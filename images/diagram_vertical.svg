@@ -64,14 +64,20 @@
   <text x="209" y="348" text-anchor="middle" font-size="13" fill="#aa2222" font-weight="bold">Glare Zone</text>
   <text x="209" y="364" text-anchor="middle" font-size="12" fill="#aa2222">(e.g. 0.5 m)</text>
 
+  <!-- ===== SUN (outside, left of wall) ===== -->
+  <circle cx="28" cy="108" r="18" fill="#FFD700" stroke="#cc9900" stroke-width="1.5"/>
+  <text x="28" y="113" text-anchor="middle" font-size="14">☀</text>
+  <text x="28" y="136" text-anchor="middle" font-size="10" fill="#664400">Outside</text>
+
   <!-- ===== SUN RAY ===== -->
-  <!-- Sun ray entering at the glare zone boundary angle (shallow angle) -->
-  <line x1="430" y1="130" x2="310" y2="315" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
-  <!-- Arrowhead at endpoint -->
-  <polygon points="310,315 322,305 316,319" fill="#FFB300"/>
-  <!-- Sun circle -->
-  <circle cx="446" cy="120" r="18" fill="#FFD700" stroke="#cc9900" stroke-width="1.5"/>
-  <text x="446" y="125" text-anchor="middle" font-size="14">☀</text>
+  <!-- Ray from sun outside, through window opening, hitting glare zone boundary inside -->
+  <!-- Sun at (28,108), enters window at wall interior (90,146), hits glare zone at (310,315) -->
+  <!-- Outside segment: sun to wall exterior -->
+  <line x1="44" y1="114" x2="60" y2="134" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
+  <!-- Inside segment: through window and into room -->
+  <line x1="60" y1="134" x2="310" y2="315" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
+  <!-- Arrowhead at glare zone boundary -->
+  <polygon points="310,315 299,307 305,319" fill="#FFB300"/>
 
   <!-- ===== PERSON/DESK SILHOUETTE ===== -->
   <!-- Desk -->

@@ -15,22 +15,20 @@
   <!-- Bottom rail -->
   <rect x="110" y="333" width="260" height="14" fill="#666" rx="2"/>
 
-  <!-- ===== SLATS (4 slats, slightly angled ~20°) ===== -->
+  <!-- ===== SLATS (4 slats, perfectly horizontal) ===== -->
   <!-- Slat centers at y = 100, 155, 210, 265 -->
-  <!-- Each slat: width 236px (from x=122 to x=358), height 18px, tilted ~15° -->
-  <!-- We use a parallelogram shape for each slat -->
 
   <!-- Slat 1 center y=100 -->
-  <polygon points="122,91 358,91 358,109 122,109" fill="#b8a080" stroke="#887050" stroke-width="1.5" transform="rotate(-5, 240, 100)"/>
+  <rect x="122" y="91" width="236" height="18" fill="#b8a080" stroke="#887050" stroke-width="1.5"/>
 
   <!-- Slat 2 center y=155 -->
-  <polygon points="122,146 358,146 358,164 122,164" fill="#c8b090" stroke="#887050" stroke-width="1.5" transform="rotate(-5, 240, 155)"/>
+  <rect x="122" y="146" width="236" height="18" fill="#c8b090" stroke="#887050" stroke-width="1.5"/>
 
   <!-- Slat 3 center y=210 -->
-  <polygon points="122,201 358,201 358,219 122,219" fill="#b8a080" stroke="#887050" stroke-width="1.5" transform="rotate(-5, 240, 210)"/>
+  <rect x="122" y="201" width="236" height="18" fill="#b8a080" stroke="#887050" stroke-width="1.5"/>
 
   <!-- Slat 4 center y=265 -->
-  <polygon points="122,256 358,256 358,274 122,274" fill="#c8b090" stroke="#887050" stroke-width="1.5" transform="rotate(-5, 240, 265)"/>
+  <rect x="122" y="256" width="236" height="18" fill="#c8b090" stroke="#887050" stroke-width="1.5"/>
 
   <!-- Ladder string (left) -->
   <line x1="155" y1="69" x2="155" y2="346" stroke="#888" stroke-width="1.5"/>
@@ -38,25 +36,20 @@
   <line x1="325" y1="69" x2="325" y2="346" stroke="#888" stroke-width="1.5"/>
 
   <!-- ===== SLAT DEPTH DIMENSION ===== -->
-  <!-- Slat depth = width measured along the slat surface (slightly diagonal) -->
-  <!-- Show on slat 2, measuring from left to right edge of slat -->
-  <!-- Left edge of slat 2 (approx after rotation): near (122,155), right edge near (358,155) -->
-  <!-- We'll show it as a diagonal arrow along the slat surface on the top face -->
-  <!-- Arrow from left slat edge to right edge, along slat angle -->
-  <!-- Slat 2 rotated -5°: left point = (122,155 - ~10px offset) adjusted -->
-  <!-- For clarity, show arrow ABOVE the slat -->
-  <line x1="122" y1="132" x2="358" y2="126" stroke="#1a6a1a" stroke-width="1.5"/>
-  <polygon points="122,132 133,126 134,136" fill="#1a6a1a"/>
-  <polygon points="358,126 346,121 347,131" fill="#1a6a1a"/>
+  <!-- Show above slat 2 (y=146 to y=164), perfectly horizontal -->
+  <line x1="122" y1="130" x2="358" y2="130" stroke="#1a6a1a" stroke-width="1.5"/>
+  <!-- Arrowheads -->
+  <polygon points="122,130 134,125 134,135" fill="#1a6a1a"/>
+  <polygon points="358,130 346,125 346,135" fill="#1a6a1a"/>
   <!-- Tick marks at ends -->
-  <line x1="122" y1="120" x2="122" y2="144" stroke="#1a6a1a" stroke-width="1.5"/>
-  <line x1="358" y1="114" x2="358" y2="138" stroke="#1a6a1a" stroke-width="1.5"/>
-  <!-- Dashed guide lines from dimension arrow to slat -->
-  <line x1="122" y1="132" x2="122" y2="148" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
-  <line x1="358" y1="126" x2="358" y2="148" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="122" y1="118" x2="122" y2="142" stroke="#1a6a1a" stroke-width="1.5"/>
+  <line x1="358" y1="118" x2="358" y2="142" stroke="#1a6a1a" stroke-width="1.5"/>
+  <!-- Dashed guide lines down to slat -->
+  <line x1="122" y1="142" x2="122" y2="146" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="358" y1="142" x2="358" y2="146" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
   <!-- Label -->
-  <text x="240" y="118" text-anchor="middle" font-size="13" fill="#1a6a1a" font-weight="bold">Slat Depth</text>
-  <text x="240" y="133" text-anchor="middle" font-size="11" fill="#1a6a1a">(measure one slat front to back, e.g. 3 cm)</text>
+  <text x="240" y="116" text-anchor="middle" font-size="13" fill="#1a6a1a" font-weight="bold">Slat Depth</text>
+  <text x="240" y="131" text-anchor="middle" font-size="11" fill="#1a6a1a">(measure one slat front to back, e.g. 3 cm)</text>
 
   <!-- ===== SLAT DISTANCE DIMENSION ===== -->
   <!-- Vertical arrow between center of slat 2 and center of slat 3 -->
