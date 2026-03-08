@@ -574,8 +574,6 @@ The integration includes sophisticated geometric enhancements to ensure accurate
 
 #### Implementation Details
 
-**Phase 1: Core Formula Enhancements (Automatic)**
-
 1. **Edge Case Handling** (`_handle_edge_cases()`)
    - Elevation < 2°: Returns full window coverage (h_win)
    - |Gamma| > 85°: Returns full window coverage (h_win)
@@ -589,15 +587,9 @@ The integration includes sophisticated geometric enhancements to ensure accurate
    - High elevation margin: Linear from 1.0 (at 75°) to 1.1 (at 90°)
    - Margins combine multiplicatively (margin = gamma_margin × elev_margin)
 
-3. **Calculation Flow** — edge cases → window depth offset → base calculation → safety margin → clip to h_win. See `calculate_position()` in `calculation.py`.
+3. **Window Depth Parameter** (optional) — `window_depth` field on `AdaptiveVerticalCover` (default 0.0), configured via `CONF_WINDOW_DEPTH` (0.0–0.5m). When `window_depth > 0` and `|gamma| > 10°`, adds horizontal offset `depth_contribution = window_depth × sin(|gamma|)` to account for window reveals/frames.
 
-**Phase 2: Window Depth Parameter (Optional)**
-
-- Added `window_depth` field to `AdaptiveVerticalCover` dataclass (default 0.0)
-- Configured via `CONF_WINDOW_DEPTH` in config flow (0.0-0.5m range)
-- Only affects calculation when `window_depth > 0` and `|gamma| > 10°`
-- Adds horizontal offset: `depth_contribution = window_depth × sin(|gamma|)`
-- Accounts for window reveals/frames creating additional shadow
+4. **Calculation Flow** — edge cases → window depth offset → base calculation → safety margin → clip to h_win. See `calculate_position()` in `calculation.py`.
 
 #### Testing Requirements
 
@@ -614,7 +606,7 @@ When modifying geometric accuracy calculations:
    - Edge case handling at thresholds
    - Smooth transitions across ranges
    - Regression tests (<5% deviation at normal angles)
-   - Backward compatibility (window_depth=0 matches Phase 1)
+   - Backward compatibility (window_depth=0 produces identical results)
 
 3. **Key test files:**
    - `tests/test_geometric_accuracy.py` - 34 dedicated tests
