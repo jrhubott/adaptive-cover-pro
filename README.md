@@ -313,11 +313,7 @@ The integration uses periodic checks to balance responsiveness with system perfo
 
 Adaptive Cover Pro includes sophisticated geometric calculations to ensure accurate sun blocking even at extreme sun angles. These improvements work automatically - no configuration required.
 
-### Automatic Improvements (Phase 1)
-
-The integration automatically applies enhanced calculations to improve accuracy at challenging sun positions:
-
-#### Angle-Dependent Safety Margins
+### Angle-Dependent Safety Margins
 
 Safety margins automatically increase blind extension at extreme angles to compensate for geometric uncertainties:
 
@@ -326,16 +322,7 @@ Safety margins automatically increase blind extension at extreme angles to compe
 - **High elevations**: Up to 10% increase when sun is nearly overhead (>75° elevation)
 - **Combined extremes**: Margins multiply together (e.g., 85° gamma + 8° elevation ≈ 27% total increase)
 
-**Why this matters:**
-- At extreme angles, small measurement errors have larger effects
-- Window frames, mullions, and mounting hardware can interfere with sun blocking
-- Safety margins ensure the blind extends far enough to fully block sunlight
-
-**When margins apply:**
-- Automatically activated based on sun position
-- Smooth transitions using interpolation (no sudden jumps)
-- Zero margin at normal angles (gamma < 45°, 10° < elevation < 75°)
-- Transparent calculation - check diagnostic sensors to see actual vs adjusted positions
+Margins activate automatically, use smoothstep interpolation for smooth transitions, and are zero at normal angles (gamma < 45°, 10° < elevation < 75°). Check the "Control Status" diagnostic sensor to see when margins are active.
 
 #### Edge Case Handling
 
@@ -347,20 +334,7 @@ Automatic fallback positions for extreme conditions where standard calculations 
 | \|Gamma\| > 85° | Full window coverage | Sun perpendicular to window, standard formula unstable |
 | Elevation > 88° | Simplified calculation | Sun nearly overhead, path length correction minimal |
 
-**Why this matters:**
-- Prevents numerical instability (NaN, infinity errors)
-- Ensures conservative behavior (always blocks sun when uncertain)
-- Smooth transitions at thresholds
-
-#### Smooth Transitions
-
-All adjustments use **smoothstep interpolation** to prevent abrupt changes in blind position:
-
-- No sudden jumps when crossing thresholds
-- Predictable, smooth motion throughout the day
-- Comfortable for occupants (gradual adjustments)
-
-### Optional Window Depth (Phase 2)
+### Optional Window Depth
 
 For users who want maximum precision, the **Window Depth** parameter accounts for window reveals/frames creating additional shadow at angled sun positions.
 
@@ -374,7 +348,7 @@ Located in the vertical blind configuration screen:
 **Unit:** meters
 
 **Typical values:**
-- `0.0m` - Disabled (default, uses Phase 1 improvements only)
+- `0.0m` - Disabled (default)
 - `0.05m` (2 inches) - Flush-mounted windows
 - `0.10m` (4 inches) - Standard window frames
 - `0.15m` (6 inches) - Deep reveals or thick walls
@@ -426,10 +400,9 @@ At angled sun positions (gamma > 10°), the window depth effectively extends the
 
 #### Backward Compatibility
 
-- **Existing installations:** Automatically use Phase 1 improvements with window_depth=0.0
-- **No configuration required:** Phase 1 works automatically
+- **Existing installations:** Unaffected — window_depth defaults to 0.0
 - **Optional enhancement:** Set window_depth > 0 only if needed
-- **No performance impact:** Window depth adds minimal computational cost
+- **No performance impact:** Adds minimal computational cost
 
 ### Technical Details
 
@@ -493,13 +466,13 @@ Compare "Calculated Position" to actual cover position to see safety margin effe
 A: This is expected behavior. Safety margins automatically increase extension at challenging angles to ensure effective sun blocking. You can check the diagnostic sensor "Control Status" to see when margins are applied.
 
 **Q: Should I enable window depth?**
-A: Only if you notice sun leaking at angles after Phase 1 improvements, or if you have deep window reveals (>10cm). Most users don't need this.
+A: Only if you notice sun leaking at extreme angles or have deep window reveals (>10cm). Most users don't need this.
 
 **Q: Can I disable the safety margins?**
 A: No, safety margins are automatic and cannot be disabled. They're essential for reliable sun blocking at extreme angles. However, margins are zero at normal angles (gamma < 45°, 10° < elevation < 75°).
 
 **Q: How do I measure window depth accurately?**
-A: Use a tape measure or ruler to measure from the outer wall surface (outside your home) to the inner edge of the window frame. If you're unsure, leave at default (0.0) - Phase 1 improvements work well without it.
+A: Use a tape measure or ruler to measure from the outer wall surface (outside your home) to the inner edge of the window frame. If you're unsure, leave at the default (0.0) — the automatic safety margins work well without it.
 
 ## Installation
 
