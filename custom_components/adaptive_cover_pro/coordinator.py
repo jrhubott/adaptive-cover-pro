@@ -1541,12 +1541,33 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         return diagnostics
 
+    def _get_control_state_reason(self) -> str:
+        """Get the current control state reason including coordinator-level overrides.
+
+        Combines cover-level sun position reasons with coordinator-level override
+        states (force override, motion timeout, manual override). Coordinator-level
+        states take priority over cover-level sun position reasons.
+
+        Returns:
+            Human-readable reason string for current cover control state.
+
+        """
+        if self.is_force_override_active:
+            return "Force Override"
+        if self.is_motion_timeout_active:
+            return "Motion Timeout"
+        if self.manager.binary_cover_manual:
+            return "Manual Override"
+        if self.normal_cover_state and self.normal_cover_state.cover:
+            return self.normal_cover_state.cover.control_state_reason
+        return "Unknown"
+
     def _build_position_diagnostics(self) -> dict:
         """Build position diagnostics.
 
         Returns:
             Dictionary containing calculated position (before limits), climate
-            position (if enabled), and control status
+            position (if enabled), control status, and control state reason
 
         """
         diagnostics = {}
@@ -1560,6 +1581,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Control status determination
         control_status = self._determine_control_status()
         diagnostics["control_status"] = control_status
+
+        # Human-readable reason for current state (including coordinator-level overrides)
+        diagnostics["control_state_reason"] = self._get_control_state_reason()
 
         return diagnostics
 

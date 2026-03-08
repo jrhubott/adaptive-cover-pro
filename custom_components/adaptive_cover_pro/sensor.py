@@ -133,6 +133,18 @@ async def async_setup_entry(
             )
         )
         entities.append(
+            AdaptiveCoverDiagnosticEnumSensor(
+                config_entry.entry_id,
+                hass,
+                config_entry,
+                name,
+                coordinator,
+                "Control State Reason",
+                "control_state_reason",
+                "mdi:information-variant",
+            )
+        )
+        entities.append(
             AdaptiveCoverDiagnosticSensor(
                 config_entry.entry_id,
                 hass,

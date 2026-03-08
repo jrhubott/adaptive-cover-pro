@@ -62,8 +62,10 @@ class AdaptiveGeneralCover(ABC):
         """Calculate when sun enters and exits window's field of view today.
 
         Uses today's solar position data to determine the time window when the sun
-        is within the configured azimuth and elevation limits. Used by sensors to
-        display sun_start and sun_end times.
+        is within the configured azimuth field of view, elevation limits, and outside
+        the sunset/sunrise offset periods. Matches the same conditions used by
+        direct_sun_valid so that "End Sun Time" accurately reflects when automatic
+        sun tracking genuinely ends.
 
         Returns:
             Tuple of (start_time, end_time) as datetime objects. Returns (None, None)
@@ -79,10 +81,35 @@ class AdaptiveGeneralCover(ABC):
         solpos = df_today.set_index(self.sun_data.times)
 
         alpha = solpos["azimuth"]
-        frame = (
+        elev = solpos["elevation"]
+
+        # Azimuth in FOV
+        in_fov = (
             (alpha - self.azi_min_abs) % 360
             <= (self.azi_max_abs - self.azi_min_abs) % 360
-        ) & (solpos["elevation"] > 0)
+        )
+
+        # Elevation check — matches valid_elevation property logic
+        if self.min_elevation is None and self.max_elevation is None:
+            valid_elev = elev > 0
+        elif self.min_elevation is None:
+            valid_elev = elev <= self.max_elevation
+        elif self.max_elevation is None:
+            valid_elev = elev >= self.min_elevation
+        else:
+            valid_elev = (elev >= self.min_elevation) & (elev <= self.max_elevation)
+
+        # Sunset/sunrise offset — exclude times within the offset windows.
+        # Matches sunset_valid: True when after (sunset+offset) or before (sunrise+offset).
+        # Convert series index to naive UTC for comparison with sun_data.sunset()/sunrise().
+        sunset_utc = self.sun_data.sunset().replace(tzinfo=None)
+        sunrise_utc = self.sun_data.sunrise().replace(tzinfo=None)
+        offset_sunset = sunset_utc + timedelta(minutes=self.sunset_off)
+        offset_sunrise = sunrise_utc + timedelta(minutes=self.sunrise_off)
+        times_utc = solpos.index.tz_convert("UTC").tz_localize(None)
+        in_sun_window = (times_utc >= offset_sunrise) & (times_utc <= offset_sunset)
+
+        frame = in_fov & valid_elev & in_sun_window
 
         if solpos[frame].empty:
             return None, None
@@ -309,6 +336,31 @@ class AdaptiveGeneralCover(ABC):
 
         """
         return (self.valid) & (not self.sunset_valid) & (not self.is_sun_in_blind_spot)
+
+    @property
+    def control_state_reason(self) -> str:
+        """Determine why the cover is tracking the sun or using the default position.
+
+        Evaluates conditions in the same priority order as direct_sun_valid to
+        provide a human-readable explanation for the current cover state. This
+        helps users understand why the cover is in its current position.
+
+        Returns:
+            Reason string: "Direct Sun", "Default: FOV Exit", "Default: Elevation Limit",
+            "Default: Sunset Offset", or "Default: Blind Spot".
+
+        """
+        if self.direct_sun_valid:
+            return "Direct Sun"
+        if self.sunset_valid:
+            return "Default: Sunset Offset"
+        if not self.valid:
+            if not self.valid_elevation:
+                return "Default: Elevation Limit"
+            return "Default: FOV Exit"
+        if self.is_sun_in_blind_spot:
+            return "Default: Blind Spot"
+        return "Default"
 
     @abstractmethod
     def calculate_position(self) -> float:
