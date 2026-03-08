@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 420" width="620" height="420" font-family="sans-serif">
+  <!-- Background -->
+  <rect width="620" height="420" fill="white"/>
+
+  <!-- Title -->
+  <text x="310" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Horizontal Awning — Side Elevation View</text>
+
+  <!-- ===== GROUND ===== -->
+  <rect x="60" y="360" width="500" height="16" fill="#888" rx="2"/>
+  <!-- Ground hatch lines -->
+  <line x1="80" y1="376" x2="70" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="100" y1="376" x2="90" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="120" y1="376" x2="110" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="140" y1="376" x2="130" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="160" y1="376" x2="150" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="180" y1="376" x2="170" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="200" y1="376" x2="190" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="220" y1="376" x2="210" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="240" y1="376" x2="230" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="260" y1="376" x2="250" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="280" y1="376" x2="270" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="300" y1="376" x2="290" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="320" y1="376" x2="310" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="340" y1="376" x2="330" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="360" y1="376" x2="350" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="380" y1="376" x2="370" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="400" y1="376" x2="390" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="420" y1="376" x2="410" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="440" y1="376" x2="430" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="460" y1="376" x2="450" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="480" y1="376" x2="470" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="500" y1="376" x2="490" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="520" y1="376" x2="510" y2="390" stroke="#666" stroke-width="1"/>
+  <line x1="540" y1="376" x2="530" y2="390" stroke="#666" stroke-width="1"/>
+
+  <!-- ===== WALL ===== -->
+  <rect x="60" y="50" width="30" height="310" fill="#aaa" rx="2"/>
+  <text x="35" y="205" text-anchor="end" font-size="11" fill="#666" writing-mode="tb-rl">Wall</text>
+
+  <!-- ===== WINDOW ===== -->
+  <rect x="60" y="130" width="30" height="160" fill="#add8e6" opacity="0.7"/>
+  <text x="75" y="215" text-anchor="middle" font-size="10" fill="#225577" writing-mode="tb">Window</text>
+
+  <!-- Window frames -->
+  <line x1="60" y1="130" x2="90" y2="130" stroke="#555" stroke-width="2.5"/>
+  <line x1="60" y1="290" x2="90" y2="290" stroke="#555" stroke-width="2.5"/>
+
+  <!-- ===== AWNING ===== -->
+  <!-- Mounting point at y=160 (awning height from ground = 360-160 = 200px ~ 2m) -->
+  <!-- Awning extends 200px to the right and droops ~20px (angle ~6°) -->
+  <!-- Awning at slight angle from horizontal -->
+  <!-- Points: start (90,160), end (390,175) — slight droop -->
+  <polygon points="90,155 390,170 390,185 90,175" fill="#5588cc" stroke="#2255aa" stroke-width="2" opacity="0.85"/>
+
+  <!-- Awning mount bracket -->
+  <rect x="85" y="150" width="15" height="30" fill="#666" rx="2"/>
+
+  <!-- ===== AWNING HEIGHT DIMENSION ===== -->
+  <!-- Vertical arrow from ground to mounting point -->
+  <line x1="44" y1="160" x2="44" y2="360" stroke="#1a6a1a" stroke-width="1.5"/>
+  <polygon points="44,160 39,172 49,172" fill="#1a6a1a"/>
+  <polygon points="44,360 39,348 49,348" fill="#1a6a1a"/>
+  <!-- Tick marks -->
+  <line x1="32" y1="160" x2="56" y2="160" stroke="#1a6a1a" stroke-width="1.5"/>
+  <line x1="32" y1="360" x2="56" y2="360" stroke="#1a6a1a" stroke-width="1.5"/>
+  <!-- Label -->
+  <text x="14" y="255" text-anchor="middle" font-size="12" fill="#1a6a1a" font-weight="bold" writing-mode="tb-rl" transform="rotate(-90,18,260)">Awning Height</text>
+  <text x="22" y="268" text-anchor="middle" font-size="11" fill="#1a6a1a">(e.g. 2 m)</text>
+
+  <!-- ===== AWNING LENGTH DIMENSION ===== -->
+  <!-- Horizontal arrow from wall to tip of awning -->
+  <line x1="90" y1="205" x2="390" y2="205" stroke="#aa5500" stroke-width="1.5"/>
+  <polygon points="90,205 102,200 102,210" fill="#aa5500"/>
+  <polygon points="390,205 378,200 378,210" fill="#aa5500"/>
+  <!-- Tick marks -->
+  <line x1="90" y1="193" x2="90" y2="217" stroke="#aa5500" stroke-width="1.5"/>
+  <line x1="390" y1="193" x2="390" y2="217" stroke="#aa5500" stroke-width="1.5"/>
+  <!-- Dotted vertical guide to awning tip -->
+  <line x1="390" y1="170" x2="390" y2="217" stroke="#aa5500" stroke-width="1" stroke-dasharray="4,3"/>
+  <!-- Label -->
+  <text x="240" y="198" text-anchor="middle" font-size="12" fill="#aa5500" font-weight="bold">Awning Length</text>
+  <text x="240" y="232" text-anchor="middle" font-size="11" fill="#aa5500">(horizontal, e.g. 2.1 m)</text>
+
+  <!-- ===== AWNING ANGLE ARC ===== -->
+  <!-- Arc from horizontal at mounting point showing droop angle -->
+  <!-- From (90,160) draw arc showing angle downward -->
+  <path d="M 180 160 A 90 90 0 0 1 178 165" fill="none" stroke="#7700aa" stroke-width="1.5"/>
+  <!-- A small angle: draw it more clearly -->
+  <path d="M 90 160 L 190 160" stroke="#7700aa" stroke-width="1" stroke-dasharray="5,3"/>
+  <path d="M 130 160 A 40 40 0 0 1 130.5 164" fill="none" stroke="#7700aa" stroke-width="2"/>
+  <!-- Actually draw a visible angle arc -->
+  <path d="M 150 160 A 60 60 0 0 1 151 165" fill="none" stroke="#7700aa" stroke-width="1"/>
+  <!-- Simplified: arrow arc from 0° to the angle -->
+  <path d="M 90,160 Q 200,160 200,163" fill="none" stroke="none"/>
+  <!-- Better angle indicator -->
+  <path d="M 170 160 A 80 80 0 0 1 169.3 166.9" fill="none" stroke="#7700aa" stroke-width="2"/>
+  <text x="200" y="155" font-size="12" fill="#7700aa" font-weight="bold">Awning Angle</text>
+  <text x="200" y="169" font-size="11" fill="#7700aa">(from horizontal, e.g. 5°)</text>
+
+  <!-- ===== GLARE ZONE ===== -->
+  <!-- Glare zone: horizontal distance from awning tip outward to protected area on ground -->
+  <!-- Awning tip at ~(390,175). Protected zone on ground under and beyond tip -->
+  <rect x="310" y="330" width="120" height="30" fill="#ffcccc" opacity="0.5"/>
+  <!-- Arrow along ground -->
+  <line x1="310" y1="355" x2="430" y2="355" stroke="#aa2222" stroke-width="1.5"/>
+  <polygon points="310,355 322,350 322,360" fill="#aa2222"/>
+  <polygon points="430,355 418,350 418,360" fill="#aa2222"/>
+  <line x1="310" y1="343" x2="310" y2="367" stroke="#aa2222" stroke-width="1.5"/>
+  <line x1="430" y1="343" x2="430" y2="367" stroke="#aa2222" stroke-width="1.5"/>
+  <!-- Dotted guide from awning tip to ground -->
+  <line x1="390" y1="175" x2="390" y2="360" stroke="#aa2222" stroke-width="1" stroke-dasharray="4,3"/>
+  <!-- Label -->
+  <text x="370" y="393" text-anchor="middle" font-size="12" fill="#aa2222" font-weight="bold">Glare Zone</text>
+
+  <!-- ===== SUN RAY ===== -->
+  <circle cx="520" cy="90" r="18" fill="#FFD700" stroke="#cc9900" stroke-width="1.5"/>
+  <text x="520" y="96" text-anchor="middle" font-size="14">☀</text>
+  <line x1="510" y1="104" x2="390" y2="350" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
+  <polygon points="390,350 396,337 402,350" fill="#FFB300"/>
+
+  <!-- ===== LEGEND ===== -->
+  <rect x="60" y="400" width="500" height="0" rx="4" fill="none"/>
+</svg>

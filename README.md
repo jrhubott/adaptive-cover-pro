@@ -712,6 +712,8 @@ Climate mode uses a **priority-based decision system** to balance comfort, energ
 
 ### Common
 
+![Field of View and Blind Spot diagram](images/diagram_fov.svg)
+
 | Variables                     | Default | Range | Description                                                                                              |
 | ----------------------------- | ------- | ----- | -------------------------------------------------------------------------------------------------------- |
 | Entities                      | []      |       | Denotes entities controllable by the integration                                                         |
@@ -792,12 +794,16 @@ Interpolated List: [100, 75, 50, 25, 0]
 
 ### Vertical
 
+![Vertical blind measurement diagram](images/diagram_vertical.svg)
+
 | Variables         | Default | Range | Description                                                                                 |
 | ----------------- | ------- | ----- | ------------------------------------------------------------------------------------------- |
 | Window Height     | 2.1     | 0.1-6 | Length of fully extended cover/window                                                       |
 | Glare Zone        | 0.5     | 0.1-5 | Objects within this distance of the cover recieve direct sunlight. Measured horizontally from the bottom of the cover when fully extended |
 
 ### Horizontal
+
+![Horizontal awning measurement diagram](images/diagram_horizontal.svg)
 
 | Variables                  | Default | Range | Description                                    |
 | -------------------------- | ------- | ----- | ---------------------------------------------- |
@@ -807,6 +813,8 @@ Interpolated List: [100, 75, 50, 25, 0]
 | Glare Zone                 | 0.5     | 0.1-5 | Objects within this distance of the cover recieve direct sunlight |
 
 ### Tilt
+
+![Venetian slat measurement diagram](images/diagram_tilt.svg)
 
 | Variables     | Default        | Range      | Description                                                |
 | ------------- | -------------- | ---------- | ---------------------------------------------------------- |
@@ -847,6 +855,8 @@ Interpolated List: [100, 75, 50, 25, 0]
 | Irradiance Threshold          | `300`   |       |                                               | "In non-summer, above threshold, use optimal position. Otherwise, default position or fully open in winter."                                         |
 
 ### Blindspot
+
+> The blind spot is shown as an orange shaded area within the FOV in the diagram above (see [Common](#common) section). It represents an angular range within the field of view where obstructions (trees, buildings) block direct sunlight.
 
 | Variables            | Default | Range                 | Example | Description                                                                                                          |
 | -------------------- | ------- | --------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
