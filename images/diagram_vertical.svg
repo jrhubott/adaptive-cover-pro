@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420" width="600" height="420" font-family="sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 0 700 420" width="700" height="420" font-family="sans-serif">
   <!-- Background -->
-  <rect width="600" height="420" fill="white"/>
+  <rect x="-100" width="700" height="420" fill="white"/>
 
   <!-- Title -->
-  <text x="300" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Vertical Blind — Side Elevation View</text>
+  <text x="250" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Vertical Blind — Side Elevation View</text>
 
   <!-- ===== CEILING ===== -->
   <rect x="60" y="50" width="480" height="16" fill="#888" rx="2"/>
@@ -17,7 +17,6 @@
   <rect x="60" y="50" width="30" height="326" fill="#aaa" rx="2"/>
 
   <!-- ===== WINDOW in wall ===== -->
-  <!-- Window opening -->
   <rect x="60" y="85" width="30" height="200" fill="#add8e6" opacity="0.7"/>
   <text x="75" y="190" text-anchor="middle" font-size="10" fill="#225577" writing-mode="tb">Window</text>
 
@@ -27,68 +26,60 @@
   <line x1="60" y1="285" x2="90" y2="285" stroke="#555" stroke-width="3"/>
 
   <!-- ===== BLIND ===== -->
-  <!-- Blind fabric -->
   <rect x="90" y="85" width="18" height="200" fill="#d4a96a" stroke="#a07040" stroke-width="1.5" rx="1"/>
-
   <!-- Blind rail at top -->
   <rect x="85" y="78" width="28" height="10" fill="#666" rx="2"/>
 
   <!-- ===== WINDOW HEIGHT DIMENSION ===== -->
-  <!-- Arrow line from top of blind to bottom -->
   <line x1="130" y1="85" x2="130" y2="285" stroke="#1a6a1a" stroke-width="1.5"/>
-  <!-- Arrowheads -->
   <polygon points="130,85 125,97 135,97" fill="#1a6a1a"/>
   <polygon points="130,285 125,273 135,273" fill="#1a6a1a"/>
-  <!-- Horizontal tick marks -->
   <line x1="108" y1="85" x2="138" y2="85" stroke="#1a6a1a" stroke-width="1.5"/>
   <line x1="108" y1="285" x2="138" y2="285" stroke="#1a6a1a" stroke-width="1.5"/>
-  <!-- Label -->
   <text x="150" y="178" font-size="13" fill="#1a6a1a" font-weight="bold">Window</text>
   <text x="150" y="194" font-size="13" fill="#1a6a1a" font-weight="bold">Height</text>
   <text x="150" y="211" font-size="12" fill="#1a6a1a">(e.g. 2.1 m)</text>
 
   <!-- ===== GLARE ZONE DIMENSION ===== -->
-  <!-- Horizontal arrow from below blind bottom outward -->
   <line x1="108" y1="315" x2="310" y2="315" stroke="#aa2222" stroke-width="1.5"/>
-  <!-- Arrowheads -->
   <polygon points="108,315 120,310 120,320" fill="#aa2222"/>
   <polygon points="310,315 298,310 298,320" fill="#aa2222"/>
-  <!-- Vertical tick marks -->
   <line x1="108" y1="303" x2="108" y2="327" stroke="#aa2222" stroke-width="1.5"/>
   <line x1="310" y1="303" x2="310" y2="327" stroke="#aa2222" stroke-width="1.5"/>
-  <!-- Glare zone shaded area -->
   <rect x="108" y="285" width="202" height="30" fill="#ffcccc" opacity="0.5"/>
-  <!-- Vertical dotted line from blind bottom down to floor level -->
   <line x1="108" y1="285" x2="108" y2="360" stroke="#aa2222" stroke-width="1" stroke-dasharray="4,3"/>
-  <!-- Label -->
   <text x="209" y="348" text-anchor="middle" font-size="13" fill="#aa2222" font-weight="bold">Glare Zone</text>
   <text x="209" y="364" text-anchor="middle" font-size="12" fill="#aa2222">(e.g. 0.5 m)</text>
 
-  <!-- ===== SUN (outside, left of wall) ===== -->
-  <circle cx="28" cy="108" r="18" fill="#FFD700" stroke="#cc9900" stroke-width="1.5"/>
-  <text x="28" y="113" text-anchor="middle" font-size="14">☀</text>
-  <text x="28" y="136" text-anchor="middle" font-size="10" fill="#664400">Outside</text>
+  <!-- ===== SUN (outside, left of wall — plenty of space) ===== -->
+  <circle cx="-48" cy="88" r="30" fill="#FFD700" stroke="#cc9900" stroke-width="2"/>
+  <!-- Sun rays -->
+  <line x1="-48" y1="52" x2="-48" y2="44" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-48" y1="124" x2="-48" y2="132" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-84" y1="88" x2="-92" y2="88" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-12" y1="88" x2="-4" y2="88" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-74" y1="62" x2="-79" y2="57" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-22" y1="114" x2="-17" y2="119" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-74" y1="114" x2="-79" y2="119" stroke="#cc9900" stroke-width="2"/>
+  <line x1="-22" y1="62" x2="-17" y2="57" stroke="#cc9900" stroke-width="2"/>
+  <text x="-48" y="93" text-anchor="middle" font-size="18">☀</text>
+  <text x="-48" y="140" text-anchor="middle" font-size="11" fill="#664400" font-weight="bold">Outside</text>
 
   <!-- ===== SUN RAY ===== -->
-  <!-- Ray from sun outside, through window opening, hitting glare zone boundary inside -->
-  <!-- Sun at (28,108), enters window at wall interior (90,146), hits glare zone at (310,315) -->
-  <!-- Outside segment: sun to wall exterior -->
-  <line x1="44" y1="114" x2="60" y2="134" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
+  <!-- Ray from sun, through window opening (enters wall at ~x=60,y=152), hits glare zone at (310,315) -->
+  <!-- Outside segment: from sun edge to wall exterior -->
+  <line x1="-20" y1="103" x2="60" y2="152" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
   <!-- Inside segment: through window and into room -->
-  <line x1="60" y1="134" x2="310" y2="315" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
+  <line x1="60" y1="152" x2="310" y2="315" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
   <!-- Arrowhead at glare zone boundary -->
   <polygon points="310,315 299,307 305,319" fill="#FFB300"/>
 
   <!-- ===== PERSON/DESK SILHOUETTE ===== -->
-  <!-- Desk -->
   <rect x="290" y="320" width="80" height="8" fill="#886644" rx="1"/>
   <rect x="300" y="328" width="8" height="30" fill="#886644" rx="1"/>
   <rect x="362" y="328" width="8" height="30" fill="#886644" rx="1"/>
-  <!-- Person (simple) -->
   <circle cx="340" cy="305" r="10" fill="#ffcc99" stroke="#aa8866" stroke-width="1"/>
   <rect x="332" y="315" width="16" height="20" fill="#6699cc" rx="2"/>
-
-  <!-- ===== LABELS & NOTES ===== -->
   <text x="370" y="340" font-size="11" fill="#555">← Protected area</text>
 
   <!-- Legend box -->
