@@ -1,13 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 440" width="700" height="440" font-family="sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 450" width="780" height="450" font-family="sans-serif">
   <!-- Background -->
-  <rect width="700" height="440" fill="white"/>
+  <rect width="780" height="450" fill="white"/>
 
   <!-- Title -->
-  <text x="350" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Horizontal Awning — Side Elevation View</text>
+  <text x="390" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Horizontal Awning — Side Elevation View</text>
 
-  <!-- ===== GROUND ===== -->
-  <rect x="60" y="380" width="580" height="16" fill="#888" rx="2"/>
-  <!-- Ground hatch lines -->
+  <!-- ===== INTERIOR REGION (right of wall) ===== -->
+  <rect x="475" y="50" width="255" height="330" fill="#f5f0e8" rx="0"/>
+  <text x="600" y="76" text-anchor="middle" font-size="13" fill="#999" font-style="italic">Inside</text>
+
+  <!-- Interior ceiling -->
+  <rect x="475" y="50" width="255" height="14" fill="#888" rx="2"/>
+  <!-- Interior floor -->
+  <rect x="475" y="380" width="255" height="16" fill="#888" rx="2"/>
+
+  <!-- ===== EXTERIOR GROUND ===== -->
+  <rect x="60" y="380" width="415" height="16" fill="#888" rx="2"/>
+  <!-- Ground hatch lines (outside) -->
   <line x1="80"  y1="396" x2="70"  y2="410" stroke="#666" stroke-width="1"/>
   <line x1="100" y1="396" x2="90"  y2="410" stroke="#666" stroke-width="1"/>
   <line x1="120" y1="396" x2="110" y2="410" stroke="#666" stroke-width="1"/>
@@ -28,106 +37,96 @@
   <line x1="420" y1="396" x2="410" y2="410" stroke="#666" stroke-width="1"/>
   <line x1="440" y1="396" x2="430" y2="410" stroke="#666" stroke-width="1"/>
   <line x1="460" y1="396" x2="450" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="480" y1="396" x2="470" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="500" y1="396" x2="490" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="520" y1="396" x2="510" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="540" y1="396" x2="530" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="560" y1="396" x2="550" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="580" y1="396" x2="570" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="600" y1="396" x2="590" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="620" y1="396" x2="610" y2="410" stroke="#666" stroke-width="1"/>
-  <line x1="640" y1="396" x2="630" y2="410" stroke="#666" stroke-width="1"/>
 
-  <!-- ===== WALL (right side — interior behind wall) ===== -->
-  <rect x="608" y="50" width="32" height="330" fill="#aaa" rx="2"/>
-  <text x="655" y="215" text-anchor="start" font-size="11" fill="#666">Wall</text>
+  <!-- ===== WALL ===== -->
+  <rect x="443" y="50" width="32" height="330" fill="#aaa" rx="2"/>
 
-  <!-- ===== WINDOW ===== -->
-  <rect x="608" y="130" width="32" height="160" fill="#add8e6" opacity="0.7"/>
-  <text x="624" y="215" text-anchor="middle" font-size="10" fill="#225577" writing-mode="tb">Window</text>
-
-  <!-- Window frames -->
-  <line x1="608" y1="130" x2="640" y2="130" stroke="#555" stroke-width="2.5"/>
-  <line x1="608" y1="290" x2="640" y2="290" stroke="#555" stroke-width="2.5"/>
+  <!-- ===== WINDOW (opening in wall) ===== -->
+  <rect x="443" y="130" width="32" height="162" fill="#add8e6" opacity="0.8"/>
+  <text x="459" y="218" text-anchor="middle" font-size="10" fill="#225577" writing-mode="tb">Window</text>
+  <!-- Window frame lines -->
+  <line x1="443" y1="130" x2="475" y2="130" stroke="#555" stroke-width="2.5"/>
+  <line x1="443" y1="292" x2="475" y2="292" stroke="#555" stroke-width="2.5"/>
 
   <!-- ===== AWNING ===== -->
-  <!-- Mounts at (608,162) on the outside face of the wall, extends LEFT to (215,178) — slight droop -->
-  <polygon points="608,155 215,170 215,185 608,172" fill="#5588cc" stroke="#2255aa" stroke-width="2" opacity="0.85"/>
-
-  <!-- Awning mount bracket -->
-  <rect x="600" y="148" width="14" height="32" fill="#666" rx="2"/>
+  <!-- Mount just above window top (y=130): bracket at y=99-123, tip extends left to (178,119) -->
+  <!-- Top face: (443,101) to (178,119); Bottom face: (178,134) to (443,116) -->
+  <polygon points="443,101 178,119 178,134 443,116" fill="#5588cc" stroke="#2255aa" stroke-width="2" opacity="0.9"/>
+  <!-- Mount bracket -->
+  <rect x="435" y="97" width="14" height="24" fill="#555" rx="2"/>
 
   <!-- ===== AWNING HEIGHT DIMENSION ===== -->
-  <!-- Vertical arrow: ground (y=380) to mount point (y=162), placed to RIGHT of wall -->
-  <line x1="660" y1="162" x2="660" y2="380" stroke="#1a6a1a" stroke-width="1.5"/>
-  <polygon points="660,162 655,174 665,174" fill="#1a6a1a"/>
-  <polygon points="660,380 655,368 665,368" fill="#1a6a1a"/>
-  <line x1="648" y1="162" x2="672" y2="162" stroke="#1a6a1a" stroke-width="1.5"/>
-  <line x1="648" y1="380" x2="672" y2="380" stroke="#1a6a1a" stroke-width="1.5"/>
-  <!-- Dashed guide from wall to dimension line -->
-  <line x1="640" y1="162" x2="660" y2="162" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="676" y="268" font-size="12" fill="#1a6a1a" font-weight="bold">Awning</text>
-  <text x="676" y="284" font-size="12" fill="#1a6a1a" font-weight="bold">Height</text>
-  <text x="676" y="300" font-size="11" fill="#1a6a1a">(e.g. 2 m)</text>
+  <!-- Vertical arrow: ground(y=380) to mount(y=109), right of wall -->
+  <line x1="530" y1="109" x2="530" y2="380" stroke="#1a6a1a" stroke-width="1.5"/>
+  <polygon points="530,109 525,121 535,121" fill="#1a6a1a"/>
+  <polygon points="530,380 525,368 535,368" fill="#1a6a1a"/>
+  <line x1="518" y1="109" x2="542" y2="109" stroke="#1a6a1a" stroke-width="1.5"/>
+  <line x1="518" y1="380" x2="542" y2="380" stroke="#1a6a1a" stroke-width="1.5"/>
+  <!-- Dashed guide from wall to dim line -->
+  <line x1="475" y1="109" x2="530" y2="109" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="546" y="226" font-size="12" fill="#1a6a1a" font-weight="bold">Awning</text>
+  <text x="546" y="242" font-size="12" fill="#1a6a1a" font-weight="bold">Height</text>
+  <text x="546" y="258" font-size="11" fill="#1a6a1a">(e.g. 2 m)</text>
 
   <!-- ===== AWNING LENGTH DIMENSION ===== -->
-  <!-- Horizontal arrow from awning tip (x=215) to wall (x=608) at y=220 -->
-  <line x1="215" y1="220" x2="608" y2="220" stroke="#aa5500" stroke-width="1.5"/>
-  <polygon points="215,220 227,215 227,225" fill="#aa5500"/>
-  <polygon points="608,220 596,215 596,225" fill="#aa5500"/>
-  <line x1="215" y1="208" x2="215" y2="232" stroke="#aa5500" stroke-width="1.5"/>
-  <line x1="608" y1="208" x2="608" y2="232" stroke="#aa5500" stroke-width="1.5"/>
-  <!-- Dotted vertical guide from awning tip down to dimension line -->
-  <line x1="215" y1="185" x2="215" y2="220" stroke="#aa5500" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="412" y="213" text-anchor="middle" font-size="12" fill="#aa5500" font-weight="bold">Awning Length</text>
-  <text x="412" y="242" text-anchor="middle" font-size="11" fill="#aa5500">(horizontal, e.g. 2.1 m)</text>
+  <!-- Horizontal arrow at y=218, from tip(x=178) to wall(x=443) -->
+  <line x1="178" y1="218" x2="443" y2="218" stroke="#aa5500" stroke-width="1.5"/>
+  <polygon points="178,218 190,213 190,223" fill="#aa5500"/>
+  <polygon points="443,218 431,213 431,223" fill="#aa5500"/>
+  <line x1="178" y1="206" x2="178" y2="230" stroke="#aa5500" stroke-width="1.5"/>
+  <line x1="443" y1="206" x2="443" y2="230" stroke="#aa5500" stroke-width="1.5"/>
+  <!-- Dotted guide from awning tip down to dim line -->
+  <line x1="178" y1="123" x2="178" y2="218" stroke="#aa5500" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="311" y="210" text-anchor="middle" font-size="12" fill="#aa5500" font-weight="bold">Awning Length</text>
+  <text x="311" y="245" text-anchor="middle" font-size="11" fill="#aa5500">(horizontal, e.g. 2.1 m)</text>
 
   <!-- ===== AWNING ANGLE ===== -->
-  <!-- Horizontal reference line at mount point, and small arc showing droop angle -->
-  <line x1="490" y1="162" x2="608" y2="162" stroke="#7700aa" stroke-width="1" stroke-dasharray="5,3"/>
-  <!-- Arc from horizontal to awning surface at ~radius 80 from mount (608,162) -->
-  <!-- Awning direction: from (608,162) to (215,170) => angle = atan2(8, -393) ≈ -1.2° -->
-  <!-- Small visible arc: use path from (528,162) sweeping down -->
-  <path d="M 528,162 A 80,80 0 0,0 527.8,164" fill="none" stroke="#7700aa" stroke-width="1.5"/>
-  <!-- Label -->
-  <text x="492" y="148" font-size="12" fill="#7700aa" font-weight="bold">Awning Angle</text>
-  <text x="492" y="162" font-size="11" fill="#7700aa">(from horizontal)</text>
+  <!-- Horizontal reference line at mount height (y=109) -->
+  <line x1="330" y1="109" x2="443" y2="109" stroke="#7700aa" stroke-width="1" stroke-dasharray="5,3"/>
+  <!-- Small arc from horizontal to awning top surface, center at mount (443,109) -->
+  <path d="M 383,109 A 60,60 0 0,0 380.8,114.4" fill="none" stroke="#7700aa" stroke-width="2"/>
+  <text x="310" y="97" font-size="12" fill="#7700aa" font-weight="bold">Awning Angle</text>
+  <text x="310" y="111" font-size="11" fill="#7700aa">(e.g. 5°)</text>
 
-  <!-- ===== GLARE ZONE ===== -->
-  <!-- Shaded region on ground from shadow boundary (~x=490) to wall (x=608) -->
-  <rect x="460" y="350" width="148" height="30" fill="#ffcccc" opacity="0.5"/>
-  <!-- Arrow showing glare zone distance -->
-  <line x1="460" y1="370" x2="608" y2="370" stroke="#aa2222" stroke-width="1.5"/>
-  <polygon points="460,370 472,365 472,375" fill="#aa2222"/>
-  <polygon points="608,370 596,365 596,375" fill="#aa2222"/>
-  <line x1="460" y1="358" x2="460" y2="382" stroke="#aa2222" stroke-width="1.5"/>
-  <line x1="608" y1="358" x2="608" y2="382" stroke="#aa2222" stroke-width="1.5"/>
-  <!-- Dotted guide from awning tip projection to ground -->
-  <line x1="215" y1="185" x2="215" y2="380" stroke="#888" stroke-width="1" stroke-dasharray="3,4"/>
-  <!-- Label -->
-  <text x="534" y="413" text-anchor="middle" font-size="12" fill="#aa2222" font-weight="bold">Glare Zone</text>
-  <text x="534" y="427" text-anchor="middle" font-size="11" fill="#aa2222">(e.g. 0.5 m)</text>
+  <!-- ===== GLARE ZONE (interior floor — where sun ray hits) ===== -->
+  <!-- Sun ray hits interior floor at x=711. Glare zone = wall interior (x=475) to floor hit (x=711) -->
+  <rect x="475" y="355" width="236" height="25" fill="#ffcccc" opacity="0.6"/>
+  <!-- Horizontal arrow from wall interior to floor hit point -->
+  <line x1="475" y1="368" x2="711" y2="368" stroke="#aa2222" stroke-width="1.5"/>
+  <polygon points="475,368 487,363 487,373" fill="#aa2222"/>
+  <polygon points="711,368 699,363 699,373" fill="#aa2222"/>
+  <line x1="475" y1="356" x2="475" y2="380" stroke="#aa2222" stroke-width="1.5"/>
+  <line x1="711" y1="356" x2="711" y2="380" stroke="#aa2222" stroke-width="1.5"/>
+  <text x="593" y="415" text-anchor="middle" font-size="12" fill="#aa2222" font-weight="bold">Glare Zone</text>
+  <text x="593" y="430" text-anchor="middle" font-size="11" fill="#aa2222">(e.g. 0.5 m)</text>
+  <!-- Dotted guide from awning tip down to exterior ground -->
+  <line x1="178" y1="134" x2="178" y2="380" stroke="#888" stroke-width="1" stroke-dasharray="3,4"/>
 
-  <!-- ===== SUN (outside — upper left, plenty of space) ===== -->
-  <circle cx="88" cy="90" r="32" fill="#FFD700" stroke="#cc9900" stroke-width="2"/>
+  <!-- ===== SUN (outside, upper-left, plenty of space) ===== -->
+  <circle cx="82" cy="72" r="32" fill="#FFD700" stroke="#cc9900" stroke-width="2"/>
   <!-- Sun rays -->
-  <line x1="88" y1="52" x2="88" y2="43" stroke="#cc9900" stroke-width="2"/>
-  <line x1="88" y1="128" x2="88" y2="137" stroke="#cc9900" stroke-width="2"/>
-  <line x1="50"  y1="90" x2="41"  y2="90" stroke="#cc9900" stroke-width="2"/>
-  <line x1="126" y1="90" x2="135" y2="90" stroke="#cc9900" stroke-width="2"/>
-  <line x1="61"  y1="63" x2="55"  y2="57" stroke="#cc9900" stroke-width="2"/>
-  <line x1="115" y1="117" x2="121" y2="123" stroke="#cc9900" stroke-width="2"/>
-  <line x1="61"  y1="117" x2="55"  y2="123" stroke="#cc9900" stroke-width="2"/>
-  <line x1="115" y1="63" x2="121" y2="57" stroke="#cc9900" stroke-width="2"/>
-  <text x="88" y="96" text-anchor="middle" font-size="20">☀</text>
-  <text x="88" y="152" text-anchor="middle" font-size="12" fill="#664400" font-weight="bold">Outside</text>
+  <line x1="82" y1="33"  x2="82" y2="24"  stroke="#cc9900" stroke-width="2.5"/>
+  <line x1="82" y1="111" x2="82" y2="120" stroke="#cc9900" stroke-width="2.5"/>
+  <line x1="43" y1="72"  x2="34" y2="72"  stroke="#cc9900" stroke-width="2.5"/>
+  <line x1="121" y1="72" x2="130" y2="72" stroke="#cc9900" stroke-width="2.5"/>
+  <line x1="55"  y1="45" x2="49"  y2="39" stroke="#cc9900" stroke-width="2"/>
+  <line x1="109" y1="99" x2="115" y2="105" stroke="#cc9900" stroke-width="2"/>
+  <line x1="55"  y1="99" x2="49"  y2="105" stroke="#cc9900" stroke-width="2"/>
+  <line x1="109" y1="45" x2="115" y2="39" stroke="#cc9900" stroke-width="2"/>
+  <text x="82" y="79" text-anchor="middle" font-size="20">☀</text>
+  <text x="82" y="160" text-anchor="middle" font-size="12" fill="#664400" font-weight="bold">Outside</text>
 
   <!-- ===== SUN RAY ===== -->
-  <!-- Ray from sun grazing awning tip (215,170), hitting ground near glare zone boundary -->
-  <!-- Line from (88,90) through (215,170): slope = 80/127 = 0.630 -->
-  <!-- At y=380: 380 = 90 + 0.630*(x-88) → x = 88 + 290/0.630 = 88 + 460 = 548 -->
-  <line x1="115" y1="107" x2="215" y2="170" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
-  <line x1="215" y1="170" x2="548" y2="380" stroke="#FFB300" stroke-width="2" stroke-dasharray="10,5"/>
-  <!-- Arrowhead at ground -->
-  <polygon points="548,380 540,368 551,369" fill="#FFB300"/>
+  <!-- Sun at (82,72). Ray grazes awning tip top-edge at (178,119).                       -->
+  <!-- Slope = (119-72)/(178-82) = 47/96 = 0.490                                         -->
+  <!-- At x=443 (wall exterior): y = 72 + 0.490*361 = 249  → inside window (130-292) ✓  -->
+  <!-- At x=475 (wall interior): y = 72 + 0.490*393 = 265                                -->
+  <!-- Floor hit (y=380): x = 82 + 308/0.490 = 711 → inside SVG ✓                       -->
+
+  <!-- Outside segment: from sun edge to wall/window exterior -->
+  <line x1="111" y1="88" x2="443" y2="249" stroke="#FFB300" stroke-width="2.5" stroke-dasharray="11,5"/>
+  <!-- Inside segment: enters window and hits interior floor -->
+  <line x1="475" y1="265" x2="711" y2="380" stroke="#FFB300" stroke-width="2.5" stroke-dasharray="11,5"/>
+  <!-- Arrowhead at interior floor hit -->
+  <polygon points="711,380 700,370 713,371" fill="#FFB300"/>
 </svg>
