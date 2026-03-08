@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Language:** Python 3.11+
 **Framework:** Home Assistant Core (async architecture)
-**Current Version:** v2.6.8
+**Current Version:** See `manifest.json`
 **Requires:** Home Assistant 2024.5.0+
 
 ## Architecture Overview
@@ -130,181 +130,42 @@ git checkout -b <prefix>/<description>
 
 ### Working with GitHub Issues
 
-When the user says "fix issue #123" or references an issue number:
+When the user references an issue number (e.g., "fix issue #123"):
 
-**Step 1: Fetch Issue Details**
-```bash
-gh issue view 123
-```
+1. **Fetch details:** `gh issue view 123`
+2. **Create branch:** `git checkout -b fix/issue-123-short-description` (bugs) or `feature/issue-123-...`
+3. **Commit with reference** — closing keywords: `Fixes #123`, `Closes #123`, `Resolves #123`; non-closing: `Related to #123`
+4. **Push and create PR immediately:**
+   ```bash
+   git push -u origin fix/issue-123-short-description
+   gh pr create --title "fix: Short description (#123)" --body "Fixes #123" --base main
+   ```
 
-Read and understand:
-- What the problem is
-- Steps to reproduce (if bug)
-- Expected vs actual behavior
-- Labels or priority indicators
-
-**Step 2: Create Appropriately Named Branch**
-```bash
-# For bugs
-git checkout -b fix/issue-123-short-description
-
-# For feature requests
-git checkout -b feature/issue-123-short-description
-```
-
-**Step 3: Make Changes and Commit with Issue Reference**
-
-Use keywords that auto-close issues when merged to main:
-- `Fixes #123` - Closes the issue
-- `Closes #123` - Closes the issue
-- `Resolves #123` - Closes the issue
-
-Non-closing references:
-- `Part of #123` - References without closing
-- `Related to #123` - Links to related issue
-
-Example commit:
-```bash
-git commit -m "fix: Resolve sensor unavailable error
-
-Changed coordinator._entities to coordinator.entities to fix
-AttributeError that caused sensor to become unavailable.
-
-Fixes #123"
-```
-
-**Step 4: Push and Create Pull Request**
-```bash
-# Push feature branch
-git push -u origin fix/issue-123-sensor-unavailable
-
-# Create pull request immediately after pushing
-# For issue-related branches, link PR to the issue
-gh pr create --title "fix: Short description of fix (#123)" \
-             --body "Fixes #123" \
-             --base main
-
-# Or for non-issue branches
-gh pr create --title "fix: Short description of fix" \
-             --base main
-
-# The PR description should include:
-# - Summary of changes
-# - Testing performed
-# - Related issues (Fixes #123, Related to #456)
-```
-
-**Pull Request Guidelines:**
-- ✅ ALWAYS create a PR after pushing a branch
-- ✅ Link PRs to issues using "Fixes #123" in the PR body
-- ✅ Use descriptive PR titles matching the commit convention (fix:, feat:, docs:)
-- ✅ Include testing details in PR description
-- ❌ NEVER merge branches directly without a PR
-- ❌ NEVER skip PR creation "because it's a small change"
-
-**Merging:**
-- Only merge PRs to main after review and all checks pass
-- Use GitHub UI or: `gh pr merge <PR-number> --squash` (or --merge/--rebase)
-- Issues will auto-close when PR is merged if "Fixes #123" is in PR body
+Issues auto-close when PR is merged if body contains `Fixes #123`.
 
 ### Pull Request Workflow
 
-**CRITICAL: All branches MUST have a pull request before merging to main.**
+**CRITICAL: All branches MUST have a PR before merging to main — always, even single-commit changes.**
 
-**When to Create a PR:**
-- ✅ Immediately after pushing any feature/fix/docs branch
-- ✅ For ALL branches, regardless of size or complexity
-- ✅ Even for single-commit changes
+**PR Title:** Conventional format (`fix:`, `feat:`, `docs:`, `chore:`, `test:`) + optional `(#123)`, under 70 chars.
 
-**PR Creation Process:**
-
-1. **After pushing branch:**
-   ```bash
-   # If addressing an issue
-   gh pr create --title "fix: Description of fix (#123)" \
-                --body "## Summary
-
-   Brief description of changes
-
-   ## Testing
-   - Tested scenario 1
-   - Tested scenario 2
-
-   ## Related Issues
-   Fixes #123" \
-                --base main
-
-   # If NOT addressing a specific issue
-   gh pr create --title "feat: Description of feature" \
-                --body "## Summary
-
-   Brief description of changes
-
-   ## Testing
-   - Tested scenario 1
-   - Tested scenario 2" \
-                --base main
-   ```
-
-2. **PR Title Format:**
-   - Use conventional commit format: `fix:`, `feat:`, `docs:`, `chore:`, `test:`
-   - Include issue number if applicable: `fix: Description (#123)`
-   - Keep under 70 characters
-
-3. **PR Body Requirements:**
-   - **Summary:** What changed and why
-   - **Testing:** What was tested and results
-   - **Related Issues:** Use `Fixes #123` to auto-close issues when PR merges
-
-4. **Linking PRs to Issues:**
-   - Use keywords in PR body: `Fixes #123`, `Closes #123`, `Resolves #123`
-   - Multiple issues: `Fixes #123, Fixes #456`
-   - Non-closing reference: `Related to #123`, `Part of #123`
-   - Issue will automatically close when PR is merged to main
-
-**Example PR Body Template:**
+**PR Body Template:**
 ```markdown
 ## Summary
-
-Added 30-second startup grace period to prevent false manual override
-detection when Home Assistant restarts and covers respond slowly.
+What changed and why.
 
 ## Testing
-
-- ✅ All 248 tests passing
-- ✅ 8 new tests for startup grace period
-- ✅ Linting clean
-- ✅ Tested HA restart scenario with slow-responding covers
+- ✅ X tests passing
+- ✅ Scenario tested
 
 ## Related Issues
-
-Fixes #11
+Fixes #123
 ```
 
-**Common PR Operations:**
+**Common operations:**
 ```bash
-# View PR details
-gh pr view
-
-# Check PR status (from any branch)
-gh pr status
-
-# View PR in browser
-gh pr view --web
-
-# List all open PRs
-gh pr list
-
-# Add reviewers
-gh pr edit --add-reviewer username
-
-# Update PR title
-gh pr edit --title "New title"
-
-# Merge PR (after approval)
-gh pr merge --squash    # Squash commits (recommended)
-gh pr merge --merge     # Standard merge
-gh pr merge --rebase    # Rebase and merge
+gh pr view / gh pr status / gh pr list
+gh pr merge --squash   # or --merge / --rebase
 ```
 
 ### Merging and Release Workflow
@@ -326,18 +187,6 @@ gh pr merge --rebase    # Rebase and merge
 - ❌ DO NOT merge automatically
 - The user will decide when to merge the PR separately
 
-**Example Question (Plan Mode Only):**
-```
-After completing the implementation, ask:
-"The changes have been committed and pushed to the feature branch. What would you like to do next?"
-
-Options:
-1. Create a pull request (linking to issue #123 if applicable)
-2. Create a pull request and merge to main
-3. Create a beta release (stay on feature branch)
-4. Stay on feature branch for more testing
-```
-
 **gh CLI Quick Reference:**
 
 | Task | Command |
@@ -346,7 +195,7 @@ Options:
 | List open issues | `gh issue list` |
 | List by label | `gh issue list --label bug` |
 | Add comment | `gh issue comment 123 --body "Message"` |
-| Close manually | `gh issue close 123 --comment "Fixed in v2.6.8"` |
+| Close manually | `gh issue close 123 --comment "Fixed in vX.Y.Z"` |
 | Create PR | `gh pr create --title "Fix: Description (#123)" --body "Fixes #123"` |
 | Link PR to issue | Include "Fixes #123" in PR body |
 | View PR | `gh pr view 456` |
@@ -416,10 +265,10 @@ source venv/bin/activate && python -m pytest tests/ -v
 
 | Module | Coverage | Tests | Status |
 |--------|----------|-------|--------|
-| calculation.py | 91% | 135 | ✅ Comprehensive |
+| calculation.py | ~91% | ~135 | ✅ Comprehensive |
 | helpers.py | 100% | 29 | ✅ Complete |
 | inverse_state behavior | 100% | 14 | ✅ Complete |
-| **Total** | **28%** | **178** | 🔄 In progress |
+| **Total** | **~19%** | **303** | 🔄 In progress |
 
 ### When to Add Tests
 
@@ -551,23 +400,6 @@ git commit -m "docs: Add release notes for v2.6.11"
 ./scripts/release
 ```
 
-### What the Script Does
-
-The script automates the complete release workflow:
-
-1. **Validates environment** - Checks for git, gh, jq; verifies authentication
-2. **Checks working directory** - Ensures no uncommitted changes
-3. **Calculates version** - Based on VERSION_SPEC and current version
-4. **Validates branch** - Ensures beta from feature branch, stable from main
-5. **Checks tag** - Verifies tag doesn't already exist
-6. **Updates manifest.json** - Sets new version number
-7. **Creates git commit** - Commits version change
-8. **Creates annotated tag** - Tags with release notes
-9. **Pushes to GitHub** - Pushes commit and tag to remote
-10. **Waits for workflow** - Monitors GitHub Actions workflow completion
-11. **Edits release** - Updates GitHub release with notes and prerelease flag
-12. **Verifies ZIP asset** - Confirms `adaptive_cover_pro.zip` was created
-
 ### Release Notes Guidelines
 
 **CRITICAL Rules:**
@@ -633,54 +465,19 @@ gh run list --workflow=publish-release.yml
 
 **View release:**
 ```bash
-gh release view v2.6.8
+gh release view <version-tag>
 ```
 
 ## Documentation Guidelines
 
-### README.md Updates
+Always update docs alongside code changes:
 
-**CRITICAL:** Always update README.md when adding new features or making user-visible changes.
-
-**Required Updates:**
-1. **Features Section** - Add bullet points describing the new feature
-2. **Entities Section** - Add new entities to appropriate table
-3. **Variables Section** - Document new configuration variables (if applicable)
-4. **Known Limitations** - Document limitations or edge cases (if applicable)
-
-### DEVELOPMENT.md Updates
-
-**CRITICAL:** Always update docs/DEVELOPMENT.md when making changes that affect the development process.
-
-**When to Update:**
-- New development scripts
-- Changes to release process
-- Architecture changes
-- New testing strategies
-- Code standards changes
-- Project structure changes
-- Debugging tools/techniques
-
-### VSCODE_TESTING_GUIDE.md Updates
-
-**CRITICAL:** Always update docs/VSCODE_TESTING_GUIDE.md when making changes that affect the VS Code testing workflow.
-
-**When to Update:**
-- New VS Code debug configurations
-- Changes to launch.json or tasks.json
-- New testing keyboard shortcuts
-- Test runner configuration changes
-- VS Code extension recommendations
-- Testing UI workflow changes
-- Debugging tips and techniques for VS Code
-
-### Features Planned Section (README.md)
-
-Check the "Features Planned" section in README.md when asked to add new functionality:
-1. Check if feature is already listed
-2. Implement the feature
-3. Mark as completed: `~~Completed feature~~`
-4. Mention in commit and release notes
+| Changed | Update |
+|---------|--------|
+| User-visible feature | `README.md` (Features, Entities, Variables sections) |
+| Development process | `docs/DEVELOPMENT.md` |
+| VS Code testing | `docs/VSCODE_TESTING_GUIDE.md` |
+| Feature in "Features Planned" | Mark as `~~Completed~~` in README, mention in release notes |
 
 ## Code Standards & Patterns
 
@@ -716,6 +513,34 @@ class MyDiagnosticSensor(AdaptiveCoverDiagnosticSensor):
 - ✅ Numeric sensors → proper unit (`"retries"`, `"°"`, `PERCENTAGE`) for statistics
 - ✅ History is still recorded for debugging
 - ❌ Don't use empty unit for numeric sensors (breaks statistics)
+
+### Motion Control Pattern
+
+**Added in v2.7.5** - Occupancy-based automatic control with debouncing.
+
+Motion control enables/disables automatic sun positioning based on room occupancy using binary motion sensors.
+
+**Key Design:**
+- **OR Logic** - ANY sensor detecting motion enables automatic positioning
+- **Debounce "no motion" only** - Immediate response when motion detected, timeout when motion stops
+- **Priority**: Force override (safety) > Motion timeout > Manual override
+- **Asyncio task-based** - `_start_motion_timeout()` / `_cancel_motion_timeout()` / `_motion_timeout_handler()` in `coordinator.py`
+
+**Use Cases:**
+- **Glare control when present** - Use sun positioning when someone is in the room
+- **Energy savings when away** - Return to default (closed) when room is empty
+- **Privacy when unoccupied** - Close covers automatically after no motion
+- **Multi-room coverage** - OR logic means ANY room with motion uses automatic
+
+**Testing:**
+- See `tests/test_motion_control.py` for 22 comprehensive test cases
+- Tests cover OR logic, debouncing, priority, edge cases, shutdown cleanup
+
+**Edge Cases Handled:**
+- Unavailable sensors treated as "off" (no motion)
+- Empty sensor list disables feature (backward compatible)
+- Double-check prevents false timeout if motion detected during sleep
+- Cleanup cancels task on shutdown or config change
 
 ### Inverse State Behavior
 
@@ -764,31 +589,7 @@ The integration includes sophisticated geometric enhancements to ensure accurate
    - High elevation margin: Linear from 1.0 (at 75°) to 1.1 (at 90°)
    - Margins combine multiplicatively (margin = gamma_margin × elev_margin)
 
-3. **Calculation Flow**
-   ```python
-   def calculate_position(self) -> float:
-       # 1. Check edge cases first
-       is_edge_case, edge_position = self._handle_edge_cases()
-       if is_edge_case:
-           return edge_position
-
-       # 2. Account for window depth (if configured)
-       effective_distance = self.distance
-       if self.window_depth > 0 and abs(self.gamma) > 10:
-           depth_contribution = self.window_depth * sin(rad(abs(self.gamma)))
-           effective_distance += depth_contribution
-
-       # 3. Base calculation
-       path_length = effective_distance / cos(rad(self.gamma))
-       base_height = path_length * tan(rad(self.sol_elev))
-
-       # 4. Apply safety margin
-       safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
-       adjusted_height = base_height * safety_margin
-
-       # 5. Clip to window height
-       return np.clip(adjusted_height, 0, self.h_win)
-   ```
+3. **Calculation Flow** — edge cases → window depth offset → base calculation → safety margin → clip to h_win. See `calculate_position()` in `calculation.py`.
 
 **Phase 2: Window Depth Parameter (Optional)**
 
@@ -835,12 +636,6 @@ When modifying geometric accuracy calculations:
 - Introduce numerical instability (NaN, infinity)
 - Skip regression testing at normal angles
 
-**CRITICAL:**
-- Safety margins are intentionally conservative to ensure sun blocking
-- Edge case thresholds chosen to prevent numerical instability
-- Smoothstep interpolation prevents jarring position changes
-- Window depth is optional (Phase 1 works standalone)
-
 #### Diagnostic Information
 
 Users can monitor geometric accuracy via diagnostic sensors:
@@ -867,6 +662,12 @@ Users can monitor geometric accuracy via diagnostic sensors:
     - False (default): Limits always enforced
     - True: Limits only during direct sun tracking
 - Automation settings (delta position/time, start/end times, manual override)
+- Force override settings:
+  - `force_override_sensors` - Optional list of binary sensor entity IDs that globally disable automatic control when any sensor is "on"
+  - `force_override_position` - Position (0-100%) to move covers to when force override is active (default: 0%)
+- Motion control settings:
+  - `motion_sensors` - Optional list of binary sensor entity IDs for occupancy-based control. When ANY sensor detects motion, covers use automatic positioning. When ALL sensors show no motion for timeout duration, covers return to default position. Empty list = feature disabled (default: [])
+  - `motion_timeout` - Duration in seconds to wait after last motion before using default position. Debounces rapid sensor toggling (range: 30-3600, default: 300)
 - Climate settings (temperature entities/thresholds, presence, weather)
 - Light settings (lux/irradiance entities and thresholds)
 - Blind spot areas
@@ -895,310 +696,25 @@ Use `./scripts/develop` to start a development instance with the integration loa
 
 ### Jupyter Notebook Testing
 
-The `notebooks/` directory contains interactive Jupyter notebooks for algorithm testing and visualization **without requiring a full Home Assistant instance**.
+`notebooks/test_env.ipynb` — test calculation algorithms without a full HA instance. Produces visual plots of vertical and horizontal cover positions over 24 hours.
 
-#### Purpose
+**Setup:** `./scripts/setup` installs Jupyter. Open with `jupyter notebook` or in VS Code (`code notebooks/test_env.ipynb`, requires Jupyter extension).
 
-Notebooks enable rapid prototyping and testing of:
-- Position calculation algorithms (`AdaptiveVerticalCover`, `AdaptiveHorizontalCover`, `AdaptiveTiltCover`)
-- Sun position tracking and timing (using `SunData`)
-- Configuration parameter effects (window dimensions, FOV, blind spots)
-- Visual validation of cover behavior throughout the day
+**Update notebook when:** dataclass signatures change in `calculation.py` or `SunData` API changes in `sun.py`. Verify by running all cells and confirming two plots appear with no errors.
 
-**Why use notebooks?**
-- Faster iteration than testing through Home Assistant UI (seconds vs. minutes)
-- Immediate visual feedback via plots
-- Easy parameter experimentation
-- No need for physical covers or Home Assistant setup
-- Perfect for algorithm development and validation
-
-#### Setup
-
-**Option 1: Use development setup script (recommended)**
-```bash
-./scripts/setup  # Installs all dev dependencies including Jupyter
-```
-
-**Option 2: Manual installation**
-```bash
-source venv/bin/activate
-pip install ipykernel jupyter matplotlib pandas pvlib
-```
-
-**Dependencies installed:**
-- `ipykernel` - Jupyter kernel for Python 3.11+
-- `jupyter` - Jupyter notebook server
-- `matplotlib` - Plotting library
-- `pandas` - Data manipulation
-- `pvlib` - Solar position calculations (for advanced simulations)
-
-#### Running Notebooks
-
-**Option 1: Jupyter Notebook (classic interface)**
-```bash
-# From repository root
-jupyter notebook
-
-# Browser opens automatically at http://localhost:8888
-# Navigate to notebooks/test_env.ipynb
-```
-
-**Option 2: VS Code (recommended for developers)**
-```bash
-# Install VS Code Jupyter extension if not present
-code --install-extension ms-toolsai.jupyter
-
-# Open notebook directly in VS Code
-code notebooks/test_env.ipynb
-
-# Click "Run All" or run cells individually
-```
-
-**Option 3: JupyterLab (modern interface)**
-```bash
-pip install jupyterlab
-jupyter lab
-```
-
-#### Available Notebooks
-
-##### `notebooks/test_env.ipynb` - Algorithm Testing and Visualization
-
-**Purpose:** Interactive testing of vertical and horizontal cover calculations with visual output.
-
-**What it tests:**
-- Vertical blind calculations (`AdaptiveVerticalCover`)
-- Horizontal awning calculations (`AdaptiveHorizontalCover`)
-- Sun position tracking (azimuth, elevation)
-- Field of view determination
-- Sunrise/sunset timing
-
-**Outputs:**
-1. **Vertical Cover Plot:**
-   - Shows sun azimuth and elevation over 24 hours
-   - Overlays calculated vertical blind position
-   - Highlights sunrise, sunset, and "sun in front" periods
-
-2. **Horizontal Cover Plot:**
-   - Same sun position data
-   - Overlays calculated awning extension
-   - Uses awning-specific parameters (length, angle)
-
-**Key Configuration Variables:**
-
-```python
-# Location (modify for your testing location)
-timezone = "CET"                 # Time zone string
-lat = 51.5616455078125          # Latitude
-lon = 5.08446288184867          # Longitude
-
-# Window properties
-window_height = 3               # meters
-window_distance = 0.5           # meters (distance from window to blind)
-windown_azimuth = 180           # degrees (south-facing)
-window_fov_left = 90            # degrees (field of view left)
-window_fov_right = 90           # degrees (field of view right)
-
-# Cover properties (vertical)
-maximum_position = 100          # percent
-default_height = 60             # percent (position when sun not in front)
-
-# Cover properties (horizontal)
-cover_awning_length = 2         # meters
-cover_awning_angle = 0          # degrees (mounting angle)
-```
-
-**How to use:**
-1. Open notebook in Jupyter or VS Code
-2. Modify configuration variables (location, window properties)
-3. Run all cells (Cell → Run All)
-4. Review plots:
-   - Check if cover opens/closes at expected times
-   - Verify sun enters/exits FOV at reasonable hours
-   - Confirm cover position looks appropriate for sun angles
-
-**Example workflow:**
-```python
-# Test extreme FOV (wide windows)
-window_fov_left = 120
-window_fov_right = 120
-
-# Test narrow FOV (small windows)
-window_fov_left = 30
-window_fov_right = 30
-
-# Test different orientations
-windown_azimuth = 90  # East-facing
-windown_azimuth = 270  # West-facing
-```
-
-#### Mock Objects Reference
-
-The notebook uses simplified mock objects to satisfy API requirements:
-
-**`MockedHass`** - Simulates Home Assistant instance
-```python
-class MockedHass:
-    class MockedConfig:
-        latitude = lat
-        longitude = lon
-        time_zone = timezone
-        elevation = 0
-
-    config = MockedConfig()
-    data = {}
-```
-
-**`MockedLogger`** - Simulates ConfigContextAdapter
-```python
-class MockedLogger:
-    """No-op logger that satisfies the API contract."""
-    def debug(self, msg, *args, **kwargs): pass
-    def info(self, msg, *args, **kwargs): pass
-    def warning(self, msg, *args, **kwargs): pass
-    def error(self, msg, *args, **kwargs): pass
-    config_name = "Notebook Test"
-```
-
-These mocks allow calculation classes to run without a full Home Assistant installation while maintaining API compatibility.
-
-#### Maintenance
-
-**Current Status:** Notebook is functional and up-to-date with v2.7.0+ codebase.
-
-**When to Update:**
-1. After changing calculation algorithms in `calculation.py`
-2. After modifying dataclass signatures:
-   - `AdaptiveGeneralCover` (lines 29-54)
-   - `AdaptiveVerticalCover` (lines 859-866)
-   - `AdaptiveHorizontalCover` (lines 959-964)
-   - `AdaptiveTiltCover` (lines 1009-1015)
-3. After changing `SunData` API (`sun.py` line 13)
-4. After adding new required parameters
-
-**How to Verify:**
-```bash
-# Open notebook
-jupyter notebook notebooks/test_env.ipynb
-
-# Run all cells (Cell → Run All)
-# Verify:
-# ✓ No import errors
-# ✓ No AttributeError about missing parameters
-# ✓ Two plots appear (vertical and horizontal)
-# ✓ Plots show reasonable behavior
-```
-
-**Known Limitations:**
-- Only tests vertical and horizontal covers (tilt not included yet)
-- Uses basic mode only (climate mode not tested)
-- Mock objects are minimal (no state management, no entity tracking)
-- Sun position calculated for full 24 hours (5-minute intervals)
+**Troubleshooting:**
+- `ModuleNotFoundError: adaptive_cover_pro` → ensure `sys.path.append("../custom_components")` is in first cell
+- `TypeError: missing argument 'logger'` → add `MockedLogger` no-op class, pass `logger=mocked_logger` to constructors
+- Plot not appearing (Jupyter) → add `%matplotlib inline` to first cell
+- `SunData` unexpected kwarg → use positional args: `SunData(timezone, mocked_hass)`
 
 ### Simulation Tools
 
-The `custom_components/adaptive_cover_pro/simulation/` directory contains visualization outputs:
+`custom_components/adaptive_cover_pro/simulation/sim_plot.png` — example plot. Regenerate by uncommenting cells 5-14 in `test_env.ipynb`.
 
-**`simulation/sim_plot.png`** - Example plot showing cover behavior over time
+### Development Workflow
 
-**How it's generated:**
-- Cells 5-14 in `test_env.ipynb` (currently commented out)
-- Uses `pvlib` for detailed solar position calculations
-- Produces publication-quality plots with multiple blind types
-- Saves output to `simulation/sim_plot.png`
-
-**To regenerate:**
-```python
-# In test_env.ipynb, uncomment cells 5-14
-# Adjust parameters:
-start_date = date.today()
-end_date = start_date + timedelta(days=1)
-
-# Run cells
-# Output saved to custom_components/adaptive_cover_pro/simulation/sim_plot.png
-```
-
-### Development Workflow Integration
-
-**Recommended workflow for algorithm changes:**
-
-```
-1. CODE CHANGE
-   ↓
-   Edit calculation.py (e.g., modify safety margins)
-
-2. QUICK VALIDATION (seconds)
-   ↓
-   Open notebooks/test_env.ipynb
-   Adjust test parameters (sun angles, window config)
-   Run cells → Check plots
-   Iterate until behavior looks correct
-
-3. UNIT TESTING (minutes)
-   ↓
-   Add tests to tests/test_calculation.py
-   Run: source venv/bin/activate && python -m pytest tests/ -v
-   Verify edge cases and regressions
-
-4. INTEGRATION TESTING (hours)
-   ↓
-   Run ./scripts/develop
-   Test with actual covers through Home Assistant UI
-   Monitor debug logs for issues
-   Test with various sun positions
-
-5. COMMIT
-   ↓
-   git add . && git commit -m "feat: Improve safety margins"
-   Create PR for review
-```
-
-**Benefits of this workflow:**
-- **Notebooks catch obvious bugs quickly** (immediate visual feedback)
-- **Unit tests verify correctness systematically** (comprehensive coverage)
-- **Live testing confirms real-world behavior** (actual covers + real sun data)
-- **Reduces iteration time** compared to testing exclusively in Home Assistant
-- **Documents expected behavior** through visualizations
-
-**Example: Testing new geometric accuracy features**
-```python
-# In notebook, test window_depth parameter
-window_depth = 0.0   # Baseline (Phase 1)
-window_depth = 0.1   # 10cm reveal
-window_depth = 0.3   # 30cm deep frame
-
-# Compare plots to see effect of window depth on position calculations
-# Verify position increases at extreme gamma angles
-# Check smooth transitions across angle ranges
-```
-
-### Troubleshooting
-
-**Import errors:**
-```python
-ModuleNotFoundError: No module named 'adaptive_cover_pro'
-```
-**Solution:** Ensure `sys.path.append("../custom_components")` is in first cell and repository structure is correct.
-
-**Parameter errors:**
-```python
-TypeError: __init__() missing 1 required positional argument: 'logger'
-```
-**Solution:** Add `MockedLogger` class and pass `logger=mocked_logger` to cover constructors.
-
-**Plot not appearing:**
-```python
-# No output after running plot cells
-```
-**Solution:**
-- In Jupyter: Add `%matplotlib inline` to first cell
-- In VS Code: Ensure Jupyter extension is installed and notebook kernel is running
-
-**SunData errors:**
-```python
-TypeError: __init__() got an unexpected keyword argument 'hass'
-```
-**Solution:** Change `SunData(hass=mocked_hass, timezone=timezone)` to `SunData(timezone, mocked_hass)` (positional args, timezone first).
+Algorithm changes: edit `calculation.py` → validate visually in notebook → add unit tests → test live with `./scripts/develop`.
 
 ## File Organization
 
@@ -1223,11 +739,19 @@ adaptive-cover/
 │   ├── develop                  # Start Home Assistant dev server
 │   ├── lint                     # Run linting
 │   └── release                  # Create releases (automated)
-├── tests/                       # Unit tests (178 tests)
+├── tests/                       # Unit tests (303 tests)
 │   ├── conftest.py              # Shared fixtures
-│   ├── test_calculation.py      # 129 tests, 91% coverage
-│   ├── test_helpers.py          # 29 tests, 100% coverage
-│   └── test_inverse_state.py    # 14 tests, 100% coverage
+│   ├── test_calculation.py      # Core calculation tests
+│   ├── test_geometric_accuracy.py
+│   ├── test_helpers.py
+│   ├── test_inverse_state.py
+│   ├── test_motion_control.py
+│   ├── test_startup_grace_period.py
+│   ├── test_force_override_sensors.py
+│   ├── test_control_state_reason.py
+│   ├── test_interpolation.py
+│   ├── test_delta_position.py
+│   └── test_manual_override.py
 ├── release_notes/               # Historical release notes
 │   ├── README.md                # Release notes documentation
 │   └── vX.Y.Z.md                # Individual release notes (versioned)
