@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-03-09
-**Current Version:** v2.7.5
+**Current Version:** v2.7.6
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -33,6 +33,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.6 | ControlMethod enum with 7 values (solar, summer, winter, default, manual_override, motion_timeout, force_override); renames `intermediate` → `solar`; fixes stale control method across cycles |
 | v2.7.5 | Motion control (occupancy-based auto positioning), control state reason sensor, force override binary sensors, solar times accuracy fix |
 | v2.7.0 | Enhanced geometric accuracy (safety margins, window depth), position limits |
 
