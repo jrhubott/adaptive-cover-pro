@@ -4,6 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **For comprehensive developer documentation, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - This file contains instructions for Claude Code specifically, while docs/DEVELOPMENT.md is the human-readable developer guide.
 
+## Session Startup
+
+**At the start of every new session, read `HANDOFF.md` before doing anything else.** It contains:
+- Current version and branch state
+- Test suite status and coverage summary
+- Open GitHub issues (backlog)
+- Key gotchas and architectural reminders
+- Release checklist
+
+```bash
+# Quick orientation at session start
+cat HANDOFF.md
+git status
+git log --oneline -5
+```
+
+## HANDOFF.md — Keeping It Current
+
+`HANDOFF.md` is the project's living status document. Update it whenever any of the following change:
+
+| Event | What to update in HANDOFF.md |
+|-------|------------------------------|
+| New release cut | Current Version, Recent Releases table |
+| Issue opened or closed | Open Issues table |
+| PR merged | Recent Releases, remove from open PRs if listed |
+| Test count or coverage changes | Tests section |
+| New architectural pattern established | Key Patterns or Known Gotchas section |
+| Bug fixed that was a known gotcha | Remove or update that gotcha |
+
+**When to update:** At the end of any session where code was merged, a release was cut, or an issue was opened/closed. Do not update mid-feature-branch — wait until changes land on `main`.
+
+**How to update:** Edit `HANDOFF.md` directly with the Write or Edit tool. Keep entries concise — it is a quick-reference document, not a changelog.
+
 ## Project Overview
 
 **Adaptive Cover Pro** is a Home Assistant custom integration that automatically controls vertical blinds, horizontal awnings, and tilted/venetian blinds based on the sun's position. It calculates optimal positions to filter direct sunlight while maximizing natural light and supporting climate-aware operation.
@@ -263,12 +296,7 @@ source venv/bin/activate && python -m pytest tests/ -v
 
 ### Test Coverage Status
 
-| Module | Coverage | Tests | Status |
-|--------|----------|-------|--------|
-| calculation.py | ~91% | ~135 | ✅ Comprehensive |
-| helpers.py | 100% | 29 | ✅ Complete |
-| inverse_state behavior | 100% | 14 | ✅ Complete |
-| **Total** | **~19%** | **303** | 🔄 In progress |
+Current test count and per-module coverage are tracked in `HANDOFF.md` (updated each session). Target: 90%+ coverage for all calculation logic.
 
 ### When to Add Tests
 
@@ -294,12 +322,6 @@ source venv/bin/activate && python -m pytest tests/ -v
 5. ✅ Follow existing patterns in test files
 
 ## Release Process
-
-### Creating Releases
-
-**CRITICAL: Only create releases when explicitly requested by the user.**
-- ❌ NEVER create releases proactively
-- ✅ ONLY create when user explicitly asks
 
 ### Release Script: `./scripts/release`
 
@@ -489,6 +511,15 @@ Always update docs alongside code changes:
 - **Entity naming** - `{domain}.{type}_{description}_{name}`
 - **Store data** - In `coordinator.data` for entity access
 - **Update handler** - Use `_handle_coordinator_update()` in entities
+
+### Adding a New Config Option
+
+1. Add constant to `const.py` (`CONF_*`)
+2. Add to `config_flow.py` (appropriate step schema + validation)
+3. Read in `coordinator.py` from `self.config_entry.options`
+4. Expose via sensor/switch if needed
+5. Add translations to `translations/en.json` (and other languages if feasible)
+6. Update `CLAUDE.md` Configuration Structure section
 
 ### Diagnostic Sensor Guidelines
 
