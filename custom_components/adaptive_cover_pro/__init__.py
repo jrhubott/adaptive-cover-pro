@@ -12,6 +12,8 @@ from homeassistant.helpers.event import (
 from .const import (
     CONF_END_ENTITY,
     CONF_ENTITIES,
+    CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_MOTION_SENSORS,
     CONF_PRESENCE_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
@@ -44,10 +46,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
+    _force_override_sensors = entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
+    _motion_sensors = entry.options.get(CONF_MOTION_SENSORS, [])
     _entities = ["sun.sun"]
     for entity in [_temp_entity, _presence_entity, _weather_entity, _end_time_entity]:
         if entity is not None:
             _entities.append(entity)
+
+    # Add force override sensors to tracked entities
+    if _force_override_sensors:
+        _entities.extend(_force_override_sensors)
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 
@@ -66,6 +74,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator.async_check_cover_state_change,
         )
     )
+
+    # Register motion sensor listeners separately (need custom handler for debouncing)
+    if _motion_sensors:
+        entry.async_on_unload(
+            async_track_state_change_event(
+                hass,
+                _motion_sensors,
+                coordinator.async_check_motion_state_change,
+            )
+        )
 
     # Register cleanup for position verification
     entry.async_on_unload(coordinator._stop_position_verification)

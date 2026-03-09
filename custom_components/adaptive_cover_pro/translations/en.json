@@ -24,6 +24,10 @@
           "manual_override_reset": "Reset Manual override duration",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
@@ -39,6 +43,10 @@
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
@@ -312,6 +320,10 @@
           "manual_override_reset": "Reset Manual override duration",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
@@ -327,6 +339,10 @@
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
@@ -553,6 +569,16 @@
         },
         "title": "Range Adjustment",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "control_status": {
+        "state": {
+          "force_override_active": "Force override active",
+          "motion_timeout": "No motion - using default position"
+        }
       }
     }
   },

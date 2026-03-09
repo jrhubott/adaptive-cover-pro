@@ -67,6 +67,10 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_FORCE_OVERRIDE_POSITION,
+    CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_MOTION_SENSORS,
+    CONF_MOTION_TIMEOUT,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -95,6 +99,7 @@ from .const import (
     POSITION_CHECK_INTERVAL_MINUTES,
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
+    DEFAULT_MOTION_TIMEOUT,
     ControlStatus,
 )
 from .helpers import (
@@ -200,6 +205,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
         self._startup_timestamp: float | None = None
         self._startup_grace_period_task: asyncio.Task | None = None
+        # Motion control tracking
+        self._motion_sensors: list[str] = []
+        self._motion_timeout_seconds: int = DEFAULT_MOTION_TIMEOUT
+        self._motion_timeout_task: asyncio.Task | None = None
+        self._last_motion_time: float | None = None
+        self._motion_timeout_active: bool = False
         self._update_listener = None
         self._scheduled_time = dt.datetime.now()
 
@@ -280,6 +291,62 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def is_awning_cover(self) -> bool:
         """Check if this is a horizontal awning."""
         return self._cover_type == "cover_awning"
+
+    @property
+    def is_force_override_active(self) -> bool:
+        """Check if any force override sensor is active.
+
+        Returns:
+            True if any configured force override sensor is in "on" state
+
+        """
+        sensors = self.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
+        if not sensors:
+            return False
+
+        for sensor in sensors:
+            state = self.hass.states.get(sensor)
+            if state and state.state == "on":
+                self.logger.debug(
+                    "Force override sensor %s is active (state: %s)",
+                    sensor,
+                    state.state,
+                )
+                return True
+
+        return False
+
+    @property
+    def is_motion_detected(self) -> bool:
+        """Check if any motion sensor currently detects motion.
+
+        Returns:
+            True if any motion sensor is "on" or no sensors configured (assume presence)
+
+        """
+        sensors = self.config_entry.options.get(CONF_MOTION_SENSORS, [])
+        if not sensors:
+            return True  # No sensors = feature disabled, assume presence
+
+        for sensor in sensors:
+            state = self.hass.states.get(sensor)
+            if state and state.state == "on":
+                return True
+        return False
+
+    @property
+    def is_motion_timeout_active(self) -> bool:
+        """Check if motion timeout is active (no motion for timeout duration).
+
+        Returns:
+            True if timeout expired and covers should use default position
+
+        """
+        sensors = self.config_entry.options.get(CONF_MOTION_SENSORS, [])
+        if not sensors:
+            return False  # Feature disabled
+
+        return self._motion_timeout_active
 
     def _read_position_with_capabilities(
         self, entity: str, caps: dict[str, bool], state_obj: State | None = None
@@ -382,6 +449,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self.async_refresh()
         else:
             self.logger.debug("Old state is unknown, not processing")
+
+    async def async_check_motion_state_change(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Handle motion sensor state changes with debouncing.
+
+        Motion detected (on) → immediate response, cancel timeout
+        Motion stopped (off) → start timeout if no other sensors active
+
+        Args:
+            event: State change event containing old and new state
+
+        """
+        data = event.data
+        entity_id = data["entity_id"]
+        new_state = data["new_state"]
+
+        if new_state is None:
+            return
+
+        self.logger.debug(
+            "Motion sensor %s state changed to %s",
+            entity_id,
+            new_state.state,
+        )
+
+        if new_state.state == "on":
+            # Motion detected - immediate response
+            self._cancel_motion_timeout()
+            self._last_motion_time = dt.datetime.now().timestamp()
+
+            if self._motion_timeout_active:
+                self._motion_timeout_active = False
+                self.logger.info("Motion detected - resuming automatic sun positioning")
+                self.state_change = True
+                await self.async_refresh()
+
+        elif new_state.state == "off":
+            # Motion stopped - check if any other sensors still active
+            if not self.is_motion_detected:
+                self._start_motion_timeout()
 
     def process_entity_state_change(self):
         """Process cover state change for manual override detection.
@@ -548,6 +656,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.info(
             "Startup grace period expired (manual override detection enabled)"
         )
+
+    def _start_motion_timeout(self) -> None:
+        """Start motion timeout for no-motion detection."""
+        self._cancel_motion_timeout()
+
+        timeout_seconds = self.config_entry.options.get(
+            CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
+        )
+        task = asyncio.create_task(self._motion_timeout_handler(timeout_seconds))
+        self._motion_timeout_task = task
+
+        self.logger.info(
+            "No motion detected - starting %s second timeout before using default position",
+            timeout_seconds,
+        )
+
+    async def _motion_timeout_handler(self, timeout_seconds: int) -> None:
+        """Handle timeout expiration after no motion."""
+        await asyncio.sleep(timeout_seconds)
+
+        # Double-check motion state after timeout
+        if self.is_motion_detected:
+            self.logger.debug(
+                "Motion detected during timeout - canceling default position"
+            )
+            return
+
+        self._motion_timeout_active = True
+        self.logger.info(
+            "Motion timeout expired (%s seconds) - using default position",
+            timeout_seconds,
+        )
+
+        self.state_change = True
+        await self.async_refresh()
+
+    def _cancel_motion_timeout(self) -> None:
+        """Cancel motion timeout task."""
+        if self._motion_timeout_task and not self._motion_timeout_task.done():
+            self._motion_timeout_task.cancel()
+        self._motion_timeout_task = None
 
     @callback
     def _async_cancel_update_listener(self) -> None:
@@ -1058,6 +1207,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.normal_list = options.get(CONF_INTERP_LIST)
         self.new_list = options.get(CONF_INTERP_LIST_NEW)
         self._open_close_threshold = options.get(CONF_OPEN_CLOSE_THRESHOLD, 50)
+        self._motion_sensors = options.get(CONF_MOTION_SENSORS, [])
+        self._motion_timeout_seconds = options.get(
+            CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
+        )
 
     def _update_manager_and_covers(self):
         """Update manager with cover entities.
@@ -1388,12 +1541,33 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         return diagnostics
 
+    def _get_control_state_reason(self) -> str:
+        """Get the current control state reason including coordinator-level overrides.
+
+        Combines cover-level sun position reasons with coordinator-level override
+        states (force override, motion timeout, manual override). Coordinator-level
+        states take priority over cover-level sun position reasons.
+
+        Returns:
+            Human-readable reason string for current cover control state.
+
+        """
+        if self.is_force_override_active:
+            return "Force Override"
+        if self.is_motion_timeout_active:
+            return "Motion Timeout"
+        if self.manager.binary_cover_manual:
+            return "Manual Override"
+        if self.normal_cover_state and self.normal_cover_state.cover:
+            return self.normal_cover_state.cover.control_state_reason
+        return "Unknown"
+
     def _build_position_diagnostics(self) -> dict:
         """Build position diagnostics.
 
         Returns:
             Dictionary containing calculated position (before limits), climate
-            position (if enabled), and control status
+            position (if enabled), control status, and control state reason
 
         """
         diagnostics = {}
@@ -1407,6 +1581,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Control status determination
         control_status = self._determine_control_status()
         diagnostics["control_status"] = control_status
+
+        # Human-readable reason for current state (including coordinator-level overrides)
+        diagnostics["control_state_reason"] = self._get_control_state_reason()
 
         return diagnostics
 
@@ -1524,6 +1701,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "enable_max_position": options.get(CONF_ENABLE_MAX_POSITION, False),
                 "inverse_state": options.get(CONF_INVERSE_STATE, False),
                 "interpolation": options.get(CONF_INTERP, False),
+                "force_override_sensors": options.get(CONF_FORCE_OVERRIDE_SENSORS, []),
+                "force_override_position": options.get(
+                    CONF_FORCE_OVERRIDE_POSITION, 0
+                ),
+                "force_override_active": self.is_force_override_active,
+                "motion_sensors": options.get(CONF_MOTION_SENSORS, []),
+                "motion_timeout": options.get(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT),
+                "motion_detected": self.is_motion_detected,
+                "motion_timeout_active": self._motion_timeout_active,
             }
         }
 
@@ -1552,12 +1738,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Determine current control status.
 
         Returns:
-            Control status string: AUTOMATIC_CONTROL_OFF, MANUAL_OVERRIDE,
-            OUTSIDE_TIME_WINDOW, SUN_NOT_VISIBLE, or ACTIVE
+            Control status string: AUTOMATIC_CONTROL_OFF, FORCE_OVERRIDE_ACTIVE,
+            MANUAL_OVERRIDE, OUTSIDE_TIME_WINDOW, SUN_NOT_VISIBLE, or ACTIVE
 
         """
         if not self.automatic_control:
             return ControlStatus.AUTOMATIC_CONTROL_OFF
+
+        # Check force override sensors (safety override takes precedence)
+        if self.is_force_override_active:
+            return ControlStatus.FORCE_OVERRIDE_ACTIVE
+
+        # Check motion timeout (second priority)
+        if self.is_motion_timeout_active:
+            return ControlStatus.MOTION_TIMEOUT
 
         if self.manager.binary_cover_manual:
             return ControlStatus.MANUAL_OVERRIDE
@@ -1574,16 +1768,37 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @property
     def state(self) -> int:
-        """Get final state with climate mode and interpolation.
+        """Get final state with climate mode, interpolation, and force override.
 
-        Determines final cover position by selecting between default and climate
-        state based on switch_mode, then applying interpolation and inverse_state
-        transformations if configured.
+        Determines final cover position by:
+        1. Checking force override (highest priority)
+        2. Selecting between default and climate state based on switch_mode
+        3. Applying interpolation and inverse_state transformations if configured
 
         Returns:
             Final calculated cover position (0-100)
 
         """
+        # Check force override first (highest priority)
+        if self.is_force_override_active:
+            override_position = self.config_entry.options.get(
+                CONF_FORCE_OVERRIDE_POSITION, 0
+            )
+            self.logger.debug(
+                "Force override active - using position: %s",
+                override_position,
+            )
+            return override_position
+
+        # Check motion timeout (second priority)
+        if self.is_motion_timeout_active:
+            self.logger.debug(
+                "Motion timeout active - using default position: %s",
+                self.default_state,
+            )
+            return self.default_state
+
+        # Normal position calculation
         self.logger.debug(
             "Basic position: %s; Climate position: %s; Using climate position? %s",
             self.default_state,
@@ -2025,6 +2240,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cancel all grace period tasks
         for entity_id in list(self._grace_period_tasks.keys()):
             self._cancel_grace_period(entity_id)
+
+        # Cancel motion timeout task
+        self._cancel_motion_timeout()
 
         # Stop position verification
         self._stop_position_verification()
