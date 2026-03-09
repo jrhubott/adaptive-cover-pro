@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 420" width="620" height="420" font-family="sans-serif">
+  <!-- Background -->
+  <rect width="620" height="420" fill="white"/>
+
+  <!-- Title -->
+  <text x="310" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Field of View &amp; Blind Spot — Top-Down Floor Plan</text>
+
+  <!-- ===== WALL (horizontal bar at top) ===== -->
+  <rect x="60" y="60" width="500" height="24" fill="#888" rx="2"/>
+
+  <!-- Window opening in wall -->
+  <rect x="240" y="60" width="140" height="24" fill="#add8e6" rx="1"/>
+  <text x="310" y="76" text-anchor="middle" font-size="11" fill="#333">Window</text>
+
+  <!-- ===== FOV arcs ===== -->
+  <!-- FOV sweep region (light blue fill) -->
+  <!-- Window center = (310, 84) — we'll draw from y=84 downward -->
+  <!-- FOV Left 90° to the left, FOV Right 90° to the right => 180° total sweep -->
+  <!-- Arc from 270° (straight down = our reference forward) ±90° -->
+  <!-- In SVG: 0° is right. Our "forward" (azimuth direction) = downward in this view = 90°.
+       FOV left = 90+90=180°, FOV right = 90-90=0°
+       So arc from angle 0° (right) going counterclockwise to 180° (left) = a semicircle below the window. -->
+  <path d="M 310 84
+    L 60 84
+    A 250 250 0 0 0 560 84
+    Z"
+    fill="#ddeeff" stroke="none" opacity="0.6"/>
+
+  <!-- Blind spot shaded region (medium angle) — ~30° each side around center -->
+  <path d="M 310 84
+    L 177 265
+    A 210 210 0 0 0 443 265
+    Z"
+    fill="#ffccaa" stroke="none" opacity="0.5"/>
+
+  <!-- FOV boundary lines -->
+  <line x1="310" y1="84" x2="60" y2="84" stroke="#2255aa" stroke-width="2" stroke-dasharray="8,4"/>
+  <line x1="310" y1="84" x2="560" y2="84" stroke="#2255aa" stroke-width="2" stroke-dasharray="8,4"/>
+
+  <!-- FOV arc border -->
+  <path d="M 60 84 A 250 250 0 0 0 560 84" fill="none" stroke="#2255aa" stroke-width="2"/>
+
+  <!-- Blind spot boundary lines -->
+  <line x1="310" y1="84" x2="177" y2="265" stroke="#cc6600" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <line x1="310" y1="84" x2="443" y2="265" stroke="#cc6600" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- ===== AZIMUTH ARROW (pointing downward = window direction) ===== -->
+  <line x1="310" y1="84" x2="310" y2="200" stroke="#222" stroke-width="2.5"/>
+  <polygon points="310,195 304,180 316,180" fill="#222"/>
+  <text x="320" y="155" font-size="12" fill="#222" font-weight="bold">Azimuth</text>
+
+  <!-- Compass N -->
+  <circle cx="560" cy="100" r="18" fill="white" stroke="#888" stroke-width="1"/>
+  <text x="560" y="94" text-anchor="middle" font-size="10" fill="#888">N</text>
+  <polygon points="560,78 556,90 564,90" fill="#cc3333"/>
+  <text x="560" y="116" text-anchor="middle" font-size="10" fill="#888">S</text>
+  <line x1="560" y1="100" x2="560" y2="115" stroke="#888" stroke-width="1"/>
+
+  <!-- ===== FOV angle arcs ===== -->
+  <!-- Left FOV label arc -->
+  <path d="M 310 84 L 243 84" stroke="none" fill="none"/>
+  <!-- Arc indicating FOV Left angle (from azimuth line to left FOV boundary) -->
+  <path d="M 260 84 A 50 50 0 0 0 310 134" fill="none" stroke="#2255aa" stroke-width="1.5"/>
+  <text x="242" y="125" font-size="12" fill="#2255aa" text-anchor="middle">FOV Left</text>
+  <text x="242" y="139" font-size="11" fill="#2255aa" text-anchor="middle">(e.g. 90°)</text>
+
+  <!-- Arc indicating FOV Right angle -->
+  <path d="M 310 134 A 50 50 0 0 0 360 84" fill="none" stroke="#2255aa" stroke-width="1.5"/>
+  <text x="378" y="125" font-size="12" fill="#2255aa" text-anchor="middle">FOV Right</text>
+  <text x="378" y="139" font-size="11" fill="#2255aa" text-anchor="middle">(e.g. 90°)</text>
+
+  <!-- ===== Blind spot label ===== -->
+  <text x="310" y="235" text-anchor="middle" font-size="12" fill="#cc6600" font-weight="bold">Blind Spot</text>
+  <text x="310" y="250" text-anchor="middle" font-size="11" fill="#cc6600">(obstructions in FOV)</text>
+
+  <!-- ===== Sun positions ===== -->
+  <!-- Sun inside FOV -->
+  <circle cx="420" cy="310" r="14" fill="#FFD700" stroke="#cc9900" stroke-width="1.5"/>
+  <text x="420" y="315" text-anchor="middle" font-size="10" fill="#664400">☀</text>
+  <text x="420" y="335" text-anchor="middle" font-size="11" fill="#664400">Sun in FOV</text>
+  <text x="420" y="349" text-anchor="middle" font-size="11" fill="#664400">(tracking active)</text>
+
+  <!-- Sun outside FOV -->
+  <circle cx="130" cy="160" r="14" fill="#ffe88a" stroke="#bba020" stroke-width="1.5"/>
+  <text x="130" y="165" text-anchor="middle" font-size="10" fill="#886600">☀</text>
+  <text x="88" y="188" text-anchor="middle" font-size="11" fill="#886600">Sun outside</text>
+  <text x="88" y="202" text-anchor="middle" font-size="11" fill="#886600">FOV (ignored)</text>
+
+  <!-- ===== Legend ===== -->
+  <rect x="60" y="355" width="500" height="50" rx="4" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
+  <rect x="75" y="368" width="16" height="12" fill="#ddeeff" stroke="#2255aa" stroke-width="1" opacity="0.8"/>
+  <text x="96" y="379" font-size="11" fill="#333">Field of View (FOV)</text>
+  <rect x="210" y="368" width="16" height="12" fill="#ffccaa" stroke="#cc6600" stroke-width="1" opacity="0.8"/>
+  <text x="231" y="379" font-size="11" fill="#333">Blind Spot zone</text>
+  <line x1="360" y1="374" x2="380" y2="374" stroke="#222" stroke-width="2.5"/>
+  <polygon points="380,374 374,370 374,378" fill="#222"/>
+  <text x="386" y="379" font-size="11" fill="#333">Window Azimuth direction</text>
+</svg>

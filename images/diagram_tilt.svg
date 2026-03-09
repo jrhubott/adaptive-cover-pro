@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 380" width="540" height="380" font-family="sans-serif">
+  <!-- Background -->
+  <rect width="540" height="380" fill="white"/>
+
+  <!-- Title -->
+  <text x="270" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Venetian / Tilt Blind — Slat Measurements</text>
+
+  <!-- ===== WINDOW FRAME (top & sides) ===== -->
+  <!-- Top rail -->
+  <rect x="110" y="55" width="260" height="14" fill="#666" rx="2"/>
+  <!-- Left side rail -->
+  <rect x="110" y="55" width="12" height="290" fill="#888" rx="1"/>
+  <!-- Right side rail -->
+  <rect x="358" y="55" width="12" height="290" fill="#888" rx="1"/>
+  <!-- Bottom rail -->
+  <rect x="110" y="333" width="260" height="14" fill="#666" rx="2"/>
+
+  <!-- ===== SLATS (4 slats, perfectly horizontal) ===== -->
+  <!-- Slat centers at y = 100, 155, 210, 265 -->
+
+  <!-- Slat 1 center y=100 -->
+  <rect x="122" y="91" width="236" height="18" fill="#b8a080" stroke="#887050" stroke-width="1.5"/>
+
+  <!-- Slat 2 center y=155 -->
+  <rect x="122" y="146" width="236" height="18" fill="#c8b090" stroke="#887050" stroke-width="1.5"/>
+
+  <!-- Slat 3 center y=210 -->
+  <rect x="122" y="201" width="236" height="18" fill="#b8a080" stroke="#887050" stroke-width="1.5"/>
+
+  <!-- Slat 4 center y=265 -->
+  <rect x="122" y="256" width="236" height="18" fill="#c8b090" stroke="#887050" stroke-width="1.5"/>
+
+  <!-- Ladder string (left) -->
+  <line x1="155" y1="69" x2="155" y2="346" stroke="#888" stroke-width="1.5"/>
+  <!-- Ladder string (right) -->
+  <line x1="325" y1="69" x2="325" y2="346" stroke="#888" stroke-width="1.5"/>
+
+  <!-- ===== SLAT DEPTH DIMENSION ===== -->
+  <!-- Vertical arrow showing the height of slat 1 (top surface y=91 to bottom surface y=109) -->
+  <!-- Positioned to the left of the slat area at x=92 -->
+  <line x1="92" y1="91" x2="92" y2="109" stroke="#1a6a1a" stroke-width="1.5"/>
+  <!-- Arrowheads (pointing outward) -->
+  <polygon points="92,91 87,103 97,103" fill="#1a6a1a"/>
+  <polygon points="92,109 87,97 97,97" fill="#1a6a1a"/>
+  <!-- Tick marks -->
+  <line x1="80" y1="91" x2="104" y2="91" stroke="#1a6a1a" stroke-width="1.5"/>
+  <line x1="80" y1="109" x2="104" y2="109" stroke="#1a6a1a" stroke-width="1.5"/>
+  <!-- Dashed guide lines from slat left edge to dimension line -->
+  <line x1="104" y1="91" x2="122" y2="91" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="104" y1="109" x2="122" y2="109" stroke="#1a6a1a" stroke-width="1" stroke-dasharray="4,3"/>
+  <!-- Label above (centered above the arrow at x=92) -->
+  <text x="92" y="79" text-anchor="middle" font-size="12" fill="#1a6a1a" font-weight="bold">Slat Depth</text>
+  <text x="92" y="124" text-anchor="middle" font-size="10" fill="#1a6a1a">(e.g. 3 cm)</text>
+
+  <!-- ===== SLAT DISTANCE DIMENSION ===== -->
+  <!-- Vertical arrow between center of slat 2 and center of slat 3 -->
+  <!-- Slat 2 center y=155, slat 3 center y=210 => distance = 55px -->
+  <line x1="430" y1="155" x2="430" y2="210" stroke="#aa2222" stroke-width="1.5"/>
+  <polygon points="430,155 425,167 435,167" fill="#aa2222"/>
+  <polygon points="430,210 425,198 435,198" fill="#aa2222"/>
+  <!-- Tick marks -->
+  <line x1="418" y1="155" x2="442" y2="155" stroke="#aa2222" stroke-width="1.5"/>
+  <line x1="418" y1="210" x2="442" y2="210" stroke="#aa2222" stroke-width="1.5"/>
+  <!-- Dashed guide lines to slat centers -->
+  <line x1="358" y1="155" x2="442" y2="155" stroke="#aa2222" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="358" y1="210" x2="442" y2="210" stroke="#aa2222" stroke-width="1" stroke-dasharray="4,3"/>
+  <!-- Label -->
+  <text x="456" y="175" font-size="12" fill="#aa2222" font-weight="bold">Slat</text>
+  <text x="456" y="190" font-size="12" fill="#aa2222" font-weight="bold">Distance</text>
+  <text x="456" y="206" font-size="11" fill="#aa2222">(e.g. 2 cm)</text>
+
+  <!-- ===== SLAT LABELS ===== -->
+  <text x="60" y="104" text-anchor="end" font-size="11" fill="#555">Slat 1</text>
+  <text x="60" y="159" text-anchor="end" font-size="11" fill="#555">Slat 2</text>
+  <text x="60" y="214" text-anchor="end" font-size="11" fill="#555">Slat 3</text>
+  <text x="60" y="269" text-anchor="end" font-size="11" fill="#555">Slat 4</text>
+
+  <!-- ===== TILT ANGLE NOTE ===== -->
+  <!-- Small arc showing tilt angle on slat 3 -->
+  <text x="240" y="310" text-anchor="middle" font-size="11" fill="#555">Slats shown at partial open angle — tilt angle is calculated automatically</text>
+  <text x="240" y="326" text-anchor="middle" font-size="11" fill="#555">based on Slat Depth ÷ Slat Distance ratio</text>
+
+  <!-- ===== LEGEND ===== -->
+  <rect x="60" y="348" width="420" height="25" rx="4" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
+  <line x1="75" y1="360" x2="95" y2="360" stroke="#1a6a1a" stroke-width="1.5"/>
+  <polygon points="75,360 84,356 84,364" fill="#1a6a1a"/>
+  <polygon points="95,360 86,356 86,364" fill="#1a6a1a"/>
+  <text x="100" y="365" font-size="11" fill="#333">Slat Depth (vertical height of one slat)</text>
+  <line x1="310" y1="360" x2="330" y2="360" stroke="#aa2222" stroke-width="1.5"/>
+  <polygon points="310,360 319,355 319,365" fill="#aa2222"/>
+  <polygon points="330,360 321,355 321,365" fill="#aa2222"/>
+  <text x="335" y="365" font-size="11" fill="#333">Slat Distance (center-to-center)</text>
+</svg>
