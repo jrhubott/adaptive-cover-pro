@@ -261,42 +261,6 @@ class AdaptiveGeneralCover(ABC):
         return [self.azi_min_abs, self.azi_max_abs]
 
     @property
-    def apply_min_position(self) -> bool:
-        """Check if minimum position limit should be applied.
-
-        Min position prevents cover from being too open. Can be configured to
-        always apply or only when sun is directly in front.
-
-        Returns:
-            True if min_pos configured and applicable. False if not configured
-            or set to 0 (no limit).
-
-        """
-        if self.min_pos is not None and self.min_pos != 0:
-            if self.min_pos_bool:
-                return self.direct_sun_valid
-            return True
-        return False
-
-    @property
-    def apply_max_position(self) -> bool:
-        """Check if maximum position limit should be applied.
-
-        Max position prevents cover from being too closed. Can be configured to
-        always apply or only when sun is directly in front.
-
-        Returns:
-            True if max_pos configured and applicable. False if not configured
-            or set to 100 (no limit).
-
-        """
-        if self.max_pos is not None and self.max_pos != 100:
-            if self.max_pos_bool:
-                return self.direct_sun_valid
-            return True
-        return False
-
-    @property
     def direct_sun_valid(self) -> bool:
         """Check if sun is directly in front with no exclusions.
 
@@ -308,7 +272,7 @@ class AdaptiveGeneralCover(ABC):
             False otherwise.
 
         """
-        return (self.valid) & (not self.sunset_valid) & (not self.is_sun_in_blind_spot)
+        return self.valid and not self.sunset_valid and not self.is_sun_in_blind_spot
 
     @abstractmethod
     def calculate_position(self) -> float:
@@ -357,8 +321,8 @@ class NormalCoverState:
             int(state),
             self.cover.min_pos,
             self.cover.max_pos,
-            self.cover.apply_min_position,
-            self.cover.apply_max_position,
+            self.cover.min_pos_bool,
+            self.cover.max_pos_bool,
             dsv,
         )
 
@@ -842,8 +806,8 @@ class ClimateCoverState(NormalCoverState):
             result,
             self.cover.min_pos,
             self.cover.max_pos,
-            self.cover.apply_min_position,
-            self.cover.apply_max_position,
+            self.cover.min_pos_bool,
+            self.cover.max_pos_bool,
             self.cover.direct_sun_valid,
         )
 
