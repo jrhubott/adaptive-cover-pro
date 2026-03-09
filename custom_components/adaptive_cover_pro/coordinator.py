@@ -102,6 +102,7 @@ from .const import (
     DEFAULT_MOTION_TIMEOUT,
     ControlStatus,
 )
+from .enums import ControlMethod
 from .helpers import (
     check_cover_features,
     get_datetime_from_str,
@@ -186,7 +187,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.timed_refresh = False
         self.climate_state = None
         self.climate_data = None  # Store climate_data for P1 diagnostics
-        self.control_method = "intermediate"
+        self.control_method = ControlMethod.SOLAR
         self.state_change_data: StateChangedData | None = None
         self.raw_calculated_position = 0  # Store raw position for diagnostics
         self.manager = AdaptiveCoverManager(
@@ -735,8 +736,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Access climate data if climate mode is enabled
         if self._climate_mode:
             self.climate_mode_data(options, cover_data)
-        else:
-            self.logger.debug("Control method is %s", self.control_method)
 
         # Calculate the state of the cover
         self.normal_cover_state = NormalCoverState(cover_data)
@@ -756,6 +755,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Sun not in front - use default position (no calculation)
             self.raw_calculated_position = cover_data.default
         self.logger.debug("Raw calculated position: %s", self.raw_calculated_position)
+
+        # Determine control method based on priority (highest to lowest)
+        if self.is_force_override_active:
+            self.control_method = ControlMethod.FORCE
+        elif self.is_motion_timeout_active:
+            self.control_method = ControlMethod.MOTION
+        elif self.manager.binary_cover_manual:
+            self.control_method = ControlMethod.MANUAL
+        elif self._climate_mode and self.climate_data and self.climate_data.is_summer and self._switch_mode:
+            self.control_method = ControlMethod.SUMMER
+        elif self._climate_mode and self.climate_data and self.climate_data.is_winter and self._switch_mode:
+            self.control_method = ControlMethod.WINTER
+        elif cover_data.direct_sun_valid:
+            self.control_method = ControlMethod.SOLAR
+        else:
+            self.control_method = ControlMethod.DEFAULT
+        self.logger.debug("Control method: %s", self.control_method)
 
         return self.state
 
@@ -1520,13 +1536,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.climate_state = round(ClimateCoverState(cover_data, climate).get_state())
         climate_data = ClimateCoverState(cover_data, climate).climate_data
         self.climate_data = climate_data  # Store for P1 diagnostics
-        if climate_data.is_summer and self.switch_mode:
-            self.control_method = "summer"
-        if climate_data.is_winter and self.switch_mode:
-            self.control_method = "winter"
-        self.logger.debug(
-            "Climate mode control method was set to %s", self.control_method
-        )
 
     def _build_solar_diagnostics(self) -> dict:
         """Build solar position diagnostics."""

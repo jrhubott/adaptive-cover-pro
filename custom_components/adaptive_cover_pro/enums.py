@@ -67,3 +67,32 @@ class ControlState(str, Enum):
     MANUAL_OVERRIDE = "manual_override"
     AUTOMATIC_CONTROL_OFF = "automatic_control_off"
     SUN_NOT_VISIBLE = "sun_not_visible"
+
+
+class ControlMethod(str, Enum):
+    """What is currently driving the cover position.
+
+    Priority order (highest to lowest):
+    FORCE > MOTION > MANUAL > SUMMER/WINTER > SOLAR > DEFAULT
+    """
+
+    SOLAR = "solar"
+    """Sun is within the FOV; cover follows the calculated sun-position."""
+
+    SUMMER = "summer"
+    """Climate mode: temperature above max threshold; cover closes to block heat."""
+
+    WINTER = "winter"
+    """Climate mode: temperature below min threshold; cover opens for solar heat gain."""
+
+    DEFAULT = "default"
+    """Sun is outside FOV, elevation limits, blind spot, or sunset offset window."""
+
+    MANUAL = "manual_override"
+    """User manually moved the cover; automatic control is paused."""
+
+    MOTION = "motion_timeout"
+    """No occupancy detected after timeout; cover returns to default position."""
+
+    FORCE = "force_override"
+    """A force override binary sensor is active; cover moves to the override position."""
