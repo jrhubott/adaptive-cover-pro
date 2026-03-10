@@ -48,6 +48,12 @@ CONF_FORCE_OVERRIDE_SENSORS = "force_override_sensors"
 CONF_FORCE_OVERRIDE_POSITION = "force_override_position"
 CONF_MOTION_SENSORS = "motion_sensors"
 CONF_MOTION_TIMEOUT = "motion_timeout"
+CONF_MIN_SUN_START = "min_sun_start"
+CONF_MAX_SUN_START = "max_sun_start"
+CONF_MIN_SUN_END = "min_sun_end"
+CONF_MAX_SUN_END = "max_sun_end"
+CONF_SUN_START_ELEVATION = "sun_start_elevation"
+CONF_SUN_END_ELEVATION = "sun_end_elevation"
 CONF_ENABLE_BLIND_SPOT = "blind_spot"
 CONF_BLIND_SPOT_RIGHT = "blind_spot_right"
 CONF_BLIND_SPOT_LEFT = "blind_spot_left"
@@ -153,6 +159,12 @@ DIRECT_MAPPING_FIELDS = [
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
+    CONF_MIN_SUN_START,
+    CONF_MAX_SUN_START,
+    CONF_MIN_SUN_END,
+    CONF_MAX_SUN_END,
+    CONF_SUN_START_ELEVATION,
+    CONF_SUN_END_ELEVATION,
     CONF_END_TIME,
     CONF_END_ENTITY,
     CONF_RETURN_SUNSET,
