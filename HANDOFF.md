@@ -59,9 +59,11 @@ These are external PRs awaiting review/merge by third-party maintainers. Check b
 
 | PR | Repo | Description | Status |
 |----|------|-------------|--------|
-| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add `jrhubott/adaptive-cover-pro` to HACS default integrations list | ⏳ Pending review |
-| [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons for `adaptive_cover_pro` (CDN, older HA versions) | ⏳ Pending review |
+| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add `jrhubott/adaptive-cover-pro` to HACS default integrations list | ❌ Closed — needs investigation |
+| [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons for `adaptive_cover_pro` (CDN, older HA versions) | ✅ Resolved — not needed |
 
-**When accepted:** Update the Status column to ✅ Merged and note the date. Once both are merged, remove this section.
+**home-assistant/brands:** Auto-closed by bot. As of HA 2026.3.0, custom integrations serve their own icons via the local `brand/` folder — which we already ship in v2.7.10. No further action needed.
+
+**hacs/default:** Closed with no explanation. Needs investigation — likely requires a different submission format or checklist. Check HACS contributing docs before re-submitting.
 
 No open pull requests on this repo.
