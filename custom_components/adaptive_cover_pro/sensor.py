@@ -170,6 +170,17 @@ async def async_setup_entry(
             )
         )
 
+        # P0: Manual Override End Time
+        entities.append(
+            AdaptiveCoverManualOverrideEndSensor(
+                config_entry.entry_id,
+                hass,
+                config_entry,
+                name,
+                coordinator,
+            )
+        )
+
         # P1: Position Verification sensors (disabled by default)
         entities.append(
             AdaptiveCoverLastVerificationSensor(
@@ -871,6 +882,59 @@ class AdaptiveCoverLastVerificationSensor(AdaptiveCoverAdvancedDiagnosticSensor)
             "per_entity": {
                 entity_id: time.isoformat()
                 for entity_id, time in self.coordinator._last_verification.items()
+            }
+        }
+
+
+class AdaptiveCoverManualOverrideEndSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+    """Sensor showing when manual override will expire."""
+
+    _attr_entity_registry_enabled_default = True  # P0: enabled by default
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            name,
+            coordinator,
+            "Manual Override End Time",
+            "manual_override_end_time",
+            None,
+            "mdi:timer-outline",
+            None,
+            SensorDeviceClass.TIMESTAMP,
+        )
+
+    @property
+    def native_value(self):
+        """Return latest manual override expiry time, or None if no override is active."""
+        times = self.coordinator.manager.manual_control_time
+        if not times:
+            return None
+        duration = self.coordinator.manager.reset_duration
+        return max(t + duration for t in times.values())
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return per-entity override expiry times."""
+        times = self.coordinator.manager.manual_control_time
+        if not times:
+            return None
+        duration = self.coordinator.manager.reset_duration
+        return {
+            "per_entity": {
+                entity_id: (t + duration).isoformat()
+                for entity_id, t in times.items()
             }
         }
 
