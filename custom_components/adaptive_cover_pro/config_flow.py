@@ -748,6 +748,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
     async def async_step_device_association(self, user_input: dict[str, Any] | None = None):
         """Show optional device association step."""
+        _standalone_sentinel = "__standalone__"
         entity_ids = self.config.get(CONF_ENTITIES, [])
         devices = await _get_devices_from_entities(self.hass, entity_ids)
 
@@ -755,20 +756,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self._continue_after_cover_config()
 
         if user_input is not None:
-            device_id = user_input.get(CONF_DEVICE_ID, "")
-            if device_id:
+            device_id = user_input.get(CONF_DEVICE_ID, _standalone_sentinel)
+            if device_id and device_id != _standalone_sentinel:
                 self.config[CONF_DEVICE_ID] = device_id
             else:
                 self.config.pop(CONF_DEVICE_ID, None)
             return await self._continue_after_cover_config()
 
-        options_list = [{"value": "", "label": "None (standalone device)"}]
+        options_list = [{"value": _standalone_sentinel, "label": "None (standalone device)"}]
         for device_id, device_name in devices.items():
             options_list.append({"value": device_id, "label": device_name})
 
         schema = vol.Schema(
             {
-                vol.Optional(CONF_DEVICE_ID, default=""): selector.SelectSelector(
+                vol.Required(CONF_DEVICE_ID, default=_standalone_sentinel): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=options_list,
                         mode=selector.SelectSelectorMode.LIST,
@@ -1306,12 +1307,13 @@ class OptionsFlowHandler(OptionsFlow):
 
     async def async_step_device(self, user_input: dict[str, Any] | None = None):
         """Manage device association."""
+        _standalone_sentinel = "__standalone__"
         entity_ids = self.options.get(CONF_ENTITIES, [])
         devices = await _get_devices_from_entities(self.hass, entity_ids)
 
         if user_input is not None:
-            device_id = user_input.get(CONF_DEVICE_ID, "")
-            if device_id:
+            device_id = user_input.get(CONF_DEVICE_ID, _standalone_sentinel)
+            if device_id and device_id != _standalone_sentinel:
                 self.options[CONF_DEVICE_ID] = device_id
             else:
                 self.options.pop(CONF_DEVICE_ID, None)
@@ -1322,14 +1324,14 @@ class OptionsFlowHandler(OptionsFlow):
             self.options.pop(CONF_DEVICE_ID, None)
             return await self._update_options()
 
-        current_device = self.options.get(CONF_DEVICE_ID, "")
-        options_list = [{"value": "", "label": "None (standalone device)"}]
+        current_device = self.options.get(CONF_DEVICE_ID) or _standalone_sentinel
+        options_list = [{"value": _standalone_sentinel, "label": "None (standalone device)"}]
         for device_id, device_name in devices.items():
             options_list.append({"value": device_id, "label": device_name})
 
         schema = vol.Schema(
             {
-                vol.Optional(CONF_DEVICE_ID, default=current_device): selector.SelectSelector(
+                vol.Required(CONF_DEVICE_ID): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=options_list,
                         mode=selector.SelectSelectorMode.LIST,
