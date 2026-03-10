@@ -450,6 +450,19 @@ class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
         diagnostics = self.data.diagnostics
         return diagnostics.get(self._diagnostic_key)
 
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return additional state attributes based on diagnostic key."""
+        if self._diagnostic_key == "sun_azimuth":
+            return self._build_azimuth_attributes()
+        if self._diagnostic_key == "sun_elevation":
+            return self._build_elevation_attributes()
+        if self._diagnostic_key == "gamma":
+            return self._build_gamma_attributes()
+        if self._diagnostic_key == "calculated_position":
+            return self._build_calculated_position_attributes()
+        return None
+
     def _build_azimuth_attributes(self) -> dict[str, Any] | None:
         """Build attributes for sun azimuth sensor."""
         if self.data.diagnostics is None:
