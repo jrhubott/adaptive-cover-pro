@@ -95,10 +95,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # If device association is active, remove the old standalone virtual device so it
-    # doesn't appear as an orphaned entry under the integration.
+    device_reg = dr.async_get(hass)
+
     if entry.options.get(CONF_DEVICE_ID):
-        device_reg = dr.async_get(hass)
+        # Device association is active — remove the old standalone virtual device so it
+        # doesn't appear as an orphaned entry under the integration.
         old_device = device_reg.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
         if old_device:
             _LOGGER.debug(
@@ -106,6 +107,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 old_device.id,
             )
             device_reg.async_remove_device(old_device.id)
+    else:
+        # No device association — remove our config entry from any physical device that
+        # still has it (left over from a previous association that was cleared).
+        for device in list(device_reg.devices.values()):
+            if (
+                entry.entry_id in device.config_entries
+                and (DOMAIN, entry.entry_id) not in device.identifiers
+            ):
+                _LOGGER.debug(
+                    "Removing stale config entry link from physical device %s",
+                    device.id,
+                )
+                device_reg.async_update_device(
+                    device.id, remove_config_entry_id=entry.entry_id
+                )
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
