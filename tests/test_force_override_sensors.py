@@ -1,6 +1,6 @@
 """Tests for force override sensors feature."""
 
-from unittest.mock import MagicMock, Mock, PropertyMock
+from unittest.mock import MagicMock
 
 import pytest
 
