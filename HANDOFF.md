@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-03-10
-**Current Version:** v2.7.7
+**Current Version:** v2.7.8
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -33,6 +33,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.8 | Fix Control Method sensor showing `ControlMethod.DEFAULT` — Python 3.11+ str(Enum) behavior change; use `.value` explicitly |
 | v2.7.7 | Motion Timeout End Time sensor (P0), Force Override Triggers sensor (P1), Last Motion Time sensor (P1), Manual Override End Time sensor (P0); default manual override duration increased to 2h |
 | v2.7.6 | ControlMethod enum with 7 values (solar, summer, winter, default, manual_override, motion_timeout, force_override); renames `intermediate` → `solar`; fixes stale control method across cycles |
 | v2.7.5 | Motion control (occupancy-based auto positioning), control state reason sensor, force override binary sensors, solar times accuracy fix |
