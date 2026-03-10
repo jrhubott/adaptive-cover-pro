@@ -179,7 +179,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             CONF_MANUAL_OVERRIDE_RESET, False
         )
         self.manual_duration = self.config_entry.options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"minutes": 15}
+            CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2}
         )
         self.state_change = False
         self.cover_state_change = False
@@ -1215,7 +1215,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.end_time_entity = options.get(CONF_END_ENTITY)
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
         self.manual_duration = options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"minutes": 15}
+            CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2}
         )
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
         self.start_value = options.get(CONF_INTERP_START)

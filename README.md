@@ -176,21 +176,22 @@ For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE
     - No configuration required - works automatically when automatic control is enabled
     - Diagnostic sensors available for troubleshooting cover movement issues
 
-- **Diagnostic Sensors** (Optional, disabled by default)
+- **Diagnostic Sensors** (Optional, enable in automation settings)
   - Real-time troubleshooting sensors to understand integration behavior
-  - Priority 0 sensors (enabled by default when diagnostics enabled):
+  - All sensors use diagnostic entity category
+  - Priority 0 sensors (enabled by default when diagnostics are on):
     - Sun position (azimuth, elevation, gamma)
     - Control status (why covers aren't moving)
+    - Control state reason (human-readable explanation of current cover position)
     - Calculated position (before adjustments)
     - Last cover action (tracks most recent cover action with full details)
+    - Manual override end time (when automatic control will resume)
   - Priority 1 sensors (disabled by default, enable individually):
     - Position verification tracking (last check time, retry counts, mismatch detection)
     - Active temperature (climate mode only)
     - Climate conditions (climate mode only)
     - Time window status
     - Sun validity status
-  - Enable in automation settings
-  - All sensors use diagnostic entity category
 
 - **Enhanced Geometric Accuracy** (automatic improvements)
   - Angle-dependent safety margins for better sun blocking at extreme angles
@@ -903,7 +904,11 @@ These sensors are created when diagnostics are enabled in automation settings. T
 | `sensor.{device_name}_control_state_reason` | Enabled | Human-readable explanation of why the cover is in its current position. Coordinator-level reasons (checked first): `Force Override` (a force override sensor is active), `Motion Timeout` (no motion detected for timeout duration), `Manual Override` (cover was manually moved). Cover-level sun position reasons: `Direct Sun` (tracking the sun to block glare), `Default: Sunset Offset` (past sunset offset time), `Default: Elevation Limit` (sun outside elevation limits), `Default: FOV Exit` (sun outside field of view), `Default: Blind Spot` (sun in a configured blind spot), `Default` (using default position). |
 | `sensor.{device_name}_calculated_position` | Enabled | Raw calculated position before interpolation/inversion adjustments. |
 | `sensor.{device_name}_last_cover_action` | Enabled | Tracks the most recent cover action: service called, entity controlled, timestamp. Attributes include position sent, threshold used (for open/close-only covers), and whether inverse_state was applied. Useful for debugging. |
+| `sensor.{device_name}_manual_override_end_time` | Enabled | Timestamp of when the current manual override will expire and automatic control will resume. Returns unavailable when no manual override is active. Attributes show per-entity expiry times for multi-cover setups. |
+| `sensor.{device_name}_motion_timeout_end_time` | Enabled | Timestamp of when the motion timeout will/did fire (i.e., when covers will switch to default position after no motion). Only created when motion sensors are configured. Returns unavailable when no timeout is pending. Attributes show configured timeout duration and last motion detected time. |
 | `sensor.{device_name}_last_position_verification` | Disabled | Timestamp of the last position verification check. Attributes show per-entity verification times. |
+| `sensor.{device_name}_force_override_triggers` | Disabled | Count of currently active force override sensors (0–N). Only created when force override sensors are configured. Attributes show per-sensor state (`on`/`off`/`unavailable`) and total configured count. |
+| `sensor.{device_name}_last_motion_time` | Disabled | Timestamp of the last motion detection event. Only created when motion sensors are configured. Returns unavailable if motion has never been detected. |
 | `sensor.{device_name}_position_verification_retries` | Disabled | Current retry count for position verification (0-3). Attributes show max retries, retries remaining, and per-entity counts. Helps identify covers that repeatedly fail to reach target positions. |
 | `binary_sensor.{device_name}_position_mismatch` | Disabled | Indicates position mismatch between target and actual position (problem class). Attributes show target position sent, actual position per entity, position delta, and retry counts. Useful for troubleshooting cover movement issues. |
 | `sensor.{device_name}_active_temperature` | Disabled | Currently active temperature value (climate mode only). Shows which sensor is used. Enable manually if needed. |
@@ -911,7 +916,7 @@ These sensors are created when diagnostics are enabled in automation settings. T
 | `sensor.{device_name}_time_window` | Disabled | Time window status (Active/Outside Window) with time details as attributes. Enable manually if needed. |
 | `sensor.{device_name}_sun_validity` | Disabled | Sun validity status (Valid, In Blind Spot, Invalid Elevation) with validation details as attributes. Enable manually if needed. |
 
-**Note:** Priority 1 sensors (last 7) are created disabled by default to reduce entity overhead. Enable them individually in the entity list if needed for troubleshooting.
+**Note:** Priority 1 sensors (disabled by default) reduce entity overhead. Enable them individually in the entity list if needed for troubleshooting. Motion and force override sensors are only created when the corresponding features are configured.
 
 ## Features Planned
 
