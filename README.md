@@ -151,6 +151,11 @@ For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE
   - Control multiple covers
   - Optional return to default position when automatic control is disabled
   - Set start time to prevent opening blinds while you are asleep
+  - **Sun Time Clamping** - Pin or clamp "Start Sun" / "End Sun" times to fixed min/max bounds
+    - Min/max start time: prevent tracking from starting too early or too late
+    - Min/max end time: prevent tracking from ending too early or too late
+    - Elevation thresholds: start/stop based on sun angle (e.g. start at 8°, stop at 5°)
+    - Works across seasonal sunrise/sunset variation without manual adjustments
   - Set minimum interval time between position changes
   - Set minimum percentage change
   - **Force Override Sensors** - Weather safety protection
@@ -825,6 +830,13 @@ Interpolated List: [100, 75, 50, 25, 0]
 | End Time                                   | `"00:00:00"` |       | Latest time a cover can be adjusted each day                                                   |
 | End Time Entity                            | None         |       | The latest moment a cover may be changed . _Overrides the `end_time` value_                    |
 | Adjust at end time                         | `False`      |       | Make sure to always update the position to the default setting at the end time.                |
+| **Sun Time Clamping** (optional, all default to disabled) |   |   |   |
+| Minimum Start Sun Time                     | None         |       | Earliest the calculated Start Sun time can be. If sun enters FOV before this time, tracking is delayed until this time. |
+| Maximum Start Sun Time                     | None         |       | Latest the calculated Start Sun time can be. Tracking begins by this time even if sun enters FOV later. |
+| Minimum End Sun Time                       | None         |       | Earliest the calculated End Sun time can be. Tracking continues until at least this time even if sun exits FOV sooner. |
+| Maximum End Sun Time                       | None         |       | Latest the calculated End Sun time can be. Tracking always stops by this time. |
+| Start Elevation Threshold                  | None         | -18–90° | Start sun tracking only when sun rises above this elevation angle. 0° = horizon. Example: 8° prevents very low morning sun tracking. Leave empty to disable. |
+| End Elevation Threshold                    | None         | -18–90° | Stop sun tracking when sun drops below this elevation angle. Example: 5° stops tracking before full sunset. Leave empty to disable. |
 | **Motion Sensors** (Occupancy-based control) |   |   |   |
 | Motion Sensors for Occupancy Control       | None (empty) |       | List of binary sensors that control sun positioning based on room occupancy. When ANY sensor detects motion, covers use automatic positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable feature. |
 | Motion Timeout Duration                    | `300`        | 30-3600 | Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Default: 300 seconds (5 minutes). |

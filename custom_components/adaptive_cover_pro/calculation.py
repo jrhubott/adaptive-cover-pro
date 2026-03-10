@@ -119,6 +119,37 @@ class AdaptiveGeneralCover(ABC):
                 solpos[frame].index[-1].to_pydatetime(),
             )
 
+    def elevation_crossing_time(
+        self, threshold: float, rising: bool
+    ) -> datetime | None:
+        """Return when sun elevation crosses a threshold angle.
+
+        Args:
+            threshold: Elevation angle in degrees.
+            rising: True = first crossing upward (morning start).
+                    False = last moment above threshold (evening end).
+
+        Returns:
+            Timezone-aware datetime of the crossing, or None if never crosses.
+
+        """
+        elevations = self.sun_data.solar_elevation
+        times = self.sun_data.times
+
+        if rising:
+            for i, elev in enumerate(elevations):
+                if elev >= threshold:
+                    return times[i].to_pydatetime()
+        else:
+            last_idx = None
+            for i, elev in enumerate(elevations):
+                if elev >= threshold:
+                    last_idx = i
+            if last_idx is not None:
+                return times[last_idx].to_pydatetime()
+
+        return None
+
     @property
     def _get_azimuth_edges(self) -> tuple[int, int]:
         """Get absolute azimuth boundaries of window's field of view.

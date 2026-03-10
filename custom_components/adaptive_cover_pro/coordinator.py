@@ -71,6 +71,12 @@ from .const import (
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
+    CONF_MIN_SUN_START,
+    CONF_MAX_SUN_START,
+    CONF_MIN_SUN_END,
+    CONF_MAX_SUN_END,
+    CONF_SUN_START_ELEVATION,
+    CONF_SUN_END_ELEVATION,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -775,6 +781,101 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         return self.state
 
+    def _apply_solar_time_clamping(
+        self,
+        start: dt.datetime | None,
+        end: dt.datetime | None,
+        elev_start: dt.datetime | None,
+        elev_end: dt.datetime | None,
+    ) -> tuple[dt.datetime | None, dt.datetime | None]:
+        """Apply min/max and elevation clamping to raw solar times."""
+        options = self.config_entry.options
+        min_start_str = options.get(CONF_MIN_SUN_START)
+        max_start_str = options.get(CONF_MAX_SUN_START)
+        min_end_str = options.get(CONF_MIN_SUN_END)
+        max_end_str = options.get(CONF_MAX_SUN_END)
+
+        # Fast path: no options and no elevation boundaries
+        if not any([min_start_str, max_start_str, min_end_str, max_end_str,
+                    elev_start, elev_end]):
+            return start, end
+
+        if start is None and end is None:
+            return start, end
+
+        tz = (start or end).tzinfo
+        today = dt.date.today()
+
+        def _parse(time_str):
+            if not time_str or time_str == "00:00:00":
+                return None
+            try:
+                t = dt.time.fromisoformat(time_str)
+                return dt.datetime.combine(today, t).replace(tzinfo=tz)
+            except (ValueError, TypeError):
+                self.logger.warning("Invalid solar clamp time: %s", time_str)
+                return None
+
+        min_start = _parse(min_start_str)
+        max_start = _parse(max_start_str)
+        min_end = _parse(min_end_str)
+        max_end = _parse(max_end_str)
+
+        clamped_start = start
+        if clamped_start is not None:
+            lower = [b for b in [min_start, elev_start] if b is not None]
+            if lower:
+                clamped_start = max(clamped_start, *lower)
+            if max_start is not None:
+                clamped_start = min(clamped_start, max_start)
+
+        clamped_end = end
+        if clamped_end is not None:
+            upper = [b for b in [max_end, elev_end] if b is not None]
+            if upper:
+                clamped_end = min(clamped_end, *upper)
+            if min_end is not None:
+                clamped_end = max(clamped_end, min_end)
+
+        # Guard against logical inversion
+        if clamped_start and clamped_end and clamped_start > clamped_end:
+            self.logger.warning(
+                "Solar time clamping produced start > end; reverting to raw. "
+                "Check min/max sun time configuration."
+            )
+            return start, end
+
+        self.logger.debug(
+            "Solar clamping: start %s→%s, end %s→%s",
+            start, clamped_start, end, clamped_end,
+        )
+        return clamped_start, clamped_end
+
+    async def _apply_solar_time_clamping_async(
+        self,
+        start: dt.datetime | None,
+        end: dt.datetime | None,
+        normal_cover,
+        loop,
+    ) -> tuple[dt.datetime | None, dt.datetime | None]:
+        """Pre-compute elevation crossing times in executor, then apply clamping."""
+        options = self.config_entry.options
+        start_elev = options.get(CONF_SUN_START_ELEVATION)
+        end_elev = options.get(CONF_SUN_END_ELEVATION)
+
+        elev_start = None
+        elev_end = None
+        if start_elev is not None:
+            elev_start = await loop.run_in_executor(
+                None, normal_cover.elevation_crossing_time, float(start_elev), True
+            )
+        if end_elev is not None:
+            elev_end = await loop.run_in_executor(
+                None, normal_cover.elevation_crossing_time, float(end_elev), False
+            )
+
+        return self._apply_solar_time_clamping(start, end, elev_start, elev_end)
+
     async def _update_solar_times_if_needed(
         self, normal_cover
     ) -> tuple[dt.datetime, dt.datetime]:
@@ -795,6 +896,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Calculating solar times")
             loop = asyncio.get_event_loop()
             start, end = await loop.run_in_executor(None, normal_cover.solar_times)
+            start, end = await self._apply_solar_time_clamping_async(
+                start, end, normal_cover, loop
+            )
             self._sun_start_time = start
             self._sun_end_time = end
             self.logger.debug("Sun start time: %s, Sun end time: %s", start, end)

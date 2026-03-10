@@ -61,6 +61,12 @@ from .const import (
     CONF_MODE,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
+    CONF_MIN_SUN_START,
+    CONF_MAX_SUN_START,
+    CONF_MIN_SUN_END,
+    CONF_MAX_SUN_END,
+    CONF_SUN_START_ELEVATION,
+    CONF_SUN_END_ELEVATION,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
@@ -503,6 +509,28 @@ AUTOMATION_CONFIG = vol.Schema(
             )
         ),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_MIN_SUN_START): selector.TimeSelector(),
+        vol.Optional(CONF_MAX_SUN_START): selector.TimeSelector(),
+        vol.Optional(CONF_MIN_SUN_END): selector.TimeSelector(),
+        vol.Optional(CONF_MAX_SUN_END): selector.TimeSelector(),
+        vol.Optional(CONF_SUN_START_ELEVATION): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-18,
+                max=90,
+                step=0.5,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Optional(CONF_SUN_END_ELEVATION): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-18,
+                max=90,
+                step=0.5,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="°",
+            )
+        ),
         vol.Optional(
             CONF_ENABLE_DIAGNOSTICS, default=False
         ): selector.BooleanSelector(),

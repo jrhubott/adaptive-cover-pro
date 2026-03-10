@@ -32,6 +32,12 @@
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
           "open_close_threshold": "Open/Close threshold",
+          "min_sun_start": "Minimum start time",
+          "max_sun_start": "Maximum start time",
+          "min_sun_end": "Minimum end time",
+          "max_sun_end": "Maximum end time",
+          "sun_start_elevation": "Start elevation threshold (°)",
+          "sun_end_elevation": "End elevation threshold (°)",
           "enable_diagnostics": "Enable diagnostic entities"
         },
         "data_description": {
@@ -51,6 +57,12 @@
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
+          "min_sun_start": "Earliest the calculated Start Sun time can be. If the sun enters the field of view before this time, tracking is delayed until this time. Leave empty to disable.",
+          "max_sun_start": "Latest the calculated Start Sun time can be. Tracking begins by this time even if the sun enters the field of view later. Leave empty to disable.",
+          "min_sun_end": "Earliest the calculated End Sun time can be. Tracking continues until at least this time even if the sun exits the field of view sooner. Leave empty to disable.",
+          "max_sun_end": "Latest the calculated End Sun time can be. Tracking always stops by this time. Leave empty to disable.",
+          "sun_start_elevation": "Start sun tracking only when the sun rises above this elevation angle (°). 0° = horizon. Example: 8° prevents very low morning sun tracking. Leave empty to disable.",
+          "sun_end_elevation": "Stop sun tracking when the sun drops below this elevation angle (°). Example: 5° stops tracking before full sunset. Leave empty to disable.",
           "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
         }
       },
@@ -328,6 +340,12 @@
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
           "open_close_threshold": "Open/Close threshold",
+          "min_sun_start": "Minimum start time",
+          "max_sun_start": "Maximum start time",
+          "min_sun_end": "Minimum end time",
+          "max_sun_end": "Maximum end time",
+          "sun_start_elevation": "Start elevation threshold (°)",
+          "sun_end_elevation": "End elevation threshold (°)",
           "enable_diagnostics": "Enable diagnostic entities"
         },
         "data_description": {
@@ -347,6 +365,12 @@
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
+          "min_sun_start": "Earliest the calculated Start Sun time can be. If the sun enters the field of view before this time, tracking is delayed until this time. Leave empty to disable.",
+          "max_sun_start": "Latest the calculated Start Sun time can be. Tracking begins by this time even if the sun enters the field of view later. Leave empty to disable.",
+          "min_sun_end": "Earliest the calculated End Sun time can be. Tracking continues until at least this time even if the sun exits the field of view sooner. Leave empty to disable.",
+          "max_sun_end": "Latest the calculated End Sun time can be. Tracking always stops by this time. Leave empty to disable.",
+          "sun_start_elevation": "Start sun tracking only when the sun rises above this elevation angle (°). 0° = horizon. Example: 8° prevents very low morning sun tracking. Leave empty to disable.",
+          "sun_end_elevation": "Stop sun tracking when the sun drops below this elevation angle (°). Example: 5° stops tracking before full sunset. Leave empty to disable.",
           "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
         }
       },

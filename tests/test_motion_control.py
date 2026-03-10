@@ -1,7 +1,5 @@
 """Tests for motion-based automatic control feature."""
 
-import asyncio
-import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
@@ -502,7 +500,6 @@ def test_build_configuration_diagnostics_includes_motion_data():
     from custom_components.adaptive_cover_pro.const import (
         CONF_MOTION_SENSORS,
         CONF_MOTION_TIMEOUT,
-        DEFAULT_MOTION_TIMEOUT,
     )
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
