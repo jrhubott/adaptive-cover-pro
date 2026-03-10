@@ -450,6 +450,19 @@ class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
         diagnostics = self.data.diagnostics
         return diagnostics.get(self._diagnostic_key)
 
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return additional state attributes based on diagnostic key."""
+        if self._diagnostic_key == "sun_azimuth":
+            return self._build_azimuth_attributes()
+        if self._diagnostic_key == "sun_elevation":
+            return self._build_elevation_attributes()
+        if self._diagnostic_key == "gamma":
+            return self._build_gamma_attributes()
+        if self._diagnostic_key == "calculated_position":
+            return self._build_calculated_position_attributes()
+        return None
+
     def _build_azimuth_attributes(self) -> dict[str, Any] | None:
         """Build attributes for sun azimuth sensor."""
         if self.data.diagnostics is None:
@@ -499,28 +512,13 @@ class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
         min_elev = config.get("min_elevation")
         max_elev = config.get("max_elevation")
 
-        attrs = {
-            "valid_elevation": diagnostics.get("sun_validity", {}).get(
-                "valid_elevation"
-            ),
-        }
-
-        # Only include min/max if configured
+        attrs = {}
         if min_elev is not None:
             attrs["min_elevation"] = min_elev
         if max_elev is not None:
             attrs["max_elevation"] = max_elev
 
-        # Include blind spot if enabled
-        if config.get("enable_blind_spot", False):
-            blind_spot_elev = config.get("blind_spot_elevation")
-            if blind_spot_elev is not None:
-                attrs["blind_spot_elevation"] = blind_spot_elev
-                attrs["in_blind_spot"] = diagnostics.get("sun_validity", {}).get(
-                    "in_blind_spot", False
-                )
-
-        return attrs
+        return attrs if attrs else None
 
     def _build_gamma_attributes(self) -> dict[str, Any] | None:
         """Build attributes for gamma sensor."""
