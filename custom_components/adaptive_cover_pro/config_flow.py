@@ -13,12 +13,14 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
+    CONF_DEVICE_ID,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
@@ -548,6 +550,21 @@ def _get_azimuth_edges(data) -> int:
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
+async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, str]:
+    """Get devices associated with the given cover entity IDs."""
+    entity_reg = er.async_get(hass)
+    device_reg = dr.async_get(hass)
+    devices: dict[str, str] = {}
+    for entity_id in entity_ids:
+        entity_entry = entity_reg.async_get(entity_id)
+        if entity_entry and entity_entry.device_id:
+            device_entry = device_reg.async_get(entity_entry.device_id)
+            if device_entry and entity_entry.device_id not in devices:
+                name = device_entry.name_by_user or device_entry.name or entity_entry.device_id
+                devices[entity_entry.device_id] = name
+    return devices
+
+
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
@@ -636,11 +653,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     # Update the config name with suggestion
                     self.config["name"] = suggested_name
 
-            if self.config[CONF_INTERP]:
-                return await self.async_step_interp()
-            if self.config[CONF_ENABLE_BLIND_SPOT]:
-                return await self.async_step_blind_spot()
-            return await self.async_step_automation()
+            return await self.async_step_device_association()
         return self.async_show_form(
             step_id="vertical",
             data_schema=CLIMATE_MODE.extend(VERTICAL_OPTIONS.schema),
@@ -684,11 +697,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     # Update the config name with suggestion
                     self.config["name"] = suggested_name
 
-            if self.config[CONF_INTERP]:
-                return await self.async_step_interp()
-            if self.config[CONF_ENABLE_BLIND_SPOT]:
-                return await self.async_step_blind_spot()
-            return await self.async_step_automation()
+            return await self.async_step_device_association()
         return self.async_show_form(
             step_id="horizontal",
             data_schema=CLIMATE_MODE.extend(HORIZONTAL_OPTIONS.schema),
@@ -732,14 +741,50 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     # Update the config name with suggestion
                     self.config["name"] = suggested_name
 
-            if self.config[CONF_INTERP]:
-                return await self.async_step_interp()
-            if self.config[CONF_ENABLE_BLIND_SPOT]:
-                return await self.async_step_blind_spot()
-            return await self.async_step_automation()
+            return await self.async_step_device_association()
         return self.async_show_form(
             step_id="tilt", data_schema=CLIMATE_MODE.extend(TILT_OPTIONS.schema)
         )
+
+    async def async_step_device_association(self, user_input: dict[str, Any] | None = None):
+        """Show optional device association step."""
+        entity_ids = self.config.get(CONF_ENTITIES, [])
+        devices = await _get_devices_from_entities(self.hass, entity_ids)
+
+        if not devices:
+            return await self._continue_after_cover_config()
+
+        if user_input is not None:
+            device_id = user_input.get(CONF_DEVICE_ID, "")
+            if device_id:
+                self.config[CONF_DEVICE_ID] = device_id
+            else:
+                self.config.pop(CONF_DEVICE_ID, None)
+            return await self._continue_after_cover_config()
+
+        options_list = [{"value": "", "label": "None (standalone device)"}]
+        for device_id, device_name in devices.items():
+            options_list.append({"value": device_id, "label": device_name})
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_DEVICE_ID, default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options_list,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="device_association", data_schema=schema)
+
+    async def _continue_after_cover_config(self):
+        """Route to next step after cover type configuration."""
+        if self.config.get(CONF_INTERP):
+            return await self.async_step_interp()
+        if self.config.get(CONF_ENABLE_BLIND_SPOT):
+            return await self.async_step_blind_spot()
+        return await self.async_step_automation()
 
     async def async_step_interp(self, user_input: dict[str, Any] | None = None):
         """Show interpolation options."""
@@ -925,6 +970,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_IRRADIANCE_ENTITY: self.config.get(CONF_IRRADIANCE_ENTITY),
                 CONF_IRRADIANCE_THRESHOLD: self.config.get(CONF_IRRADIANCE_THRESHOLD),
                 CONF_OUTSIDE_THRESHOLD: self.config.get(CONF_OUTSIDE_THRESHOLD),
+                CONF_DEVICE_ID: self.config.get(CONF_DEVICE_ID),
             },
         )
 
@@ -1227,7 +1273,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        options = ["automation", "blind"]
+        options = ["automation", "blind", "device"]
         if self.options[CONF_CLIMATE_MODE]:
             options.append("climate")
         if self.options.get(CONF_WEATHER_ENTITY):
@@ -1255,6 +1301,46 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="automation",
             data_schema=self.add_suggested_values_to_schema(
                 AUTOMATION_CONFIG, user_input or self.options
+            ),
+        )
+
+    async def async_step_device(self, user_input: dict[str, Any] | None = None):
+        """Manage device association."""
+        entity_ids = self.options.get(CONF_ENTITIES, [])
+        devices = await _get_devices_from_entities(self.hass, entity_ids)
+
+        if user_input is not None:
+            device_id = user_input.get(CONF_DEVICE_ID, "")
+            if device_id:
+                self.options[CONF_DEVICE_ID] = device_id
+            else:
+                self.options.pop(CONF_DEVICE_ID, None)
+            return await self._update_options()
+
+        if not devices:
+            # No devices available — clear any stale association and update immediately
+            self.options.pop(CONF_DEVICE_ID, None)
+            return await self._update_options()
+
+        current_device = self.options.get(CONF_DEVICE_ID, "")
+        options_list = [{"value": "", "label": "None (standalone device)"}]
+        for device_id, device_name in devices.items():
+            options_list.append({"value": device_id, "label": device_name})
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_DEVICE_ID, default=current_device): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options_list,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="device",
+            data_schema=self.add_suggested_values_to_schema(
+                schema, {CONF_DEVICE_ID: current_device}
             ),
         )
 
