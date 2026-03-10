@@ -53,4 +53,15 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | Safety retraction when wind exceeds a threshold sensor |
 | [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times instead of pure solar calculation |
 
-No open pull requests.
+## Pending Upstream PRs
+
+These are external PRs awaiting review/merge by third-party maintainers. Check back periodically and update this section when accepted.
+
+| PR | Repo | Description | Status |
+|----|------|-------------|--------|
+| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add `jrhubott/adaptive-cover-pro` to HACS default integrations list | ⏳ Pending review |
+| [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons for `adaptive_cover_pro` (CDN, older HA versions) | ⏳ Pending review |
+
+**When accepted:** Update the Status column to ✅ Merged and note the date. Once both are merged, remove this section.
+
+No open pull requests on this repo.
