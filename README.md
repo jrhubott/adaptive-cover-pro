@@ -176,21 +176,22 @@ For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE
     - No configuration required - works automatically when automatic control is enabled
     - Diagnostic sensors available for troubleshooting cover movement issues
 
-- **Diagnostic Sensors** (Optional, disabled by default)
+- **Diagnostic Sensors** (Optional, enable in automation settings)
   - Real-time troubleshooting sensors to understand integration behavior
-  - Priority 0 sensors (enabled by default when diagnostics enabled):
+  - All sensors use diagnostic entity category
+  - Priority 0 sensors (enabled by default when diagnostics are on):
     - Sun position (azimuth, elevation, gamma)
     - Control status (why covers aren't moving)
+    - Control state reason (human-readable explanation of current cover position)
     - Calculated position (before adjustments)
     - Last cover action (tracks most recent cover action with full details)
+    - Manual override end time (when automatic control will resume)
   - Priority 1 sensors (disabled by default, enable individually):
     - Position verification tracking (last check time, retry counts, mismatch detection)
     - Active temperature (climate mode only)
     - Climate conditions (climate mode only)
     - Time window status
     - Sun validity status
-  - Enable in automation settings
-  - All sensors use diagnostic entity category
 
 - **Enhanced Geometric Accuracy** (automatic improvements)
   - Angle-dependent safety margins for better sun blocking at extreme angles
