@@ -19,6 +19,8 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_CLIMATE_MODE,
     CONF_ENABLE_DIAGNOSTICS,
+    CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_MOTION_SENSORS,
     DOMAIN,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
@@ -180,6 +182,42 @@ async def async_setup_entry(
                 coordinator,
             )
         )
+
+        # P0: Motion Timeout End Time (only when motion sensors are configured)
+        if config_entry.options.get(CONF_MOTION_SENSORS):
+            entities.append(
+                AdaptiveCoverMotionTimeoutEndSensor(
+                    config_entry.entry_id,
+                    hass,
+                    config_entry,
+                    name,
+                    coordinator,
+                )
+            )
+
+        # P1: Force Override Triggers (only when force override sensors are configured)
+        if config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS):
+            entities.append(
+                AdaptiveCoverForceOverrideTriggerSensor(
+                    config_entry.entry_id,
+                    hass,
+                    config_entry,
+                    name,
+                    coordinator,
+                )
+            )
+
+        # P1: Last Motion Time (only when motion sensors are configured)
+        if config_entry.options.get(CONF_MOTION_SENSORS):
+            entities.append(
+                AdaptiveCoverLastMotionTimeSensor(
+                    config_entry.entry_id,
+                    hass,
+                    config_entry,
+                    name,
+                    coordinator,
+                )
+            )
 
         # P1: Position Verification sensors (disabled by default)
         entities.append(
@@ -987,3 +1025,161 @@ class AdaptiveCoverRetryCountSensor(AdaptiveCoverAdvancedDiagnosticSensor):
             ),
             "per_entity": dict(self.coordinator._retry_counts),
         }
+
+
+class AdaptiveCoverMotionTimeoutEndSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+    """Sensor showing when motion timeout will expire (covers auto-close time)."""
+
+    _attr_entity_registry_enabled_default = True  # P0: enabled by default
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            name,
+            coordinator,
+            "Motion Timeout End Time",
+            "motion_timeout_end_time",
+            None,
+            "mdi:motion-sensor-off",
+            None,
+            SensorDeviceClass.TIMESTAMP,
+        )
+
+    @property
+    def native_value(self):
+        """Return when motion timeout will/did fire, or None if no timeout is active."""
+        if self.coordinator._last_motion_time is None:
+            return None
+
+        task = self.coordinator._motion_timeout_task
+        timeout_pending = task is not None and not task.done()
+
+        if timeout_pending or self.coordinator._motion_timeout_active:
+            end_ts = (
+                self.coordinator._last_motion_time
+                + self.coordinator._motion_timeout_seconds
+            )
+            return dt_util.utc_from_timestamp(end_ts)
+
+        return None
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return motion timeout details."""
+        if self.coordinator._last_motion_time is None:
+            return None
+
+        attrs: dict[str, Any] = {
+            "motion_timeout_seconds": self.coordinator._motion_timeout_seconds,
+        }
+
+        last_motion = dt_util.utc_from_timestamp(self.coordinator._last_motion_time)
+        attrs["last_motion_detected"] = last_motion.isoformat()
+
+        return attrs
+
+
+class AdaptiveCoverForceOverrideTriggerSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+    """Sensor showing how many force override sensors are currently active."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_registry_enabled_default = False  # P1 sensor
+    _attr_native_unit_of_measurement = "sensors"
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            name,
+            coordinator,
+            "Force Override Triggers",
+            "force_override_triggers",
+            None,
+            "mdi:shield-alert-outline",
+        )
+
+    @property
+    def native_value(self):
+        """Return count of currently active force override sensors."""
+        sensors = self.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
+        if not sensors:
+            return None
+        return sum(
+            1
+            for entity_id in sensors
+            if (state := self.hass.states.get(entity_id)) and state.state == "on"
+        )
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return per-sensor state details."""
+        sensors = self.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
+        if not sensors:
+            return None
+
+        per_sensor: dict[str, str] = {}
+        for entity_id in sensors:
+            state = self.hass.states.get(entity_id)
+            per_sensor[entity_id] = state.state if state is not None else "unavailable"
+
+        return {
+            "per_sensor": per_sensor,
+            "total_configured": len(sensors),
+        }
+
+
+class AdaptiveCoverLastMotionTimeSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+    """Sensor showing when motion was last detected."""
+
+    _attr_entity_registry_enabled_default = False  # P1 sensor
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            name,
+            coordinator,
+            "Last Motion Time",
+            "last_motion_time",
+            None,
+            "mdi:motion-sensor",
+            None,
+            SensorDeviceClass.TIMESTAMP,
+        )
+
+    @property
+    def native_value(self):
+        """Return last motion detection time as UTC datetime."""
+        if self.coordinator._last_motion_time is None:
+            return None
+        return dt_util.utc_from_timestamp(self.coordinator._last_motion_time)
