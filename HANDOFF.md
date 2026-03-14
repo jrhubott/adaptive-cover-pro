@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-03-10
-**Current Version:** v2.7.10
+**Date:** 2026-03-14
+**Current Version:** v2.7.11
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -33,6 +33,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.11 | Optional device association — link entities to a physical device instead of standalone virtual device; orphaned device cleanup fixes |
 | v2.7.10 | Local brand icons (`brand/` folder in integration); HACS default + home-assistant/brands PRs submitted |
 | v2.7.9 | Diagnostic sensor cleanup — removed redundant attributes from `sun_elevation` sensor |
 | v2.7.8 | Fix Control Method sensor showing `ControlMethod.DEFAULT` — Python 3.11+ str(Enum) behavior change; use `.value` explicitly |
