@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_SENSOR_TYPE, DOMAIN
+from .const import CONF_DEVICE_ID, CONF_SENSOR_TYPE, DOMAIN
 from .enums import CoverType
 
 if TYPE_CHECKING:
@@ -45,8 +46,17 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
-        type_display = self._get_type_display_name(self._cover_type)
+        linked_device_id = self.config_entry.options.get(CONF_DEVICE_ID)
+        if linked_device_id:
+            device_reg = dr.async_get(self.hass)
+            device_entry = device_reg.async_get(linked_device_id)
+            if device_entry:
+                return DeviceInfo(
+                    identifiers=device_entry.identifiers,
+                    connections=device_entry.connections,
+                )
 
+        type_display = self._get_type_display_name(self._cover_type)
         return DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, self._device_id)},

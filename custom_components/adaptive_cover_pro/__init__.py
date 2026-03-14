@@ -5,11 +5,13 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import (
     async_track_state_change_event,
 )
 
 from .const import (
+    CONF_DEVICE_ID,
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_SENSORS,
@@ -92,6 +94,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    device_reg = dr.async_get(hass)
+
+    if entry.options.get(CONF_DEVICE_ID):
+        # Device association is active — remove the old standalone virtual device so it
+        # doesn't appear as an orphaned entry under the integration.
+        old_device = device_reg.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+        if old_device:
+            _LOGGER.debug(
+                "Removing orphaned standalone device %s after device association",
+                old_device.id,
+            )
+            device_reg.async_remove_device(old_device.id)
+    else:
+        # No device association — remove our config entry from any physical device that
+        # still has it (left over from a previous association that was cleared).
+        for device in list(device_reg.devices.values()):
+            if (
+                entry.entry_id in device.config_entries
+                and (DOMAIN, entry.entry_id) not in device.identifiers
+            ):
+                _LOGGER.debug(
+                    "Removing stale config entry link from physical device %s",
+                    device.id,
+                )
+                device_reg.async_update_device(
+                    device.id, remove_config_entry_id=entry.entry_id
+                )
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True

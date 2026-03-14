@@ -287,6 +287,16 @@
         "data": {
           "confirm": "Confirm import"
         }
+      },
+      "device_association": {
+        "title": "Link to Existing Device",
+        "description": "Optionally attach this integration's entities to an existing device (e.g., the physical blind motor). Select 'None' to keep them as a standalone Adaptive Cover virtual device.",
+        "data": {
+          "linked_device_id": "Attach to Device"
+        },
+        "data_description": {
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
+        }
       }
     },
     "abort": {
@@ -304,6 +314,7 @@
         "menu_options": {
           "automation": "Modify Automation Configuration",
           "blind": "Fine-tune Blind Settings",
+          "device": "Device Association",
           "climate": "Edit Climate Configuration",
           "weather": "Edit Weather Configuration",
           "blind_spot": "Setup Blindspot",
@@ -569,6 +580,16 @@
         },
         "title": "Range Adjustment",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
+      },
+      "device": {
+        "title": "Device Association",
+        "description": "Link this integration's entities to an existing device (e.g., the physical blind motor) or remove an existing link.",
+        "data": {
+          "linked_device_id": "Attach to Device"
+        },
+        "data_description": {
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
+        }
       }
     }
   },
