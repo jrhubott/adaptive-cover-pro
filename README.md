@@ -1,11 +1,11 @@
-![Version](https://img.shields.io/github/v/release/jrhubott/adaptive-cover?style=for-the-badge)
-![Tests](https://img.shields.io/github/actions/workflow/status/jrhubott/adaptive-cover/tests.yml?branch=main&label=Tests&style=for-the-badge)
-![Hassfest](https://img.shields.io/github/actions/workflow/status/jrhubott/adaptive-cover/hassfest.yml?branch=main&label=Hassfest&style=for-the-badge)
-![HACS](https://img.shields.io/github/actions/workflow/status/jrhubott/adaptive-cover/hacs.yaml?branch=main&label=HACS&style=for-the-badge)
-![Coverage](https://img.shields.io/codecov/c/github/jrhubott/adaptive-cover?style=for-the-badge)
+![Version](https://img.shields.io/github/v/release/jrhubott/adaptive-cover-pro?style=for-the-badge)
+![Tests](https://img.shields.io/github/actions/workflow/status/jrhubott/adaptive-cover-pro/tests.yml?branch=main&label=Tests&style=for-the-badge)
+![Hassfest](https://img.shields.io/github/actions/workflow/status/jrhubott/adaptive-cover-pro/hassfest.yml?branch=main&label=Hassfest&style=for-the-badge)
+![HACS](https://img.shields.io/github/actions/workflow/status/jrhubott/adaptive-cover-pro/hacs.yaml?branch=main&label=HACS&style=for-the-badge)
+![Coverage](https://img.shields.io/codecov/c/github/jrhubott/adaptive-cover-pro?style=for-the-badge)
 
-![logo](https://github.com/jrhubott/adaptive-cover/blob/main/images/logo.png#gh-light-mode-only)
-![logo](https://github.com/jrhubott/adaptive-cover/blob/main/images/dark_logo.png#gh-dark-mode-only)
+![logo](https://github.com/jrhubott/adaptive-cover-pro/blob/main/images/logo.png#gh-light-mode-only)
+![logo](https://github.com/jrhubott/adaptive-cover-pro/blob/main/images/dark_logo.png#gh-dark-mode-only)
 
 # Adaptive Cover Pro
 
@@ -129,7 +129,7 @@ For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE
 ## Features
 
 - Individual service devices for `vertical`, `horizontal` and `tilted` covers
-- Two mode approach with multiple strategies [Modes(`basic`,`climate`)](https://github.com/jrhubott/adaptive-cover?tab=readme-ov-file#modes)
+- Two mode approach with multiple strategies [Modes(`basic`,`climate`)](https://github.com/jrhubott/adaptive-cover-pro?tab=readme-ov-file#modes)
 - Binary Sensor to track when the sun is in front of the window
 - Sensors for `start` and `end` time
 - Auto manual override detection
@@ -493,7 +493,7 @@ A: Use a tape measure or ruler to measure from the outer wall surface (outside y
 
 ### HACS (Recommended)
 
-Add <https://github.com/jrhubott/adaptive-cover> as custom repository to HACS.
+Add <https://github.com/jrhubott/adaptive-cover-pro> as custom repository to HACS.
 Search and download Adaptive Cover Pro within HACS.
 
 Restart Home-Assistant and add the integration.
@@ -666,7 +666,7 @@ This mode uses the calculated position when the sun is within the specified azim
 > **Temperature Unit Consistency Required:** All temperature sensors must use the same unit system (°C or °F). The integration does not automatically convert between units. See [Known Limitations](#known-limitations--best-practices) for details.
 
 This mode calculates the position based on extra parameters for presence, indoor temperature, minimal comfort temperature, maximum comfort temperature and weather (optional).
-This mode is split up in two types of strategies; [Presence](https://github.com/jrhubott/adaptive-cover?tab=readme-ov-file#presence) and [No Presence](https://github.com/jrhubott/adaptive-cover?tab=readme-ov-file#no-presence).
+This mode is split up in two types of strategies; [Presence](https://github.com/jrhubott/adaptive-cover-pro?tab=readme-ov-file#presence) and [No Presence](https://github.com/jrhubott/adaptive-cover-pro?tab=readme-ov-file#no-presence).
 
 #### Climate strategies
 

@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-03-10
-**Current Version:** v2.7.8
+**Current Version:** v2.7.10
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -33,6 +33,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.10 | Local brand icons (`brand/` folder in integration); HACS default + home-assistant/brands PRs submitted |
+| v2.7.9 | Diagnostic sensor cleanup — removed redundant attributes from `sun_elevation` sensor |
 | v2.7.8 | Fix Control Method sensor showing `ControlMethod.DEFAULT` — Python 3.11+ str(Enum) behavior change; use `.value` explicitly |
 | v2.7.7 | Motion Timeout End Time sensor (P0), Force Override Triggers sensor (P1), Last Motion Time sensor (P1), Manual Override End Time sensor (P0); default manual override duration increased to 2h |
 | v2.7.6 | ControlMethod enum with 7 values (solar, summer, winter, default, manual_override, motion_timeout, force_override); renames `intermediate` → `solar`; fixes stale control method across cycles |
@@ -51,4 +53,17 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | Safety retraction when wind exceeds a threshold sensor |
 | [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times instead of pure solar calculation |
 
-No open pull requests.
+## Pending Upstream PRs
+
+These are external PRs awaiting review/merge by third-party maintainers. Check back periodically and update this section when accepted.
+
+| PR | Repo | Description | Status |
+|----|------|-------------|--------|
+| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add `jrhubott/adaptive-cover-pro` to HACS default integrations list | ❌ Closed — needs investigation |
+| [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons for `adaptive_cover_pro` (CDN, older HA versions) | ✅ Resolved — not needed |
+
+**home-assistant/brands:** Auto-closed by bot. As of HA 2026.3.0, custom integrations serve their own icons via the local `brand/` folder — which we already ship in v2.7.10. No further action needed.
+
+**hacs/default:** Closed with no explanation. Needs investigation — likely requires a different submission format or checklist. Check HACS contributing docs before re-submitting.
+
+No open pull requests on this repo.
