@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-03-14
-**Current Version:** v2.7.11
+**Current Version:** v2.7.12
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -13,7 +13,7 @@
 
 ### Tests
 
-313 passing, 0 failing.
+331 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -27,12 +27,13 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | `coordinator.py` | 34% (HA integration code, hard to unit test) |
 | `config_flow.py` | 0% (UI flow) |
 | `sensor.py` / `switch.py` | 0% (platform code) |
-| **Total** | **36%** |
+| **Total** | **38%** |
 
 ### Recent Releases
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.12 | Fix horizontal covers closing before end sun time — clamp position to ≥1% when sun is in FOV |
 | v2.7.11 | Optional device association — link entities to a physical device instead of standalone virtual device; orphaned device cleanup fixes |
 | v2.7.10 | Local brand icons (`brand/` folder in integration); HACS default + home-assistant/brands PRs submitted |
 | v2.7.9 | Diagnostic sensor cleanup — removed redundant attributes from `sun_elevation` sensor |
