@@ -361,6 +361,9 @@ class NormalCoverState:
         )
         if dsv:
             state = self.cover.calculate_percentage()
+            # When sun is in the window, position must be at least 1% to prevent
+            # open/close-only covers from closing while sun is still in the FOV.
+            state = max(state, 1)
             self.cover.logger.debug(
                 "Yes sun in window: using calculated percentage (%s)", state
             )

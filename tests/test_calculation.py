@@ -1152,6 +1152,199 @@ class TestNormalCoverState:
 
 
 # ============================================================================
+# Phase 3b: NormalCoverState — Horizontal Cover Minimum Position Tests
+# ============================================================================
+
+
+class TestNormalCoverStateHorizontalMinPosition:
+    """Test that NormalCoverState clamps position to at least 1 when sun is valid.
+
+    Horizontal covers can compute 0% when the vertical calculation saturates at h_win,
+    causing awning length to be 0. The fix ensures position >= 1 while direct_sun_valid
+    is True, preventing open/close-only covers from closing prematurely.
+    """
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    def test_horizontal_saturated_vertical_returns_at_least_1(
+        self, mock_datetime, hass, mock_logger
+    ):
+        """Horizontal cover with vertical saturation must return >= 1 when sun is valid."""
+        from custom_components.adaptive_cover_pro.calculation import (
+            AdaptiveHorizontalCover,
+        )
+
+        # distance=3, h_win=1.5, gamma~80°, elev=20° → vertical saturates at h_win → gap=0 → 0%
+        cover = AdaptiveHorizontalCover(
+            hass=hass,
+            logger=mock_logger,
+            sol_azi=260.0,  # gamma ≈ 80° from win_azi=180
+            sol_elev=20.0,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            timezone="UTC",
+            fov_left=90,
+            fov_right=90,
+            win_azi=180,
+            h_def=0,
+            max_pos=100,
+            min_pos=0,
+            max_pos_bool=False,
+            min_pos_bool=False,
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            distance=3.0,
+            h_win=1.5,
+            awn_length=2.0,
+            awn_angle=0,
+        )
+
+        # Confirm raw calculation yields 0
+        assert cover.calculate_percentage() == 0
+
+        # Setup time so sun is valid
+        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
+
+        state_handler = NormalCoverState(cover)
+        state = state_handler.get_state()
+
+        # Must be >= 1 so open/close-only covers don't close while sun is in FOV
+        assert state >= 1
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "sol_azi,sol_elev",
+        [
+            (230.0, 10.0),   # gamma=50°, low elevation
+            (245.0, 15.0),   # gamma=65°
+            (260.0, 20.0),   # gamma=80°
+            (265.0, 30.0),   # gamma=85°
+            (250.0, 45.0),   # gamma=70°, high elevation
+        ],
+        ids=["gamma50_elev10", "gamma65_elev15", "gamma80_elev20", "gamma85_elev30", "gamma70_elev45"],
+    )
+    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    def test_horizontal_saturated_parametrized(
+        self, mock_datetime, sol_azi, sol_elev, hass, mock_logger
+    ):
+        """Fix works across the full range of saturation angles."""
+        from custom_components.adaptive_cover_pro.calculation import (
+            AdaptiveHorizontalCover,
+        )
+
+        cover = AdaptiveHorizontalCover(
+            hass=hass,
+            logger=mock_logger,
+            sol_azi=sol_azi,
+            sol_elev=sol_elev,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            timezone="UTC",
+            fov_left=90,
+            fov_right=90,
+            win_azi=180,
+            h_def=0,
+            max_pos=100,
+            min_pos=0,
+            max_pos_bool=False,
+            min_pos_bool=False,
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            distance=3.0,
+            h_win=1.5,
+            awn_length=2.0,
+            awn_angle=0,
+        )
+
+        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
+
+        state_handler = NormalCoverState(cover)
+        state = state_handler.get_state()
+
+        # If sun is valid (in FOV), state must be >= 1
+        if cover.direct_sun_valid:
+            assert state >= 1, (
+                f"Position was {state} at gamma={cover.gamma:.1f}°, "
+                f"elev={sol_elev}° — should be >= 1 when sun is in FOV"
+            )
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    def test_sun_not_valid_returns_default_zero(
+        self, mock_datetime, hass, mock_logger
+    ):
+        """When sun is NOT valid, default=0 is returned unchanged (no clamping)."""
+        from custom_components.adaptive_cover_pro.calculation import (
+            AdaptiveHorizontalCover,
+        )
+
+        cover = AdaptiveHorizontalCover(
+            hass=hass,
+            logger=mock_logger,
+            sol_azi=90.0,  # Way outside FOV (gamma=90° but FOV only ±45°)
+            sol_elev=20.0,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            timezone="UTC",
+            fov_left=45,
+            fov_right=45,
+            win_azi=180,
+            h_def=0,  # default position = 0
+            max_pos=100,
+            min_pos=0,
+            max_pos_bool=False,
+            min_pos_bool=False,
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            distance=3.0,
+            h_win=1.5,
+            awn_length=2.0,
+            awn_angle=0,
+        )
+
+        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
+
+        state_handler = NormalCoverState(cover)
+        state = state_handler.get_state()
+
+        # Sun is outside FOV → default position (0) should be returned, no clamping
+        assert state == 0
+
+
+# ============================================================================
 # Phase 4: ClimateCoverData Tests
 # ============================================================================
 
