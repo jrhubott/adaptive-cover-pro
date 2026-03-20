@@ -1,7 +1,8 @@
 """Tests for manual override detection with grace period."""
 
+import asyncio
 import datetime as dt
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -169,3 +170,125 @@ def test_cancel_grace_period_handles_missing_entity():
     # Tracking should still be empty
     assert "cover.test" not in coordinator._grace_period_tasks
     assert "cover.test" not in coordinator._command_timestamps
+
+
+# ---------------------------------------------------------------------------
+# Reset button tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reset_button_clears_manual_override_and_stays_cleared():
+    """Reset button must clear manual override and leave it cleared after refresh."""
+    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+
+    entity_id = "cover.living_room"
+
+    # Build a minimal coordinator mock
+    coordinator = MagicMock()
+    coordinator.manager.is_cover_manual.return_value = True
+    coordinator.state = 75
+    coordinator.config_entry.options = {}
+    coordinator.check_position_delta.return_value = True
+    coordinator.async_set_position = AsyncMock()
+    coordinator.async_refresh = AsyncMock()
+    # Simulate cover reaching target immediately
+    coordinator.wait_for_target = {entity_id: False}
+    coordinator.cover_state_change = False
+
+    # Build button with the mocked coordinator
+    config_entry = MagicMock()
+    config_entry.options = {"entities": [entity_id]}
+    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
+    button.coordinator = coordinator
+    button._entities = [entity_id]
+
+    await button.async_press()
+
+    # Manager reset was called
+    coordinator.manager.reset.assert_called_once_with(entity_id)
+    # Refresh was called
+    coordinator.async_refresh.assert_called_once()
+    # After refresh, wait_for_target was cleared (False), not left suppressing events
+    assert coordinator.wait_for_target[entity_id] is False
+
+
+@pytest.mark.asyncio
+async def test_reset_button_suppresses_redetection_during_refresh():
+    """wait_for_target must be True while async_refresh runs, then cleared."""
+    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+
+    entity_id = "cover.bedroom"
+    states_during_refresh = []
+
+    async def capture_refresh():
+        # Record wait_for_target value at the moment refresh runs
+        states_during_refresh.append(coordinator.wait_for_target.get(entity_id))
+
+    coordinator = MagicMock()
+    coordinator.manager.is_cover_manual.return_value = True
+    coordinator.state = 50
+    coordinator.config_entry.options = {}
+    coordinator.check_position_delta.return_value = True
+    coordinator.async_set_position = AsyncMock()
+    coordinator.async_refresh = AsyncMock(side_effect=capture_refresh)
+    coordinator.wait_for_target = {entity_id: False}
+    coordinator.cover_state_change = False
+
+    config_entry = MagicMock()
+    config_entry.options = {"entities": [entity_id]}
+    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
+    button.coordinator = coordinator
+    button._entities = [entity_id]
+
+    await button.async_press()
+
+    # During refresh, suppression must be active (True)
+    assert states_during_refresh == [True]
+    # After refresh, suppression must be cleared (False)
+    assert coordinator.wait_for_target[entity_id] is False
+
+
+@pytest.mark.asyncio
+async def test_reset_button_times_out_if_cover_never_reaches_target():
+    """Button must not hang forever when cover never reaches the target position."""
+    import time
+
+    from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+
+    entity_id = "cover.stuck"
+
+    coordinator = MagicMock()
+    coordinator.manager.is_cover_manual.return_value = True
+    coordinator.state = 80
+    coordinator.config_entry.options = {}
+    coordinator.check_position_delta.return_value = True
+    coordinator.async_set_position = AsyncMock()
+    coordinator.async_refresh = AsyncMock()
+    # Cover never clears wait_for_target — simulates position mismatch
+    coordinator.wait_for_target = {entity_id: True}
+    coordinator.cover_state_change = False
+
+    button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
+    button.coordinator = coordinator
+    button._entities = [entity_id]
+
+    start = time.monotonic()
+    # Patch event loop time so the 30-second timeout fires immediately
+    fake_time = [0.0]
+
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(delay):
+        fake_time[0] += 31  # Jump past the 30-second deadline
+
+    with patch("asyncio.get_event_loop") as mock_loop:
+        mock_loop.return_value.time.side_effect = lambda: fake_time[0]
+        with patch("asyncio.sleep", side_effect=fast_sleep):
+            await button.async_press()
+
+    elapsed = time.monotonic() - start
+    # Should complete almost instantly (well under a real second)
+    assert elapsed < 5
+    # Refresh was still called despite the timeout
+    coordinator.async_refresh.assert_called_once()
