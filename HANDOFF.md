@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-03-14
-**Current Version:** v2.7.12
+**Date:** 2026-03-20
+**Current Version:** v2.7.13
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -33,6 +33,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.13 | Fix reset button race condition — suppress override re-detection during post-reset cover settling; add 30s timeout to wait loop |
 | v2.7.12 | Fix horizontal covers closing before end sun time — clamp position to ≥1% when sun is in FOV |
 | v2.7.11 | Optional device association — link entities to a physical device instead of standalone virtual device; orphaned device cleanup fixes |
 | v2.7.10 | Local brand icons (`brand/` folder in integration); HACS default + home-assistant/brands PRs submitted |
