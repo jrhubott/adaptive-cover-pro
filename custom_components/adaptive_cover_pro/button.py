@@ -62,6 +62,7 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
+        reset_entities = []
         for entity in self._entities:
             if self.coordinator.manager.is_cover_manual(entity):
                 _LOGGER.debug("Resetting manual override for: %s", entity)
@@ -73,7 +74,15 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
                     entity, target_position, options
                 ):
                     await self.coordinator.async_set_position(entity, target_position)
+                    # Wait for cover to reach target, but no longer than 30 seconds
+                    deadline = asyncio.get_event_loop().time() + 30
                     while self.coordinator.wait_for_target.get(entity):
+                        if asyncio.get_event_loop().time() >= deadline:
+                            _LOGGER.debug(
+                                "Timed out waiting for %s to reach target position",
+                                entity,
+                            )
+                            break
                         await asyncio.sleep(1)
                 else:
                     _LOGGER.debug(
@@ -82,9 +91,17 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
                     )
 
                 self.coordinator.manager.reset(entity)
+                # Suppress re-detection: any cover state events arriving during
+                # refresh should not be treated as a new manual override.
+                self.coordinator.wait_for_target[entity] = True
+                self.coordinator.cover_state_change = False
+                reset_entities.append(entity)
             else:
                 _LOGGER.debug(
                     "Resetting manual override for %s is not needed since it is already auto-controlled",
                     entity,
                 )
         await self.coordinator.async_refresh()
+        # Unblock state tracking now that refresh has consumed any pending events.
+        for entity in reset_entities:
+            self.coordinator.wait_for_target[entity] = False
