@@ -83,6 +83,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
+    CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
     DEFAULT_MOTION_TIMEOUT,
     DIRECT_MAPPING_FIELDS,
@@ -251,6 +252,15 @@ VERTICAL_OPTIONS = vol.Schema(
             selector.NumberSelectorConfig(
                 min=0.0,
                 max=0.5,
+                step=0.01,
+                unit_of_measurement="m",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Optional(CONF_SILL_HEIGHT, default=0.0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.0,
+                max=3.0,
                 step=0.01,
                 unit_of_measurement="m",
                 mode=selector.NumberSelectorMode.BOX,
@@ -900,6 +910,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_HEIGHT_WIN: self.config.get(CONF_HEIGHT_WIN),
                 CONF_DISTANCE: self.config.get(CONF_DISTANCE),
                 CONF_WINDOW_DEPTH: self.config.get(CONF_WINDOW_DEPTH),
+                CONF_SILL_HEIGHT: self.config.get(CONF_SILL_HEIGHT),
                 CONF_DEFAULT_HEIGHT: self.config.get(CONF_DEFAULT_HEIGHT),
                 CONF_MAX_POSITION: self.config.get(CONF_MAX_POSITION),
                 CONF_ENABLE_MAX_POSITION: self.config.get(CONF_ENABLE_MAX_POSITION),

@@ -48,6 +48,7 @@ from ..const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
+    CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
 )
 
@@ -137,13 +138,14 @@ class ConfigurationService:
         """Extract vertical blind configuration.
 
         Returns:
-            List of [distance, window_height, window_depth]
+            List of [distance, window_height, window_depth, sill_height]
 
         """
         return [
             options.get(CONF_DISTANCE),
             options.get(CONF_HEIGHT_WIN),
             options.get(CONF_WINDOW_DEPTH, 0.0),  # Default 0.0 for backward compatibility
+            options.get(CONF_SILL_HEIGHT, 0.0),  # Default 0.0 for backward compatibility
         ]
 
     def get_horizontal_data(self, options: dict) -> list:

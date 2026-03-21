@@ -883,6 +883,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
     window_depth: float = (
         0.0  # Window reveal/frame depth (meters), default 0 = disabled
     )
+    sill_height: float = 0.0  # Height from floor to window bottom (meters), default 0 = floor-level
 
     def _calculate_safety_margin(self, gamma: float, sol_elev: float) -> float:
         """Calculate angle-dependent safety margin multiplier (≥1.0).
@@ -947,6 +948,13 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             # At angles, window depth creates additional horizontal offset
             depth_contribution = self.window_depth * sin(rad(abs(self.gamma)))
             effective_distance += depth_contribution
+
+        # Account for window sill height (window not starting at floor)
+        # Sun ray passing below blind must travel extra vertical distance to hit floor,
+        # landing sill_height/tan(elevation) further from the window
+        if self.sill_height > 0:
+            sill_offset = self.sill_height / tan(rad(self.sol_elev))
+            effective_distance += sill_offset
 
         # Base calculation: project glare zone to vertical blind height
         path_length = effective_distance / cos(rad(self.gamma))
