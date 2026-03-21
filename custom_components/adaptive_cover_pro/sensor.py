@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -252,7 +252,7 @@ async def async_setup_entry(
                     coordinator,
                     "Active Temperature",
                     "active_temperature",
-                    None,  # Unit will be determined by HA
+                    hass.config.units.temperature_unit,
                     "mdi:thermometer",
                     SensorStateClass.MEASUREMENT,
                     SensorDeviceClass.TEMPERATURE,
