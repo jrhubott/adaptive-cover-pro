@@ -1,11 +1,12 @@
 """Tests for the sill_height parameter in AdaptiveVerticalCover.
 
 The sill_height parameter accounts for windows that do not start at floor level.
-When a window sill is above the floor, sun rays passing below the blind travel
-extra vertical distance before hitting the floor, landing farther from the window.
-This means the blind can be raised higher (smaller blind height needed).
+When a window sill is at height S above the floor, the blind bottom is also at
+height S. The sill already blocks S/tan(elevation) meters of horizontal sun
+penetration for free, so the effective distance the blind needs to cover is
+reduced. This means the blind can be raised higher (smaller blind height needed).
 
-Implementation: effective_distance += sill_height / max(tan(elevation), 0.05)
+Implementation: effective_distance -= sill_height / max(tan(elevation), 0.05)
 """
 
 import math
@@ -143,36 +144,24 @@ class TestBackwardCompatibility:
 
 
 class TestGeometrySillHeightEffect:
-    """Tests that document the actual geometric effect of sill_height.
+    """Tests that verify the correct geometric effect of sill_height.
 
-    BUG REPORT: The implementation's geometric effect is opposite to the stated intent.
+    Correct geometry: When a window sill is at height S above the floor, the blind
+    bottom starts at S meters height. The sill already provides S/tan(elevation) meters
+    of "free" horizontal sun protection. So the effective distance the blind needs to
+    cover is reduced by S/tan(elevation), meaning:
+      - effective_distance = distance - sill_height / tan(elevation)
+      - base_height = effective_distance * tan(elevation) / cos(gamma)
+      - base_height DECREASES with sill_height (blind can be raised higher)
 
-    The task description states: "When a window sill is above the floor, sun rays passing
-    below the blind travel extra vertical distance before hitting the floor, landing farther
-    from the window. This means the blind can be raised higher."
-
-    However, the implementation adds sill_height / tan(elevation) to effective_distance,
-    which INCREASES the required blind height (blind extends LOWER, not higher).
-
-    Geometric analysis:
-    - Without sill: base_height = (distance / cos(gamma)) * tan(elevation)
-    - With sill (implementation): effective_distance += sill_height / tan(elevation)
-      => base_height = ((distance + sill_height/tan(E)) / cos(g)) * tan(E)
-      => base_height INCREASES with sill_height
-
-    If the intent is that sill_height means the protected floor zone effectively extends
-    further from the window (so MORE blind is needed to protect the same room depth),
-    then the code is correct. But this contradicts the stated goal of "blind can be raised
-    higher" (less coverage needed).
-
-    These tests verify what the code ACTUALLY does, not what it was described to do.
-    The geometric bug should be fixed in the implementation separately.
+    The np.clip(adjusted_height, 0, h_win) at the end correctly clamps negative
+    effective_distance to 0 (sill already blocks all sun penetration).
     """
 
-    def test_sill_height_increases_position_low_elevation(self, base_cover_params):
-        """ACTUAL behavior: sill_height > 0 INCREASES blind height at low elevation (20°).
+    def test_sill_height_decreases_position_low_elevation(self, base_cover_params):
+        """sill_height > 0 DECREASES blind height at low elevation (20°).
 
-        Note: This is the opposite of the stated geometric intent. See class docstring.
+        The sill provides free protection, so less blind extension is needed.
         """
         cover_no_sill = make_vertical_cover(base_cover_params, gamma=0.0, sol_elev=20.0)
         cover_with_sill = make_vertical_cover(
@@ -182,16 +171,16 @@ class TestGeometrySillHeightEffect:
         pos_no_sill = cover_no_sill.calculate_position()
         pos_with_sill = cover_with_sill.calculate_position()
 
-        # Implementation adds to effective_distance -> increases position
-        assert pos_with_sill > pos_no_sill, (
-            f"ACTUAL: sill_height increases position at low elevation: "
+        # Correct: sill subtracts from effective_distance -> decreases position
+        assert pos_with_sill < pos_no_sill, (
+            f"sill_height should decrease position at low elevation: "
             f"no_sill={pos_no_sill:.4f}, with_sill={pos_with_sill:.4f}"
         )
 
-    def test_sill_height_increases_position_medium_elevation(self, base_cover_params):
-        """ACTUAL behavior: sill_height > 0 INCREASES blind height at medium elevation (45°).
+    def test_sill_height_decreases_position_medium_elevation(self, base_cover_params):
+        """sill_height > 0 DECREASES blind height at medium elevation (45°).
 
-        Note: This is the opposite of the stated geometric intent. See class docstring.
+        The sill provides free protection, so less blind extension is needed.
         """
         cover_no_sill = make_vertical_cover(base_cover_params, gamma=0.0, sol_elev=45.0)
         cover_with_sill = make_vertical_cover(
@@ -201,16 +190,16 @@ class TestGeometrySillHeightEffect:
         pos_no_sill = cover_no_sill.calculate_position()
         pos_with_sill = cover_with_sill.calculate_position()
 
-        # Implementation adds to effective_distance -> increases position
-        assert pos_with_sill > pos_no_sill, (
-            f"ACTUAL: sill_height increases position at medium elevation: "
+        # Correct: sill subtracts from effective_distance -> decreases position
+        assert pos_with_sill < pos_no_sill, (
+            f"sill_height should decrease position at medium elevation: "
             f"no_sill={pos_no_sill:.4f}, with_sill={pos_with_sill:.4f}"
         )
 
-    def test_sill_height_increases_position_high_elevation(self, base_cover_params):
-        """ACTUAL behavior: sill_height > 0 INCREASES blind height at high elevation (70°).
+    def test_sill_height_decreases_position_high_elevation(self, base_cover_params):
+        """sill_height > 0 DECREASES blind height at high elevation (70°).
 
-        Note: This is the opposite of the stated geometric intent. See class docstring.
+        The sill provides free protection, so less blind extension is needed.
         """
         cover_no_sill = make_vertical_cover(base_cover_params, gamma=0.0, sol_elev=70.0)
         cover_with_sill = make_vertical_cover(
@@ -220,18 +209,20 @@ class TestGeometrySillHeightEffect:
         pos_no_sill = cover_no_sill.calculate_position()
         pos_with_sill = cover_with_sill.calculate_position()
 
-        # Implementation adds to effective_distance -> increases position
-        assert pos_with_sill > pos_no_sill, (
-            f"ACTUAL: sill_height increases position at high elevation: "
+        # Correct: sill subtracts from effective_distance -> decreases position
+        assert pos_with_sill < pos_no_sill, (
+            f"sill_height should decrease position at high elevation: "
             f"no_sill={pos_no_sill:.4f}, with_sill={pos_with_sill:.4f}"
         )
 
-    def test_larger_sill_height_increases_position_more(self, base_cover_params):
-        """ACTUAL behavior: larger sill_height produces progressively LARGER blind height.
+    def test_larger_sill_height_decreases_position_more(self, base_cover_params):
+        """Larger sill_height produces progressively SMALLER blind height.
 
-        Note: This is the opposite of the stated geometric intent. See class docstring.
+        More sill height = more free protection = less blind extension needed.
+        Uses h_win=2.1 and distance=0.5; at 45° elevation, base without sill=0.5m.
+        Sill heights up to 0.5m will reduce position; beyond that clips to 0.
         """
-        sill_heights = [0.0, 0.2, 0.5, 1.0, 1.5]
+        sill_heights = [0.0, 0.1, 0.2, 0.5]
         positions = []
 
         for sh in sill_heights:
@@ -240,10 +231,10 @@ class TestGeometrySillHeightEffect:
             )
             positions.append(cover.calculate_position())
 
-        # Positions should be monotonically increasing with sill_height
+        # Positions should be monotonically decreasing with sill_height
         for i in range(len(positions) - 1):
-            assert positions[i] <= positions[i + 1], (
-                f"Expected monotonic increase: sill_heights={sill_heights}, positions={positions}"
+            assert positions[i] >= positions[i + 1], (
+                f"Expected monotonic decrease: sill_heights={sill_heights}, positions={positions}"
             )
 
 
@@ -255,18 +246,20 @@ class TestMathVerification:
         # With gamma=0, cos(gamma)=1, so path_length = effective_distance
         # base_height = effective_distance * tan(sol_elev)
         # At sol_elev=45°, tan(45°)=1, so base_height = effective_distance
-        # effective_distance = distance + sill_offset = 0.5 + 1.0 / tan(45°) = 0.5 + 1.0 = 1.5
-        # base_height = 1.5 * tan(45°) = 1.5 * 1.0 = 1.5
-        # At gamma=0, no safety margin: base_height = 1.5
+        # effective_distance = distance - sill_offset = 0.5 - 1.0 / tan(45°) = 0.5 - 1.0 = -0.5
+        # Clipped to 0 by np.clip -> position = 0.0 (sill already blocks all sun)
+        # Use a smaller sill_height to stay positive: sill_height=0.3
+        # effective_distance = 0.5 - 0.3 = 0.2
+        # base_height = 0.2 * tan(45°) = 0.2
 
-        sill_height = 1.0
+        sill_height = 0.3
         sol_elev = 45.0
         distance = 0.5
-        expected_sill_offset = sill_height / math.tan(math.radians(sol_elev))  # = 1.0
-        expected_effective_distance = distance + expected_sill_offset  # = 1.5
+        expected_sill_offset = sill_height / math.tan(math.radians(sol_elev))  # = 0.3
+        expected_effective_distance = distance - expected_sill_offset  # = 0.2
         expected_base_height = expected_effective_distance * math.tan(
             math.radians(sol_elev)
-        )  # = 1.5
+        )  # = 0.2
 
         cover = make_vertical_cover(
             base_cover_params,
@@ -278,19 +271,19 @@ class TestMathVerification:
         position = cover.calculate_position()
 
         # At gamma=0, sol_elev=45°, safety margin = 1.0, so result = expected_base_height
-        # unless clipped by h_win (2.1m > 1.5m, so no clipping)
+        # expected 0.2 < h_win=2.1, so no clipping
         assert abs(position - expected_base_height) < 1e-6, (
             f"Expected {expected_base_height:.6f} but got {position:.6f}"
         )
 
     def test_sill_offset_formula_at_30_degrees(self, base_cover_params):
         """At 30° elevation, sill_offset = sill_height / tan(30°)."""
-        sill_height = 0.5
+        sill_height = 0.1
         sol_elev = 30.0
         distance = 0.5
 
         expected_sill_offset = sill_height / math.tan(math.radians(sol_elev))
-        expected_effective_distance = distance + expected_sill_offset
+        expected_effective_distance = distance - expected_sill_offset
         expected_base_height = expected_effective_distance * math.tan(
             math.radians(sol_elev)
         )
@@ -309,13 +302,11 @@ class TestMathVerification:
             f"Expected {expected_base_height:.6f} but got {position:.6f}"
         )
 
-    def test_sill_offset_increases_effective_distance(self, base_cover_params):
-        """The sill_offset increases effective_distance, which increases required position.
+    def test_sill_offset_reduces_effective_distance(self, base_cover_params):
+        """The sill_offset subtracts from effective_distance, reducing required position.
 
-        NOTE: This test documents actual code behavior. The implementation adds
-        sill_height / tan(elevation) to effective_distance, causing the blind to extend
-        LOWER (more coverage). This is the opposite of the stated design intent
-        ("blind can be raised higher"). See TestGeometrySillHeightEffect for details.
+        The sill provides free horizontal protection, so less blind extension is needed.
+        Correct behavior: sill_height reduces effective_distance -> reduces position.
         """
         cover_no_sill = make_vertical_cover(
             base_cover_params, gamma=0.0, sol_elev=45.0, distance=0.5
@@ -326,9 +317,9 @@ class TestMathVerification:
         pos_no_sill = cover_no_sill.calculate_position()
         pos_with_sill = cover_with_sill.calculate_position()
 
-        # Actual behavior: sill increases effective_distance -> increases position
-        assert pos_with_sill > pos_no_sill, (
-            f"With sill, position is larger (more blind needed): "
+        # Correct: sill reduces effective_distance -> reduces position (blind raised higher)
+        assert pos_with_sill < pos_no_sill, (
+            f"With sill, position should be smaller (less blind needed): "
             f"no_sill={pos_no_sill:.4f}, with_sill={pos_with_sill:.4f}"
         )
 
@@ -336,12 +327,12 @@ class TestMathVerification:
 class TestEdgeCasesLowElevation:
     """Tests for edge cases at low sun elevation angles."""
 
-    def test_very_low_elevation_just_above_threshold(self, base_cover_params):
-        """At sol_elev=2.5° (just above 2° edge case threshold), max guard prevents extremes."""
-        # At 2.5°, tan(2.5°) ≈ 0.0437, which is below 0.05 guard
-        # So sill_offset = sill_height / 0.05 (the guard value)
-        # With sill_height=3.0: sill_offset = 60.0m, effective_distance = 60.5m
-        # base_height will be enormous, clipped to h_win
+    def test_very_low_elevation_large_sill_clips_to_zero(self, base_cover_params):
+        """At sol_elev=2.5° with large sill_height, effective_distance goes very negative.
+
+        tan(2.5°) ≈ 0.0437 < 0.05 guard → sill_offset = 3.0 / 0.05 = 60.0
+        effective_distance = 0.5 - 60.0 = -59.5 → clips to 0 (sill blocks all sun)
+        """
         cover = make_vertical_cover(
             base_cover_params,
             gamma=0.0,
@@ -350,9 +341,9 @@ class TestEdgeCasesLowElevation:
         )
         position = cover.calculate_position()
 
-        # Should be clipped to h_win due to large effective_distance
-        assert position == cover.h_win, (
-            f"Expected h_win ({cover.h_win}) but got {position}"
+        # Sill more than covers the sun penetration, so blind is fully raised (position=0)
+        assert position == 0.0, (
+            f"Expected 0.0 (sill blocks all sun) but got {position}"
         )
 
     def test_very_low_elevation_no_exception_raised(self, base_cover_params):
@@ -368,11 +359,12 @@ class TestEdgeCasesLowElevation:
         assert position is not None
 
     def test_moderate_sill_height_at_low_elevation(self, base_cover_params):
-        """At sol_elev=2.5° with moderate sill_height, guard clamps the tan denominator."""
-        # tan(2.5°) ≈ 0.0437 < 0.05 → guard kicks in: effective tan = 0.05
-        # sill_offset = 1.0 / 0.05 = 20.0, effective_distance = 20.5
-        # base_height = 20.5 / cos(0) * tan(2.5°) ≈ 20.5 * 0.0437 ≈ 0.896
-        # This is less than h_win=2.1, so not clipped
+        """At sol_elev=2.5° with moderate sill_height, guard clamps the tan denominator.
+
+        tan(2.5°) ≈ 0.0437 < 0.05 guard → sill_offset = 1.0 / 0.05 = 20.0
+        effective_distance = 0.5 - 20.0 = -19.5 → clips to 0 (sill blocks all sun)
+        Position = 0 (blind fully raised — the large sill provides complete protection).
+        """
         cover = make_vertical_cover(
             base_cover_params,
             gamma=0.0,
@@ -426,8 +418,11 @@ class TestEdgeCasesAtThreshold:
 class TestInteractionWithWindowDepth:
     """Tests for combined sill_height + window_depth interaction."""
 
-    def test_both_params_combine_additively(self, base_cover_params):
-        """With both sill_height and window_depth, both contribute to effective_distance."""
+    def test_both_params_combine_independently(self, base_cover_params):
+        """With both sill_height and window_depth, both affect effective_distance.
+
+        window_depth adds to effective_distance; sill_height subtracts from it.
+        """
         # gamma=30° > 10° threshold, so window_depth contributes
         gamma = 30.0
         sol_elev = 45.0
@@ -473,19 +468,20 @@ class TestInteractionWithWindowDepth:
         # Combined should differ from each individually
         assert pos_both != pos_neither
 
-    def test_combined_result_is_consistent_with_additive_offsets(
+    def test_combined_result_is_consistent_with_offsets(
         self, base_cover_params
     ):
-        """Both offsets add to effective_distance independently, result is consistent."""
+        """window_depth adds and sill_height subtracts from effective_distance independently."""
         gamma = 30.0
         sol_elev = 45.0
         window_depth = 0.1
-        sill_height = 0.5
+        sill_height = 0.1  # Small enough that effective_distance stays positive
 
         # Calculate expected combined effective_distance manually:
+        # window_depth adds, sill_height subtracts
         depth_contrib = window_depth * math.sin(math.radians(abs(gamma)))
         sill_offset = sill_height / math.tan(math.radians(sol_elev))
-        expected_effective_dist = 0.5 + depth_contrib + sill_offset  # base distance=0.5
+        expected_effective_dist = 0.5 + depth_contrib - sill_offset  # base distance=0.5
 
         # Expected base_height (gamma=30°, safety margin = 1.0 at this angle)
         expected_path_length = expected_effective_dist / math.cos(math.radians(gamma))
