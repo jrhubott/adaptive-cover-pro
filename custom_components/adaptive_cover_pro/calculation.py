@@ -953,7 +953,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Sun ray passing below blind must travel extra vertical distance to hit floor,
         # landing sill_height/tan(elevation) further from the window
         if self.sill_height > 0:
-            sill_offset = self.sill_height / tan(rad(self.sol_elev))
+            sill_offset = self.sill_height / max(tan(rad(self.sol_elev)), 0.05)  # ~2.9° minimum
             effective_distance += sill_offset
 
         # Base calculation: project glare zone to vertical blind height

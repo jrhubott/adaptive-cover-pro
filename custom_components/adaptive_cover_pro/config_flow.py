@@ -220,7 +220,7 @@ OPTIONS = vol.Schema(
     }
 )
 
-VERTICAL_OPTIONS = vol.Schema(
+VERTICAL_COVER_BASE_OPTIONS = vol.Schema(
     {
         vol.Optional(CONF_ENTITIES, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -257,6 +257,11 @@ VERTICAL_OPTIONS = vol.Schema(
                 mode=selector.NumberSelectorMode.BOX,
             )
         ),
+    }
+).extend(OPTIONS.schema)
+
+VERTICAL_OPTIONS = vol.Schema(
+    {
         vol.Optional(CONF_SILL_HEIGHT, default=0.0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
@@ -267,7 +272,7 @@ VERTICAL_OPTIONS = vol.Schema(
             )
         ),
     }
-).extend(OPTIONS.schema)
+).extend(VERTICAL_COVER_BASE_OPTIONS.schema)
 
 
 HORIZONTAL_OPTIONS = vol.Schema(
@@ -290,7 +295,7 @@ HORIZONTAL_OPTIONS = vol.Schema(
             )
         ),
     }
-).extend(VERTICAL_OPTIONS.schema)
+).extend(VERTICAL_COVER_BASE_OPTIONS.schema)
 
 TILT_OPTIONS = vol.Schema(
     {
