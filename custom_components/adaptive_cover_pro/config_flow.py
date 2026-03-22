@@ -1002,12 +1002,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
     async def _detect_legacy_entries(self, hass: HomeAssistant) -> list[ConfigEntry]:
         """Detect existing adaptive_cover config entries."""
-        from homeassistant.config_entries import ConfigEntryState
-
-        legacy_entries = hass.config_entries.async_entries(LEGACY_DOMAIN)
-        return [
-            entry for entry in legacy_entries if entry.state == ConfigEntryState.LOADED
-        ]
+        return list(hass.config_entries.async_entries(LEGACY_DOMAIN))
 
     async def _validate_imported_config(
         self, legacy_entry: ConfigEntry
@@ -1091,18 +1086,18 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         legacy_entries = self.legacy_entries
 
         if user_input is not None:
-            selected_ids = user_input.get("selected_entries", [])
-            self.selected_for_import = selected_ids
+            selected_id = user_input.get("selected_entries")
+            self.selected_for_import = [selected_id] if selected_id else []
             return await self.async_step_import_review()
 
-        # Build selection schema with multi-select
+        # Build selection schema with single-select
         return self.async_show_form(  # type: ignore[return-value]
             step_id="import_select",
             data_schema=vol.Schema(
                 {
                     vol.Required("selected_entries"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            multiple=True,
+                            multiple=False,
                             options=[
                                 {
                                     "value": e["entry_id"],
@@ -1205,37 +1200,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if not selected_ids:
             return self.async_abort(reason="no_entries_selected")  # type: ignore[return-value]
 
-        # Get the current entry being processed (or start with the first)
-        current_index = getattr(self, "import_index", 0)
-
-        if current_index >= len(selected_ids):
-            # All entries processed, show completion
-            imported_count = self.context.get("imported_count", 0)
-            self.hass.components.persistent_notification.async_create(  # type: ignore[attr-defined]
-                message=(
-                    f"Successfully imported {imported_count} Adaptive Cover "
-                    f"configuration(s) to Adaptive Cover Pro.\n\n"
-                    f"Next steps:\n"
-                    f"1. Verify imported configurations work correctly\n"
-                    f"2. Test cover movements\n"
-                    f"3. Disable old Adaptive Cover entries when ready\n"
-                    f"4. (Optional) Remove old integration from HACS\n\n"
-                    f"Both integrations can run simultaneously during transition."
-                ),
-                title="Adaptive Cover Pro Import Complete",
-                notification_id=f"adaptive_cover_pro_import_{imported_count}",
-            )
-            return self.async_abort(reason="import_successful")  # type: ignore[return-value]
-
-        # Process current entry
-        entry_id = selected_ids[current_index]
+        entry_id = selected_ids[0]
         legacy_entries = self.hass.config_entries.async_entries(LEGACY_DOMAIN)
         legacy = next((e for e in legacy_entries if e.entry_id == entry_id), None)
 
         if not legacy:
-            # Skip this entry and move to next
-            self.import_index = current_index + 1
-            return await self.async_step_import_execute()
+            return self.async_abort(reason="import_failed")  # type: ignore[return-value]
 
         # Map data (immutable setup info)
         new_data = {
@@ -1260,10 +1230,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         }
         sensor_type = new_data[CONF_SENSOR_TYPE]
         title = f"{type_labels.get(sensor_type, 'Unknown')} {new_data['name']}"  # type: ignore[arg-type]
-
-        # Update tracking for next iteration
-        self.import_index = current_index + 1
-        self.imported_count += 1
 
         # Create the entry
         return self.async_create_entry(  # type: ignore[return-value]
