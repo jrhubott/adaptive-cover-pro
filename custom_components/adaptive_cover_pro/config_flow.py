@@ -507,7 +507,7 @@ AUTOMATION_CONFIG = vol.Schema(
             selector.EntitySelectorConfig(
                 domain=["binary_sensor"],
                 multiple=True,
-                device_class="motion",
+#                device_class=["motion", "occupancy"],
             )
         ),
         vol.Optional(CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT): selector.NumberSelector(
