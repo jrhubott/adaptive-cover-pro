@@ -932,6 +932,9 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         - Window depth: Accounts for window reveals/frames (0.0-0.5m)
         - Only active when window_depth > 0 and |gamma| > 10°
         - Adds horizontal offset: depth × sin(|gamma|)
+        - Sill height: Accounts for windows not starting at floor level (0.0-3.0m)
+        - Only active when sill_height > 0
+        - Subtracts horizontal offset: sill_height / tan(elevation), capped at 0.05 minimum
 
         Returns:
             Blind height in meters (0 to h_win).

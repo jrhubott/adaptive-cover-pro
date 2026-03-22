@@ -145,7 +145,7 @@ class ConfigurationService:
             options.get(CONF_DISTANCE),
             options.get(CONF_HEIGHT_WIN),
             options.get(CONF_WINDOW_DEPTH, 0.0),  # Default 0.0 for backward compatibility
-            options.get(CONF_SILL_HEIGHT, 0.0),  # Default 0.0 for backward compatibility
+            options.get(CONF_SILL_HEIGHT) or 0.0,  # Default 0.0; handle None for non-vertical covers
         ]
 
     def get_horizontal_data(self, options: dict) -> list:
