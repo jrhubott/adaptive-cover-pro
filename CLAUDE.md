@@ -620,7 +620,9 @@ The integration includes sophisticated geometric enhancements to ensure accurate
 
 3. **Window Depth Parameter** (optional) — `window_depth` field on `AdaptiveVerticalCover` (default 0.0), configured via `CONF_WINDOW_DEPTH` (0.0–0.5m). When `window_depth > 0` and `|gamma| > 10°`, adds horizontal offset `depth_contribution = window_depth × sin(|gamma|)` to account for window reveals/frames.
 
-4. **Calculation Flow** — edge cases → window depth offset → base calculation → safety margin → clip to h_win. See `calculate_position()` in `calculation.py`.
+4. **Sill Height Parameter** (optional) — `sill_height` field on `AdaptiveVerticalCover` (default 0.0), configured via `CONF_SILL_HEIGHT` (0.0–3.0m). For windows not starting at floor level, the sill provides natural sun blocking: sunlight entering at the sill height cannot reach closer than `sill_height / tan(elevation)` meters from the wall. This reduces the `effective_distance` needed, raising the blind. Not applicable to horizontal awnings or tilt covers.
+
+5. **Calculation Flow** — edge cases → window depth offset → sill height offset → base calculation → safety margin → clip to h_win. See `calculate_position()` in `calculation.py`.
 
 #### Testing Requirements
 
@@ -655,7 +657,7 @@ When modifying geometric accuracy calculations:
 **DON'T:**
 - Remove or reduce safety margins without thorough testing
 - Change edge case thresholds without testing transitions
-- Break backward compatibility (window_depth must default to 0.0)
+- Break backward compatibility (window_depth and sill_height must default to 0.0)
 - Introduce numerical instability (NaN, infinity)
 - Skip regression testing at normal angles
 
@@ -678,6 +680,7 @@ Users can monitor geometric accuracy via diagnostic sensors:
 - Cover-specific dimensions (height, length, slat properties)
 - Enhanced geometric accuracy:
   - `window_depth` - Optional window reveal/frame depth (0.0-0.5m, default 0.0)
+  - `sill_height` - Optional height from floor to window bottom (0.0-3.0m, default 0.0). Raises the blind for windows above floor level — accounting for the sill's geometric effect of reducing sun penetration into the room
   - Safety margins and edge case handling apply automatically (not configurable)
 - Position limits:
   - `min_position` / `max_position` - Absolute position boundaries (0-99%, 1-100%)

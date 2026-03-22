@@ -787,6 +787,7 @@ Interpolated List: [100, 75, 50, 25, 0]
 | Variables         | Default | Range | Description                                                                                 |
 | ----------------- | ------- | ----- | ------------------------------------------------------------------------------------------- |
 | Window Height     | 2.1     | 0.1-6 | Length of fully extended cover/window                                                       |
+| Sill Height       | 0.0     | 0.0-3.0 | Height from floor to bottom of window glass (meters). Set for windows not starting at floor level. Allows the blind to open more, as the sill already blocks low-angle sun. Range: 0.0–3.0m. |
 | Glare Zone        | 0.5     | 0.1-5 | Objects within this distance of the cover recieve direct sunlight. Measured horizontally from the bottom of the cover when fully extended |
 
 ### Horizontal
