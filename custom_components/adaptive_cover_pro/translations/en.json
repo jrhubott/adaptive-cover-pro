@@ -277,10 +277,10 @@
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
       "import_select": {
-        "title": "Select Configurations to Import",
-        "description": "Choose which Adaptive Cover configurations to import to Adaptive Cover Pro. All settings will be preserved.",
+        "title": "Select Configuration to Import",
+        "description": "Choose an Adaptive Cover configuration to import to Adaptive Cover Pro. All settings will be preserved. Re-run this flow to import additional configurations.",
         "data": {
-          "selected_entries": "Configurations to import"
+          "selected_entries": "Configuration to import"
         }
       },
       "import_review": {
