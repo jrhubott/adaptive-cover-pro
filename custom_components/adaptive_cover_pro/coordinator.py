@@ -992,15 +992,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             options: Configuration options dictionary containing CONF_SUNSET_POS
 
         """
+        sunset_pos_raw = options.get(CONF_SUNSET_POS)
         self.logger.debug(
             "This is a timed refresh, using sunset position: %s",
-            options.get(CONF_SUNSET_POS),
+            sunset_pos_raw,
         )
+        if sunset_pos_raw is None:
+            self.logger.debug("Timed refresh: no sunset position configured, skipping")
+            self.timed_refresh = False
+            return
         if self.automatic_control:
             sunset_pos = (
-                inverse_state(options.get(CONF_SUNSET_POS))
+                inverse_state(sunset_pos_raw)
                 if self._inverse_state
-                else options.get(CONF_SUNSET_POS)
+                else sunset_pos_raw
             )
             for cover in self.entities:
                 # Only move if delta is sufficient or it's a special position

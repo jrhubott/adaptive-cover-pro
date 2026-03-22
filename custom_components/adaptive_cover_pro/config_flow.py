@@ -195,12 +195,12 @@ OPTIONS = vol.Schema(
                 unit_of_measurement="°",
             )
         ),
-        vol.Required(CONF_SUNSET_POS, default=0): selector.NumberSelector(
+        vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=100,
                 step=1,
-                mode=selector.NumberSelectorMode.SLIDER,
+                mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="%",
             )
         ),
