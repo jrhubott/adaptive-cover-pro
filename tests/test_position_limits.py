@@ -8,8 +8,8 @@ Regression tests for Issue #24: Invalid sunset cover position.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
-from datetime import datetime, timedelta
+from unittest.mock import patch
+from datetime import datetime
 
 from custom_components.adaptive_cover_pro.calculation import (
     AdaptiveVerticalCover,
