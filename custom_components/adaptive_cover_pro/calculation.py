@@ -274,7 +274,7 @@ class AdaptiveGeneralCover(ABC):
 
         """
         default = self.h_def
-        if self.sunset_valid:
+        if self.sunset_valid and self.sunset_pos is not None:
             default = self.sunset_pos
         return default
 
