@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-03-21
-**Current Version:** v2.7.14
+**Date:** 2026-03-22
+**Current Version:** v2.7.15
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -33,6 +33,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.7.15 | Accept occupancy sensors in motion control selector (Issue #52); fix sunset_position not accepting blank value (Issue #55) |
 | v2.7.14 | Add `sill_height` parameter for windows above floor level (Issue #47) — raises blind when sill provides natural sun blocking |
 | v2.7.13 | Fix reset button race condition — suppress override re-detection during post-reset cover settling; add 30s timeout to wait loop |
 | v2.7.12 | Fix horizontal covers closing before end sun time — clamp position to ≥1% when sun is in FOV |
