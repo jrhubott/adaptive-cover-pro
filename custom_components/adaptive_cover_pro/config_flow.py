@@ -580,6 +580,18 @@ async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str])
     return devices
 
 
+_SHARED_OPTIONS_EXCLUDED = {CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID}
+
+
+def _extract_shared_options(entry: ConfigEntry) -> dict[str, Any]:
+    """Return options safe to copy across covers.
+
+    Excludes per-window fields: CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID.
+    All other options (dimensions, automation, climate, motion, etc.) are shared.
+    """
+    return {k: v for k, v in entry.options.items() if k not in _SHARED_OPTIONS_EXCLUDED}
+
+
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
