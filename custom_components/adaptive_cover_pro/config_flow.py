@@ -1514,7 +1514,10 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_abort(reason="no_covers_to_sync")  # type: ignore[return-value]
 
         if user_input is not None:
-            self.selected_sync_targets = user_input.get("target_entries", [])
+            targets = user_input.get("target_entries", [])
+            if not targets:
+                return self.async_abort(reason="no_covers_to_sync")  # type: ignore[return-value]
+            self.selected_sync_targets = targets
             return await self.async_step_sync_confirm()
 
         return self.async_show_form(  # type: ignore[return-value]
