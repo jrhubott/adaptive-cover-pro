@@ -631,6 +631,7 @@
     },
     "abort": {
       "no_covers_to_sync": "No other covers of the same type exist to sync to.",
+      "no_targets_selected": "No covers were selected to sync to.",
       "user_cancelled": "Sync cancelled.",
       "sync_complete": "Settings synced successfully."
     }

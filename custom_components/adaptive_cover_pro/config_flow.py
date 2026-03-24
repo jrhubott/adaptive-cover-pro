@@ -636,13 +636,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     menu_options.append("import_legacy")
                 if acp_entries:
                     menu_options.append("duplicate_existing")
-                placeholders = (
-                    {"legacy_count": str(len(legacy_entries))} if legacy_entries else {}
-                )
                 return self.async_show_menu(  # type: ignore[return-value]
                     step_id="user",
                     menu_options=menu_options,
-                    description_placeholders=placeholders,
+                    description_placeholders={"legacy_count": str(len(legacy_entries))},
                 )
 
         if user_input:
@@ -1516,7 +1513,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             targets = user_input.get("target_entries", [])
             if not targets:
-                return self.async_abort(reason="no_covers_to_sync")  # type: ignore[return-value]
+                return self.async_abort(reason="no_targets_selected")  # type: ignore[return-value]
             self.selected_sync_targets = targets
             return await self.async_step_sync_confirm()
 
