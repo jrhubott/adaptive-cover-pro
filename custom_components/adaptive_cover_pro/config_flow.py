@@ -1418,12 +1418,13 @@ class OptionsFlowHandler(OptionsFlow):
         self.sensor_type: SensorType = (  # type: ignore[misc]
             self.current_config.get(CONF_SENSOR_TYPE) or SensorType.BLIND
         )
+        self.selected_sync_targets: list[str] = []
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        options = ["automation", "blind", "device"]
+        options = ["automation", "blind", "device", "sync"]
         if self.options[CONF_CLIMATE_MODE]:
             options.append("climate")
         if self.options.get(CONF_WEATHER_ENTITY):
@@ -1495,6 +1496,76 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, {CONF_DEVICE_ID: current_device}
             ),
+        )
+
+    async def async_step_sync(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select target covers to sync settings to."""
+        current_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        other_entries = [
+            e
+            for e in self.hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != self._config_entry.entry_id
+            and e.data.get(CONF_SENSOR_TYPE) == current_type
+        ]
+
+        if not other_entries:
+            return self.async_abort(reason="no_covers_to_sync")  # type: ignore[return-value]
+
+        if user_input is not None:
+            self.selected_sync_targets = user_input.get("target_entries", [])
+            return await self.async_step_sync_confirm()
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="sync",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("target_entries"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            multiple=True,
+                            options=[
+                                {"value": e.entry_id, "label": e.title}
+                                for e in other_entries
+                            ],
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_sync_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm and execute sync to selected covers."""
+        if user_input is not None:
+            if user_input.get("confirm"):
+                shared_options = _extract_shared_options(self._config_entry)
+                for entry_id in self.selected_sync_targets:
+                    target = self.hass.config_entries.async_get_entry(entry_id)
+                    if target:
+                        self.hass.config_entries.async_update_entry(
+                            target,
+                            options={**target.options, **shared_options},
+                        )
+                return self.async_abort(reason="sync_complete")  # type: ignore[return-value]
+            return self.async_abort(reason="user_cancelled")  # type: ignore[return-value]
+
+        # Build summary of selected targets
+        target_titles = []
+        for entry_id in self.selected_sync_targets:
+            target = self.hass.config_entries.async_get_entry(entry_id)
+            if target:
+                target_titles.append(f"• {target.title}")
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="sync_confirm",
+            data_schema=vol.Schema(
+                {vol.Required("confirm", default=True): selector.BooleanSelector()}
+            ),
+            description_placeholders={
+                "entries_summary": "\n".join(target_titles) or "(none selected)"
+            },
         )
 
     async def async_step_blind(self, user_input: dict[str, Any] | None = None):
