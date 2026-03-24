@@ -510,7 +510,9 @@ AUTOMATION_CONFIG = vol.Schema(
                 device_class=["motion", "occupancy"],
             )
         ),
-        vol.Optional(CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT): selector.NumberSelector(
+        vol.Optional(
+            CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
+        ): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=30,
                 max=3600,
@@ -565,7 +567,9 @@ def _get_azimuth_edges(data) -> int:
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
-async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, str]:
+async def _get_devices_from_entities(
+    hass: HomeAssistant, entity_ids: list[str]
+) -> dict[str, str]:
     """Get devices associated with the given cover entity IDs."""
     entity_reg = er.async_get(hass)
     device_reg = dr.async_get(hass)
@@ -575,7 +579,11 @@ async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str])
         if entity_entry and entity_entry.device_id:
             device_entry = device_reg.async_get(entity_entry.device_id)
             if device_entry and entity_entry.device_id not in devices:
-                name = device_entry.name_by_user or device_entry.name or entity_entry.device_id
+                name = (
+                    device_entry.name_by_user
+                    or device_entry.name
+                    or entity_entry.device_id
+                )
                 devices[entity_entry.device_id] = name
     return devices
 
@@ -604,6 +612,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self.selected_for_import: list[str] = []
         self.import_index: int = 0
         self.imported_count: int = 0
+        self.selected_source_entry_id: str | None = None
 
     @staticmethod
     @callback
@@ -619,12 +628,17 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if not user_input and not hasattr(self, "_legacy_detected"):
             self._legacy_detected = True
             legacy_entries = await self._detect_legacy_entries(self.hass)
+            acp_entries = self.hass.config_entries.async_entries(DOMAIN)
 
-            if legacy_entries:
-                # Show menu with import option
+            if legacy_entries or acp_entries:
+                menu_options = ["create_new"]
+                if legacy_entries:
+                    menu_options.append("import_legacy")
+                if acp_entries:
+                    menu_options.append("duplicate_existing")
                 return self.async_show_menu(  # type: ignore[return-value]
                     step_id="user",
-                    menu_options=["create_new", "import_legacy"],
+                    menu_options=menu_options,
                     description_placeholders={"legacy_count": str(len(legacy_entries))},
                 )
 
@@ -773,7 +787,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="tilt", data_schema=CLIMATE_MODE.extend(TILT_OPTIONS.schema)
         )
 
-    async def async_step_device_association(self, user_input: dict[str, Any] | None = None):
+    async def async_step_device_association(
+        self, user_input: dict[str, Any] | None = None
+    ):
         """Show optional device association step."""
         _standalone_sentinel = "__standalone__"
         entity_ids = self.config.get(CONF_ENTITIES, [])
@@ -790,13 +806,17 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 self.config.pop(CONF_DEVICE_ID, None)
             return await self._continue_after_cover_config()
 
-        options_list = [{"value": _standalone_sentinel, "label": "None (standalone device)"}]
+        options_list = [
+            {"value": _standalone_sentinel, "label": "None (standalone device)"}
+        ]
         for device_id, device_name in devices.items():
             options_list.append({"value": device_id, "label": device_name})
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_DEVICE_ID, default=_standalone_sentinel): selector.SelectSelector(
+                vol.Required(
+                    CONF_DEVICE_ID, default=_standalone_sentinel
+                ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=options_list,
                         mode=selector.SelectSelectorMode.LIST,
@@ -1007,6 +1027,99 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Handle create new configuration flow."""
         # Redirect to original user flow
         return await self.async_step_user(user_input)
+
+    async def async_step_duplicate_existing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle duplicate existing configuration flow."""
+        return await self.async_step_duplicate_select(user_input)
+
+    async def async_step_duplicate_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select the source cover to duplicate from."""
+        acp_entries = self.hass.config_entries.async_entries(DOMAIN)
+
+        if user_input is not None:
+            self.selected_source_entry_id = user_input["source_entry"]
+            return await self.async_step_duplicate_configure()
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="duplicate_select",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("source_entry"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": e.entry_id, "label": e.title}
+                                for e in acp_entries
+                            ],
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_duplicate_configure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the unique fields for the duplicated cover."""
+        source_entry = self.hass.config_entries.async_get_entry(
+            self.selected_source_entry_id or ""
+        )
+        if not source_entry:
+            return self.async_abort(reason="source_not_found")  # type: ignore[return-value]
+
+        if user_input is not None:
+            shared_options = _extract_shared_options(source_entry)
+            sensor_type = source_entry.data.get(CONF_SENSOR_TYPE)
+            new_name = await self._ensure_unique_name(user_input["name"], suffix="Copy")
+
+            type_mapping = {
+                "cover_blind": "Vertical",
+                "cover_awning": "Horizontal",
+                "cover_tilt": "Tilt",
+            }
+
+            return self.async_create_entry(  # type: ignore[return-value]
+                title=f"{type_mapping.get(sensor_type, 'Cover')} {new_name}",
+                data={"name": new_name, CONF_SENSOR_TYPE: sensor_type},
+                options={
+                    **shared_options,
+                    CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                    CONF_AZIMUTH: user_input[CONF_AZIMUTH],
+                    # CONF_DEVICE_ID intentionally omitted — device association skipped for duplicates
+                },
+            )
+
+        source_azimuth = source_entry.options.get(CONF_AZIMUTH, 180)
+
+        schema = vol.Schema(
+            {
+                vol.Required("name"): selector.TextSelector(),
+                vol.Optional(CONF_ENTITIES, default=[]): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="cover",
+                        multiple=True,
+                    )
+                ),
+                vol.Required(
+                    CONF_AZIMUTH, default=source_azimuth
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=359,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                        unit_of_measurement="°",
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="duplicate_configure",
+            data_schema=schema,
+        )
 
     async def async_step_import_legacy(self, user_input: dict[str, Any] | None = None):
         """Handle import from legacy Adaptive Cover."""
@@ -1355,7 +1468,9 @@ class OptionsFlowHandler(OptionsFlow):
             return await self._update_options()
 
         current_device = self.options.get(CONF_DEVICE_ID) or _standalone_sentinel
-        options_list = [{"value": _standalone_sentinel, "label": "None (standalone device)"}]
+        options_list = [
+            {"value": _standalone_sentinel, "label": "None (standalone device)"}
+        ]
         for device_id, device_name in devices.items():
             options_list.append({"value": device_id, "label": device_name})
 
