@@ -18,6 +18,8 @@ __pycache__
 !.vscode/tasks.json
 coverage.xml
 
+# don't place superpower documents in the repo
+docs/superpowers/
 
 # Home Assistant configuration
 config/*
