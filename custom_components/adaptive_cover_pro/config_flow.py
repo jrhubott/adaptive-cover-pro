@@ -580,7 +580,7 @@ async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str])
     return devices
 
 
-_SHARED_OPTIONS_EXCLUDED = {CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID}
+_SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
 
 
 def _extract_shared_options(entry: ConfigEntry) -> dict[str, Any]:
