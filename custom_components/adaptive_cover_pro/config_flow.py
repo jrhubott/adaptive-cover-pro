@@ -1055,25 +1055,27 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
         return {"valid": len(errors) == 0, "errors": errors}
 
-    async def _ensure_unique_name(self, name: str) -> str:
-        """Ensure imported name doesn't conflict with existing entries."""
+    async def _ensure_unique_name(self, name: str, suffix: str = "Imported") -> str:
+        """Ensure name doesn't conflict with existing entries.
+
+        Appends ' (suffix)' or ' (suffix N)' if a conflict exists.
+        Default suffix is 'Imported' for backward compatibility with legacy import flow.
+        """
         existing_entries = self.hass.config_entries.async_entries(DOMAIN)
         existing_names = {e.data.get("name") for e in existing_entries}
 
         if name not in existing_names:
             return name
 
-        # Try with " (Imported)" suffix
-        imported_name = f"{name} (Imported)"
-        if imported_name not in existing_names:
-            return imported_name
+        suffixed_name = f"{name} ({suffix})"
+        if suffixed_name not in existing_names:
+            return suffixed_name
 
-        # Add number suffix if needed
         counter = 2
-        while f"{name} (Imported {counter})" in existing_names:
+        while f"{name} ({suffix} {counter})" in existing_names:
             counter += 1
 
-        return f"{name} (Imported {counter})"
+        return f"{name} ({suffix} {counter})"
 
     async def async_step_import_detect(
         self, user_input: dict[str, Any] | None = None

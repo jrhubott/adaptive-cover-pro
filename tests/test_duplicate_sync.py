@@ -1,8 +1,12 @@
 """Tests for duplicate and sync cover features."""
 
+import pytest
 from unittest.mock import MagicMock
 
-from custom_components.adaptive_cover_pro.config_flow import _extract_shared_options
+from custom_components.adaptive_cover_pro.config_flow import (
+    ConfigFlowHandler,
+    _extract_shared_options,
+)
 from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
@@ -102,3 +106,56 @@ class TestExtractSharedOptions:
         result = _extract_shared_options(entry)
         result[CONF_HEIGHT_WIN] = 99.0
         assert entry.options[CONF_HEIGHT_WIN] == 2.1
+
+
+class TestEnsureUniqueName:
+    """Tests for _ensure_unique_name with suffix support."""
+
+    def _make_handler_with_names(self, existing_names: list[str]) -> ConfigFlowHandler:
+        """Create a ConfigFlowHandler mock with given existing entry names."""
+        handler = ConfigFlowHandler.__new__(ConfigFlowHandler)
+        entries = []
+        for name in existing_names:
+            e = MagicMock()
+            e.data = {"name": name}
+            entries.append(e)
+        handler.hass = MagicMock()
+        handler.hass.config_entries.async_entries.return_value = entries
+        return handler
+
+    @pytest.mark.asyncio
+    async def test_unique_name_returned_unchanged(self):
+        """Verify a name with no conflict is returned as-is."""
+        handler = self._make_handler_with_names(["Living Room"])
+        result = await handler._ensure_unique_name("Bedroom")
+        assert result == "Bedroom"
+
+    @pytest.mark.asyncio
+    async def test_default_suffix_is_imported(self):
+        """Verify the default suffix is 'Imported' for backward compatibility."""
+        handler = self._make_handler_with_names(["Living Room"])
+        result = await handler._ensure_unique_name("Living Room")
+        assert result == "Living Room (Imported)"
+
+    @pytest.mark.asyncio
+    async def test_copy_suffix(self):
+        """Verify 'Copy' suffix is used when explicitly passed."""
+        handler = self._make_handler_with_names(["Living Room"])
+        result = await handler._ensure_unique_name("Living Room", suffix="Copy")
+        assert result == "Living Room (Copy)"
+
+    @pytest.mark.asyncio
+    async def test_copy_suffix_increments(self):
+        """Verify suffix increments to 2 when first suffixed name also conflicts."""
+        handler = self._make_handler_with_names(["Living Room", "Living Room (Copy)"])
+        result = await handler._ensure_unique_name("Living Room", suffix="Copy")
+        assert result == "Living Room (Copy 2)"
+
+    @pytest.mark.asyncio
+    async def test_copy_suffix_increments_further(self):
+        """Verify suffix increments to 3 when Copy and Copy 2 both conflict."""
+        handler = self._make_handler_with_names(
+            ["Living Room", "Living Room (Copy)", "Living Room (Copy 2)"]
+        )
+        result = await handler._ensure_unique_name("Living Room", suffix="Copy")
+        assert result == "Living Room (Copy 3)"
