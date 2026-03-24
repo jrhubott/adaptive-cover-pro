@@ -636,10 +636,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     menu_options.append("import_legacy")
                 if acp_entries:
                     menu_options.append("duplicate_existing")
+                placeholders = (
+                    {"legacy_count": str(len(legacy_entries))} if legacy_entries else {}
+                )
                 return self.async_show_menu(  # type: ignore[return-value]
                     step_id="user",
                     menu_options=menu_options,
-                    description_placeholders={"legacy_count": str(len(legacy_entries))},
+                    description_placeholders=placeholders,
                 )
 
         if user_input:
@@ -1039,6 +1042,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Select the source cover to duplicate from."""
         acp_entries = self.hass.config_entries.async_entries(DOMAIN)
+
+        if not acp_entries:
+            return self.async_abort(reason="source_not_found")  # type: ignore[return-value]
 
         if user_input is not None:
             self.selected_source_entry_id = user_input["source_entry"]
