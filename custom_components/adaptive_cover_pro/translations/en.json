@@ -11,7 +11,8 @@
         },
         "menu_options": {
           "create_new": "Create new configuration",
-          "import_legacy": "Import from Adaptive Cover ({legacy_count} found)"
+          "import_legacy": "Import from Adaptive Cover ({legacy_count} found)",
+          "duplicate_existing": "Duplicate existing cover"
         }
       },
       "automation": {
@@ -299,6 +300,22 @@
         "data_description": {
           "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
         }
+      },
+      "duplicate_select": {
+        "title": "Duplicate Cover — Select Source",
+        "description": "Choose which existing cover to duplicate settings from.",
+        "data": {
+          "source_entry": "Source cover"
+        }
+      },
+      "duplicate_configure": {
+        "title": "Duplicate Cover — Configure",
+        "description": "Enter the unique settings for the new cover. All other settings will be copied from the source.",
+        "data": {
+          "name": "Name",
+          "entities": "Cover entities",
+          "azimuth": "Window azimuth"
+        }
       }
     },
     "abort": {
@@ -307,7 +324,8 @@
       "validation_failed": "Import validation failed. Please fix these issues:\n\n{errors}\n\nYou can try importing again after fixing missing entities.",
       "no_entries_selected": "No entries were selected for import",
       "import_successful": "Import completed successfully",
-      "import_failed": "Import failed - no valid entries to import"
+      "import_failed": "Import failed - no valid entries to import",
+      "source_not_found": "The source cover no longer exists."
     }
   },
   "options": {
@@ -320,7 +338,8 @@
           "climate": "Edit Climate Configuration",
           "weather": "Edit Weather Configuration",
           "blind_spot": "Setup Blindspot",
-          "interp": "Range Adjustment"
+          "interp": "Range Adjustment",
+          "sync": "Sync settings to other covers"
         }
       },
       "automation": {
@@ -594,7 +613,26 @@
         "data_description": {
           "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
         }
+      },
+      "sync": {
+        "title": "Sync Settings — Select Targets",
+        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "data": {
+          "target_entries": "Target covers"
+        }
+      },
+      "sync_confirm": {
+        "title": "Sync Settings — Confirm",
+        "description": "The following covers will have their shared settings overwritten:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
+        "data": {
+          "confirm": "Confirm sync"
+        }
       }
+    },
+    "abort": {
+      "no_covers_to_sync": "No other covers of the same type exist to sync to.",
+      "user_cancelled": "Sync cancelled.",
+      "sync_complete": "Settings synced successfully."
     }
   },
   "entity": {
