@@ -122,16 +122,24 @@ class TestClimateStrategyNormalWithPresence:
     """ClimateCoverState sets climate_strategy correctly for normal_with_presence."""
 
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_winter_heating_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_winter_heating_strategy(
+        self, mock_datetime, hass, mock_logger, vertical_cover
+    ):
         """Winter + sun valid → WINTER_HEATING."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
 
         # Simulate winter (low temperature)
         temp_state = MagicMock()
         temp_state.state = "10.0"
-        hass.states.get.side_effect = lambda eid: temp_state if "temp" in eid else MagicMock(state="on")
+        hass.states.get.side_effect = lambda eid: (
+            temp_state if "temp" in eid else MagicMock(state="on")
+        )
 
         climate_data = make_climate_data(
             hass,
@@ -145,11 +153,36 @@ class TestClimateStrategyNormalWithPresence:
 
         # Force winter + presence + sun valid
         with (
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "valid", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "valid",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             result = state_handler.normal_with_presence()
@@ -161,17 +194,43 @@ class TestClimateStrategyNormalWithPresence:
     def test_low_light_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
         """Not summer + low lux → LOW_LIGHT."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
 
         climate_data = make_climate_data(hass, mock_logger)
 
         with (
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "lux", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data), "lux", new_callable=PropertyMock, return_value=True
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             state_handler.normal_with_presence()
@@ -179,23 +238,61 @@ class TestClimateStrategyNormalWithPresence:
         assert state_handler.climate_strategy == ClimateStrategy.LOW_LIGHT
 
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_summer_cooling_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_summer_cooling_strategy(
+        self, mock_datetime, hass, mock_logger, vertical_cover
+    ):
         """Summer + transparent blind → SUMMER_COOLING."""
         mock_datetime.utcnow.return_value = datetime(2024, 6, 21, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 6, 21, 21, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 6, 21, 5, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 6, 21, 21, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 6, 21, 5, 0, 0)
+        )
 
         # transparent_blind is a dataclass field — set it directly
         climate_data = make_climate_data(hass, mock_logger, transparent_blind=True)
 
         with (
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "lux", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "irradiance", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_sunny", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data), "lux", new_callable=PropertyMock, return_value=False
+            ),
+            patch.object(
+                type(climate_data),
+                "irradiance",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_sunny",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             result = state_handler.normal_with_presence()
@@ -204,23 +301,61 @@ class TestClimateStrategyNormalWithPresence:
         assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_glare_control_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_glare_control_strategy(
+        self, mock_datetime, hass, mock_logger, vertical_cover
+    ):
         """Normal sunny conditions with presence → GLARE_CONTROL."""
         mock_datetime.utcnow.return_value = datetime(2024, 6, 21, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 6, 21, 21, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 6, 21, 5, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 6, 21, 21, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 6, 21, 5, 0, 0)
+        )
 
         # transparent_blind=False is the default; set explicitly to be clear
         climate_data = make_climate_data(hass, mock_logger, transparent_blind=False)
 
         with (
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "lux", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "irradiance", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_sunny", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data), "lux", new_callable=PropertyMock, return_value=False
+            ),
+            patch.object(
+                type(climate_data),
+                "irradiance",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_sunny",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             state_handler.normal_with_presence()
@@ -237,20 +372,51 @@ class TestClimateStrategyNormalWithoutPresence:
     """ClimateCoverState sets climate_strategy correctly for normal_without_presence."""
 
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_summer_cooling_without_presence(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_summer_cooling_without_presence(
+        self, mock_datetime, hass, mock_logger, vertical_cover
+    ):
         """Summer + sun valid + no presence → SUMMER_COOLING."""
         mock_datetime.utcnow.return_value = datetime(2024, 6, 21, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 6, 21, 21, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 6, 21, 5, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 6, 21, 21, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 6, 21, 5, 0, 0)
+        )
 
         climate_data = make_climate_data(hass, mock_logger)
 
         with (
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=False),
-            patch.object(type(vertical_cover), "valid", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "valid",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             result = state_handler.normal_without_presence()
@@ -259,20 +425,51 @@ class TestClimateStrategyNormalWithoutPresence:
         assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_winter_heating_without_presence(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_winter_heating_without_presence(
+        self, mock_datetime, hass, mock_logger, vertical_cover
+    ):
         """Winter + sun valid + no presence → WINTER_HEATING."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
 
         climate_data = make_climate_data(hass, mock_logger)
 
         with (
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=True),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=False),
-            patch.object(type(vertical_cover), "valid", new_callable=PropertyMock, return_value=True),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "valid",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             result = state_handler.normal_without_presence()
@@ -281,20 +478,51 @@ class TestClimateStrategyNormalWithoutPresence:
         assert state_handler.climate_strategy == ClimateStrategy.WINTER_HEATING
 
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_low_light_without_presence_no_sun(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_low_light_without_presence_no_sun(
+        self, mock_datetime, hass, mock_logger, vertical_cover
+    ):
         """Sun not valid + no presence → LOW_LIGHT (default position)."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        vertical_cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
-        vertical_cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
 
         climate_data = make_climate_data(hass, mock_logger)
 
         with (
-            patch.object(type(climate_data), "is_summer", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_winter", new_callable=PropertyMock, return_value=False),
-            patch.object(type(climate_data), "is_presence", new_callable=PropertyMock, return_value=False),
-            patch.object(type(vertical_cover), "valid", new_callable=PropertyMock, return_value=False),
-            patch.object(type(vertical_cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_presence",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             state_handler = make_climate_state(vertical_cover, climate_data)
             state_handler.normal_without_presence()
@@ -321,7 +549,9 @@ class TestBuildPositionExplanation:
         coord._build_position_explanation = (
             AdaptiveDataUpdateCoordinator._build_position_explanation.__get__(coord)
         )
-        coord._CLIMATE_STRATEGY_LABELS = AdaptiveDataUpdateCoordinator._CLIMATE_STRATEGY_LABELS
+        coord._CLIMATE_STRATEGY_LABELS = (
+            AdaptiveDataUpdateCoordinator._CLIMATE_STRATEGY_LABELS
+        )
 
         # Defaults — no overrides
         coord.is_force_override_active = False

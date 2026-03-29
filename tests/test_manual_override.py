@@ -1,6 +1,5 @@
 """Tests for manual override detection with grace period."""
 
-import asyncio
 import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -93,9 +92,7 @@ async def test_grace_period_timeout_clears_tracking():
     )
 
     # Call the timeout method
-    await AdaptiveDataUpdateCoordinator._grace_period_timeout(
-        coordinator, "cover.test"
-    )
+    await AdaptiveDataUpdateCoordinator._grace_period_timeout(coordinator, "cover.test")
 
     # Verify tracking was cleared
     assert "cover.test" not in coordinator._command_timestamps
@@ -276,8 +273,6 @@ async def test_reset_button_times_out_if_cover_never_reaches_target():
     start = time.monotonic()
     # Patch event loop time so the 30-second timeout fires immediately
     fake_time = [0.0]
-
-    original_sleep = asyncio.sleep
 
     async def fast_sleep(delay):
         fake_time[0] += 31  # Jump past the 30-second deadline

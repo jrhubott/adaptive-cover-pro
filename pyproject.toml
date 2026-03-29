@@ -39,6 +39,7 @@ build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
 
 [tool.ruff]
+exclude = ["notebooks/"]
 ignore = [
   "ANN101", # Self... explanatory
   "ANN401", # Opiniated warning on disallowing dynamically typed expressions
@@ -61,6 +62,9 @@ ignore = [
 ]
 select = ["ALL"]
 src = ["custom_components/adaptive_cover_pro"]
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["ALL"]
 
 [tool.ruff.flake8-import-conventions.extend-aliases]
 "homeassistant.helpers.area_registry" = "ar"

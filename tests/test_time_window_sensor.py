@@ -13,7 +13,6 @@ import pytest
 
 from custom_components.adaptive_cover_pro.calculation import (
     AdaptiveVerticalCover,
-    NormalCoverState,
 )
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_HEIGHT,

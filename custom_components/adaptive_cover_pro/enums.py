@@ -1,9 +1,9 @@
 """Enums for Adaptive Cover Pro integration."""
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 
-class CoverType(str, Enum):
+class CoverType(StrEnum):
     """Cover type enumeration."""
 
     BLIND = "cover_blind"
@@ -20,7 +20,7 @@ class CoverType(str, Enum):
         }[self]
 
 
-class TiltMode(str, Enum):
+class TiltMode(StrEnum):
     """Tilt mode enumeration for venetian blinds."""
 
     MODE1 = "mode1"  # Single direction (0-90°)
@@ -39,7 +39,7 @@ class TemperatureSource(Enum):
     OUTSIDE = "outside"
 
 
-class PresenceDomain(str, Enum):
+class PresenceDomain(StrEnum):
     """Supported presence entity domains."""
 
     DEVICE_TRACKER = "device_tracker"
@@ -57,7 +57,7 @@ class ClimateStrategy(Enum):
     GLARE_CONTROL = "glare_control"  # Use calculated position
 
 
-class ControlState(str, Enum):
+class ControlState(StrEnum):
     """Control status states for diagnostic sensor."""
 
     ACTIVE = "active"
@@ -69,7 +69,7 @@ class ControlState(str, Enum):
     SUN_NOT_VISIBLE = "sun_not_visible"
 
 
-class ControlMethod(str, Enum):
+class ControlMethod(StrEnum):
     """What is currently driving the cover position.
 
     Priority order (highest to lowest):
