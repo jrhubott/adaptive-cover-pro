@@ -13,7 +13,7 @@
 
 ### Tests
 
-358 passing, 0 failing.
+375 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
