@@ -135,7 +135,7 @@ OPTIONS = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_MAX_POSITION): selector.NumberSelector(
+        vol.Optional(CONF_MAX_POSITION, default=100): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
                 max=100,
@@ -147,7 +147,7 @@ OPTIONS = vol.Schema(
         vol.Optional(
             CONF_ENABLE_MAX_POSITION, default=False
         ): selector.BooleanSelector(),
-        vol.Optional(CONF_MIN_POSITION): selector.NumberSelector(
+        vol.Optional(CONF_MIN_POSITION, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=99,
