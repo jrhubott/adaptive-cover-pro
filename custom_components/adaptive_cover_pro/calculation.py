@@ -19,7 +19,7 @@ from .const import (
     POSITION_CLOSED,
     WINDOW_DEPTH_GAMMA_THRESHOLD,
 )
-from .enums import CoverType, TiltMode
+from .enums import ClimateStrategy, CoverType, TiltMode
 from .geometry import EdgeCaseHandler, SafetyMarginCalculator
 from .helpers import get_domain, get_safe_state
 from .position_utils import PositionConverter
@@ -643,6 +643,7 @@ class ClimateCoverState(NormalCoverState):
     """Compute state for climate control operation."""
 
     climate_data: ClimateCoverData
+    climate_strategy: ClimateStrategy | None = field(default=None, init=False)
 
     def normal_type_cover(self) -> int:
         """Determine state for horizontal and vertical covers with climate logic.
@@ -683,6 +684,7 @@ class ClimateCoverState(NormalCoverState):
             self.cover.logger.debug(
                 "n_w_p(): Winter mode active with sun in window = use 100 for solar heating"
             )
+            self.climate_strategy = ClimateStrategy.WINTER_HEATING
             return 100
 
         # Priority 2: Low light or non-sunny conditions
@@ -695,6 +697,7 @@ class ClimateCoverState(NormalCoverState):
             self.cover.logger.debug(
                 "n_w_p(): Low light or not sunny = use default position"
             )
+            self.climate_strategy = ClimateStrategy.LOW_LIGHT
             return round(self.cover.default)
 
         # Priority 3: Summer with transparent blinds
@@ -702,10 +705,12 @@ class ClimateCoverState(NormalCoverState):
             self.cover.logger.debug(
                 "n_w_p(): Summer with transparent blind = close to 0"
             )
+            self.climate_strategy = ClimateStrategy.SUMMER_COOLING
             return 0
 
         # Priority 4: Normal glare calculation
         self.cover.logger.debug("n_w_p(): Use calculated position for glare control")
+        self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return super().get_state()
 
     def normal_without_presence(self) -> int:
@@ -724,9 +729,12 @@ class ClimateCoverState(NormalCoverState):
         """
         if self.cover.valid:
             if self.climate_data.is_summer:
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return 0
             if self.climate_data.is_winter:
+                self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return 100
+        self.climate_strategy = ClimateStrategy.LOW_LIGHT
         return round(self.cover.default)
 
     def tilt_with_presence(self, degrees: int) -> int:
@@ -752,6 +760,7 @@ class ClimateCoverState(NormalCoverState):
                 self.cover.logger.debug(
                     "tilt_w_p(): Summer mode = %s degrees", CLIMATE_SUMMER_TILT_ANGLE
                 )
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return round((CLIMATE_SUMMER_TILT_ANGLE / degrees) * 100)
 
             # Winter: Use calculated position for optimal light/heat
@@ -759,6 +768,7 @@ class ClimateCoverState(NormalCoverState):
                 self.cover.logger.debug(
                     "tilt_w_p(): Winter mode = use calculated position"
                 )
+                self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return super().get_state()
 
             # Low light or not sunny: Use calculated position
@@ -770,12 +780,14 @@ class ClimateCoverState(NormalCoverState):
                 self.cover.logger.debug(
                     "tilt_w_p(): Low light or not sunny = use calculated position"
                 )
+                self.climate_strategy = ClimateStrategy.LOW_LIGHT
                 return super().get_state()
 
         # Default: mostly open for natural light
         self.cover.logger.debug(
             "tilt_w_p(): Default = %s degrees", CLIMATE_DEFAULT_TILT_ANGLE
         )
+        self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
 
     def tilt_without_presence(self, degrees: int) -> int:
@@ -799,6 +811,7 @@ class ClimateCoverState(NormalCoverState):
         if tilt_cover.valid:
             if self.climate_data.is_summer:
                 # block out all light in summer
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return POSITION_CLOSED
             # Check for MODE2 (handles both string and enum)
             is_mode2 = (
@@ -807,8 +820,11 @@ class ClimateCoverState(NormalCoverState):
             )
             if self.climate_data.is_winter and is_mode2:
                 # parallel to sun beams, not possible with single direction
+                self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return round((beta + 90) / degrees * 100)
+            self.climate_strategy = ClimateStrategy.GLARE_CONTROL
             return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
+        self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return super().get_state()
 
     def tilt_state(self) -> int:

@@ -606,6 +606,14 @@ class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
             if climate_pos != calculated:
                 attrs["climate_position"] = climate_pos
 
+        # Show which climate strategy was applied
+        if diagnostics.get("climate_strategy") is not None:
+            attrs["climate_strategy"] = diagnostics["climate_strategy"]
+
+        # Full decision chain explanation
+        if diagnostics.get("position_explanation") is not None:
+            attrs["position_explanation"] = diagnostics["position_explanation"]
+
         return attrs
 
 

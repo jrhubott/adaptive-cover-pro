@@ -102,7 +102,7 @@ from .const import (
     DEFAULT_MOTION_TIMEOUT,
     ControlStatus,
 )
-from .enums import ControlMethod
+from .enums import ClimateStrategy, ControlMethod
 from .helpers import (
     check_cover_features,
     get_datetime_from_str,
@@ -187,6 +187,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.timed_refresh = False
         self.climate_state = None
         self.climate_data = None  # Store climate_data for P1 diagnostics
+        self.climate_strategy = None  # Store climate strategy for diagnostics
         self.control_method = ControlMethod.SOLAR
         self.state_change_data: StateChangedData | None = None
         self.raw_calculated_position = 0  # Store raw position for diagnostics
@@ -734,6 +735,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         # Access climate data if climate mode is enabled
+        self.climate_strategy = None
         if self._climate_mode:
             self.climate_mode_data(options, cover_data)
 
@@ -1554,9 +1556,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         climate = ClimateCoverData(*self._config_service.get_climate_data(options))
-        self.climate_state = round(ClimateCoverState(cover_data, climate).get_state())
-        climate_data = ClimateCoverState(cover_data, climate).climate_data
-        self.climate_data = climate_data  # Store for P1 diagnostics
+        climate_cover_state = ClimateCoverState(cover_data, climate)
+        self.climate_state = round(climate_cover_state.get_state())
+        self.climate_data = climate_cover_state.climate_data  # Store for P1 diagnostics
+        self.climate_strategy = climate_cover_state.climate_strategy  # Store for diagnostics
 
     def _build_solar_diagnostics(self) -> dict:
         """Build solar position diagnostics."""
@@ -1592,6 +1595,81 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return self.normal_cover_state.cover.control_state_reason
         return "Unknown"
 
+    _CLIMATE_STRATEGY_LABELS: dict[ClimateStrategy, str] = {
+        ClimateStrategy.WINTER_HEATING: "Winter Heating",
+        ClimateStrategy.SUMMER_COOLING: "Summer Cooling",
+        ClimateStrategy.LOW_LIGHT: "Low Light",
+        ClimateStrategy.GLARE_CONTROL: "Glare Control",
+    }
+
+    def _build_position_explanation(self) -> str:
+        """Build a human-readable explanation of the full position decision chain.
+
+        Returns:
+            Single-line string describing each step from raw calculation to final
+            position (e.g. "Sun tracking (45%) → Climate: Winter Heating → 100%").
+
+        """
+        options = self.config_entry.options
+
+        # Priority overrides
+        if self.is_force_override_active:
+            pos = options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
+            return f"Force override active → {pos}%"
+
+        if self.is_motion_timeout_active:
+            return f"No motion detected → default {self.default_state}%"
+
+        if self.manager.binary_cover_manual:
+            return "Manual override active"
+
+        # Outside time window
+        if not self.check_adaptive_time:
+            sunset_pos = options.get(CONF_SUNSET_POS)
+            default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
+            pos = sunset_pos if sunset_pos is not None else default_height
+            return f"Outside time window → default {pos}%"
+
+        # Build the decision chain
+        parts = []
+
+        # Step 1: Sun position condition and raw calculated value
+        if self.normal_cover_state and self.normal_cover_state.cover:
+            cover = self.normal_cover_state.cover
+            if cover.direct_sun_valid:
+                parts.append(f"Sun tracking ({self.raw_calculated_position}%)")
+            else:
+                default_pos = round(cover.default)
+                reason = cover.control_state_reason
+                parts.append(f"{reason} ({default_pos}%)")
+
+        # Step 2: Position limits on the non-climate path
+        if not self._switch_mode:
+            min_pos = options.get(CONF_MIN_POSITION)
+            max_pos = options.get(CONF_MAX_POSITION)
+            enable_min = options.get(CONF_ENABLE_MIN_POSITION, False)
+            enable_max = options.get(CONF_ENABLE_MAX_POSITION, False)
+            if min_pos is not None and enable_min and self.default_state == min_pos:
+                parts.append(f"min limit ({min_pos}%) → {self.default_state}%")
+            elif max_pos is not None and enable_max and self.default_state == max_pos:
+                parts.append(f"max limit ({max_pos}%) → {self.default_state}%")
+
+        # Step 3: Climate mode override
+        if self._switch_mode and self.climate_state is not None:
+            strategy_label = self._CLIMATE_STRATEGY_LABELS.get(
+                self.climate_strategy, "Active"
+            ) if self.climate_strategy else "Active"
+            parts.append(f"Climate: {strategy_label} → {self.climate_state}%")
+
+        # Step 4: Interpolation / inverse state
+        final = self.state
+        if self._use_interpolation:
+            parts.append(f"interpolated → {final}%")
+        elif self._inverse_state:
+            parts.append(f"inversed → {final}%")
+
+        return " → ".join(parts) if parts else "Unknown"
+
     def _build_position_diagnostics(self) -> dict:
         """Build position diagnostics.
 
@@ -1614,6 +1692,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Human-readable reason for current state (including coordinator-level overrides)
         diagnostics["control_state_reason"] = self._get_control_state_reason()
+
+        # Full decision chain explanation
+        diagnostics["position_explanation"] = self._build_position_explanation()
 
         return diagnostics
 
@@ -1674,6 +1755,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "outside_temperature": self.climate_data.outside_temperature,
                 "temp_switch": self.climate_data.temp_switch,
             }
+
+            # Which strategy branch was taken
+            if self.climate_strategy is not None:
+                diagnostics["climate_strategy"] = self.climate_strategy.value
 
             # Climate conditions
             diagnostics["climate_conditions"] = {
