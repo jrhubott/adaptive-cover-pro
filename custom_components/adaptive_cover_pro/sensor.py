@@ -977,8 +977,7 @@ class AdaptiveCoverManualOverrideEndSensor(AdaptiveCoverAdvancedDiagnosticSensor
         duration = self.coordinator.manager.reset_duration
         return {
             "per_entity": {
-                entity_id: (t + duration).isoformat()
-                for entity_id, t in times.items()
+                entity_id: (t + duration).isoformat() for entity_id, t in times.items()
             }
         }
 

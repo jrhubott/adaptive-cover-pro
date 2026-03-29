@@ -261,7 +261,11 @@ def test_blind_spot_detection_logic():
 
     # Check if gamma is between edges AND elevation is below threshold
     # gamma must be: left_edge <= gamma <= right_edge
-    in_blind_spot = (gamma <= right_edge) & (gamma >= left_edge) & (sol_elev <= blind_spot_elevation)
+    in_blind_spot = (
+        (gamma <= right_edge)
+        & (gamma >= left_edge)
+        & (sol_elev <= blind_spot_elevation)
+    )
 
     # gamma=25 is between 15 and 25, elevation 30 < 40
     assert in_blind_spot is True
@@ -280,7 +284,11 @@ def test_blind_spot_outside_elevation():
     left_edge = fov_left - blind_spot_left
     right_edge = fov_left - blind_spot_right
 
-    in_blind_spot = (gamma <= left_edge) & (gamma >= right_edge) & (sol_elev <= blind_spot_elevation)
+    in_blind_spot = (
+        (gamma <= left_edge)
+        & (gamma >= right_edge)
+        & (sol_elev <= blind_spot_elevation)
+    )
 
     # Elevation 50 > 40, so not in blind spot
     assert in_blind_spot is False
@@ -591,7 +599,9 @@ class TestAdaptiveGeneralCoverProperties:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_all_conditions_met(self, mock_datetime, vertical_cover_instance):
+    def test_direct_sun_valid_all_conditions_met(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid when all conditions are met."""
         # Setup: sun in FOV, above horizon, before sunset, no blind spot
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -608,10 +618,14 @@ class TestAdaptiveGeneralCoverProperties:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_after_sunset(self, mock_datetime, vertical_cover_instance):
+    def test_direct_sun_valid_after_sunset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid returns False after sunset (reproduces bug scenario)."""
         # Setup: sun still in FOV geometrically, but after sunset time
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)  # After sunset
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 20, 0, 0
+        )  # After sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -627,7 +641,9 @@ class TestAdaptiveGeneralCoverProperties:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_in_blind_spot(self, mock_datetime, vertical_cover_instance):
+    def test_direct_sun_valid_in_blind_spot(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid returns False when sun in blind spot."""
         # Setup: sun in FOV and before sunset, but in blind spot
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -674,10 +690,14 @@ class TestAdaptiveGeneralCoverProperties:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_before_sunrise(self, mock_datetime, vertical_cover_instance):
+    def test_direct_sun_valid_before_sunrise(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid returns False before sunrise."""
         # Setup: sun geometrically in FOV, but before sunrise
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 5, 0, 0)  # Before sunrise
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 5, 0, 0
+        )  # Before sunrise
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -692,10 +712,14 @@ class TestAdaptiveGeneralCoverProperties:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_with_sunset_offset(self, mock_datetime, vertical_cover_instance):
+    def test_direct_sun_valid_with_sunset_offset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid respects sunset offset."""
         # Setup: time is after sunset but within offset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 18, 15, 0)  # 15 min after sunset
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 18, 15, 0
+        )  # 15 min after sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -710,13 +734,17 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is True
 
         # Now test beyond offset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 18, 45, 0)  # 45 min after sunset
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 18, 45, 0
+        )  # 45 min after sunset
         # Now sunset_valid should be True (after offset)
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_default_position_before_sunset(self, mock_datetime, vertical_cover_instance):
+    def test_default_position_before_sunset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test default position returns h_def before sunset."""
         # Mock current time before sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -731,7 +759,9 @@ class TestAdaptiveGeneralCoverProperties:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_default_position_after_sunset(self, mock_datetime, vertical_cover_instance):
+    def test_default_position_after_sunset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test default position returns sunset_pos after sunset."""
         # Mock current time after sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
@@ -806,7 +836,9 @@ class TestAdaptiveVerticalCover:
         assert percentage == 25
 
     @pytest.mark.unit
-    def test_calculate_percentage_with_different_window_height(self, vertical_cover_instance):
+    def test_calculate_percentage_with_different_window_height(
+        self, vertical_cover_instance
+    ):
         """Test percentage with different window height."""
         vertical_cover_instance.h_win = 3.0
         percentage = vertical_cover_instance.calculate_percentage()
@@ -814,7 +846,9 @@ class TestAdaptiveVerticalCover:
         assert percentage == 17
 
     @pytest.mark.unit
-    def test_calculate_percentage_with_different_distance(self, vertical_cover_instance):
+    def test_calculate_percentage_with_different_distance(
+        self, vertical_cover_instance
+    ):
         """Test percentage with different distance."""
         vertical_cover_instance.distance = 1.0
         percentage = vertical_cover_instance.calculate_percentage()
@@ -862,7 +896,9 @@ class TestAdaptiveHorizontalCover:
         assert 0 <= percentage <= 200  # Can exceed 100% in some cases
 
     @pytest.mark.unit
-    def test_calculate_percentage_with_different_awning_length(self, horizontal_cover_instance):
+    def test_calculate_percentage_with_different_awning_length(
+        self, horizontal_cover_instance
+    ):
         """Test percentage with different awning length."""
         horizontal_cover_instance.awn_length = 3.0
         percentage = horizontal_cover_instance.calculate_percentage()
@@ -1077,7 +1113,9 @@ class TestNormalCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_min_position_with_bool_flag_sun_valid(self, mock_datetime, vertical_cover_instance):
+    def test_min_position_with_bool_flag_sun_valid(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test min position with bool flag when sun is valid."""
         # Setup for valid sun
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -1098,7 +1136,9 @@ class TestNormalCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_max_position_with_bool_flag_sun_valid(self, mock_datetime, vertical_cover_instance):
+    def test_max_position_with_bool_flag_sun_valid(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test max position with bool flag when sun is valid."""
         # Setup for valid sun, high elevation to get higher percentage
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -1209,12 +1249,8 @@ class TestNormalCoverStateHorizontalMinPosition:
 
         # Setup time so sun is valid
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        cover.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        cover.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
         state_handler = NormalCoverState(cover)
         state = state_handler.get_state()
@@ -1226,13 +1262,19 @@ class TestNormalCoverStateHorizontalMinPosition:
     @pytest.mark.parametrize(
         "sol_azi,sol_elev",
         [
-            (230.0, 10.0),   # gamma=50°, low elevation
-            (245.0, 15.0),   # gamma=65°
-            (260.0, 20.0),   # gamma=80°
-            (265.0, 30.0),   # gamma=85°
-            (250.0, 45.0),   # gamma=70°, high elevation
+            (230.0, 10.0),  # gamma=50°, low elevation
+            (245.0, 15.0),  # gamma=65°
+            (260.0, 20.0),  # gamma=80°
+            (265.0, 30.0),  # gamma=85°
+            (250.0, 45.0),  # gamma=70°, high elevation
         ],
-        ids=["gamma50_elev10", "gamma65_elev15", "gamma80_elev20", "gamma85_elev30", "gamma70_elev45"],
+        ids=[
+            "gamma50_elev10",
+            "gamma65_elev15",
+            "gamma80_elev20",
+            "gamma85_elev30",
+            "gamma70_elev45",
+        ],
     )
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
     def test_horizontal_saturated_parametrized(
@@ -1273,12 +1315,8 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        cover.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        cover.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
         state_handler = NormalCoverState(cover)
         state = state_handler.get_state()
@@ -1292,9 +1330,7 @@ class TestNormalCoverStateHorizontalMinPosition:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_sun_not_valid_returns_default_zero(
-        self, mock_datetime, hass, mock_logger
-    ):
+    def test_sun_not_valid_returns_default_zero(self, mock_datetime, hass, mock_logger):
         """When sun is NOT valid, default=0 is returned unchanged (no clamping)."""
         from custom_components.adaptive_cover_pro.calculation import (
             AdaptiveHorizontalCover,
@@ -1330,12 +1366,8 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        cover.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        cover.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
         state_handler = NormalCoverState(cover)
         state = state_handler.get_state()
@@ -1353,7 +1385,9 @@ class TestClimateCoverData:
     """Test ClimateCoverData properties."""
 
     @pytest.mark.unit
-    def test_outside_temperature_from_outside_entity(self, hass, mock_logger, mock_state):
+    def test_outside_temperature_from_outside_entity(
+        self, hass, mock_logger, mock_state
+    ):
         """Test outside temperature reading from outside sensor."""
         # Mock the state
         temp_state = mock_state("sensor.outside_temp", "22.5", {})
@@ -1415,7 +1449,10 @@ class TestClimateCoverData:
         )
 
         # Need to mock state_attr
-        with patch("custom_components.adaptive_cover_pro.calculation.state_attr", return_value=20.0):
+        with patch(
+            "custom_components.adaptive_cover_pro.calculation.state_attr",
+            return_value=20.0,
+        ):
             temp = climate_data.outside_temperature
             assert temp == 20.0
 
@@ -1479,7 +1516,10 @@ class TestClimateCoverData:
             _use_irradiance=False,
         )
 
-        with patch("custom_components.adaptive_cover_pro.calculation.state_attr", return_value=21.5):
+        with patch(
+            "custom_components.adaptive_cover_pro.calculation.state_attr",
+            return_value=21.5,
+        ):
             temp = climate_data.inside_temperature
             assert temp == 21.5
 
@@ -1817,6 +1857,7 @@ class TestClimateCoverData:
     @pytest.mark.unit
     def test_is_summer_true(self, hass, mock_logger, mock_state):
         """Test is_summer when temperature above threshold."""
+
         # Mock both inside and outside temps
         def mock_get_state(entity_id):
             if entity_id == "sensor.inside_temp":
@@ -2249,7 +2290,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_type_cover_with_presence(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_type_cover_with_presence(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test normal_type_cover delegates to normal_with_presence."""
         # Setup mocks
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -2292,7 +2335,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_type_cover_without_presence(self, mock_datetime, vertical_cover_instance, hass, mock_logger):
+    def test_normal_type_cover_without_presence(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger
+    ):
         """Test normal_type_cover delegates to normal_without_presence."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2332,7 +2377,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_sun_valid(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_winter_sun_valid(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test winter strategy with presence: open fully when cold and not sunny."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2383,7 +2430,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_not_sunny(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_not_sunny(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test not sunny weather returns default."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2434,7 +2483,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_summer_transparent(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_summer_transparent(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test summer with transparent blind returns 0."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2482,7 +2533,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_intermediate(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_intermediate(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test intermediate conditions use calculated position."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2492,7 +2545,9 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})  # Between temp_low and temp_high
+        temp_state = mock_state(
+            "sensor.inside_temp", "22.0", {}
+        )  # Between temp_low and temp_high
         weather_state = mock_state("weather.home", "sunny", {})
 
         def mock_get_state(entity_id):
@@ -2533,7 +2588,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_without_presence_summer(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_without_presence_summer(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test summer without presence closes blind."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2581,7 +2638,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_without_presence_winter(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_without_presence_winter(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test winter without presence opens blind."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2623,7 +2682,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_without_presence_default(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_without_presence_default(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test default path without presence."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2732,7 +2793,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_blind_type(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_get_state_blind_type(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test get_state routes to normal_type_cover for blind."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2773,7 +2836,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_tilt_type(self, mock_datetime, tilt_cover_instance, hass, mock_logger):
+    def test_get_state_tilt_type(
+        self, mock_datetime, tilt_cover_instance, hass, mock_logger
+    ):
         """Test get_state routes to tilt_state for tilt cover."""
         # Mock datetime for sunset_valid check
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -2817,7 +2882,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_max_position_clamping(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_get_state_max_position_clamping(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test max position clamping in climate state."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2861,7 +2928,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_min_position_clamping(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_get_state_min_position_clamping(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test min position clamping in climate state."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2905,7 +2974,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_sunny_no_sensors(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_winter_sunny_no_sensors(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test winter mode on sunny day WITHOUT lux/irradiance sensors.
 
         This is the bug scenario from issue #4:
@@ -2942,7 +3013,9 @@ class TestClimateCoverState:
         hass.states.get.side_effect = state_get
 
         # Mock sun as valid (in front of window)
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
             climate_data = ClimateCoverData(
@@ -2975,7 +3048,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_cloudy(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_winter_cloudy(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test winter mode on cloudy day.
 
         This should still work as before - winter mode on cloudy day.
@@ -3003,7 +3078,9 @@ class TestClimateCoverState:
 
         hass.states.get.side_effect = state_get
 
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
             climate_data = ClimateCoverData(
@@ -3035,7 +3112,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_low_lux(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_winter_low_lux(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test winter mode with lux sensor showing low light."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -3060,7 +3139,9 @@ class TestClimateCoverState:
 
         hass.states.get.side_effect = state_get
 
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
             climate_data = ClimateCoverData(
@@ -3093,7 +3174,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_normal_sunny_day(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    def test_normal_with_presence_normal_sunny_day(
+        self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test normal operation on mild sunny day.
 
         Not winter, not summer, sunny weather.
@@ -3108,7 +3191,9 @@ class TestClimateCoverState:
         )
 
         # Setup mild conditions: normal temp, sunny weather
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})  # Between temp_low and temp_high
+        temp_state = mock_state(
+            "sensor.inside_temp", "22.0", {}
+        )  # Between temp_low and temp_high
         weather_state = mock_state("weather.home", "sunny", {})
         presence_state = mock_state("binary_sensor.presence", "on", {})
 
@@ -3123,7 +3208,9 @@ class TestClimateCoverState:
 
         hass.states.get.side_effect = state_get
 
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
             climate_data = ClimateCoverData(
@@ -3161,7 +3248,9 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_tilt_with_presence_winter_sunny(self, mock_datetime, tilt_cover_instance, hass, mock_logger, mock_state):
+    def test_tilt_with_presence_winter_sunny(
+        self, mock_datetime, tilt_cover_instance, hass, mock_logger, mock_state
+    ):
         """Test tilt winter mode on sunny day."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
@@ -3187,7 +3276,9 @@ class TestClimateCoverState:
 
         hass.states.get.side_effect = state_get
 
-        with patch.object(type(tilt_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(tilt_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
             tilt_cover_instance.tilt_degrees = 90  # Venetian blinds
 
@@ -3216,7 +3307,9 @@ class TestClimateCoverState:
             state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
 
             # Mock the parent get_state to return a known value
-            with patch.object(NormalCoverState, 'get_state', return_value=50) as mock_get_state:
+            with patch.object(
+                NormalCoverState, "get_state", return_value=50
+            ) as mock_get_state:
                 result = state_handler.tilt_with_presence(90)
 
                 # Winter mode for tilt should call super().get_state() (calculated position)
@@ -3234,7 +3327,9 @@ def test_tilt_data_cm_to_meter_conversion():
     This is a critical test for Issue #5 - ensures the UI input in cm
     is correctly converted to meters for calculation formulas.
     """
-    from custom_components.adaptive_cover_pro.services.configuration_service import ConfigurationService
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
 
     # Create a mock configuration service instance
     config_entry = MagicMock()
@@ -3254,8 +3349,8 @@ def test_tilt_data_cm_to_meter_conversion():
 
     # Use the actual get_tilt_data method
     options = {
-        "slat_distance": 2.0,   # 2.0 cm (user input)
-        "slat_depth": 2.5,      # 2.5 cm (user input)
+        "slat_distance": 2.0,  # 2.0 cm (user input)
+        "slat_depth": 2.5,  # 2.5 cm (user input)
         "tilt_mode": "mode2",
     }
 
@@ -3263,8 +3358,8 @@ def test_tilt_data_cm_to_meter_conversion():
     result = config_service.get_tilt_data(options)
 
     # Should convert cm to meters
-    assert result[0] == pytest.approx(0.02, abs=0.0001)    # 2.0 cm -> 0.02 m (distance)
-    assert result[1] == pytest.approx(0.025, abs=0.0001)   # 2.5 cm -> 0.025 m (depth)
+    assert result[0] == pytest.approx(0.02, abs=0.0001)  # 2.0 cm -> 0.02 m (distance)
+    assert result[1] == pytest.approx(0.025, abs=0.0001)  # 2.5 cm -> 0.025 m (depth)
     assert result[2] == "mode2"
 
 
@@ -3276,7 +3371,9 @@ def test_tilt_data_warns_on_small_values(caplog):
     instead of centimeters.
     """
     import logging
-    from custom_components.adaptive_cover_pro.services.configuration_service import ConfigurationService
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
 
     # Create a mock configuration service instance
     config_entry = MagicMock()
@@ -3296,8 +3393,8 @@ def test_tilt_data_warns_on_small_values(caplog):
 
     # Use very small values (likely meters entered by mistake)
     options = {
-        "slat_distance": 0.02,   # 0.02 cm (suspiciously small - likely meant 0.02m)
-        "slat_depth": 0.025,     # 0.025 cm (suspiciously small - likely meant 0.025m)
+        "slat_distance": 0.02,  # 0.02 cm (suspiciously small - likely meant 0.02m)
+        "slat_depth": 0.025,  # 0.025 cm (suspiciously small - likely meant 0.025m)
         "tilt_mode": "mode2",
     }
 
@@ -3309,5 +3406,7 @@ def test_tilt_data_warns_on_small_values(caplog):
     assert result[1] == pytest.approx(0.00025, abs=0.00001)
 
     # Should have logged a warning
-    assert any("slat dimensions are very small" in record.message for record in caplog.records)
+    assert any(
+        "slat dimensions are very small" in record.message for record in caplog.records
+    )
     assert any("CENTIMETERS" in record.message for record in caplog.records)

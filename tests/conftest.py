@@ -123,12 +123,14 @@ def sample_climate_config():
 @pytest.fixture
 def mock_state():
     """Return a mock Home Assistant state object."""
+
     def _create_state(entity_id: str, state: str, attributes: dict | None = None):
         state_obj = MagicMock()
         state_obj.entity_id = entity_id
         state_obj.state = state
         state_obj.attributes = attributes or {}
         return state_obj
+
     return _create_state
 
 

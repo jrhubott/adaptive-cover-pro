@@ -179,7 +179,9 @@ async def test_startup_grace_period_prevents_manual_override_detection():
     # Create minimal mock coordinator
     coordinator = MagicMock()
     coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    coordinator._startup_timestamp = dt.datetime.now().timestamp()  # Active grace period
+    coordinator._startup_timestamp = (
+        dt.datetime.now().timestamp()
+    )  # Active grace period
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
     coordinator.cover_state_change = True
@@ -194,9 +196,7 @@ async def test_startup_grace_period_prevents_manual_override_detection():
     )
 
     # Call async_handle_cover_state_change
-    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
-        coordinator, 50
-    )
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)
 
     # Verify handle_state_change was NOT called (manual override prevented)
     coordinator.manager.handle_state_change.assert_not_called()
@@ -239,9 +239,7 @@ async def test_startup_grace_period_allows_manual_override_after_expiration():
     coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
 
     # Call async_handle_cover_state_change
-    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
-        coordinator, 50
-    )
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)
 
     # Verify _is_in_startup_grace_period was checked
     coordinator._is_in_startup_grace_period.assert_called_once()

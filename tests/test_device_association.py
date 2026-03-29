@@ -65,7 +65,9 @@ def mock_config_entry_with_device():
 @pytest.mark.unit
 async def test_get_devices_from_entities_no_entities(mock_hass):
     """Helper returns empty dict when entity_ids list is empty."""
-    from custom_components.adaptive_cover_pro.config_flow import _get_devices_from_entities
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _get_devices_from_entities,
+    )
 
     with (
         patch("custom_components.adaptive_cover_pro.config_flow.er") as mock_er,
@@ -83,7 +85,9 @@ async def test_get_devices_from_entities_no_entities(mock_hass):
 @pytest.mark.unit
 async def test_get_devices_from_entities_entity_has_no_device(mock_hass):
     """Helper returns empty dict when entity has no device_id."""
-    from custom_components.adaptive_cover_pro.config_flow import _get_devices_from_entities
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _get_devices_from_entities,
+    )
 
     with (
         patch("custom_components.adaptive_cover_pro.config_flow.er") as mock_er,
@@ -105,7 +109,9 @@ async def test_get_devices_from_entities_entity_has_no_device(mock_hass):
 @pytest.mark.unit
 async def test_get_devices_from_entities_entity_has_device(mock_hass):
     """Helper returns device dict when entity has an associated device."""
-    from custom_components.adaptive_cover_pro.config_flow import _get_devices_from_entities
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _get_devices_from_entities,
+    )
 
     with (
         patch("custom_components.adaptive_cover_pro.config_flow.er") as mock_er,
@@ -134,7 +140,9 @@ async def test_get_devices_from_entities_entity_has_device(mock_hass):
 @pytest.mark.unit
 async def test_get_devices_from_entities_deduplicates(mock_hass):
     """Helper de-duplicates devices when multiple entities share one device."""
-    from custom_components.adaptive_cover_pro.config_flow import _get_devices_from_entities
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _get_devices_from_entities,
+    )
 
     with (
         patch("custom_components.adaptive_cover_pro.config_flow.er") as mock_er,
@@ -201,9 +209,7 @@ def test_device_info_merged_when_device_id_set(mock_hass):
     device_entry.identifiers = {("some_integration", "motor-id")}
     device_entry.connections = set()
 
-    with patch(
-        "custom_components.adaptive_cover_pro.entity_base.dr"
-    ) as mock_dr:
+    with patch("custom_components.adaptive_cover_pro.entity_base.dr") as mock_dr:
         device_reg = MagicMock()
         device_reg.async_get.return_value = device_entry
         mock_dr.async_get.return_value = device_reg
@@ -232,9 +238,7 @@ def test_device_info_fallback_when_device_not_found(mock_hass):
     config_entry.data = {"name": "My Blind", CONF_SENSOR_TYPE: "cover_blind"}
     config_entry.options = {CONF_DEVICE_ID: "device-stale-999"}
 
-    with patch(
-        "custom_components.adaptive_cover_pro.entity_base.dr"
-    ) as mock_dr:
+    with patch("custom_components.adaptive_cover_pro.entity_base.dr") as mock_dr:
         device_reg = MagicMock()
         device_reg.async_get.return_value = None  # Device no longer exists
         mock_dr.async_get.return_value = device_reg

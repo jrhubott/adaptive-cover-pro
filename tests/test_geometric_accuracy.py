@@ -24,7 +24,9 @@ def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
     return (win_azi - gamma) % 360
 
 
-def make_cover_with_angles(base_params: dict, gamma: float, sol_elev: float) -> AdaptiveVerticalCover:
+def make_cover_with_angles(
+    base_params: dict, gamma: float, sol_elev: float
+) -> AdaptiveVerticalCover:
     """Create a cover with specific gamma and elevation angles.
 
     Args:
@@ -174,7 +176,9 @@ class TestSafetyMargins:
         cover = AdaptiveVerticalCover(**base_cover_params)
 
         # Test smooth transition in gamma range
-        margins = [cover._calculate_safety_margin(gamma, 45.0) for gamma in range(45, 91, 5)]
+        margins = [
+            cover._calculate_safety_margin(gamma, 45.0) for gamma in range(45, 91, 5)
+        ]
 
         # Check monotonic increase
         for i in range(len(margins) - 1):
@@ -266,17 +270,21 @@ class TestEdgeCases:
         """Normal angles should not trigger edge case handling."""
         # Test various normal angles
         test_cases = [
-            (0.0, 45.0),   # Direct front, mid elevation
+            (0.0, 45.0),  # Direct front, mid elevation
             (30.0, 30.0),  # Moderate angle
             (60.0, 60.0),  # Higher angle (below 85° gamma threshold)
-            (-45.0, 15.0), # Negative gamma
+            (-45.0, 15.0),  # Negative gamma
             (45.0, 45.0),  # 45 degree angle
         ]
 
         for gamma, sol_elev in test_cases:
-            cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=gamma, sol_elev=sol_elev
+            )
             is_edge_case, _ = cover._handle_edge_cases()
-            assert is_edge_case is False, f"False edge case at gamma={gamma}, elev={sol_elev}"
+            assert is_edge_case is False, (
+                f"False edge case at gamma={gamma}, elev={sol_elev}"
+            )
 
 
 class TestEnhancedCalculatePosition:
@@ -284,7 +292,9 @@ class TestEnhancedCalculatePosition:
 
     def test_calculate_position_uses_edge_case_handling(self, base_cover_params):
         """calculate_position should use edge case handling."""
-        cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=1.5)  # Triggers edge case
+        cover = make_cover_with_angles(
+            base_cover_params, gamma=0.0, sol_elev=1.5
+        )  # Triggers edge case
 
         position = cover.calculate_position()
 
@@ -294,8 +304,12 @@ class TestEnhancedCalculatePosition:
     def test_calculate_position_applies_safety_margin(self, base_cover_params):
         """calculate_position should apply safety margins at extreme angles."""
         # Create two covers with different gamma angles
-        cover_normal = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=45.0)  # No margin
-        cover_extreme = make_cover_with_angles(base_cover_params, gamma=70.0, sol_elev=45.0)  # Margin applied
+        cover_normal = make_cover_with_angles(
+            base_cover_params, gamma=0.0, sol_elev=45.0
+        )  # No margin
+        cover_extreme = make_cover_with_angles(
+            base_cover_params, gamma=70.0, sol_elev=45.0
+        )  # Margin applied
 
         pos_normal = cover_normal.calculate_position()
         pos_extreme = cover_extreme.calculate_position()
@@ -307,15 +321,19 @@ class TestEnhancedCalculatePosition:
         """calculate_position should never exceed window height."""
         # Test various angles that might cause overflow
         test_cases = [
-            (0.0, 89.0),   # Near vertical
+            (0.0, 89.0),  # Near vertical
             (10.0, 85.0),  # High elevation
             (80.0, 70.0),  # Extreme gamma with safety margin
         ]
 
         for gamma, sol_elev in test_cases:
-            cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=gamma, sol_elev=sol_elev
+            )
             position = cover.calculate_position()
-            assert position <= cover.h_win, f"Exceeded h_win at gamma={gamma}, elev={sol_elev}"
+            assert position <= cover.h_win, (
+                f"Exceeded h_win at gamma={gamma}, elev={sol_elev}"
+            )
 
     def test_calculate_position_never_negative(self, base_cover_params):
         """calculate_position should never return negative values."""
@@ -328,7 +346,9 @@ class TestEnhancedCalculatePosition:
         ]
 
         for gamma, sol_elev in test_cases:
-            cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=gamma, sol_elev=sol_elev
+            )
             position = cover.calculate_position()
             assert position >= 0, f"Negative position at gamma={gamma}, elev={sol_elev}"
 
@@ -337,7 +357,9 @@ class TestEnhancedCalculatePosition:
         # Test wide range of angles including extremes
         for gamma in range(-90, 91, 10):
             for sol_elev in range(0, 91, 10):
-                cover = make_cover_with_angles(base_cover_params, gamma=float(gamma), sol_elev=float(sol_elev))
+                cover = make_cover_with_angles(
+                    base_cover_params, gamma=float(gamma), sol_elev=float(sol_elev)
+                )
                 position = cover.calculate_position()
 
                 assert not np.isnan(position), f"NaN at gamma={gamma}, elev={sol_elev}"
@@ -363,17 +385,19 @@ class TestRegressionNormalAngles:
         """Normal angles should show <5% deviation from baseline."""
         # Test "normal" operating range
         normal_test_cases = [
-            (0.0, 30.0),   # Direct front, low-mid elevation
-            (0.0, 45.0),   # Direct front, mid elevation
-            (0.0, 60.0),   # Direct front, high elevation
+            (0.0, 30.0),  # Direct front, low-mid elevation
+            (0.0, 45.0),  # Direct front, mid elevation
+            (0.0, 60.0),  # Direct front, high elevation
             (15.0, 45.0),  # Slight angle
             (30.0, 45.0),  # Moderate angle
             (45.0, 30.0),  # Threshold angle
-            (-30.0, 45.0), # Negative gamma
+            (-30.0, 45.0),  # Negative gamma
         ]
 
         for gamma, sol_elev in normal_test_cases:
-            cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=gamma, sol_elev=sol_elev
+            )
 
             enhanced_pos = cover.calculate_position()
             baseline_pos = self._baseline_calculation(
@@ -392,7 +416,9 @@ class TestRegressionNormalAngles:
         """Direct front (gamma=0) should match baseline exactly at normal elevations."""
         # Only test elevations where no safety margins are applied
         for sol_elev in [30.0, 45.0, 60.0, 70.0]:
-            cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=sol_elev)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=0.0, sol_elev=sol_elev
+            )
 
             enhanced_pos = cover.calculate_position()
             baseline_pos = self._baseline_calculation(
@@ -410,12 +436,14 @@ class TestRegressionNormalAngles:
         extreme_test_cases = [
             (60.0, 45.0),  # High gamma
             (75.0, 45.0),  # Very high gamma
-            (0.0, 8.0),    # Low elevation (with margin)
-            (45.0, 8.0),   # Combined moderate gamma + low elevation
+            (0.0, 8.0),  # Low elevation (with margin)
+            (45.0, 8.0),  # Combined moderate gamma + low elevation
         ]
 
         for gamma, sol_elev in extreme_test_cases:
-            cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=gamma, sol_elev=sol_elev
+            )
 
             enhanced_pos = cover.calculate_position()
             baseline_pos = self._baseline_calculation(
@@ -440,13 +468,17 @@ class TestWindowDepth:
     def test_window_depth_disabled_matches_baseline(self, base_cover_params):
         """Window depth=0 should match baseline behavior exactly."""
         # Configure with window_depth explicitly set to 0
-        cover_no_depth = make_cover_with_angles(base_cover_params, gamma=30.0, sol_elev=45.0)
+        cover_no_depth = make_cover_with_angles(
+            base_cover_params, gamma=30.0, sol_elev=45.0
+        )
 
         # Configure with window_depth parameter
         params_with_depth = base_cover_params.copy()
         params_with_depth["window_depth"] = 0.0
         cover_with_zero_depth = AdaptiveVerticalCover(**params_with_depth)
-        cover_with_zero_depth.sol_azi = gamma_to_sol_azi(cover_with_zero_depth.win_azi, 30.0)
+        cover_with_zero_depth.sol_azi = gamma_to_sol_azi(
+            cover_with_zero_depth.win_azi, 30.0
+        )
         cover_with_zero_depth.sol_elev = 45.0
 
         pos_no_depth = cover_no_depth.calculate_position()
@@ -459,7 +491,9 @@ class TestWindowDepth:
         # Test at gamma=45 where depth effect is significant
         params_no_depth = base_cover_params.copy()
         params_no_depth["window_depth"] = 0.0
-        cover_no_depth = make_cover_with_angles(params_no_depth, gamma=45.0, sol_elev=45.0)
+        cover_no_depth = make_cover_with_angles(
+            params_no_depth, gamma=45.0, sol_elev=45.0
+        )
 
         params_with_depth = base_cover_params.copy()
         params_with_depth["window_depth"] = 0.10  # 10cm window depth
@@ -477,7 +511,9 @@ class TestWindowDepth:
         """Window depth should have minimal effect at gamma < 10°."""
         params_no_depth = base_cover_params.copy()
         params_no_depth["window_depth"] = 0.0
-        cover_no_depth = make_cover_with_angles(params_no_depth, gamma=5.0, sol_elev=45.0)
+        cover_no_depth = make_cover_with_angles(
+            params_no_depth, gamma=5.0, sol_elev=45.0
+        )
 
         params_with_depth = base_cover_params.copy()
         params_with_depth["window_depth"] = 0.10
@@ -576,7 +612,9 @@ class TestSmoothTransitions:
         # Test positions around threshold
         positions = []
         for gamma in range(40, 51, 1):
-            cover = make_cover_with_angles(base_cover_params, gamma=float(gamma), sol_elev=45.0)
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=float(gamma), sol_elev=45.0
+            )
             positions.append(cover.calculate_position())
 
         # Check no large jumps
@@ -591,13 +629,17 @@ class TestSmoothTransitions:
         # Test around 10° threshold
         positions_low = []
         for elev in range(5, 16, 1):
-            cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=float(elev))
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=0.0, sol_elev=float(elev)
+            )
             positions_low.append(cover.calculate_position())
 
         # Test around 75° threshold
         positions_high = []
         for elev in range(70, 81, 1):
-            cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=float(elev))
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=0.0, sol_elev=float(elev)
+            )
             positions_high.append(cover.calculate_position())
 
         for positions, threshold in [(positions_low, 10), (positions_high, 75)]:
@@ -613,7 +655,9 @@ class TestSmoothTransitions:
         """Position should increase monotonically with elevation (at constant gamma)."""
         positions = []
         for elev in range(10, 81, 5):
-            cover = make_cover_with_angles(base_cover_params, gamma=30.0, sol_elev=float(elev))
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=30.0, sol_elev=float(elev)
+            )
             positions.append(cover.calculate_position())
 
         # Check monotonic increase

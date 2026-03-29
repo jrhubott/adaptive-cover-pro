@@ -169,7 +169,9 @@ def test_issue_24_sunset_position_with_conditional_min_pos(hass, mock_logger):
         result = state.get_state()
 
         # Result should be sunset_pos (0), NOT min_pos (35)
-        assert result == 0, f"Expected 0 (sunset_pos), got {result} (min_pos applied incorrectly)"
+        assert result == 0, (
+            f"Expected 0 (sunset_pos), got {result} (min_pos applied incorrectly)"
+        )
 
 
 @pytest.mark.unit
@@ -286,7 +288,9 @@ def test_sun_in_window_with_conditional_min_pos(hass, mock_logger):
         result = state.get_state()
 
         # Result should be >= min_pos (35) because sun is in window and enable_min_position = True
-        assert result >= 35, f"Expected >= 35 (min_pos applied during sun), got {result}"
+        assert result >= 35, (
+            f"Expected >= 35 (min_pos applied during sun), got {result}"
+        )
 
 
 @pytest.mark.unit

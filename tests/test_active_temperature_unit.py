@@ -7,7 +7,9 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature
 
 from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE
-from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverAdvancedDiagnosticSensor
+from custom_components.adaptive_cover_pro.sensor import (
+    AdaptiveCoverAdvancedDiagnosticSensor,
+)
 
 
 @pytest.fixture
@@ -30,7 +32,9 @@ def mock_coordinator(hass):
 
 
 @pytest.mark.unit
-def test_active_temperature_sensor_has_valid_unit(hass, mock_config_entry, mock_coordinator):
+def test_active_temperature_sensor_has_valid_unit(
+    hass, mock_config_entry, mock_coordinator
+):
     """active_temperature sensor must not have None as unit when device_class is TEMPERATURE.
 
     Regression test for GitHub issue #48.
@@ -59,7 +63,9 @@ def test_active_temperature_sensor_has_valid_unit(hass, mock_config_entry, mock_
 
 
 @pytest.mark.unit
-def test_active_temperature_unit_matches_hass_config(hass, mock_config_entry, mock_coordinator):
+def test_active_temperature_unit_matches_hass_config(
+    hass, mock_config_entry, mock_coordinator
+):
     """active_temperature sensor unit must match hass.config.units.temperature_unit."""
     sensor = AdaptiveCoverAdvancedDiagnosticSensor(
         mock_config_entry.entry_id,

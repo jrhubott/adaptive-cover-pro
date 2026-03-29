@@ -342,9 +342,7 @@ class TestEdgeCasesLowElevation:
         position = cover.calculate_position()
 
         # Sill more than covers the sun penetration, so blind is fully raised (position=0)
-        assert position == 0.0, (
-            f"Expected 0.0 (sill blocks all sun) but got {position}"
-        )
+        assert position == 0.0, f"Expected 0.0 (sill blocks all sun) but got {position}"
 
     def test_very_low_elevation_no_exception_raised(self, base_cover_params):
         """At sol_elev=2.5° with large sill_height, no exception should be raised."""
@@ -468,9 +466,7 @@ class TestInteractionWithWindowDepth:
         # Combined should differ from each individually
         assert pos_both != pos_neither
 
-    def test_combined_result_is_consistent_with_offsets(
-        self, base_cover_params
-    ):
+    def test_combined_result_is_consistent_with_offsets(self, base_cover_params):
         """window_depth adds and sill_height subtracts from effective_distance independently."""
         gamma = 30.0
         sol_elev = 45.0

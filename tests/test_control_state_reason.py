@@ -65,7 +65,9 @@ class TestControlStateReasonDirectSun:
         """Sun in FOV, no blind spot, no sunset offset → Direct Sun."""
         cover = make_cover(hass, mock_logger, sol_azi=180.0, sol_elev=45.0)
 
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             assert cover.control_state_reason == "Direct Sun"
 
     def test_direct_sun_elevation_in_range(self, hass, mock_logger):
@@ -78,7 +80,9 @@ class TestControlStateReasonDirectSun:
             min_elevation=10,
             max_elevation=60,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             assert cover.control_state_reason == "Direct Sun"
 
 
@@ -90,10 +94,12 @@ class TestControlStateReasonFOVExit:
         cover = make_cover(
             hass,
             mock_logger,
-            sol_azi=0.0,   # 180° from window azimuth 180°
+            sol_azi=0.0,  # 180° from window azimuth 180°
             sol_elev=45.0,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: FOV Exit"
 
@@ -108,7 +114,9 @@ class TestControlStateReasonFOVExit:
             fov_left=45,
             fov_right=45,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: FOV Exit"
 
@@ -122,11 +130,13 @@ class TestControlStateReasonElevationLimit:
             hass,
             mock_logger,
             sol_azi=180.0,
-            sol_elev=5.0,   # Below min_elevation of 10
+            sol_elev=5.0,  # Below min_elevation of 10
             min_elevation=10,
             max_elevation=None,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
 
@@ -140,7 +150,9 @@ class TestControlStateReasonElevationLimit:
             min_elevation=None,
             max_elevation=70,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
 
@@ -150,11 +162,13 @@ class TestControlStateReasonElevationLimit:
             hass,
             mock_logger,
             sol_azi=180.0,
-            sol_elev=5.0,   # Below min of 10
+            sol_elev=5.0,  # Below min of 10
             min_elevation=10,
             max_elevation=70,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
 
@@ -167,7 +181,9 @@ class TestControlStateReasonSunsetOffset:
         cover = make_cover(hass, mock_logger, sol_azi=180.0, sol_elev=45.0)
 
         # Patch sunset_valid to return True (in offset window)
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=True):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=True
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: Sunset Offset"
 
@@ -176,11 +192,13 @@ class TestControlStateReasonSunsetOffset:
         cover = make_cover(
             hass,
             mock_logger,
-            sol_azi=0.0,   # Outside FOV
+            sol_azi=0.0,  # Outside FOV
             sol_elev=45.0,
         )
         # Both FOV exit and sunset offset are True
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=True):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=True
+        ):
             reason = cover.control_state_reason
             # Sunset offset should take priority
             assert reason == "Default: Sunset Offset"
@@ -205,8 +223,18 @@ class TestControlStateReasonBlindSpot:
         )
         # Patch is_sun_in_blind_spot to confirm it's in the blind spot
         with (
-            patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
-            patch.object(type(cover), "is_sun_in_blind_spot", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                type(cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(cover),
+                "is_sun_in_blind_spot",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
         ):
             reason = cover.control_state_reason
             assert reason == "Default: Blind Spot"
@@ -222,7 +250,9 @@ class TestControlStateReasonBlindSpot:
             blind_spot_right=30,
             blind_spot_on=False,  # Disabled
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             # Should be Direct Sun because blind spot is disabled
             assert reason == "Direct Sun"
@@ -235,8 +265,18 @@ class TestControlStateReasonPriority:
         """direct_sun_valid=True always returns 'Direct Sun'."""
         cover = make_cover(hass, mock_logger, sol_azi=180.0, sol_elev=45.0)
         with (
-            patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
-            patch.object(type(cover), "is_sun_in_blind_spot", new_callable=PropertyMock, return_value=False),
+            patch.object(
+                type(cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(cover),
+                "is_sun_in_blind_spot",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             assert cover.control_state_reason == "Direct Sun"
 
@@ -246,12 +286,22 @@ class TestControlStateReasonPriority:
             hass,
             mock_logger,
             sol_azi=180.0,
-            sol_elev=5.0,   # Below min
+            sol_elev=5.0,  # Below min
             min_elevation=10,
         )
         with (
-            patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False),
-            patch.object(type(cover), "is_sun_in_blind_spot", new_callable=PropertyMock, return_value=True),
+            patch.object(
+                type(cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(cover),
+                "is_sun_in_blind_spot",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
         ):
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
@@ -261,11 +311,13 @@ class TestControlStateReasonPriority:
         cover = make_cover(
             hass,
             mock_logger,
-            sol_azi=0.0,    # Outside FOV
+            sol_azi=0.0,  # Outside FOV
             sol_elev=45.0,  # Valid elevation
             min_elevation=10,
             max_elevation=80,
         )
-        with patch.object(type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False):
+        with patch.object(
+            type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
+        ):
             reason = cover.control_state_reason
             assert reason == "Default: FOV Exit"

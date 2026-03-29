@@ -84,10 +84,9 @@ class AdaptiveGeneralCover(ABC):
         elev = solpos["elevation"]
 
         # Azimuth in FOV
-        in_fov = (
-            (alpha - self.azi_min_abs) % 360
-            <= (self.azi_max_abs - self.azi_min_abs) % 360
-        )
+        in_fov = (alpha - self.azi_min_abs) % 360 <= (
+            self.azi_max_abs - self.azi_min_abs
+        ) % 360
 
         # Elevation check — matches valid_elevation property logic
         if self.min_elevation is None and self.max_elevation is None:
@@ -899,7 +898,9 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
     window_depth: float = (
         0.0  # Window reveal/frame depth (meters), default 0 = disabled
     )
-    sill_height: float = 0.0  # Height from floor to window bottom (meters), default 0 = floor-level
+    sill_height: float = (
+        0.0  # Height from floor to window bottom (meters), default 0 = floor-level
+    )
 
     def _calculate_safety_margin(self, gamma: float, sol_elev: float) -> float:
         """Calculate angle-dependent safety margin multiplier (≥1.0).
@@ -973,7 +974,9 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # providing S/tan(elevation) meters of "free" horizontal protection.
         # Subtract from effective_distance to account for this.
         if self.sill_height > 0:
-            sill_offset = self.sill_height / max(tan(rad(self.sol_elev)), 0.05)  # ~2.9° minimum
+            sill_offset = self.sill_height / max(
+                tan(rad(self.sol_elev)), 0.05
+            )  # ~2.9° minimum
             effective_distance -= sill_offset
 
         # Base calculation: project glare zone to vertical blind height
@@ -1059,7 +1062,9 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
     slat_distance: float
     depth: float
-    mode: TiltMode | str  # Accept both TiltMode enum and string for backward compatibility
+    mode: (
+        TiltMode | str
+    )  # Accept both TiltMode enum and string for backward compatibility
 
     @property
     def beta(self) -> float:

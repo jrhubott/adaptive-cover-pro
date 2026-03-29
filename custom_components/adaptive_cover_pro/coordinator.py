@@ -744,7 +744,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if not self.check_adaptive_time:
             sunset_pos = options.get(CONF_SUNSET_POS)
             default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            outside_window_pos = sunset_pos if sunset_pos is not None else default_height
+            outside_window_pos = (
+                sunset_pos if sunset_pos is not None else default_height
+            )
 
             self.normal_cover_state = NormalCoverState(cover_data)
             self.default_state = outside_window_pos
@@ -781,9 +783,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.control_method = ControlMethod.MOTION
         elif self.manager.binary_cover_manual:
             self.control_method = ControlMethod.MANUAL
-        elif self._climate_mode and self.climate_data and self.climate_data.is_summer and self._switch_mode:
+        elif (
+            self._climate_mode
+            and self.climate_data
+            and self.climate_data.is_summer
+            and self._switch_mode
+        ):
             self.control_method = ControlMethod.SUMMER
-        elif self._climate_mode and self.climate_data and self.climate_data.is_winter and self._switch_mode:
+        elif (
+            self._climate_mode
+            and self.climate_data
+            and self.climate_data.is_winter
+            and self._switch_mode
+        ):
             self.control_method = ControlMethod.WINTER
         elif cover_data.direct_sun_valid:
             self.control_method = ControlMethod.SOLAR
@@ -1021,9 +1033,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
         if self.automatic_control:
             sunset_pos = (
-                inverse_state(sunset_pos_raw)
-                if self._inverse_state
-                else sunset_pos_raw
+                inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
             )
             for cover in self.entities:
                 # Only move if delta is sufficient or it's a special position
@@ -1237,9 +1247,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.end_time = options.get(CONF_END_TIME)
         self.end_time_entity = options.get(CONF_END_ENTITY)
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
-        self.manual_duration = options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2}
-        )
+        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2})
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
         self.start_value = options.get(CONF_INTERP_START)
         self.end_value = options.get(CONF_INTERP_END)
@@ -1559,7 +1567,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         climate_cover_state = ClimateCoverState(cover_data, climate)
         self.climate_state = round(climate_cover_state.get_state())
         self.climate_data = climate_cover_state.climate_data  # Store for P1 diagnostics
-        self.climate_strategy = climate_cover_state.climate_strategy  # Store for diagnostics
+        self.climate_strategy = (
+            climate_cover_state.climate_strategy
+        )  # Store for diagnostics
 
     def _build_solar_diagnostics(self) -> dict:
         """Build solar position diagnostics."""
@@ -1656,9 +1666,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Step 3: Climate mode override
         if self._switch_mode and self.climate_state is not None:
-            strategy_label = self._CLIMATE_STRATEGY_LABELS.get(
-                self.climate_strategy, "Active"
-            ) if self.climate_strategy else "Active"
+            strategy_label = (
+                self._CLIMATE_STRATEGY_LABELS.get(self.climate_strategy, "Active")
+                if self.climate_strategy
+                else "Active"
+            )
             parts.append(f"Climate: {strategy_label} → {self.climate_state}%")
 
         # Step 4: Interpolation / inverse state
@@ -1817,12 +1829,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "inverse_state": options.get(CONF_INVERSE_STATE, False),
                 "interpolation": options.get(CONF_INTERP, False),
                 "force_override_sensors": options.get(CONF_FORCE_OVERRIDE_SENSORS, []),
-                "force_override_position": options.get(
-                    CONF_FORCE_OVERRIDE_POSITION, 0
-                ),
+                "force_override_position": options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
                 "force_override_active": self.is_force_override_active,
                 "motion_sensors": options.get(CONF_MOTION_SENSORS, []),
-                "motion_timeout": options.get(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT),
+                "motion_timeout": options.get(
+                    CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
+                ),
                 "motion_detected": self.is_motion_detected,
                 "motion_timeout_active": self._motion_timeout_active,
             }

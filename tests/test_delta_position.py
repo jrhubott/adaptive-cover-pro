@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock
 
 
-
 def test_check_position_delta_respects_threshold():
     """Test that check_position_delta enforces minimum threshold."""
     from custom_components.adaptive_cover_pro.coordinator import (
