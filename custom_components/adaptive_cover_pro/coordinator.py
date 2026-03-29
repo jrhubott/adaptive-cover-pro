@@ -737,6 +737,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._climate_mode:
             self.climate_mode_data(options, cover_data)
 
+        # When outside the configured start_time/end_time window,
+        # report the position the cover was actually commanded to
+        if not self.check_adaptive_time:
+            sunset_pos = options.get(CONF_SUNSET_POS)
+            default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
+            outside_window_pos = sunset_pos if sunset_pos is not None else default_height
+
+            self.normal_cover_state = NormalCoverState(cover_data)
+            self.default_state = outside_window_pos
+            self.raw_calculated_position = outside_window_pos
+            self.control_method = ControlMethod.DEFAULT
+            self.logger.debug(
+                "Outside time window - using position: %s", outside_window_pos
+            )
+            return self.state
+
         # Calculate the state of the cover
         self.normal_cover_state = NormalCoverState(cover_data)
         self.logger.debug(
