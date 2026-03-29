@@ -79,7 +79,6 @@ CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"
 CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
 CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
-CONF_ENABLE_DIAGNOSTICS = "enable_diagnostics"
 
 # Position verification constants (fixed values, not configurable)
 POSITION_CHECK_INTERVAL_MINUTES = 1  # Fixed interval for position verification

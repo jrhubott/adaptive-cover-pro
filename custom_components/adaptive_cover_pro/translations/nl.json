@@ -22,8 +22,7 @@
           "manual_threshold": "Minimale handmatige overschrijfdrempel",
           "manual_ignore_intermediate": "Negeer tussenliggende posities tijdens handmatige overschrijving (openen en sluiten)",
           "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Minimale verandering in positie vereist voordat de positie van de bekleding wordt aangepast",
@@ -34,8 +33,7 @@
           "manual_override_reset": "Optie om de duur van handmatige overschrijving na elke handmatige aanpassing te resetten; als dit is uitgeschakeld, geldt de duur alleen voor de eerste handmatige aanpassing",
           "end_time": "Eindtijd voor elke dag; na deze tijd blijft de bekleding stationair",
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
       "vertical": {
@@ -255,8 +253,7 @@
           "manual_threshold": "Minimale handmatige overschrijfdrempel",
           "manual_ignore_intermediate": "Negeer tussenliggende posities tijdens handmatige overschrijving (openen en sluiten)",
           "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Minimale verandering in positie vereist voordat de positie van de bekleding wordt aangepast",

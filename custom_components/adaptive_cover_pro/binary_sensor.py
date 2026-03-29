@@ -14,7 +14,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ENABLE_DIAGNOSTICS, DOMAIN
+from .const import DOMAIN
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
@@ -51,14 +51,13 @@ async def async_setup_entry(
     )
     entities.extend([binary_sensor, manual_override])
 
-    # Add diagnostic binary sensors if enabled
-    if config_entry.options.get(CONF_ENABLE_DIAGNOSTICS, False):
-        position_mismatch = AdaptiveCoverPositionMismatchSensor(
-            config_entry,
-            config_entry.entry_id,
-            coordinator,
-        )
-        entities.append(position_mismatch)
+    # Diagnostic binary sensor (always enabled)
+    position_mismatch = AdaptiveCoverPositionMismatchSensor(
+        config_entry,
+        config_entry.entry_id,
+        coordinator,
+    )
+    entities.append(position_mismatch)
 
     async_add_entities(entities)
 

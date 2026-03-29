@@ -61,7 +61,6 @@ from .const import (
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_ENABLE_BLIND_SPOT,
-    CONF_ENABLE_DIAGNOSTICS,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
@@ -885,10 +884,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         normal_cover = self.normal_cover_state.cover
         start, end = await self._update_solar_times_if_needed(normal_cover)
 
-        # Build diagnostic data if enabled
-        diagnostics = None
-        if options.get(CONF_ENABLE_DIAGNOSTICS, False):
-            diagnostics = self.build_diagnostic_data()
+        # Build diagnostic data (always enabled)
+        diagnostics = self.build_diagnostic_data()
 
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
@@ -1707,6 +1704,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Full decision chain explanation
         diagnostics["position_explanation"] = self._build_position_explanation()
+
+        # Delta thresholds (for debugging position_delta_too_small / time_delta_too_small)
+        diagnostics["delta_position_threshold"] = self.min_change
+        diagnostics["delta_time_threshold_minutes"] = self.time_threshold
+
+        # Position delta from last action
+        last_action = self.last_cover_action
+        if last_action.get("position") is not None:
+            diagnostics["position_delta_from_last_action"] = abs(
+                self.raw_calculated_position - last_action["position"]
+            )
+
+        # Time since last action
+        if last_action.get("timestamp"):
+            try:
+                last_ts = dt.datetime.fromisoformat(last_action["timestamp"])
+                now_utc = dt.datetime.now(dt.UTC)
+                elapsed = (now_utc - last_ts).total_seconds()
+                diagnostics["seconds_since_last_action"] = round(elapsed)
+            except (ValueError, AttributeError):
+                pass
+
+        # Coordinator last update time
+        diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
 
         return diagnostics
 
