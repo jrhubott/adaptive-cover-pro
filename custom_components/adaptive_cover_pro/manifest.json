@@ -13,9 +13,9 @@
     "sensor",
     "weather"
   ],
-  "documentation": "https://github.com/jrhubott/adaptive-cover",
+  "documentation": "https://github.com/jrhubott/adaptive-cover-pro",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/jrhubott/adaptive-cover/issues",
+  "issue_tracker": "https://github.com/jrhubott/adaptive-cover-pro/issues",
   "requirements": [
     "astral",
     "pandas"
