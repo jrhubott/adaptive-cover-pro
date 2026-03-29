@@ -510,7 +510,9 @@ AUTOMATION_CONFIG = vol.Schema(
                 device_class=["motion", "occupancy"],
             )
         ),
-        vol.Optional(CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT): selector.NumberSelector(
+        vol.Optional(
+            CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
+        ): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=30,
                 max=3600,
@@ -565,7 +567,9 @@ def _get_azimuth_edges(data) -> int:
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
-async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, str]:
+async def _get_devices_from_entities(
+    hass: HomeAssistant, entity_ids: list[str]
+) -> dict[str, str]:
     """Get devices associated with the given cover entity IDs."""
     entity_reg = er.async_get(hass)
     device_reg = dr.async_get(hass)
@@ -575,9 +579,25 @@ async def _get_devices_from_entities(hass: HomeAssistant, entity_ids: list[str])
         if entity_entry and entity_entry.device_id:
             device_entry = device_reg.async_get(entity_entry.device_id)
             if device_entry and entity_entry.device_id not in devices:
-                name = device_entry.name_by_user or device_entry.name or entity_entry.device_id
+                name = (
+                    device_entry.name_by_user
+                    or device_entry.name
+                    or entity_entry.device_id
+                )
                 devices[entity_entry.device_id] = name
     return devices
+
+
+_SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
+
+
+def _extract_shared_options(entry: ConfigEntry) -> dict[str, Any]:
+    """Return options safe to copy across covers.
+
+    Excludes per-window fields: CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID.
+    All other options (dimensions, automation, climate, motion, etc.) are shared.
+    """
+    return {k: v for k, v in entry.options.items() if k not in _SHARED_OPTIONS_EXCLUDED}
 
 
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -592,6 +612,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self.selected_for_import: list[str] = []
         self.import_index: int = 0
         self.imported_count: int = 0
+        self.selected_source_entry_id: str | None = None
 
     @staticmethod
     @callback
@@ -607,12 +628,17 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if not user_input and not hasattr(self, "_legacy_detected"):
             self._legacy_detected = True
             legacy_entries = await self._detect_legacy_entries(self.hass)
+            acp_entries = self.hass.config_entries.async_entries(DOMAIN)
 
-            if legacy_entries:
-                # Show menu with import option
+            if legacy_entries or acp_entries:
+                menu_options = ["create_new"]
+                if legacy_entries:
+                    menu_options.append("import_legacy")
+                if acp_entries:
+                    menu_options.append("duplicate_existing")
                 return self.async_show_menu(  # type: ignore[return-value]
                     step_id="user",
-                    menu_options=["create_new", "import_legacy"],
+                    menu_options=menu_options,
                     description_placeholders={"legacy_count": str(len(legacy_entries))},
                 )
 
@@ -761,7 +787,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="tilt", data_schema=CLIMATE_MODE.extend(TILT_OPTIONS.schema)
         )
 
-    async def async_step_device_association(self, user_input: dict[str, Any] | None = None):
+    async def async_step_device_association(
+        self, user_input: dict[str, Any] | None = None
+    ):
         """Show optional device association step."""
         _standalone_sentinel = "__standalone__"
         entity_ids = self.config.get(CONF_ENTITIES, [])
@@ -778,13 +806,17 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 self.config.pop(CONF_DEVICE_ID, None)
             return await self._continue_after_cover_config()
 
-        options_list = [{"value": _standalone_sentinel, "label": "None (standalone device)"}]
+        options_list = [
+            {"value": _standalone_sentinel, "label": "None (standalone device)"}
+        ]
         for device_id, device_name in devices.items():
             options_list.append({"value": device_id, "label": device_name})
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_DEVICE_ID, default=_standalone_sentinel): selector.SelectSelector(
+                vol.Required(
+                    CONF_DEVICE_ID, default=_standalone_sentinel
+                ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=options_list,
                         mode=selector.SelectSelectorMode.LIST,
@@ -996,6 +1028,102 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         # Redirect to original user flow
         return await self.async_step_user(user_input)
 
+    async def async_step_duplicate_existing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle duplicate existing configuration flow."""
+        return await self.async_step_duplicate_select(user_input)
+
+    async def async_step_duplicate_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select the source cover to duplicate from."""
+        acp_entries = self.hass.config_entries.async_entries(DOMAIN)
+
+        if not acp_entries:
+            return self.async_abort(reason="source_not_found")  # type: ignore[return-value]
+
+        if user_input is not None:
+            self.selected_source_entry_id = user_input["source_entry"]
+            return await self.async_step_duplicate_configure()
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="duplicate_select",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("source_entry"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": e.entry_id, "label": e.title}
+                                for e in acp_entries
+                            ],
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_duplicate_configure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure the unique fields for the duplicated cover."""
+        source_entry = self.hass.config_entries.async_get_entry(
+            self.selected_source_entry_id or ""
+        )
+        if not source_entry:
+            return self.async_abort(reason="source_not_found")  # type: ignore[return-value]
+
+        if user_input is not None:
+            shared_options = _extract_shared_options(source_entry)
+            sensor_type = source_entry.data.get(CONF_SENSOR_TYPE)
+            new_name = await self._ensure_unique_name(user_input["name"], suffix="Copy")
+
+            type_mapping = {
+                "cover_blind": "Vertical",
+                "cover_awning": "Horizontal",
+                "cover_tilt": "Tilt",
+            }
+
+            return self.async_create_entry(  # type: ignore[return-value]
+                title=f"{type_mapping.get(sensor_type, 'Cover')} {new_name}",
+                data={"name": new_name, CONF_SENSOR_TYPE: sensor_type},
+                options={
+                    **shared_options,
+                    CONF_ENTITIES: user_input.get(CONF_ENTITIES, []),
+                    CONF_AZIMUTH: user_input[CONF_AZIMUTH],
+                    # CONF_DEVICE_ID intentionally omitted — device association skipped for duplicates
+                },
+            )
+
+        source_azimuth = source_entry.options.get(CONF_AZIMUTH, 180)
+
+        schema = vol.Schema(
+            {
+                vol.Required("name"): selector.TextSelector(),
+                vol.Optional(CONF_ENTITIES, default=[]): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="cover",
+                        multiple=True,
+                    )
+                ),
+                vol.Required(
+                    CONF_AZIMUTH, default=source_azimuth
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=359,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                        unit_of_measurement="°",
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="duplicate_configure",
+            data_schema=schema,
+        )
+
     async def async_step_import_legacy(self, user_input: dict[str, Any] | None = None):
         """Handle import from legacy Adaptive Cover."""
         return await self.async_step_import_detect(user_input)
@@ -1043,25 +1171,27 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
         return {"valid": len(errors) == 0, "errors": errors}
 
-    async def _ensure_unique_name(self, name: str) -> str:
-        """Ensure imported name doesn't conflict with existing entries."""
+    async def _ensure_unique_name(self, name: str, suffix: str = "Imported") -> str:
+        """Ensure name doesn't conflict with existing entries.
+
+        Appends ' (suffix)' or ' (suffix N)' if a conflict exists.
+        Default suffix is 'Imported' for backward compatibility with legacy import flow.
+        """
         existing_entries = self.hass.config_entries.async_entries(DOMAIN)
         existing_names = {e.data.get("name") for e in existing_entries}
 
         if name not in existing_names:
             return name
 
-        # Try with " (Imported)" suffix
-        imported_name = f"{name} (Imported)"
-        if imported_name not in existing_names:
-            return imported_name
+        suffixed_name = f"{name} ({suffix})"
+        if suffixed_name not in existing_names:
+            return suffixed_name
 
-        # Add number suffix if needed
         counter = 2
-        while f"{name} (Imported {counter})" in existing_names:
+        while f"{name} ({suffix} {counter})" in existing_names:
             counter += 1
 
-        return f"{name} (Imported {counter})"
+        return f"{name} ({suffix} {counter})"
 
     async def async_step_import_detect(
         self, user_input: dict[str, Any] | None = None
@@ -1285,12 +1415,13 @@ class OptionsFlowHandler(OptionsFlow):
         self.sensor_type: SensorType = (  # type: ignore[misc]
             self.current_config.get(CONF_SENSOR_TYPE) or SensorType.BLIND
         )
+        self.selected_sync_targets: list[str] = []
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        options = ["automation", "blind", "device"]
+        options = ["automation", "blind", "device", "sync"]
         if self.options[CONF_CLIMATE_MODE]:
             options.append("climate")
         if self.options.get(CONF_WEATHER_ENTITY):
@@ -1341,7 +1472,9 @@ class OptionsFlowHandler(OptionsFlow):
             return await self._update_options()
 
         current_device = self.options.get(CONF_DEVICE_ID) or _standalone_sentinel
-        options_list = [{"value": _standalone_sentinel, "label": "None (standalone device)"}]
+        options_list = [
+            {"value": _standalone_sentinel, "label": "None (standalone device)"}
+        ]
         for device_id, device_name in devices.items():
             options_list.append({"value": device_id, "label": device_name})
 
@@ -1360,6 +1493,79 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, {CONF_DEVICE_ID: current_device}
             ),
+        )
+
+    async def async_step_sync(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select target covers to sync settings to."""
+        current_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        other_entries = [
+            e
+            for e in self.hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != self._config_entry.entry_id
+            and e.data.get(CONF_SENSOR_TYPE) == current_type
+        ]
+
+        if not other_entries:
+            return self.async_abort(reason="no_covers_to_sync")  # type: ignore[return-value]
+
+        if user_input is not None:
+            targets = user_input.get("target_entries", [])
+            if not targets:
+                return self.async_abort(reason="no_targets_selected")  # type: ignore[return-value]
+            self.selected_sync_targets = targets
+            return await self.async_step_sync_confirm()
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="sync",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("target_entries"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            multiple=True,
+                            options=[
+                                {"value": e.entry_id, "label": e.title}
+                                for e in other_entries
+                            ],
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_sync_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm and execute sync to selected covers."""
+        if user_input is not None:
+            if user_input.get("confirm"):
+                shared_options = _extract_shared_options(self._config_entry)
+                for entry_id in self.selected_sync_targets:
+                    target = self.hass.config_entries.async_get_entry(entry_id)
+                    if target:
+                        self.hass.config_entries.async_update_entry(
+                            target,
+                            options={**target.options, **shared_options},
+                        )
+                return self.async_abort(reason="sync_complete")  # type: ignore[return-value]
+            return self.async_abort(reason="user_cancelled")  # type: ignore[return-value]
+
+        # Build summary of selected targets
+        target_titles = []
+        for entry_id in self.selected_sync_targets:
+            target = self.hass.config_entries.async_get_entry(entry_id)
+            if target:
+                target_titles.append(f"• {target.title}")
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="sync_confirm",
+            data_schema=vol.Schema(
+                {vol.Required("confirm", default=True): selector.BooleanSelector()}
+            ),
+            description_placeholders={
+                "entries_summary": "\n".join(target_titles) or "(none selected)"
+            },
         )
 
     async def async_step_blind(self, user_input: dict[str, Any] | None = None):
