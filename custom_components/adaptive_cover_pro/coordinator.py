@@ -1720,6 +1720,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if last_action.get("timestamp"):
             try:
                 last_ts = dt.datetime.fromisoformat(last_action["timestamp"])
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.replace(tzinfo=dt.UTC)
                 now_utc = dt.datetime.now(dt.UTC)
                 elapsed = (now_utc - last_ts).total_seconds()
                 diagnostics["seconds_since_last_action"] = round(elapsed)
