@@ -51,8 +51,9 @@ EXPORT_CONFIG_SCHEMA = vol.Schema(
 )
 
 
-async def async_handle_export(hass: HomeAssistant, call: ServiceCall) -> dict:
+async def async_handle_export(call: ServiceCall) -> dict:
     """Handle the export_config service call and return config as a dict."""
+    hass: HomeAssistant = call.hass
     entry_id = call.data["config_entry_id"]
     entry = hass.config_entries.async_get_entry(entry_id)
 

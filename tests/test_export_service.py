@@ -62,10 +62,11 @@ def make_entry(cover_type="cover_blind", name="Test Cover", options=None):
     return entry
 
 
-def make_call(entry_id="test-entry-id"):
+def make_call(entry_id="test-entry-id", hass=None):
     """Build a minimal mocked service call."""
     call = MagicMock()
     call.data = {"config_entry_id": entry_id}
+    call.hass = hass
     return call
 
 
@@ -74,9 +75,9 @@ async def test_export_returns_required_top_level_keys():
     """Exported dict contains all required top-level sections."""
     entry = make_entry()
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
 
     assert "export_version" in result
     assert "name" in result
@@ -93,9 +94,9 @@ async def test_export_location_from_hass_config():
     """Location section is sourced from hass.config, not config_entry."""
     entry = make_entry()
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
 
     loc = result["location"]
     assert loc["latitude"] == 32.939
@@ -109,9 +110,9 @@ async def test_export_name_and_cover_type():
     """Name and cover_type come from config_entry.data."""
     entry = make_entry(cover_type="cover_awning", name="My Awning")
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
 
     assert result["name"] == "My Awning"
     assert result["cover_type"] == "cover_awning"
@@ -122,9 +123,9 @@ async def test_export_common_section_contains_all_fields():
     """Common section contains all expected option keys."""
     entry = make_entry()
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
     common = result["common"]
 
     assert CONF_AZIMUTH in common
@@ -146,9 +147,9 @@ async def test_export_vertical_section():
     """Vertical section contains cover-specific fields."""
     entry = make_entry()
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
     vert = result["vertical"]
 
     assert vert[CONF_DISTANCE] == 1.0
@@ -167,9 +168,9 @@ async def test_export_tilt_values_stored_in_cm():
     }
     entry = make_entry(cover_type="cover_tilt", options=options)
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
     tilt = result["tilt"]
 
     # Must be 4.0 and 6.0 (cm), NOT 0.04 and 0.06 (meters)
@@ -189,9 +190,9 @@ async def test_export_defaults_applied_for_missing_options():
         }
     )
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
-    result = await async_handle_export(hass, call)
+    result = await async_handle_export(call)
 
     assert result["vertical"][CONF_WINDOW_DEPTH] == 0.0
     assert result["vertical"][CONF_SILL_HEIGHT] == 0.0
@@ -207,10 +208,10 @@ async def test_export_invalid_entry_id_raises():
     from homeassistant.exceptions import ServiceValidationError
 
     hass = make_hass(entry=None)  # returns None for any entry_id
-    call = make_call("nonexistent-id")
+    call = make_call("nonexistent-id", hass=hass)
 
     with pytest.raises(ServiceValidationError):
-        await async_handle_export(hass, call)
+        await async_handle_export(call)
 
 
 @pytest.mark.asyncio
@@ -221,10 +222,10 @@ async def test_export_wrong_domain_raises():
     entry = make_entry()
     entry.domain = "some_other_integration"
     hass = make_hass(entry)
-    call = make_call()
+    call = make_call(hass=hass)
 
     with pytest.raises(ServiceValidationError):
-        await async_handle_export(hass, call)
+        await async_handle_export(call)
 
 
 @pytest.mark.asyncio
@@ -233,9 +234,9 @@ async def test_export_all_three_cover_types():
     for cover_type in ("cover_blind", "cover_awning", "cover_tilt"):
         entry = make_entry(cover_type=cover_type)
         hass = make_hass(entry)
-        call = make_call()
+        call = make_call(hass=hass)
 
-        result = await async_handle_export(hass, call)
+        result = await async_handle_export(call)
 
         assert result["cover_type"] == cover_type
         assert "location" in result
