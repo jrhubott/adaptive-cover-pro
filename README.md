@@ -101,7 +101,7 @@ The **simulation notebook** (`notebooks/simulate_cover.ipynb`) lets you visualiz
 2. Select **"Adaptive Cover Pro: Export Configuration"**
 3. In the **Cover configuration** field, select the cover you want to simulate
 4. Click **Call Service**
-5. Copy the entire JSON response that appears in the response panel
+5. Copy the entire YAML response that appears in the response panel
 
 **Step 2: Open the simulation notebook**
 
@@ -114,15 +114,13 @@ Or open in VS Code with the Jupyter extension.
 
 **Step 3: Paste your config and set the date**
 
-In **Cell 2**, replace the example JSON with your copied config and set your simulation parameters:
+In **Cell 2**, replace the example YAML with your copied config and set your simulation parameters:
 
 ```python
-CONFIG_JSON = """
-{
-  "name": "Living Room West",
-  "cover_type": "cover_blind",
-  ...  # paste your exported JSON here
-}
+CONFIG_YAML = """
+name: Living Room West
+cover_type: cover_blind
+# ... paste your exported YAML here
 """
 
 START_DATE = "today"   # "today" or "YYYY-MM-DD" e.g. "2026-06-21"
