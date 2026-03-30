@@ -429,7 +429,7 @@ git commit -m "docs: Add release notes for v2.6.11"
 - **NEVER** include Claude/AI attributions
 - **ALWAYS** use `--notes` parameter with versioned filename: `release_notes/vX.Y.Z.md`
 - **NEVER** use `--editor` parameter
-- **ALWAYS** commit release notes to git after creating release
+- **ALWAYS** commit release notes to git BEFORE running the release script (it requires a clean working directory)
 
 **File Naming Convention:**
 - Production releases: `release_notes/v2.6.11.md`
@@ -521,6 +521,8 @@ Always update docs alongside code changes:
 5. Add translations to `translations/en.json` (and other languages if feasible)
 6. Update `CLAUDE.md` Configuration Structure section
 
+**Optional numeric fields:** Use `NumberSelectorMode.SLIDER` (not `BOX`) with `vol.Optional` and no default. BOX mode does not preserve `None` — clearing the field saves `0`. Sliders correctly return `None` when empty. Code consuming the value must check `if value is not None` (not `if value`) to distinguish 0% from unset.
+
 ### Diagnostic Sensor Guidelines
 
 When creating diagnostic sensors:
@@ -535,7 +537,7 @@ class MyDiagnosticSensor(AdaptiveCoverDiagnosticSensor):
     # For numeric sensors: MUST have proper unit for statistics
     _attr_native_unit_of_measurement = "retries"  # Enables statistics tracking
 
-    # For P0 sensors (basic diagnostics), enable by default
+    # All diagnostic sensors are enabled by default (no enable_diagnostics toggle)
     _attr_entity_registry_enabled_default = True
 ```
 
@@ -648,7 +650,7 @@ When modifying geometric accuracy calculations:
 #### Modification Guidelines
 
 **DO:**
-- Test all changes with full test suite (214 tests must pass)
+- Test all changes with full test suite (run `source venv/bin/activate && python -m pytest tests/ -v`)
 - Maintain backward compatibility (existing installations unaffected)
 - Keep safety margins conservative (always ≥ baseline position)
 - Use smoothstep interpolation for smooth transitions
@@ -663,11 +665,10 @@ When modifying geometric accuracy calculations:
 
 #### Diagnostic Information
 
-Users can monitor geometric accuracy via diagnostic sensors:
-- "Calculated Position" - Raw position before adjustments
-- "Sun Gamma" - Horizontal angle from window normal
-- "Sun Elevation" - Vertical angle above horizon
-- Compare calculated vs actual position to see safety margin effects
+Users can monitor geometric accuracy via the always-on diagnostic sensors:
+- **Calculated Position** — raw position; `position_explanation` attribute shows full decision chain
+- **Sun Position** — state is azimuth; attributes include `sun_elevation` and `gamma`
+- Compare "Calculated Position" to actual cover position to see safety margin effects
 
 ## Configuration Structure
 
@@ -678,6 +679,9 @@ Users can monitor geometric accuracy via diagnostic sensors:
 **`config_entry.options`** (configurable):
 - Window azimuth, field of view, elevation limits
 - Cover-specific dimensions (height, length, slat properties)
+- Sunset behavior:
+  - `sunset_position` - Optional position after sunset (None = use `default_percentage`). Use SLIDER in config_flow, not BOX.
+  - `sunset_offset` / `sunrise_offset` — minutes to shift sunset/sunrise times
 - Enhanced geometric accuracy:
   - `window_depth` - Optional window reveal/frame depth (0.0-0.5m, default 0.0)
   - `sill_height` - Optional height from floor to window bottom (0.0-3.0m, default 0.0). Raises the blind for windows above floor level — accounting for the sill's geometric effect of reducing sun penetration into the room
@@ -765,7 +769,7 @@ adaptive-cover/
 │   ├── develop                  # Start Home Assistant dev server
 │   ├── lint                     # Run linting
 │   └── release                  # Create releases (automated)
-├── tests/                       # Unit tests (303 tests)
+├── tests/                       # Unit tests (410 tests)
 │   ├── conftest.py              # Shared fixtures
 │   ├── test_calculation.py      # Core calculation tests
 │   ├── test_geometric_accuracy.py
@@ -777,7 +781,8 @@ adaptive-cover/
 │   ├── test_control_state_reason.py
 │   ├── test_interpolation.py
 │   ├── test_delta_position.py
-│   └── test_manual_override.py
+│   ├── test_manual_override.py
+│   └── test_position_explanation.py
 ├── release_notes/               # Historical release notes
 │   ├── README.md                # Release notes documentation
 │   └── vX.Y.Z.md                # Individual release notes (versioned)

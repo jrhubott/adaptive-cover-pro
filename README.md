@@ -89,6 +89,81 @@ window_distance = 0.5          # Distance from window to blind (meters)
 
 For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE.md#manual-testing).
 
+## Simulation Notebook — Visualize Your Actual Configuration
+
+The **simulation notebook** (`notebooks/simulate_cover.ipynb`) lets you visualize how your covers will behave for **any date or date range** using your real Home Assistant configuration — no guesswork, no manual parameter entry.
+
+### How It Works
+
+**Step 1: Export your cover's configuration from Home Assistant**
+
+1. Go to **Developer Tools → Services**
+2. Select **"Adaptive Cover Pro: Export Configuration"**
+3. In the **Cover configuration** field, select the cover you want to simulate
+4. Click **Call Service**
+5. Copy the entire JSON response that appears in the response panel
+
+**Step 2: Open the simulation notebook**
+
+```bash
+# From the repository root
+jupyter notebook notebooks/simulate_cover.ipynb
+```
+
+Or open in VS Code with the Jupyter extension.
+
+**Step 3: Paste your config and set the date**
+
+In **Cell 2**, replace the example JSON with your copied config and set your simulation parameters:
+
+```python
+CONFIG_JSON = """
+{
+  "name": "Living Room West",
+  "cover_type": "cover_blind",
+  ...  # paste your exported JSON here
+}
+"""
+
+START_DATE = "today"   # "today" or "YYYY-MM-DD" e.g. "2026-06-21"
+NUM_DAYS = 1           # 1 = single 24-hour day; increase for multi-day range
+```
+
+**Step 4: Run all cells (Cell → Run All)**
+
+### What You'll See
+
+**Single day (NUM_DAYS = 1):** A two-subplot figure per day showing:
+- **Top:** Sun elevation and azimuth over the full 24-hour period (00:00–24:00)
+- **Bottom:** Calculated cover position (%) with gamma angle on secondary axis
+- **Red dashed lines:** Sunrise and sunset
+- **Yellow dashed lines:** Sun enters/exits the window's field of view
+- **Shaded region:** Period when the sun is actively in front of your window
+
+**Multi-day range (NUM_DAYS > 1):** An additional overlay plot showing all days on the same 24-hour axis — useful for comparing seasonal behavior, e.g. a week around summer solstice vs. winter solstice.
+
+**Summary table:** Per-day stats including sunrise/sunset times, hours of direct sun exposure, and average/max cover position.
+
+### Example: Simulate Summer Solstice
+
+```python
+START_DATE = "2026-06-21"
+NUM_DAYS = 1
+```
+
+### Example: Compare a Full Week
+
+```python
+START_DATE = "2026-06-18"
+NUM_DAYS = 7
+```
+
+**Perfect for:**
+- Validating your window azimuth and field-of-view settings before deploying
+- Checking cover behavior on a specific date (e.g., before a holiday)
+- Comparing summer vs. winter behavior side-by-side
+- Debugging unexpected cover positions by replaying historical dates
+
 ## Table of Contents
 
 - [Adaptive Cover Pro](#adaptive-cover-pro)
@@ -176,22 +251,19 @@ For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE
     - No configuration required - works automatically when automatic control is enabled
     - Diagnostic sensors available for troubleshooting cover movement issues
 
-- **Diagnostic Sensors** (Optional, enable in automation settings)
+- **Diagnostic Sensors** (always enabled, no setup required)
   - Real-time troubleshooting sensors to understand integration behavior
   - All sensors use diagnostic entity category
-  - Priority 0 sensors (enabled by default when diagnostics are on):
-    - Sun position (azimuth, elevation, gamma)
-    - Control status (why covers aren't moving)
-    - Control state reason (human-readable explanation of current cover position)
-    - Calculated position (before adjustments)
-    - Last cover action (tracks most recent cover action with full details)
-    - Manual override end time (when automatic control will resume)
-  - Priority 1 sensors (disabled by default, enable individually):
-    - Position verification tracking (last check time, retry counts, mismatch detection)
-    - Active temperature (climate mode only)
-    - Climate conditions (climate mode only)
-    - Time window status
-    - Sun validity status
+  - 9 consolidated sensors covering all aspects of integration behavior:
+    - **Sun Position** — azimuth, elevation, gamma, FOV bounds, in_fov in one sensor
+    - **Control Status** — why covers are/aren't moving, delta thresholds, time since last action
+    - **Calculated Position** — raw geometric position with `position_explanation` attribute showing the full decision chain (e.g. `"Sun tracking (45%) → Climate: Winter Heating → 100%"`)
+    - **Last Cover Action** — most recent cover command with full details
+    - **Manual Override End Time** — when automatic control will resume
+    - **Position Verification** — last check time and retry count combined
+    - **Motion Status** — timeout end time and last motion time (when motion sensors configured)
+    - **Climate Status** — active temperature and climate strategy combined (when climate mode enabled)
+    - **Force Override Triggers** — count and per-sensor status (when force override sensors configured)
 
 - **Enhanced Geometric Accuracy** (automatic improvements)
   - Angle-dependent safety margins for better sun blocking at extreme angles
@@ -337,7 +409,7 @@ Safety margins automatically increase blind extension at extreme angles to compe
 - **High elevations**: Up to 10% increase when sun is nearly overhead (>75° elevation)
 - **Combined extremes**: Margins multiply together (e.g., 85° gamma + 8° elevation ≈ 27% total increase)
 
-Margins activate automatically, use smoothstep interpolation for smooth transitions, and are zero at normal angles (gamma < 45°, 10° < elevation < 75°). Check the "Control Status" diagnostic sensor to see when margins are active.
+Margins activate automatically, use smoothstep interpolation for smooth transitions, and are zero at normal angles (gamma < 45°, 10° < elevation < 75°). Check the "Calculated Position" diagnostic sensor's `position_explanation` attribute to see the full decision chain, or compare it to the actual cover position to see the effect of safety margins.
 
 #### Edge Case Handling
 
@@ -465,20 +537,19 @@ All enhancements are verified to:
 
 ### Diagnostic Sensors
 
-Enable diagnostic sensors to monitor enhanced geometric accuracy:
+Use the always-on diagnostic sensors to monitor enhanced geometric accuracy:
 
 **Key sensors:**
-- `Calculated Position` - Raw calculated position before adjustments
-- `Sun Gamma` - Horizontal angle from window normal
-- `Sun Elevation` - Vertical angle above horizon
-- `Control Status` - Shows active safety margins and adjustments
+- `Sun Position` — state is azimuth; attributes include `sun_elevation` and `gamma` (angle relative to window normal)
+- `Calculated Position` — raw geometric position before adjustments; `position_explanation` attribute shows the full decision chain
+- `Control Status` — shows why the cover is at its current position, including when safety margins are active
 
-Compare "Calculated Position" to actual cover position to see safety margin effects.
+Compare the `Calculated Position` sensor to the actual cover position to see the effect of safety margins.
 
 ### Troubleshooting
 
 **Q: My blinds extend more than before at extreme angles**
-A: This is expected behavior. Safety margins automatically increase extension at challenging angles to ensure effective sun blocking. You can check the diagnostic sensor "Control Status" to see when margins are applied.
+A: This is expected behavior. Safety margins automatically increase extension at challenging angles to ensure effective sun blocking. Check the `position_explanation` attribute on the "Calculated Position" diagnostic sensor to see the full decision chain, or compare "Calculated Position" to actual cover position to confirm margins are active.
 
 **Q: Should I enable window depth?**
 A: Only if you notice sun leaking at extreme angles or have deep window reveals (>10cm). Most users don't need this.
@@ -892,32 +963,24 @@ When climate mode is setup you will also get these entities:
 | `switch.{device_name}_climate_mode`        | `on`    | Enables climate mode strategy; otherwise, defaults to the standard strategy.                                |
 | `switch.{device_name}_outside_temperature` | `on`    | Switches between inside and outside temperatures as the basis for determining the climate control strategy. |
 
-**Diagnostic Sensors (Optional):**
+**Diagnostic Sensors:**
 
-These sensors are created when diagnostics are enabled in automation settings. They help troubleshoot and monitor integration behavior.
+These sensors are always created for every device (no configuration required). They help troubleshoot and monitor integration behavior.
 
-| Entity | Default | Description |
-| ------ | ------- | ----------- |
-| `sensor.{device_name}_sun_azimuth` | Enabled | Current sun azimuth angle in degrees (0–360°). Use to verify window azimuth configuration. Attributes: `window_azimuth`, `fov_left`, `fov_right`, `azimuth_min`, `azimuth_max`, `in_fov` (bool — whether the sun is currently within the field of view). |
-| `sensor.{device_name}_sun_elevation` | Enabled | Current sun elevation angle in degrees. Compare against configured limits to debug why the sun is considered out of range. Attributes: `min_elevation` and `max_elevation` (shown only when configured). For validity status and blind spot detection, see `sensor.{device_name}_sun_validity`. |
-| `sensor.{device_name}_gamma` | Enabled | Surface solar azimuth — the sun's angle relative to the window normal. Most critical sensor for troubleshooting shadow accuracy. Attributes: `interpretation` (`nearly perpendicular` / `oblique angle` / `steep angle` / `nearly parallel`), `absolute_angle`, `direction` (`left`/`right`/`center`); `blind_spot_range` when blind spot is enabled. |
-| `sensor.{device_name}_control_status` | Enabled | Shows current automation status. Possible values: `active` (running normally), `automatic_control_off` (Automatic Control switch is off), `manual_override` (cover was manually moved), `outside_time_window` (outside configured schedule), `sun_not_visible` (sun not shining on window). Attributes: `automatic_control_enabled` (always present); `after_start_time`/`before_end_time` when `outside_time_window`; `valid_elevation`/`in_blind_spot` when `sun_not_visible`; `manual_covers` list when `manual_override`. |
-| `sensor.{device_name}_control_state_reason` | Enabled | Human-readable explanation of why the cover is in its current position. Coordinator-level reasons (checked first): `Force Override` (a force override sensor is active), `Motion Timeout` (no motion detected for timeout duration), `Manual Override` (cover was manually moved). Cover-level sun position reasons: `Direct Sun` (tracking the sun to block glare), `Default: Sunset Offset` (past sunset offset time), `Default: Elevation Limit` (sun outside elevation limits), `Default: FOV Exit` (sun outside field of view), `Default: Blind Spot` (sun in a configured blind spot), `Default` (using default position). No attributes. |
-| `sensor.{device_name}_calculated_position` | Enabled | Raw calculated position (%) before interpolation or inversion adjustments. Compare to the final Cover Position to see the effect of limits, inversion, or climate mode. Attributes: `final_position` (position actually sent to the cover), `direct_sun_valid` (bool); `min_limit_applied`/`max_limit_applied` and `limited_by` when a position limit was enforced; `inverse_state_enabled` when inverse state is active; `interpolation_enabled` when interpolation is active; `climate_position` when climate mode overrides the geometric calculation. |
-| `sensor.{device_name}_last_cover_action` | Enabled | Tracks the most recent cover command: service called, entity controlled, and timestamp formatted as `HH:MM:SS`. Attributes: `entity_id`, `service`, `position` (sent), `calculated_position`, `inverse_state_applied`, `timestamp`, `covers_controlled`; `threshold_used` and `threshold_comparison` for open/close-only covers. |
-| `sensor.{device_name}_manual_override_end_time` | Enabled | Timestamp of when the current manual override will expire and automatic control will resume. Returns unavailable when no manual override is active. Attributes: `per_entity` dict mapping each cover entity ID to its expiry timestamp (ISO 8601). |
-| `sensor.{device_name}_motion_timeout_end_time` | Enabled | Timestamp of when the motion timeout will fire (i.e., when covers switch to default position after no motion). Only created when motion sensors are configured. Returns unavailable when no timeout is pending. Attributes: `motion_timeout_seconds` (configured duration), `last_motion_detected` (ISO 8601 timestamp). |
-| `sensor.{device_name}_last_position_verification` | Disabled | Timestamp of the most recent position verification check across all controlled covers. Attributes: `per_entity` dict mapping each cover entity ID to its last verification timestamp (ISO 8601). |
-| `sensor.{device_name}_force_override_triggers` | Disabled | Count of currently active force override sensors (0–N). Only created when force override sensors are configured. Attributes: `per_sensor` dict mapping each sensor entity ID to its state (`on`/`off`/`unavailable`), `total_configured`. |
-| `sensor.{device_name}_last_motion_time` | Disabled | Timestamp of the last motion detection event. Only created when motion sensors are configured. Returns unavailable if motion has never been detected. No attributes. |
-| `sensor.{device_name}_position_verification_retries` | Disabled | Current retry count for position verification (0–3). Attributes: `max_retries`, `retries_remaining`, `per_entity` dict of retry counts per cover entity. Helps identify covers that repeatedly fail to reach their target positions. |
-| `binary_sensor.{device_name}_position_mismatch` | Disabled | Indicates position mismatch between target and actual position (problem class). Attributes show target position sent, actual position per entity, position delta, and retry counts. Useful for troubleshooting cover movement issues. |
-| `sensor.{device_name}_active_temperature` | Disabled | Currently active temperature value used for climate mode decisions. Only created when climate mode is configured. Attributes: `inside_temperature`, `outside_temperature`, `temp_switch` (bool — whether outside temperature is selected). |
-| `sensor.{device_name}_climate_conditions` | Disabled | Climate mode state: `Summer Mode`, `Winter Mode`, or `Intermediate`. Only created when climate mode is configured. Attributes: `is_summer`, `is_winter`, `is_presence` (bool flags). |
-| `sensor.{device_name}_time_window` | Disabled | Time window status: `Active` or `Outside Window`. Attributes: `check_adaptive_time` (bool — within window?), `after_start_time`, `before_end_time`, `start_time`, `end_time`. |
-| `sensor.{device_name}_sun_validity` | Disabled | Sun validity status: `Valid`, `In Blind Spot`, or `Invalid Elevation`. Attributes: `valid` (bool), `valid_elevation` (bool), `in_blind_spot` (bool or null when blind spot is not configured). |
+| Entity | Description |
+| ------ | ----------- |
+| `sensor.{device_name}_sun_position` | Current sun azimuth angle (state). Attributes: `sun_elevation`, `gamma` (angle relative to window normal), `fov_left`, `fov_right`, `azimuth_min`, `azimuth_max`, `in_fov`, `blind_spot_range` (when blind spot enabled). |
+| `sensor.{device_name}_control_status` | Current automation status: `active`, `automatic_control_off`, `manual_override`, `outside_time_window`, `sun_not_visible`. Attributes include all Control State Reason and Time Window details, plus `delta_position_threshold`, `delta_time_threshold_minutes`, `position_delta_from_last_action`, `seconds_since_last_action`, `last_updated`. |
+| `sensor.{device_name}_calculated_position` | Raw geometric position (%) before climate/limits/inversion. Attributes: `position_explanation` (full human-readable decision chain, e.g. `"Sun tracking (45%) → Climate: Winter Heating → 100%"`), `climate_strategy` (which climate branch applied: `winter_heating`, `summer_cooling`, `low_light`, `glare_control`), `sun_calculated_position` (raw geometry before any override), `final_position`, `direct_sun_valid`; limit/inversion/interpolation flags when active. |
+| `sensor.{device_name}_last_cover_action` | Most recent cover command. Attributes: `entity_id`, `service`, `position` (sent), `calculated_position`, `inverse_state_applied`, `timestamp`, `covers_controlled`; `threshold_used` and `threshold_comparison` for open/close-only covers. |
+| `sensor.{device_name}_manual_override_end_time` | When the current manual override expires and automatic control resumes. Unavailable when no override is active. Attributes: `per_entity` dict of expiry timestamps per cover entity ID. |
+| `sensor.{device_name}_position_verification` | Timestamp of the most recent position verification check. Attributes: `retry_count` (current retry count 0–3), `max_retries`, `per_entity` dict of last verification timestamps and retry counts per cover. |
+| `sensor.{device_name}_motion_status` | Timestamp when motion timeout fires (covers switch to default position). Only created when motion sensors are configured. Unavailable when no timeout pending. Attributes: `motion_timeout_seconds`, `last_motion_detected`. |
+| `sensor.{device_name}_climate_status` | Active temperature used for climate decisions (state). Only created when climate mode is configured. Attributes: `climate_conditions` (`Summer Mode` / `Winter Mode` / `Intermediate`), `inside_temperature`, `outside_temperature`, `is_summer`, `is_winter`, `is_presence`. |
+| `sensor.{device_name}_force_override_triggers` | Count of currently active force override sensors. Only created when force override sensors are configured. Attributes: `per_sensor` dict of sensor states, `total_configured`. |
+| `binary_sensor.{device_name}_position_mismatch` | Indicates a mismatch between target and actual cover position (problem class). Attributes: target position, actual position per entity, position delta, retry counts. |
 
-**Note:** Priority 1 sensors (disabled by default) reduce entity overhead. Enable them individually in the entity list if needed for troubleshooting. Motion and force override sensors are only created when the corresponding features are configured.
+**Note:** Motion, climate, and force override sensors are only created when the corresponding features are configured.
 
 ## Features Planned
 
