@@ -570,6 +570,8 @@ class TestBuildPositionExplanation:
         # Normal cover state mock
         cover_mock = MagicMock()
         cover_mock.direct_sun_valid = True
+        cover_mock.sunset_valid = False
+        cover_mock.sunset_pos = None
         cover_mock.control_state_reason = "Direct Sun"
         cover_mock.default = 50
         normal_state = MagicMock()
@@ -612,15 +614,50 @@ class TestBuildPositionExplanation:
         result = coord._build_position_explanation()
         assert "manual" in result.lower()
 
-    def test_outside_time_window(self):
-        """Outside time window → explains default/sunset position."""
+    def test_outside_time_window_with_sunset_position(self):
+        """Outside time window with sunset position set → shows Sunset Position."""
         coord = self._make_coordinator()
         coord.check_adaptive_time = False
-        coord.config_entry.options = {"sunset_pos": 0}
+        coord.config_entry.options = {"sunset_position": 30}
 
         result = coord._build_position_explanation()
-        assert "time window" in result.lower()
-        assert "0%" in result
+        assert "Sunset Position" in result
+        assert "30%" in result
+
+    def test_outside_time_window_without_sunset_position(self):
+        """Outside time window without sunset position → shows Default Position."""
+        coord = self._make_coordinator()
+        coord.check_adaptive_time = False
+        coord.config_entry.options = {"default_percentage": 100}
+
+        result = coord._build_position_explanation()
+        assert "Default Position" in result
+        assert "100%" in result
+
+    def test_sunset_offset_with_sunset_position(self):
+        """In window but sunset_valid with sunset_pos set → shows Sunset Position."""
+        coord = self._make_coordinator()
+        coord.normal_cover_state.cover.direct_sun_valid = False
+        coord.normal_cover_state.cover.sunset_valid = True
+        coord.normal_cover_state.cover.sunset_pos = 20
+
+        result = coord._build_position_explanation()
+        assert "Sunset Position" in result
+        assert "20%" in result
+
+    def test_default_fov_exit_without_sunset(self):
+        """In window, FOV exit, no sunset → shows Default Position."""
+        coord = self._make_coordinator()
+        coord.normal_cover_state.cover.direct_sun_valid = False
+        coord.normal_cover_state.cover.sunset_valid = False
+        coord.normal_cover_state.cover.sunset_pos = None
+        coord.normal_cover_state.cover.control_state_reason = "Default: FOV Exit"
+        coord.normal_cover_state.cover.default = 100
+
+        result = coord._build_position_explanation()
+        assert "FOV Exit" in result
+        assert "Default Position" in result
+        assert "100%" in result
 
     def test_sun_tracking_no_limits(self):
         """Sun tracking, no limits, no climate → shows raw tracking position."""

@@ -1634,8 +1634,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if not self.check_adaptive_time:
             sunset_pos = options.get(CONF_SUNSET_POS)
             default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            pos = sunset_pos if sunset_pos is not None else default_height
-            return f"Outside time window → default {pos}%"
+            if sunset_pos is not None:
+                return f"Outside time window → Sunset Position ({sunset_pos}%)"
+            return f"Outside time window → Default Position ({default_height}%)"
 
         # Build the decision chain
         parts = []
@@ -1645,10 +1646,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cover = self.normal_cover_state.cover
             if cover.direct_sun_valid:
                 parts.append(f"Sun tracking ({self.raw_calculated_position}%)")
+            elif cover.sunset_valid and cover.sunset_pos is not None:
+                parts.append(
+                    f"Sunset Position ({round(cover.sunset_pos)}%)"
+                )
             else:
-                default_pos = round(cover.default)
                 reason = cover.control_state_reason
-                parts.append(f"{reason} ({default_pos}%)")
+                parts.append(
+                    f"{reason} → Default Position ({round(cover.default)}%)"
+                )
 
         # Step 2: Position limits on the non-climate path
         if not self._switch_mode:
