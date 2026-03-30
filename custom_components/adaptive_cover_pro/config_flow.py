@@ -199,7 +199,7 @@ OPTIONS = vol.Schema(
                 min=0,
                 max=100,
                 step=1,
-                mode=selector.NumberSelectorMode.BOX,
+                mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="%",
             )
         ),
