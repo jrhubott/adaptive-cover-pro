@@ -847,17 +847,18 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
     @property
     def native_value(self) -> str:
         """Return motion control state as a human-readable string."""
-        if self.coordinator._last_motion_time is None:
+        mgr = self.coordinator._motion_mgr
+        if mgr.last_motion_time is None:
             return "waiting_for_data"
 
         if self.coordinator.is_motion_detected:
             return "motion_detected"
 
-        task = self.coordinator._motion_timeout_task
+        task = mgr._motion_timeout_task
         if task is not None and not task.done():
             return "timeout_pending"
 
-        if self.coordinator._motion_timeout_active:
+        if mgr._motion_timeout_active:
             return "no_motion"
 
         return "waiting_for_data"
@@ -865,25 +866,23 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return motion timeout config, end time, and last motion time."""
+        mgr = self.coordinator._motion_mgr
         attrs: dict[str, Any] = {
-            "motion_timeout_seconds": self.coordinator._motion_timeout_seconds,
+            "motion_timeout_seconds": mgr._timeout_seconds,
         }
 
-        if self.coordinator._last_motion_time is not None:
-            task = self.coordinator._motion_timeout_task
+        if mgr.last_motion_time is not None:
+            task = mgr._motion_timeout_task
             timeout_pending = task is not None and not task.done()
 
-            if timeout_pending or self.coordinator._motion_timeout_active:
-                end_ts = (
-                    self.coordinator._last_motion_time
-                    + self.coordinator._motion_timeout_seconds
-                )
+            if timeout_pending or mgr._motion_timeout_active:
+                end_ts = mgr.last_motion_time + mgr._timeout_seconds
                 attrs["motion_timeout_end_time"] = dt_util.utc_from_timestamp(
                     end_ts
                 ).isoformat()
 
             attrs["last_motion_time"] = dt_util.utc_from_timestamp(
-                self.coordinator._last_motion_time
+                mgr.last_motion_time
             ).isoformat()
 
         return attrs

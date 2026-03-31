@@ -111,6 +111,7 @@ from .helpers import (
 )
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
+from .managers.motion import MotionManager
 
 
 @dataclass
@@ -207,11 +208,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
         )
         # Motion control tracking
-        self._motion_sensors: list[str] = []
-        self._motion_timeout_seconds: int = DEFAULT_MOTION_TIMEOUT
-        self._motion_timeout_task: asyncio.Task | None = None
-        self._last_motion_time: float | None = None
-        self._motion_timeout_active: bool = False
+        self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
         self._update_listener = None
         self._scheduled_time = dt.datetime.now()
 
@@ -335,15 +332,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if any motion sensor is "on" or no sensors configured (assume presence)
 
         """
-        sensors = self.config_entry.options.get(CONF_MOTION_SENSORS, [])
-        if not sensors:
-            return True  # No sensors = feature disabled, assume presence
-
-        for sensor in sensors:
-            state = self.hass.states.get(sensor)
-            if state and state.state == "on":
-                return True
-        return False
+        return self._motion_mgr.is_motion_detected
 
     @property
     def is_motion_timeout_active(self) -> bool:
@@ -353,11 +342,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if timeout expired and covers should use default position
 
         """
-        sensors = self.config_entry.options.get(CONF_MOTION_SENSORS, [])
-        if not sensors:
-            return False  # Feature disabled
-
-        return self._motion_timeout_active
+        return self._motion_mgr.is_motion_timeout_active
 
     def _read_position_with_capabilities(
         self, entity: str, caps: dict[str, bool], state_obj: State | None = None
@@ -495,11 +480,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         if new_state.state == "on":
             # Motion detected - immediate response
-            self._cancel_motion_timeout()
-            self._last_motion_time = dt.datetime.now().timestamp()
+            was_timeout_active = self._motion_mgr._motion_timeout_active
+            self._motion_mgr.record_motion_detected()
 
-            if self._motion_timeout_active:
-                self._motion_timeout_active = False
+            if was_timeout_active:
                 self.logger.info("Motion detected - resuming automatic sun positioning")
                 self.state_change = True
                 await self.async_refresh()
@@ -577,45 +561,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _start_motion_timeout(self) -> None:
         """Start motion timeout for no-motion detection."""
-        self._cancel_motion_timeout()
 
-        timeout_seconds = self.config_entry.options.get(
-            CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
+        async def _refresh_with_state_change() -> None:
+            self.state_change = True
+            await self.async_refresh()
+
+        self._motion_mgr.start_motion_timeout(
+            refresh_callback=_refresh_with_state_change
         )
-        task = asyncio.create_task(self._motion_timeout_handler(timeout_seconds))
-        self._motion_timeout_task = task
-
-        self.logger.info(
-            "No motion detected - starting %s second timeout before using default position",
-            timeout_seconds,
-        )
-
-    async def _motion_timeout_handler(self, timeout_seconds: int) -> None:
-        """Handle timeout expiration after no motion."""
-        await asyncio.sleep(timeout_seconds)
-
-        # Double-check motion state after timeout
-        if self.is_motion_detected:
-            self.logger.debug(
-                "Motion detected during timeout - canceling default position"
-            )
-            return
-
-        self._motion_timeout_active = True
-        self.logger.info(
-            "Motion timeout expired (%s seconds) - using default position",
-            timeout_seconds,
-        )
-
-        self.state_change = True
-        await self.async_refresh()
 
     def _cancel_motion_timeout(self) -> None:
         """Cancel motion timeout task."""
-        if self._motion_timeout_task and not self._motion_timeout_task.done():
-            self.logger.debug("Motion timeout canceled")
-            self._motion_timeout_task.cancel()
-        self._motion_timeout_task = None
+        self._motion_mgr.cancel_motion_timeout()
 
     @callback
     def _async_cancel_update_listener(self) -> None:
@@ -1195,9 +1152,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.normal_list = options.get(CONF_INTERP_LIST)
         self.new_list = options.get(CONF_INTERP_LIST_NEW)
         self._open_close_threshold = options.get(CONF_OPEN_CLOSE_THRESHOLD, 50)
-        self._motion_sensors = options.get(CONF_MOTION_SENSORS, [])
-        self._motion_timeout_seconds = options.get(
-            CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
+        self._motion_mgr.update_config(
+            sensors=options.get(CONF_MOTION_SENSORS, []),
+            timeout_seconds=options.get(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT),
         )
 
     def _update_manager_and_covers(self):
@@ -1823,7 +1780,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
                 ),
                 "motion_detected": self.is_motion_detected,
-                "motion_timeout_active": self._motion_timeout_active,
+                "motion_timeout_active": self._motion_mgr._motion_timeout_active,
             }
         }
 
