@@ -817,7 +817,6 @@ class AdaptiveCoverPositionVerificationSensor(
 class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
     """Diagnostic sensor showing current motion control state."""
 
-    _attr_native_unit_of_measurement = ""
     _attr_should_poll = False
     _attr_translation_key = "motion_status"
 
