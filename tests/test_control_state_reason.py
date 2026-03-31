@@ -12,31 +12,27 @@ from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCov
 
 
 @pytest.fixture
-def hass():
-    """Return a mock HomeAssistant instance."""
-    hass_mock = MagicMock()
-    hass_mock.states.get.return_value = None
-    hass_mock.config.units.temperature_unit = "°C"
-    return hass_mock
-
-
-@pytest.fixture
 def mock_logger():
     """Return a mock logger."""
     return MagicMock()
 
 
-def make_cover(hass, mock_logger, **overrides) -> AdaptiveVerticalCover:
+@pytest.fixture
+def mock_sun_data():
+    """Return a mock SunData instance."""
+    return MagicMock()
+
+
+def make_cover(mock_sun_data, mock_logger, **overrides) -> AdaptiveVerticalCover:
     """Create an AdaptiveVerticalCover with sensible defaults and optional overrides."""
     defaults = {
-        "hass": hass,
         "logger": mock_logger,
         "sol_azi": 180.0,
         "sol_elev": 45.0,
         "sunset_pos": 0,
         "sunset_off": 0,
         "sunrise_off": 0,
-        "timezone": "UTC",
+        "sun_data": mock_sun_data,
         "fov_left": 45,
         "fov_right": 45,
         "win_azi": 180,
@@ -61,19 +57,21 @@ def make_cover(hass, mock_logger, **overrides) -> AdaptiveVerticalCover:
 class TestControlStateReasonDirectSun:
     """Tests for 'Direct Sun' reason."""
 
-    def test_direct_sun_when_sun_in_fov_and_no_exclusions(self, hass, mock_logger):
+    def test_direct_sun_when_sun_in_fov_and_no_exclusions(
+        self, mock_sun_data, mock_logger
+    ):
         """Sun in FOV, no blind spot, no sunset offset → Direct Sun."""
-        cover = make_cover(hass, mock_logger, sol_azi=180.0, sol_elev=45.0)
+        cover = make_cover(mock_sun_data, mock_logger, sol_azi=180.0, sol_elev=45.0)
 
         with patch.object(
             type(cover), "sunset_valid", new_callable=PropertyMock, return_value=False
         ):
             assert cover.control_state_reason == "Direct Sun"
 
-    def test_direct_sun_elevation_in_range(self, hass, mock_logger):
+    def test_direct_sun_elevation_in_range(self, mock_sun_data, mock_logger):
         """Sun in FOV with elevation within configured limits → Direct Sun."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=30.0,
@@ -89,10 +87,10 @@ class TestControlStateReasonDirectSun:
 class TestControlStateReasonFOVExit:
     """Tests for 'Default: FOV Exit' reason."""
 
-    def test_fov_exit_sun_behind_window(self, hass, mock_logger):
+    def test_fov_exit_sun_behind_window(self, mock_sun_data, mock_logger):
         """Sun behind the window (180° away) → Default: FOV Exit."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=0.0,  # 180° from window azimuth 180°
             sol_elev=45.0,
@@ -103,11 +101,11 @@ class TestControlStateReasonFOVExit:
             reason = cover.control_state_reason
             assert reason == "Default: FOV Exit"
 
-    def test_fov_exit_sun_outside_fov_left(self, hass, mock_logger):
+    def test_fov_exit_sun_outside_fov_left(self, mock_sun_data, mock_logger):
         """Sun outside left FOV boundary → Default: FOV Exit."""
         # fov_left=45, win_azi=180: left edge at azimuth 135. sun at 90 is outside.
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=90.0,
             sol_elev=45.0,
@@ -124,10 +122,10 @@ class TestControlStateReasonFOVExit:
 class TestControlStateReasonElevationLimit:
     """Tests for 'Default: Elevation Limit' reason."""
 
-    def test_elevation_below_min_elevation(self, hass, mock_logger):
+    def test_elevation_below_min_elevation(self, mock_sun_data, mock_logger):
         """Sun elevation below configured minimum → Default: Elevation Limit."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=5.0,  # Below min_elevation of 10
@@ -140,10 +138,10 @@ class TestControlStateReasonElevationLimit:
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
 
-    def test_elevation_above_max_elevation(self, hass, mock_logger):
+    def test_elevation_above_max_elevation(self, mock_sun_data, mock_logger):
         """Sun elevation above configured maximum → Default: Elevation Limit."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=80.0,  # Above max_elevation of 70
@@ -156,10 +154,10 @@ class TestControlStateReasonElevationLimit:
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
 
-    def test_elevation_outside_both_limits(self, hass, mock_logger):
+    def test_elevation_outside_both_limits(self, mock_sun_data, mock_logger):
         """Sun elevation outside both min and max → Default: Elevation Limit."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=5.0,  # Below min of 10
@@ -176,9 +174,9 @@ class TestControlStateReasonElevationLimit:
 class TestControlStateReasonSunsetOffset:
     """Tests for 'Default: Sunset Offset' reason."""
 
-    def test_sunset_offset_active(self, hass, mock_logger):
+    def test_sunset_offset_active(self, mock_sun_data, mock_logger):
         """When sunset_valid is True → Default: Sunset Offset (takes priority over FOV)."""
-        cover = make_cover(hass, mock_logger, sol_azi=180.0, sol_elev=45.0)
+        cover = make_cover(mock_sun_data, mock_logger, sol_azi=180.0, sol_elev=45.0)
 
         # Patch sunset_valid to return True (in offset window)
         with patch.object(
@@ -187,10 +185,10 @@ class TestControlStateReasonSunsetOffset:
             reason = cover.control_state_reason
             assert reason == "Default: Sunset Offset"
 
-    def test_sunset_offset_priority_over_fov_exit(self, hass, mock_logger):
+    def test_sunset_offset_priority_over_fov_exit(self, mock_sun_data, mock_logger):
         """Sunset offset is checked before FOV exit when both conditions are True."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=0.0,  # Outside FOV
             sol_elev=45.0,
@@ -207,10 +205,10 @@ class TestControlStateReasonSunsetOffset:
 class TestControlStateReasonBlindSpot:
     """Tests for 'Default: Blind Spot' reason."""
 
-    def test_blind_spot_active(self, hass, mock_logger):
+    def test_blind_spot_active(self, mock_sun_data, mock_logger):
         """Sun in configured blind spot → Default: Blind Spot."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
@@ -239,10 +237,10 @@ class TestControlStateReasonBlindSpot:
             reason = cover.control_state_reason
             assert reason == "Default: Blind Spot"
 
-    def test_blind_spot_not_active_when_disabled(self, hass, mock_logger):
+    def test_blind_spot_not_active_when_disabled(self, mock_sun_data, mock_logger):
         """Blind spot feature disabled → not in blind spot."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
@@ -261,9 +259,9 @@ class TestControlStateReasonBlindSpot:
 class TestControlStateReasonPriority:
     """Test that conditions are evaluated in the correct priority order."""
 
-    def test_direct_sun_has_highest_priority(self, hass, mock_logger):
+    def test_direct_sun_has_highest_priority(self, mock_sun_data, mock_logger):
         """direct_sun_valid=True always returns 'Direct Sun'."""
-        cover = make_cover(hass, mock_logger, sol_azi=180.0, sol_elev=45.0)
+        cover = make_cover(mock_sun_data, mock_logger, sol_azi=180.0, sol_elev=45.0)
         with (
             patch.object(
                 type(cover),
@@ -280,10 +278,12 @@ class TestControlStateReasonPriority:
         ):
             assert cover.control_state_reason == "Direct Sun"
 
-    def test_elevation_limit_takes_priority_over_blind_spot(self, hass, mock_logger):
+    def test_elevation_limit_takes_priority_over_blind_spot(
+        self, mock_sun_data, mock_logger
+    ):
         """When sun has invalid elevation AND is in blind spot, elevation wins."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=180.0,
             sol_elev=5.0,  # Below min
@@ -306,10 +306,10 @@ class TestControlStateReasonPriority:
             reason = cover.control_state_reason
             assert reason == "Default: Elevation Limit"
 
-    def test_fov_exit_when_only_azimuth_invalid(self, hass, mock_logger):
+    def test_fov_exit_when_only_azimuth_invalid(self, mock_sun_data, mock_logger):
         """Invalid azimuth with valid elevation → FOV Exit (not elevation limit)."""
         cover = make_cover(
-            hass,
+            mock_sun_data,
             mock_logger,
             sol_azi=0.0,  # Outside FOV
             sol_elev=45.0,  # Valid elevation

@@ -30,14 +30,13 @@ from .sun import SunData
 class AdaptiveGeneralCover(ABC):
     """Collect common data."""
 
-    hass: HomeAssistant
     logger: ConfigContextAdapter
     sol_azi: float
     sol_elev: float
     sunset_pos: int
     sunset_off: int
     sunrise_off: int
-    timezone: str
+    sun_data: SunData
     fov_left: int
     fov_right: int
     win_azi: int
@@ -52,11 +51,6 @@ class AdaptiveGeneralCover(ABC):
     blind_spot_on: bool
     min_elevation: int
     max_elevation: int
-    sun_data: SunData = field(init=False)
-
-    def __post_init__(self) -> None:
-        """Add solar data to dataset."""
-        self.sun_data = SunData(self.timezone, self.hass)
 
     def solar_times(self) -> tuple[datetime | None, datetime | None]:
         """Calculate when sun enters and exits window's field of view today.

@@ -1216,14 +1216,13 @@ class TestNormalCoverStateHorizontalMinPosition:
 
         # distance=3, h_win=1.5, gamma~80°, elev=20° → vertical saturates at h_win → gap=0 → 0%
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=260.0,  # gamma ≈ 80° from win_azi=180
             sol_elev=20.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -1286,14 +1285,13 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=sol_azi,
             sol_elev=sol_elev,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -1337,14 +1335,13 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=90.0,  # Way outside FOV (gamma=90° but FOV only ±45°)
             sol_elev=20.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=45,
             fov_right=45,
             win_azi=180,

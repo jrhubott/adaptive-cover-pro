@@ -45,32 +45,28 @@ def make_cover_with_angles(
 
 
 @pytest.fixture
-def hass():
-    """Create a mock HomeAssistant instance."""
-    hass_mock = MagicMock()
-    hass_mock.states.get.return_value = None
-    hass_mock.config.units.temperature_unit = "°C"
-    return hass_mock
-
-
-@pytest.fixture
 def mock_logger():
     """Create a mock logger."""
     return MagicMock()
 
 
 @pytest.fixture
-def base_cover_params(hass, mock_logger):
+def mock_sun_data():
+    """Create a mock SunData instance."""
+    return MagicMock()
+
+
+@pytest.fixture
+def base_cover_params(mock_sun_data, mock_logger):
     """Return base parameters for AdaptiveVerticalCover."""
     return {
-        "hass": hass,
         "logger": mock_logger,
         "sol_azi": 180.0,
         "sol_elev": 45.0,
         "sunset_pos": 0,
         "sunset_off": 0,
         "sunrise_off": 0,
-        "timezone": "UTC",
+        "sun_data": mock_sun_data,
         "fov_left": 90,
         "fov_right": 90,
         "win_azi": 180,
@@ -567,36 +563,10 @@ class TestWindowDepth:
                 f"Invalid position for {description}: {position}"
             )
 
-    def test_window_depth_backward_compatibility(self, hass, mock_logger):
+    def test_window_depth_backward_compatibility(self, base_cover_params):
         """Cover without window_depth parameter should work (backward compatibility)."""
         # Create cover without window_depth parameter (old code style)
-        cover = AdaptiveVerticalCover(
-            hass=hass,
-            logger=mock_logger,
-            sol_azi=180.0,
-            sol_elev=45.0,
-            sunset_pos=0,
-            sunset_off=0,
-            sunrise_off=0,
-            timezone="UTC",
-            fov_left=90,
-            fov_right=90,
-            win_azi=180,
-            h_def=50,
-            max_pos=100,
-            min_pos=0,
-            max_pos_bool=False,
-            min_pos_bool=False,
-            blind_spot_left=None,
-            blind_spot_right=None,
-            blind_spot_elevation=None,
-            blind_spot_on=False,
-            min_elevation=None,
-            max_elevation=None,
-            distance=0.5,
-            h_win=2.1,
-            # window_depth omitted - should use default
-        )
+        cover = AdaptiveVerticalCover(**base_cover_params)
 
         # Should work and use default
         assert cover.window_depth == 0.0

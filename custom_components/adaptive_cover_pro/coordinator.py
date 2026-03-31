@@ -109,6 +109,7 @@ from .helpers import (
     get_open_close_state,
     get_safe_state,
 )
+from .state.sun_provider import SunProvider
 
 
 @dataclass
@@ -230,6 +231,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._lux_toggle,
             self._irradiance_toggle,
         )
+
+        # Sun data provider (bridges HA astral location to pure SunData)
+        self._sun_provider = SunProvider(hass=self.hass)
 
         # Track last skipped action for diagnostic sensor
         self.last_skipped_action: dict[str, Any] = {
@@ -1333,29 +1337,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             or AdaptiveTiltCover)
 
         """
+        sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
+        common = self._config_service.get_common_data(options)
+        # Insert sun_data after sunrise_off (index 2) into the common params
+        # common is [sunset_pos, sunset_off, sunrise_off, fov_left, ...]
+        common_with_sun = common[:3] + [sun_data] + common[3:]
+
         if self.is_blind_cover:
             cover_data = AdaptiveVerticalCover(
-                self.hass,
                 self.logger,
                 *self.pos_sun,
-                *self._config_service.get_common_data(options),
+                *common_with_sun,
                 *self._config_service.get_vertical_data(options),
             )
         if self.is_awning_cover:
             cover_data = AdaptiveHorizontalCover(
-                self.hass,
                 self.logger,
                 *self.pos_sun,
-                *self._config_service.get_common_data(options),
+                *common_with_sun,
                 *self._config_service.get_vertical_data(options),
                 *self._config_service.get_horizontal_data(options),
             )
         if self.is_tilt_cover:
             cover_data = AdaptiveTiltCover(
-                self.hass,
                 self.logger,
                 *self.pos_sun,
-                *self._config_service.get_common_data(options),
+                *common_with_sun,
                 *self._config_service.get_tilt_data(options),
             )
         return cover_data

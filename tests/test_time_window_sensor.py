@@ -25,17 +25,16 @@ from custom_components.adaptive_cover_pro.coordinator import (
 
 
 @pytest.fixture
-def cover_in_fov(hass, mock_logger):
+def cover_in_fov(mock_sun_data, mock_logger):
     """Create a vertical cover with sun directly in FOV (would calculate a tracking position)."""
     return AdaptiveVerticalCover(
-        hass=hass,
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=30.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,

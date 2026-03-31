@@ -61,15 +61,6 @@ def make_climate_state(cover, climate_data):
 
 
 @pytest.fixture
-def hass():
-    """Mock HomeAssistant."""
-    h = MagicMock()
-    h.states.get.return_value = None
-    h.config.units.temperature_unit = "°C"
-    return h
-
-
-@pytest.fixture
 def mock_logger():
     """Mock logger."""
     logger = MagicMock()
@@ -81,19 +72,33 @@ def mock_logger():
 
 
 @pytest.fixture
-def vertical_cover(hass, mock_logger):
+def mock_sun_data():
+    """Mock SunData instance."""
+    return MagicMock()
+
+
+@pytest.fixture
+def hass():
+    """Mock HomeAssistant (used by ClimateCoverData)."""
+    h = MagicMock()
+    h.states.get.return_value = None
+    h.config.units.temperature_unit = "°C"
+    return h
+
+
+@pytest.fixture
+def vertical_cover(mock_sun_data, mock_logger):
     """Vertical cover with sun directly in front."""
     from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
 
     return AdaptiveVerticalCover(
-        hass=hass,
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
