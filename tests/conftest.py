@@ -237,32 +237,22 @@ def tilt_cover_instance(hass, mock_logger):
 
 
 @pytest.fixture
-def climate_data_instance(hass, mock_logger, mock_state):
-    """ClimateCoverData instance with mocked entities."""
+def climate_data_instance(mock_logger):
+    """ClimateCoverData instance with pre-read values."""
     from custom_components.adaptive_cover_pro.calculation import ClimateCoverData
 
-    # Mock temperature sensor
-    temp_state = mock_state("sensor.outside_temp", "22.5", {})
-    hass.states.get.return_value = temp_state
-
     return ClimateCoverData(
-        hass=hass,
         logger=mock_logger,
-        temp_entity="sensor.inside_temp",
         temp_low=20.0,
         temp_high=25.0,
-        presence_entity="binary_sensor.presence",
-        weather_entity="weather.home",
-        weather_condition=["sunny", "partlycloudy"],
-        outside_entity="sensor.outside_temp",
         temp_switch=True,
         blind_type="cover_blind",
         transparent_blind=False,
-        lux_entity="sensor.lux",
-        irradiance_entity="sensor.solar",
-        lux_threshold=5000,
-        irradiance_threshold=300,
         temp_summer_outside=22.0,
-        _use_lux=False,
-        _use_irradiance=False,
+        outside_temperature="22.5",
+        inside_temperature=None,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
     )

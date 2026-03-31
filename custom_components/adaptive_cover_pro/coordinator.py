@@ -83,6 +83,19 @@ from .const import (
     CONF_START_TIME,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_TEMP_ENTITY,
+    CONF_TEMP_LOW,
+    CONF_TEMP_HIGH,
+    CONF_PRESENCE_ENTITY,
+    CONF_WEATHER_ENTITY,
+    CONF_WEATHER_STATE,
+    CONF_OUTSIDETEMP_ENTITY,
+    CONF_OUTSIDE_THRESHOLD,
+    CONF_TRANSPARENT_BLIND,
+    CONF_LUX_ENTITY,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_LUX_THRESHOLD,
+    CONF_IRRADIANCE_THRESHOLD,
     DOMAIN,
     LOGGER,
     MAX_POSITION_RETRIES,
@@ -102,6 +115,7 @@ from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
 from .managers.position_verification import PositionVerificationManager
+from .state.climate_provider import ClimateProvider
 
 
 @dataclass
@@ -211,6 +225,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._temp_toggle,
             self._lux_toggle,
             self._irradiance_toggle,
+        )
+
+        # Climate state provider
+        self._climate_provider = ClimateProvider(
+            hass=self.hass, logger=self.logger
         )
 
         # Track position explanation for change detection logging
@@ -1232,7 +1251,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cover_data: Cover calculation data object
 
         """
-        climate = ClimateCoverData(*self._config_service.get_climate_data(options))
+        readings = self._climate_provider.read(
+            temp_entity=options.get(CONF_TEMP_ENTITY),
+            outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
+            weather_entity=options.get(CONF_WEATHER_ENTITY),
+            weather_condition=options.get(CONF_WEATHER_STATE),
+            presence_entity=options.get(CONF_PRESENCE_ENTITY),
+            use_lux=bool(self._lux_toggle),
+            lux_entity=options.get(CONF_LUX_ENTITY),
+            lux_threshold=options.get(CONF_LUX_THRESHOLD),
+            use_irradiance=bool(self._irradiance_toggle),
+            irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
+            irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
+        )
+        climate = ClimateCoverData(
+            logger=self.logger,
+            temp_low=options.get(CONF_TEMP_LOW),
+            temp_high=options.get(CONF_TEMP_HIGH),
+            temp_switch=bool(self._temp_toggle),
+            blind_type=self._cover_type,
+            transparent_blind=options.get(CONF_TRANSPARENT_BLIND, False),
+            temp_summer_outside=options.get(CONF_OUTSIDE_THRESHOLD),
+            outside_temperature=readings.outside_temperature,
+            inside_temperature=readings.inside_temperature,
+            is_presence=readings.is_presence,
+            is_sunny=readings.is_sunny,
+            lux_below_threshold=readings.lux_below_threshold,
+            irradiance_below_threshold=readings.irradiance_below_threshold,
+        )
         climate_cover_state = ClimateCoverState(cover_data, climate)
         self.climate_state = round(climate_cover_state.get_state())
         self.climate_data = climate_cover_state.climate_data  # Store for P1 diagnostics

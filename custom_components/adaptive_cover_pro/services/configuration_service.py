@@ -24,31 +24,18 @@ from ..const import (
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_HEIGHT_WIN,
-    CONF_IRRADIANCE_ENTITY,
-    CONF_IRRADIANCE_THRESHOLD,
     CONF_LENGTH_AWNING,
-    CONF_LUX_ENTITY,
-    CONF_LUX_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
-    CONF_OUTSIDE_THRESHOLD,
-    CONF_OUTSIDETEMP_ENTITY,
-    CONF_PRESENCE_ENTITY,
+    CONF_SILL_HEIGHT,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
-    CONF_TEMP_ENTITY,
-    CONF_TEMP_HIGH,
-    CONF_TEMP_LOW,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
-    CONF_TRANSPARENT_BLIND,
-    CONF_WEATHER_ENTITY,
-    CONF_WEATHER_STATE,
-    CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
 )
 
@@ -103,35 +90,6 @@ class ConfigurationService:
             options.get(CONF_ENABLE_BLIND_SPOT, False),
             options.get(CONF_MIN_ELEVATION, None),
             options.get(CONF_MAX_ELEVATION, None),
-        ]
-
-    def get_climate_data(self, options: dict) -> list:
-        """Extract climate mode configuration.
-
-        Returns:
-            List of climate configuration values
-
-        """
-        return [
-            self.hass,
-            self.logger,
-            options.get(CONF_TEMP_ENTITY),
-            options.get(CONF_TEMP_LOW),
-            options.get(CONF_TEMP_HIGH),
-            options.get(CONF_PRESENCE_ENTITY),
-            options.get(CONF_WEATHER_ENTITY),
-            options.get(CONF_WEATHER_STATE),
-            options.get(CONF_OUTSIDETEMP_ENTITY),
-            self._temp_toggle,
-            self._cover_type,
-            options.get(CONF_TRANSPARENT_BLIND),
-            options.get(CONF_LUX_ENTITY),
-            options.get(CONF_IRRADIANCE_ENTITY),
-            options.get(CONF_LUX_THRESHOLD),
-            options.get(CONF_IRRADIANCE_THRESHOLD),
-            options.get(CONF_OUTSIDE_THRESHOLD),
-            self._lux_toggle,
-            self._irradiance_toggle,
         ]
 
     def get_vertical_data(self, options: dict) -> list:

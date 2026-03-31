@@ -25,28 +25,30 @@ from custom_components.adaptive_cover_pro.enums import ClimateStrategy
 def make_climate_data(hass, mock_logger, **overrides):
     """Build a ClimateCoverData with minimal defaults."""
     defaults = {
-        "hass": hass,
         "logger": mock_logger,
-        "temp_entity": None,
         "temp_low": 20.0,
         "temp_high": 25.0,
-        "presence_entity": None,
-        "weather_entity": None,
-        "weather_condition": ["sunny"],
-        "outside_entity": None,
         "temp_switch": False,
         "blind_type": "cover_blind",
         "transparent_blind": False,
-        "lux_entity": None,
-        "irradiance_entity": None,
-        "lux_threshold": 5000,
-        "irradiance_threshold": 300,
         "temp_summer_outside": 22.0,
-        "_use_lux": False,
-        "_use_irradiance": False,
+        "outside_temperature": None,
+        "inside_temperature": None,
+        "is_presence": True,
+        "is_sunny": True,
+        "lux_below_threshold": False,
+        "irradiance_below_threshold": False,
     }
     defaults.update(overrides)
-    return ClimateCoverData(**defaults)
+    # Remove keys not in ClimateCoverData (e.g. 'hass' passed by callers)
+    valid_keys = {
+        "logger", "temp_low", "temp_high", "temp_switch", "blind_type",
+        "transparent_blind", "temp_summer_outside", "outside_temperature",
+        "inside_temperature", "is_presence", "is_sunny",
+        "lux_below_threshold", "irradiance_below_threshold",
+    }
+    filtered = {k: v for k, v in defaults.items() if k in valid_keys}
+    return ClimateCoverData(**filtered)
 
 
 def make_climate_state(cover, climate_data):
@@ -134,24 +136,15 @@ class TestClimateStrategyNormalWithPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        # Simulate winter (low temperature)
-        temp_state = MagicMock()
-        temp_state.state = "10.0"
-        hass.states.get.side_effect = lambda eid: (
-            temp_state if "temp" in eid else MagicMock(state="on")
-        )
-
         climate_data = make_climate_data(
             hass,
             mock_logger,
-            temp_entity="sensor.temp",
+            is_presence=True,
             temp_low=20.0,
             temp_high=25.0,
-            presence_entity="binary_sensor.presence",
-            weather_condition=["sunny"],
         )
 
-        # Force winter + presence + sun valid
+        # Force winter + sun valid
         with (
             patch.object(
                 type(climate_data),
@@ -164,12 +157,6 @@ class TestClimateStrategyNormalWithPresence:
                 "is_summer",
                 new_callable=PropertyMock,
                 return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
-                new_callable=PropertyMock,
-                return_value=True,
             ),
             patch.object(
                 type(vertical_cover),
@@ -201,7 +188,9 @@ class TestClimateStrategyNormalWithPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger)
+        climate_data = make_climate_data(
+            hass, mock_logger, is_presence=True, lux_below_threshold=True
+        )
 
         with (
             patch.object(
@@ -215,15 +204,6 @@ class TestClimateStrategyNormalWithPresence:
                 "is_summer",
                 new_callable=PropertyMock,
                 return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
-                new_callable=PropertyMock,
-                return_value=True,
-            ),
-            patch.object(
-                type(climate_data), "lux", new_callable=PropertyMock, return_value=True
             ),
             patch.object(
                 type(vertical_cover),
@@ -250,8 +230,15 @@ class TestClimateStrategyNormalWithPresence:
             return_value=datetime(2024, 6, 21, 5, 0, 0)
         )
 
-        # transparent_blind is a dataclass field — set it directly
-        climate_data = make_climate_data(hass, mock_logger, transparent_blind=True)
+        climate_data = make_climate_data(
+            hass,
+            mock_logger,
+            transparent_blind=True,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+        )
 
         with (
             patch.object(
@@ -263,27 +250,6 @@ class TestClimateStrategyNormalWithPresence:
             patch.object(
                 type(climate_data),
                 "is_summer",
-                new_callable=PropertyMock,
-                return_value=True,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
-                new_callable=PropertyMock,
-                return_value=True,
-            ),
-            patch.object(
-                type(climate_data), "lux", new_callable=PropertyMock, return_value=False
-            ),
-            patch.object(
-                type(climate_data),
-                "irradiance",
-                new_callable=PropertyMock,
-                return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_sunny",
                 new_callable=PropertyMock,
                 return_value=True,
             ),
@@ -313,8 +279,15 @@ class TestClimateStrategyNormalWithPresence:
             return_value=datetime(2024, 6, 21, 5, 0, 0)
         )
 
-        # transparent_blind=False is the default; set explicitly to be clear
-        climate_data = make_climate_data(hass, mock_logger, transparent_blind=False)
+        climate_data = make_climate_data(
+            hass,
+            mock_logger,
+            transparent_blind=False,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+        )
 
         with (
             patch.object(
@@ -328,27 +301,6 @@ class TestClimateStrategyNormalWithPresence:
                 "is_summer",
                 new_callable=PropertyMock,
                 return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
-                new_callable=PropertyMock,
-                return_value=True,
-            ),
-            patch.object(
-                type(climate_data), "lux", new_callable=PropertyMock, return_value=False
-            ),
-            patch.object(
-                type(climate_data),
-                "irradiance",
-                new_callable=PropertyMock,
-                return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_sunny",
-                new_callable=PropertyMock,
-                return_value=True,
             ),
             patch.object(
                 type(vertical_cover),
@@ -384,7 +336,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 6, 21, 5, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger)
+        climate_data = make_climate_data(hass, mock_logger, is_presence=False)
 
         with (
             patch.object(
@@ -396,12 +348,6 @@ class TestClimateStrategyNormalWithoutPresence:
             patch.object(
                 type(climate_data),
                 "is_winter",
-                new_callable=PropertyMock,
-                return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
                 new_callable=PropertyMock,
                 return_value=False,
             ),
@@ -437,7 +383,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger)
+        climate_data = make_climate_data(hass, mock_logger, is_presence=False)
 
         with (
             patch.object(
@@ -451,12 +397,6 @@ class TestClimateStrategyNormalWithoutPresence:
                 "is_winter",
                 new_callable=PropertyMock,
                 return_value=True,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
-                new_callable=PropertyMock,
-                return_value=False,
             ),
             patch.object(
                 type(vertical_cover),
@@ -490,7 +430,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger)
+        climate_data = make_climate_data(hass, mock_logger, is_presence=False)
 
         with (
             patch.object(
@@ -502,12 +442,6 @@ class TestClimateStrategyNormalWithoutPresence:
             patch.object(
                 type(climate_data),
                 "is_winter",
-                new_callable=PropertyMock,
-                return_value=False,
-            ),
-            patch.object(
-                type(climate_data),
-                "is_presence",
                 new_callable=PropertyMock,
                 return_value=False,
             ),

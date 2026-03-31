@@ -8,7 +8,6 @@ from typing import cast
 import numpy as np
 import pandas as pd
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.template import state_attr
 from numpy import cos, sin, tan
 from numpy import radians as rad
 
@@ -21,7 +20,6 @@ from .const import (
 )
 from .enums import ClimateStrategy, CoverType, TiltMode
 from .geometry import EdgeCaseHandler, SafetyMarginCalculator
-from .helpers import get_domain, get_safe_state
 from .position_utils import PositionConverter
 from .sun import SunData
 
@@ -391,70 +389,27 @@ class NormalCoverState:
 
 @dataclass
 class ClimateCoverData:
-    """Fetch additional data."""
+    """Pure climate data container with computed properties.
 
-    hass: HomeAssistant
+    All Home Assistant state reads happen in ClimateProvider.read() before
+    constructing this dataclass. The pre-read values are passed directly,
+    making this class testable without mocking HA state.
+    """
+
     logger: ConfigContextAdapter
-    temp_entity: str
     temp_low: float
     temp_high: float
-    presence_entity: str
-    weather_entity: str
-    weather_condition: list[str]
-    outside_entity: str
     temp_switch: bool
     blind_type: str
     transparent_blind: bool
-    lux_entity: str
-    irradiance_entity: str
-    lux_threshold: int
-    irradiance_threshold: int
     temp_summer_outside: float
-    _use_lux: bool
-    _use_irradiance: bool
-
-    @property
-    def outside_temperature(self) -> str | float | None:
-        """Get outside temperature from configured entity or weather integration.
-
-        Tries outside_entity first, falls back to weather entity's temperature
-        attribute if available.
-
-        Returns:
-            Temperature value as float or string, or None if not available.
-
-        """
-        temp = None
-        if self.outside_entity:
-            temp = get_safe_state(
-                self.hass,
-                self.outside_entity,
-            )
-        elif self.weather_entity:
-            temp = state_attr(self.hass, self.weather_entity, "temperature")
-        return temp
-
-    @property
-    def inside_temperature(self) -> str | float | None:
-        """Get inside temperature from configured temperature entity.
-
-        Supports both sensor entities (direct state) and climate entities
-        (current_temperature attribute).
-
-        Returns:
-            Temperature value as float or string, or None if not configured.
-
-        """
-        if self.temp_entity is not None:
-            if get_domain(self.temp_entity) != "climate":
-                temp = get_safe_state(
-                    self.hass,
-                    self.temp_entity,
-                )
-            else:
-                temp = state_attr(self.hass, self.temp_entity, "current_temperature")
-            return temp
-        return None
+    # Pre-read values from ClimateProvider
+    outside_temperature: float | str | None
+    inside_temperature: float | str | None
+    is_presence: bool
+    is_sunny: bool
+    lux_below_threshold: bool
+    irradiance_below_threshold: bool
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -474,34 +429,6 @@ class ClimateCoverData:
         if self.inside_temperature is not None:
             return float(self.inside_temperature)
         return None
-
-    @property
-    def is_presence(self) -> bool:
-        """Check if people are present based on configured presence entity.
-
-        Supports multiple entity types with appropriate state interpretation:
-        - device_tracker: "home" = present
-        - zone: count > 0 = present
-        - binary_sensor/input_boolean: "on" = present
-
-        Returns:
-            True if presence detected or no presence entity configured (assume present).
-            False if presence entity indicates nobody home.
-
-        """
-        presence = None
-        if self.presence_entity is not None:
-            presence = get_safe_state(self.hass, self.presence_entity)
-        # set to true if no sensor is defined
-        if presence is not None:
-            domain = get_domain(self.presence_entity)
-            if domain == "device_tracker":
-                return presence == "home"
-            if domain == "zone":
-                return int(presence) > 0
-            if domain in ["binary_sensor", "input_boolean"]:
-                return presence == "on"
-        return True
 
     @property
     def is_winter(self) -> bool:
@@ -575,74 +502,22 @@ class ClimateCoverData:
         return is_it
 
     @property
-    def is_sunny(self) -> bool:
-        """Check if current weather condition allows solar radiation.
-
-        Compares current weather state against configured sunny weather conditions
-        (default: sunny, windy, partlycloudy, cloudy). Used in climate mode to
-        determine if calculated position should be used vs default position.
-
-        Returns:
-            True if weather state matches configured sunny conditions or weather
-            entity not configured. False if weather state indicates no solar
-            radiation (rainy, snowy, etc).
-
-        """
-        weather_state = None
-        if self.weather_entity is not None:
-            weather_state = get_safe_state(self.hass, self.weather_entity)
-        else:
-            self.logger.debug("is_sunny(): No weather entity defined")
-            return True
-        if self.weather_condition is not None:
-            matches = weather_state in self.weather_condition
-            self.logger.debug("is_sunny(): Weather: %s = %s", weather_state, matches)
-            return matches
-        # No weather condition defined, default to sunny
-        self.logger.debug("is_sunny(): No weather condition defined")
-        return True
-
-    @property
     def lux(self) -> bool:
         """Check if illuminance is below lux threshold indicating low light.
 
-        Used in climate mode to detect low light conditions where default position
-        should be used instead of calculated position for glare control.
-
-        Returns:
-            True if lux sensor value <= lux_threshold (low light detected).
-            False if lux not configured, sensor unavailable, or above threshold.
+        Returns the pre-read lux_below_threshold value from ClimateProvider.
 
         """
-        if not self._use_lux:
-            return False
-        if self.lux_entity is not None and self.lux_threshold is not None:
-            value = get_safe_state(self.hass, self.lux_entity)
-            if value is None:
-                return False
-            return float(value) <= self.lux_threshold
-        return False
+        return self.lux_below_threshold
 
     @property
     def irradiance(self) -> bool:
         """Check if solar irradiance is below threshold indicating low light.
 
-        Used in climate mode to detect low solar radiation conditions where default
-        position should be used instead of calculated position for glare control.
-
-        Returns:
-            True if irradiance sensor value <= irradiance_threshold (low radiation).
-            False if irradiance not configured, sensor unavailable, or above threshold.
+        Returns the pre-read irradiance_below_threshold value from ClimateProvider.
 
         """
-        if not self._use_irradiance:
-            return False
-        if self.irradiance_entity is not None and self.irradiance_threshold is not None:
-            value = get_safe_state(self.hass, self.irradiance_entity)
-            if value is None:
-                return False
-            return float(value) <= self.irradiance_threshold
-        return False
+        return self.irradiance_below_threshold
 
 
 @dataclass
