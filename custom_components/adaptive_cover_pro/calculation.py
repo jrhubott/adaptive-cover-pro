@@ -298,7 +298,15 @@ class AdaptiveGeneralCover(ABC):
             False otherwise.
 
         """
-        return self.valid and not self.sunset_valid and not self.is_sun_in_blind_spot
+        result = self.valid and not self.sunset_valid and not self.is_sun_in_blind_spot
+        self.logger.debug(
+            "direct_sun_valid=%s (valid=%s, sunset_valid=%s, in_blind_spot=%s)",
+            result,
+            self.valid,
+            self.sunset_valid,
+            self.is_sun_in_blind_spot,
+        )
+        return result
 
     @property
     def control_state_reason(self) -> str:
@@ -728,11 +736,20 @@ class ClimateCoverState(NormalCoverState):
         """
         if self.cover.valid:
             if self.climate_data.is_summer:
+                self.cover.logger.debug(
+                    "n_w/o_p(): Summer mode active with sun in window = close to 0"
+                )
                 self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return 0
             if self.climate_data.is_winter:
+                self.cover.logger.debug(
+                    "n_w/o_p(): Winter mode active with sun in window = use 100"
+                )
                 self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return 100
+        self.cover.logger.debug(
+            "n_w/o_p(): Low light or not sunny = use default position"
+        )
         self.climate_strategy = ClimateStrategy.LOW_LIGHT
         return round(self.cover.default)
 
@@ -960,10 +977,24 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Check edge cases first
         is_edge_case, edge_position = self._handle_edge_cases()
         if is_edge_case:
+            self.logger.debug(
+                "Vertical calc: edge case detected (elev=%.1f°, gamma=%.1f°) → %.3fm",
+                self.sol_elev,
+                self.gamma,
+                edge_position,
+            )
+            self._last_calc_details = {
+                "edge_case_detected": True,
+                "safety_margin": 1.0,
+                "effective_distance": self.distance,
+                "window_depth_contribution": 0.0,
+                "sill_height_offset": 0.0,
+            }
             return edge_position
 
         # Account for window depth at angles (creates additional shadow)
         effective_distance = self.distance
+        depth_contribution = 0.0
         if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
             # At angles, window depth creates additional horizontal offset
             depth_contribution = self.window_depth * sin(rad(abs(self.gamma)))
@@ -973,6 +1004,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Sill at height S means blind bottom is S meters above floor,
         # providing S/tan(elevation) meters of "free" horizontal protection.
         # Subtract from effective_distance to account for this.
+        sill_offset = 0.0
         if self.sill_height > 0:
             sill_offset = self.sill_height / max(
                 tan(rad(self.sol_elev)), 0.05
@@ -986,8 +1018,31 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Apply safety margin for extreme angles
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
         adjusted_height = base_height * safety_margin
+        result = float(np.clip(adjusted_height, 0, self.h_win))
 
-        return np.clip(adjusted_height, 0, self.h_win)
+        self.logger.debug(
+            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (depth=%.3f, sill=%.3f), "
+            "base=%.3f, margin=%.3f, adjusted=%.3f, clipped=%.3f",
+            self.sol_elev,
+            self.gamma,
+            self.distance,
+            effective_distance,
+            depth_contribution,
+            sill_offset,
+            base_height,
+            safety_margin,
+            adjusted_height,
+            result,
+        )
+        # Store for diagnostic sensor access
+        self._last_calc_details = {
+            "edge_case_detected": False,
+            "safety_margin": round(safety_margin, 4),
+            "effective_distance": round(effective_distance, 4),
+            "window_depth_contribution": round(depth_contribution, 4),
+            "sill_height_offset": round(sill_offset, 4),
+        }
+        return result
 
     def calculate_percentage(self) -> float:
         """Convert blind height to percentage for Home Assistant.
@@ -1037,6 +1092,15 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
         vertical_position = super().calculate_position()
         length = ((self.h_win - vertical_position) * sin(rad(a_angle))) / sin(
             rad(c_angle)
+        )
+        self.logger.debug(
+            "Horizontal calc: elev=%.1f°, gamma=%.1f°, awn_angle=%s°, "
+            "vertical_pos=%.3f, length=%.3f",
+            self.sol_elev,
+            self.gamma,
+            self.awn_angle,
+            vertical_position,
+            length,
         )
         # return np.clip(length, 0, self.awn_length)
         return length
@@ -1112,6 +1176,13 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         )
         result = np.rad2deg(slat)
 
+        self.logger.debug(
+            "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",
+            self.sol_elev,
+            self.gamma,
+            beta,
+            result,
+        )
         return result
 
     def calculate_percentage(self) -> float:

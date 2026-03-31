@@ -749,3 +749,78 @@ class TestBuildPositionExplanation:
         result = coord._build_position_explanation()
         assert "invers" in result.lower()
         assert "28%" in result
+
+
+# ---------------------------------------------------------------------------
+# Position Explanation Change Detection Logging Tests (A1)
+# ---------------------------------------------------------------------------
+
+
+class TestPositionExplanationChangeDetection:
+    """_build_position_diagnostics logs position explanation only when it changes."""
+
+    def _make_coordinator_with_diagnostics(self):
+        """Build a minimal mock coordinator with real _build_position_diagnostics bound."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+        coord._build_position_explanation = MagicMock(return_value="Sun tracking (50%)")
+        coord._last_position_explanation = ""
+        coord.logger = MagicMock()
+        coord.logger.debug = MagicMock()
+
+        # Minimal stubs needed by the real _build_position_diagnostics
+        coord.raw_calculated_position = 50
+        coord.climate_state = None
+        coord._determine_control_status = MagicMock(return_value="solar")
+        coord._get_control_state_reason = MagicMock(return_value="Direct Sun")
+        coord.min_change = 5
+        coord.time_threshold = 2
+        coord.last_cover_action = {
+            "entity_id": None,
+            "position": None,
+            "timestamp": None,
+        }
+        coord.last_skipped_action = {"entity_id": None}
+        coord.normal_cover_state = None
+
+        coord._build_position_diagnostics = (
+            AdaptiveDataUpdateCoordinator._build_position_diagnostics.__get__(coord)
+        )
+        return coord
+
+    def test_logs_on_first_call(self):
+        """First call logs the explanation (empty → something)."""
+        coord = self._make_coordinator_with_diagnostics()
+        coord._build_position_diagnostics()
+        coord.logger.debug.assert_called()
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert any("Position explanation changed" in c for c in calls)
+
+    def test_logs_on_change(self):
+        """Logs when explanation changes between calls."""
+        coord = self._make_coordinator_with_diagnostics()
+        coord._last_position_explanation = "Sun tracking (40%)"
+        coord._build_position_explanation.return_value = "Sun tracking (50%)"
+        coord._build_position_diagnostics()
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert any("Position explanation changed" in c for c in calls)
+
+    def test_no_log_when_unchanged(self):
+        """Does NOT log when explanation is the same as last time."""
+        coord = self._make_coordinator_with_diagnostics()
+        coord._last_position_explanation = "Sun tracking (50%)"
+        coord._build_position_explanation.return_value = "Sun tracking (50%)"
+        coord._build_position_diagnostics()
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert not any("Position explanation changed" in c for c in calls)
+
+    def test_updates_stored_explanation(self):
+        """Stored explanation is updated after a change."""
+        coord = self._make_coordinator_with_diagnostics()
+        coord._last_position_explanation = "Sun tracking (40%)"
+        coord._build_position_explanation.return_value = "Manual override active"
+        coord._build_position_diagnostics()
+        assert coord._last_position_explanation == "Manual override active"

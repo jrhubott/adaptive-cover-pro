@@ -231,6 +231,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._irradiance_toggle,
         )
 
+        # Track last skipped action for diagnostic sensor
+        self.last_skipped_action: dict[str, Any] = {
+            "entity_id": None,
+            "reason": None,
+            "calculated_position": None,
+            "timestamp": None,
+        }
+        # Track position explanation for change detection logging
+        self._last_position_explanation: str = ""
+
         # Track last cover action for diagnostic sensor
         self.last_cover_action: dict[str, Any] = {
             "entity_id": None,
@@ -418,7 +428,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             event: State change event containing old and new state
 
         """
-        self.logger.debug("Entity state change")
+        entity_id = event.data.get("entity_id", "unknown")
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        old_val = old_state.state if old_state else "None"
+        new_val = new_state.state if new_state else "None"
+        self.logger.debug(
+            "Entity state change: %s (%s → %s)", entity_id, old_val, new_val
+        )
         self.state_change = True
         await self.async_refresh()
 
@@ -491,6 +508,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Motion stopped - check if any other sensors still active
             if not self.is_motion_detected:
                 self._start_motion_timeout()
+            else:
+                self.logger.debug(
+                    "Motion stopped on %s but another sensor still active — timeout not started",
+                    entity_id,
+                )
 
     def process_entity_state_change(self):
         """Process cover state change for manual override detection.
@@ -696,6 +718,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _cancel_motion_timeout(self) -> None:
         """Cancel motion timeout task."""
         if self._motion_timeout_task and not self._motion_timeout_task.done():
+            self.logger.debug("Motion timeout canceled")
             self._motion_timeout_task.cancel()
         self._motion_timeout_task = None
 
@@ -1058,13 +1081,39 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             options: Configuration options dictionary
 
         """
-        if (
-            self.check_adaptive_time
-            and self.check_position_delta(entity, state, options)
-            and self.check_time_delta(entity)
-            and not self.manager.is_cover_manual(entity)
-        ):
-            await self.async_set_position(entity, state)
+        if not self.check_adaptive_time:
+            self.logger.debug("Skipping %s: outside time window", entity)
+            self._record_skipped_action(entity, "Outside time window", state)
+            return
+        if not self.check_position_delta(entity, state, options):
+            self.logger.debug("Skipping %s: position delta too small", entity)
+            self._record_skipped_action(entity, "Position delta too small", state)
+            return
+        if not self.check_time_delta(entity):
+            self.logger.debug("Skipping %s: time delta too small", entity)
+            self._record_skipped_action(entity, "Time delta too small", state)
+            return
+        if self.manager.is_cover_manual(entity):
+            self.logger.debug("Skipping %s: manual override active", entity)
+            self._record_skipped_action(entity, "Manual override active", state)
+            return
+        await self.async_set_position(entity, state)
+
+    def _record_skipped_action(self, entity: str, reason: str, state: int) -> None:
+        """Record a skipped cover action for diagnostic tracking.
+
+        Args:
+            entity: Cover entity ID that was skipped
+            reason: Human-readable reason for skipping
+            state: Target position that would have been set
+
+        """
+        self.last_skipped_action = {
+            "entity_id": entity,
+            "reason": reason,
+            "calculated_position": state,
+            "timestamp": dt.datetime.now(dt.UTC).isoformat(),
+        }
 
     async def async_set_position(self, entity, state: int):
         """Set cover position.
@@ -1567,6 +1616,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.climate_strategy = (
             climate_cover_state.climate_strategy
         )  # Store for diagnostics
+        self.logger.debug(
+            "Climate mode: strategy=%s, state=%s%%",
+            self.climate_strategy.value if self.climate_strategy else "none",
+            self.climate_state,
+        )
 
     def _build_solar_diagnostics(self) -> dict:
         """Build solar position diagnostics."""
@@ -1647,14 +1701,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             if cover.direct_sun_valid:
                 parts.append(f"Sun tracking ({self.raw_calculated_position}%)")
             elif cover.sunset_valid and cover.sunset_pos is not None:
-                parts.append(
-                    f"Sunset Position ({round(cover.sunset_pos)}%)"
-                )
+                parts.append(f"Sunset Position ({round(cover.sunset_pos)}%)")
             else:
                 reason = cover.control_state_reason
-                parts.append(
-                    f"{reason} → Default Position ({round(cover.default)}%)"
-                )
+                parts.append(f"{reason} → Default Position ({round(cover.default)}%)")
 
         # Step 2: Position limits on the non-climate path
         if not self._switch_mode:
@@ -1709,7 +1759,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         diagnostics["control_state_reason"] = self._get_control_state_reason()
 
         # Full decision chain explanation
-        diagnostics["position_explanation"] = self._build_position_explanation()
+        explanation = self._build_position_explanation()
+        diagnostics["position_explanation"] = explanation
+        if explanation != self._last_position_explanation:
+            self.logger.debug("Position explanation changed: %s", explanation)
+            self._last_position_explanation = explanation
 
         # Delta thresholds (for debugging position_delta_too_small / time_delta_too_small)
         diagnostics["delta_position_threshold"] = self.min_change
@@ -1733,6 +1787,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 diagnostics["seconds_since_last_action"] = round(elapsed)
             except (ValueError, AttributeError):
                 pass
+
+        # Vertical cover calculation details (edge case, safety margin, distances)
+        if self.normal_cover_state and self.normal_cover_state.cover:
+            cover = self.normal_cover_state.cover
+            calc_details = getattr(cover, "_last_calc_details", None)
+            if calc_details is not None:
+                diagnostics["calculation_details"] = calc_details
 
         # Coordinator last update time
         diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
@@ -1828,6 +1889,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         diagnostics = {}
         if self.last_cover_action.get("entity_id"):
             diagnostics["last_cover_action"] = self.last_cover_action.copy()
+        if self.last_skipped_action.get("entity_id"):
+            diagnostics["last_skipped_action"] = self.last_skipped_action.copy()
         return diagnostics
 
     def _build_configuration_diagnostics(self) -> dict:
@@ -2200,8 +2263,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._last_sun_validity_state = current_sun_valid
             return False
 
-        # Detect transition from not-in-front to in-front
+        # Detect transitions
         sun_just_appeared = (not self._last_sun_validity_state) and current_sun_valid
+        sun_just_left = self._last_sun_validity_state and (not current_sun_valid)
 
         # Update tracking
         self._last_sun_validity_state = current_sun_valid
@@ -2209,6 +2273,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if sun_just_appeared:
             self.logger.info(
                 "Sun visibility transition detected: OFF → ON (sun came into field of view)"
+            )
+        elif sun_just_left:
+            self.logger.debug(
+                "Sun visibility transition detected: ON → OFF (sun left field of view)"
             )
 
         return sun_just_appeared

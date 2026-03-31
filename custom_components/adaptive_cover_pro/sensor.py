@@ -121,6 +121,20 @@ async def async_setup_entry(
         )
     )
 
+    # Position Explanation
+    entities.append(
+        AdaptiveCoverPositionExplanationSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
+        )
+    )
+
+    # Last Skipped Action
+    entities.append(
+        AdaptiveCoverLastSkippedActionSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
+        )
+    )
+
     # Last Cover Action
     entities.append(
         AdaptiveCoverLastActionSensor(
@@ -582,6 +596,16 @@ class AdaptiveCoverCalculatedPositionSensor(
         if diagnostics.get("position_explanation") is not None:
             attrs["position_explanation"] = diagnostics["position_explanation"]
 
+        calc_details = diagnostics.get("calculation_details")
+        if calc_details:
+            attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
+            attrs["safety_margin"] = calc_details.get("safety_margin")
+            attrs["effective_distance"] = calc_details.get("effective_distance")
+            attrs["window_depth_contribution"] = calc_details.get(
+                "window_depth_contribution"
+            )
+            attrs["sill_height_offset"] = calc_details.get("sill_height_offset")
+
         return attrs
 
 
@@ -1003,3 +1027,106 @@ class AdaptiveCoverClimateStatusSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 attrs["irradiance_active"] = climate_conditions["irradiance_active"]
 
         return attrs or None
+
+
+class AdaptiveCoverPositionExplanationSensor(
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+):
+    """Diagnostic sensor showing the current position decision explanation.
+
+    State is the full position_explanation string so HA records it in state
+    history, enabling time-based troubleshooting.
+    """
+
+    _attr_native_unit_of_measurement = ""  # Text sensor — excluded from logbook
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            "position_explanation",
+            "mdi:text-box-outline",
+        )
+        self._sensor_name = "Position Explanation"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the position explanation string as the sensor state."""
+        if not self.data or not self.data.diagnostics:
+            return None
+        return self.data.diagnostics.get("position_explanation")
+
+
+class AdaptiveCoverLastSkippedActionSensor(
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+):
+    """Diagnostic sensor showing why the last cover move was skipped.
+
+    Records when automatic cover movement was suppressed and the reason,
+    making it possible to debug why a cover did not move when expected.
+    """
+
+    _attr_native_unit_of_measurement = ""  # Text sensor — excluded from logbook
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            "last_skipped_action",
+            "mdi:debug-step-over",
+        )
+        self._sensor_name = "Last Skipped Action"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the skip reason as the sensor state."""
+        if not self.data or not self.data.diagnostics:
+            return None
+        action = self.data.diagnostics.get("last_skipped_action")
+        if not action or not action.get("entity_id"):
+            return "No action skipped"
+        return action.get("reason")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return entity, position, and timestamp of the skipped action."""
+        if not self.data or not self.data.diagnostics:
+            return None
+        action = self.data.diagnostics.get("last_skipped_action")
+        if not action or not action.get("entity_id"):
+            return None
+        return {
+            "entity_id": action.get("entity_id"),
+            "calculated_position": action.get("calculated_position"),
+            "timestamp": action.get("timestamp"),
+        }

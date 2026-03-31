@@ -558,6 +558,31 @@ A: No, safety margins are automatic and cannot be disabled. They're essential fo
 **Q: How do I measure window depth accurately?**
 A: Use a tape measure or ruler to measure from the outer wall surface (outside your home) to the inner edge of the window frame. If you're unsure, leave at the default (0.0) — the automatic safety margins work well without it.
 
+**Q: How do I troubleshoot unexpected cover behavior over time?**
+A: Two built-in diagnostic sensors help with time-based troubleshooting:
+- **Position Explanation** — tracks *why* the cover is at its current position (e.g., "Sun tracking (45%) → Climate: Winter Heating → 100%"). Because the state itself is the explanation string, Home Assistant records its history — check the History panel to see how decisions changed over time.
+- **Last Skipped Action** — shows why the most recent automatic cover move was suppressed (e.g., "Position delta too small", "Manual override active", "Outside time window"). Useful when a cover doesn't move and you expect it to.
+
+For even deeper logging, enable debug logging in your `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.adaptive_cover_pro: debug
+```
+
+Restart Home Assistant and check **Settings → System → Logs** or `home-assistant.log`. With debug logging active you will see detailed entries such as:
+
+```
+Position explanation changed: Sun tracking (45%) → Climate: Winter Heating → 100%
+Skipping cover.living_room_blind: position delta too small
+Vertical calc: elev=32.5°, gamma=18.3°, dist=2.500→2.500, base=1.234, margin=1.000, clipped=1.234
+Sun visibility transition detected: ON → OFF (sun left field of view)
+```
+
+Each log entry is prefixed with the device name so you can filter by device in multi-instance setups.
+
 ## Installation
 
 ### HACS (Recommended)
