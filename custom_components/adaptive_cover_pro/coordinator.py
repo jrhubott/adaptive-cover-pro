@@ -109,6 +109,7 @@ from .helpers import (
     get_open_close_state,
     get_safe_state,
 )
+from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 
 
@@ -199,14 +200,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.ignore_intermediate_states = self.config_entry.options.get(
             CONF_MANUAL_IGNORE_INTERMEDIATE, False
         )
-        # Command grace period tracking
-        self._command_grace_period_seconds = COMMAND_GRACE_PERIOD_SECONDS
-        self._command_timestamps: dict[str, float] = {}
-        self._grace_period_tasks: dict[str, asyncio.Task] = {}
-        # Startup grace period tracking (global, not per-entity)
-        self._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-        self._startup_timestamp: float | None = None
-        self._startup_grace_period_task: asyncio.Task | None = None
+        # Grace period management (command + startup)
+        self._grace_mgr = GracePeriodManager(
+            logger=self.logger,
+            command_grace_seconds=COMMAND_GRACE_PERIOD_SECONDS,
+            startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+        )
         # Motion control tracking
         self._motion_sensors: list[str] = []
         self._motion_timeout_seconds: int = DEFAULT_MOTION_TIMEOUT
@@ -557,129 +556,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("No wait for target call for %s", entity_id)
 
     def _is_in_grace_period(self, entity_id: str) -> bool:
-        """Check if entity is in command grace period.
-
-        Args:
-            entity_id: Entity to check
-
-        Returns:
-            True if in grace period, False otherwise
-
-        """
-        timestamp = self._command_timestamps.get(entity_id)
-        if timestamp is None:
-            return False
-
-        elapsed = dt.datetime.now().timestamp() - timestamp
-        return elapsed < self._command_grace_period_seconds
+        """Check if entity is in command grace period."""
+        return self._grace_mgr.is_in_command_grace_period(entity_id)
 
     def _start_grace_period(self, entity_id: str) -> None:
-        """Start grace period for entity.
-
-        Sets timestamp and schedules automatic clearing after grace period.
-
-        Args:
-            entity_id: Entity to start grace period for
-
-        """
-        # Cancel any existing grace period task
-        self._cancel_grace_period(entity_id)
-
-        # Record command timestamp
-        now = dt.datetime.now().timestamp()
-        self._command_timestamps[entity_id] = now
-
-        # Schedule automatic grace period expiration
-        task = asyncio.create_task(self._grace_period_timeout(entity_id))
-        self._grace_period_tasks[entity_id] = task
-
-        self.logger.debug(
-            "Started %s second grace period for %s",
-            self._command_grace_period_seconds,
-            entity_id,
-        )
-
-    async def _grace_period_timeout(self, entity_id: str) -> None:
-        """Clear grace period after timeout.
-
-        Args:
-            entity_id: Entity whose grace period expired
-
-        """
-        await asyncio.sleep(self._command_grace_period_seconds)
-
-        # Clear tracking
-        self._command_timestamps.pop(entity_id, None)
-        self._grace_period_tasks.pop(entity_id, None)
-
-        self.logger.debug("Grace period expired for %s", entity_id)
+        """Start grace period for entity."""
+        self._grace_mgr.start_command_grace_period(entity_id)
 
     def _cancel_grace_period(self, entity_id: str) -> None:
-        """Cancel grace period task for entity.
-
-        Args:
-            entity_id: Entity whose grace period to cancel
-
-        """
-        task = self._grace_period_tasks.get(entity_id)
-        if task and not task.done():
-            task.cancel()
-
-        self._grace_period_tasks.pop(entity_id, None)
-        self._command_timestamps.pop(entity_id, None)
+        """Cancel grace period task for entity."""
+        self._grace_mgr.cancel_command_grace_period(entity_id)
 
     def _is_in_startup_grace_period(self) -> bool:
-        """Check if integration is in startup grace period.
-
-        Returns:
-            True if in startup grace period, False otherwise
-
-        """
-        if self._startup_timestamp is None:
-            return False
-
-        elapsed = dt.datetime.now().timestamp() - self._startup_timestamp
-        return elapsed < self._startup_grace_period_seconds
+        """Check if integration is in startup grace period."""
+        return self._grace_mgr.is_in_startup_grace_period()
 
     def _start_startup_grace_period(self) -> None:
-        """Start startup grace period after first refresh.
-
-        Sets timestamp and schedules automatic clearing after grace period.
-        This prevents manual override detection during HA restart when covers
-        may respond slowly due to system initialization.
-
-        """
-        # Cancel any existing grace period task
-        if (
-            self._startup_grace_period_task
-            and not self._startup_grace_period_task.done()
-        ):
-            self._startup_grace_period_task.cancel()
-
-        # Record startup timestamp
-        self._startup_timestamp = dt.datetime.now().timestamp()
-
-        # Schedule automatic grace period expiration
-        self._startup_grace_period_task = asyncio.create_task(
-            self._startup_grace_period_timeout()
-        )
-
-        self.logger.info(
-            "Started %s second startup grace period (manual override detection disabled)",
-            self._startup_grace_period_seconds,
-        )
-
-    async def _startup_grace_period_timeout(self) -> None:
-        """Clear startup grace period after timeout."""
-        await asyncio.sleep(self._startup_grace_period_seconds)
-
-        # Clear tracking
-        self._startup_timestamp = None
-        self._startup_grace_period_task = None
-
-        self.logger.info(
-            "Startup grace period expired (manual override detection enabled)"
-        )
+        """Start startup grace period after first refresh."""
+        self._grace_mgr.start_startup_grace_period()
 
     def _start_motion_timeout(self) -> None:
         """Start motion timeout for no-motion detection."""
@@ -2463,8 +2357,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         # Cancel all grace period tasks
-        for entity_id in list(self._grace_period_tasks.keys()):
-            self._cancel_grace_period(entity_id)
+        self._grace_mgr.cancel_all()
 
         # Cancel motion timeout task
         self._cancel_motion_timeout()
