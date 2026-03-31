@@ -520,5 +520,24 @@
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "decision_trace": {
+        "name": "Decision Trace",
+        "state": {
+          "unknown": "Unknown",
+          "solar": "Solar",
+          "summer": "Summer",
+          "winter": "Winter",
+          "default": "Default",
+          "manual_override": "Manual Override",
+          "motion_timeout": "Motion Timeout",
+          "force_override": "Force Override",
+          "wind_override": "Wind Override",
+          "cloud_suppression": "Cloud Suppression"
+        }
+      }
+    }
   }
 }

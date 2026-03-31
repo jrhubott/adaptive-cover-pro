@@ -128,6 +128,13 @@ async def async_setup_entry(
         )
     )
 
+    # Decision Trace
+    entities.append(
+        AdaptiveCoverDecisionTraceSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
+        )
+    )
+
     # Last Skipped Action
     entities.append(
         AdaptiveCoverLastSkippedActionSensor(
@@ -227,7 +234,20 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:  # noqa: D102
-        return self.data.attributes
+        attrs = dict(self.data.attributes) if self.data.attributes else {}
+        # Enrich with pipeline context
+        attrs["control_method"] = self.data.states.get("control")
+        pipeline_result = self.coordinator._pipeline_result
+        if pipeline_result is not None:
+            attrs["reason"] = pipeline_result.reason
+        diagnostics = (
+            self.coordinator.data.diagnostics if self.coordinator.data else None
+        )
+        if diagnostics:
+            position_explanation = diagnostics.get("position_explanation")
+            if position_explanation is not None:
+                attrs["position_explanation"] = position_explanation
+        return attrs
 
 
 class AdaptiveCoverTimeSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
@@ -1067,6 +1087,89 @@ class AdaptiveCoverPositionExplanationSensor(
         if not self.data or not self.data.diagnostics:
             return None
         return self.data.diagnostics.get("position_explanation")
+
+
+class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
+    """Diagnostic sensor showing the full pipeline decision trace."""
+
+    _attr_translation_key = "decision_trace"
+    _attr_native_unit_of_measurement = ""
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            "decision_trace",
+            "mdi:list-status",
+        )
+        self._sensor_name = "Decision Trace"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str:
+        """Return the winning handler name."""
+        result = self.coordinator._pipeline_result
+        if result is None:
+            return "unknown"
+        return result.control_method.value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the full decision trace and sun position data."""
+        attrs: dict[str, Any] = {}
+        result = self.coordinator._pipeline_result
+        if result:
+            trace = []
+            for step in result.decision_trace:
+                trace.append(
+                    {
+                        "handler": step.handler,
+                        "matched": step.matched,
+                        "reason": step.reason,
+                        "position": step.position,
+                    }
+                )
+            attrs["trace"] = trace
+            attrs["reason"] = result.reason
+
+        diagnostics = (
+            self.coordinator.data.diagnostics if self.coordinator.data else {}
+        )
+        if diagnostics:
+            attrs["sun_azimuth"] = diagnostics.get("sun_azimuth")
+            attrs["sun_elevation"] = diagnostics.get("sun_elevation")
+            attrs["gamma"] = diagnostics.get("gamma")
+
+            sun_validity = diagnostics.get("sun_validity", {})
+            if sun_validity:
+                attrs["in_field_of_view"] = sun_validity.get("valid")
+                attrs["elevation_valid"] = sun_validity.get("valid_elevation")
+                attrs["in_blind_spot"] = sun_validity.get("in_blind_spot")
+
+            if (
+                hasattr(self.coordinator, "normal_cover_state")
+                and self.coordinator.normal_cover_state
+                and self.coordinator.normal_cover_state.cover
+            ):
+                attrs["direct_sun_valid"] = (
+                    self.coordinator.normal_cover_state.cover.direct_sun_valid
+                )
+
+        return attrs or None
 
 
 class AdaptiveCoverLastSkippedActionSensor(

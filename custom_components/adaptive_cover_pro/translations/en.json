@@ -651,6 +651,21 @@
           "no_motion": "No Motion",
           "waiting_for_data": "Waiting for Data"
         }
+      },
+      "decision_trace": {
+        "name": "Decision Trace",
+        "state": {
+          "unknown": "Unknown",
+          "solar": "Solar",
+          "summer": "Summer",
+          "winter": "Winter",
+          "default": "Default",
+          "manual_override": "Manual Override",
+          "motion_timeout": "Motion Timeout",
+          "force_override": "Force Override",
+          "wind_override": "Wind Override",
+          "cloud_suppression": "Cloud Suppression"
+        }
       }
     }
   },
