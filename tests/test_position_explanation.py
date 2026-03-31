@@ -6,6 +6,7 @@ Tests cover:
 """
 
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import pytest
@@ -14,7 +15,17 @@ from custom_components.adaptive_cover_pro.calculation import (
     ClimateCoverData,
     ClimateCoverState,
 )
-from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+from custom_components.adaptive_cover_pro.const import (
+    CONF_DEFAULT_HEIGHT,
+    CONF_ENABLE_MIN_POSITION,
+    CONF_MIN_POSITION,
+    CONF_SUNSET_POS,
+)
+from custom_components.adaptive_cover_pro.diagnostics.builder import (
+    DiagnosticContext,
+    DiagnosticsBuilder,
+)
+from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +75,75 @@ def make_climate_state(cover, climate_data):
     """Build a ClimateCoverState, mocking sun data to avoid HA calls."""
     state = ClimateCoverState(cover, climate_data)
     return state
+
+
+def _make_cover(
+    *,
+    direct_sun_valid=True,
+    sunset_valid=False,
+    sunset_pos=None,
+    control_state_reason="Sun in FOV",
+    default=50.0,
+):
+    """Create a minimal cover mock for position explanation tests."""
+    return SimpleNamespace(
+        gamma=10.0,
+        valid=True,
+        valid_elevation=True,
+        in_blind_spot=False,
+        direct_sun_valid=direct_sun_valid,
+        sunset_valid=sunset_valid,
+        sunset_pos=sunset_pos,
+        default=default,
+        control_state_reason=control_state_reason,
+    )
+
+
+def _make_ncs(cover=None):
+    """Wrap a cover mock in a NormalCoverState-like object."""
+    if cover is None:
+        cover = _make_cover()
+    return SimpleNamespace(cover=cover)
+
+
+def _base_ctx(**overrides):
+    """Return a DiagnosticContext with sensible defaults."""
+    defaults = {  # noqa: C408
+        "pos_sun": [180.0, 45.0],
+        "normal_cover_state": _make_ncs(),
+        "raw_calculated_position": 50,
+        "climate_state": None,
+        "climate_data": None,
+        "climate_strategy": None,
+        "climate_mode": False,
+        "control_method": ControlMethod.SOLAR,
+        "pipeline_result": None,
+        "is_force_override_active": False,
+        "is_motion_timeout_active": False,
+        "is_manual_override_active": False,
+        "check_adaptive_time": True,
+        "after_start_time": True,
+        "before_end_time": True,
+        "start_time": None,
+        "end_time": None,
+        "automatic_control": True,
+        "last_cover_action": {},
+        "last_skipped_action": {},
+        "min_change": 1,
+        "time_threshold": 2,
+        "switch_mode": False,
+        "inverse_state": False,
+        "use_interpolation": False,
+        "default_state": 50,
+        "final_state": 50,
+        "config_options": {},
+        "motion_detected": True,
+        "motion_timeout_active": False,
+        "force_override_sensors": [],
+        "force_override_position": 0,
+    }
+    defaults.update(overrides)
+    return DiagnosticContext(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +200,12 @@ def vertical_cover(mock_sun_data, mock_logger):
         distance=0.5,
         h_win=2.0,
     )
+
+
+@pytest.fixture
+def builder():
+    """Create a DiagnosticsBuilder instance."""
+    return DiagnosticsBuilder()
 
 
 # ---------------------------------------------------------------------------
@@ -477,217 +563,175 @@ class TestClimateStrategyNormalWithoutPresence:
 
 
 class TestBuildPositionExplanation:
-    """_build_position_explanation returns correct strings for all scenarios."""
+    """DiagnosticsBuilder._build_position_explanation returns correct strings."""
 
-    def _make_coordinator(self):
-        """Build a minimal mock coordinator with the real method bound."""
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-
-        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        # Bind the real method
-        coord._build_position_explanation = (
-            AdaptiveDataUpdateCoordinator._build_position_explanation.__get__(coord)
-        )
-        coord._CLIMATE_STRATEGY_LABELS = (
-            AdaptiveDataUpdateCoordinator._CLIMATE_STRATEGY_LABELS
-        )
-
-        # Defaults — no overrides
-        coord.is_force_override_active = False
-        coord.is_motion_timeout_active = False
-        coord.manager = MagicMock()
-        coord.manager.binary_cover_manual = False
-        coord.check_adaptive_time = True
-        coord._switch_mode = False
-        coord._use_interpolation = False
-        coord._inverse_state = False
-        coord.climate_state = None
-        coord.climate_strategy = None
-        coord.default_state = 50
-        coord.raw_calculated_position = 50
-
-        # Normal cover state mock
-        cover_mock = MagicMock()
-        cover_mock.direct_sun_valid = True
-        cover_mock.sunset_valid = False
-        cover_mock.sunset_pos = None
-        cover_mock.control_state_reason = "Direct Sun"
-        cover_mock.default = 50
-        normal_state = MagicMock()
-        normal_state.cover = cover_mock
-        coord.normal_cover_state = normal_state
-
-        coord.config_entry = MagicMock()
-        coord.config_entry.options = {}
-
-        # state property
-        type(coord).state = PropertyMock(return_value=50)
-
-        return coord
-
-    def test_force_override(self):
+    def test_force_override(self, builder):
         """Force override active → explains override position."""
-        coord = self._make_coordinator()
-        coord.is_force_override_active = True
-        coord.config_entry.options = {"force_override_position": 0}
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                is_force_override_active=True,
+                force_override_position=0,
+            )
+        )
         assert "Force override" in result
         assert "0%" in result
 
-    def test_motion_timeout(self):
+    def test_motion_timeout(self, builder):
         """Motion timeout active → explains default position."""
-        coord = self._make_coordinator()
-        coord.is_motion_timeout_active = True
-        coord.default_state = 30
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(is_motion_timeout_active=True, default_state=30)
+        )
         assert "motion" in result.lower()
         assert "30%" in result
 
-    def test_manual_override(self):
+    def test_manual_override(self, builder):
         """Manual override → explains manual control."""
-        coord = self._make_coordinator()
-        coord.manager.binary_cover_manual = True
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(is_manual_override_active=True)
+        )
         assert "manual" in result.lower()
 
-    def test_outside_time_window_with_sunset_position(self):
+    def test_outside_time_window_with_sunset_position(self, builder):
         """Outside time window with sunset position set → shows Sunset Position."""
-        coord = self._make_coordinator()
-        coord.check_adaptive_time = False
-        coord.config_entry.options = {"sunset_position": 30}
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                check_adaptive_time=False,
+                config_options={CONF_SUNSET_POS: 30},
+            )
+        )
         assert "Sunset Position" in result
         assert "30%" in result
 
-    def test_outside_time_window_without_sunset_position(self):
+    def test_outside_time_window_without_sunset_position(self, builder):
         """Outside time window without sunset position → shows Default Position."""
-        coord = self._make_coordinator()
-        coord.check_adaptive_time = False
-        coord.config_entry.options = {"default_percentage": 100}
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                check_adaptive_time=False,
+                config_options={CONF_DEFAULT_HEIGHT: 100},
+            )
+        )
         assert "Default Position" in result
         assert "100%" in result
 
-    def test_sunset_offset_with_sunset_position(self):
+    def test_sunset_offset_with_sunset_position(self, builder):
         """In window but sunset_valid with sunset_pos set → shows Sunset Position."""
-        coord = self._make_coordinator()
-        coord.normal_cover_state.cover.direct_sun_valid = False
-        coord.normal_cover_state.cover.sunset_valid = True
-        coord.normal_cover_state.cover.sunset_pos = 20
-
-        result = coord._build_position_explanation()
+        cover = _make_cover(direct_sun_valid=False, sunset_valid=True, sunset_pos=20)
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(normal_cover_state=_make_ncs(cover))
+        )
         assert "Sunset Position" in result
         assert "20%" in result
 
-    def test_default_fov_exit_without_sunset(self):
+    def test_default_fov_exit_without_sunset(self, builder):
         """In window, FOV exit, no sunset → shows Default Position."""
-        coord = self._make_coordinator()
-        coord.normal_cover_state.cover.direct_sun_valid = False
-        coord.normal_cover_state.cover.sunset_valid = False
-        coord.normal_cover_state.cover.sunset_pos = None
-        coord.normal_cover_state.cover.control_state_reason = "Default: FOV Exit"
-        coord.normal_cover_state.cover.default = 100
-
-        result = coord._build_position_explanation()
+        cover = _make_cover(
+            direct_sun_valid=False,
+            sunset_valid=False,
+            sunset_pos=None,
+            control_state_reason="Default: FOV Exit",
+            default=100,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(normal_cover_state=_make_ncs(cover))
+        )
         assert "FOV Exit" in result
         assert "Default Position" in result
         assert "100%" in result
 
-    def test_sun_tracking_no_limits(self):
+    def test_sun_tracking_no_limits(self, builder):
         """Sun tracking, no limits, no climate → shows raw tracking position."""
-        coord = self._make_coordinator()
-        coord.raw_calculated_position = 65
-        coord.normal_cover_state.cover.direct_sun_valid = True
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(raw_calculated_position=65)
+        )
         assert "Sun tracking" in result
         assert "65%" in result
 
-    def test_sun_tracking_with_min_limit(self):
+    def test_sun_tracking_with_min_limit(self, builder):
         """Sun tracking below min_position → shows limit applied."""
-        coord = self._make_coordinator()
-        coord.raw_calculated_position = 30
-        coord.default_state = 60  # min limit bumped it to 60
-        coord.normal_cover_state.cover.direct_sun_valid = True
-        coord.config_entry.options = {
-            "min_position": 60,
-            "enable_min_position": True,
-        }
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                raw_calculated_position=30,
+                default_state=60,
+                config_options={
+                    CONF_MIN_POSITION: 60,
+                    CONF_ENABLE_MIN_POSITION: True,
+                },
+            )
+        )
         assert "Sun tracking" in result
         assert "min limit" in result
         assert "60%" in result
 
-    def test_climate_winter_heating(self):
+    def test_climate_winter_heating(self, builder):
         """Sun tracking + climate winter heating → shows winter heating decision."""
-        coord = self._make_coordinator()
-        coord.raw_calculated_position = 45
-        coord._switch_mode = True
-        coord.climate_state = 100
-        coord.climate_strategy = ClimateStrategy.WINTER_HEATING
-        type(coord).state = PropertyMock(return_value=100)
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                raw_calculated_position=45,
+                switch_mode=True,
+                climate_state=100,
+                climate_strategy=ClimateStrategy.WINTER_HEATING,
+                final_state=100,
+            )
+        )
         assert "Sun tracking" in result
         assert "Winter Heating" in result
         assert "100%" in result
 
-    def test_climate_summer_cooling(self):
+    def test_climate_summer_cooling(self, builder):
         """Sun tracking + climate summer cooling → shows summer cooling."""
-        coord = self._make_coordinator()
-        coord.raw_calculated_position = 45
-        coord._switch_mode = True
-        coord.climate_state = 0
-        coord.climate_strategy = ClimateStrategy.SUMMER_COOLING
-        type(coord).state = PropertyMock(return_value=0)
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                raw_calculated_position=45,
+                switch_mode=True,
+                climate_state=0,
+                climate_strategy=ClimateStrategy.SUMMER_COOLING,
+                final_state=0,
+            )
+        )
         assert "Summer Cooling" in result
         assert "0%" in result
 
-    def test_climate_low_light(self):
+    def test_climate_low_light(self, builder):
         """Default position + climate low light strategy."""
-        coord = self._make_coordinator()
-        coord.normal_cover_state.cover.direct_sun_valid = False
-        coord.normal_cover_state.cover.control_state_reason = "Default: FOV Exit"
-        coord.normal_cover_state.cover.default = 0
-        coord.raw_calculated_position = 0
-        coord._switch_mode = True
-        coord.climate_state = 0
-        coord.climate_strategy = ClimateStrategy.LOW_LIGHT
-        type(coord).state = PropertyMock(return_value=0)
-
-        result = coord._build_position_explanation()
+        cover = _make_cover(
+            direct_sun_valid=False,
+            control_state_reason="Default: FOV Exit",
+            default=0,
+        )
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                normal_cover_state=_make_ncs(cover),
+                raw_calculated_position=0,
+                switch_mode=True,
+                climate_state=0,
+                climate_strategy=ClimateStrategy.LOW_LIGHT,
+                final_state=0,
+            )
+        )
         assert "FOV Exit" in result
         assert "Low Light" in result
 
-    def test_sun_tracking_with_interpolation(self):
+    def test_sun_tracking_with_interpolation(self, builder):
         """Interpolation applied → shows interpolated final value."""
-        coord = self._make_coordinator()
-        coord.raw_calculated_position = 72
-        coord._use_interpolation = True
-        type(coord).state = PropertyMock(return_value=65)
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                raw_calculated_position=72,
+                use_interpolation=True,
+                final_state=65,
+            )
+        )
         assert "interpolated" in result
         assert "65%" in result
 
-    def test_sun_tracking_with_inverse(self):
+    def test_sun_tracking_with_inverse(self, builder):
         """Inverse state applied → shows inversed final value."""
-        coord = self._make_coordinator()
-        coord.raw_calculated_position = 72
-        coord._inverse_state = True
-        type(coord).state = PropertyMock(return_value=28)
-
-        result = coord._build_position_explanation()
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                raw_calculated_position=72,
+                inverse_state=True,
+                final_state=28,
+            )
+        )
         assert "invers" in result.lower()
         assert "28%" in result
 
@@ -698,70 +742,97 @@ class TestBuildPositionExplanation:
 
 
 class TestPositionExplanationChangeDetection:
-    """_build_position_diagnostics logs position explanation only when it changes."""
+    """build_diagnostic_data logs position explanation only when it changes.
 
-    def _make_coordinator_with_diagnostics(self):
-        """Build a minimal mock coordinator with real _build_position_diagnostics bound."""
+    These tests verify the change-detection logging that happens in the
+    coordinator's build_diagnostic_data delegate.  Since the builder itself
+    is a pure function, we test the coordinator's thin wrapper behavior.
+    """
+
+    def _make_coordinator_mock(self, explanation="Sun tracking (50%)"):
+        """Build a mock coordinator with a real DiagnosticsBuilder."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
         coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        coord._build_position_explanation = MagicMock(return_value="Sun tracking (50%)")
+        coord._diagnostics_builder = DiagnosticsBuilder()
         coord._last_position_explanation = ""
         coord.logger = MagicMock()
-        coord.logger.debug = MagicMock()
 
-        # Minimal stubs needed by the real _build_position_diagnostics
+        # Minimal stubs for DiagnosticContext construction
+        coord.pos_sun = [180.0, 45.0]
+        coord.normal_cover_state = _make_ncs()
         coord.raw_calculated_position = 50
         coord.climate_state = None
-        coord._determine_control_status = MagicMock(return_value="solar")
-        coord._get_control_state_reason = MagicMock(return_value="Direct Sun")
+        coord.climate_data = None
+        coord.climate_strategy = None
+        coord._climate_mode = False
+        coord.control_method = ControlMethod.SOLAR
+        coord._pipeline_result = None
+        type(coord).is_force_override_active = PropertyMock(return_value=False)
+        type(coord).is_motion_timeout_active = PropertyMock(return_value=False)
+        coord.manager = MagicMock()
+        coord.manager.binary_cover_manual = False
+        type(coord).check_adaptive_time = PropertyMock(return_value=True)
+        type(coord).after_start_time = PropertyMock(return_value=True)
+        type(coord).before_end_time = PropertyMock(return_value=True)
+        coord._start_time = None
+        coord._end_time = None
+        type(coord).automatic_control = PropertyMock(return_value=True)
+        type(coord).last_cover_action = PropertyMock(return_value={})
+        type(coord).last_skipped_action = PropertyMock(return_value={})
         coord.min_change = 5
         coord.time_threshold = 2
-        coord.last_cover_action = {
-            "entity_id": None,
-            "position": None,
-            "timestamp": None,
-        }
-        coord.last_skipped_action = {"entity_id": None}
-        coord.normal_cover_state = None
+        coord._switch_mode = False
+        coord._inverse_state = False
+        coord._use_interpolation = False
+        coord.default_state = 50
+        type(coord).state = PropertyMock(return_value=50)
+        coord.config_entry = MagicMock()
+        coord.config_entry.options = {}
+        type(coord).is_motion_detected = PropertyMock(return_value=True)
+        coord._motion_mgr = MagicMock()
+        coord._motion_mgr._motion_timeout_active = False
 
-        coord._build_position_diagnostics = (
-            AdaptiveDataUpdateCoordinator._build_position_diagnostics.__get__(coord)
+        # Bind the real method
+        coord.build_diagnostic_data = (
+            AdaptiveDataUpdateCoordinator.build_diagnostic_data.__get__(coord)
         )
         return coord
 
     def test_logs_on_first_call(self):
         """First call logs the explanation (empty → something)."""
-        coord = self._make_coordinator_with_diagnostics()
-        coord._build_position_diagnostics()
+        coord = self._make_coordinator_mock()
+        coord.build_diagnostic_data()
         coord.logger.debug.assert_called()
         calls = [str(c) for c in coord.logger.debug.call_args_list]
         assert any("Position explanation changed" in c for c in calls)
 
     def test_logs_on_change(self):
         """Logs when explanation changes between calls."""
-        coord = self._make_coordinator_with_diagnostics()
+        coord = self._make_coordinator_mock()
         coord._last_position_explanation = "Sun tracking (40%)"
-        coord._build_position_explanation.return_value = "Sun tracking (50%)"
-        coord._build_position_diagnostics()
+        coord.build_diagnostic_data()
         calls = [str(c) for c in coord.logger.debug.call_args_list]
         assert any("Position explanation changed" in c for c in calls)
 
     def test_no_log_when_unchanged(self):
         """Does NOT log when explanation is the same as last time."""
-        coord = self._make_coordinator_with_diagnostics()
-        coord._last_position_explanation = "Sun tracking (50%)"
-        coord._build_position_explanation.return_value = "Sun tracking (50%)"
-        coord._build_position_diagnostics()
+        coord = self._make_coordinator_mock()
+        # First call to set the explanation
+        coord.build_diagnostic_data()
+        coord.logger.debug.reset_mock()
+        # Second call with same state — should NOT log
+        coord.build_diagnostic_data()
         calls = [str(c) for c in coord.logger.debug.call_args_list]
         assert not any("Position explanation changed" in c for c in calls)
 
     def test_updates_stored_explanation(self):
         """Stored explanation is updated after a change."""
-        coord = self._make_coordinator_with_diagnostics()
+        coord = self._make_coordinator_mock()
         coord._last_position_explanation = "Sun tracking (40%)"
-        coord._build_position_explanation.return_value = "Manual override active"
-        coord._build_position_diagnostics()
-        assert coord._last_position_explanation == "Manual override active"
+        coord.build_diagnostic_data()
+        # The explanation should now match the current state
+        assert coord._last_position_explanation != "Sun tracking (40%)"
+        assert len(coord._last_position_explanation) > 0

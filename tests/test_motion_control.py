@@ -371,26 +371,40 @@ def test_determine_control_status_motion_timeout():
     """Test control status returns MOTION_TIMEOUT when active."""
     from custom_components.adaptive_cover_pro.const import ControlStatus
     from custom_components.adaptive_cover_pro.enums import ControlMethod
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
+    from custom_components.adaptive_cover_pro.diagnostics.builder import (
+        DiagnosticContext,
+        DiagnosticsBuilder,
     )
     from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
-    coordinator = MagicMock()
-    coordinator._automatic_control = True
-
-    # Mock property access for direct checks in _determine_control_status
-    type(coordinator).is_force_override_active = property(lambda self: False)
-    type(coordinator).is_motion_timeout_active = property(lambda self: True)
-
-    # Pipeline result indicates motion timeout
-    coordinator._pipeline_result = PipelineResult(
+    pipeline_result = PipelineResult(
         position=60,
         control_method=ControlMethod.MOTION,
         reason="motion timeout active",
     )
 
-    result = AdaptiveDataUpdateCoordinator._determine_control_status(coordinator)
+    ctx = DiagnosticContext(
+        pos_sun=[180.0, 45.0],
+        normal_cover_state=None,
+        raw_calculated_position=60,
+        climate_state=None,
+        climate_data=None,
+        climate_strategy=None,
+        climate_mode=False,
+        control_method=ControlMethod.MOTION,
+        pipeline_result=pipeline_result,
+        is_force_override_active=False,
+        is_motion_timeout_active=True,
+        is_manual_override_active=False,
+        check_adaptive_time=True,
+        after_start_time=True,
+        before_end_time=True,
+        start_time=None,
+        end_time=None,
+        automatic_control=True,
+    )
+
+    result = DiagnosticsBuilder._determine_control_status(ctx)
     assert result == ControlStatus.MOTION_TIMEOUT
 
 
@@ -398,26 +412,40 @@ def test_determine_control_status_force_override_precedence():
     """Test force override takes precedence over motion timeout."""
     from custom_components.adaptive_cover_pro.const import ControlStatus
     from custom_components.adaptive_cover_pro.enums import ControlMethod
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
+    from custom_components.adaptive_cover_pro.diagnostics.builder import (
+        DiagnosticContext,
+        DiagnosticsBuilder,
     )
     from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
-    coordinator = MagicMock()
-    coordinator._automatic_control = True
-
-    # Both active: force override takes precedence
-    type(coordinator).is_force_override_active = property(lambda self: True)
-    type(coordinator).is_motion_timeout_active = property(lambda self: True)
-
-    # Pipeline result indicates force override (highest priority)
-    coordinator._pipeline_result = PipelineResult(
+    pipeline_result = PipelineResult(
         position=0,
         control_method=ControlMethod.FORCE,
         reason="force override active",
     )
 
-    result = AdaptiveDataUpdateCoordinator._determine_control_status(coordinator)
+    ctx = DiagnosticContext(
+        pos_sun=[180.0, 45.0],
+        normal_cover_state=None,
+        raw_calculated_position=0,
+        climate_state=None,
+        climate_data=None,
+        climate_strategy=None,
+        climate_mode=False,
+        control_method=ControlMethod.FORCE,
+        pipeline_result=pipeline_result,
+        is_force_override_active=True,
+        is_motion_timeout_active=True,
+        is_manual_override_active=False,
+        check_adaptive_time=True,
+        after_start_time=True,
+        before_end_time=True,
+        start_time=None,
+        end_time=None,
+        automatic_control=True,
+    )
+
+    result = DiagnosticsBuilder._determine_control_status(ctx)
     assert result == ControlStatus.FORCE_OVERRIDE_ACTIVE
 
 
@@ -490,31 +518,40 @@ def test_build_configuration_diagnostics_includes_motion_data():
         CONF_MOTION_SENSORS,
         CONF_MOTION_TIMEOUT,
     )
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
+    from custom_components.adaptive_cover_pro.diagnostics.builder import (
+        DiagnosticContext,
+        DiagnosticsBuilder,
     )
+    from custom_components.adaptive_cover_pro.enums import ControlMethod
 
-    coordinator, hass = _make_coordinator_with_motion_mgr(
-        sensors=["binary_sensor.motion_living_room"],
-        timeout_seconds=300,
-    )
-
-    def get_option(key, default=None):
-        options_map = {
+    ctx = DiagnosticContext(
+        pos_sun=[180.0, 45.0],
+        normal_cover_state=None,
+        raw_calculated_position=0,
+        climate_state=None,
+        climate_data=None,
+        climate_strategy=None,
+        climate_mode=False,
+        control_method=ControlMethod.SOLAR,
+        pipeline_result=None,
+        is_force_override_active=False,
+        is_motion_timeout_active=False,
+        is_manual_override_active=False,
+        check_adaptive_time=True,
+        after_start_time=True,
+        before_end_time=True,
+        start_time=None,
+        end_time=None,
+        automatic_control=True,
+        motion_detected=True,
+        motion_timeout_active=False,
+        config_options={
             CONF_MOTION_SENSORS: ["binary_sensor.motion_living_room"],
             CONF_MOTION_TIMEOUT: 300,
-        }
-        return options_map.get(key, default)
+        },
+    )
 
-    coordinator.config_entry.options.get.side_effect = get_option
-
-    # Mock is_force_override_active
-    type(coordinator).is_force_override_active = property(lambda self: False)
-
-    # Mock is_motion_detected
-    type(coordinator).is_motion_detected = property(lambda self: True)
-
-    result = AdaptiveDataUpdateCoordinator._build_configuration_diagnostics(coordinator)
+    result = DiagnosticsBuilder._build_configuration(ctx)
 
     config = result["configuration"]
     assert "motion_sensors" in config

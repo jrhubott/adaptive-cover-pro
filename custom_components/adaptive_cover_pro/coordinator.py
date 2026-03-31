@@ -45,15 +45,10 @@ from .const import (
     COMMAND_GRACE_PERIOD_SECONDS,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
-    CONF_BLIND_SPOT_LEFT,
-    CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
-    CONF_ENABLE_BLIND_SPOT,
-    CONF_ENABLE_MAX_POSITION,
-    CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
@@ -73,10 +68,6 @@ from .const import (
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
-    CONF_MAX_ELEVATION,
-    CONF_MAX_POSITION,
-    CONF_MIN_ELEVATION,
-    CONF_MIN_POSITION,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_RETURN_SUNSET,
     CONF_START_ENTITY,
@@ -103,9 +94,9 @@ from .const import (
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
     DEFAULT_MOTION_TIMEOUT,
-    ControlStatus,
 )
-from .enums import ClimateStrategy, ControlMethod
+from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
+from .enums import ControlMethod
 from .helpers import (
     get_datetime_from_str,
     get_safe_state,
@@ -221,14 +212,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Motion control tracking
         self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
         # Override pipeline
-        self._pipeline = PipelineRegistry([
-            ForceOverrideHandler(),
-            MotionTimeoutHandler(),
-            ManualOverrideHandler(),
-            ClimateHandler(),
-            SolarHandler(),
-            DefaultHandler(),
-        ])
+        self._pipeline = PipelineRegistry(
+            [
+                ForceOverrideHandler(),
+                MotionTimeoutHandler(),
+                ManualOverrideHandler(),
+                ClimateHandler(),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
         self._pipeline_result = None
         self._update_listener = None
         self._scheduled_time = dt.datetime.now()
@@ -251,6 +244,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Sun data provider
         self._sun_provider = SunProvider(hass=self.hass)
+
+        # Diagnostics builder (extracted from coordinator)
+        self._diagnostics_builder = DiagnosticsBuilder()
 
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
@@ -1332,373 +1328,62 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.climate_state,
         )
 
-    def _build_solar_diagnostics(self) -> dict:
-        """Build solar position diagnostics."""
-        diagnostics = {}
-        sun_azimuth, sun_elevation = self.pos_sun
-        diagnostics["sun_azimuth"] = sun_azimuth
-        diagnostics["sun_elevation"] = sun_elevation
-
-        # Gamma (surface solar azimuth)
-        if self.normal_cover_state and hasattr(self.normal_cover_state.cover, "gamma"):
-            diagnostics["gamma"] = self.normal_cover_state.cover.gamma
-
-        return diagnostics
-
-    def _get_control_state_reason(self) -> str:
-        """Get the current control state reason including coordinator-level overrides.
-
-        Combines cover-level sun position reasons with coordinator-level override
-        states (force override, motion timeout, manual override). Coordinator-level
-        states take priority over cover-level sun position reasons.
-
-        Returns:
-            Human-readable reason string for current cover control state.
-
-        """
-        if self.is_force_override_active:
-            return "Force Override"
-        if self.is_motion_timeout_active:
-            return "Motion Timeout"
-        if self.manager.binary_cover_manual:
-            return "Manual Override"
-        if self.normal_cover_state and self.normal_cover_state.cover:
-            return self.normal_cover_state.cover.control_state_reason
-        return "Unknown"
-
-    _CLIMATE_STRATEGY_LABELS: dict[ClimateStrategy, str] = {
-        ClimateStrategy.WINTER_HEATING: "Winter Heating",
-        ClimateStrategy.SUMMER_COOLING: "Summer Cooling",
-        ClimateStrategy.LOW_LIGHT: "Low Light",
-        ClimateStrategy.GLARE_CONTROL: "Glare Control",
-    }
-
-    def _build_position_explanation(self) -> str:
-        """Build a human-readable explanation of the full position decision chain.
-
-        Returns:
-            Single-line string describing each step from raw calculation to final
-            position (e.g. "Sun tracking (45%) → Climate: Winter Heating → 100%").
-
-        """
-        options = self.config_entry.options
-
-        # Priority overrides
-        if self.is_force_override_active:
-            pos = options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
-            return f"Force override active → {pos}%"
-
-        if self.is_motion_timeout_active:
-            return f"No motion detected → default {self.default_state}%"
-
-        if self.manager.binary_cover_manual:
-            return "Manual override active"
-
-        # Outside time window
-        if not self.check_adaptive_time:
-            sunset_pos = options.get(CONF_SUNSET_POS)
-            default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            if sunset_pos is not None:
-                return f"Outside time window → Sunset Position ({sunset_pos}%)"
-            return f"Outside time window → Default Position ({default_height}%)"
-
-        # Build the decision chain
-        parts = []
-
-        # Step 1: Sun position condition and raw calculated value
-        if self.normal_cover_state and self.normal_cover_state.cover:
-            cover = self.normal_cover_state.cover
-            if cover.direct_sun_valid:
-                parts.append(f"Sun tracking ({self.raw_calculated_position}%)")
-            elif cover.sunset_valid and cover.sunset_pos is not None:
-                parts.append(f"Sunset Position ({round(cover.sunset_pos)}%)")
-            else:
-                reason = cover.control_state_reason
-                parts.append(f"{reason} → Default Position ({round(cover.default)}%)")
-
-        # Step 2: Position limits on the non-climate path
-        if not self._switch_mode:
-            min_pos = options.get(CONF_MIN_POSITION)
-            max_pos = options.get(CONF_MAX_POSITION)
-            enable_min = options.get(CONF_ENABLE_MIN_POSITION, False)
-            enable_max = options.get(CONF_ENABLE_MAX_POSITION, False)
-            if min_pos is not None and enable_min and self.default_state == min_pos:
-                parts.append(f"min limit ({min_pos}%) → {self.default_state}%")
-            elif max_pos is not None and enable_max and self.default_state == max_pos:
-                parts.append(f"max limit ({max_pos}%) → {self.default_state}%")
-
-        # Step 3: Climate mode override
-        if self._switch_mode and self.climate_state is not None:
-            strategy_label = (
-                self._CLIMATE_STRATEGY_LABELS.get(self.climate_strategy, "Active")
-                if self.climate_strategy
-                else "Active"
-            )
-            parts.append(f"Climate: {strategy_label} → {self.climate_state}%")
-
-        # Step 4: Interpolation / inverse state
-        final = self.state
-        if self._use_interpolation:
-            parts.append(f"interpolated → {final}%")
-        elif self._inverse_state:
-            parts.append(f"inversed → {final}%")
-
-        return " → ".join(parts) if parts else "Unknown"
-
-    def _build_position_diagnostics(self) -> dict:
-        """Build position diagnostics.
-
-        Returns:
-            Dictionary containing calculated position (before limits), climate
-            position (if enabled), control status, and control state reason
-
-        """
-        diagnostics = {}
-
-        # Use raw calculated position (before min/max limits) for diagnostic
-        diagnostics["calculated_position"] = self.raw_calculated_position
-
-        if self.climate_state is not None:
-            diagnostics["calculated_position_climate"] = self.climate_state
-
-        # Control status determination
-        control_status = self._determine_control_status()
-        diagnostics["control_status"] = control_status
-
-        # Human-readable reason for current state (including coordinator-level overrides)
-        diagnostics["control_state_reason"] = self._get_control_state_reason()
-
-        # Full decision chain explanation
-        explanation = self._build_position_explanation()
-        diagnostics["position_explanation"] = explanation
-        if explanation != self._last_position_explanation:
-            self.logger.debug("Position explanation changed: %s", explanation)
-            self._last_position_explanation = explanation
-
-        # Delta thresholds (for debugging position_delta_too_small / time_delta_too_small)
-        diagnostics["delta_position_threshold"] = self.min_change
-        diagnostics["delta_time_threshold_minutes"] = self.time_threshold
-
-        # Position delta from last action
-        last_action = self.last_cover_action
-        if last_action.get("position") is not None:
-            diagnostics["position_delta_from_last_action"] = abs(
-                self.raw_calculated_position - last_action["position"]
-            )
-
-        # Time since last action
-        if last_action.get("timestamp"):
-            try:
-                last_ts = dt.datetime.fromisoformat(last_action["timestamp"])
-                if last_ts.tzinfo is None:
-                    last_ts = last_ts.replace(tzinfo=dt.UTC)
-                now_utc = dt.datetime.now(dt.UTC)
-                elapsed = (now_utc - last_ts).total_seconds()
-                diagnostics["seconds_since_last_action"] = round(elapsed)
-            except (ValueError, AttributeError):
-                pass
-
-        # Vertical cover calculation details (edge case, safety margin, distances)
-        if self.normal_cover_state and self.normal_cover_state.cover:
-            cover = self.normal_cover_state.cover
-            calc_details = getattr(cover, "_last_calc_details", None)
-            if calc_details is not None:
-                diagnostics["calculation_details"] = calc_details
-
-        # Coordinator last update time
-        diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
-
-        return diagnostics
-
-    def _build_time_window_diagnostics(self) -> dict:
-        """Build time window diagnostics.
-
-        Returns:
-            Dictionary containing time window state checks and configured times
-
-        """
-        return {
-            "time_window": {
-                "check_adaptive_time": self.check_adaptive_time,
-                "after_start_time": self.after_start_time,
-                "before_end_time": self.before_end_time,
-                "start_time": self._start_time,
-                "end_time": self._end_time,
-            }
-        }
-
-    def _build_sun_validity_diagnostics(self) -> dict:
-        """Build sun validity diagnostics.
-
-        Returns:
-            Dictionary containing sun validity state (in field of view, elevation
-            valid, in blind spot)
-
-        """
-        diagnostics = {}
-        if self.normal_cover_state and self.normal_cover_state.cover:
-            cover = self.normal_cover_state.cover
-            diagnostics["sun_validity"] = {
-                "valid": cover.valid,
-                "valid_elevation": cover.valid_elevation,
-                "in_blind_spot": getattr(cover, "in_blind_spot", None),
-            }
-        return diagnostics
-
-    def _build_climate_diagnostics(self) -> dict:
-        """Build climate mode diagnostics.
-
-        Returns:
-            Dictionary containing climate control method, active temperature,
-            temperature details, and climate conditions (summer/winter/presence/
-            sunny/lux/irradiance)
-
-        """
-        diagnostics = {}
-        if self._climate_mode and self.climate_data is not None:
-            diagnostics["climate_control_method"] = self.control_method
-
-            # Active temperature and temperature details
-            diagnostics["active_temperature"] = (
-                self.climate_data.get_current_temperature
-            )
-            diagnostics["temperature_details"] = {
-                "inside_temperature": self.climate_data.inside_temperature,
-                "outside_temperature": self.climate_data.outside_temperature,
-                "temp_switch": self.climate_data.temp_switch,
-            }
-
-            # Which strategy branch was taken
-            if self.climate_strategy is not None:
-                diagnostics["climate_strategy"] = self.climate_strategy.value
-
-            # Climate conditions
-            diagnostics["climate_conditions"] = {
-                "is_summer": self.climate_data.is_summer,
-                "is_winter": self.climate_data.is_winter,
-                "is_presence": self.climate_data.is_presence,
-                "is_sunny": self.climate_data.is_sunny,
-                "lux_active": self.climate_data.lux
-                if self.climate_data._use_lux
-                else None,
-                "irradiance_active": self.climate_data.irradiance
-                if self.climate_data._use_irradiance
-                else None,
-            }
-
-        return diagnostics
-
-    def _build_last_action_diagnostics(self) -> dict:
-        """Build last action diagnostics.
-
-        Returns:
-            Dictionary containing last cover action details (entity, service,
-            position, timestamp, etc.) if any action has been taken
-
-        """
-        diagnostics = {}
-        if self.last_cover_action.get("entity_id"):
-            diagnostics["last_cover_action"] = self.last_cover_action.copy()
-        if self.last_skipped_action.get("entity_id"):
-            diagnostics["last_skipped_action"] = self.last_skipped_action.copy()
-        return diagnostics
-
-    def _build_configuration_diagnostics(self) -> dict:
-        """Build configuration diagnostics.
-
-        Returns:
-            Dictionary containing current configuration settings (azimuth, FOV,
-            elevation limits, blind spot, position limits, inverse state,
-            interpolation)
-
-        """
-        options = self.config_entry.options
-        return {
-            "configuration": {
-                "azimuth": options.get(CONF_AZIMUTH),
-                "fov_left": options.get(CONF_FOV_LEFT),
-                "fov_right": options.get(CONF_FOV_RIGHT),
-                "min_elevation": options.get(CONF_MIN_ELEVATION),
-                "max_elevation": options.get(CONF_MAX_ELEVATION),
-                "enable_blind_spot": options.get(CONF_ENABLE_BLIND_SPOT, False),
-                "blind_spot_elevation": options.get(CONF_BLIND_SPOT_ELEVATION),
-                "blind_spot_left": options.get(CONF_BLIND_SPOT_LEFT),
-                "blind_spot_right": options.get(CONF_BLIND_SPOT_RIGHT),
-                "min_position": options.get(CONF_MIN_POSITION),
-                "max_position": options.get(CONF_MAX_POSITION),
-                "enable_min_position": options.get(CONF_ENABLE_MIN_POSITION, False),
-                "enable_max_position": options.get(CONF_ENABLE_MAX_POSITION, False),
-                "inverse_state": options.get(CONF_INVERSE_STATE, False),
-                "interpolation": options.get(CONF_INTERP, False),
-                "force_override_sensors": options.get(CONF_FORCE_OVERRIDE_SENSORS, []),
-                "force_override_position": options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
-                "force_override_active": self.is_force_override_active,
-                "motion_sensors": options.get(CONF_MOTION_SENSORS, []),
-                "motion_timeout": options.get(
-                    CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
-                ),
-                "motion_detected": self.is_motion_detected,
-                "motion_timeout_active": self._motion_mgr._motion_timeout_active,
-            }
-        }
-
     def build_diagnostic_data(self) -> dict:
-        """Build complete diagnostic data.
+        """Build complete diagnostic data via the extracted DiagnosticsBuilder.
 
-        Combines all diagnostic categories (solar, position, time window,
-        sun validity, climate, last action, configuration) into single
-        dictionary for diagnostic sensors.
+        Constructs a DiagnosticContext from coordinator state, delegates to
+        the builder, and handles position-explanation change-detection logging.
 
         Returns:
             Dictionary containing all diagnostic data
 
         """
-        return {
-            **self._build_solar_diagnostics(),
-            **self._build_position_diagnostics(),
-            **self._build_time_window_diagnostics(),
-            **self._build_sun_validity_diagnostics(),
-            **self._build_climate_diagnostics(),
-            **self._build_last_action_diagnostics(),
-            **self._build_configuration_diagnostics(),
-        }
+        ctx = DiagnosticContext(
+            pos_sun=self.pos_sun,
+            normal_cover_state=self.normal_cover_state,
+            raw_calculated_position=self.raw_calculated_position,
+            climate_state=self.climate_state,
+            climate_data=self.climate_data,
+            climate_strategy=self.climate_strategy,
+            climate_mode=self._climate_mode,
+            control_method=self.control_method,
+            pipeline_result=self._pipeline_result,
+            is_force_override_active=self.is_force_override_active,
+            is_motion_timeout_active=self.is_motion_timeout_active,
+            is_manual_override_active=self.manager.binary_cover_manual,
+            check_adaptive_time=self.check_adaptive_time,
+            after_start_time=self.after_start_time,
+            before_end_time=self.before_end_time,
+            start_time=self._start_time,
+            end_time=self._end_time,
+            automatic_control=self.automatic_control,
+            last_cover_action=self.last_cover_action,
+            last_skipped_action=self.last_skipped_action,
+            min_change=self.min_change,
+            time_threshold=self.time_threshold,
+            switch_mode=self._switch_mode,
+            inverse_state=self._inverse_state,
+            use_interpolation=self._use_interpolation,
+            default_state=self.default_state,
+            final_state=self.state,
+            config_options=dict(self.config_entry.options),
+            motion_detected=self.is_motion_detected,
+            motion_timeout_active=self._motion_mgr._motion_timeout_active,
+            force_override_sensors=self.config_entry.options.get(
+                CONF_FORCE_OVERRIDE_SENSORS, []
+            ),
+            force_override_position=self.config_entry.options.get(
+                CONF_FORCE_OVERRIDE_POSITION, 0
+            ),
+        )
 
-    def _determine_control_status(self) -> str:
-        """Determine current control status.
+        diagnostics, explanation = self._diagnostics_builder.build(ctx)
 
-        Uses the pipeline result's control method when available to avoid
-        duplicating the priority logic.  Force override and motion timeout
-        are also checked directly so they take effect even outside the
-        time window (when the pipeline does not run).
+        if explanation != self._last_position_explanation:
+            self.logger.debug("Position explanation changed: %s", explanation)
+            self._last_position_explanation = explanation
 
-        Returns:
-            Control status string: AUTOMATIC_CONTROL_OFF, FORCE_OVERRIDE_ACTIVE,
-            MANUAL_OVERRIDE, OUTSIDE_TIME_WINDOW, SUN_NOT_VISIBLE, or ACTIVE
-
-        """
-        if not self.automatic_control:
-            return ControlStatus.AUTOMATIC_CONTROL_OFF
-
-        # Safety overrides checked directly (apply even outside time window)
-        if self.is_force_override_active:
-            return ControlStatus.FORCE_OVERRIDE_ACTIVE
-
-        if self.is_motion_timeout_active:
-            return ControlStatus.MOTION_TIMEOUT
-
-        # Pipeline-derived statuses (only when pipeline has run)
-        if self._pipeline_result is not None:
-            method = self._pipeline_result.control_method
-            if method == ControlMethod.MANUAL:
-                return ControlStatus.MANUAL_OVERRIDE
-
-        if not self.check_adaptive_time:
-            return ControlStatus.OUTSIDE_TIME_WINDOW
-
-        if self.normal_cover_state and not self.normal_cover_state.cover.valid:
-            return ControlStatus.SUN_NOT_VISIBLE
-
-        return ControlStatus.ACTIVE
+        return diagnostics
 
     @property
     def state(self) -> int:
@@ -1732,9 +1417,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state = self.interpolate_states(state)
 
         if self._inverse_state and self._use_interpolation:
-            self.logger.info(
-                "Inverse state is not supported with interpolation"
-            )
+            self.logger.info("Inverse state is not supported with interpolation")
 
         if self._inverse_state and not self._use_interpolation:
             state = inverse_state(state)
