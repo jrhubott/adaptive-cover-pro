@@ -115,6 +115,14 @@ from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
 from .managers.position_verification import PositionVerificationManager
+from .pipeline.handlers.climate import ClimateHandler
+from .pipeline.handlers.default import DefaultHandler
+from .pipeline.handlers.force_override import ForceOverrideHandler
+from .pipeline.handlers.manual_override import ManualOverrideHandler
+from .pipeline.handlers.motion_timeout import MotionTimeoutHandler
+from .pipeline.handlers.solar import SolarHandler
+from .pipeline.registry import PipelineRegistry
+from .pipeline.types import PipelineContext
 from .state.climate_provider import ClimateProvider
 from .state.sun_provider import SunProvider
 
@@ -212,6 +220,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         # Motion control tracking
         self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
+        # Override pipeline
+        self._pipeline = PipelineRegistry([
+            ForceOverrideHandler(),
+            MotionTimeoutHandler(),
+            ManualOverrideHandler(),
+            ClimateHandler(),
+            SolarHandler(),
+            DefaultHandler(),
+        ])
+        self._pipeline_result = None
         self._update_listener = None
         self._scheduled_time = dt.datetime.now()
 
@@ -614,6 +632,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.default_state = outside_window_pos
             self.raw_calculated_position = outside_window_pos
             self.control_method = ControlMethod.DEFAULT
+            self._pipeline_result = None
             self.logger.debug(
                 "Outside time window - using position: %s", outside_window_pos
             )
@@ -638,32 +657,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.raw_calculated_position = cover_data.default
         self.logger.debug("Raw calculated position: %s", self.raw_calculated_position)
 
-        # Determine control method based on priority (highest to lowest)
-        if self.is_force_override_active:
-            self.control_method = ControlMethod.FORCE
-        elif self.is_motion_timeout_active:
-            self.control_method = ControlMethod.MOTION
-        elif self.manager.binary_cover_manual:
-            self.control_method = ControlMethod.MANUAL
-        elif (
-            self._climate_mode
-            and self.climate_data
-            and self.climate_data.is_summer
-            and self._switch_mode
-        ):
-            self.control_method = ControlMethod.SUMMER
-        elif (
-            self._climate_mode
-            and self.climate_data
-            and self.climate_data.is_winter
-            and self._switch_mode
-        ):
-            self.control_method = ControlMethod.WINTER
-        elif cover_data.direct_sun_valid:
-            self.control_method = ControlMethod.SOLAR
-        else:
-            self.control_method = ControlMethod.DEFAULT
-        self.logger.debug("Control method: %s", self.control_method)
+        # Determine the base position (what the old state property would return
+        # pre-interpolation/inverse, excluding force/motion early returns)
+        base_position = (
+            self.climate_state
+            if self._switch_mode and self.climate_state is not None
+            else self.default_state
+        )
+
+        # Run pipeline to determine control method and position
+        ctx = PipelineContext(
+            calculated_position=base_position,
+            climate_position=self.climate_state,
+            default_position=self.default_state,
+            raw_calculated_position=self.raw_calculated_position,
+            in_time_window=True,
+            direct_sun_valid=cover_data.direct_sun_valid,
+            force_override_active=self.is_force_override_active,
+            force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
+            motion_timeout_active=self.is_motion_timeout_active,
+            manual_override_active=self.manager.binary_cover_manual,
+            climate_mode_enabled=self._switch_mode,
+            climate_is_summer=bool(
+                self._climate_mode
+                and self.climate_data
+                and self.climate_data.is_summer
+                and self._switch_mode
+            ),
+            climate_is_winter=bool(
+                self._climate_mode
+                and self.climate_data
+                and self.climate_data.is_winter
+                and self._switch_mode
+            ),
+        )
+        self._pipeline_result = self._pipeline.evaluate(ctx)
+        self.control_method = self._pipeline_result.control_method
+        self.logger.debug(
+            "Pipeline result: %s → %s",
+            self.control_method,
+            self._pipeline_result.position,
+        )
 
         return self.state
 
@@ -1632,6 +1666,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _determine_control_status(self) -> str:
         """Determine current control status.
 
+        Uses the pipeline result's control method when available to avoid
+        duplicating the priority logic.  Force override and motion timeout
+        are also checked directly so they take effect even outside the
+        time window (when the pipeline does not run).
+
         Returns:
             Control status string: AUTOMATIC_CONTROL_OFF, FORCE_OVERRIDE_ACTIVE,
             MANUAL_OVERRIDE, OUTSIDE_TIME_WINDOW, SUN_NOT_VISIBLE, or ACTIVE
@@ -1640,16 +1679,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if not self.automatic_control:
             return ControlStatus.AUTOMATIC_CONTROL_OFF
 
-        # Check force override sensors (safety override takes precedence)
+        # Safety overrides checked directly (apply even outside time window)
         if self.is_force_override_active:
             return ControlStatus.FORCE_OVERRIDE_ACTIVE
 
-        # Check motion timeout (second priority)
         if self.is_motion_timeout_active:
             return ControlStatus.MOTION_TIMEOUT
 
-        if self.manager.binary_cover_manual:
-            return ControlStatus.MANUAL_OVERRIDE
+        # Pipeline-derived statuses (only when pipeline has run)
+        if self._pipeline_result is not None:
+            method = self._pipeline_result.control_method
+            if method == ControlMethod.MANUAL:
+                return ControlStatus.MANUAL_OVERRIDE
 
         if not self.check_adaptive_time:
             return ControlStatus.OUTSIDE_TIME_WINDOW
@@ -1657,68 +1698,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.normal_cover_state and not self.normal_cover_state.cover.valid:
             return ControlStatus.SUN_NOT_VISIBLE
 
-        # For position/time delta, we'd need to check per-cover, so we default to active
-        # if all other checks pass
         return ControlStatus.ACTIVE
 
     @property
     def state(self) -> int:
-        """Get final state with climate mode, interpolation, and force override.
+        """Get final state with pipeline result, interpolation, and inverse.
 
         Determines final cover position by:
-        1. Checking force override (highest priority)
-        2. Selecting between default and climate state based on switch_mode
-        3. Applying interpolation and inverse_state transformations if configured
+        1. Using pipeline result position if available, otherwise default_state
+        2. For force override and motion timeout, returning position directly
+           (no interpolation/inverse — preserves legacy early-return behavior)
+        3. Applying interpolation and inverse_state transformations otherwise
 
         Returns:
             Final calculated cover position (0-100)
 
         """
-        # Check force override first (highest priority)
+        # Force override and motion timeout always take precedence
+        # (even outside time window, skip interpolation/inverse)
         if self.is_force_override_active:
-            override_position = self.config_entry.options.get(
-                CONF_FORCE_OVERRIDE_POSITION, 0
-            )
-            self.logger.debug(
-                "Force override active - using position: %s",
-                override_position,
-            )
-            return override_position
-
-        # Check motion timeout (second priority)
+            return self.config_entry.options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
         if self.is_motion_timeout_active:
-            self.logger.debug(
-                "Motion timeout active - using default position: %s",
-                self.default_state,
-            )
             return self.default_state
 
-        # Normal position calculation
-        self.logger.debug(
-            "Basic position: %s; Climate position: %s; Using climate position? %s",
-            self.default_state,
-            self.climate_state,
-            self._switch_mode,
-        )
-        if self._switch_mode:
-            state = self.climate_state
+        # Use pipeline result if available, otherwise default_state (outside time window)
+        if self._pipeline_result is not None:
+            state = self._pipeline_result.position
         else:
             state = self.default_state
 
+        # Post-processing: interpolation and inverse state
         if self._use_interpolation:
-            self.logger.debug("Interpolating position: %s", state)
             state = self.interpolate_states(state)
 
         if self._inverse_state and self._use_interpolation:
             self.logger.info(
-                "Inverse state is not supported with interpolation, you can inverse the state by arranging the list from high to low"
+                "Inverse state is not supported with interpolation"
             )
 
         if self._inverse_state and not self._use_interpolation:
             state = inverse_state(state)
-            self.logger.debug("Inversed position: %s", state)
 
-        self.logger.debug("Final position to use: %s", state)
         return state
 
     def interpolate_states(self, state):

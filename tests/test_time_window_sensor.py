@@ -22,6 +22,13 @@ from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import ClimateHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.default import DefaultHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import ForceOverrideHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import ManualOverrideHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import MotionTimeoutHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
+from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 
 
 @pytest.fixture
@@ -77,6 +84,15 @@ def make_coordinator(extra_attrs=None):
     coordinator.control_method = ControlMethod.SOLAR
     coordinator.config_entry = MagicMock()
     coordinator.config_entry.options = {}
+    coordinator._pipeline_result = None
+    coordinator._pipeline = PipelineRegistry([
+        ForceOverrideHandler(),
+        MotionTimeoutHandler(),
+        ManualOverrideHandler(),
+        ClimateHandler(),
+        SolarHandler(),
+        DefaultHandler(),
+    ])
 
     if extra_attrs:
         for k, v in extra_attrs.items():

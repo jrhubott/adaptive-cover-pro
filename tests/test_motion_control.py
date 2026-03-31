@@ -370,18 +370,25 @@ async def test_async_check_motion_state_change_off_other_sensors_active():
 def test_determine_control_status_motion_timeout():
     """Test control status returns MOTION_TIMEOUT when active."""
     from custom_components.adaptive_cover_pro.const import ControlStatus
+    from custom_components.adaptive_cover_pro.enums import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
     coordinator = MagicMock()
     coordinator._automatic_control = True
 
-    # Mock is_force_override_active to return False
+    # Mock property access for direct checks in _determine_control_status
     type(coordinator).is_force_override_active = property(lambda self: False)
-
-    # Mock is_motion_timeout_active to return True
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
+
+    # Pipeline result indicates motion timeout
+    coordinator._pipeline_result = PipelineResult(
+        position=60,
+        control_method=ControlMethod.MOTION,
+        reason="motion timeout active",
+    )
 
     result = AdaptiveDataUpdateCoordinator._determine_control_status(coordinator)
     assert result == ControlStatus.MOTION_TIMEOUT
@@ -390,16 +397,25 @@ def test_determine_control_status_motion_timeout():
 def test_determine_control_status_force_override_precedence():
     """Test force override takes precedence over motion timeout."""
     from custom_components.adaptive_cover_pro.const import ControlStatus
+    from custom_components.adaptive_cover_pro.enums import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
     coordinator = MagicMock()
     coordinator._automatic_control = True
 
-    # Both active: force override and motion timeout
+    # Both active: force override takes precedence
     type(coordinator).is_force_override_active = property(lambda self: True)
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
+
+    # Pipeline result indicates force override (highest priority)
+    coordinator._pipeline_result = PipelineResult(
+        position=0,
+        control_method=ControlMethod.FORCE,
+        reason="force override active",
+    )
 
     result = AdaptiveDataUpdateCoordinator._determine_control_status(coordinator)
     assert result == ControlStatus.FORCE_OVERRIDE_ACTIVE
@@ -407,19 +423,26 @@ def test_determine_control_status_force_override_precedence():
 
 def test_state_property_motion_timeout_returns_default():
     """Test state property returns default position during motion timeout."""
+    from custom_components.adaptive_cover_pro.enums import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
     coordinator = MagicMock()
     coordinator.default_state = 60
     coordinator.logger = MagicMock()
 
-    # Mock is_force_override_active to return False
+    # Mock property access for direct checks in state property
     type(coordinator).is_force_override_active = property(lambda self: False)
-
-    # Mock is_motion_timeout_active to return True
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
+
+    # Pipeline result indicates motion timeout with default position
+    coordinator._pipeline_result = PipelineResult(
+        position=60,
+        control_method=ControlMethod.MOTION,
+        reason="motion timeout active",
+    )
 
     result = AdaptiveDataUpdateCoordinator.state.fget(coordinator)
     assert result == 60
@@ -430,9 +453,11 @@ def test_state_property_force_override_precedence():
     from custom_components.adaptive_cover_pro.const import (
         CONF_FORCE_OVERRIDE_POSITION,
     )
+    from custom_components.adaptive_cover_pro.enums import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
     coordinator = MagicMock()
     coordinator.logger = MagicMock()
@@ -444,9 +469,16 @@ def test_state_property_force_override_precedence():
 
     coordinator.config_entry.options.get.side_effect = get_option
 
-    # Both active: force override and motion timeout
+    # Both active: force override takes precedence
     type(coordinator).is_force_override_active = property(lambda self: True)
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
+
+    # Pipeline result indicates force override with position 0
+    coordinator._pipeline_result = PipelineResult(
+        position=0,
+        control_method=ControlMethod.FORCE,
+        reason="force override active",
+    )
 
     result = AdaptiveDataUpdateCoordinator.state.fget(coordinator)
     assert result == 0
