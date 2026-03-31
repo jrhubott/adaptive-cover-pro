@@ -7,7 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+from custom_components.adaptive_cover_pro.managers.grace_period import (
+    GracePeriodManager,
+)
 
 
 @pytest.fixture

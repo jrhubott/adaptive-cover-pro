@@ -3,84 +3,83 @@
 from unittest.mock import MagicMock
 
 
-def test_check_position_delta_respects_threshold():
-    """Test that check_position_delta enforces minimum threshold."""
+def _make_coordinator_with_cmd_svc(current_position, min_change=20):
+    """Build a mock coordinator with a wired CoverCommandService for delta tests."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        CoverCommandService,
+    )
 
-    # Create minimal mock coordinator
-    coordinator = MagicMock()
-    coordinator.min_change = 20  # 20% minimum
-    coordinator._get_current_position = MagicMock(return_value=50)
+    coordinator = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+    coordinator.min_change = min_change
     coordinator.logger = MagicMock()
+
+    # Use a real CoverCommandService with mocked _get_current_position
+    cmd_svc = CoverCommandService(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=MagicMock(),
+        pos_verify_mgr=MagicMock(),
+    )
+    cmd_svc._get_current_position = MagicMock(return_value=current_position)
+    coordinator._cmd_svc = cmd_svc
+
+    # Wire the real check_position_delta method
+    coordinator.check_position_delta = (
+        AdaptiveDataUpdateCoordinator.check_position_delta.__get__(coordinator)
+    )
+    return coordinator
+
+
+def test_check_position_delta_respects_threshold():
+    """Test that check_position_delta enforces minimum threshold."""
+    coordinator = _make_coordinator_with_cmd_svc(current_position=50, min_change=20)
 
     # Test with 5% delta (should fail)
     options = {}
-    result = AdaptiveDataUpdateCoordinator.check_position_delta(
-        coordinator, "cover.test", 55, options
-    )
+    result = coordinator.check_position_delta("cover.test", 55, options)
     assert result is False
 
     # Test with 25% delta (should pass)
-    result = AdaptiveDataUpdateCoordinator.check_position_delta(
-        coordinator, "cover.test", 75, options
-    )
+    result = coordinator.check_position_delta("cover.test", 75, options)
     assert result is True
 
 
 def test_check_position_delta_allows_special_positions():
     """Test that special positions (0, 100) are always allowed."""
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
+    coordinator = _make_coordinator_with_cmd_svc(current_position=50, min_change=20)
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_SUNSET_POS,
     )
 
-    # Create minimal mock coordinator
-    coordinator = MagicMock()
-    coordinator.min_change = 20  # 20% minimum
-    coordinator._get_current_position = MagicMock(return_value=50)
-    coordinator.logger = MagicMock()
-    coordinator.default_height = 40
+    options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 40}
 
-    options = {"sunset_pos": 0, "default_percentage": 40}
-
-    # Test 0% (special position)
-    result = AdaptiveDataUpdateCoordinator.check_position_delta(
-        coordinator, "cover.test", 0, options
-    )
+    # Test 0% (special position — also sunset_pos)
+    result = coordinator.check_position_delta("cover.test", 0, options)
     assert result is True
 
     # Test 100% (special position)
-    result = AdaptiveDataUpdateCoordinator.check_position_delta(
-        coordinator, "cover.test", 100, options
-    )
+    result = coordinator.check_position_delta("cover.test", 100, options)
     assert result is True
 
     # Test default height (special position)
-    result = AdaptiveDataUpdateCoordinator.check_position_delta(
-        coordinator, "cover.test", 40, options
-    )
+    result = coordinator.check_position_delta("cover.test", 40, options)
     assert result is True
 
 
 def test_check_position_delta_handles_none_position():
     """Test that check_position_delta handles unavailable position."""
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
-    )
-
-    # Create minimal mock coordinator
-    coordinator = MagicMock()
-    coordinator.min_change = 20
-    coordinator._get_current_position = MagicMock(return_value=None)
-    coordinator.logger = MagicMock()
+    coordinator = _make_coordinator_with_cmd_svc(current_position=None, min_change=20)
 
     options = {}
 
     # Should allow move when position unavailable
-    result = AdaptiveDataUpdateCoordinator.check_position_delta(
-        coordinator, "cover.test", 75, options
-    )
+    result = coordinator.check_position_delta("cover.test", 75, options)
     assert result is True
 
 

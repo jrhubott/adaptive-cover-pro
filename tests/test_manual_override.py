@@ -9,7 +9,9 @@ import pytest
 def test_is_in_grace_period_returns_false_when_no_timestamp():
     """Test that _is_in_grace_period returns False when no timestamp exists."""
     from custom_components.adaptive_cover_pro.const import COMMAND_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -34,7 +36,9 @@ def test_is_in_grace_period_returns_false_when_no_timestamp():
 def test_is_in_grace_period_returns_true_when_within_period():
     """Test that _is_in_grace_period returns True when within grace period."""
     from custom_components.adaptive_cover_pro.const import COMMAND_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -42,7 +46,9 @@ def test_is_in_grace_period_returns_true_when_within_period():
         logger=MagicMock(),
         command_grace_seconds=COMMAND_GRACE_PERIOD_SECONDS,
     )
-    coordinator._grace_mgr._command_timestamps["cover.test"] = dt.datetime.now().timestamp()
+    coordinator._grace_mgr._command_timestamps["cover.test"] = (
+        dt.datetime.now().timestamp()
+    )
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -60,7 +66,9 @@ def test_is_in_grace_period_returns_true_when_within_period():
 def test_is_in_grace_period_returns_false_when_expired():
     """Test that _is_in_grace_period returns False when grace period expired."""
     from custom_components.adaptive_cover_pro.const import COMMAND_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -69,7 +77,9 @@ def test_is_in_grace_period_returns_false_when_expired():
         command_grace_seconds=COMMAND_GRACE_PERIOD_SECONDS,
     )
     # Set timestamp to 10 seconds ago (past the 5-second grace period)
-    coordinator._grace_mgr._command_timestamps["cover.test"] = dt.datetime.now().timestamp() - 10
+    coordinator._grace_mgr._command_timestamps["cover.test"] = (
+        dt.datetime.now().timestamp() - 10
+    )
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -87,7 +97,9 @@ def test_is_in_grace_period_returns_false_when_expired():
 @pytest.mark.asyncio
 async def test_grace_period_timeout_clears_tracking():
     """Test that grace period timeout clears tracking data."""
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Test the GracePeriodManager timeout directly (the coordinator delegates to it)
     mgr = GracePeriodManager(
@@ -106,7 +118,9 @@ async def test_grace_period_timeout_clears_tracking():
 
 def test_cancel_grace_period_removes_tracking():
     """Test that _cancel_grace_period removes all tracking data."""
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -114,7 +128,9 @@ def test_cancel_grace_period_removes_tracking():
     mock_task = MagicMock()
     mock_task.done.return_value = False
     coordinator._grace_mgr._grace_period_tasks["cover.test"] = mock_task
-    coordinator._grace_mgr._command_timestamps["cover.test"] = dt.datetime.now().timestamp()
+    coordinator._grace_mgr._command_timestamps["cover.test"] = (
+        dt.datetime.now().timestamp()
+    )
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -134,7 +150,9 @@ def test_cancel_grace_period_removes_tracking():
 
 def test_cancel_grace_period_handles_completed_task():
     """Test that _cancel_grace_period handles already completed tasks."""
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -142,7 +160,9 @@ def test_cancel_grace_period_handles_completed_task():
     mock_task = MagicMock()
     mock_task.done.return_value = True  # Task already done
     coordinator._grace_mgr._grace_period_tasks["cover.test"] = mock_task
-    coordinator._grace_mgr._command_timestamps["cover.test"] = dt.datetime.now().timestamp()
+    coordinator._grace_mgr._command_timestamps["cover.test"] = (
+        dt.datetime.now().timestamp()
+    )
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -162,7 +182,9 @@ def test_cancel_grace_period_handles_completed_task():
 
 def test_cancel_grace_period_handles_missing_entity():
     """Test that _cancel_grace_period handles entities with no active grace period."""
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()

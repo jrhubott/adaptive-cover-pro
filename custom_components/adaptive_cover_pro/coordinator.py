@@ -5,17 +5,10 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pytz
-from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    SERVICE_SET_COVER_POSITION,
-    SERVICE_SET_COVER_TILT_POSITION,
-)
 from homeassistant.core import (
     Event,
     HomeAssistant,
@@ -49,8 +42,6 @@ from .config_context_adapter import ConfigContextAdapter
 from .services.configuration_service import ConfigurationService
 from .const import (
     _LOGGER,
-    ATTR_POSITION,
-    ATTR_TILT_POSITION,
     COMMAND_GRACE_PERIOD_SECONDS,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -103,12 +94,10 @@ from .const import (
 )
 from .enums import ClimateStrategy, ControlMethod
 from .helpers import (
-    check_cover_features,
     get_datetime_from_str,
-    get_last_updated,
-    get_open_close_state,
     get_safe_state,
 )
+from .managers.cover_command import CoverCommandService, build_special_positions
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
@@ -197,8 +186,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manager = AdaptiveCoverManager(
             self.hass, self.manual_duration, self.logger
         )
-        self.wait_for_target = {}
-        self.target_call = {}
         self.ignore_intermediate_states = self.config_entry.options.get(
             CONF_MANUAL_IGNORE_INTERMEDIATE, False
         )
@@ -214,9 +201,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._scheduled_time = dt.datetime.now()
 
         self._cached_options = None
-        self._open_close_threshold = self.config_entry.options.get(
-            CONF_OPEN_CLOSE_THRESHOLD, 50
-        )
 
         # Initialize configuration service
         self._config_service = ConfigurationService(
@@ -229,27 +213,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._irradiance_toggle,
         )
 
-        # Track last skipped action for diagnostic sensor
-        self.last_skipped_action: dict[str, Any] = {
-            "entity_id": None,
-            "reason": None,
-            "calculated_position": None,
-            "timestamp": None,
-        }
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
-
-        # Track last cover action for diagnostic sensor
-        self.last_cover_action: dict[str, Any] = {
-            "entity_id": None,
-            "service": None,
-            "position": None,
-            "calculated_position": None,
-            "threshold_used": None,
-            "inverse_state_applied": False,
-            "timestamp": None,
-            "covers_controlled": 0,
-        }
 
         # Position verification tracking
         self._pos_verify_mgr = PositionVerificationManager(
@@ -259,27 +224,54 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             max_retries=MAX_POSITION_RETRIES,
         )
 
+        # Cover command service — encapsulates service calls, delta checks, and tracking
+        self._cmd_svc = CoverCommandService(
+            hass=self.hass,
+            logger=self.logger,
+            cover_type=self._cover_type,
+            grace_mgr=self._grace_mgr,
+            pos_verify_mgr=self._pos_verify_mgr,
+            open_close_threshold=self.config_entry.options.get(
+                CONF_OPEN_CLOSE_THRESHOLD, 50
+            ),
+        )
+
         # Track time window state transitions (for responsive end time handling)
         self._last_time_window_state: bool | None = None
 
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
 
+    # --- Property delegates for CoverCommandService state ---
+
+    @property
+    def wait_for_target(self) -> dict:
+        """Delegate to CoverCommandService.wait_for_target."""
+        return self._cmd_svc.wait_for_target
+
+    @property
+    def target_call(self) -> dict:
+        """Delegate to CoverCommandService.target_call."""
+        return self._cmd_svc.target_call
+
+    @property
+    def last_cover_action(self) -> dict:
+        """Delegate to CoverCommandService.last_cover_action."""
+        return self._cmd_svc.last_cover_action
+
+    @property
+    def last_skipped_action(self) -> dict:
+        """Delegate to CoverCommandService.last_skipped_action."""
+        return self._cmd_svc.last_skipped_action
+
+    @property
+    def _open_close_threshold(self) -> int:
+        """Delegate to CoverCommandService threshold."""
+        return self._cmd_svc._open_close_threshold
+
     def _get_cover_capabilities(self, entity: str) -> dict[str, bool]:
-        """Get cover capabilities with fallback to safe defaults.
-
-        Args:
-            entity: The cover entity ID
-
-        Returns:
-            Dict of capabilities (has_set_position, has_set_tilt_position, has_open, has_close)
-
-        """
-        caps = check_cover_features(self.hass, entity)
-        if caps is None:
-            self.logger.debug("Cover %s not ready, using safe defaults", entity)
-            return self._DEFAULT_CAPABILITIES.copy()
-        return caps
+        """Get cover capabilities — delegates to CoverCommandService."""
+        return self._cmd_svc.get_cover_capabilities(entity)
 
     @property
     def is_tilt_cover(self) -> bool:
@@ -343,29 +335,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _read_position_with_capabilities(
         self, entity: str, caps: dict[str, bool], state_obj: State | None = None
     ) -> int | None:
-        """Read position based on cover type and capabilities.
-
-        Args:
-            entity: Entity ID
-            caps: Capabilities dict
-            state_obj: Optional state object (for event handling)
-
-        Returns:
-            Current position or None
-
-        """
-        if self.is_tilt_cover:
-            if caps.get("has_set_tilt_position", True):
-                if state_obj:
-                    return state_obj.attributes.get("current_tilt_position")
-                return state_attr(self.hass, entity, "current_tilt_position")
-        else:
-            if caps.get("has_set_position", True):
-                if state_obj:
-                    return state_obj.attributes.get("current_position")
-                return state_attr(self.hass, entity, "current_position")
-
-        return get_open_close_state(self.hass, entity)
+        """Read position based on cover type and capabilities — delegates to CoverCommandService."""
+        return self._cmd_svc.read_position_with_capabilities(entity, caps, state_obj)
 
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
@@ -948,20 +919,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         await self.async_set_position(entity, state)
 
     def _record_skipped_action(self, entity: str, reason: str, state: int) -> None:
-        """Record a skipped cover action for diagnostic tracking.
-
-        Args:
-            entity: Cover entity ID that was skipped
-            reason: Human-readable reason for skipping
-            state: Target position that would have been set
-
-        """
-        self.last_skipped_action = {
-            "entity_id": entity,
-            "reason": reason,
-            "calculated_position": state,
-            "timestamp": dt.datetime.now(dt.UTC).isoformat(),
-        }
+        """Record a skipped cover action — delegates to CoverCommandService."""
+        self._cmd_svc.record_skipped_action(entity, reason, state)
 
     async def async_set_position(self, entity, state: int):
         """Set cover position.
@@ -978,110 +937,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _prepare_position_service_call(
         self, entity: str, state: int, caps: dict[str, bool]
-    ) -> tuple[str, dict, bool]:
-        """Determine service and data based on capabilities.
-
-        Args:
-            entity: Entity ID
-            state: Target position (0-100)
-            caps: Cover capabilities dict
-
-        Returns:
-            Tuple of (service_name, service_data, supports_position)
-
-        """
-        # Determine if cover supports position control
-        supports_position = False
-        if self.is_tilt_cover:
-            supports_position = caps.get("has_set_tilt_position", True)
-        else:
-            supports_position = caps.get("has_set_position", True)
-
-        self.logger.debug(
-            "Cover %s: supports_position=%s, caps=%s",
-            entity,
-            supports_position,
-            caps,
+    ) -> tuple[str | None, dict | None, bool]:
+        """Determine service and data based on capabilities — delegates to CoverCommandService."""
+        return self._cmd_svc.prepare_position_service_call(
+            entity, state, caps, inverse_state=self._inverse_state
         )
-
-        if supports_position:
-            # Use position control
-            service = SERVICE_SET_COVER_POSITION
-            service_data = {ATTR_ENTITY_ID: entity}
-
-            if self.is_tilt_cover:
-                service = SERVICE_SET_COVER_TILT_POSITION
-                service_data[ATTR_TILT_POSITION] = state
-            else:
-                service_data[ATTR_POSITION] = state
-
-            self.wait_for_target[entity] = True
-            self.target_call[entity] = state
-            self._start_grace_period(entity)
-            self.logger.debug(
-                "Set wait for target %s and target call %s",
-                self.wait_for_target,
-                self.target_call,
-            )
-        else:
-            # Use open/close control
-            has_open = caps.get("has_open", False)
-            has_close = caps.get("has_close", False)
-
-            if not has_open or not has_close:
-                self.logger.warning(
-                    "Cover %s does not support both open and close. Skipping.",
-                    entity,
-                )
-                return None, None, False
-
-            # Apply threshold
-            if state >= self._open_close_threshold:
-                service = "open_cover"
-                self.target_call[entity] = 100
-                self._pos_verify_mgr.mark_commanded(entity)
-            else:
-                service = "close_cover"
-                self.target_call[entity] = 0
-                self._pos_verify_mgr.mark_commanded(entity)
-
-            service_data = {ATTR_ENTITY_ID: entity}
-            self.wait_for_target[entity] = True
-            self._start_grace_period(entity)
-
-            self.logger.debug(
-                "Using open/close control: state=%s, threshold=%s, service=%s",
-                state,
-                self._open_close_threshold,
-                service,
-            )
-
-        return service, service_data, supports_position
 
     def _track_cover_action(
         self, entity: str, service: str, state: int, supports_position: bool
     ) -> None:
-        """Track cover action for diagnostic sensor.
-
-        Args:
-            entity: Entity ID
-            service: Service name called
-            state: Requested position
-            supports_position: Whether position control is used
-
-        """
-        self.last_cover_action = {
-            "entity_id": entity,
-            "service": service,
-            "position": state if supports_position else self.target_call[entity],
-            "calculated_position": state,
-            "threshold_used": self._open_close_threshold
-            if not supports_position
-            else None,
-            "inverse_state_applied": self._inverse_state,
-            "timestamp": dt.datetime.now().isoformat(),
-            "covers_controlled": 1,
-        }
+        """Track cover action for diagnostic sensor — delegates to CoverCommandService."""
+        self._cmd_svc.track_cover_action(
+            entity, service, state, supports_position, inverse_state=self._inverse_state
+        )
 
     async def async_set_manual_position(self, entity, state):
         """Call service to set cover position or open/close.
@@ -1100,22 +968,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if not self.check_position(entity, state):
             return
 
-        # Check capabilities and prepare service call
         caps = self._get_cover_capabilities(entity)
         service, service_data, supports_position = self._prepare_position_service_call(
             entity, state, caps
         )
 
-        # Skip if service preparation failed (e.g., missing open/close capabilities)
         if service is None:
             return
 
-        # Track action for diagnostic sensor
         self._track_cover_action(entity, service, state, supports_position)
 
-        # Execute service call
         self.logger.debug("Run %s with data %s", service, service_data)
-        await self.hass.services.async_call(COVER_DOMAIN, service, service_data)
+        await self._cmd_svc.execute_service_call(service, service_data)
         self.logger.debug("Successfully called service %s for %s", service, entity)
 
     def _update_options(self, options):
@@ -1143,7 +1007,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.end_value = options.get(CONF_INTERP_END)
         self.normal_list = options.get(CONF_INTERP_LIST)
         self.new_list = options.get(CONF_INTERP_LIST_NEW)
-        self._open_close_threshold = options.get(CONF_OPEN_CLOSE_THRESHOLD, 50)
+        self._cmd_svc.update_threshold(options.get(CONF_OPEN_CLOSE_THRESHOLD, 50))
         self._motion_mgr.update_config(
             sensors=options.get(CONF_MOTION_SENSORS, []),
             timeout_seconds=options.get(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT),
@@ -1290,16 +1154,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return True
 
     def _get_current_position(self, entity) -> int | None:
-        """Get current position of cover.
-
-        For position-capable covers, returns current_position or current_tilt_position.
-        For open/close-only covers, maps state to 0 (closed) or 100 (open).
-        """
-        # Check capabilities on-demand
-        caps = self._get_cover_capabilities(entity)
-
-        # Read position based on cover type and capabilities
-        return self._read_position_with_capabilities(entity, caps)
+        """Get current position of cover — delegates to CoverCommandService."""
+        return self._cmd_svc._get_current_position(entity)
 
     def check_position(self, entity, state):
         """Check if position differs from state.
@@ -1317,34 +1173,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             False if position matches state
 
         """
-        position = self._get_current_position(entity)
-        if position is not None:
-            # Check if sun just came into field of view
-            sun_just_appeared = self._check_sun_validity_transition()
-
-            if sun_just_appeared:
-                self.logger.debug(
-                    "Bypassing position equality check: sun just came into field of view "
-                    "(entity: %s, position: %s, state: %s)",
-                    entity,
-                    position,
-                    state,
-                )
-                return True  # Force repositioning on sun visibility transition
-
-            # Normal check: only move if position changed
-            return position != state
-
-        self.logger.debug("Cover is already at position %s", state)
-        return False
+        sun_just_appeared = self._check_sun_validity_transition()
+        return self._cmd_svc.check_position(entity, state, sun_just_appeared=sun_just_appeared)
 
     def check_position_delta(self, entity, state: int, options):
-        """Check if position delta exceeds threshold.
-
-        Determines if position change is large enough to warrant sending a
-        command. Always allows moves to/from special positions (0, 100, default,
-        sunset) to ensure responsive behavior at key positions and during sun
-        visibility transitions.
+        """Check if position delta exceeds threshold — delegates to CoverCommandService.
 
         Args:
             entity: Cover entity ID to check
@@ -1356,55 +1189,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             position, False otherwise
 
         """
-        position = self._get_current_position(entity)
-        if position is not None:
-            condition = abs(position - state) >= self.min_change
-
-            # Get special positions for comparison
-            default_height = options.get(CONF_DEFAULT_HEIGHT)
-            sunset_pos = options.get(CONF_SUNSET_POS)
-            special_positions = [0, 100]
-            if default_height is not None:
-                special_positions.append(default_height)
-            if sunset_pos is not None:
-                special_positions.append(sunset_pos)
-
-            self.logger.debug(
-                "Entity: %s, position: %s, state: %s, delta position: %s, min_change: %s, condition: %s",
-                entity,
-                position,
-                state,
-                abs(position - state),
-                self.min_change,
-                condition,
-            )
-
-            # Bypass delta check when moving TO special positions (existing logic)
-            if state in special_positions:
-                self.logger.debug(
-                    "Bypassing delta check: moving TO special position %s", state
-                )
-                condition = True
-
-            # Bypass delta check when moving FROM special positions (NEW logic)
-            # This ensures covers reposition when sun transitions from "not in front" to "in front"
-            elif position in special_positions:
-                self.logger.debug(
-                    "Bypassing delta check: moving FROM special position %s to calculated position %s",
-                    position,
-                    state,
-                )
-                condition = True
-
-            return condition
-        return True
+        special_positions = build_special_positions(options)
+        return self._cmd_svc.check_position_delta(
+            entity, state, self.min_change, special_positions
+        )
 
     def check_time_delta(self, entity):
-        """Check if time delta exceeds threshold.
-
-        Determines if enough time has passed since last position command to
-        warrant sending a new command. Prevents excessive API calls when
-        position changes frequently.
+        """Check if time delta exceeds threshold — delegates to CoverCommandService.
 
         Args:
             entity: Cover entity ID to check
@@ -1414,19 +1205,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             False otherwise. Returns True if entity has no last_updated time.
 
         """
-        now = dt.datetime.now(dt.UTC)
-        last_updated = get_last_updated(entity, self.hass)
-        if last_updated is not None:
-            condition = now - last_updated >= dt.timedelta(minutes=self.time_threshold)
-            self.logger.debug(
-                "Entity: %s, time delta: %s, threshold: %s, condition: %s",
-                entity,
-                now - last_updated,
-                self.time_threshold,
-                condition,
-            )
-            return condition
-        return True
+        return self._cmd_svc.check_time_delta(entity, self.time_threshold)
 
     @property
     def pos_sun(self):

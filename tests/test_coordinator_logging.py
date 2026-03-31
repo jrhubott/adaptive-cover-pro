@@ -19,16 +19,38 @@ class TestHandleCallServiceLogging:
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            CoverCommandService,
+        )
 
         coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
         coord.logger = MagicMock()
         coord.logger.debug = MagicMock()
-        coord.last_skipped_action = {
+
+        # Wire a real CoverCommandService so _record_skipped_action / last_skipped_action work
+        cmd_svc = MagicMock(spec=CoverCommandService)
+        cmd_svc.last_skipped_action = {
             "entity_id": None,
             "reason": None,
             "calculated_position": None,
             "timestamp": None,
         }
+
+        def _record_side_effect(entity, reason, state):
+            import datetime as dt
+
+            cmd_svc.last_skipped_action = {
+                "entity_id": entity,
+                "reason": reason,
+                "calculated_position": state,
+                "timestamp": dt.datetime.now(dt.UTC).isoformat(),
+            }
+
+        cmd_svc.record_skipped_action.side_effect = _record_side_effect
+        coord._cmd_svc = cmd_svc
+
+        # last_skipped_action property returns _cmd_svc dict
+        type(coord).last_skipped_action = property(lambda self: self._cmd_svc.last_skipped_action)
 
         # Bind real methods
         coord.async_handle_call_service = (
@@ -121,9 +143,31 @@ class TestRecordSkippedAction:
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            CoverCommandService,
+        )
 
         coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        coord.last_skipped_action = {}
+
+        # Wire a CoverCommandService mock so record_skipped_action works
+        cmd_svc = MagicMock(spec=CoverCommandService)
+        cmd_svc.last_skipped_action = {}
+
+        def _record_side_effect(entity, reason, state):
+            import datetime as dt
+
+            cmd_svc.last_skipped_action = {
+                "entity_id": entity,
+                "reason": reason,
+                "calculated_position": state,
+                "timestamp": dt.datetime.now(dt.UTC).isoformat(),
+            }
+
+        cmd_svc.record_skipped_action.side_effect = _record_side_effect
+        coord._cmd_svc = cmd_svc
+
+        type(coord).last_skipped_action = property(lambda self: self._cmd_svc.last_skipped_action)
+
         coord._record_skipped_action = (
             AdaptiveDataUpdateCoordinator._record_skipped_action.__get__(coord)
         )

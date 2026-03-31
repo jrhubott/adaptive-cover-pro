@@ -9,7 +9,9 @@ import pytest
 def test_is_in_startup_grace_period_returns_false_when_no_timestamp():
     """Test that _is_in_startup_grace_period returns False when no timestamp exists."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -32,7 +34,9 @@ def test_is_in_startup_grace_period_returns_false_when_no_timestamp():
 def test_is_in_startup_grace_period_returns_true_when_within_period():
     """Test that _is_in_startup_grace_period returns True when within grace period."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -56,7 +60,9 @@ def test_is_in_startup_grace_period_returns_true_when_within_period():
 def test_is_in_startup_grace_period_returns_false_when_expired():
     """Test that _is_in_startup_grace_period returns False when grace period expired."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
@@ -81,7 +87,9 @@ def test_is_in_startup_grace_period_returns_false_when_expired():
 @pytest.mark.asyncio
 async def test_startup_grace_period_timeout_clears_tracking():
     """Test that startup grace period timeout clears tracking data."""
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Test the GracePeriodManager timeout directly (the coordinator delegates to it)
     mock_logger = MagicMock()
@@ -105,7 +113,9 @@ async def test_start_startup_grace_period_sets_timestamp():
     """Test that _start_startup_grace_period sets the timestamp."""
     from unittest.mock import patch
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager
     mock_logger = MagicMock()
@@ -148,7 +158,9 @@ async def test_start_startup_grace_period_cancels_existing_task():
     """Test that _start_startup_grace_period cancels existing task."""
     from unittest.mock import patch
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create mock task
     mock_task = MagicMock()
@@ -182,7 +194,9 @@ async def test_start_startup_grace_period_cancels_existing_task():
 async def test_startup_grace_period_prevents_manual_override_detection():
     """Test that startup grace period prevents manual override detection."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create minimal mock coordinator backed by a real GracePeriodManager with active period
     coordinator = MagicMock()
