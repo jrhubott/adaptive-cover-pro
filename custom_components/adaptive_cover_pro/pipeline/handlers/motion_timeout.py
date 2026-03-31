@@ -1,0 +1,34 @@
+"""Motion timeout handler — return default when no occupancy detected."""
+
+from __future__ import annotations
+
+from ...enums import ControlMethod
+from ..handler import OverrideHandler
+from ..types import PipelineContext, PipelineResult
+
+
+class MotionTimeoutHandler(OverrideHandler):
+    """Return the default position when the motion timeout is active.
+
+    Priority 80 — lower than force override but higher than manual override.
+    When all occupancy sensors have reported no motion for the configured
+    timeout duration, automatic sun-tracking is suspended.
+    """
+
+    name = "motion_timeout"
+    priority = 80
+
+    def evaluate(self, ctx: PipelineContext) -> PipelineResult | None:
+        """Return default position when motion timeout is active."""
+        if not ctx.motion_timeout_active:
+            return None
+        return PipelineResult(
+            position=ctx.default_position,
+            control_method=ControlMethod.MOTION,
+            reason=f"motion timeout active — default position {ctx.default_position}%",
+            decision_trace=[],
+        )
+
+    def describe_skip(self, ctx: PipelineContext) -> str:  # noqa: ARG002
+        """Reason when motion timeout is not active."""
+        return "motion timeout not active"
