@@ -558,3 +558,143 @@ async def test_async_shutdown_cancels_motion_timeout():
 
     # Verify motion timeout was canceled
     coordinator._cancel_motion_timeout.assert_called_once()
+
+
+# --- AdaptiveCoverMotionStatusSensor tests ---
+
+
+def _make_motion_status_sensor(coordinator):
+    """Create a motion status sensor with a mocked coordinator."""
+    from custom_components.adaptive_cover_pro.sensor import (
+        AdaptiveCoverMotionStatusSensor,
+    )
+
+    sensor = AdaptiveCoverMotionStatusSensor.__new__(AdaptiveCoverMotionStatusSensor)
+    sensor.coordinator = coordinator
+    return sensor
+
+
+def test_motion_status_sensor_waiting_for_data_no_history():
+    """Sensor returns waiting_for_data when no motion has ever been detected."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = None
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "waiting_for_data"
+
+
+def test_motion_status_sensor_motion_detected():
+    """Sensor returns motion_detected when occupancy is active."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = 1700000000.0
+    type(coordinator).is_motion_detected = property(lambda self: True)
+    coordinator._motion_timeout_task = None
+    coordinator._motion_timeout_active = False
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "motion_detected"
+
+
+def test_motion_status_sensor_timeout_pending():
+    """Sensor returns timeout_pending when countdown task is running."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = 1700000000.0
+    type(coordinator).is_motion_detected = property(lambda self: False)
+    coordinator._motion_timeout_active = False
+
+    task = MagicMock()
+    task.done.return_value = False
+    coordinator._motion_timeout_task = task
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "timeout_pending"
+
+
+def test_motion_status_sensor_no_motion():
+    """Sensor returns no_motion when timeout has expired."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = 1700000000.0
+    type(coordinator).is_motion_detected = property(lambda self: False)
+    coordinator._motion_timeout_active = True
+    coordinator._motion_timeout_task = None
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "no_motion"
+
+
+def test_motion_status_sensor_waiting_for_data_fallback():
+    """Sensor returns waiting_for_data when no state matches (e.g. after task completes but flag not set)."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = 1700000000.0
+    type(coordinator).is_motion_detected = property(lambda self: False)
+    coordinator._motion_timeout_active = False
+
+    task = MagicMock()
+    task.done.return_value = True
+    coordinator._motion_timeout_task = task
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "waiting_for_data"
+
+
+def test_motion_status_sensor_attributes_with_timeout():
+    """Attributes include motion_timeout_end_time when timeout is pending."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = 1700000000.0
+    coordinator._motion_timeout_seconds = 300
+    coordinator._motion_timeout_active = False
+
+    task = MagicMock()
+    task.done.return_value = False
+    coordinator._motion_timeout_task = task
+
+    sensor = _make_motion_status_sensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["motion_timeout_seconds"] == 300
+    assert "motion_timeout_end_time" in attrs
+    assert "last_motion_time" in attrs
+
+
+def test_motion_status_sensor_attributes_no_timeout():
+    """Attributes do not include motion_timeout_end_time when motion is active."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = 1700000000.0
+    coordinator._motion_timeout_seconds = 300
+    coordinator._motion_timeout_active = False
+    coordinator._motion_timeout_task = None
+
+    sensor = _make_motion_status_sensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["motion_timeout_seconds"] == 300
+    assert "motion_timeout_end_time" not in attrs
+    assert "last_motion_time" in attrs
+
+
+def test_motion_status_sensor_attributes_no_data():
+    """Attributes contain only motion_timeout_seconds when no motion data exists."""
+    coordinator = MagicMock()
+    coordinator._last_motion_time = None
+    coordinator._motion_timeout_seconds = 300
+
+    sensor = _make_motion_status_sensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    assert attrs == {"motion_timeout_seconds": 300}
+    assert "motion_timeout_end_time" not in attrs
+    assert "last_motion_time" not in attrs
+
+
+def test_motion_status_sensor_no_timestamp_device_class():
+    """Sensor does not use TIMESTAMP device class (regression for issue #75)."""
+    from homeassistant.components.sensor import SensorDeviceClass
+
+    from custom_components.adaptive_cover_pro.sensor import (
+        AdaptiveCoverMotionStatusSensor,
+    )
+
+    assert (
+        getattr(AdaptiveCoverMotionStatusSensor, "_attr_device_class", None)
+        != SensorDeviceClass.TIMESTAMP
+    )
