@@ -1038,8 +1038,6 @@ class AdaptiveCoverPositionExplanationSensor(
     history, enabling time-based troubleshooting.
     """
 
-    _attr_native_unit_of_measurement = ""  # Text sensor — excluded from logbook
-
     def __init__(
         self,
         config_entry_id: str,
@@ -1080,8 +1078,6 @@ class AdaptiveCoverLastSkippedActionSensor(
     Records when automatic cover movement was suppressed and the reason,
     making it possible to debug why a cover did not move when expected.
     """
-
-    _attr_native_unit_of_measurement = ""  # Text sensor — excluded from logbook
 
     def __init__(
         self,
