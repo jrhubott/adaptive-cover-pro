@@ -112,6 +112,7 @@ from .helpers import (
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
+from .managers.position_verification import PositionVerificationManager
 
 
 @dataclass
@@ -251,17 +252,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         }
 
         # Position verification tracking
-        self._position_check_interval = None  # async_track_time_interval listener
-        self._retry_counts: dict[str, int] = {}  # entity_id → retry count
-        self._last_verification: dict[
-            str, dt.datetime
-        ] = {}  # entity_id → last check time
-        self._check_interval_minutes = POSITION_CHECK_INTERVAL_MINUTES
-        self._position_tolerance = POSITION_TOLERANCE_PERCENT
-        self._max_retries = MAX_POSITION_RETRIES
-
-        # Track entities that have never received commands (for cleaner logging)
-        self._never_commanded: set[str] = set()
+        self._pos_verify_mgr = PositionVerificationManager(
+            logger=self.logger,
+            check_interval_minutes=POSITION_CHECK_INTERVAL_MINUTES,
+            position_tolerance=POSITION_TOLERANCE_PERCENT,
+            max_retries=MAX_POSITION_RETRIES,
+        )
 
         # Track time window state transitions (for responsive end time handling)
         self._last_time_window_state: bool | None = None
@@ -1043,15 +1039,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             if state >= self._open_close_threshold:
                 service = "open_cover"
                 self.target_call[entity] = 100
-                self._never_commanded.discard(
-                    entity
-                )  # Remove from never-commanded tracking
+                self._pos_verify_mgr.mark_commanded(entity)
             else:
                 service = "close_cover"
                 self.target_call[entity] = 0
-                self._never_commanded.discard(
-                    entity
-                )  # Remove from never-commanded tracking
+                self._pos_verify_mgr.mark_commanded(entity)
 
             service_data = {ATTR_ENTITY_ID: entity}
             self.wait_for_target[entity] = True
@@ -2174,12 +2166,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         # Update last verification time FIRST for diagnostic tracking
-        check_time = now if isinstance(now, dt.datetime) else dt.datetime.now()
-        self._last_verification[entity_id] = check_time
+        self._pos_verify_mgr.record_verification(entity_id, now)
 
         # Skip if manual override active
         if self.manager.is_cover_manual(entity_id):
-            self._reset_retry_count(entity_id)
+            self._pos_verify_mgr.reset_retry_count(entity_id)
             return
 
         # Skip if currently waiting for target (move in progress)
@@ -2190,8 +2181,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         target_position = self.target_call.get(entity_id)
         if target_position is None:
             # Only log once when first encountered to avoid log spam
-            if entity_id not in self._never_commanded:
-                self._never_commanded.add(entity_id)
+            if self._pos_verify_mgr.mark_never_commanded(entity_id):
                 self.logger.debug(
                     "No command sent to %s yet, position verification will begin after first command",
                     entity_id,
@@ -2212,9 +2202,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # This prevents false mismatches when sun moves between command and verification
         position_delta = abs(target_position - actual_position)
 
-        if position_delta <= self._position_tolerance:
+        if self._pos_verify_mgr.is_position_matched(actual_position, target_position):
             # Position is correct, reset retry count
-            self._reset_retry_count(entity_id)
+            self._pos_verify_mgr.reset_retry_count(entity_id)
             return
 
         # Check if delta is sufficient before retrying
@@ -2227,13 +2217,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 target_position,
                 self.min_change,
             )
-            self._reset_retry_count(entity_id)
+            self._pos_verify_mgr.reset_retry_count(entity_id)
             return
 
         # Position mismatch detected - cover failed to reach target we sent
-        retry_count = self._retry_counts.get(entity_id, 0)
+        retry_count = self._pos_verify_mgr.get_retry_count(entity_id)
 
-        if retry_count >= self._max_retries:
+        if not self._pos_verify_mgr.should_retry(entity_id):
             self.logger.warning(
                 "Max retries exceeded for %s. Position mismatch: target=%s, actual=%s, delta=%s",
                 entity_id,
@@ -2243,13 +2233,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             return
 
-        # Increment retry count and reposition
-        self._retry_counts[entity_id] = retry_count + 1
         self.logger.info(
             "Position mismatch detected for %s (attempt %d/%d): target=%s, actual=%s, delta=%s. Repositioning...",
             entity_id,
             retry_count + 1,
-            self._max_retries,
+            self._pos_verify_mgr.max_retries,
             target_position,
             actual_position,
             position_delta,
@@ -2260,19 +2248,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # update cycle will handle that separately. We only retry the last command.
         await self.async_set_position(entity_id, target_position)
 
-    def _reset_retry_count(self, entity_id: str) -> None:
-        """Reset retry count for entity.
-
-        Called when cover reaches target position or when manual override is
-        active. Clears retry tracking to start fresh on next position command.
-
-        Args:
-            entity_id: Cover entity ID to reset
-
-        """
-        if entity_id in self._retry_counts:
-            del self._retry_counts[entity_id]
-
     def _start_position_verification(self) -> None:
         """Start periodic position verification.
 
@@ -2281,11 +2256,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         already started.
 
         """
-        if self._position_check_interval is not None:
+        if self._pos_verify_mgr._position_check_interval is not None:
             return  # Already started
 
-        interval = dt.timedelta(minutes=self._check_interval_minutes)
-        self._position_check_interval = async_track_time_interval(
+        interval = dt.timedelta(minutes=self._pos_verify_mgr.check_interval_minutes)
+        self._pos_verify_mgr._position_check_interval = async_track_time_interval(
             self.hass,
             self.async_periodic_position_check,
             interval,
@@ -2300,9 +2275,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         Cancels time interval listener. Called during coordinator shutdown.
 
         """
-        if self._position_check_interval:
-            self._position_check_interval()
-            self._position_check_interval = None
+        if self._pos_verify_mgr._position_check_interval:
+            self._pos_verify_mgr._position_check_interval()
+            self._pos_verify_mgr._position_check_interval = None
             self.logger.debug("Stopped periodic position verification")
 
     async def async_shutdown(self) -> None:

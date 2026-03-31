@@ -170,8 +170,8 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
                     "target_position": target,
                     "actual_position": actual,
                     "position_delta": delta,
-                    "mismatch": delta > self.coordinator._position_tolerance,
-                    "retry_count": self.coordinator._retry_counts.get(entity_id, 0),
+                    "mismatch": delta > self.coordinator._pos_verify_mgr.position_tolerance,
+                    "retry_count": self.coordinator._pos_verify_mgr.get_retry_count(entity_id),
                 }
 
         if entity_details:

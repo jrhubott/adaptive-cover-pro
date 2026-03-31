@@ -783,32 +783,36 @@ class AdaptiveCoverPositionVerificationSensor(
     @property
     def native_value(self):
         """Return maximum retry count across all entities."""
-        if not self.coordinator._retry_counts:
+        retry_counts = self.coordinator._pos_verify_mgr._retry_counts
+        if not retry_counts:
             return 0
-        return max(self.coordinator._retry_counts.values())
+        return max(retry_counts.values())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return verification details and retry counts."""
+        mgr = self.coordinator._pos_verify_mgr
+        retry_counts = mgr._retry_counts
+        last_verification = mgr._last_verification
+
         attrs: dict[str, Any] = {
-            "max_retries": self.coordinator._max_retries,
+            "max_retries": mgr.max_retries,
             "retries_remaining": max(
                 0,
-                self.coordinator._max_retries
-                - max(self.coordinator._retry_counts.values(), default=0),
+                mgr.max_retries - max(retry_counts.values(), default=0),
             ),
         }
 
-        if self.coordinator._retry_counts:
-            attrs["per_entity_retries"] = dict(self.coordinator._retry_counts)
+        if retry_counts:
+            attrs["per_entity_retries"] = dict(retry_counts)
 
-        if self.coordinator._last_verification:
+        if last_verification:
             attrs["last_verification"] = max(
-                self.coordinator._last_verification.values()
+                last_verification.values()
             ).isoformat()
             attrs["per_entity_verification"] = {
                 entity_id: t.isoformat()
-                for entity_id, t in self.coordinator._last_verification.items()
+                for entity_id, t in last_verification.items()
             }
 
         return attrs
