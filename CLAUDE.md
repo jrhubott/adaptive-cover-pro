@@ -130,12 +130,12 @@ Pre-commit hooks run automatically on commit:
 **BEFORE MAKING ANY CODE CHANGES:**
 
 1. **Check current branch:** `git branch --show-current`
-2. **Create feature branch from main** (REQUIRED)
+2. **Create feature branch from dev** (REQUIRED)
 
 ```bash
-# ALWAYS branch from main
-git checkout main
-git pull origin main
+# ALWAYS branch from dev
+git checkout dev
+git pull origin dev
 
 # Create feature branch
 git checkout -b <prefix>/<description>
@@ -153,11 +153,11 @@ git checkout -b <prefix>/<description>
 
 **Rules:**
 - ✅ ALWAYS create a feature branch FIRST (before any edits)
-- ✅ ALWAYS branch from `main` (never from other feature branches)
+- ✅ ALWAYS branch from `dev` (never from `main` or other feature branches)
 - ✅ ALWAYS create a pull request after pushing the branch
 - ✅ Keep commits atomic and focused
 - ✅ Test changes on the feature branch
-- ❌ NEVER commit directly to `main` branch
+- ❌ NEVER commit directly to `dev` or `main` branch
 - ❌ NEVER skip feature branches "because it's a small change"
 - ❌ NEVER merge to main without a pull request
 
@@ -171,7 +171,7 @@ When the user references an issue number (e.g., "fix issue #123"):
 4. **Push and create PR immediately:**
    ```bash
    git push -u origin fix/issue-123-short-description
-   gh pr create --title "fix: Short description (#123)" --body "Fixes #123" --base main
+   gh pr create --title "fix: Short description (#123)" --body "Fixes #123" --base dev
    ```
 
 Issues auto-close when PR is merged if body contains `Fixes #123`.
@@ -242,6 +242,7 @@ gh pr merge --squash   # or --merge / --rebase
 - ❌ NEVER add `Co-Authored-By: Claude` lines
 - ❌ NEVER add `Generated with Claude Code`
 - ✅ Commit messages should only describe the changes made
+- ✅ Always use first-person voice (I/me) in commit messages and PR descriptions
 
 This applies to ALL commits (regular commits, merge commits, etc.) and release notes.
 
