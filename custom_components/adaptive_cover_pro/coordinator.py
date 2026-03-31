@@ -116,6 +116,7 @@ from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
 from .managers.position_verification import PositionVerificationManager
 from .state.climate_provider import ClimateProvider
+from .state.sun_provider import SunProvider
 
 
 @dataclass
@@ -228,9 +229,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
         # Climate state provider
-        self._climate_provider = ClimateProvider(
-            hass=self.hass, logger=self.logger
-        )
+        self._climate_provider = ClimateProvider(hass=self.hass, logger=self.logger)
+
+        # Sun data provider
+        self._sun_provider = SunProvider(hass=self.hass)
 
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
@@ -1060,29 +1062,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             or AdaptiveTiltCover)
 
         """
+        sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
+        common = self._config_service.get_common_data(options)
+        # common is [sunset_pos, sunset_off, sunrise_off, fov_left, fov_right, ...]
+        # Insert sun_data after sunrise_off (index 3)
+        common_with_sun = common[:3] + [sun_data] + common[3:]
+
         if self.is_blind_cover:
             cover_data = AdaptiveVerticalCover(
-                self.hass,
                 self.logger,
                 *self.pos_sun,
-                *self._config_service.get_common_data(options),
+                *common_with_sun,
                 *self._config_service.get_vertical_data(options),
             )
         if self.is_awning_cover:
             cover_data = AdaptiveHorizontalCover(
-                self.hass,
                 self.logger,
                 *self.pos_sun,
-                *self._config_service.get_common_data(options),
+                *common_with_sun,
                 *self._config_service.get_vertical_data(options),
                 *self._config_service.get_horizontal_data(options),
             )
         if self.is_tilt_cover:
             cover_data = AdaptiveTiltCover(
-                self.hass,
                 self.logger,
                 *self.pos_sun,
-                *self._config_service.get_common_data(options),
+                *common_with_sun,
                 *self._config_service.get_tilt_data(options),
             )
         return cover_data
@@ -1193,7 +1198,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         sun_just_appeared = self._check_sun_validity_transition()
-        return self._cmd_svc.check_position(entity, state, sun_just_appeared=sun_just_appeared)
+        return self._cmd_svc.check_position(
+            entity, state, sun_just_appeared=sun_just_appeared
+        )
 
     def check_position_delta(self, entity, state: int, options):
         """Check if position delta exceeds threshold — delegates to CoverCommandService.

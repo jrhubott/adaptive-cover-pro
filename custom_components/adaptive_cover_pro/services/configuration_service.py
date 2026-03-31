@@ -75,7 +75,6 @@ class ConfigurationService:
             options.get(CONF_SUNSET_POS),
             options.get(CONF_SUNSET_OFFSET),
             options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)),
-            self.hass.config.time_zone,
             options.get(CONF_FOV_LEFT),
             options.get(CONF_FOV_RIGHT),
             options.get(CONF_AZIMUTH),

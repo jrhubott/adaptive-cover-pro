@@ -27,11 +27,9 @@ def mock_logger():
 
 @pytest.fixture
 def mock_sun_data():
-    """Return a mock SunData instance with predictable values."""
+    """Return a mock SunData instance."""
     sun_data = MagicMock()
-    sun_data.sun_azimuth = 180.0
-    sun_data.sun_elevation = 45.0
-    sun_data.sun_position.return_value = (180.0, 45.0)
+    sun_data.timezone = "UTC"
     return sun_data
 
 
@@ -135,19 +133,18 @@ def mock_state():
 
 
 @pytest.fixture
-def vertical_cover_instance(hass, mock_logger):
+def vertical_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveVerticalCover instance for testing."""
     from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
 
     return AdaptiveVerticalCover(
-        hass=hass,
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
@@ -168,19 +165,18 @@ def vertical_cover_instance(hass, mock_logger):
 
 
 @pytest.fixture
-def horizontal_cover_instance(hass, mock_logger):
+def horizontal_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveHorizontalCover instance for testing."""
     from custom_components.adaptive_cover_pro.calculation import AdaptiveHorizontalCover
 
     return AdaptiveHorizontalCover(
-        hass=hass,
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
@@ -203,19 +199,18 @@ def horizontal_cover_instance(hass, mock_logger):
 
 
 @pytest.fixture
-def tilt_cover_instance(hass, mock_logger):
+def tilt_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveTiltCover instance for testing."""
     from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
 
     return AdaptiveTiltCover(
-        hass=hass,
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,

@@ -1207,7 +1207,7 @@ class TestNormalCoverStateHorizontalMinPosition:
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
     def test_horizontal_saturated_vertical_returns_at_least_1(
-        self, mock_datetime, hass, mock_logger
+        self, mock_datetime, mock_logger
     ):
         """Horizontal cover with vertical saturation must return >= 1 when sun is valid."""
         from custom_components.adaptive_cover_pro.calculation import (
@@ -1216,14 +1216,13 @@ class TestNormalCoverStateHorizontalMinPosition:
 
         # distance=3, h_win=1.5, gamma~80°, elev=20° → vertical saturates at h_win → gap=0 → 0%
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=260.0,  # gamma ≈ 80° from win_azi=180
             sol_elev=20.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -1278,7 +1277,7 @@ class TestNormalCoverStateHorizontalMinPosition:
     )
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
     def test_horizontal_saturated_parametrized(
-        self, mock_datetime, sol_azi, sol_elev, hass, mock_logger
+        self, mock_datetime, sol_azi, sol_elev, mock_logger
     ):
         """Fix works across the full range of saturation angles."""
         from custom_components.adaptive_cover_pro.calculation import (
@@ -1286,14 +1285,13 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=sol_azi,
             sol_elev=sol_elev,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -1330,21 +1328,20 @@ class TestNormalCoverStateHorizontalMinPosition:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_sun_not_valid_returns_default_zero(self, mock_datetime, hass, mock_logger):
+    def test_sun_not_valid_returns_default_zero(self, mock_datetime, mock_logger):
         """When sun is NOT valid, default=0 is returned unchanged (no clamping)."""
         from custom_components.adaptive_cover_pro.calculation import (
             AdaptiveHorizontalCover,
         )
 
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=90.0,  # Way outside FOV (gamma=90° but FOV only ±45°)
             sol_elev=20.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=45,
             fov_right=45,
             win_azi=180,
@@ -1864,9 +1861,7 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_tilt_type(
-        self, mock_datetime, tilt_cover_instance, mock_logger
-    ):
+    def test_get_state_tilt_type(self, mock_datetime, tilt_cover_instance, mock_logger):
         """Test get_state routes to tilt_state for tilt cover."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(

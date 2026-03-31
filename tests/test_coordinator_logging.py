@@ -50,7 +50,9 @@ class TestHandleCallServiceLogging:
         coord._cmd_svc = cmd_svc
 
         # last_skipped_action property returns _cmd_svc dict
-        type(coord).last_skipped_action = property(lambda self: self._cmd_svc.last_skipped_action)
+        type(coord).last_skipped_action = property(
+            lambda self: self._cmd_svc.last_skipped_action
+        )
 
         # Bind real methods
         coord.async_handle_call_service = (
@@ -166,7 +168,9 @@ class TestRecordSkippedAction:
         cmd_svc.record_skipped_action.side_effect = _record_side_effect
         coord._cmd_svc = cmd_svc
 
-        type(coord).last_skipped_action = property(lambda self: self._cmd_svc.last_skipped_action)
+        type(coord).last_skipped_action = property(
+            lambda self: self._cmd_svc.last_skipped_action
+        )
 
         coord._record_skipped_action = (
             AdaptiveDataUpdateCoordinator._record_skipped_action.__get__(coord)

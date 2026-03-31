@@ -290,7 +290,9 @@ class TestIrradiance:
         """Irradiance below threshold → True."""
         hass.states.get.return_value = _mock_state("sensor.solar", "250")
         readings = provider.read(
-            use_irradiance=True, irradiance_entity="sensor.solar", irradiance_threshold=300
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
         )
         assert readings.irradiance_below_threshold is True
 
@@ -299,7 +301,9 @@ class TestIrradiance:
         """Irradiance above threshold → False."""
         hass.states.get.return_value = _mock_state("sensor.solar", "400")
         readings = provider.read(
-            use_irradiance=True, irradiance_entity="sensor.solar", irradiance_threshold=300
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
         )
         assert readings.irradiance_below_threshold is False
 
@@ -316,7 +320,9 @@ class TestIrradiance:
         unavailable.state = "unavailable"
         hass.states.get.return_value = unavailable
         readings = provider.read(
-            use_irradiance=True, irradiance_entity="sensor.solar", irradiance_threshold=300
+            use_irradiance=True,
+            irradiance_entity="sensor.solar",
+            irradiance_threshold=300,
         )
         assert readings.irradiance_below_threshold is False
 

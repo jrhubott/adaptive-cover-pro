@@ -42,10 +42,19 @@ def make_climate_data(hass, mock_logger, **overrides):
     defaults.update(overrides)
     # Remove keys not in ClimateCoverData (e.g. 'hass' passed by callers)
     valid_keys = {
-        "logger", "temp_low", "temp_high", "temp_switch", "blind_type",
-        "transparent_blind", "temp_summer_outside", "outside_temperature",
-        "inside_temperature", "is_presence", "is_sunny",
-        "lux_below_threshold", "irradiance_below_threshold",
+        "logger",
+        "temp_low",
+        "temp_high",
+        "temp_switch",
+        "blind_type",
+        "transparent_blind",
+        "temp_summer_outside",
+        "outside_temperature",
+        "inside_temperature",
+        "is_presence",
+        "is_sunny",
+        "lux_below_threshold",
+        "irradiance_below_threshold",
     }
     filtered = {k: v for k, v in defaults.items() if k in valid_keys}
     return ClimateCoverData(**filtered)
@@ -63,12 +72,11 @@ def make_climate_state(cover, climate_data):
 
 
 @pytest.fixture
-def hass():
-    """Mock HomeAssistant."""
-    h = MagicMock()
-    h.states.get.return_value = None
-    h.config.units.temperature_unit = "°C"
-    return h
+def mock_sun_data():
+    """Mock SunData instance."""
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    return sun_data
 
 
 @pytest.fixture
@@ -83,19 +91,18 @@ def mock_logger():
 
 
 @pytest.fixture
-def vertical_cover(hass, mock_logger):
+def vertical_cover(mock_sun_data, mock_logger):
     """Vertical cover with sun directly in front."""
     from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
 
     return AdaptiveVerticalCover(
-        hass=hass,
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,

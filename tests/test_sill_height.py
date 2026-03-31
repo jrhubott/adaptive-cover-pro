@@ -31,12 +31,11 @@ def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
 
 
 @pytest.fixture
-def hass():
-    """Create a mock HomeAssistant instance."""
-    hass_mock = MagicMock()
-    hass_mock.states.get.return_value = None
-    hass_mock.config.units.temperature_unit = "°C"
-    return hass_mock
+def mock_sun_data():
+    """Create a mock SunData instance."""
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    return sun_data
 
 
 @pytest.fixture
@@ -46,17 +45,16 @@ def mock_logger():
 
 
 @pytest.fixture
-def base_cover_params(hass, mock_logger):
+def base_cover_params(mock_sun_data, mock_logger):
     """Return base parameters for AdaptiveVerticalCover with sill_height=0."""
     return {
-        "hass": hass,
         "logger": mock_logger,
         "sol_azi": 180.0,
         "sol_elev": 45.0,
         "sunset_pos": 0,
         "sunset_off": 0,
         "sunrise_off": 0,
-        "timezone": "UTC",
+        "sun_data": mock_sun_data,
         "fov_left": 90,
         "fov_right": 90,
         "win_azi": 180,
@@ -501,17 +499,16 @@ class TestInteractionWithWindowDepth:
 class TestHorizontalCoverSillHeight:
     """Tests for sill_height behavior in AdaptiveHorizontalCover."""
 
-    def test_horizontal_cover_has_sill_height_field(self, hass, mock_logger):
+    def test_horizontal_cover_has_sill_height_field(self, mock_sun_data, mock_logger):
         """AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover."""
         cover = AdaptiveHorizontalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=mock_sun_data,
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -534,17 +531,18 @@ class TestHorizontalCoverSillHeight:
         # sill_height defaults to 0.0 (inherited)
         assert cover.sill_height == 0.0
 
-    def test_horizontal_cover_default_sill_vs_explicit_zero(self, hass, mock_logger):
+    def test_horizontal_cover_default_sill_vs_explicit_zero(
+        self, mock_sun_data, mock_logger
+    ):
         """Horizontal cover with sill_height=0.0 and without it produce identical results."""
         common_params = {
-            "hass": hass,
             "logger": mock_logger,
             "sol_azi": 180.0,
             "sol_elev": 45.0,
             "sunset_pos": 0,
             "sunset_off": 0,
             "sunrise_off": 0,
-            "timezone": "UTC",
+            "sun_data": mock_sun_data,
             "fov_left": 90,
             "fov_right": 90,
             "win_azi": 180,

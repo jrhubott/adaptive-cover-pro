@@ -14,7 +14,12 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import state_attr
 
-from ..const import ATTR_POSITION, ATTR_TILT_POSITION, CONF_DEFAULT_HEIGHT, CONF_SUNSET_POS
+from ..const import (
+    ATTR_POSITION,
+    ATTR_TILT_POSITION,
+    CONF_DEFAULT_HEIGHT,
+    CONF_SUNSET_POS,
+)
 from ..helpers import check_cover_features, get_last_updated, get_open_close_state
 
 
@@ -416,7 +421,9 @@ class CoverCommandService:
             "service": service,
             "position": state if supports_position else self.target_call[entity],
             "calculated_position": state,
-            "threshold_used": self._open_close_threshold if not supports_position else None,
+            "threshold_used": self._open_close_threshold
+            if not supports_position
+            else None,
             "inverse_state_applied": inverse_state,
             "timestamp": dt.datetime.now().isoformat(),
             "covers_controlled": 1,

@@ -113,9 +113,7 @@ def test_get_cover_capabilities_from_entity(cmd_svc):
 def test_read_position_with_capabilities_position_cover(cmd_svc, hass):
     """Reads current_position for position-capable non-tilt cover."""
     caps = {"has_set_position": True, "has_set_tilt_position": False}
-    hass.states.get.return_value = MagicMock(
-        attributes={"current_position": 42}
-    )
+    hass.states.get.return_value = MagicMock(attributes={"current_position": 42})
 
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.state_attr",
@@ -195,39 +193,51 @@ def test_check_position_none_position(cmd_svc):
 def test_check_position_delta_above_threshold(cmd_svc):
     """Returns True when delta exceeds min_change."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
+        result = cmd_svc.check_position_delta(
+            "cover.test", 75, min_change=20, special_positions=[0, 100]
+        )
     assert result is True
 
 
 def test_check_position_delta_below_threshold(cmd_svc):
     """Returns False when delta is below min_change."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta("cover.test", 55, min_change=20, special_positions=[0, 100])
+        result = cmd_svc.check_position_delta(
+            "cover.test", 55, min_change=20, special_positions=[0, 100]
+        )
     assert result is False
 
 
 def test_check_position_delta_special_position_bypass(cmd_svc):
     """Returns True when target is a special position (0 or 100) regardless of delta."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta("cover.test", 0, min_change=20, special_positions=[0, 100])
+        result = cmd_svc.check_position_delta(
+            "cover.test", 0, min_change=20, special_positions=[0, 100]
+        )
     assert result is True
 
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta("cover.test", 100, min_change=20, special_positions=[0, 100])
+        result = cmd_svc.check_position_delta(
+            "cover.test", 100, min_change=20, special_positions=[0, 100]
+        )
     assert result is True
 
 
 def test_check_position_delta_from_special_position_bypass(cmd_svc):
     """Returns True when moving FROM a special position regardless of delta."""
     with patch.object(cmd_svc, "_get_current_position", return_value=0):
-        result = cmd_svc.check_position_delta("cover.test", 5, min_change=20, special_positions=[0, 100])
+        result = cmd_svc.check_position_delta(
+            "cover.test", 5, min_change=20, special_positions=[0, 100]
+        )
     assert result is True
 
 
 def test_check_position_delta_none_position(cmd_svc):
     """Returns True when position is unavailable."""
     with patch.object(cmd_svc, "_get_current_position", return_value=None):
-        result = cmd_svc.check_position_delta("cover.test", 50, min_change=20, special_positions=[0, 100])
+        result = cmd_svc.check_position_delta(
+            "cover.test", 50, min_change=20, special_positions=[0, 100]
+        )
     assert result is True
 
 
@@ -391,7 +401,9 @@ def test_track_cover_action_open_close_service(cmd_svc):
 def test_track_cover_action_inverse_state(cmd_svc):
     """Records inverse_state_applied correctly."""
     cmd_svc.target_call["cover.test"] = 30
-    cmd_svc.track_cover_action("cover.test", "set_cover_position", 30, True, inverse_state=True)
+    cmd_svc.track_cover_action(
+        "cover.test", "set_cover_position", 30, True, inverse_state=True
+    )
     assert cmd_svc.last_cover_action["inverse_state_applied"] is True
 
 

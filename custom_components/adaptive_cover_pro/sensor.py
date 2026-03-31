@@ -807,12 +807,9 @@ class AdaptiveCoverPositionVerificationSensor(
             attrs["per_entity_retries"] = dict(retry_counts)
 
         if last_verification:
-            attrs["last_verification"] = max(
-                last_verification.values()
-            ).isoformat()
+            attrs["last_verification"] = max(last_verification.values()).isoformat()
             attrs["per_entity_verification"] = {
-                entity_id: t.isoformat()
-                for entity_id, t in last_verification.items()
+                entity_id: t.isoformat() for entity_id, t in last_verification.items()
             }
 
         return attrs

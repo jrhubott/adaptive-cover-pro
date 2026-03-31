@@ -109,7 +109,7 @@ def test_apply_limits_conditional_max_sun_not_valid(mock_sun_data, mock_logger):
 
 
 @pytest.mark.unit
-def test_issue_24_sunset_position_with_conditional_min_pos(hass, mock_logger):
+def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_logger):
     """Test Issue #24: sunset_position should be used after sunset, not min_position.
 
     User configuration:
@@ -126,14 +126,13 @@ def test_issue_24_sunset_position_with_conditional_min_pos(hass, mock_logger):
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
         cover = AdaptiveVerticalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=-10.0,  # Sun below horizon
             sunset_pos=0,  # Should return to 0 after sunset
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=mock_sun_data,
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -175,7 +174,7 @@ def test_issue_24_sunset_position_with_conditional_min_pos(hass, mock_logger):
 
 
 @pytest.mark.unit
-def test_sunset_position_with_always_min_pos(hass, mock_logger):
+def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
     """Test sunset_position with enable_min_position = False (always apply).
 
     When enable_min_position = False, min_pos should always be applied,
@@ -189,14 +188,13 @@ def test_sunset_position_with_always_min_pos(hass, mock_logger):
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
         cover = AdaptiveVerticalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=-10.0,  # Sun below horizon
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=mock_sun_data,
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -233,7 +231,7 @@ def test_sunset_position_with_always_min_pos(hass, mock_logger):
 
 
 @pytest.mark.unit
-def test_sun_in_window_with_conditional_min_pos(hass, mock_logger):
+def test_sun_in_window_with_conditional_min_pos(mock_sun_data, mock_logger):
     """Test min_pos applied during sun in window with enable_min_position = True."""
     # Mock to NOT be sunset time
     with patch(
@@ -244,14 +242,13 @@ def test_sun_in_window_with_conditional_min_pos(hass, mock_logger):
 
         # Sun directly in front, low elevation → calculated position would be low
         cover = AdaptiveVerticalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=15.0,  # Low sun → large calculated position
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=mock_sun_data,
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -294,7 +291,7 @@ def test_sun_in_window_with_conditional_min_pos(hass, mock_logger):
 
 
 @pytest.mark.unit
-def test_direct_sun_valid_uses_and_operator(hass, mock_logger):
+def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
     """Test that direct_sun_valid uses 'and' operator (not bitwise '&')."""
     # This test verifies the fix for the secondary issue in #24
     with patch(
@@ -304,14 +301,13 @@ def test_direct_sun_valid_uses_and_operator(hass, mock_logger):
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         cover = AdaptiveVerticalCover(
-            hass=hass,
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=mock_sun_data,
             fov_left=90,
             fov_right=90,
             win_azi=180,

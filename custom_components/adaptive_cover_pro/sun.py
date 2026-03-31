@@ -3,16 +3,12 @@
 from datetime import date, datetime, timedelta
 
 import pandas as pd
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.sun import get_astral_location
 
 
 class SunData:
     """Access local sun data."""
 
-    def __init__(self, timezone, hass: HomeAssistant) -> None:  # noqa: D107
-        self.hass = hass
-        location, elevation = get_astral_location(self.hass)
+    def __init__(self, timezone, location, elevation) -> None:  # noqa: D107
         self.location = location  # astral.location.Location
         self.elevation = elevation
         self.timezone = timezone
