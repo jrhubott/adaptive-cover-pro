@@ -127,8 +127,7 @@ def test_last_motion_time_initially_none(mgr):
 
 def test_last_motion_time_tracking(mgr):
     """record_motion_detected() updates last_motion_time to a recent timestamp."""
-    callback = AsyncMock()
-    mgr.last_motion_time  # ensure None before
+    assert mgr.last_motion_time is None  # ensure None before
 
     mgr.record_motion_detected()
 
