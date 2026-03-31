@@ -643,6 +643,14 @@
           "force_override_active": "Force override active",
           "motion_timeout": "No motion - using default position"
         }
+      },
+      "motion_status": {
+        "state": {
+          "motion_detected": "Motion Detected",
+          "timeout_pending": "Timeout Pending",
+          "no_motion": "No Motion",
+          "waiting_for_data": "Waiting for Data"
+        }
       }
     }
   },

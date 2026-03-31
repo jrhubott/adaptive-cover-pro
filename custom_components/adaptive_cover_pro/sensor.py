@@ -791,10 +791,11 @@ class AdaptiveCoverPositionVerificationSensor(
 
 
 class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
-    """Diagnostic sensor combining motion timeout end time and last motion time."""
+    """Diagnostic sensor showing current motion control state."""
 
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_native_unit_of_measurement = ""
     _attr_should_poll = False
+    _attr_translation_key = "motion_status"
 
     def __init__(
         self,
@@ -821,34 +822,46 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
         return self._sensor_name
 
     @property
-    def native_value(self):
-        """Return timeout end time, or None if no motion/timeout is active."""
+    def native_value(self) -> str:
+        """Return motion control state as a human-readable string."""
         if self.coordinator._last_motion_time is None:
-            return None
+            return "waiting_for_data"
+
+        if self.coordinator.is_motion_detected:
+            return "motion_detected"
 
         task = self.coordinator._motion_timeout_task
-        timeout_pending = task is not None and not task.done()
+        if task is not None and not task.done():
+            return "timeout_pending"
 
-        if timeout_pending or self.coordinator._motion_timeout_active:
-            end_ts = (
-                self.coordinator._last_motion_time
-                + self.coordinator._motion_timeout_seconds
-            )
-            return dt_util.utc_from_timestamp(end_ts)
+        if self.coordinator._motion_timeout_active:
+            return "no_motion"
 
-        return None
+        return "waiting_for_data"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return motion timeout config and last motion time."""
+        """Return motion timeout config, end time, and last motion time."""
         attrs: dict[str, Any] = {
             "motion_timeout_seconds": self.coordinator._motion_timeout_seconds,
         }
 
         if self.coordinator._last_motion_time is not None:
-            last_motion = dt_util.utc_from_timestamp(self.coordinator._last_motion_time)
-            attrs["last_motion_detected"] = last_motion.isoformat()
-            attrs["last_motion_time"] = last_motion.isoformat()
+            task = self.coordinator._motion_timeout_task
+            timeout_pending = task is not None and not task.done()
+
+            if timeout_pending or self.coordinator._motion_timeout_active:
+                end_ts = (
+                    self.coordinator._last_motion_time
+                    + self.coordinator._motion_timeout_seconds
+                )
+                attrs["motion_timeout_end_time"] = dt_util.utc_from_timestamp(
+                    end_ts
+                ).isoformat()
+
+            attrs["last_motion_time"] = dt_util.utc_from_timestamp(
+                self.coordinator._last_motion_time
+            ).isoformat()
 
         return attrs
 
