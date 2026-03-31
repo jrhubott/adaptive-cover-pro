@@ -25,6 +25,11 @@ class PipelineContext:
     climate_is_summer: bool
     climate_is_winter: bool
 
+    # Extensibility hooks (default False = disabled)
+    wind_active: bool = False
+    wind_retract_position: int = 100
+    cloud_suppression_active: bool = False
+
 
 @dataclass(frozen=True)
 class DecisionStep:
@@ -44,3 +49,4 @@ class PipelineResult:
     control_method: ControlMethod
     reason: str
     decision_trace: list[DecisionStep] = field(default_factory=list)
+    tilt: int | None = None
