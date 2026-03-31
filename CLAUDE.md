@@ -48,47 +48,63 @@ git log --oneline -5
 
 ## Architecture Overview
 
-This integration follows Home Assistant's **Data Coordinator Pattern**:
+This integration follows Home Assistant's **Data Coordinator Pattern** with a layered architecture: state providers read HA entities, a pure calculation engine computes positions, an override pipeline determines final position, and managers handle operational concerns.
 
-### Core Components
+### Layers
 
-**`coordinator.py`** - Central hub for all state management
-- `AdaptiveDataUpdateCoordinator` manages async updates, entity listeners, and position calculations
-- Tracks state changes from sun position, temperature, weather, presence entities
-- Handles manual override detection and control
-- Orchestrates position calculations and cover service calls
+**`state/`** - HA Boundary Layer (all Home Assistant reads happen here)
+- `climate_provider.py` - `ClimateProvider` reads temp/weather/presence/lux/irradiance entities → `ClimateReadings` frozen dataclass
+- `sun_provider.py` - `SunProvider` reads astral location from HA → creates pure `SunData` instances
 
-**`calculation.py`** - Position calculation algorithms
-- `AdaptiveVerticalCover` - Up/down blind calculations with enhanced geometric accuracy
-  - `calculate_position()` - Main calculation with safety margins and window depth support
-  - `_calculate_safety_margin()` - Angle-dependent safety margins (0-35% at extremes)
-  - `_handle_edge_cases()` - Robust fallbacks for extreme sun angles
-  - Supports optional `window_depth` parameter for advanced precision
+**`calculation.py`** + **`sun.py`** - Pure Calculation Engine (0 HA imports)
+- `AdaptiveGeneralCover` base class — takes `SunData` (injected, not `hass`), computes gamma/FOV/elevation/sun validity
+- `AdaptiveVerticalCover` - Up/down blind calculations with safety margins, window depth, sill height
 - `AdaptiveHorizontalCover` - In/out awning calculations
 - `AdaptiveTiltCover` - Slat rotation calculations
-- `NormalCoverState` - Basic sun position mode
-- `ClimateCoverState` - Climate-aware mode with temperature/presence/weather
+- `NormalCoverState` / `ClimateCoverState` - Position state determination
+- `ClimateCoverData` - Pure dataclass with pre-read values (no HA dependency)
+
+**`pipeline/`** - Override Priority Chain (pluggable handlers)
+- `registry.py` - `PipelineRegistry` evaluates handlers in priority order, builds decision trace
+- 6 handlers: `force_override`(100) > `motion_timeout`(80) > `manual_override`(70) > `climate`(50) > `solar`(40) > `default`(0)
+- Adding a new override = create one handler file + register in coordinator
+
+**`managers/`** - Extracted Coordinator Responsibilities
+- `manual_override.py` - `AdaptiveCoverManager` — override detection & tracking
+- `grace_period.py` - `GracePeriodManager` — per-command + startup grace periods
+- `motion.py` - `MotionManager` — motion sensor timeout tracking
+- `position_verification.py` - `PositionVerificationManager` — periodic position verification & retry
+- `cover_command.py` - `CoverCommandService` — cover service calls, capability detection, delta checks
+
+**`diagnostics/`** - Diagnostic Data Builder
+- `builder.py` - `DiagnosticsBuilder` with `DiagnosticContext` — builds all diagnostic data from pipeline result
+
+**`coordinator.py`** - Thin Orchestrator (~1,839 lines)
+- Runs the update cycle (`_async_update_data`)
+- Routes events (sun/cover/motion state changes)
+- Schedules refreshes (end time, timed)
+- Delegates to managers, providers, pipeline, and diagnostics builder
 
 **`config_flow.py`** - Multi-step UI configuration
-- Separate flows for vertical/horizontal/tilt cover types
-- Common options, automation settings, climate mode, blind spots
-- Option validation and context-aware forms
 
 ### Platform Files
 
-- `sensor.py` - Position, control method, start/end sun times
+- `sensor.py` - Position, control method, start/end sun times, diagnostic sensors
 - `switch.py` - Automatic control, climate mode, manual override detection
 - `binary_sensor.py` - Sun visibility, manual override status
 - `button.py` - Manual override reset
 
 ### Data Flow
 
-1. **Initialization:** Config flow creates `ConfigEntry` → coordinator setup
-2. **Listeners:** Coordinator registers listeners on sun, temperature, weather, presence entities
-3. **State Change:** Entity change triggers `async_check_entity_state_change()`
-4. **Calculation:** `_async_update_data()` calls appropriate cover class to calculate position
-5. **Update:** Coordinator updates data → platform entities refresh
-6. **Control:** If enabled and not manually overridden → calls cover service to move blinds
+1. **Initialization:** Config flow creates `ConfigEntry` → coordinator setup with managers, providers, pipeline
+2. **Listeners:** Coordinator registers listeners on sun, temperature, weather, presence, motion entities
+3. **State Change:** Entity change triggers coordinator event handler
+4. **State Snapshot:** Providers read HA entities → pure data (SunData, ClimateReadings)
+5. **Calculation:** Pure calculation engine computes position (no HA dependency)
+6. **Pipeline:** Override pipeline evaluates priority chain → `PipelineResult` with position + decision trace
+7. **Post-processing:** Interpolation and inverse state applied
+8. **Control:** `CoverCommandService` sends commands if delta/time checks pass
+9. **Diagnostics:** `DiagnosticsBuilder` produces diagnostic data from pipeline result
 
 ## Development Environment
 
@@ -737,7 +753,7 @@ Use `./scripts/develop` to start a development instance with the integration loa
 - `ModuleNotFoundError: adaptive_cover_pro` → ensure `sys.path.append("../custom_components")` is in first cell
 - `TypeError: missing argument 'logger'` → add `MockedLogger` no-op class, pass `logger=mocked_logger` to constructors
 - Plot not appearing (Jupyter) → add `%matplotlib inline` to first cell
-- `SunData` unexpected kwarg → use positional args: `SunData(timezone, mocked_hass)`
+- `SunData` unexpected kwarg → use positional args: `SunData(timezone, location, elevation)` (SunData no longer takes `hass`)
 
 ### Simulation Tools
 
@@ -753,16 +769,44 @@ Algorithm changes: edit `calculation.py` → validate visually in notebook → a
 adaptive-cover/
 ├── custom_components/adaptive_cover_pro/
 │   ├── __init__.py              # Integration entry point
-│   ├── coordinator.py           # Data coordinator (primary hub)
-│   ├── calculation.py           # Position calculation engine
+│   ├── coordinator.py           # Thin orchestrator (~1,839 lines)
+│   ├── calculation.py           # Pure calculation engine (0 HA imports)
 │   ├── config_flow.py           # Configuration UI
+│   ├── sun.py                   # Pure solar calculations (0 HA imports)
+│   ├── managers/                # Extracted coordinator responsibilities
+│   │   ├── manual_override.py   # Manual override detection & tracking
+│   │   ├── grace_period.py      # Per-command + startup grace periods
+│   │   ├── motion.py            # Motion sensor timeout tracking
+│   │   ├── position_verification.py  # Periodic position verification
+│   │   └── cover_command.py     # Cover service calls & delta checks
+│   ├── state/                   # HA boundary layer (state providers)
+│   │   ├── climate_provider.py  # Reads climate/weather/presence entities
+│   │   └── sun_provider.py      # Reads astral location from HA
+│   ├── pipeline/                # Override priority chain
+│   │   ├── registry.py          # Evaluates handlers in priority order
+│   │   ├── types.py             # PipelineContext, PipelineResult, DecisionStep
+│   │   ├── handler.py           # OverrideHandler base class
+│   │   └── handlers/            # 6 priority handlers
+│   │       ├── force_override.py    # Priority 100
+│   │       ├── motion_timeout.py    # Priority 80
+│   │       ├── manual_override.py   # Priority 70
+│   │       ├── climate.py           # Priority 50
+│   │       ├── solar.py             # Priority 40
+│   │       └── default.py           # Priority 0
+│   ├── diagnostics/             # Diagnostic data builder
+│   │   └── builder.py           # DiagnosticsBuilder + DiagnosticContext
+│   ├── services/                # Service layer
+│   │   └── configuration_service.py
 │   ├── sensor.py                # Sensor platform
 │   ├── switch.py                # Switch platform
 │   ├── binary_sensor.py         # Binary sensor platform
 │   ├── button.py                # Button platform
-│   ├── sun.py                   # Solar calculations
+│   ├── entity_base.py           # Base entity classes
 │   ├── helpers.py               # Utility functions
 │   ├── const.py                 # Constants
+│   ├── enums.py                 # Type-safe enumerations
+│   ├── geometry.py              # Geometric utilities
+│   ├── position_utils.py        # Position conversion utilities
 │   ├── manifest.json            # Integration metadata
 │   └── translations/            # i18n files (13 languages)
 ├── scripts/
@@ -770,7 +814,7 @@ adaptive-cover/
 │   ├── develop                  # Start Home Assistant dev server
 │   ├── lint                     # Run linting
 │   └── release                  # Create releases (automated)
-├── tests/                       # Unit tests (410 tests)
+├── tests/                       # Unit tests (657 tests)
 │   ├── conftest.py              # Shared fixtures
 │   ├── test_calculation.py      # Core calculation tests
 │   ├── test_geometric_accuracy.py
@@ -783,7 +827,11 @@ adaptive-cover/
 │   ├── test_interpolation.py
 │   ├── test_delta_position.py
 │   ├── test_manual_override.py
-│   └── test_position_explanation.py
+│   ├── test_position_explanation.py
+│   ├── test_managers/           # Manager unit tests
+│   ├── test_pipeline/           # Pipeline handler tests
+│   ├── test_state/              # State provider tests
+│   └── test_diagnostics/        # Diagnostics builder tests
 ├── release_notes/               # Historical release notes
 │   ├── README.md                # Release notes documentation
 │   └── vX.Y.Z.md                # Individual release notes (versioned)

@@ -86,42 +86,77 @@ pre-commit run --all-files
 adaptive-cover/
 ├── custom_components/adaptive_cover_pro/
 │   ├── __init__.py              # Integration entry point
-│   ├── coordinator.py           # Data coordinator (939 lines)
-│   ├── calculation.py           # Position calculations (596 lines)
-│   ├── config_flow.py           # Configuration UI (896 lines)
+│   ├── coordinator.py           # Data coordinator (orchestrator, ~1,839 lines)
+│   ├── calculation.py           # Position calculations (pure, 0 HA imports)
+│   ├── config_flow.py           # Configuration UI
+│   ├── sun.py                   # Solar calculations (pure, 0 HA imports)
+│   ├── managers/                # Extracted coordinator responsibilities
+│   │   ├── manual_override.py   # Manual override detection & tracking
+│   │   ├── grace_period.py      # Per-command + startup grace periods
+│   │   ├── motion.py            # Motion sensor timeout tracking
+│   │   ├── position_verification.py  # Periodic position verification
+│   │   └── cover_command.py     # Cover service calls & delta checks
+│   ├── state/                   # HA boundary layer (state providers)
+│   │   ├── climate_provider.py  # Reads climate/weather/presence entities
+│   │   └── sun_provider.py      # Reads astral location from HA
+│   ├── pipeline/                # Override priority chain
+│   │   ├── registry.py          # Evaluates handlers in priority order
+│   │   ├── types.py             # PipelineContext, PipelineResult, DecisionStep
+│   │   ├── handler.py           # OverrideHandler base class
+│   │   └── handlers/            # 6 priority handlers
+│   │       ├── force_override.py    # Priority 100
+│   │       ├── motion_timeout.py    # Priority 80
+│   │       ├── manual_override.py   # Priority 70
+│   │       ├── climate.py           # Priority 50
+│   │       ├── solar.py             # Priority 40
+│   │       └── default.py           # Priority 0
+│   ├── diagnostics/             # Diagnostic data builder
+│   │   └── builder.py           # DiagnosticsBuilder + DiagnosticContext
+│   ├── services/                # Service layer
+│   │   └── configuration_service.py
 │   ├── sensor.py                # Sensor platform
 │   ├── switch.py                # Switch platform
 │   ├── binary_sensor.py         # Binary sensor platform
 │   ├── button.py                # Button platform
-│   ├── sun.py                   # Solar calculations
+│   ├── entity_base.py           # Base entity classes
 │   ├── helpers.py               # Utility functions
 │   ├── const.py                 # Constants
+│   ├── enums.py                 # Type-safe enumerations
+│   ├── geometry.py              # Geometric utilities
+│   ├── position_utils.py        # Position conversion utilities
 │   ├── config_context_adapter.py # Logging adapter
-│   ├── diagnostics.py           # Diagnostics export
 │   ├── manifest.json            # Integration metadata
-│   ├── translations/            # i18n files (13 languages)
-│   ├── blueprints/              # Automation blueprints
-│   └── simulation/              # Testing and simulation tools
+│   └── translations/            # i18n files
+├── tests/                       # Unit tests (657 tests)
+│   ├── conftest.py              # Shared fixtures
+│   ├── test_calculation.py      # Core calculation tests
+│   ├── test_geometric_accuracy.py
+│   ├── test_sill_height.py
+│   ├── test_control_state_reason.py
+│   ├── test_position_explanation.py
+│   ├── test_position_limits.py
+│   ├── test_inverse_state.py
+│   ├── test_manual_override.py
+│   ├── test_motion_control.py
+│   ├── test_force_override_sensors.py
+│   ├── test_startup_grace_period.py
+│   ├── test_delta_position.py
+│   ├── test_interpolation.py
+│   ├── test_helpers.py
+│   ├── test_time_window_sensor.py
+│   ├── test_coordinator_logging.py
+│   ├── test_managers/           # Manager unit tests
+│   ├── test_pipeline/           # Pipeline handler tests
+│   ├── test_state/              # State provider tests
+│   └── test_diagnostics/        # Diagnostics builder tests
 ├── scripts/
-│   ├── setup                    # Development environment setup
-│   ├── develop                  # Start Home Assistant dev server
-│   ├── lint                     # Run linting
-│   └── release                  # Create releases (automated)
-├── config/                      # Test Home Assistant config
-│   └── configuration.yaml       # Mock entities for testing
-├── notebooks/                   # Jupyter notebooks for testing
-│   └── test_env.ipynb          # Algorithm testing/visualization
-├── .github/workflows/           # GitHub Actions
-│   └── publish-release.yml      # Automated release workflow
-├── docs/                        # Documentation directory
-│   ├── ARCHITECTURE.md          # Architecture documentation
-│   ├── CONTRIBUTING.md          # Contributing guidelines
-│   ├── DEVELOPMENT.md           # This file
-│   ├── UNIT_TESTS.md            # Unit test documentation
-│   └── VSCODE_TESTING_GUIDE.md  # VS Code testing guide
-├── CLAUDE.md                   # Instructions for Claude Code
-├── README.md                   # User documentation
-└── pyproject.toml              # Python project configuration
+├── docs/
+├── release_notes/
+├── notebooks/
+├── CLAUDE.md
+├── HANDOFF.md
+├── README.md
+└── pyproject.toml
 
 ```
 
