@@ -30,7 +30,11 @@ from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .calculation import ClimateCoverData, ClimateCoverState, NormalCoverState
-from .engine.covers import AdaptiveHorizontalCover, AdaptiveTiltCover, AdaptiveVerticalCover
+from .engine.covers import (
+    AdaptiveHorizontalCover,
+    AdaptiveTiltCover,
+    AdaptiveVerticalCover,
+)
 from .config_context_adapter import ConfigContextAdapter
 from .services.configuration_service import ConfigurationService
 from .const import (
@@ -843,7 +847,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
         if not self.check_position_delta(entity, state, options):
             self.logger.debug("Skipping %s: position delta too small", entity)
-            self._cmd_svc.record_skipped_action(entity, "Position delta too small", state)
+            self._cmd_svc.record_skipped_action(
+                entity, "Position delta too small", state
+            )
             return
         if not self._cmd_svc.check_time_delta(entity, self.time_threshold):
             self.logger.debug("Skipping %s: time delta too small", entity)
@@ -886,8 +892,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         caps = self._cmd_svc.get_cover_capabilities(entity)
-        service, service_data, supports_position = self._cmd_svc.prepare_position_service_call(
-            entity, state, caps, inverse_state=self._inverse_state
+        service, service_data, supports_position = (
+            self._cmd_svc.prepare_position_service_call(
+                entity, state, caps, inverse_state=self._inverse_state
+            )
         )
 
         if service is None:

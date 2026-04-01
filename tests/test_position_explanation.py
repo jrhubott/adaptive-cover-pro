@@ -7,7 +7,7 @@ Tests cover:
 
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 

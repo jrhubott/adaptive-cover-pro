@@ -10,7 +10,11 @@ from custom_components.adaptive_cover_pro.engine.covers import (
     DualAxisResult,
     VenetianCoverCalculation,
 )
-from tests.cover_helpers import make_cover_config, make_tilt_config, make_vertical_config
+from tests.cover_helpers import (
+    make_cover_config,
+    make_tilt_config,
+    make_vertical_config,
+)
 
 
 def _make_logger():
@@ -92,7 +96,9 @@ class TestVenetianCoverCalculation:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_delegates_to_vertical(self, mock_datetime):
         """Position matches what AdaptiveVerticalCover.calculate_percentage() returns."""
-        from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+        from custom_components.adaptive_cover_pro.calculation import (
+            AdaptiveVerticalCover,
+        )
 
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
@@ -182,7 +188,9 @@ class TestVenetianCoverCalculation:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun_valid_delegation(self, mock_datetime):
         """direct_sun_valid delegates to the internal vertical cover."""
-        from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+        from custom_components.adaptive_cover_pro.calculation import (
+            AdaptiveVerticalCover,
+        )
 
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
 

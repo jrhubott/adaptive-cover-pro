@@ -152,9 +152,7 @@ class TestRecordSkippedAction:
             "calculated_position": None,
             "timestamp": None,
         }
-        cmd_svc.record_skipped_action(
-            "cover.living_room", "Outside time window", 75
-        )
+        cmd_svc.record_skipped_action("cover.living_room", "Outside time window", 75)
 
         assert cmd_svc.last_skipped_action["entity_id"] == "cover.living_room"
         assert cmd_svc.last_skipped_action["reason"] == "Outside time window"

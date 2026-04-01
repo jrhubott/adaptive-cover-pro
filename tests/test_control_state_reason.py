@@ -5,7 +5,6 @@ covering all possible conditions: direct sun, FOV exit, elevation limit,
 sunset offset, and blind spot.
 """
 
-import pytest
 from unittest.mock import patch, PropertyMock
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
