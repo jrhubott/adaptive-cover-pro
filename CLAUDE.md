@@ -157,14 +157,11 @@ Pre-commit hooks run automatically on commit:
 **BEFORE MAKING ANY CODE CHANGES:**
 
 1. **Check current branch:** `git branch --show-current`
-2. **Create feature branch from dev** (REQUIRED)
+2. **Create feature branch from the current branch** (REQUIRED)
 
 ```bash
-# ALWAYS branch from dev
-git checkout dev
-git pull origin dev
-
-# Create feature branch
+# Pull latest on the current branch, then create feature branch from it
+git pull origin $(git branch --show-current)
 git checkout -b <prefix>/<description>
 ```
 
@@ -180,8 +177,8 @@ git checkout -b <prefix>/<description>
 
 **Rules:**
 - ✅ ALWAYS create a feature branch FIRST (before any edits)
-- ✅ ALWAYS branch from `dev` (never from `main` or other feature branches)
-- ✅ ALWAYS create a pull request after pushing the branch
+- ✅ ALWAYS branch from the current branch (pull latest first)
+- ✅ ALWAYS ask the user before creating a pull request
 - ✅ Keep commits atomic and focused
 - ✅ Test changes on the feature branch
 - ❌ NEVER commit directly to `dev` or `main` branch
@@ -195,11 +192,8 @@ When the user references an issue number (e.g., "fix issue #123"):
 1. **Fetch details:** `gh issue view 123`
 2. **Create branch:** `git checkout -b fix/issue-123-short-description` (bugs) or `feature/issue-123-...`
 3. **Commit with reference** — closing keywords: `Fixes #123`, `Closes #123`, `Resolves #123`; non-closing: `Related to #123`
-4. **Push and create PR immediately:**
-   ```bash
-   git push -u origin fix/issue-123-short-description
-   gh pr create --title "fix: Short description (#123)" --body "Fixes #123" --base dev
-   ```
+4. **Push branch:** `git push -u origin fix/issue-123-short-description`
+5. **Ask the user** if they want a PR created before running `gh pr create`
 
 Issues auto-close when PR is merged if body contains `Fixes #123`.
 
@@ -241,11 +235,12 @@ gh pr merge --squash   # or --merge / --rebase
 - Wait for user confirmation before proceeding with PR creation, merge, or release
 
 **When NOT in Plan Mode (ad-hoc changes):**
-- ✅ Create a pull request after pushing changes (always required)
+- ✅ Push the branch, then **ask the user** if they want a PR created
 - ✅ Stay on the feature/fix branch after pushing changes
+- ❌ DO NOT create a PR without asking first
 - ❌ DO NOT ask about merging to main
 - ❌ DO NOT merge automatically
-- The user will decide when to merge the PR separately
+- The user will decide when to create the PR and merge separately
 
 **gh CLI Quick Reference:**
 
