@@ -80,6 +80,7 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
+    CONF_CLOUD_SUPPRESSION,
     CONF_LUX_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -110,7 +111,7 @@ from .pipeline.handlers.motion_timeout import MotionTimeoutHandler
 from .pipeline.handlers.solar import SolarHandler
 from .pipeline.registry import PipelineRegistry
 from .pipeline.types import PipelineContext
-from .state.climate_provider import ClimateProvider
+from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
@@ -176,6 +177,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.timed_refresh = False
         self.climate_state = None
         self.climate_data = None  # Store climate_data for P1 diagnostics
+        self._weather_readings: ClimateReadings | None = None
         self.climate_strategy = None  # Store climate strategy for diagnostics
         self.control_method = ControlMethod.SOLAR
         self.state_change_data: StateChangedData | None = None
@@ -536,6 +538,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _calculate_cover_state(self, cover_data, options) -> int:
         """Calculate cover state via pipeline and return final position."""
+        # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
+        self._read_weather_conditions(options)
         # Access climate data if climate mode is enabled
         self.climate_strategy = None
         if self._climate_mode:
@@ -612,6 +616,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 and self.climate_data.is_winter
                 and self._toggles.switch_mode
             ),
+            cloud_suppression_active=self._is_cloud_suppression_active(),
         )
         self._pipeline_result = self._pipeline.evaluate(ctx)
         self.control_method = self._pipeline_result.control_method
@@ -1066,6 +1071,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state_attr(self.hass, "sun.sun", "azimuth"),
             state_attr(self.hass, "sun.sun", "elevation"),
         ]
+
+    def _read_weather_conditions(self, options) -> None:
+        """Read weather/lux/irradiance into self._weather_readings (always runs)."""
+        self._weather_readings = self._climate_provider.read(
+            weather_entity=options.get(CONF_WEATHER_ENTITY),
+            weather_condition=options.get(CONF_WEATHER_STATE),
+            use_lux=bool(self._toggles.lux_toggle),
+            lux_entity=options.get(CONF_LUX_ENTITY),
+            lux_threshold=options.get(CONF_LUX_THRESHOLD),
+            use_irradiance=bool(self._toggles.irradiance_toggle),
+            irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
+            irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
+        )
+
+    def _is_cloud_suppression_active(self) -> bool:
+        """Return True when weather/lux/irradiance indicate no real direct sun."""
+        if not self.config_entry.options.get(CONF_CLOUD_SUPPRESSION, False):
+            return False
+        if self._weather_readings is None:
+            return False
+        return bool(
+            not self._weather_readings.is_sunny
+            or self._weather_readings.lux_below_threshold
+            or self._weather_readings.irradiance_below_threshold
+        )
 
     def climate_mode_data(self, options, cover_data):
         """Calculate climate-aware cover state and store strategy for diagnostics."""
