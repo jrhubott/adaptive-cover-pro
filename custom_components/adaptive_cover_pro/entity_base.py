@@ -63,7 +63,7 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
             name=self._name,
             manufacturer="BasHeijermans",
             model=f"Adaptive {type_display} Cover",
-            configuration_url="https://github.com/basbruss/adaptive-cover",
+            configuration_url="https://github.com/jrhubott/adaptive-cover-pro",
         )
 
     @staticmethod
