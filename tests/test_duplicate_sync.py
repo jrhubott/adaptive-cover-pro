@@ -73,7 +73,9 @@ class TestExtractSharedOptions:
 
     def test_includes_motion_sensors(self):
         """Verify motion sensor options are included in the returned dict."""
-        entry = _make_entry({CONF_MOTION_SENSORS: ["binary_sensor.motion"], CONF_AZIMUTH: 180})
+        entry = _make_entry(
+            {CONF_MOTION_SENSORS: ["binary_sensor.motion"], CONF_AZIMUTH: 180}
+        )
         result = _extract_shared_options(entry)
         assert result[CONF_MOTION_SENSORS] == ["binary_sensor.motion"]
 
@@ -91,11 +93,13 @@ class TestExtractSharedOptions:
 
     def test_only_excluded_fields_returns_empty(self):
         """Verify a dict containing only excluded fields returns empty."""
-        entry = _make_entry({
-            CONF_ENTITIES: ["cover.test"],
-            CONF_AZIMUTH: 180,
-            CONF_DEVICE_ID: "abc",
-        })
+        entry = _make_entry(
+            {
+                CONF_ENTITIES: ["cover.test"],
+                CONF_AZIMUTH: 180,
+                CONF_DEVICE_ID: "abc",
+            }
+        )
         result = _extract_shared_options(entry)
         assert result == {}
 

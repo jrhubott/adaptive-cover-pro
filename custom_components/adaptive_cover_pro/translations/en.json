@@ -32,8 +32,7 @@
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -51,8 +50,7 @@
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
       "vertical": {
@@ -95,7 +93,7 @@
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "sunset_position": "Cover position to set after sunset (0-100%). Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). This overrides the default position after sun sets. Leave blank to keep using default position (no special sunset behavior).",
+          "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, cover behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor (indoor or outdoor). Optional: Presence sensor, weather integration, lux sensor. Recommended for energy efficiency and comfort.",
@@ -138,7 +136,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
@@ -185,7 +185,7 @@
           "fov_right": "How wide the sun tracking area is on the RIGHT side (in degrees). Standard patios: 45° (90° total coverage with both sides), Wide patios: 60-75°, Narrow doors: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "group": "Select the cover entities to control via this integration instance. You can select multiple awnings to control them as a group (all will receive the same position commands). Only select awnings that serve this particular area - create separate integration instances for different locations.",
           "inverse_state": "Enable for awnings where position logic is reversed. Standard: 0 = retracted, 100 = extended. Inverted: 0 = extended, 100 = retracted. Check this ONLY if your awning shows opposite behavior, 100% retracts instead of extends, or documentation says 'inverted' or 'reversed'. Test your awning manually first to confirm. Most awnings don't need this.",
-          "sunset_position": "Awning position to set after sunset (0-100%). Common uses: Retract for protection (0% = fully retracted, recommended), Partial extension for evening use (30-50%), Keep extended (100%). This overrides the default position after sun sets. Leave blank to keep using default position (no special sunset behavior).",
+          "sunset_position": "Awning position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Retract for protection (0% = fully retracted, recommended), Partial extension for evening use (30-50%), Keep extended (100%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want awning to stay extended a bit past sunset. Use negative value (e.g., -30) to retract early for safety.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want delayed morning extension. Combines with Start Time setting (uses whichever is later).",
           "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, awning behavior changes by season: WINTER (cold) retracts on sunny days to allow solar heat gain into building; SUMMER (hot) extends fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
@@ -234,7 +234,7 @@
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "group": "Select the cover entities to control via this integration instance. You can select multiple venetian blinds to control them as a group (all will receive the same tilt commands). Only select blinds that serve this particular window - create separate integration instances for different windows.",
           "inverse_state": "Enable for blinds where tilt logic is reversed. Standard: 0 = closed/horizontal, 100 = open/vertical. Inverted: 0 = open/vertical, 100 = closed/horizontal. Check this ONLY if your blind shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your blind manually first to confirm. Most blinds don't need this.",
-          "sunset_position": "Slat tilt position to set after sunset (0-100%). Common uses: Closed for privacy (0%), Partially open for view (30-50%), Open for night view (100%). This overrides the default position after sun sets. Leave blank to keep using default position (no special sunset behavior).",
+          "sunset_position": "Slat tilt position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Closed for privacy (0%), Partially open for view (30-50%), Open for night view (100%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want blinds to stay in tracking mode a bit past sunset. Use negative value (e.g., -30) to close early for evening privacy.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, slat behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
@@ -359,8 +359,7 @@
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -378,8 +377,7 @@
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
       "vertical": {
@@ -422,7 +420,7 @@
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "sunset_position": "Cover position to set after sunset (0-100%). Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). This overrides the default position after sun sets. Leave blank to keep using default position (no special sunset behavior).",
+          "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, cover behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor (indoor or outdoor). Optional: Presence sensor, weather integration, lux sensor. Recommended for energy efficiency and comfort.",
@@ -465,7 +463,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
@@ -512,7 +512,7 @@
           "fov_right": "How wide the sun tracking area is on the RIGHT side (in degrees). Standard patios: 45° (90° total coverage with both sides), Wide patios: 60-75°, Narrow doors: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "group": "Select the cover entities to control via this integration instance. You can select multiple awnings to control them as a group (all will receive the same position commands). Only select awnings that serve this particular area - create separate integration instances for different locations.",
           "inverse_state": "Enable for awnings where position logic is reversed. Standard: 0 = retracted, 100 = extended. Inverted: 0 = extended, 100 = retracted. Check this ONLY if your awning shows opposite behavior, 100% retracts instead of extends, or documentation says 'inverted' or 'reversed'. Test your awning manually first to confirm. Most awnings don't need this.",
-          "sunset_position": "Awning position to set after sunset (0-100%). Common uses: Retract for protection (0% = fully retracted, recommended), Partial extension for evening use (30-50%), Keep extended (100%). This overrides the default position after sun sets. Leave blank to keep using default position (no special sunset behavior).",
+          "sunset_position": "Awning position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Retract for protection (0% = fully retracted, recommended), Partial extension for evening use (30-50%), Keep extended (100%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want awning to stay extended a bit past sunset. Use negative value (e.g., -30) to retract early for safety.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want delayed morning extension. Combines with Start Time setting (uses whichever is later).",
           "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, awning behavior changes by season: WINTER (cold) retracts on sunny days to allow solar heat gain into building; SUMMER (hot) extends fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
@@ -561,7 +561,7 @@
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "group": "Select the cover entities to control via this integration instance. You can select multiple venetian blinds to control them as a group (all will receive the same tilt commands). Only select blinds that serve this particular window - create separate integration instances for different windows.",
           "inverse_state": "Enable for blinds where tilt logic is reversed. Standard: 0 = closed/horizontal, 100 = open/vertical. Inverted: 0 = open/vertical, 100 = closed/horizontal. Check this ONLY if your blind shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your blind manually first to confirm. Most blinds don't need this.",
-          "sunset_position": "Slat tilt position to set after sunset (0-100%). Common uses: Closed for privacy (0%), Partially open for view (30-50%), Open for night view (100%). This overrides the default position after sun sets. Leave blank to keep using default position (no special sunset behavior).",
+          "sunset_position": "Slat tilt position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Closed for privacy (0%), Partially open for view (30-50%), Open for night view (100%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want blinds to stay in tracking mode a bit past sunset. Use negative value (e.g., -30) to close early for evening privacy.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, slat behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
@@ -642,6 +642,29 @@
         "state": {
           "force_override_active": "Force override active",
           "motion_timeout": "No motion - using default position"
+        }
+      },
+      "motion_status": {
+        "state": {
+          "motion_detected": "Motion Detected",
+          "timeout_pending": "Timeout Pending",
+          "no_motion": "No Motion",
+          "waiting_for_data": "Waiting for Data"
+        }
+      },
+      "decision_trace": {
+        "name": "Decision Trace",
+        "state": {
+          "unknown": "Unknown",
+          "solar": "Solar",
+          "summer": "Summer",
+          "winter": "Winter",
+          "default": "Default",
+          "manual_override": "Manual Override",
+          "motion_timeout": "Motion Timeout",
+          "force_override": "Force Override",
+          "wind_override": "Wind Override",
+          "cloud_suppression": "Cloud Suppression"
         }
       }
     }

@@ -9,11 +9,16 @@ import pytest
 def test_is_in_startup_grace_period_returns_false_when_no_timestamp():
     """Test that _is_in_startup_grace_period returns False when no timestamp exists."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
-    # Create minimal mock coordinator
+    # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    coordinator._startup_timestamp = None
+    coordinator._grace_mgr = GracePeriodManager(
+        logger=MagicMock(),
+        startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+    )
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -29,12 +34,17 @@ def test_is_in_startup_grace_period_returns_false_when_no_timestamp():
 def test_is_in_startup_grace_period_returns_true_when_within_period():
     """Test that _is_in_startup_grace_period returns True when within grace period."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
-    # Create minimal mock coordinator
+    # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    now = dt.datetime.now().timestamp()
-    coordinator._startup_timestamp = now
+    coordinator._grace_mgr = GracePeriodManager(
+        logger=MagicMock(),
+        startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+    )
+    coordinator._grace_mgr._startup_timestamp = dt.datetime.now().timestamp()
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -50,13 +60,18 @@ def test_is_in_startup_grace_period_returns_true_when_within_period():
 def test_is_in_startup_grace_period_returns_false_when_expired():
     """Test that _is_in_startup_grace_period returns False when grace period expired."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
-    # Create minimal mock coordinator
+    # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
+    coordinator._grace_mgr = GracePeriodManager(
+        logger=MagicMock(),
+        startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+    )
     # Set timestamp to 60 seconds ago (past the 30-second grace period)
-    past = dt.datetime.now().timestamp() - 60
-    coordinator._startup_timestamp = past
+    coordinator._grace_mgr._startup_timestamp = dt.datetime.now().timestamp() - 60
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -72,29 +87,25 @@ def test_is_in_startup_grace_period_returns_false_when_expired():
 @pytest.mark.asyncio
 async def test_startup_grace_period_timeout_clears_tracking():
     """Test that startup grace period timeout clears tracking data."""
-
-    # Create minimal mock coordinator
-    coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = 0.1  # Short period for testing
-    coordinator._startup_timestamp = dt.datetime.now().timestamp()
-    coordinator._startup_grace_period_task = None
-    coordinator.logger = MagicMock()
-
-    # Import the method
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
     )
 
-    # Call the timeout method
-    await AdaptiveDataUpdateCoordinator._startup_grace_period_timeout(coordinator)
+    # Test the GracePeriodManager timeout directly (the coordinator delegates to it)
+    mock_logger = MagicMock()
+    mgr = GracePeriodManager(logger=mock_logger, startup_grace_seconds=0.1)
+    mgr._startup_timestamp = dt.datetime.now().timestamp()
+    mgr._startup_grace_period_task = None
+
+    await mgr._startup_grace_period_timeout()
 
     # Verify tracking was cleared
-    assert coordinator._startup_timestamp is None
-    assert coordinator._startup_grace_period_task is None
+    assert mgr._startup_timestamp is None
+    assert mgr._startup_grace_period_task is None
 
-    # Verify info log was called for expiration
-    coordinator.logger.info.assert_called_once()
-    assert "Startup grace period expired" in str(coordinator.logger.info.call_args)
+    # Verify debug log was called for expiration
+    mock_logger.debug.assert_called_once()
+    assert "Startup grace period expired" in str(mock_logger.debug.call_args)
 
 
 @pytest.mark.asyncio
@@ -102,13 +113,17 @@ async def test_start_startup_grace_period_sets_timestamp():
     """Test that _start_startup_grace_period sets the timestamp."""
     from unittest.mock import patch
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
-    # Create minimal mock coordinator
+    # Create minimal mock coordinator backed by a real GracePeriodManager
+    mock_logger = MagicMock()
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    coordinator._startup_timestamp = None
-    coordinator._startup_grace_period_task = None
-    coordinator.logger = MagicMock()
+    coordinator._grace_mgr = GracePeriodManager(
+        logger=mock_logger,
+        startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+    )
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -129,13 +144,13 @@ async def test_start_startup_grace_period_sets_timestamp():
     after = dt.datetime.now().timestamp()
 
     # Verify timestamp was set within the expected range
-    assert coordinator._startup_timestamp is not None
-    assert before <= coordinator._startup_timestamp <= after
+    assert coordinator._grace_mgr._startup_timestamp is not None
+    assert before <= coordinator._grace_mgr._startup_timestamp <= after
 
     # Verify info log was called for startup
-    coordinator.logger.info.assert_called_once()
-    assert "Started" in str(coordinator.logger.info.call_args)
-    assert "startup grace period" in str(coordinator.logger.info.call_args)
+    mock_logger.info.assert_called_once()
+    assert "Started" in str(mock_logger.info.call_args)
+    assert "startup grace period" in str(mock_logger.info.call_args)
 
 
 @pytest.mark.asyncio
@@ -143,17 +158,21 @@ async def test_start_startup_grace_period_cancels_existing_task():
     """Test that _start_startup_grace_period cancels existing task."""
     from unittest.mock import patch
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     # Create mock task
     mock_task = MagicMock()
     mock_task.done.return_value = False
 
-    # Create minimal mock coordinator
+    # Create minimal mock coordinator backed by a real GracePeriodManager
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    coordinator._startup_timestamp = None
-    coordinator._startup_grace_period_task = mock_task
-    coordinator.logger = MagicMock()
+    coordinator._grace_mgr = GracePeriodManager(
+        logger=MagicMock(),
+        startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+    )
+    coordinator._grace_mgr._startup_grace_period_task = mock_task
 
     # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -175,11 +194,17 @@ async def test_start_startup_grace_period_cancels_existing_task():
 async def test_startup_grace_period_prevents_manual_override_detection():
     """Test that startup grace period prevents manual override detection."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
-    # Create minimal mock coordinator
+    # Create minimal mock coordinator backed by a real GracePeriodManager with active period
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    coordinator._startup_timestamp = dt.datetime.now().timestamp()  # Active grace period
+    coordinator._grace_mgr = GracePeriodManager(
+        logger=MagicMock(),
+        startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
+    )
+    coordinator._grace_mgr._startup_timestamp = dt.datetime.now().timestamp()  # Active
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
     coordinator.cover_state_change = True
@@ -194,9 +219,7 @@ async def test_startup_grace_period_prevents_manual_override_detection():
     )
 
     # Call async_handle_cover_state_change
-    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
-        coordinator, 50
-    )
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)
 
     # Verify handle_state_change was NOT called (manual override prevented)
     coordinator.manager.handle_state_change.assert_not_called()
@@ -212,16 +235,13 @@ async def test_startup_grace_period_prevents_manual_override_detection():
 @pytest.mark.asyncio
 async def test_startup_grace_period_allows_manual_override_after_expiration():
     """Test that manual override detection works after startup grace period expires."""
-    from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
 
     # Create minimal mock coordinator
     coordinator = MagicMock()
-    coordinator._startup_grace_period_seconds = STARTUP_GRACE_PERIOD_SECONDS
-    # Set timestamp to 60 seconds ago (expired)
-    coordinator._startup_timestamp = dt.datetime.now().timestamp() - 60
+    # Set timestamp to 60 seconds ago (expired) — mock _is_in_startup_grace_period
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
     coordinator.cover_state_change = True
@@ -239,9 +259,7 @@ async def test_startup_grace_period_allows_manual_override_after_expiration():
     coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
 
     # Call async_handle_cover_state_change
-    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
-        coordinator, 50
-    )
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)
 
     # Verify _is_in_startup_grace_period was checked
     coordinator._is_in_startup_grace_period.assert_called_once()

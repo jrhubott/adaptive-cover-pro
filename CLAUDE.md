@@ -48,47 +48,74 @@ git log --oneline -5
 
 ## Architecture Overview
 
-This integration follows Home Assistant's **Data Coordinator Pattern**:
+This integration follows Home Assistant's **Data Coordinator Pattern** with a layered architecture: state providers read HA entities, a pure calculation engine computes positions, an override pipeline determines final position, and managers handle operational concerns.
 
-### Core Components
+### Layers
 
-**`coordinator.py`** - Central hub for all state management
-- `AdaptiveDataUpdateCoordinator` manages async updates, entity listeners, and position calculations
-- Tracks state changes from sun position, temperature, weather, presence entities
-- Handles manual override detection and control
-- Orchestrates position calculations and cover service calls
+**`state/`** - HA Boundary Layer (all Home Assistant reads happen here)
+- `climate_provider.py` - `ClimateProvider` reads temp/weather/presence/lux/irradiance entities → `ClimateReadings` frozen dataclass
+- `sun_provider.py` - `SunProvider` reads astral location from HA → creates pure `SunData` instances
 
-**`calculation.py`** - Position calculation algorithms
-- `AdaptiveVerticalCover` - Up/down blind calculations with enhanced geometric accuracy
-  - `calculate_position()` - Main calculation with safety margins and window depth support
-  - `_calculate_safety_margin()` - Angle-dependent safety margins (0-35% at extremes)
-  - `_handle_edge_cases()` - Robust fallbacks for extreme sun angles
-  - Supports optional `window_depth` parameter for advanced precision
+**`calculation.py`** + **`sun.py`** - Pure Calculation Engine (0 HA imports)
+- `AdaptiveGeneralCover` base class — takes `SunData` (injected, not `hass`), computes gamma/FOV/elevation/sun validity
+- `AdaptiveVerticalCover` - Up/down blind calculations with safety margins, window depth, sill height
 - `AdaptiveHorizontalCover` - In/out awning calculations
 - `AdaptiveTiltCover` - Slat rotation calculations
-- `NormalCoverState` - Basic sun position mode
-- `ClimateCoverState` - Climate-aware mode with temperature/presence/weather
+- `NormalCoverState` / `ClimateCoverState` - Position state determination
+- `ClimateCoverData` - Pure dataclass with pre-read values (no HA dependency)
+
+**`pipeline/`** - Override Priority Chain (pluggable handlers)
+- `registry.py` - `PipelineRegistry` evaluates handlers in priority order, builds decision trace
+- 8 handlers: `force_override`(100) > `wind`(95, stub) > `motion_timeout`(80) > `manual_override`(70) > `climate`(50) > `solar`(40) > `cloud_suppression`(35, stub) > `default`(0)
+- `wind.py` and `cloud_suppression.py` are registered stubs — they pass through until sensors are configured
+- Adding a new override = create one handler file + register in coordinator
+
+**`managers/`** - Extracted Coordinator Responsibilities
+- `manual_override.py` - `AdaptiveCoverManager` — override detection & tracking
+- `grace_period.py` - `GracePeriodManager` — per-command + startup grace periods
+- `motion.py` - `MotionManager` — motion sensor timeout tracking
+- `position_verification.py` - `PositionVerificationManager` — periodic position verification & retry
+- `cover_command.py` - `CoverCommandService` — cover service calls, capability detection, delta checks
+
+**`diagnostics/`** - Diagnostic Data Builder
+- `builder.py` - `DiagnosticsBuilder` with `DiagnosticContext` — builds all diagnostic data from pipeline result
+
+**`coordinator.py`** - Thin Orchestrator (~1,477 lines)
+- Runs the update cycle (`_async_update_data`)
+- Routes events (sun/cover/motion state changes)
+- Schedules refreshes (end time, timed)
+- Delegates to managers, providers, pipeline, and diagnostics builder
 
 **`config_flow.py`** - Multi-step UI configuration
-- Separate flows for vertical/horizontal/tilt cover types
-- Common options, automation settings, climate mode, blind spots
-- Option validation and context-aware forms
+
+**`config_types.py`** - Typed `CoverConfig` dataclass (all cover configuration in one place)
+
+**`engine/`** - Next-generation calculation engine
+- `sun_geometry.py` - `SunGeometry` dataclass (pure sun angle math, replaces inline calculations)
+- `covers/venetian.py` - `VenetianCoverCalculation` — dual-axis venetian blinds (position + tilt)
+
+**`state/`** also contains:
+- `cover_provider.py` - `CoverProvider` reads cover entity state from HA
+- `snapshot.py` - `SunSnapshot` and `CoverStateSnapshot` frozen dataclasses (unified state for update cycle)
 
 ### Platform Files
 
-- `sensor.py` - Position, control method, start/end sun times
+- `sensor.py` - Cover Position sensor (consolidated — replaces separate Control Method, Calculated Position, and Position Explanation sensors), start/end sun times, diagnostic sensors
 - `switch.py` - Automatic control, climate mode, manual override detection
 - `binary_sensor.py` - Sun visibility, manual override status
 - `button.py` - Manual override reset
 
 ### Data Flow
 
-1. **Initialization:** Config flow creates `ConfigEntry` → coordinator setup
-2. **Listeners:** Coordinator registers listeners on sun, temperature, weather, presence entities
-3. **State Change:** Entity change triggers `async_check_entity_state_change()`
-4. **Calculation:** `_async_update_data()` calls appropriate cover class to calculate position
-5. **Update:** Coordinator updates data → platform entities refresh
-6. **Control:** If enabled and not manually overridden → calls cover service to move blinds
+1. **Initialization:** Config flow creates `ConfigEntry` → coordinator setup with managers, providers, pipeline
+2. **Listeners:** Coordinator registers listeners on sun, temperature, weather, presence, motion entities
+3. **State Change:** Entity change triggers coordinator event handler
+4. **State Snapshot:** Providers read HA entities → pure data (SunData, ClimateReadings)
+5. **Calculation:** Pure calculation engine computes position (no HA dependency)
+6. **Pipeline:** Override pipeline evaluates priority chain → `PipelineResult` with position + decision trace
+7. **Post-processing:** Interpolation and inverse state applied
+8. **Control:** `CoverCommandService` sends commands if delta/time checks pass
+9. **Diagnostics:** `DiagnosticsBuilder` produces diagnostic data from pipeline result
 
 ## Development Environment
 
@@ -130,12 +157,12 @@ Pre-commit hooks run automatically on commit:
 **BEFORE MAKING ANY CODE CHANGES:**
 
 1. **Check current branch:** `git branch --show-current`
-2. **Create feature branch from main** (REQUIRED)
+2. **Create feature branch from dev** (REQUIRED)
 
 ```bash
-# ALWAYS branch from main
-git checkout main
-git pull origin main
+# ALWAYS branch from dev
+git checkout dev
+git pull origin dev
 
 # Create feature branch
 git checkout -b <prefix>/<description>
@@ -153,11 +180,11 @@ git checkout -b <prefix>/<description>
 
 **Rules:**
 - ✅ ALWAYS create a feature branch FIRST (before any edits)
-- ✅ ALWAYS branch from `main` (never from other feature branches)
+- ✅ ALWAYS branch from `dev` (never from `main` or other feature branches)
 - ✅ ALWAYS create a pull request after pushing the branch
 - ✅ Keep commits atomic and focused
 - ✅ Test changes on the feature branch
-- ❌ NEVER commit directly to `main` branch
+- ❌ NEVER commit directly to `dev` or `main` branch
 - ❌ NEVER skip feature branches "because it's a small change"
 - ❌ NEVER merge to main without a pull request
 
@@ -171,7 +198,7 @@ When the user references an issue number (e.g., "fix issue #123"):
 4. **Push and create PR immediately:**
    ```bash
    git push -u origin fix/issue-123-short-description
-   gh pr create --title "fix: Short description (#123)" --body "Fixes #123" --base main
+   gh pr create --title "fix: Short description (#123)" --body "Fixes #123" --base dev
    ```
 
 Issues auto-close when PR is merged if body contains `Fixes #123`.
@@ -242,6 +269,7 @@ gh pr merge --squash   # or --merge / --rebase
 - ❌ NEVER add `Co-Authored-By: Claude` lines
 - ❌ NEVER add `Generated with Claude Code`
 - ✅ Commit messages should only describe the changes made
+- ✅ Always use first-person voice (I/me) in commit messages and PR descriptions
 
 This applies to ALL commits (regular commits, merge commits, etc.) and release notes.
 
@@ -429,7 +457,7 @@ git commit -m "docs: Add release notes for v2.6.11"
 - **NEVER** include Claude/AI attributions
 - **ALWAYS** use `--notes` parameter with versioned filename: `release_notes/vX.Y.Z.md`
 - **NEVER** use `--editor` parameter
-- **ALWAYS** commit release notes to git after creating release
+- **ALWAYS** commit release notes to git BEFORE running the release script (it requires a clean working directory)
 
 **File Naming Convention:**
 - Production releases: `release_notes/v2.6.11.md`
@@ -521,6 +549,8 @@ Always update docs alongside code changes:
 5. Add translations to `translations/en.json` (and other languages if feasible)
 6. Update `CLAUDE.md` Configuration Structure section
 
+**Optional numeric fields:** Use `NumberSelectorMode.SLIDER` (not `BOX`) with `vol.Optional` and no default. BOX mode does not preserve `None` — clearing the field saves `0`. Sliders correctly return `None` when empty. Code consuming the value must check `if value is not None` (not `if value`) to distinguish 0% from unset.
+
 ### Diagnostic Sensor Guidelines
 
 When creating diagnostic sensors:
@@ -535,7 +565,7 @@ class MyDiagnosticSensor(AdaptiveCoverDiagnosticSensor):
     # For numeric sensors: MUST have proper unit for statistics
     _attr_native_unit_of_measurement = "retries"  # Enables statistics tracking
 
-    # For P0 sensors (basic diagnostics), enable by default
+    # All diagnostic sensors are enabled by default (no enable_diagnostics toggle)
     _attr_entity_registry_enabled_default = True
 ```
 
@@ -648,7 +678,7 @@ When modifying geometric accuracy calculations:
 #### Modification Guidelines
 
 **DO:**
-- Test all changes with full test suite (214 tests must pass)
+- Test all changes with full test suite (run `source venv/bin/activate && python -m pytest tests/ -v`)
 - Maintain backward compatibility (existing installations unaffected)
 - Keep safety margins conservative (always ≥ baseline position)
 - Use smoothstep interpolation for smooth transitions
@@ -663,11 +693,10 @@ When modifying geometric accuracy calculations:
 
 #### Diagnostic Information
 
-Users can monitor geometric accuracy via diagnostic sensors:
-- "Calculated Position" - Raw position before adjustments
-- "Sun Gamma" - Horizontal angle from window normal
-- "Sun Elevation" - Vertical angle above horizon
-- Compare calculated vs actual position to see safety margin effects
+Users can monitor geometric accuracy via the always-on diagnostic sensors:
+- **Calculated Position** — raw position; `position_explanation` attribute shows full decision chain
+- **Sun Position** — state is azimuth; attributes include `sun_elevation` and `gamma`
+- Compare "Calculated Position" to actual cover position to see safety margin effects
 
 ## Configuration Structure
 
@@ -678,6 +707,9 @@ Users can monitor geometric accuracy via diagnostic sensors:
 **`config_entry.options`** (configurable):
 - Window azimuth, field of view, elevation limits
 - Cover-specific dimensions (height, length, slat properties)
+- Sunset behavior:
+  - `sunset_position` - Optional position after sunset (None = use `default_percentage`). Use SLIDER in config_flow, not BOX.
+  - `sunset_offset` / `sunrise_offset` — minutes to shift sunset/sunrise times
 - Enhanced geometric accuracy:
   - `window_depth` - Optional window reveal/frame depth (0.0-0.5m, default 0.0)
   - `sill_height` - Optional height from floor to window bottom (0.0-3.0m, default 0.0). Raises the blind for windows above floor level — accounting for the sill's geometric effect of reducing sun penetration into the room
@@ -722,21 +754,15 @@ Use `./scripts/develop` to start a development instance with the integration loa
 
 ### Jupyter Notebook Testing
 
-`notebooks/test_env.ipynb` — test calculation algorithms without a full HA instance. Produces visual plots of vertical and horizontal cover positions over 24 hours.
+`notebooks/simulate_cover.ipynb` — simulate cover positions over a full day without running Home Assistant. Produces visual plots of vertical, horizontal, and tilt cover positions.
 
-**Setup:** `./scripts/setup` installs Jupyter. Open with `jupyter notebook` or in VS Code (`code notebooks/test_env.ipynb`, requires Jupyter extension).
+**Setup:** `./scripts/setup` installs Jupyter. Open with `jupyter notebook` or in VS Code (`code notebooks/simulate_cover.ipynb`, requires Jupyter extension).
 
-**Update notebook when:** dataclass signatures change in `calculation.py` or `SunData` API changes in `sun.py`. Verify by running all cells and confirming two plots appear with no errors.
+**Update notebook when:** dataclass signatures change in `calculation.py` or `SunData` API changes in `sun.py`. Verify by running all cells and confirming plots appear with no errors.
 
 **Troubleshooting:**
 - `ModuleNotFoundError: adaptive_cover_pro` → ensure `sys.path.append("../custom_components")` is in first cell
-- `TypeError: missing argument 'logger'` → add `MockedLogger` no-op class, pass `logger=mocked_logger` to constructors
 - Plot not appearing (Jupyter) → add `%matplotlib inline` to first cell
-- `SunData` unexpected kwarg → use positional args: `SunData(timezone, mocked_hass)`
-
-### Simulation Tools
-
-`custom_components/adaptive_cover_pro/simulation/sim_plot.png` — example plot. Regenerate by uncommenting cells 5-14 in `test_env.ipynb`.
 
 ### Development Workflow
 
@@ -748,16 +774,53 @@ Algorithm changes: edit `calculation.py` → validate visually in notebook → a
 adaptive-cover/
 ├── custom_components/adaptive_cover_pro/
 │   ├── __init__.py              # Integration entry point
-│   ├── coordinator.py           # Data coordinator (primary hub)
-│   ├── calculation.py           # Position calculation engine
+│   ├── coordinator.py           # Thin orchestrator (~1,477 lines)
+│   ├── calculation.py           # Pure calculation engine (0 HA imports)
 │   ├── config_flow.py           # Configuration UI
+│   ├── config_types.py          # CoverConfig typed dataclass
+│   ├── sun.py                   # Pure solar calculations (0 HA imports)
+│   ├── engine/                  # Next-gen calculation engine
+│   │   ├── sun_geometry.py      # SunGeometry dataclass (pure sun angle math)
+│   │   └── covers/
+│   │       └── venetian.py      # VenetianCoverCalculation (dual-axis)
+│   ├── managers/                # Extracted coordinator responsibilities
+│   │   ├── manual_override.py   # Manual override detection & tracking
+│   │   ├── grace_period.py      # Per-command + startup grace periods
+│   │   ├── motion.py            # Motion sensor timeout tracking
+│   │   ├── position_verification.py  # Periodic position verification
+│   │   └── cover_command.py     # Cover service calls & delta checks
+│   ├── state/                   # HA boundary layer (state providers)
+│   │   ├── climate_provider.py  # Reads climate/weather/presence entities
+│   │   ├── cover_provider.py    # CoverProvider — reads cover entity state
+│   │   ├── snapshot.py          # SunSnapshot, CoverStateSnapshot dataclasses
+│   │   └── sun_provider.py      # Reads astral location from HA
+│   ├── pipeline/                # Override priority chain
+│   │   ├── registry.py          # Evaluates handlers in priority order
+│   │   ├── types.py             # PipelineContext, PipelineResult, DecisionStep
+│   │   ├── handler.py           # OverrideHandler base class
+│   │   └── handlers/            # 8 priority handlers
+│   │       ├── force_override.py    # Priority 100
+│   │       ├── wind.py              # Priority 95 (stub)
+│   │       ├── motion_timeout.py    # Priority 80
+│   │       ├── manual_override.py   # Priority 70
+│   │       ├── climate.py           # Priority 50
+│   │       ├── solar.py             # Priority 40
+│   │       ├── cloud_suppression.py # Priority 35 (stub)
+│   │       └── default.py           # Priority 0
+│   ├── diagnostics/             # Diagnostic data builder
+│   │   └── builder.py           # DiagnosticsBuilder + DiagnosticContext
+│   ├── services/                # Service layer
+│   │   └── configuration_service.py
 │   ├── sensor.py                # Sensor platform
 │   ├── switch.py                # Switch platform
 │   ├── binary_sensor.py         # Binary sensor platform
 │   ├── button.py                # Button platform
-│   ├── sun.py                   # Solar calculations
+│   ├── entity_base.py           # Base entity classes
 │   ├── helpers.py               # Utility functions
 │   ├── const.py                 # Constants
+│   ├── enums.py                 # Type-safe enumerations
+│   ├── geometry.py              # Geometric utilities
+│   ├── position_utils.py        # Position conversion utilities
 │   ├── manifest.json            # Integration metadata
 │   └── translations/            # i18n files (13 languages)
 ├── scripts/
@@ -765,7 +828,7 @@ adaptive-cover/
 │   ├── develop                  # Start Home Assistant dev server
 │   ├── lint                     # Run linting
 │   └── release                  # Create releases (automated)
-├── tests/                       # Unit tests (303 tests)
+├── tests/                       # Unit tests (751 tests)
 │   ├── conftest.py              # Shared fixtures
 │   ├── test_calculation.py      # Core calculation tests
 │   ├── test_geometric_accuracy.py
@@ -777,7 +840,13 @@ adaptive-cover/
 │   ├── test_control_state_reason.py
 │   ├── test_interpolation.py
 │   ├── test_delta_position.py
-│   └── test_manual_override.py
+│   ├── test_manual_override.py
+│   ├── test_position_explanation.py
+│   ├── test_managers/           # Manager unit tests
+│   ├── test_pipeline/           # Pipeline handler tests
+│   ├── test_state/              # State provider tests
+│   ├── test_diagnostics/        # Diagnostics builder tests
+│   └── test_engine/             # Engine module tests (SunGeometry, VenetianCoverCalculation)
 ├── release_notes/               # Historical release notes
 │   ├── README.md                # Release notes documentation
 │   └── vX.Y.Z.md                # Individual release notes (versioned)

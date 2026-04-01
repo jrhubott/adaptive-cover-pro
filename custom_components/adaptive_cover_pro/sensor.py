@@ -13,18 +13,19 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CLIMATE_MODE,
-    CONF_ENABLE_DIAGNOSTICS,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
     DOMAIN,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
+from .enums import ControlMethod
 
 
 async def async_setup_entry(
@@ -38,6 +39,30 @@ async def async_setup_entry(
     coordinator: AdaptiveDataUpdateCoordinator = hass.data[DOMAIN][
         config_entry.entry_id
     ]
+
+    # Auto-cleanup orphaned entities replaced by consolidated sensors
+    er = entity_registry.async_get(hass)
+    old_suffixes = [
+        "sun_azimuth",
+        "sun_elevation",
+        "gamma",
+        "control_state_reason",
+        "time_window",
+        "sun_validity",
+        "active_temperature",
+        "climate_conditions",
+        "motion_timeout_end_time",
+        "last_motion_time",
+        "last_position_verification",
+        "position_verification_retries",
+        "position_explanation",
+        "calculated_position",
+        "Control_Method",
+    ]
+    for suffix in old_suffixes:
+        old_uid = f"{config_entry.entry_id}_{suffix}"
+        if entity_id := er.async_get_entity_id("sensor", DOMAIN, old_uid):
+            er.async_remove(entity_id)
 
     entities = []
 
@@ -71,237 +96,89 @@ async def async_setup_entry(
             coordinator,
         )
     )
+    # Diagnostic sensors (always enabled)
+
+    # Sun Position: combines Sun Azimuth + Sun Elevation + Gamma
     entities.append(
-        AdaptiveCoverControlSensorEntity(
+        AdaptiveCoverSunPositionSensor(
             config_entry.entry_id, hass, config_entry, name, coordinator
         )
     )
 
-    # Diagnostic sensors (if enabled)
-    if config_entry.options.get(CONF_ENABLE_DIAGNOSTICS, False):
-        # P0: Solar position sensors
-        entities.append(
-            AdaptiveCoverDiagnosticSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Sun Azimuth",
-                "sun_azimuth",
-                "°",
-                "mdi:compass-outline",
-                SensorStateClass.MEASUREMENT,
-            )
+    # Control Status: combines Control Status + Reason + Time Window + Sun Validity
+    entities.append(
+        AdaptiveCoverControlStatusSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
         )
-        entities.append(
-            AdaptiveCoverDiagnosticSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Sun Elevation",
-                "sun_elevation",
-                "°",
-                "mdi:angle-acute",
-                SensorStateClass.MEASUREMENT,
-            )
+    )
+
+    # Decision Trace
+    entities.append(
+        AdaptiveCoverDecisionTraceSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
         )
-        entities.append(
-            AdaptiveCoverDiagnosticSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Gamma",
-                "gamma",
-                "°",
-                "mdi:angle-right",
-                SensorStateClass.MEASUREMENT,
-            )
+    )
+
+    # Last Skipped Action
+    entities.append(
+        AdaptiveCoverLastSkippedActionSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
         )
-        entities.append(
-            AdaptiveCoverDiagnosticEnumSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Control Status",
-                "control_status",
-                "mdi:information-outline",
-            )
+    )
+
+    # Last Cover Action
+    entities.append(
+        AdaptiveCoverLastActionSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
         )
-        entities.append(
-            AdaptiveCoverDiagnosticEnumSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Control State Reason",
-                "control_state_reason",
-                "mdi:information-variant",
-            )
+    )
+
+    # Manual Override End Time
+    entities.append(
+        AdaptiveCoverManualOverrideEndSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
         )
+    )
+
+    # Position Verification: combines Last Verification + Retry Count
+    entities.append(
+        AdaptiveCoverPositionVerificationSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
+        )
+    )
+
+    # Motion Status: combines Motion Timeout End + Last Motion Time
+    # (only when motion sensors are configured)
+    if config_entry.options.get(CONF_MOTION_SENSORS):
         entities.append(
-            AdaptiveCoverDiagnosticSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Calculated Position",
-                "calculated_position",
-                PERCENTAGE,
-                "mdi:calculator",
-                SensorStateClass.MEASUREMENT,
+            AdaptiveCoverMotionStatusSensor(
+                config_entry.entry_id, hass, config_entry, name, coordinator
             )
         )
 
-        # P0: Last Cover Action
+    # Force Override Triggers (only when force override sensors are configured)
+    if config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS):
         entities.append(
-            AdaptiveCoverLastActionSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
+            AdaptiveCoverForceOverrideTriggerSensor(
+                config_entry.entry_id, hass, config_entry, name, coordinator
             )
         )
 
-        # P0: Manual Override End Time
+    # Climate Status: combines Active Temperature + Climate Conditions
+    # (only when climate mode is enabled)
+    if config_entry.options.get(CONF_CLIMATE_MODE, False):
         entities.append(
-            AdaptiveCoverManualOverrideEndSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-            )
-        )
-
-        # P0: Motion Timeout End Time (only when motion sensors are configured)
-        if config_entry.options.get(CONF_MOTION_SENSORS):
-            entities.append(
-                AdaptiveCoverMotionTimeoutEndSensor(
-                    config_entry.entry_id,
-                    hass,
-                    config_entry,
-                    name,
-                    coordinator,
-                )
-            )
-
-        # P1: Force Override Triggers (only when force override sensors are configured)
-        if config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS):
-            entities.append(
-                AdaptiveCoverForceOverrideTriggerSensor(
-                    config_entry.entry_id,
-                    hass,
-                    config_entry,
-                    name,
-                    coordinator,
-                )
-            )
-
-        # P1: Last Motion Time (only when motion sensors are configured)
-        if config_entry.options.get(CONF_MOTION_SENSORS):
-            entities.append(
-                AdaptiveCoverLastMotionTimeSensor(
-                    config_entry.entry_id,
-                    hass,
-                    config_entry,
-                    name,
-                    coordinator,
-                )
-            )
-
-        # P1: Position Verification sensors (disabled by default)
-        entities.append(
-            AdaptiveCoverLastVerificationSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-            )
-        )
-        entities.append(
-            AdaptiveCoverRetryCountSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-            )
-        )
-
-        # P1: Advanced diagnostic sensors (disabled by default)
-        # Only add climate-specific sensors if climate mode is enabled
-        if config_entry.options.get(CONF_CLIMATE_MODE, False):
-            # Active Temperature sensor
-            entities.append(
-                AdaptiveCoverAdvancedDiagnosticSensor(
-                    config_entry.entry_id,
-                    hass,
-                    config_entry,
-                    name,
-                    coordinator,
-                    "Active Temperature",
-                    "active_temperature",
-                    hass.config.units.temperature_unit,
-                    "mdi:thermometer",
-                    SensorStateClass.MEASUREMENT,
-                    SensorDeviceClass.TEMPERATURE,
-                )
-            )
-
-            # Climate Conditions sensor
-            entities.append(
-                AdaptiveCoverAdvancedDiagnosticEnumSensor(
-                    config_entry.entry_id,
-                    hass,
-                    config_entry,
-                    name,
-                    coordinator,
-                    "Climate Conditions",
-                    "climate_conditions",
-                    "mdi:weather-partly-cloudy",
-                )
-            )
-
-        # Time Window Status sensor (always created if diagnostics enabled)
-        entities.append(
-            AdaptiveCoverAdvancedDiagnosticEnumSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Time Window Status",
-                "time_window",
-                "mdi:clock-check-outline",
-            )
-        )
-
-        # Sun Validity Status sensor (always created if diagnostics enabled)
-        entities.append(
-            AdaptiveCoverAdvancedDiagnosticEnumSensor(
-                config_entry.entry_id,
-                hass,
-                config_entry,
-                name,
-                coordinator,
-                "Sun Validity Status",
-                "sun_validity",
-                "mdi:weather-sunny-alert",
+            AdaptiveCoverClimateStatusSensor(
+                config_entry.entry_id, hass, config_entry, name, coordinator, hass
             )
         )
 
     async_add_entities(entities)
+
+
+# ---------------------------------------------------------------------------
+# Standard sensors
+# ---------------------------------------------------------------------------
 
 
 class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
@@ -341,7 +218,26 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:  # noqa: D102
-        return self.data.attributes
+        attrs = dict(self.data.attributes) if self.data.attributes else {}
+        # Enrich with pipeline context
+        attrs["control_method"] = self.data.states.get("control")
+        pipeline_result = self.coordinator._pipeline_result
+        if pipeline_result is not None:
+            attrs["reason"] = pipeline_result.reason
+        diagnostics = (
+            self.coordinator.data.diagnostics if self.coordinator.data else None
+        )
+        if diagnostics:
+            position_explanation = diagnostics.get("position_explanation")
+            if position_explanation is not None:
+                attrs["position_explanation"] = position_explanation
+            attrs["raw_calculated_position"] = diagnostics.get("calculated_position")
+            calc_details = diagnostics.get("calculation_details")
+            if calc_details:
+                attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
+                attrs["safety_margin"] = calc_details.get("safety_margin")
+                attrs["effective_distance"] = calc_details.get("effective_distance")
+        return attrs
 
 
 class AdaptiveCoverTimeSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
@@ -376,39 +272,16 @@ class AdaptiveCoverTimeSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
         return self.data.states[self.key]
 
 
-class AdaptiveCoverControlSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
-    """Adaptive Cover Pro Control method Sensor."""
-
-    _attr_translation_key = "control"
-
-    def __init__(
-        self,
-        unique_id: str,
-        hass,
-        config_entry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-    ) -> None:
-        """Initialize adaptive_cover Sensor."""
-        super().__init__(
-            unique_id, hass, config_entry, coordinator, "Control_Method", None
-        )
-        self._sensor_name = "Control Method"
-        self.id = unique_id
-
-    @property
-    def name(self):
-        """Name of the entity."""
-        return self._sensor_name
-
-    @property
-    def native_value(self) -> str | None:
-        """Handle when entity is added."""
-        return self.data.states["control"]
+# ---------------------------------------------------------------------------
+# Diagnostic sensors
+# ---------------------------------------------------------------------------
 
 
-class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
-    """Adaptive Cover Pro Diagnostic Sensor."""
+class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
+    """Diagnostic sensor combining sun azimuth, elevation, and gamma."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "°"
 
     def __init__(
         self,
@@ -417,25 +290,17 @@ class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
         config_entry: ConfigEntry,
         name: str,
         coordinator: AdaptiveDataUpdateCoordinator,
-        sensor_name: str,
-        diagnostic_key: str,
-        unit: str | None,
-        icon: str,
-        state_class: SensorStateClass | None = None,
     ) -> None:
-        """Initialize diagnostic sensor."""
+        """Initialize sun position sensor."""
         super().__init__(
             unique_id,
             hass,
             config_entry,
             coordinator,
-            diagnostic_key,
-            icon,
-            unit,
-            state_class,
+            "sun_position",
+            "mdi:compass-outline",
         )
-        self._sensor_name = sensor_name
-        self._diagnostic_key = diagnostic_key
+        self._sensor_name = "Sun Position"
 
     @property
     def name(self) -> str:
@@ -443,176 +308,97 @@ class AdaptiveCoverDiagnosticSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
         return self._sensor_name
 
     @property
-    def native_value(self) -> float | int | None:
-        """Return sensor value."""
+    def native_value(self) -> float | None:
+        """Return sun azimuth as primary state."""
         if self.data.diagnostics is None:
             return None
-        diagnostics = self.data.diagnostics
-        return diagnostics.get(self._diagnostic_key)
+        return self.data.diagnostics.get("sun_azimuth")
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return additional state attributes based on diagnostic key."""
-        if self._diagnostic_key == "sun_azimuth":
-            return self._build_azimuth_attributes()
-        if self._diagnostic_key == "sun_elevation":
-            return self._build_elevation_attributes()
-        if self._diagnostic_key == "gamma":
-            return self._build_gamma_attributes()
-        if self._diagnostic_key == "calculated_position":
-            return self._build_calculated_position_attributes()
-        return None
-
-    def _build_azimuth_attributes(self) -> dict[str, Any] | None:
-        """Build attributes for sun azimuth sensor."""
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return elevation, gamma, and all FOV/blind-spot attrs."""
         if self.data.diagnostics is None:
             return None
         diagnostics = self.data.diagnostics
         config = diagnostics.get("configuration", {})
-        window_azi = config.get("azimuth")
-        fov_left = config.get("fov_left")
-        fov_right = config.get("fov_right")
 
-        if window_azi is None or fov_left is None or fov_right is None:
-            return None
+        attrs: dict[str, Any] = {}
 
-        azi_min = (window_azi - fov_left + 360) % 360
-        azi_max = (window_azi + fov_right + 360) % 360
+        # Elevation
+        elevation = diagnostics.get("sun_elevation")
+        if elevation is not None:
+            attrs["elevation"] = elevation
 
-        return {
-            "window_azimuth": window_azi,
-            "fov_left": fov_left,
-            "fov_right": fov_right,
-            "azimuth_min": azi_min,
-            "azimuth_max": azi_max,
-            "in_fov": self._check_azimuth_in_fov(azi_min, azi_max),
-        }
-
-    def _check_azimuth_in_fov(self, azi_min: float, azi_max: float) -> bool:
-        """Check if current sun azimuth is within field of view."""
-        if self.data.diagnostics is None:
-            return False
-        diagnostics = self.data.diagnostics
-        sun_azimuth = diagnostics.get("sun_azimuth")
-        if sun_azimuth is None:
-            return False
-
-        # Handle wraparound (FOV crosses 0/360 boundary)
-        if azi_min <= azi_max:
-            return azi_min <= sun_azimuth <= azi_max
-        else:
-            return sun_azimuth >= azi_min or sun_azimuth <= azi_max
-
-    def _build_elevation_attributes(self) -> dict[str, Any] | None:
-        """Build attributes for sun elevation sensor."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
-        config = diagnostics.get("configuration", {})
+        # Elevation limits from config
         min_elev = config.get("min_elevation")
         max_elev = config.get("max_elevation")
-
-        attrs = {}
         if min_elev is not None:
             attrs["min_elevation"] = min_elev
         if max_elev is not None:
             attrs["max_elevation"] = max_elev
 
-        return attrs if attrs else None
-
-    def _build_gamma_attributes(self) -> dict[str, Any] | None:
-        """Build attributes for gamma sensor."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
+        # Gamma
         gamma = diagnostics.get("gamma")
-        if gamma is None:
-            return None
+        if gamma is not None:
+            attrs["gamma"] = gamma
+            abs_gamma = abs(gamma)
+            if abs_gamma < 10:
+                interpretation = "nearly perpendicular"
+            elif abs_gamma < 45:
+                interpretation = "oblique angle"
+            elif abs_gamma < 80:
+                interpretation = "steep angle"
+            else:
+                interpretation = "nearly parallel"
+            attrs["gamma_interpretation"] = interpretation
+            attrs["gamma_absolute_angle"] = abs_gamma
+            attrs["gamma_direction"] = (
+                "left" if gamma < 0 else "right" if gamma > 0 else "center"
+            )
 
-        # Gamma interpretation
-        abs_gamma = abs(gamma)
-        if abs_gamma < 10:
-            interpretation = "nearly perpendicular"
-        elif abs_gamma < 45:
-            interpretation = "oblique angle"
-        elif abs_gamma < 80:
-            interpretation = "steep angle"
-        else:
-            interpretation = "nearly parallel"
+        # Azimuth FOV
+        window_azi = config.get("azimuth")
+        fov_left = config.get("fov_left")
+        fov_right = config.get("fov_right")
+        if window_azi is not None:
+            attrs["window_azimuth"] = window_azi
+        if fov_left is not None:
+            attrs["fov_left"] = fov_left
+        if fov_right is not None:
+            attrs["fov_right"] = fov_right
 
-        attrs = {
-            "interpretation": interpretation,
-            "absolute_angle": abs_gamma,
-            "direction": "left" if gamma < 0 else "right" if gamma > 0 else "center",
-        }
+        if window_azi is not None and fov_left is not None and fov_right is not None:
+            azi_min = (window_azi - fov_left + 360) % 360
+            azi_max = (window_azi + fov_right + 360) % 360
+            attrs["azimuth_min"] = azi_min
+            attrs["azimuth_max"] = azi_max
+            sun_azimuth = diagnostics.get("sun_azimuth")
+            if sun_azimuth is not None:
+                if azi_min <= azi_max:
+                    attrs["in_fov"] = azi_min <= sun_azimuth <= azi_max
+                else:
+                    attrs["in_fov"] = sun_azimuth >= azi_min or sun_azimuth <= azi_max
 
-        # Include blind spot range if configured
-        config = diagnostics.get("configuration", {})
+        # Blind spot range
         if config.get("enable_blind_spot", False):
             blind_spot_left = config.get("blind_spot_left")
             blind_spot_right = config.get("blind_spot_right")
-            fov_left = config.get("fov_left")
             if (
-                blind_spot_left is not None
+                fov_left is not None
+                and blind_spot_left is not None
                 and blind_spot_right is not None
-                and fov_left is not None
             ):
                 left_edge = fov_left - blind_spot_left
                 right_edge = fov_left - blind_spot_right
                 attrs["blind_spot_range"] = [right_edge, left_edge]
 
-        return attrs
-
-    def _build_calculated_position_attributes(self) -> dict[str, Any] | None:
-        """Build attributes for calculated position sensor."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
-        config = diagnostics.get("configuration", {})
-        calculated = diagnostics.get("calculated_position")
-        if calculated is None:
-            return None
-
-        attrs = {
-            "final_position": self.data.states.get("state"),
-            "direct_sun_valid": self.data.states.get("sun_motion"),
-        }
-
-        # Show applied limits if they affected the result
-        min_pos = config.get("min_position")
-        max_pos = config.get("max_position")
-        enable_min = config.get("enable_min_position", False)
-        enable_max = config.get("enable_max_position", False)
-
-        if min_pos is not None and enable_min and calculated < min_pos:
-            attrs["min_limit_applied"] = min_pos
-            attrs["limited_by"] = "min_position"
-
-        if max_pos is not None and enable_max and calculated > max_pos:
-            attrs["max_limit_applied"] = max_pos
-            attrs["limited_by"] = "max_position"
-
-        # Show if inverse state is applied
-        if config.get("inverse_state", False):
-            attrs["inverse_state_enabled"] = True
-
-        # Show if interpolation is applied
-        if config.get("interpolation", False):
-            attrs["interpolation_enabled"] = True
-
-        # Show climate mode position if different
-        if diagnostics.get("calculated_position_climate") is not None:
-            climate_pos = diagnostics.get("calculated_position_climate")
-            if climate_pos != calculated:
-                attrs["climate_position"] = climate_pos
-
-        return attrs
+        return attrs or None
 
 
-class AdaptiveCoverDiagnosticEnumSensor(
-    AdaptiveCoverDiagnosticSensorBase, SensorEntity
-):
-    """Adaptive Cover Pro Diagnostic Enum Sensor."""
+class AdaptiveCoverControlStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
+    """Diagnostic sensor combining control status, reason, time window, and sun validity."""
+
+    _attr_translation_key = "control_status"
 
     def __init__(
         self,
@@ -621,16 +407,17 @@ class AdaptiveCoverDiagnosticEnumSensor(
         config_entry: ConfigEntry,
         name: str,
         coordinator: AdaptiveDataUpdateCoordinator,
-        sensor_name: str,
-        diagnostic_key: str,
-        icon: str,
     ) -> None:
-        """Initialize diagnostic enum sensor."""
+        """Initialize control status sensor."""
         super().__init__(
-            unique_id, hass, config_entry, coordinator, diagnostic_key, icon
+            unique_id,
+            hass,
+            config_entry,
+            coordinator,
+            "control_status",
+            "mdi:information-outline",
         )
-        self._sensor_name = sensor_name
-        self._diagnostic_key = diagnostic_key
+        self._sensor_name = "Control Status"
 
     @property
     def name(self) -> str:
@@ -639,155 +426,70 @@ class AdaptiveCoverDiagnosticEnumSensor(
 
     @property
     def native_value(self) -> str | None:
-        """Return sensor value."""
+        """Return control status enum value."""
         if self.data.diagnostics is None:
             return None
-        diagnostics = self.data.diagnostics
-        return diagnostics.get(self._diagnostic_key)
+        return self.data.diagnostics.get("control_status")
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return additional state attributes."""
-        if self.data.diagnostics is None:
-            return None
-
-        # Special handling for control_status sensor
-        if self._diagnostic_key == "control_status":
-            return self._build_control_status_attributes()
-
-        # No attributes for other enum sensors
-        return None
-
-    def _build_control_status_attributes(self) -> dict[str, Any] | None:
-        """Build attributes for control status sensor."""
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return reason, time window, sun validity, and delta diagnostics."""
         if self.data.diagnostics is None:
             return None
         diagnostics = self.data.diagnostics
-        attrs = {}
+        attrs: dict[str, Any] = {}
 
-        # Always show automatic control status
+        attrs["reason"] = diagnostics.get("control_state_reason")
         attrs["automatic_control_enabled"] = self.coordinator.automatic_control
 
-        control_status = diagnostics.get("control_status")
+        # Time window details
+        time_window = diagnostics.get("time_window", {})
+        attrs["time_window_status"] = (
+            "Active" if time_window.get("check_adaptive_time") else "Outside Window"
+        )
+        attrs["after_start_time"] = time_window.get("after_start_time")
+        attrs["before_end_time"] = time_window.get("before_end_time")
 
-        # Add context-specific attributes based on status
-        if control_status == "outside_time_window":
-            time_window = diagnostics.get("time_window", {})
-            attrs["after_start_time"] = time_window.get("after_start_time")
-            attrs["before_end_time"] = time_window.get("before_end_time")
-
-        elif control_status == "sun_not_visible":
-            sun_validity = diagnostics.get("sun_validity", {})
+        # Sun validity details
+        sun_validity = diagnostics.get("sun_validity", {})
+        if sun_validity:
+            if not sun_validity.get("valid"):
+                if sun_validity.get("in_blind_spot"):
+                    attrs["sun_validity_status"] = "In Blind Spot"
+                elif not sun_validity.get("valid_elevation"):
+                    attrs["sun_validity_status"] = "Invalid Elevation"
+                else:
+                    attrs["sun_validity_status"] = "Invalid"
+            else:
+                attrs["sun_validity_status"] = "Valid"
             attrs["valid_elevation"] = sun_validity.get("valid_elevation")
             attrs["in_blind_spot"] = sun_validity.get("in_blind_spot")
 
-        elif control_status == "manual_override":
+        # Context: manual covers when in manual override
+        if diagnostics.get("control_status") == "manual_override":
             attrs["manual_covers"] = self.data.states.get("manual_list", [])
 
-        return (
-            attrs if len(attrs) > 1 else None
-        )  # Return None if only automatic_control_enabled
-
-
-class AdaptiveCoverAdvancedDiagnosticSensor(AdaptiveCoverDiagnosticSensor):
-    """Advanced diagnostic sensor (P1 - disabled by default)."""
-
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(
-        self,
-        unique_id: str,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-        sensor_name: str,
-        diagnostic_key: str,
-        unit: str | None,
-        icon: str,
-        state_class: SensorStateClass | None = None,
-        device_class: SensorDeviceClass | None = None,
-    ) -> None:
-        """Initialize advanced diagnostic sensor."""
-        super().__init__(
-            unique_id,
-            hass,
-            config_entry,
-            name,
-            coordinator,
-            sensor_name,
-            diagnostic_key,
-            unit,
-            icon,
-            state_class,
+        # Delta tracking (helps debug delta_too_small states)
+        attrs["delta_position_threshold"] = diagnostics.get("delta_position_threshold")
+        attrs["delta_time_threshold_minutes"] = diagnostics.get(
+            "delta_time_threshold_minutes"
         )
-        if device_class:
-            self._attr_device_class = device_class
+        if "position_delta_from_last_action" in diagnostics:
+            attrs["position_delta_from_last_action"] = diagnostics[
+                "position_delta_from_last_action"
+            ]
+        if "seconds_since_last_action" in diagnostics:
+            attrs["seconds_since_last_action"] = diagnostics[
+                "seconds_since_last_action"
+            ]
 
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return additional state attributes."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
+        attrs["last_updated"] = diagnostics.get("last_updated")
 
-        # For temperature sensor, add temperature details
-        if self._diagnostic_key == "active_temperature":
-            return diagnostics.get("temperature_details")
-
-        return None
+        return attrs
 
 
-class AdaptiveCoverAdvancedDiagnosticEnumSensor(AdaptiveCoverDiagnosticEnumSensor):
-    """Advanced diagnostic enum sensor (P1 - disabled by default)."""
-
-    _attr_entity_registry_enabled_default = False
-
-    @property
-    def native_value(self) -> str | None:
-        """Return computed state from dict data."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
-
-        data = diagnostics.get(self._diagnostic_key)
-        if data is None:
-            return None
-
-        # Compute human-readable state from dict
-        if self._diagnostic_key == "time_window":
-            return "Active" if data.get("check_adaptive_time") else "Outside Window"
-        elif self._diagnostic_key == "sun_validity":
-            if not data.get("valid"):
-                if data.get("in_blind_spot"):
-                    return "In Blind Spot"
-                elif not data.get("valid_elevation"):
-                    return "Invalid Elevation"
-                return "Invalid"
-            return "Valid"
-        elif self._diagnostic_key == "climate_conditions":
-            if data.get("is_summer"):
-                return "Summer Mode"
-            elif data.get("is_winter"):
-                return "Winter Mode"
-            return "Intermediate"
-
-        return str(data)
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return dict data as attributes."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
-        return diagnostics.get(self._diagnostic_key)
-
-
-class AdaptiveCoverLastActionSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+class AdaptiveCoverLastActionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
     """Sensor showing the last cover action performed."""
-
-    # Override parent class to enable by default (matches P0 classification and docs)
-    _attr_entity_registry_enabled_default = True
 
     def __init__(
         self,
@@ -802,13 +504,16 @@ class AdaptiveCoverLastActionSensor(AdaptiveCoverAdvancedDiagnosticSensor):
             config_entry_id,
             hass,
             config_entry,
-            name,
             coordinator,
-            "Last Cover Action",
             "last_cover_action",
-            None,  # unit (text sensor has no unit)
             "mdi:history",
         )
+        self._sensor_name = "Last Cover Action"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
 
     @property
     def native_value(self) -> str | None:
@@ -821,12 +526,10 @@ class AdaptiveCoverLastActionSensor(AdaptiveCoverAdvancedDiagnosticSensor):
         if not action or not action.get("entity_id"):
             return "No action recorded"
 
-        # Format: "service → entity at timestamp"
         service = action.get("service", "unknown")
         entity = action.get("entity_id", "unknown")
         timestamp_str = action.get("timestamp", "")
 
-        # Parse and format timestamp to be more readable
         if timestamp_str:
             try:
                 ts = dt_util.parse_datetime(timestamp_str)
@@ -859,7 +562,6 @@ class AdaptiveCoverLastActionSensor(AdaptiveCoverAdvancedDiagnosticSensor):
             "covers_controlled": action.get("covers_controlled", 1),
         }
 
-        # Only include threshold for open/close-only covers
         if action.get("threshold_used") is not None:
             attrs["threshold_used"] = action.get("threshold_used")
             attrs["threshold_comparison"] = (
@@ -869,63 +571,12 @@ class AdaptiveCoverLastActionSensor(AdaptiveCoverAdvancedDiagnosticSensor):
         return attrs
 
 
-class AdaptiveCoverLastVerificationSensor(AdaptiveCoverAdvancedDiagnosticSensor):
-    """Sensor showing when position was last verified."""
-
-    _attr_entity_registry_enabled_default = False  # P1 sensor
-    _attr_native_unit_of_measurement = ""  # Exclude from logbook
-    _attr_should_poll = False  # Prevent unnecessary state polling
-    _attr_has_entity_name = True  # Modern entity naming (HA 2024.5+)
-
-    def __init__(
-        self,
-        config_entry_id: str,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-    ):
-        """Initialize the sensor."""
-        super().__init__(
-            config_entry_id,
-            hass,
-            config_entry,
-            name,
-            coordinator,
-            "Last Position Verification",
-            "last_position_verification",
-            None,
-            "mdi:clock-check-outline",
-            None,
-            SensorDeviceClass.TIMESTAMP,
-        )
-
-    @property
-    def native_value(self):
-        """Return last verification time."""
-        # Return the most recent verification time from all entities
-        if not self.coordinator._last_verification:
-            return None
-        return max(self.coordinator._last_verification.values())
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return additional state attributes."""
-        if not self.coordinator._last_verification:
-            return None
-
-        return {
-            "per_entity": {
-                entity_id: time.isoformat()
-                for entity_id, time in self.coordinator._last_verification.items()
-            }
-        }
-
-
-class AdaptiveCoverManualOverrideEndSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+class AdaptiveCoverManualOverrideEndSensor(
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+):
     """Sensor showing when manual override will expire."""
 
-    _attr_entity_registry_enabled_default = True  # P0: enabled by default
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_should_poll = False
 
     def __init__(
@@ -941,15 +592,16 @@ class AdaptiveCoverManualOverrideEndSensor(AdaptiveCoverAdvancedDiagnosticSensor
             config_entry_id,
             hass,
             config_entry,
-            name,
             coordinator,
-            "Manual Override End Time",
             "manual_override_end_time",
-            None,
             "mdi:timer-outline",
-            None,
-            SensorDeviceClass.TIMESTAMP,
         )
+        self._sensor_name = "Manual Override End Time"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
 
     @property
     def native_value(self):
@@ -961,7 +613,7 @@ class AdaptiveCoverManualOverrideEndSensor(AdaptiveCoverAdvancedDiagnosticSensor
         return max(t + duration for t in times.values())
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return per-entity override expiry times."""
         times = self.coordinator.manager.manual_control_time
         if not times:
@@ -969,66 +621,18 @@ class AdaptiveCoverManualOverrideEndSensor(AdaptiveCoverAdvancedDiagnosticSensor
         duration = self.coordinator.manager.reset_duration
         return {
             "per_entity": {
-                entity_id: (t + duration).isoformat()
-                for entity_id, t in times.items()
+                entity_id: (t + duration).isoformat() for entity_id, t in times.items()
             }
         }
 
 
-class AdaptiveCoverRetryCountSensor(AdaptiveCoverAdvancedDiagnosticSensor):
-    """Sensor showing current retry count for position verification."""
+class AdaptiveCoverPositionVerificationSensor(
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+):
+    """Diagnostic sensor combining position verification retries and last verification time."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_registry_enabled_default = False  # P1 sensor
     _attr_native_unit_of_measurement = "retries"
-
-    def __init__(
-        self,
-        config_entry_id: str,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-    ):
-        """Initialize the sensor."""
-        super().__init__(
-            config_entry_id,
-            hass,
-            config_entry,
-            name,
-            coordinator,
-            "Position Verification Retries",
-            "position_verification_retries",
-            None,
-            "mdi:refresh",
-        )
-
-    @property
-    def native_value(self):
-        """Return retry count."""
-        # Return the maximum retry count from all entities
-        if not self.coordinator._retry_counts:
-            return 0
-        return max(self.coordinator._retry_counts.values())
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return additional attributes."""
-        return {
-            "max_retries": self.coordinator._max_retries,
-            "retries_remaining": max(
-                0,
-                self.coordinator._max_retries
-                - max(self.coordinator._retry_counts.values(), default=0),
-            ),
-            "per_entity": dict(self.coordinator._retry_counts),
-        }
-
-
-class AdaptiveCoverMotionTimeoutEndSensor(AdaptiveCoverAdvancedDiagnosticSensor):
-    """Sensor showing when motion timeout will expire (covers auto-close time)."""
-
-    _attr_entity_registry_enabled_default = True  # P0: enabled by default
     _attr_should_poll = False
 
     def __init__(
@@ -1044,55 +648,132 @@ class AdaptiveCoverMotionTimeoutEndSensor(AdaptiveCoverAdvancedDiagnosticSensor)
             config_entry_id,
             hass,
             config_entry,
-            name,
             coordinator,
-            "Motion Timeout End Time",
-            "motion_timeout_end_time",
-            None,
-            "mdi:motion-sensor-off",
-            None,
-            SensorDeviceClass.TIMESTAMP,
+            "position_verification",
+            "mdi:refresh",
         )
+        self._sensor_name = "Position Verification"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
 
     @property
     def native_value(self):
-        """Return when motion timeout will/did fire, or None if no timeout is active."""
-        if self.coordinator._last_motion_time is None:
-            return None
-
-        task = self.coordinator._motion_timeout_task
-        timeout_pending = task is not None and not task.done()
-
-        if timeout_pending or self.coordinator._motion_timeout_active:
-            end_ts = (
-                self.coordinator._last_motion_time
-                + self.coordinator._motion_timeout_seconds
-            )
-            return dt_util.utc_from_timestamp(end_ts)
-
-        return None
+        """Return maximum retry count across all entities."""
+        retry_counts = self.coordinator._pos_verify_mgr._retry_counts
+        if not retry_counts:
+            return 0
+        return max(retry_counts.values())
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return motion timeout details."""
-        if self.coordinator._last_motion_time is None:
-            return None
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return verification details and retry counts."""
+        mgr = self.coordinator._pos_verify_mgr
+        retry_counts = mgr._retry_counts
+        last_verification = mgr._last_verification
 
         attrs: dict[str, Any] = {
-            "motion_timeout_seconds": self.coordinator._motion_timeout_seconds,
+            "max_retries": mgr.max_retries,
+            "retries_remaining": max(
+                0,
+                mgr.max_retries - max(retry_counts.values(), default=0),
+            ),
         }
 
-        last_motion = dt_util.utc_from_timestamp(self.coordinator._last_motion_time)
-        attrs["last_motion_detected"] = last_motion.isoformat()
+        if retry_counts:
+            attrs["per_entity_retries"] = dict(retry_counts)
+
+        if last_verification:
+            attrs["last_verification"] = max(last_verification.values()).isoformat()
+            attrs["per_entity_verification"] = {
+                entity_id: t.isoformat() for entity_id, t in last_verification.items()
+            }
 
         return attrs
 
 
-class AdaptiveCoverForceOverrideTriggerSensor(AdaptiveCoverAdvancedDiagnosticSensor):
+class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
+    """Diagnostic sensor showing current motion control state."""
+
+    _attr_should_poll = False
+    _attr_translation_key = "motion_status"
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            "motion_status",
+            "mdi:motion-sensor",
+        )
+        self._sensor_name = "Motion Status"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str:
+        """Return motion control state as a human-readable string."""
+        mgr = self.coordinator._motion_mgr
+        if mgr.last_motion_time is None:
+            return "waiting_for_data"
+
+        if self.coordinator.is_motion_detected:
+            return "motion_detected"
+
+        task = mgr._motion_timeout_task
+        if task is not None and not task.done():
+            return "timeout_pending"
+
+        if mgr._motion_timeout_active:
+            return "no_motion"
+
+        return "waiting_for_data"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return motion timeout config, end time, and last motion time."""
+        mgr = self.coordinator._motion_mgr
+        attrs: dict[str, Any] = {
+            "motion_timeout_seconds": mgr._timeout_seconds,
+        }
+
+        if mgr.last_motion_time is not None:
+            task = mgr._motion_timeout_task
+            timeout_pending = task is not None and not task.done()
+
+            if timeout_pending or mgr._motion_timeout_active:
+                end_ts = mgr.last_motion_time + mgr._timeout_seconds
+                attrs["motion_timeout_end_time"] = dt_util.utc_from_timestamp(
+                    end_ts
+                ).isoformat()
+
+            attrs["last_motion_time"] = dt_util.utc_from_timestamp(
+                mgr.last_motion_time
+            ).isoformat()
+
+        return attrs
+
+
+class AdaptiveCoverForceOverrideTriggerSensor(
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+):
     """Sensor showing how many force override sensors are currently active."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_registry_enabled_default = False  # P1 sensor
     _attr_native_unit_of_measurement = "sensors"
 
     def __init__(
@@ -1108,13 +789,16 @@ class AdaptiveCoverForceOverrideTriggerSensor(AdaptiveCoverAdvancedDiagnosticSen
             config_entry_id,
             hass,
             config_entry,
-            name,
             coordinator,
-            "Force Override Triggers",
             "force_override_triggers",
-            None,
             "mdi:shield-alert-outline",
         )
+        self._sensor_name = "Force Override Triggers"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
 
     @property
     def native_value(self):
@@ -1129,7 +813,7 @@ class AdaptiveCoverForceOverrideTriggerSensor(AdaptiveCoverAdvancedDiagnosticSen
         )
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return per-sensor state details."""
         sensors = self.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
         if not sensors:
@@ -1146,11 +830,89 @@ class AdaptiveCoverForceOverrideTriggerSensor(AdaptiveCoverAdvancedDiagnosticSen
         }
 
 
-class AdaptiveCoverLastMotionTimeSensor(AdaptiveCoverAdvancedDiagnosticSensor):
-    """Sensor showing when motion was last detected."""
+class AdaptiveCoverClimateStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
+    """Diagnostic sensor combining climate conditions and active temperature."""
 
-    _attr_entity_registry_enabled_default = False  # P1 sensor
-    _attr_should_poll = False
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+        hass_ref: HomeAssistant,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            "climate_status",
+            "mdi:weather-partly-cloudy",
+        )
+        self._sensor_name = "Climate Status"
+        self._temp_unit = hass_ref.config.units.temperature_unit
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str | None:
+        """Return climate conditions string."""
+        if self.data.diagnostics is None:
+            return None
+        diagnostics = self.data.diagnostics
+        data = diagnostics.get("climate_conditions")
+        if data is None:
+            return None
+
+        if data.get("is_summer"):
+            return "Summer Mode"
+        if data.get("is_winter"):
+            return "Winter Mode"
+        return "Intermediate"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return active temperature and all climate detail attributes."""
+        if self.data.diagnostics is None:
+            return None
+        diagnostics = self.data.diagnostics
+
+        attrs: dict[str, Any] = {}
+
+        active_temp = diagnostics.get("active_temperature")
+        if active_temp is not None:
+            attrs["active_temperature"] = active_temp
+            attrs["temperature_unit"] = self._temp_unit
+
+        temp_details = diagnostics.get("temperature_details", {})
+        if temp_details:
+            attrs["indoor_temperature"] = temp_details.get("inside_temperature")
+            attrs["outdoor_temperature"] = temp_details.get("outside_temperature")
+            attrs["temp_switch"] = temp_details.get("temp_switch")
+
+        climate_conditions = diagnostics.get("climate_conditions", {})
+        if climate_conditions:
+            attrs["is_presence"] = climate_conditions.get("is_presence")
+            attrs["is_sunny"] = climate_conditions.get("is_sunny")
+            if climate_conditions.get("lux_active") is not None:
+                attrs["lux_active"] = climate_conditions["lux_active"]
+            if climate_conditions.get("irradiance_active") is not None:
+                attrs["irradiance_active"] = climate_conditions["irradiance_active"]
+
+        return attrs or None
+
+
+class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
+    """Diagnostic sensor showing the full pipeline decision trace."""
+
+    _attr_translation_key = "decision_trace"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [m.value for m in ControlMethod] + ["unknown"]
 
     def __init__(
         self,
@@ -1165,19 +927,121 @@ class AdaptiveCoverLastMotionTimeSensor(AdaptiveCoverAdvancedDiagnosticSensor):
             config_entry_id,
             hass,
             config_entry,
-            name,
             coordinator,
-            "Last Motion Time",
-            "last_motion_time",
-            None,
-            "mdi:motion-sensor",
-            None,
-            SensorDeviceClass.TIMESTAMP,
+            "decision_trace",
+            "mdi:list-status",
         )
+        self._sensor_name = "Decision Trace"
 
     @property
-    def native_value(self):
-        """Return last motion detection time as UTC datetime."""
-        if self.coordinator._last_motion_time is None:
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str:
+        """Return the winning handler name."""
+        result = self.coordinator._pipeline_result
+        if result is None:
+            return "unknown"
+        return result.control_method.value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the full decision trace and sun position data."""
+        attrs: dict[str, Any] = {}
+        result = self.coordinator._pipeline_result
+        if result:
+            trace = []
+            for step in result.decision_trace:
+                trace.append(
+                    {
+                        "handler": step.handler,
+                        "matched": step.matched,
+                        "reason": step.reason,
+                        "position": step.position,
+                    }
+                )
+            attrs["trace"] = trace
+            attrs["reason"] = result.reason
+
+        diagnostics = self.coordinator.data.diagnostics if self.coordinator.data else {}
+        if diagnostics:
+            attrs["sun_azimuth"] = diagnostics.get("sun_azimuth")
+            attrs["sun_elevation"] = diagnostics.get("sun_elevation")
+            attrs["gamma"] = diagnostics.get("gamma")
+
+            sun_validity = diagnostics.get("sun_validity", {})
+            if sun_validity:
+                attrs["in_field_of_view"] = sun_validity.get("valid")
+                attrs["elevation_valid"] = sun_validity.get("valid_elevation")
+                attrs["in_blind_spot"] = sun_validity.get("in_blind_spot")
+
+            if (
+                hasattr(self.coordinator, "normal_cover_state")
+                and self.coordinator.normal_cover_state
+                and self.coordinator.normal_cover_state.cover
+            ):
+                attrs["direct_sun_valid"] = (
+                    self.coordinator.normal_cover_state.cover.direct_sun_valid
+                )
+
+        return attrs or None
+
+
+class AdaptiveCoverLastSkippedActionSensor(
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+):
+    """Diagnostic sensor showing why the last cover move was skipped.
+
+    Records when automatic cover movement was suppressed and the reason,
+    making it possible to debug why a cover did not move when expected.
+    """
+
+    def __init__(
+        self,
+        config_entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        name: str,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ):
+        """Initialize the sensor."""
+        super().__init__(
+            config_entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            "last_skipped_action",
+            "mdi:debug-step-over",
+        )
+        self._sensor_name = "Last Skipped Action"
+
+    @property
+    def name(self) -> str:
+        """Name of the entity."""
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the skip reason as the sensor state."""
+        if not self.data or not self.data.diagnostics:
             return None
-        return dt_util.utc_from_timestamp(self.coordinator._last_motion_time)
+        action = self.data.diagnostics.get("last_skipped_action")
+        if not action or not action.get("entity_id"):
+            return "No action skipped"
+        return action.get("reason")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return entity, position, and timestamp of the skipped action."""
+        if not self.data or not self.data.diagnostics:
+            return None
+        action = self.data.diagnostics.get("last_skipped_action")
+        if not action or not action.get("entity_id"):
+            return None
+        return {
+            "entity_id": action.get("entity_id"),
+            "calculated_position": action.get("calculated_position"),
+            "timestamp": action.get("timestamp"),
+        }

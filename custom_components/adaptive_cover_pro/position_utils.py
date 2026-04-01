@@ -5,6 +5,42 @@ from __future__ import annotations
 import numpy as np
 
 
+def interpolate_position(
+    state: float,
+    start_value: float | None,
+    end_value: float | None,
+    normal_list: list | None,
+    new_list: list | None,
+) -> float:
+    """Interpolate state using custom ranges.
+
+    Maps position from normal range to custom range using linear interpolation.
+    Supports both simple start/end values or complex multi-point lists.
+
+    Args:
+        state: Position in normal range (0-100)
+        start_value: Start of custom range (or None)
+        end_value: End of custom range (or None)
+        normal_list: Multi-point normal range values (or None)
+        new_list: Multi-point custom range values (or None)
+
+    Returns:
+        Interpolated position in custom range, or original state if no
+        interpolation configured
+
+    """
+    normal_range = [0, 100]
+    new_range: list = []
+    if start_value is not None and end_value is not None:
+        new_range = [start_value, end_value]
+    if normal_list and new_list:
+        normal_range = list(map(int, normal_list))
+        new_range = list(map(int, new_list))
+    if new_range:
+        state = np.interp(state, normal_range, new_range)
+    return state
+
+
 class PositionConverter:
     """Handles position-to-percentage conversions and limit application."""
 

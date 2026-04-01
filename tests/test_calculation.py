@@ -16,6 +16,7 @@ from custom_components.adaptive_cover_pro.calculation import (
     ClimateCoverData,
     ClimateCoverState,
 )
+from tests.cover_helpers import build_horizontal_cover
 
 
 @pytest.mark.unit
@@ -261,7 +262,11 @@ def test_blind_spot_detection_logic():
 
     # Check if gamma is between edges AND elevation is below threshold
     # gamma must be: left_edge <= gamma <= right_edge
-    in_blind_spot = (gamma <= right_edge) & (gamma >= left_edge) & (sol_elev <= blind_spot_elevation)
+    in_blind_spot = (
+        (gamma <= right_edge)
+        & (gamma >= left_edge)
+        & (sol_elev <= blind_spot_elevation)
+    )
 
     # gamma=25 is between 15 and 25, elevation 30 < 40
     assert in_blind_spot is True
@@ -280,7 +285,11 @@ def test_blind_spot_outside_elevation():
     left_edge = fov_left - blind_spot_left
     right_edge = fov_left - blind_spot_right
 
-    in_blind_spot = (gamma <= left_edge) & (gamma >= right_edge) & (sol_elev <= blind_spot_elevation)
+    in_blind_spot = (
+        (gamma <= left_edge)
+        & (gamma >= right_edge)
+        & (sol_elev <= blind_spot_elevation)
+    )
 
     # Elevation 50 > 40, so not in blind spot
     assert in_blind_spot is False
@@ -590,8 +599,10 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.is_sun_in_blind_spot is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_all_conditions_met(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_direct_sun_valid_all_conditions_met(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid when all conditions are met."""
         # Setup: sun in FOV, above horizon, before sunset, no blind spot
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -607,11 +618,15 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is True
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_after_sunset(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_direct_sun_valid_after_sunset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid returns False after sunset (reproduces bug scenario)."""
         # Setup: sun still in FOV geometrically, but after sunset time
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)  # After sunset
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 20, 0, 0
+        )  # After sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -626,8 +641,10 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_in_blind_spot(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_direct_sun_valid_in_blind_spot(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid returns False when sun in blind spot."""
         # Setup: sun in FOV and before sunset, but in blind spot
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -654,7 +671,7 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun_valid_outside_fov(self, mock_datetime, vertical_cover_instance):
         """Test direct_sun_valid returns False when sun outside FOV."""
         # Setup: sun outside FOV
@@ -673,11 +690,15 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_before_sunrise(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_direct_sun_valid_before_sunrise(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid returns False before sunrise."""
         # Setup: sun geometrically in FOV, but before sunrise
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 5, 0, 0)  # Before sunrise
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 5, 0, 0
+        )  # Before sunrise
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -691,11 +712,15 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_direct_sun_valid_with_sunset_offset(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_direct_sun_valid_with_sunset_offset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test direct_sun_valid respects sunset offset."""
         # Setup: time is after sunset but within offset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 18, 15, 0)  # 15 min after sunset
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 18, 15, 0
+        )  # 15 min after sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -710,13 +735,17 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is True
 
         # Now test beyond offset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 18, 45, 0)  # 45 min after sunset
+        mock_datetime.utcnow.return_value = datetime(
+            2024, 1, 1, 18, 45, 0
+        )  # 45 min after sunset
         # Now sunset_valid should be True (after offset)
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_default_position_before_sunset(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_default_position_before_sunset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test default position returns h_def before sunset."""
         # Mock current time before sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -730,8 +759,10 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.default == 75
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_default_position_after_sunset(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_default_position_after_sunset(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test default position returns sunset_pos after sunset."""
         # Mock current time after sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
@@ -806,7 +837,9 @@ class TestAdaptiveVerticalCover:
         assert percentage == 25
 
     @pytest.mark.unit
-    def test_calculate_percentage_with_different_window_height(self, vertical_cover_instance):
+    def test_calculate_percentage_with_different_window_height(
+        self, vertical_cover_instance
+    ):
         """Test percentage with different window height."""
         vertical_cover_instance.h_win = 3.0
         percentage = vertical_cover_instance.calculate_percentage()
@@ -814,7 +847,9 @@ class TestAdaptiveVerticalCover:
         assert percentage == 17
 
     @pytest.mark.unit
-    def test_calculate_percentage_with_different_distance(self, vertical_cover_instance):
+    def test_calculate_percentage_with_different_distance(
+        self, vertical_cover_instance
+    ):
         """Test percentage with different distance."""
         vertical_cover_instance.distance = 1.0
         percentage = vertical_cover_instance.calculate_percentage()
@@ -862,7 +897,9 @@ class TestAdaptiveHorizontalCover:
         assert 0 <= percentage <= 200  # Can exceed 100% in some cases
 
     @pytest.mark.unit
-    def test_calculate_percentage_with_different_awning_length(self, horizontal_cover_instance):
+    def test_calculate_percentage_with_different_awning_length(
+        self, horizontal_cover_instance
+    ):
         """Test percentage with different awning length."""
         horizontal_cover_instance.awn_length = 3.0
         percentage = horizontal_cover_instance.calculate_percentage()
@@ -977,7 +1014,7 @@ class TestNormalCoverState:
     """Test NormalCoverState logic."""
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_get_state_sun_valid(self, mock_datetime, vertical_cover_instance):
         """Test state when sun is valid - uses calculated position."""
         # Setup mocks for sunset_valid check
@@ -995,7 +1032,7 @@ class TestNormalCoverState:
         assert state == 25
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_get_state_sun_invalid(self, mock_datetime, vertical_cover_instance):
         """Test state when sun is invalid - uses default position."""
         # Make sun invalid by putting it outside FOV
@@ -1014,7 +1051,7 @@ class TestNormalCoverState:
         assert state == 50
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_get_state_after_sunset(self, mock_datetime, vertical_cover_instance):
         """Test state after sunset uses sunset_pos."""
         # Set time after sunset
@@ -1032,7 +1069,7 @@ class TestNormalCoverState:
         assert state == 0
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_max_position_clamping(self, mock_datetime, vertical_cover_instance):
         """Test max position clamping."""
         # Setup for valid sun
@@ -1054,7 +1091,7 @@ class TestNormalCoverState:
         assert state == 20
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_min_position_clamping(self, mock_datetime, vertical_cover_instance):
         """Test min position clamping."""
         # Setup for valid sun
@@ -1076,8 +1113,10 @@ class TestNormalCoverState:
         assert state == 30
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_min_position_with_bool_flag_sun_valid(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_min_position_with_bool_flag_sun_valid(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test min position with bool flag when sun is valid."""
         # Setup for valid sun
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -1097,8 +1136,10 @@ class TestNormalCoverState:
         assert state == 30
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_max_position_with_bool_flag_sun_valid(self, mock_datetime, vertical_cover_instance):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_max_position_with_bool_flag_sun_valid(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """Test max position with bool flag when sun is valid."""
         # Setup for valid sun, high elevation to get higher percentage
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -1129,7 +1170,7 @@ class TestNormalCoverState:
         # TODO: Add proper assertion when mock setup is complete
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_combined_min_max_clamping(self, mock_datetime, vertical_cover_instance):
         """Test both min and max clamping together."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -1165,25 +1206,20 @@ class TestNormalCoverStateHorizontalMinPosition:
     """
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_horizontal_saturated_vertical_returns_at_least_1(
-        self, mock_datetime, hass, mock_logger
+        self, mock_datetime, mock_logger
     ):
         """Horizontal cover with vertical saturation must return >= 1 when sun is valid."""
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
-
         # distance=3, h_win=1.5, gamma~80°, elev=20° → vertical saturates at h_win → gap=0 → 0%
-        cover = AdaptiveHorizontalCover(
-            hass=hass,
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=260.0,  # gamma ≈ 80° from win_azi=180
             sol_elev=20.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -1209,12 +1245,8 @@ class TestNormalCoverStateHorizontalMinPosition:
 
         # Setup time so sun is valid
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        cover.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        cover.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
         state_handler = NormalCoverState(cover)
         state = state_handler.get_state()
@@ -1226,32 +1258,33 @@ class TestNormalCoverStateHorizontalMinPosition:
     @pytest.mark.parametrize(
         "sol_azi,sol_elev",
         [
-            (230.0, 10.0),   # gamma=50°, low elevation
-            (245.0, 15.0),   # gamma=65°
-            (260.0, 20.0),   # gamma=80°
-            (265.0, 30.0),   # gamma=85°
-            (250.0, 45.0),   # gamma=70°, high elevation
+            (230.0, 10.0),  # gamma=50°, low elevation
+            (245.0, 15.0),  # gamma=65°
+            (260.0, 20.0),  # gamma=80°
+            (265.0, 30.0),  # gamma=85°
+            (250.0, 45.0),  # gamma=70°, high elevation
         ],
-        ids=["gamma50_elev10", "gamma65_elev15", "gamma80_elev20", "gamma85_elev30", "gamma70_elev45"],
+        ids=[
+            "gamma50_elev10",
+            "gamma65_elev15",
+            "gamma80_elev20",
+            "gamma85_elev30",
+            "gamma70_elev45",
+        ],
     )
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_horizontal_saturated_parametrized(
-        self, mock_datetime, sol_azi, sol_elev, hass, mock_logger
+        self, mock_datetime, sol_azi, sol_elev, mock_logger
     ):
         """Fix works across the full range of saturation angles."""
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
-
-        cover = AdaptiveHorizontalCover(
-            hass=hass,
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=sol_azi,
             sol_elev=sol_elev,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -1273,12 +1306,8 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        cover.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        cover.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
         state_handler = NormalCoverState(cover)
         state = state_handler.get_state()
@@ -1291,24 +1320,17 @@ class TestNormalCoverStateHorizontalMinPosition:
             )
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_sun_not_valid_returns_default_zero(
-        self, mock_datetime, hass, mock_logger
-    ):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_sun_not_valid_returns_default_zero(self, mock_datetime, mock_logger):
         """When sun is NOT valid, default=0 is returned unchanged (no clamping)."""
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
-
-        cover = AdaptiveHorizontalCover(
-            hass=hass,
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=90.0,  # Way outside FOV (gamma=90° but FOV only ±45°)
             sol_elev=20.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=MagicMock(),
             fov_left=45,
             fov_right=45,
             win_azi=180,
@@ -1330,12 +1352,8 @@ class TestNormalCoverStateHorizontalMinPosition:
         )
 
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        cover.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        cover.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
         state_handler = NormalCoverState(cover)
         state = state_handler.get_state()
@@ -1349,893 +1367,200 @@ class TestNormalCoverStateHorizontalMinPosition:
 # ============================================================================
 
 
+def _make_climate(mock_logger, **overrides):
+    """Build a ClimateCoverData with sensible defaults and optional overrides."""
+    defaults = {
+        "logger": mock_logger,
+        "temp_low": 20.0,
+        "temp_high": 25.0,
+        "temp_switch": False,
+        "blind_type": "cover_blind",
+        "transparent_blind": False,
+        "temp_summer_outside": 22.0,
+        "outside_temperature": None,
+        "inside_temperature": None,
+        "is_presence": True,
+        "is_sunny": True,
+        "lux_below_threshold": False,
+        "irradiance_below_threshold": False,
+    }
+    defaults.update(overrides)
+    return ClimateCoverData(**defaults)
+
+
 class TestClimateCoverData:
     """Test ClimateCoverData properties."""
 
     @pytest.mark.unit
-    def test_outside_temperature_from_outside_entity(self, hass, mock_logger, mock_state):
-        """Test outside temperature reading from outside sensor."""
-        # Mock the state
-        temp_state = mock_state("sensor.outside_temp", "22.5", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=True,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        temp = climate_data.outside_temperature
-        assert temp == "22.5"
+    def test_outside_temperature_field(self, mock_logger):
+        """Test outside temperature is a simple field."""
+        climate_data = _make_climate(mock_logger, outside_temperature="22.5")
+        assert climate_data.outside_temperature == "22.5"
 
     @pytest.mark.unit
-    def test_outside_temperature_from_weather_entity(self, hass, mock_logger):
-        """Test outside temperature from weather entity."""
-        # Mock weather entity with temperature attribute
-        weather_state = MagicMock()
-        weather_state.attributes = {"temperature": 20.0}
-        hass.states.get.return_value = weather_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity="weather.home",
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        # Need to mock state_attr
-        with patch("custom_components.adaptive_cover_pro.calculation.state_attr", return_value=20.0):
-            temp = climate_data.outside_temperature
-            assert temp == 20.0
+    def test_inside_temperature_field(self, mock_logger):
+        """Test inside temperature is a simple field."""
+        climate_data = _make_climate(mock_logger, inside_temperature="23.0")
+        assert climate_data.inside_temperature == "23.0"
 
     @pytest.mark.unit
-    def test_inside_temperature_from_sensor(self, hass, mock_logger, mock_state):
-        """Test inside temperature from temp sensor."""
-        temp_state = mock_state("sensor.inside_temp", "23.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        temp = climate_data.inside_temperature
-        assert temp == "23.0"
-
-    @pytest.mark.unit
-    def test_inside_temperature_from_climate_entity(self, hass, mock_logger):
-        """Test inside temperature from climate entity."""
-        climate_state = MagicMock()
-        climate_state.attributes = {"current_temperature": 21.5}
-        hass.states.get.return_value = climate_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="climate.living_room",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        with patch("custom_components.adaptive_cover_pro.calculation.state_attr", return_value=21.5):
-            temp = climate_data.inside_temperature
-            assert temp == 21.5
-
-    @pytest.mark.unit
-    def test_get_current_temperature_outside(self, hass, mock_logger, mock_state):
+    def test_get_current_temperature_outside(self, mock_logger):
         """Test get_current_temperature with temp_switch=True (outside)."""
-        temp_state = mock_state("sensor.outside_temp", "22.5", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
+        climate_data = _make_climate(
+            mock_logger,
             temp_switch=True,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+            outside_temperature="22.5",
+            inside_temperature="21.0",
         )
-
-        temp = climate_data.get_current_temperature
-        assert temp == 22.5
+        assert climate_data.get_current_temperature == 22.5
 
     @pytest.mark.unit
-    def test_get_current_temperature_inside(self, hass, mock_logger, mock_state):
+    def test_get_current_temperature_inside(self, mock_logger):
         """Test get_current_temperature with temp_switch=False (inside)."""
-        temp_state = mock_state("sensor.inside_temp", "21.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
+        climate_data = _make_climate(
+            mock_logger,
             temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+            inside_temperature="21.0",
         )
-
-        temp = climate_data.get_current_temperature
-        assert temp == 21.0
+        assert climate_data.get_current_temperature == 21.0
 
     @pytest.mark.unit
-    def test_is_presence_device_tracker_home(self, hass, mock_logger, mock_state):
-        """Test presence detection with device_tracker at home."""
-        presence_state = mock_state("device_tracker.phone", "home", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="device_tracker.phone",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
+    def test_is_presence_true(self, mock_logger):
+        """Test is_presence when pre-read as True."""
+        climate_data = _make_climate(mock_logger, is_presence=True)
         assert climate_data.is_presence is True
 
     @pytest.mark.unit
-    def test_is_presence_device_tracker_away(self, hass, mock_logger, mock_state):
-        """Test presence detection with device_tracker away."""
-        presence_state = mock_state("device_tracker.phone", "not_home", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="device_tracker.phone",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
+    def test_is_presence_false(self, mock_logger):
+        """Test is_presence when pre-read as False."""
+        climate_data = _make_climate(mock_logger, is_presence=False)
         assert climate_data.is_presence is False
 
     @pytest.mark.unit
-    def test_is_presence_zone_occupied(self, hass, mock_logger, mock_state):
-        """Test presence detection with zone (people inside)."""
-        presence_state = mock_state("zone.home", "2", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="zone.home",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        assert climate_data.is_presence is True
-
-    @pytest.mark.unit
-    def test_is_presence_zone_empty(self, hass, mock_logger, mock_state):
-        """Test presence detection with zone (nobody inside)."""
-        presence_state = mock_state("zone.home", "0", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="zone.home",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        assert climate_data.is_presence is False
-
-    @pytest.mark.unit
-    def test_is_presence_binary_sensor_on(self, hass, mock_logger, mock_state):
-        """Test presence detection with binary_sensor on."""
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="binary_sensor.presence",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        assert climate_data.is_presence is True
-
-    @pytest.mark.unit
-    def test_is_presence_binary_sensor_off(self, hass, mock_logger, mock_state):
-        """Test presence detection with binary_sensor off."""
-        presence_state = mock_state("binary_sensor.presence", "off", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="binary_sensor.presence",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        assert climate_data.is_presence is False
-
-    @pytest.mark.unit
-    def test_is_presence_none_entity(self, hass, mock_logger):
-        """Test presence detection with no entity (defaults to True)."""
-        hass.states.get.return_value = None
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
-        assert climate_data.is_presence is True
-
-    @pytest.mark.unit
-    def test_is_winter_true(self, hass, mock_logger, mock_state):
+    def test_is_winter_true(self, mock_logger):
         """Test is_winter when temperature below threshold."""
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="18.0",
             temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
         )
-
         assert climate_data.is_winter is True
 
     @pytest.mark.unit
-    def test_is_winter_false(self, hass, mock_logger, mock_state):
+    def test_is_winter_false(self, mock_logger):
         """Test is_winter when temperature above threshold."""
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",
             temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
         )
-
         assert climate_data.is_winter is False
 
     @pytest.mark.unit
-    def test_is_summer_true(self, hass, mock_logger, mock_state):
+    def test_is_summer_true(self, mock_logger):
         """Test is_summer when temperature above threshold."""
-        # Mock both inside and outside temps
-        def mock_get_state(entity_id):
-            if entity_id == "sensor.inside_temp":
-                return mock_state(entity_id, "26.0", {})
-            return mock_state("sensor.outside_temp", "24.0", {})
-
-        hass.states.get.side_effect = mock_get_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="26.0",
+            outside_temperature="24.0",
             temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
             temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
         )
-
         assert climate_data.is_summer is True
 
     @pytest.mark.unit
-    def test_is_summer_false(self, hass, mock_logger, mock_state):
+    def test_is_summer_false(self, mock_logger):
         """Test is_summer when temperature below threshold."""
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",
             temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
         )
-
         assert climate_data.is_summer is False
 
     @pytest.mark.unit
-    def test_outside_high_true(self, hass, mock_logger, mock_state):
+    def test_outside_high_true(self, mock_logger):
         """Test outside_high when outside temp above threshold."""
-        outside_state = mock_state("sensor.outside_temp", "24.0", {})
-        hass.states.get.return_value = outside_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=True,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
+        climate_data = _make_climate(
+            mock_logger,
+            outside_temperature="24.0",
             temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
         )
-
         assert climate_data.outside_high is True
 
     @pytest.mark.unit
-    def test_is_sunny_true(self, hass, mock_logger, mock_state):
-        """Test is_sunny with sunny weather."""
-        weather_state = mock_state("weather.home", "sunny", {})
-        hass.states.get.return_value = weather_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity="weather.home",
-            weather_condition=["sunny", "partlycloudy"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
+    def test_is_sunny_true(self, mock_logger):
+        """Test is_sunny when pre-read as True."""
+        climate_data = _make_climate(mock_logger, is_sunny=True)
         assert climate_data.is_sunny is True
 
     @pytest.mark.unit
-    def test_is_sunny_false(self, hass, mock_logger, mock_state):
-        """Test is_sunny with non-sunny weather."""
-        weather_state = mock_state("weather.home", "rainy", {})
-        hass.states.get.return_value = weather_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity="weather.home",
-            weather_condition=["sunny", "partlycloudy"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
+    def test_is_sunny_false(self, mock_logger):
+        """Test is_sunny when pre-read as False."""
+        climate_data = _make_climate(mock_logger, is_sunny=False)
         assert climate_data.is_sunny is False
 
     @pytest.mark.unit
-    def test_lux_below_threshold(self, hass, mock_logger, mock_state):
+    def test_lux_below_threshold(self, mock_logger):
         """Test lux property when below threshold."""
-        lux_state = mock_state("sensor.lux", "4000", {})
-        hass.states.get.return_value = lux_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity="sensor.lux",
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=True,
-            _use_irradiance=False,
-        )
-
+        climate_data = _make_climate(mock_logger, lux_below_threshold=True)
         assert climate_data.lux is True
 
     @pytest.mark.unit
-    def test_lux_above_threshold(self, hass, mock_logger, mock_state):
+    def test_lux_above_threshold(self, mock_logger):
         """Test lux property when above threshold."""
-        lux_state = mock_state("sensor.lux", "6000", {})
-        hass.states.get.return_value = lux_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity="sensor.lux",
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=True,
-            _use_irradiance=False,
-        )
-
+        climate_data = _make_climate(mock_logger, lux_below_threshold=False)
         assert climate_data.lux is False
 
     @pytest.mark.unit
-    def test_lux_disabled(self, hass, mock_logger):
-        """Test lux property when disabled."""
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity="sensor.lux",
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
+    def test_lux_disabled(self, mock_logger):
+        """Test lux property when disabled (default False)."""
+        climate_data = _make_climate(mock_logger, lux_below_threshold=False)
         assert climate_data.lux is False
 
     @pytest.mark.unit
-    def test_irradiance_below_threshold(self, hass, mock_logger, mock_state):
+    def test_irradiance_below_threshold(self, mock_logger):
         """Test irradiance property when below threshold."""
-        irrad_state = mock_state("sensor.solar", "250", {})
-        hass.states.get.return_value = irrad_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity="sensor.solar",
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=True,
-        )
-
+        climate_data = _make_climate(mock_logger, irradiance_below_threshold=True)
         assert climate_data.irradiance is True
 
     @pytest.mark.unit
-    def test_irradiance_disabled(self, hass, mock_logger):
-        """Test irradiance property when disabled."""
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity="sensor.solar",
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
-
+    def test_irradiance_disabled(self, mock_logger):
+        """Test irradiance property when disabled (default False)."""
+        climate_data = _make_climate(mock_logger, irradiance_below_threshold=False)
         assert climate_data.irradiance is False
 
     @pytest.mark.unit
-    def test_lux_with_none_value(self, hass, mock_logger):
-        """Test lux property returns False when sensor value is None (unavailable)."""
-        # Mock unavailable sensor (returns None)
-        hass.states.get.return_value = None
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity="sensor.lux",
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=True,
-            _use_irradiance=False,
-        )
-
-        # Should return False (condition not met) when sensor unavailable
+    def test_lux_with_none_value(self, mock_logger):
+        """Test lux property returns False when not below threshold."""
+        climate_data = _make_climate(mock_logger, lux_below_threshold=False)
         assert climate_data.lux is False
 
     @pytest.mark.unit
-    def test_irradiance_with_none_value(self, hass, mock_logger):
-        """Test irradiance property returns False when sensor value is None (unavailable)."""
-        # Mock unavailable sensor (returns None)
-        hass.states.get.return_value = None
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity="sensor.solar",
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=True,
-        )
-
-        # Should return False (condition not met) when sensor unavailable
+    def test_irradiance_with_none_value(self, mock_logger):
+        """Test irradiance property returns False when not below threshold."""
+        climate_data = _make_climate(mock_logger, irradiance_below_threshold=False)
         assert climate_data.irradiance is False
 
     @pytest.mark.unit
-    def test_get_current_temperature_with_none_values(self, hass, mock_logger):
-        """Test get_current_temperature returns None when all sensors unavailable."""
-        # Mock unavailable sensors (returns None)
-        hass.states.get.return_value = None
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
+    def test_get_current_temperature_with_none_values(self, mock_logger):
+        """Test get_current_temperature returns None when all temps unavailable."""
+        climate_data = _make_climate(
+            mock_logger,
             temp_switch=True,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+            outside_temperature=None,
+            inside_temperature=None,
         )
-
-        # Should return None when no temperature available
-        temp = climate_data.get_current_temperature
-        assert temp is None
+        assert climate_data.get_current_temperature is None
 
     @pytest.mark.unit
-    def test_outside_high_with_none_value(self, hass, mock_logger):
+    def test_outside_high_with_none_value(self, mock_logger):
         """Test outside_high returns True (default) when outside temp is None."""
-        # Mock unavailable sensor (returns None)
-        hass.states.get.return_value = None
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
+        climate_data = _make_climate(
+            mock_logger,
+            outside_temperature=None,
             temp_summer_outside=30.0,
-            _use_lux=False,
-            _use_irradiance=False,
         )
-
-        # Should return True (default behavior) when sensor unavailable
         assert climate_data.outside_high is True
 
 
@@ -2248,10 +1573,11 @@ class TestClimateCoverState:
     """Test ClimateCoverState logic."""
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_type_cover_with_presence(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_type_cover_with_presence(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test normal_type_cover delegates to normal_with_presence."""
-        # Setup mocks
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
@@ -2260,39 +1586,17 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-        hass.states.get.return_value = presence_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity="binary_sensor.presence",
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
+        climate_data = _make_climate(mock_logger, is_presence=True)
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.normal_type_cover()
-        # With presence, should use normal_with_presence logic
         assert isinstance(result, (int, np.integer))
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_type_cover_without_presence(self, mock_datetime, vertical_cover_instance, hass, mock_logger):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_type_cover_without_presence(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test normal_type_cover delegates to normal_without_presence."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2302,37 +1606,17 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        hass.states.get.return_value = None  # No presence entity
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
+        climate_data = _make_climate(mock_logger, is_presence=False)
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.normal_type_cover()
         assert isinstance(result, (int, np.integer))
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_sun_valid(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_winter_sun_valid(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test winter strategy with presence: open fully when cold and not sunny."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2342,48 +1626,23 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})  # Below temp_low (20)
-        weather_state = mock_state("weather.home", "cloudy", {})  # Not sunny
-
-        def mock_get_state(entity_id):
-            if "temp" in entity_id:
-                return temp_state
-            if "weather" in entity_id:
-                return weather_state
-            return None
-
-        hass.states.get.side_effect = mock_get_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,  # No presence, defaults to True
-            weather_entity="weather.home",
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="18.0",  # Below temp_low (20)
+            is_sunny=False,  # Cloudy
+            is_presence=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.normal_with_presence()
-        # Winter + sun valid + not sunny weather → 100 (fully open)
+        # Winter + sun valid → 100 (fully open)
         assert result == 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_not_sunny(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_not_sunny(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test not sunny weather returns default."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2393,38 +1652,11 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "21.0", {})
-        weather_state = mock_state("weather.home", "rainy", {})
-
-        def mock_get_state(entity_id):
-            if "temp" in entity_id:
-                return temp_state
-            if "weather" in entity_id:
-                return weather_state
-            return None
-
-        hass.states.get.side_effect = mock_get_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity="weather.home",
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="21.0",
+            is_sunny=False,
+            is_presence=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2433,8 +1665,10 @@ class TestClimateCoverState:
         assert result == vertical_cover_instance.h_def
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_summer_transparent(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_summer_transparent(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test summer with transparent blind returns 0."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2444,35 +1678,15 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        def mock_get_state(entity_id):
-            if "inside" in entity_id:
-                return mock_state(entity_id, "26.0", {})  # Above temp_high (25)
-            if "outside" in entity_id:
-                return mock_state(entity_id, "28.0", {})  # Above threshold
-            return None
-
-        hass.states.get.side_effect = mock_get_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="26.0",
+            outside_temperature="28.0",
             temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=True,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
             temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+            transparent_blind=True,
+            is_presence=True,
+            is_sunny=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2481,8 +1695,10 @@ class TestClimateCoverState:
         assert result == 0
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_intermediate(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_intermediate(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test intermediate conditions use calculated position."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2492,38 +1708,11 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})  # Between temp_low and temp_high
-        weather_state = mock_state("weather.home", "sunny", {})
-
-        def mock_get_state(entity_id):
-            if "temp" in entity_id:
-                return temp_state
-            if "weather" in entity_id:
-                return weather_state
-            return None
-
-        hass.states.get.side_effect = mock_get_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity="weather.home",
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",  # Between temp_low and temp_high
+            is_sunny=True,
+            is_presence=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2532,8 +1721,10 @@ class TestClimateCoverState:
         assert result == 25  # Calculated position for this config
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_without_presence_summer(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_without_presence_summer(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test summer without presence closes blind."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2543,35 +1734,13 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        def mock_get_state(entity_id):
-            if "inside" in entity_id:
-                return mock_state(entity_id, "27.0", {})
-            if "outside" in entity_id:
-                return mock_state(entity_id, "30.0", {})
-            return None
-
-        hass.states.get.side_effect = mock_get_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="27.0",
+            outside_temperature="30.0",
             temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity="sensor.outside_temp",
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
             temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+            is_presence=False,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2580,8 +1749,10 @@ class TestClimateCoverState:
         assert result == 0
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_without_presence_winter(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_without_presence_winter(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test winter without presence opens blind."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2591,29 +1762,10 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="18.0",
+            is_presence=False,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2622,8 +1774,10 @@ class TestClimateCoverState:
         assert result == 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_without_presence_default(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_without_presence_default(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test default path without presence."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2636,29 +1790,10 @@ class TestClimateCoverState:
         # Sun not valid (outside FOV)
         vertical_cover_instance.sol_azi = 90.0
 
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",
+            is_presence=False,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2667,72 +1802,32 @@ class TestClimateCoverState:
         assert result == vertical_cover_instance.h_def
 
     @pytest.mark.unit
-    def test_tilt_state_mode1(self, tilt_cover_instance, hass, mock_logger):
-        """Test tilt_state with mode1 (90°)."""
+    def test_tilt_state_mode1(self, tilt_cover_instance, mock_logger):
+        """Test tilt_state with mode1 (90 degrees)."""
         tilt_cover_instance.mode = "mode1"
 
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_tilt",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
+        climate_data = _make_climate(mock_logger, blind_type="cover_tilt")
 
         state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
         result = state_handler.tilt_state()
-        # Should return percentage based on 90° mode
         assert 0 <= result <= 100
 
     @pytest.mark.unit
-    def test_tilt_state_mode2(self, tilt_cover_instance, hass, mock_logger):
-        """Test tilt_state with mode2 (180°)."""
+    def test_tilt_state_mode2(self, tilt_cover_instance, mock_logger):
+        """Test tilt_state with mode2 (180 degrees)."""
         tilt_cover_instance.mode = "mode2"
 
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_tilt",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
+        climate_data = _make_climate(mock_logger, blind_type="cover_tilt")
 
         state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
         result = state_handler.tilt_state()
-        # Should return percentage based on 180° mode
         assert 0 <= result <= 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_blind_type(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_get_state_blind_type(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test get_state routes to normal_type_cover for blind."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2742,29 +1837,11 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",
+            is_sunny=True,
+            is_presence=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -2772,10 +1849,9 @@ class TestClimateCoverState:
         assert 0 <= result <= 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_tilt_type(self, mock_datetime, tilt_cover_instance, hass, mock_logger):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_get_state_tilt_type(self, mock_datetime, tilt_cover_instance, mock_logger):
         """Test get_state routes to tilt_state for tilt cover."""
-        # Mock datetime for sunset_valid check
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
@@ -2784,40 +1860,21 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity=None,
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_tilt",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
-        )
+        climate_data = _make_climate(mock_logger, blind_type="cover_tilt")
 
         state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
         try:
             result = state_handler.get_state()
-            # Result can raise ValueError if round(NaN) is called
             assert 0 <= result <= 100
         except ValueError:
             # ValueError from round(NaN) is expected for invalid tilt math
             pass
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_max_position_clamping(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_get_state_max_position_clamping(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test max position clamping in climate state."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2829,39 +1886,22 @@ class TestClimateCoverState:
         vertical_cover_instance.max_pos = 20
         vertical_cover_instance.max_pos_bool = False
 
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",
+            is_sunny=True,
+            is_presence=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.get_state()
-        # Should be clamped to max_pos
         assert result == 20
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_get_state_min_position_clamping(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_get_state_min_position_clamping(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test min position clamping in climate state."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2873,39 +1913,22 @@ class TestClimateCoverState:
         vertical_cover_instance.min_pos = 30
         vertical_cover_instance.min_pos_bool = False
 
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})
-        hass.states.get.return_value = temp_state
-
-        climate_data = ClimateCoverData(
-            hass=hass,
-            logger=mock_logger,
-            temp_entity="sensor.inside_temp",
-            temp_low=20.0,
-            temp_high=25.0,
-            presence_entity=None,
-            weather_entity=None,
-            weather_condition=["sunny"],
-            outside_entity=None,
-            temp_switch=False,
-            blind_type="cover_blind",
-            transparent_blind=False,
-            lux_entity=None,
-            irradiance_entity=None,
-            lux_threshold=5000,
-            irradiance_threshold=300,
-            temp_summer_outside=22.0,
-            _use_lux=False,
-            _use_irradiance=False,
+        climate_data = _make_climate(
+            mock_logger,
+            inside_temperature="22.0",
+            is_sunny=True,
+            is_presence=True,
         )
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.get_state()
-        # Should be clamped to min_pos
         assert result == 30
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_sunny_no_sensors(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_winter_sunny_no_sensors(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test winter mode on sunny day WITHOUT lux/irradiance sensors.
 
         This is the bug scenario from issue #4:
@@ -2915,7 +1938,6 @@ class TestClimateCoverState:
         - NO lux/irradiance sensors configured
 
         Expected: Should return 100 for solar heating
-        Bug: Previously returned calculated position (4-5%)
         """
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -2925,61 +1947,30 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        # Setup winter conditions: cold indoor temp, sunny weather, sun valid
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})  # Below temp_low (20)
-        weather_state = mock_state("weather.home", "sunny", {})  # Sunny weather
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-
-        def state_get(entity_id):
-            if entity_id == "sensor.inside_temp":
-                return temp_state
-            if entity_id == "weather.home":
-                return weather_state
-            if entity_id == "binary_sensor.presence":
-                return presence_state
-            return None
-
-        hass.states.get.side_effect = state_get
-
-        # Mock sun as valid (in front of window)
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
-            climate_data = ClimateCoverData(
-                hass=hass,
-                logger=mock_logger,
-                temp_entity="sensor.inside_temp",
-                temp_low=20.0,  # Indoor temp is below this (winter)
-                temp_high=25.0,
-                presence_entity="binary_sensor.presence",
-                weather_entity="weather.home",
-                weather_condition=["sunny", "windy", "partlycloudy"],
-                outside_entity=None,
-                temp_switch=False,
-                blind_type="cover_blind",
-                transparent_blind=False,
-                lux_entity=None,  # NO lux sensor
-                irradiance_entity=None,  # NO irradiance sensor
-                lux_threshold=5000,
-                irradiance_threshold=300,
-                temp_summer_outside=22.0,
-                _use_lux=False,
-                _use_irradiance=False,
+            climate_data = _make_climate(
+                mock_logger,
+                inside_temperature="18.0",  # Below temp_low (20) = winter
+                is_sunny=True,
+                is_presence=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
             result = state_handler.normal_with_presence()
-
-            # Should return 100 for solar heating (not calculated position)
             assert result == 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_cloudy(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
-        """Test winter mode on cloudy day.
-
-        This should still work as before - winter mode on cloudy day.
-        """
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_winter_cloudy(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Test winter mode on cloudy day."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
@@ -2988,54 +1979,27 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})  # Below temp_low (20)
-        weather_state = mock_state("weather.home", "cloudy", {})  # Not sunny
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-
-        def state_get(entity_id):
-            if entity_id == "sensor.inside_temp":
-                return temp_state
-            if entity_id == "weather.home":
-                return weather_state
-            if entity_id == "binary_sensor.presence":
-                return presence_state
-            return None
-
-        hass.states.get.side_effect = state_get
-
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
-            climate_data = ClimateCoverData(
-                hass=hass,
-                logger=mock_logger,
-                temp_entity="sensor.inside_temp",
-                temp_low=20.0,
-                temp_high=25.0,
-                presence_entity="binary_sensor.presence",
-                weather_entity="weather.home",
-                weather_condition=["sunny", "windy", "partlycloudy"],
-                outside_entity=None,
-                temp_switch=False,
-                blind_type="cover_blind",
-                transparent_blind=False,
-                lux_entity=None,
-                irradiance_entity=None,
-                lux_threshold=5000,
-                irradiance_threshold=300,
-                temp_summer_outside=22.0,
-                _use_lux=False,
-                _use_irradiance=False,
+            climate_data = _make_climate(
+                mock_logger,
+                inside_temperature="18.0",  # Below temp_low (20) = winter
+                is_sunny=False,  # Cloudy
+                is_presence=True,
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
             result = state_handler.normal_with_presence()
-
             assert result == 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_winter_low_lux(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_winter_low_lux(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test winter mode with lux sensor showing low light."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -3045,55 +2009,29 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})  # Below temp_low (20)
-        lux_state = mock_state("sensor.lux", "2000", {})  # Below threshold (5000)
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-
-        def state_get(entity_id):
-            if entity_id == "sensor.inside_temp":
-                return temp_state
-            if entity_id == "sensor.lux":
-                return lux_state
-            if entity_id == "binary_sensor.presence":
-                return presence_state
-            return None
-
-        hass.states.get.side_effect = state_get
-
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
-            climate_data = ClimateCoverData(
-                hass=hass,
-                logger=mock_logger,
-                temp_entity="sensor.inside_temp",
-                temp_low=20.0,
-                temp_high=25.0,
-                presence_entity="binary_sensor.presence",
-                weather_entity=None,
-                weather_condition=["sunny"],
-                outside_entity=None,
-                temp_switch=False,
-                blind_type="cover_blind",
-                transparent_blind=False,
-                lux_entity="sensor.lux",
-                irradiance_entity=None,
-                lux_threshold=5000,  # Lux is below this
-                irradiance_threshold=300,
-                temp_summer_outside=22.0,
-                _use_lux=True,
-                _use_irradiance=False,
+            climate_data = _make_climate(
+                mock_logger,
+                inside_temperature="18.0",  # Below temp_low (20) = winter
+                is_sunny=True,
+                is_presence=True,
+                lux_below_threshold=True,  # Low lux
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
             result = state_handler.normal_with_presence()
-
             # Winter mode should still return 100 even with low lux
             assert result == 100
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_normal_with_presence_normal_sunny_day(self, mock_datetime, vertical_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_normal_with_presence_normal_sunny_day(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
         """Test normal operation on mild sunny day.
 
         Not winter, not summer, sunny weather.
@@ -3107,61 +2045,30 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        # Setup mild conditions: normal temp, sunny weather
-        temp_state = mock_state("sensor.inside_temp", "22.0", {})  # Between temp_low and temp_high
-        weather_state = mock_state("weather.home", "sunny", {})
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-
-        def state_get(entity_id):
-            if entity_id == "sensor.inside_temp":
-                return temp_state
-            if entity_id == "weather.home":
-                return weather_state
-            if entity_id == "binary_sensor.presence":
-                return presence_state
-            return None
-
-        hass.states.get.side_effect = state_get
-
-        with patch.object(type(vertical_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
 
-            climate_data = ClimateCoverData(
-                hass=hass,
-                logger=mock_logger,
-                temp_entity="sensor.inside_temp",
-                temp_low=20.0,  # Indoor temp is above this (not winter)
-                temp_high=25.0,  # Indoor temp is below this (not summer)
-                presence_entity="binary_sensor.presence",
-                weather_entity="weather.home",
-                weather_condition=["sunny", "windy", "partlycloudy"],
-                outside_entity=None,
-                temp_switch=False,
-                blind_type="cover_blind",
-                transparent_blind=False,
-                lux_entity=None,
-                irradiance_entity=None,
-                lux_threshold=5000,
-                irradiance_threshold=300,
-                temp_summer_outside=22.0,
-                _use_lux=False,
-                _use_irradiance=False,
+            climate_data = _make_climate(
+                mock_logger,
+                inside_temperature="22.0",  # Between temp_low and temp_high
+                is_sunny=True,
+                is_presence=True,
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
             result = state_handler.normal_with_presence()
 
-            # Should use calculated position (from super().get_state())
-            # Not 100 (winter), not default, not 0 (summer)
-            # The actual value depends on the mock cover state calculation
             assert isinstance(result, (int, np.integer))
-            # Verify it's not using the climate overrides
             assert result != 100  # Not winter mode
             assert result != vertical_cover_instance.default  # Not default
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
-    def test_tilt_with_presence_winter_sunny(self, mock_datetime, tilt_cover_instance, hass, mock_logger, mock_state):
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_tilt_with_presence_winter_sunny(
+        self, mock_datetime, tilt_cover_instance, mock_logger
+    ):
         """Test tilt winter mode on sunny day."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
@@ -3171,60 +2078,31 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        # Setup winter conditions
-        temp_state = mock_state("sensor.inside_temp", "18.0", {})  # Below temp_low (20)
-        weather_state = mock_state("weather.home", "sunny", {})
-        presence_state = mock_state("binary_sensor.presence", "on", {})
-
-        def state_get(entity_id):
-            if entity_id == "sensor.inside_temp":
-                return temp_state
-            if entity_id == "weather.home":
-                return weather_state
-            if entity_id == "binary_sensor.presence":
-                return presence_state
-            return None
-
-        hass.states.get.side_effect = state_get
-
-        with patch.object(type(tilt_cover_instance), 'valid', new_callable=PropertyMock) as mock_valid:
+        with patch.object(
+            type(tilt_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
             mock_valid.return_value = True
-            tilt_cover_instance.tilt_degrees = 90  # Venetian blinds
+            tilt_cover_instance.tilt_degrees = 90
 
-            climate_data = ClimateCoverData(
-                hass=hass,
-                logger=mock_logger,
-                temp_entity="sensor.inside_temp",
-                temp_low=20.0,
-                temp_high=25.0,
-                presence_entity="binary_sensor.presence",
-                weather_entity="weather.home",
-                weather_condition=["sunny", "windy", "partlycloudy"],
-                outside_entity=None,
-                temp_switch=False,
+            climate_data = _make_climate(
+                mock_logger,
+                inside_temperature="18.0",  # Below temp_low (20) = winter
                 blind_type="cover_tilt",
-                transparent_blind=False,
-                lux_entity=None,
-                irradiance_entity=None,
-                lux_threshold=5000,
-                irradiance_threshold=300,
-                temp_summer_outside=22.0,
-                _use_lux=False,
-                _use_irradiance=False,
+                is_sunny=True,
+                is_presence=True,
             )
 
             state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
 
-            # Mock the parent get_state to return a known value
-            with patch.object(NormalCoverState, 'get_state', return_value=50) as mock_get_state:
+            with patch.object(
+                NormalCoverState, "get_state", return_value=50
+            ) as mock_get_state:
                 result = state_handler.tilt_with_presence(90)
 
-                # Winter mode for tilt should call super().get_state() (calculated position)
                 mock_get_state.assert_called_once()
-                # Result should be the calculated value (50), not default 80°
                 default_80_degrees = 80 / 90 * 100  # ~88.9%
                 assert result != pytest.approx(default_80_degrees, abs=1)
-                assert result == 50  # The mocked calculated value
+                assert result == 50
 
 
 @pytest.mark.unit
@@ -3234,7 +2112,9 @@ def test_tilt_data_cm_to_meter_conversion():
     This is a critical test for Issue #5 - ensures the UI input in cm
     is correctly converted to meters for calculation formulas.
     """
-    from custom_components.adaptive_cover_pro.services.configuration_service import ConfigurationService
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
 
     # Create a mock configuration service instance
     config_entry = MagicMock()
@@ -3254,18 +2134,18 @@ def test_tilt_data_cm_to_meter_conversion():
 
     # Use the actual get_tilt_data method
     options = {
-        "slat_distance": 2.0,   # 2.0 cm (user input)
-        "slat_depth": 2.5,      # 2.5 cm (user input)
+        "slat_distance": 2.0,  # 2.0 cm (user input)
+        "slat_depth": 2.5,  # 2.5 cm (user input)
         "tilt_mode": "mode2",
     }
 
     # Call the actual method
     result = config_service.get_tilt_data(options)
 
-    # Should convert cm to meters
-    assert result[0] == pytest.approx(0.02, abs=0.0001)    # 2.0 cm -> 0.02 m (distance)
-    assert result[1] == pytest.approx(0.025, abs=0.0001)   # 2.5 cm -> 0.025 m (depth)
-    assert result[2] == "mode2"
+    # Should convert cm to meters — result is a TiltConfig dataclass
+    assert result.slat_distance == pytest.approx(0.02, abs=0.0001)  # 2.0 cm -> 0.02 m
+    assert result.depth == pytest.approx(0.025, abs=0.0001)  # 2.5 cm -> 0.025 m
+    assert result.mode == "mode2"
 
 
 @pytest.mark.unit
@@ -3276,7 +2156,9 @@ def test_tilt_data_warns_on_small_values(caplog):
     instead of centimeters.
     """
     import logging
-    from custom_components.adaptive_cover_pro.services.configuration_service import ConfigurationService
+    from custom_components.adaptive_cover_pro.services.configuration_service import (
+        ConfigurationService,
+    )
 
     # Create a mock configuration service instance
     config_entry = MagicMock()
@@ -3296,18 +2178,20 @@ def test_tilt_data_warns_on_small_values(caplog):
 
     # Use very small values (likely meters entered by mistake)
     options = {
-        "slat_distance": 0.02,   # 0.02 cm (suspiciously small - likely meant 0.02m)
-        "slat_depth": 0.025,     # 0.025 cm (suspiciously small - likely meant 0.025m)
+        "slat_distance": 0.02,  # 0.02 cm (suspiciously small - likely meant 0.02m)
+        "slat_depth": 0.025,  # 0.025 cm (suspiciously small - likely meant 0.025m)
         "tilt_mode": "mode2",
     }
 
     with caplog.at_level(logging.WARNING):
         result = config_service.get_tilt_data(options)
 
-    # Should still convert (0.02 cm -> 0.0002 m) but log warning
-    assert result[0] == pytest.approx(0.0002, abs=0.00001)
-    assert result[1] == pytest.approx(0.00025, abs=0.00001)
+    # Should still convert (0.02 cm -> 0.0002 m) but log warning — result is TiltConfig
+    assert result.slat_distance == pytest.approx(0.0002, abs=0.00001)
+    assert result.depth == pytest.approx(0.00025, abs=0.00001)
 
     # Should have logged a warning
-    assert any("slat dimensions are very small" in record.message for record in caplog.records)
+    assert any(
+        "slat dimensions are very small" in record.message for record in caplog.records
+    )
     assert any("CENTIMETERS" in record.message for record in caplog.records)

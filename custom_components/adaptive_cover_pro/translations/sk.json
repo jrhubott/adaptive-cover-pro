@@ -22,8 +22,7 @@
           "manual_threshold": "Prah ručného ovládania",
           "manual_ignore_intermediate": "Ignorovať medzipolohy pri ručnom ovládaní (otváranie a zatváranie)",
           "return_sunset": "Vždy upravte polohu na predvolenú hodnotu západu slnka v čase ukončenia; Užitočné, ak je čas ukončenia pred skutočným západom slnka",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Pred nastavením polohy krytu je potrebná minimálna zmena polohy",
@@ -34,8 +33,7 @@
           "manual_override_reset": "Možnosť resetovania trvania manuálneho ovládania po každom manuálnom nastavení; ak je vypnutá, trvanie platí len pre prvé manuálne nastavenie",
           "end_time": "Čas ukončenia každého dňa; po tomto čase zostane kryt nehybný",
           "end_entity": "Entita predstavujúca stav času ukončenia, ktorý má prednosť pred pevným časom ukončenia nastaveným vyššie. Užitočné na automatizáciu času ukončenia s entitou",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
       "vertical": {
@@ -110,7 +108,9 @@
         "title": "Nastavenia klímy"
       },
       "weather": {
-        "data": { "weather_state": "Poveternostné podmienky" },
+        "data": {
+          "weather_state": "Poveternostné podmienky"
+        },
         "data_description": {
           "weather_state": "Vyberte poveternostné podmienky, ktoré umožňujú automatické ovládanie okien."
         },
@@ -259,8 +259,7 @@
           "manual_threshold": "Prah ručného ovládania",
           "manual_ignore_intermediate": "Ignorovať medzipolohy pri ručnom ovládaní (otváranie a zatváranie)",
           "return_sunset": "Vždy upravte polohu na predvolenú hodnotu západu slnka v čase ukončenia; Užitočné, ak je čas ukončenia pred skutočným západom slnka",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Pred nastavením polohy krytu je potrebná minimálna zmena polohy",
@@ -345,7 +344,9 @@
         "title": "Nastavenia klímy"
       },
       "weather": {
-        "data": { "weather_state": "Poveternostné podmienky" },
+        "data": {
+          "weather_state": "Poveternostné podmienky"
+        },
         "data_description": {
           "weather_state": "Vyberte poveternostné podmienky, ktoré umožňujú automatické ovládanie okien."
         },

@@ -128,7 +128,9 @@ class AdaptiveCoverDiagnosticSensorBase(AdaptiveCoverSensorBase):
         state_class=None,
     ) -> None:
         """Initialize diagnostic sensor."""
-        super().__init__(entry_id, hass, config_entry, coordinator, unique_id_suffix, icon)
+        super().__init__(
+            entry_id, hass, config_entry, coordinator, unique_id_suffix, icon
+        )
         if unit:
             self._attr_native_unit_of_measurement = unit
         if state_class:

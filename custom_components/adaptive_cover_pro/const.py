@@ -79,7 +79,6 @@ CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"
 CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
 CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
-CONF_ENABLE_DIAGNOSTICS = "enable_diagnostics"
 
 # Position verification constants (fixed values, not configurable)
 POSITION_CHECK_INTERVAL_MINUTES = 1  # Fixed interval for position verification
@@ -88,7 +87,9 @@ MAX_POSITION_RETRIES = 3  # Maximum retry attempts before giving up
 
 # Manual override detection grace period (fixed values, not configurable)
 COMMAND_GRACE_PERIOD_SECONDS = 5.0  # Time to ignore position changes after command
-STARTUP_GRACE_PERIOD_SECONDS = 30.0  # Time to disable manual override detection on startup
+STARTUP_GRACE_PERIOD_SECONDS = (
+    30.0  # Time to disable manual override detection on startup
+)
 
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection
@@ -194,19 +195,27 @@ class ControlStatus:
 # Geometric accuracy constants (used in calculation.py for safety margins and edge cases)
 # Edge case thresholds for extreme sun positions
 EDGE_CASE_LOW_ELEVATION = 2.0  # degrees - minimum elevation for normal calculation
-EDGE_CASE_HIGH_ELEVATION = 88.0  # degrees - maximum elevation before using simplified calculation
+EDGE_CASE_HIGH_ELEVATION = (
+    88.0  # degrees - maximum elevation before using simplified calculation
+)
 EDGE_CASE_EXTREME_GAMMA = 85  # degrees - maximum horizontal angle deviation
 
 # Safety margin thresholds and multipliers
 SAFETY_MARGIN_GAMMA_THRESHOLD = 45  # degrees - angle where gamma-based margins start
 SAFETY_MARGIN_GAMMA_MAX = 0.2  # 20% increase at extreme horizontal angles (>45°)
-SAFETY_MARGIN_LOW_ELEV_THRESHOLD = 10  # degrees - elevation where low-angle margins apply
+SAFETY_MARGIN_LOW_ELEV_THRESHOLD = (
+    10  # degrees - elevation where low-angle margins apply
+)
 SAFETY_MARGIN_LOW_ELEV_MAX = 0.15  # 15% increase at low sun elevation (<10°)
-SAFETY_MARGIN_HIGH_ELEV_THRESHOLD = 75  # degrees - elevation where high-angle margins apply
+SAFETY_MARGIN_HIGH_ELEV_THRESHOLD = (
+    75  # degrees - elevation where high-angle margins apply
+)
 SAFETY_MARGIN_HIGH_ELEV_MAX = 0.1  # 10% increase at high sun elevation (>75°)
 
 # Window depth calculation threshold
-WINDOW_DEPTH_GAMMA_THRESHOLD = 10  # degrees - minimum gamma for window depth contribution
+WINDOW_DEPTH_GAMMA_THRESHOLD = (
+    10  # degrees - minimum gamma for window depth contribution
+)
 
 # Climate mode constants
 CLIMATE_SUMMER_TILT_ANGLE = 45  # degrees - tilt angle for summer cooling strategy

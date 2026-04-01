@@ -23,6 +23,7 @@ from .const import (
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
+from .services import async_setup_services, async_unload_services
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
 CONF_SUN = ["sun.sun"]
@@ -41,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Adaptive Cover Pro from a config entry."""
 
     hass.data.setdefault(DOMAIN, {})
+    await async_setup_services(hass)
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
     _temp_entity = entry.options.get(CONF_TEMP_ENTITY)
@@ -131,6 +133,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
+        await async_unload_services(hass)
 
     return unload_ok
 

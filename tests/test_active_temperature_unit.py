@@ -1,13 +1,14 @@
-"""Regression test for issue #48: active_temperature sensor must have a valid unit."""
+"""Regression test for issue #48: climate status sensor must expose temperature with correct unit."""
 
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature
 
 from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE
-from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverAdvancedDiagnosticSensor
+from custom_components.adaptive_cover_pro.sensor import (
+    AdaptiveCoverClimateStatusSensor,
+)
 
 
 @pytest.fixture
@@ -30,49 +31,83 @@ def mock_coordinator(hass):
 
 
 @pytest.mark.unit
-def test_active_temperature_sensor_has_valid_unit(hass, mock_config_entry, mock_coordinator):
-    """active_temperature sensor must not have None as unit when device_class is TEMPERATURE.
+def test_climate_status_sensor_exposes_temperature_unit(
+    hass, mock_config_entry, mock_coordinator
+):
+    """Climate status sensor must expose temperature with the correct HA unit in attributes.
 
     Regression test for GitHub issue #48.
     """
-    sensor = AdaptiveCoverAdvancedDiagnosticSensor(
+    sensor = AdaptiveCoverClimateStatusSensor(
         mock_config_entry.entry_id,
         hass,
         mock_config_entry,
         "Test Cover",
         mock_coordinator,
-        "Active Temperature",
-        "active_temperature",
-        hass.config.units.temperature_unit,
-        "mdi:thermometer",
-        SensorStateClass.MEASUREMENT,
-        SensorDeviceClass.TEMPERATURE,
+        hass,
     )
 
-    assert sensor._attr_native_unit_of_measurement is not None
-    assert sensor._attr_native_unit_of_measurement in (
+    assert sensor._temp_unit is not None
+    assert sensor._temp_unit in (
         UnitOfTemperature.CELSIUS,
         UnitOfTemperature.FAHRENHEIT,
         UnitOfTemperature.KELVIN,
     )
-    assert sensor._attr_device_class == SensorDeviceClass.TEMPERATURE
 
 
 @pytest.mark.unit
-def test_active_temperature_unit_matches_hass_config(hass, mock_config_entry, mock_coordinator):
-    """active_temperature sensor unit must match hass.config.units.temperature_unit."""
-    sensor = AdaptiveCoverAdvancedDiagnosticSensor(
+def test_climate_status_temperature_unit_matches_hass_config(
+    hass, mock_config_entry, mock_coordinator
+):
+    """Climate status sensor temperature_unit attribute must match hass.config.units.temperature_unit."""
+    sensor = AdaptiveCoverClimateStatusSensor(
         mock_config_entry.entry_id,
         hass,
         mock_config_entry,
         "Test Cover",
         mock_coordinator,
-        "Active Temperature",
-        "active_temperature",
-        hass.config.units.temperature_unit,
-        "mdi:thermometer",
-        SensorStateClass.MEASUREMENT,
-        SensorDeviceClass.TEMPERATURE,
+        hass,
     )
 
-    assert sensor._attr_native_unit_of_measurement == hass.config.units.temperature_unit
+    assert sensor._temp_unit == hass.config.units.temperature_unit
+
+
+@pytest.mark.unit
+def test_climate_status_attributes_include_temperature(
+    hass, mock_config_entry, mock_coordinator
+):
+    """Climate status sensor must include active_temperature and temperature_unit in attributes."""
+    sensor = AdaptiveCoverClimateStatusSensor(
+        mock_config_entry.entry_id,
+        hass,
+        mock_config_entry,
+        "Test Cover",
+        mock_coordinator,
+        hass,
+    )
+
+    mock_coordinator.data = MagicMock()
+    mock_coordinator.data.diagnostics = {
+        "active_temperature": 22.5,
+        "temperature_details": {
+            "inside_temperature": 22.5,
+            "outside_temperature": 30.0,
+            "temp_switch": True,
+        },
+        "climate_conditions": {
+            "is_summer": True,
+            "is_winter": False,
+            "is_presence": True,
+            "is_sunny": True,
+            "lux_active": None,
+            "irradiance_active": None,
+        },
+    }
+    sensor.coordinator = mock_coordinator
+
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert "active_temperature" in attrs
+    assert attrs["active_temperature"] == 22.5
+    assert "temperature_unit" in attrs
+    assert attrs["temperature_unit"] == hass.config.units.temperature_unit

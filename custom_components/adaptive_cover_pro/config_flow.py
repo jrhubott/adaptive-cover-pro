@@ -30,7 +30,6 @@ from .const import (
     CONF_DELTA_TIME,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
-    CONF_ENABLE_DIAGNOSTICS,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
@@ -200,7 +199,7 @@ OPTIONS = vol.Schema(
                 min=0,
                 max=100,
                 step=1,
-                mode=selector.NumberSelectorMode.BOX,
+                mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="%",
             )
         ),
@@ -522,9 +521,6 @@ AUTOMATION_CONFIG = vol.Schema(
             )
         ),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_ENABLE_DIAGNOSTICS, default=False
-        ): selector.BooleanSelector(),
     }
 )
 

@@ -1,8 +1,8 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-03-29
-**Current Version:** v2.7.16
-**Branch:** `main` (clean)
+**Date:** 2026-03-31
+**Current Version:** v2.7.17-beta.9
+**Branch:** `dev` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -11,9 +11,26 @@
 
 ## Current State
 
+### Architecture (Post-Rewrite)
+
+The integration was fully rewritten with a layered architecture:
+
+| Layer | Package | Purpose |
+|-------|---------|---------|
+| HA Boundary | `state/` | `ClimateProvider`, `SunProvider`, `CoverProvider`, `SunSnapshot`, `CoverStateSnapshot` — all HA reads happen here |
+| Calculation | `calculation.py`, `sun.py` | Pure math, 0 HA imports |
+| Engine | `engine/` | `SunGeometry`, `VenetianCoverCalculation` — next-gen calculation engine |
+| Config Types | `config_types.py` | `CoverConfig` typed dataclass |
+| Pipeline | `pipeline/` | 8 pluggable override handlers (wind and cloud_suppression are stubs) |
+| Managers | `managers/` | 5 focused classes extracted from coordinator |
+| Diagnostics | `diagnostics/` | `DiagnosticsBuilder` with decision trace |
+| Coordinator | `coordinator.py` | Thin orchestrator (~1,477 lines) |
+
+**Adding a new override:** Create handler in `pipeline/handlers/`, register in coordinator `__init__`. No coordinator logic changes.
+
 ### Tests
 
-388 passing, 0 failing.
+751 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -24,10 +41,15 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | `geometry.py` | 100% |
 | `position_utils.py` | 100% |
 | `enums.py` | 97% |
-| `coordinator.py` | 34% (HA integration code, hard to unit test) |
+| `pipeline/` | 100% |
+| `managers/` | ~96% |
+| `state/` | ~95% |
+| `diagnostics/` | ~90% |
+| `engine/` | ~90% |
+| `coordinator.py` | ~34% (HA integration code, hard to unit test) |
 | `config_flow.py` | 0% (UI flow) |
 | `sensor.py` / `switch.py` | 0% (platform code) |
-| **Total** | **38%** |
+| **Total** | **61%** |
 
 ### Recent Releases
 
@@ -37,15 +59,6 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | v2.7.15 | Accept occupancy sensors in motion control selector (Issue #52); fix sunset_position not accepting blank value (Issue #55) |
 | v2.7.14 | Add `sill_height` parameter for windows above floor level (Issue #47) — raises blind when sill provides natural sun blocking |
 | v2.7.13 | Fix reset button race condition — suppress override re-detection during post-reset cover settling; add 30s timeout to wait loop |
-| v2.7.12 | Fix horizontal covers closing before end sun time — clamp position to ≥1% when sun is in FOV |
-| v2.7.11 | Optional device association — link entities to a physical device instead of standalone virtual device; orphaned device cleanup fixes |
-| v2.7.10 | Local brand icons (`brand/` folder in integration); HACS default + home-assistant/brands PRs submitted |
-| v2.7.9 | Diagnostic sensor cleanup — removed redundant attributes from `sun_elevation` sensor |
-| v2.7.8 | Fix Control Method sensor showing `ControlMethod.DEFAULT` — Python 3.11+ str(Enum) behavior change; use `.value` explicitly |
-| v2.7.7 | Motion Timeout End Time sensor (P0), Force Override Triggers sensor (P1), Last Motion Time sensor (P1), Manual Override End Time sensor (P0); default manual override duration increased to 2h |
-| v2.7.6 | ControlMethod enum with 7 values (solar, summer, winter, default, manual_override, motion_timeout, force_override); renames `intermediate` → `solar`; fixes stale control method across cycles |
-| v2.7.5 | Motion control (occupancy-based auto positioning), control state reason sensor, force override binary sensors, solar times accuracy fix |
-| v2.7.0 | Enhanced geometric accuracy (safety margins, window depth), position limits |
 
 ---
 
@@ -53,23 +66,17 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | # | Title | Notes |
 |---|-------|-------|
-| [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt — current arch requires two separate HA entities |
-| [#31](https://github.com/jrhubott/adaptive-cover/issues/31) | Suppress cover adjustment based on cloud coverage sensor | Add lux/cloud sensor as a suppression condition |
-| [#29](https://github.com/jrhubott/adaptive-cover/issues/29) | Keep heat in — close non-sun-exposed covers in winter | Extend climate mode to close shaded-side covers |
-| [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | Safety retraction when wind exceeds a threshold sensor |
-| [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times instead of pure solar calculation |
+| [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt — architecture now supports dual-axis via pipeline |
+| [#31](https://github.com/jrhubott/adaptive-cover/issues/31) | Suppress cover adjustment based on cloud coverage sensor | Create `pipeline/handlers/cloud_suppression.py` |
+| [#29](https://github.com/jrhubott/adaptive-cover/issues/29) | Keep heat in — close non-sun-exposed covers in winter | Extend climate handler or add new pipeline handler |
+| [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | Create `pipeline/handlers/wind.py` with priority 90 |
+| [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times |
 
 ## Pending Upstream PRs
 
-These are external PRs awaiting review/merge by third-party maintainers. Check back periodically and update this section when accepted.
-
 | PR | Repo | Description | Status |
 |----|------|-------------|--------|
-| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add `jrhubott/adaptive-cover-pro` to HACS default integrations list | ❌ Closed — needs investigation |
-| [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons for `adaptive_cover_pro` (CDN, older HA versions) | ✅ Resolved — not needed |
-
-**home-assistant/brands:** Auto-closed by bot. As of HA 2026.3.0, custom integrations serve their own icons via the local `brand/` folder — which we already ship in v2.7.10. No further action needed.
-
-**hacs/default:** Closed with no explanation. Needs investigation — likely requires a different submission format or checklist. Check HACS contributing docs before re-submitting.
+| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add to HACS default integrations list | ❌ Closed — needs investigation |
+| [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons | ✅ Resolved — not needed (local brand/ folder) |
 
 No open pull requests on this repo.

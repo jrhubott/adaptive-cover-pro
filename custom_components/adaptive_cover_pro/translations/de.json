@@ -22,8 +22,7 @@
           "manual_threshold": "Schwellenwert für manuelle Steuerung",
           "manual_ignore_intermediate": "Zwischenpositionen während der manuellen Steuerung ignorieren (Öffnen und Schließen)",
           "return_sunset": "Position zum Sonnenuntergangs-Standardwert anpassen, wenn die Endzeit vor dem tatsächlichen Sonnenuntergang liegt",
-          "open_close_threshold": "Open/Close threshold",
-          "enable_diagnostics": "Enable diagnostic entities"
+          "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung, die erforderlich ist, bevor die Abdeckung angepasst wird",
@@ -34,8 +33,7 @@
           "manual_override_reset": "Option, um die manuelle Steuerungsdauer nach jeder manuellen Anpassung zurückzusetzen. Falls deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung",
           "end_time": "Endzeit für jeden Tag; nach dieser Zeit bleibt die Abdeckung unbewegt",
           "end_entity": "Entität, die den Endzeitstatus angibt und die feste Endzeit überschreibt. Nützlich zur Automatisierung der Endzeit mit einer Entität",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "enable_diagnostics": "Enable additional diagnostic sensor entities for debugging and monitoring. When enabled, creates extra entities that show: solar position (azimuth/elevation), last cover action details, control method status, and calculation diagnostics. Default: Disabled (to avoid entity clutter). Enable this if you want detailed visibility into the integration's decision-making process or need to troubleshoot behavior. Diagnostic entities are disabled by default in the UI."
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
       "vertical": {
@@ -79,7 +77,7 @@
         "description": "Füge Konfigurationsvariablen zum Sensor hinzu",
         "title": "Vertikale Abdeckung"
       },
-	  "climate": {
+      "climate": {
         "data": {
           "temp_entity": "Innenraum-Temperatur-Entität",
           "presence_entity": "Präsenz-Entität (optional)",
@@ -110,7 +108,9 @@
         "title": "Klimaeinstellungen"
       },
       "weather": {
-        "data": { "weather_state": "Wetterbedingungen" },
+        "data": {
+          "weather_state": "Wetterbedingungen"
+        },
         "data_description": {
           "weather_state": "Wählen Sie die Wetterbedingungen, die die automatische Fenstersteuerung aktivieren."
         },
@@ -202,35 +202,35 @@
           "tilt_mode": "Bewegungsart wählen"
         },
         "description": "Konfigurationsvariablen zum Sensor hinzufügen",
-		"title": "Kippbare Abdeckung"
-	  },
-	  "blind_spot": {
-		"data": {
+        "title": "Kippbare Abdeckung"
+      },
+      "blind_spot": {
+        "data": {
           "blind_spot_left": "Start der blinden Zone links",
           "blind_spot_right": "Ende der blinden Zone rechts",
           "blind_spot_elevation": "Elevationshöhe der blinden Zone"
-		},
-		"data_description": {
+        },
+        "data_description": {
           "blind_spot_left": "Linke Kante der blinden Zone",
           "blind_spot_right": "Rechte Kante der blinden Zone",
           "blind_spot_elevation": "Alle Werte, die gleich oder kleiner sind, gelten als innerhalb der blinden Zone. Nützlich, wenn die Sonne über ein Objekt in der blinden Zone scheinen kann"
-		},
-		"title": "Blinde Zone",
-		"description": "Blinde Zone für die Abdeckung einrichten. Diese Werte sind relative Gradwerte zur Breite des Sichtfelds, wobei 0 die linkeste Position darstellt, die vom Parameter 'FOV links' des Sichtfeldes genommen wird."
-	  },
-	  "interp": {
-		"data": {
+        },
+        "title": "Blinde Zone",
+        "description": "Blinde Zone für die Abdeckung einrichten. Diese Werte sind relative Gradwerte zur Breite des Sichtfelds, wobei 0 die linkeste Position darstellt, die vom Parameter 'FOV links' des Sichtfeldes genommen wird."
+      },
+      "interp": {
+        "data": {
           "interp_start": "Wert, bei dem die Öffnung beginnt",
           "interp_end": "Wert, bei dem das Schließen beginnt",
           "interp_list": "Liste der Interpolationen",
           "interp_list_new": "Benutzerdefinierte Interpolationsliste"
-		},
-		"data_description": {
+        },
+        "data_description": {
           "interp_list": "Liste der Interpolationswerte, bei denen 0 vollständig geschlossen und 100 vollständig offen ist",
           "interp_list_new": "Benutzerdefinierter Bereich von Interpolationswerten, wobei der Beginn geschlossen und das Ende offen darstellen sollte"
-		  },
-		  "title": "Bereichsanpassung",
-		  "description": "Passen Sie die Werte an, bei denen Ihre Abdeckung effektiv öffnet oder schließt. Ideal für Abdeckungen, die nicht vollständig bei 0% öffnen oder bei 100% schließen. \n Die ersten beiden Schieberegler sind für eine 2-Punkte-Anpassung, die Listenauswahl ist für eine Mehrpunkt-Anpassung."
+        },
+        "title": "Bereichsanpassung",
+        "description": "Passen Sie die Werte an, bei denen Ihre Abdeckung effektiv öffnet oder schließt. Ideal für Abdeckungen, die nicht vollständig bei 0% öffnen oder bei 100% schließen. \n Die ersten beiden Schieberegler sind für eine 2-Punkte-Anpassung, die Listenauswahl ist für eine Mehrpunkt-Anpassung."
       }
     }
   },
@@ -343,14 +343,16 @@
         "title": "Klimaeinstellungen"
       },
       "weather": {
-        "data": { "weather_state": "Wetterbedingungen" },
+        "data": {
+          "weather_state": "Wetterbedingungen"
+        },
         "data_description": {
           "weather_state": "Wähle die Wetterbedingungen, die eine automatische Fenstersteuerung aktivieren."
         },
         "title": "Wetterbedingungen"
-	  },
-	  "horizontal": {
-		"data": {
+      },
+      "horizontal": {
+        "data": {
           "set_azimuth": "Fenster-Azimut",
           "length_awning": "Markisen-Spannweite",
           "window_height": "Markisenhöhe",
@@ -373,8 +375,8 @@
           "min_elevation": "Minimale Elevation der Sonne",
           "max_elevation": "Maximale Elevation der Sonne",
           "interp": "Benutzerdefinierte Öffnungs-/Schließpositionen für Meine Abdeckung einstellen, wenn diese nicht vollständig bei 0-100% funktioniert"
-		},
-		"data_description": {
+        },
+        "data_description": {
           "set_azimuth": "Azimut angeben",
           "window_height": "Höhe der Markise vom Arbeitsbereich aus anpassen",
           "length_awning": "Gesamtlänge der Markise in Metern",
@@ -390,12 +392,12 @@
           "sunset_offset": "Offset (±) von der Sonnenuntergangszeit in Minuten",
           "sunrise_offset": "Offset (±) von der Sonnenaufgangszeit in Minuten",
           "climate_mode": "Variablen für den Klimamodus konfigurieren"
-		},
-		"description": "Füge Konfigurationsvariablen zum Sensor hinzu",
-		"title": "Horizontale Abdeckung"
-	  },
-	  "tilt": {
-		"data": {
+        },
+        "description": "Füge Konfigurationsvariablen zum Sensor hinzu",
+        "title": "Horizontale Abdeckung"
+      },
+      "tilt": {
+        "data": {
           "set_azimuth": "Fenster-Azimut",
           "slat_depth": "Lamellenstärke",
           "slat_distance": "Lamellenabstand",
@@ -417,8 +419,8 @@
           "min_elevation": "Minimale Elevation der Sonne",
           "max_elevation": "Maximale Elevation der Sonne",
           "interp": "Benutzerdefinierte Öffnungs-/Schließpositionen für Meine Abdeckung einstellen, wenn diese nicht vollständig bei 0-100% funktioniert"
-		},
-		"data_description": {
+        },
+        "data_description": {
           "set_azimuth": "Azimut angeben",
           "slat_depth": "Tiefe jeder einzelnen Lamelle in Zentimetern",
           "slat_distance": "Vertikaler Abstand zwischen zwei Lamellen in Zentimetern",
@@ -433,37 +435,37 @@
           "sunrise_offset": "Offset (±) von der Sonnenaufgangszeit in Minuten",
           "climate_mode": "Variablen für den Klimamodus konfigurieren",
           "tilt_mode": "Bewegungsart auswählen"
-		},
-		"description": "Füge Konfigurationsvariablen zum Sensor hinzu",
-		"title": "Kippbare Abdeckung"
-	  },
-	  "blind_spot": {
-		"data": {
+        },
+        "description": "Füge Konfigurationsvariablen zum Sensor hinzu",
+        "title": "Kippbare Abdeckung"
+      },
+      "blind_spot": {
+        "data": {
           "blind_spot_left": "Start der blinden Zone links",
           "blind_spot_right": "Ende der blinden Zone rechts",
           "blind_spot_elevation": "Elevationshöhe der blinden Zone"
-		},
-		"data_description": {
+        },
+        "data_description": {
           "blind_spot_left": "Linke Kante der blinden Zone",
           "blind_spot_right": "Rechte Kante der blinden Zone",
           "blind_spot_elevation": "Alle Werte, die gleich oder kleiner sind, gelten als innerhalb der blinden Zone. Nützlich, wenn die Sonne über ein Objekt in der blinden Zone scheinen kann"
-		},
-		"title": "Blinde Zone",
-		"description": "Blinde Zone für die Abdeckung einrichten. Diese Werte sind relative Gradwerte zur Breite des Sichtfelds, wobei 0 die linkeste Position darstellt, die vom Parameter 'FOV links' des Sichtfeldes genommen wird."
-	  },
-	  "interp": {
-		"data": {
+        },
+        "title": "Blinde Zone",
+        "description": "Blinde Zone für die Abdeckung einrichten. Diese Werte sind relative Gradwerte zur Breite des Sichtfelds, wobei 0 die linkeste Position darstellt, die vom Parameter 'FOV links' des Sichtfeldes genommen wird."
+      },
+      "interp": {
+        "data": {
           "interp_start": "Wert, bei dem die Öffnung beginnt",
           "interp_end": "Wert, bei dem das Schließen beginnt",
           "interp_list": "Liste der Interpolationen",
           "interp_list_new": "Benutzerdefinierte Interpolationsliste"
-		},
-		"data_description": {
+        },
+        "data_description": {
           "interp_list": "Liste der Interpolationswerte, bei denen 0 vollständig geschlossen und 100 vollständig offen ist",
           "interp_list_new": "Benutzerdefinierter Bereich von Interpolationswerten, wobei der Beginn geschlossen und das Ende offen darstellen sollte"
-		},
-		"title": "Bereichsanpassung",
-		"description": "Passen Sie die Werte an, bei denen Ihre Abdeckung effektiv öffnet oder schließt. Ideal für Abdeckungen, die nicht vollständig bei 0% öffnen oder bei 100% schließen. \n Die ersten beiden Schieberegler sind für eine 2-Punkte-Anpassung, die Listenauswahl ist für eine Mehrpunkt-Anpassung."
+        },
+        "title": "Bereichsanpassung",
+        "description": "Passen Sie die Werte an, bei denen Ihre Abdeckung effektiv öffnet oder schließt. Ideal für Abdeckungen, die nicht vollständig bei 0% öffnen oder bei 100% schließen. \n Die ersten beiden Schieberegler sind für eine 2-Punkte-Anpassung, die Listenauswahl ist für eine Mehrpunkt-Anpassung."
       }
     }
   },

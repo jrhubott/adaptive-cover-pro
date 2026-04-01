@@ -16,9 +16,9 @@ import pytest
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.calculation import (
-    AdaptiveHorizontalCover,
     AdaptiveVerticalCover,
 )
+from tests.cover_helpers import build_horizontal_cover, build_vertical_cover
 
 
 def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
@@ -31,12 +31,11 @@ def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
 
 
 @pytest.fixture
-def hass():
-    """Create a mock HomeAssistant instance."""
-    hass_mock = MagicMock()
-    hass_mock.states.get.return_value = None
-    hass_mock.config.units.temperature_unit = "°C"
-    return hass_mock
+def mock_sun_data():
+    """Create a mock SunData instance."""
+    sun_data = MagicMock()
+    sun_data.timezone = "UTC"
+    return sun_data
 
 
 @pytest.fixture
@@ -46,17 +45,16 @@ def mock_logger():
 
 
 @pytest.fixture
-def base_cover_params(hass, mock_logger):
+def base_cover_params(mock_sun_data, mock_logger):
     """Return base parameters for AdaptiveVerticalCover with sill_height=0."""
     return {
-        "hass": hass,
         "logger": mock_logger,
         "sol_azi": 180.0,
         "sol_elev": 45.0,
         "sunset_pos": 0,
         "sunset_off": 0,
         "sunrise_off": 0,
-        "timezone": "UTC",
+        "sun_data": mock_sun_data,
         "fov_left": 90,
         "fov_right": 90,
         "win_azi": 180,
@@ -85,7 +83,7 @@ def make_vertical_cover(
     params.update(overrides)
     params["sol_azi"] = gamma_to_sol_azi(params["win_azi"], gamma)
     params["sol_elev"] = sol_elev
-    return AdaptiveVerticalCover(**params)
+    return build_vertical_cover(**params)
 
 
 class TestBackwardCompatibility:
@@ -93,7 +91,7 @@ class TestBackwardCompatibility:
 
     def test_default_sill_height_is_zero(self, base_cover_params):
         """sill_height should default to 0.0 when not specified."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
         assert cover.sill_height == 0.0
 
     def test_explicit_zero_matches_default_at_normal_angle(self, base_cover_params):
@@ -105,8 +103,8 @@ class TestBackwardCompatibility:
         params_explicit["sill_height"] = 0.0
         params_explicit["sol_azi"] = gamma_to_sol_azi(params_explicit["win_azi"], 30.0)
 
-        cover_default = AdaptiveVerticalCover(**params_default)
-        cover_explicit = AdaptiveVerticalCover(**params_explicit)
+        cover_default = build_vertical_cover(**params_default)
+        cover_explicit = build_vertical_cover(**params_explicit)
 
         assert cover_default.calculate_position() == cover_explicit.calculate_position()
 
@@ -132,8 +130,8 @@ class TestBackwardCompatibility:
             params_zero_sill = params_no_sill.copy()
             params_zero_sill["sill_height"] = 0.0
 
-            pos_no_sill = AdaptiveVerticalCover(**params_no_sill).calculate_position()
-            pos_zero_sill = AdaptiveVerticalCover(
+            pos_no_sill = build_vertical_cover(**params_no_sill).calculate_position()
+            pos_zero_sill = build_vertical_cover(
                 **params_zero_sill
             ).calculate_position()
 
@@ -342,9 +340,7 @@ class TestEdgeCasesLowElevation:
         position = cover.calculate_position()
 
         # Sill more than covers the sun penetration, so blind is fully raised (position=0)
-        assert position == 0.0, (
-            f"Expected 0.0 (sill blocks all sun) but got {position}"
-        )
+        assert position == 0.0, f"Expected 0.0 (sill blocks all sun) but got {position}"
 
     def test_very_low_elevation_no_exception_raised(self, base_cover_params):
         """At sol_elev=2.5° with large sill_height, no exception should be raised."""
@@ -468,9 +464,7 @@ class TestInteractionWithWindowDepth:
         # Combined should differ from each individually
         assert pos_both != pos_neither
 
-    def test_combined_result_is_consistent_with_offsets(
-        self, base_cover_params
-    ):
+    def test_combined_result_is_consistent_with_offsets(self, base_cover_params):
         """window_depth adds and sill_height subtracts from effective_distance independently."""
         gamma = 30.0
         sol_elev = 45.0
@@ -505,17 +499,16 @@ class TestInteractionWithWindowDepth:
 class TestHorizontalCoverSillHeight:
     """Tests for sill_height behavior in AdaptiveHorizontalCover."""
 
-    def test_horizontal_cover_has_sill_height_field(self, hass, mock_logger):
+    def test_horizontal_cover_has_sill_height_field(self, mock_sun_data, mock_logger):
         """AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover."""
-        cover = AdaptiveHorizontalCover(
-            hass=hass,
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
-            timezone="UTC",
+            sun_data=mock_sun_data,
             fov_left=90,
             fov_right=90,
             win_azi=180,
@@ -535,20 +528,21 @@ class TestHorizontalCoverSillHeight:
             awn_length=2.0,
             awn_angle=0,
         )
-        # sill_height defaults to 0.0 (inherited)
+        # sill_height defaults to 0.0 (in vert_config)
         assert cover.sill_height == 0.0
 
-    def test_horizontal_cover_default_sill_vs_explicit_zero(self, hass, mock_logger):
+    def test_horizontal_cover_default_sill_vs_explicit_zero(
+        self, mock_sun_data, mock_logger
+    ):
         """Horizontal cover with sill_height=0.0 and without it produce identical results."""
         common_params = {
-            "hass": hass,
             "logger": mock_logger,
             "sol_azi": 180.0,
             "sol_elev": 45.0,
             "sunset_pos": 0,
             "sunset_off": 0,
             "sunrise_off": 0,
-            "timezone": "UTC",
+            "sun_data": mock_sun_data,
             "fov_left": 90,
             "fov_right": 90,
             "win_azi": 180,
@@ -569,30 +563,27 @@ class TestHorizontalCoverSillHeight:
             "awn_angle": 0,
         }
 
-        cover_default = AdaptiveHorizontalCover(**common_params)
+        cover_default = build_horizontal_cover(**common_params)
 
         params_explicit = common_params.copy()
         params_explicit["sill_height"] = 0.0
-        cover_explicit = AdaptiveHorizontalCover(**params_explicit)
+        cover_explicit = build_horizontal_cover(**params_explicit)
 
         assert cover_default.calculate_position() == cover_explicit.calculate_position()
 
     def test_sill_height_not_in_horizontal_cover_config_schema(self):
-        """Verify sill_height is not exposed as a config option for horizontal covers.
+        """Verify sill_height is accessible on horizontal covers via vert_config.
 
-        AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover,
-        but sill_height is a vertical-cover-specific parameter. The config flow
-        should not expose it for horizontal covers. This test verifies the
-        dataclass field exists with its default only (no schema enforcement needed here
-        since schema lives in config_flow.py).
+        AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover
+        (via vert_config), but sill_height is a vertical-cover-specific parameter.
+        The config flow should not expose it for horizontal covers.
         """
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
+        from custom_components.adaptive_cover_pro.config_types import VerticalConfig
+
+        # sill_height is a field on VerticalConfig with default 0.0
         import dataclasses
 
-        # Check that sill_height is indeed a field with default 0.0 on the class
-        fields = {f.name: f for f in dataclasses.fields(AdaptiveHorizontalCover)}
+        fields = {f.name: f for f in dataclasses.fields(VerticalConfig)}
         assert "sill_height" in fields
         assert fields["sill_height"].default == 0.0
 

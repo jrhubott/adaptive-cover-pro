@@ -1,14 +1,13 @@
 """Generate values for all types of covers."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import cast
 
 import numpy as np
-import pandas as pd
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.template import state_attr
 from numpy import cos, sin, tan
 from numpy import radians as rad
 
@@ -19,221 +18,172 @@ from .const import (
     POSITION_CLOSED,
     WINDOW_DEPTH_GAMMA_THRESHOLD,
 )
-from .enums import CoverType, TiltMode
+from .config_types import CoverConfig, HorizontalConfig, TiltConfig, VerticalConfig
+from .engine.sun_geometry import SunGeometry
+from .enums import ClimateStrategy, CoverType, TiltMode
 from .geometry import EdgeCaseHandler, SafetyMarginCalculator
-from .helpers import get_domain, get_safe_state
 from .position_utils import PositionConverter
 from .sun import SunData
+
+
+_COVER_CONFIG_FIELDS = frozenset(
+    {
+        "win_azi",
+        "fov_left",
+        "fov_right",
+        "h_def",
+        "sunset_pos",
+        "sunset_off",
+        "sunrise_off",
+        "max_pos",
+        "min_pos",
+        "max_pos_sun_only",
+        "min_pos_sun_only",
+        "blind_spot_left",
+        "blind_spot_right",
+        "blind_spot_elevation",
+        "blind_spot_on",
+        "min_elevation",
+        "max_elevation",
+    }
+)
+
+_COVER_CONFIG_RENAMES = {
+    "max_pos_bool": "max_pos_sun_only",
+    "min_pos_bool": "min_pos_sun_only",
+}
+
+_VERT_CONFIG_FIELDS = frozenset({"distance", "h_win", "window_depth", "sill_height"})
+_HORIZ_CONFIG_FIELDS = frozenset({"awn_length", "awn_angle"})
+_TILT_CONFIG_FIELDS = frozenset({"slat_distance", "depth", "mode"})
 
 
 @dataclass
 class AdaptiveGeneralCover(ABC):
     """Collect common data."""
 
-    hass: HomeAssistant
     logger: ConfigContextAdapter
     sol_azi: float
     sol_elev: float
-    sunset_pos: int
-    sunset_off: int
-    sunrise_off: int
-    timezone: str
-    fov_left: int
-    fov_right: int
-    win_azi: int
-    h_def: int
-    max_pos: int
-    min_pos: int
-    max_pos_bool: bool
-    min_pos_bool: bool
-    blind_spot_left: int
-    blind_spot_right: int
-    blind_spot_elevation: int
-    blind_spot_on: bool
-    min_elevation: int
-    max_elevation: int
-    sun_data: SunData = field(init=False)
-
-    def __post_init__(self) -> None:
-        """Add solar data to dataset."""
-        self.sun_data = SunData(self.timezone, self.hass)
-
-    def solar_times(self) -> tuple[datetime | None, datetime | None]:
-        """Calculate when sun enters and exits window's field of view today.
-
-        Uses today's solar position data to determine the time window when the sun
-        is within the configured azimuth field of view, elevation limits, and outside
-        the sunset/sunrise offset periods. Matches the same conditions used by
-        direct_sun_valid so that "End Sun Time" accurately reflects when automatic
-        sun tracking genuinely ends.
-
-        Returns:
-            Tuple of (start_time, end_time) as datetime objects. Returns (None, None)
-            if sun never enters the field of view today.
-
-        """
-        df_today = pd.DataFrame(
-            {
-                "azimuth": self.sun_data.solar_azimuth,
-                "elevation": self.sun_data.solar_elevation,
-            }
-        )
-        solpos = df_today.set_index(self.sun_data.times)
-
-        alpha = solpos["azimuth"]
-        elev = solpos["elevation"]
-
-        # Azimuth in FOV
-        in_fov = (
-            (alpha - self.azi_min_abs) % 360
-            <= (self.azi_max_abs - self.azi_min_abs) % 360
-        )
-
-        # Elevation check — matches valid_elevation property logic
-        if self.min_elevation is None and self.max_elevation is None:
-            valid_elev = elev > 0
-        elif self.min_elevation is None:
-            valid_elev = elev <= self.max_elevation
-        elif self.max_elevation is None:
-            valid_elev = elev >= self.min_elevation
-        else:
-            valid_elev = (elev >= self.min_elevation) & (elev <= self.max_elevation)
-
-        # Sunset/sunrise offset — exclude times within the offset windows.
-        # Matches sunset_valid: True when after (sunset+offset) or before (sunrise+offset).
-        # Convert series index to naive UTC for comparison with sun_data.sunset()/sunrise().
-        sunset_utc = self.sun_data.sunset().replace(tzinfo=None)
-        sunrise_utc = self.sun_data.sunrise().replace(tzinfo=None)
-        offset_sunset = sunset_utc + timedelta(minutes=self.sunset_off)
-        offset_sunrise = sunrise_utc + timedelta(minutes=self.sunrise_off)
-        times_utc = solpos.index.tz_convert("UTC").tz_localize(None)
-        in_sun_window = (times_utc >= offset_sunrise) & (times_utc <= offset_sunset)
-
-        frame = in_fov & valid_elev & in_sun_window
-
-        if solpos[frame].empty:
-            return None, None
-        else:
-            return (
-                solpos[frame].index[0].to_pydatetime(),
-                solpos[frame].index[-1].to_pydatetime(),
-            )
+    sun_data: SunData
+    config: CoverConfig
 
     @property
-    def _get_azimuth_edges(self) -> tuple[int, int]:
-        """Get absolute azimuth boundaries of window's field of view.
+    def solar(self) -> SunGeometry:
+        """Build a SunGeometry from current field values (always fresh)."""
+        return SunGeometry(
+            self.sol_azi,
+            self.sol_elev,
+            self.sun_data,
+            self.config,
+            self.logger,
+        )
 
-        Returns:
-            Tuple of (min_azimuth, max_azimuth) in degrees (0-360).
+    def __getattr__(self, name: str) -> object:
+        """Route old flat field names to the appropriate config dataclass for reads.
 
+        Note: __getattr__ is only called when normal lookup fails, so this
+        won't intercept accesses to real dataclass fields (logger, sol_azi, etc.).
         """
-        return (self.azi_min_abs, self.azi_max_abs)
+        canonical = _COVER_CONFIG_RENAMES.get(name, name)
+        if canonical in _COVER_CONFIG_FIELDS:
+            # Access config via __dict__ to avoid infinite recursion
+            config = object.__getattribute__(self, "config")
+            return getattr(config, canonical)
+        if canonical in _VERT_CONFIG_FIELDS:
+            try:
+                vert_config = object.__getattribute__(self, "vert_config")
+                return getattr(vert_config, canonical)
+            except AttributeError:
+                pass
+        if canonical in _TILT_CONFIG_FIELDS:
+            try:
+                tilt_config = object.__getattribute__(self, "tilt_config")
+                return getattr(tilt_config, canonical)
+            except AttributeError:
+                pass
+        if canonical in _HORIZ_CONFIG_FIELDS:
+            try:
+                horiz_config = object.__getattribute__(self, "horiz_config")
+                return getattr(horiz_config, canonical)
+            except AttributeError:
+                pass
+        msg = f"'{type(self).__name__}' object has no attribute '{name}'"
+        raise AttributeError(msg)
 
-    @property
-    def is_sun_in_blind_spot(self) -> bool:
-        """Check if sun is currently within configured blind spot area.
+    def __setattr__(self, name: str, value: object) -> None:
+        """Route old flat field names to the appropriate config dataclass for writes."""
+        canonical = _COVER_CONFIG_RENAMES.get(name, name)
+        if canonical in _COVER_CONFIG_FIELDS:
+            try:
+                object.__setattr__(self.config, canonical, value)
+            except AttributeError:
+                # During __init__, self.config may not exist yet
+                object.__setattr__(self, name, value)
+            return
+        if canonical in _VERT_CONFIG_FIELDS and hasattr(self, "vert_config"):
+            object.__setattr__(self.vert_config, canonical, value)
+            return
+        if canonical in _TILT_CONFIG_FIELDS and hasattr(self, "tilt_config"):
+            object.__setattr__(self.tilt_config, canonical, value)
+            return
+        if canonical in _HORIZ_CONFIG_FIELDS and hasattr(self, "horiz_config"):
+            object.__setattr__(self.horiz_config, canonical, value)
+            return
+        object.__setattr__(self, name, value)
 
-        Blind spots are areas where the calculated position should not be used
-        (e.g., architectural obstructions, tree coverage). Defined by horizontal
-        angles (left/right) and optional elevation limit.
-
-        Returns:
-            True if sun is within blind spot area and blind spot enabled.
-            False if blind spot not configured, disabled, or sun outside area.
-
-        """
-        if (
-            self.blind_spot_left is not None
-            and self.blind_spot_right is not None
-            and self.blind_spot_on
-        ):
-            left_edge = self.fov_left - self.blind_spot_left
-            right_edge = self.fov_left - self.blind_spot_right
-            blindspot = (self.gamma <= left_edge) & (self.gamma >= right_edge)
-            if self.blind_spot_elevation is not None:
-                blindspot = blindspot & (self.sol_elev <= self.blind_spot_elevation)
-            self.logger.debug("Is sun in blind spot? %s", blindspot)
-            return blindspot
-        return False
+    # ------------------------------------------------------------------
+    # Leaf properties delegated to SunGeometry
+    # ------------------------------------------------------------------
 
     @property
     def azi_min_abs(self) -> int:
-        """Calculate absolute minimum azimuth of window's field of view.
-
-        Returns:
-            Minimum azimuth angle in degrees (0-360).
-
-        """
-        azi_min_abs = (self.win_azi - self.fov_left + 360) % 360
-        return azi_min_abs
+        """Delegate to SunGeometry.azi_min_abs."""
+        return self.solar.azi_min_abs
 
     @property
     def azi_max_abs(self) -> int:
-        """Calculate absolute maximum azimuth of window's field of view.
-
-        Returns:
-            Maximum azimuth angle in degrees (0-360).
-
-        """
-        azi_max_abs = (self.win_azi + self.fov_right + 360) % 360
-        return azi_max_abs
+        """Delegate to SunGeometry.azi_max_abs."""
+        return self.solar.azi_max_abs
 
     @property
     def gamma(self) -> float:
-        """Calculate gamma (surface solar azimuth).
-
-        Gamma is the horizontal angle between the window's perpendicular and the
-        sun's position, normalized to -180 to +180 degrees. Positive values indicate
-        sun to the right of window normal, negative to the left.
-
-        Returns:
-            Gamma angle in degrees (-180 to +180).
-
-        """
-        # surface solar azimuth
-        gamma = (self.win_azi - self.sol_azi + 180) % 360 - 180
-        return gamma
+        """Delegate to SunGeometry.gamma."""
+        return self.solar.gamma
 
     @property
     def valid_elevation(self) -> bool:
-        """Check if sun elevation is within configured limits.
+        """Delegate to SunGeometry.valid_elevation."""
+        return self.solar.valid_elevation
 
-        Used to exclude times when sun is too low (glare not an issue) or too high
-        (directly overhead, no horizontal glare).
+    @property
+    def sunset_valid(self) -> bool:
+        """Delegate to SunGeometry.sunset_valid."""
+        return self.solar.sunset_valid
 
-        Returns:
-            True if sun elevation within configured min/max range (or no limits set).
-            False if sun below horizon or outside configured limits.
+    @property
+    def is_sun_in_blind_spot(self) -> bool:
+        """Delegate to SunGeometry.is_sun_in_blind_spot."""
+        return self.solar.is_sun_in_blind_spot
 
-        """
-        if self.min_elevation is None and self.max_elevation is None:
-            return self.sol_elev >= 0
-        if self.min_elevation is None:
-            return self.sol_elev <= self.max_elevation
-        if self.max_elevation is None:
-            return self.sol_elev >= self.min_elevation
-        within_range = self.min_elevation <= self.sol_elev <= self.max_elevation
-        self.logger.debug("elevation within range? %s", within_range)
-        return within_range
+    def solar_times(self) -> tuple[datetime | None, datetime | None]:
+        """Delegate to SunGeometry.solar_times()."""
+        return self.solar.solar_times()
+
+    # ------------------------------------------------------------------
+    # Compound properties (kept here so tests can patch individual parts)
+    # ------------------------------------------------------------------
+
+    @property
+    def _get_azimuth_edges(self) -> tuple[int, int]:
+        """Get absolute azimuth boundaries of window's field of view."""
+        return (self.azi_min_abs, self.azi_max_abs)
 
     @property
     def valid(self) -> bool:
-        """Check if sun is in front of window within field of view.
-
-        Combines azimuth check (gamma within FOV) and elevation check to determine
-        if sun is positioned where it could create glare. Does not consider blind
-        spots or sunset offset.
-
-        Returns:
-            True if sun within configured azimuth field of view and valid elevation.
-            False if sun behind window, outside FOV, or elevation invalid.
-
-        """
-        # Use configured FOV values directly without clipping
-        azi_min = self.fov_left
-        azi_max = self.fov_right
-
-        # valid sun positions are those within the blind's azimuth range and above the horizon (FOV)
+        """Check if sun is in front of window within field of view."""
+        azi_min = self.config.fov_left
+        azi_max = self.config.fov_right
         valid = (
             (self.gamma < azi_min) & (self.gamma > -azi_max) & (self.valid_elevation)
         )
@@ -241,79 +191,33 @@ class AdaptiveGeneralCover(ABC):
         return valid
 
     @property
-    def sunset_valid(self) -> bool:
-        """Check if current time is within sunset/sunrise offset period.
-
-        Determines if default "sunset position" should be used instead of calculated
-        position. Useful for returning covers to a preferred night position or
-        accounting for late/early twilight.
-
-        Returns:
-            True if current time is after (sunset + offset) or before (sunrise + offset).
-            False during normal daytime operation.
-
-        """
-        sunset = self.sun_data.sunset().replace(tzinfo=None)
-        sunrise = self.sun_data.sunrise().replace(tzinfo=None)
-        after_sunset = datetime.utcnow() > (sunset + timedelta(minutes=self.sunset_off))
-        before_sunrise = datetime.utcnow() < (
-            sunrise + timedelta(minutes=self.sunrise_off)
-        )
-        self.logger.debug(
-            "After sunset plus offset? %s", (after_sunset or before_sunrise)
-        )
-        return after_sunset or before_sunrise
-
-    @property
     def default(self) -> float:
-        """Get default position considering sunset offset.
-
-        Returns:
-            Sunset position if within sunset/sunrise offset period, otherwise
-            normal default position.
-
-        """
-        default = self.h_def
-        if self.sunset_valid and self.sunset_pos is not None:
-            default = self.sunset_pos
+        """Get default position considering sunset offset."""
+        default = self.config.h_def
+        if self.sunset_valid and self.config.sunset_pos is not None:
+            default = self.config.sunset_pos
         return default
 
     def fov(self) -> list[int]:
-        """Get absolute azimuth boundaries of field of view.
-
-        Returns:
-            List of [min_azimuth, max_azimuth] in degrees (0-360).
-
-        """
+        """Get absolute azimuth boundaries of field of view."""
         return [self.azi_min_abs, self.azi_max_abs]
 
     @property
     def direct_sun_valid(self) -> bool:
-        """Check if sun is directly in front with no exclusions.
-
-        Combines all sun position checks to determine if calculated position should
-        be used. Excludes blind spots and sunset offset periods.
-
-        Returns:
-            True if sun in FOV, not in blind spot, and not in sunset/sunrise offset.
-            False otherwise.
-
-        """
-        return self.valid and not self.sunset_valid and not self.is_sun_in_blind_spot
+        """Check if sun is directly in front with no exclusions."""
+        result = self.valid and not self.sunset_valid and not self.is_sun_in_blind_spot
+        self.logger.debug(
+            "direct_sun_valid=%s (valid=%s, sunset_valid=%s, in_blind_spot=%s)",
+            result,
+            self.valid,
+            self.sunset_valid,
+            self.is_sun_in_blind_spot,
+        )
+        return result
 
     @property
     def control_state_reason(self) -> str:
-        """Determine why the cover is tracking the sun or using the default position.
-
-        Evaluates conditions in the same priority order as direct_sun_valid to
-        provide a human-readable explanation for the current cover state. This
-        helps users understand why the cover is in its current position.
-
-        Returns:
-            Reason string: "Direct Sun", "Default: FOV Exit", "Default: Elevation Limit",
-            "Default: Sunset Offset", or "Default: Blind Spot".
-
-        """
+        """Determine why the cover is tracking the sun or using the default position."""
         if self.direct_sun_valid:
             return "Direct Sun"
         if self.sunset_valid:
@@ -374,80 +278,37 @@ class NormalCoverState:
         # Apply position limits using utility
         return PositionConverter.apply_limits(
             int(state),
-            self.cover.min_pos,
-            self.cover.max_pos,
-            self.cover.min_pos_bool,
-            self.cover.max_pos_bool,
+            self.cover.config.min_pos,
+            self.cover.config.max_pos,
+            self.cover.config.min_pos_sun_only,
+            self.cover.config.max_pos_sun_only,
             dsv,
         )
 
 
 @dataclass
 class ClimateCoverData:
-    """Fetch additional data."""
+    """Pure climate data container with computed properties.
 
-    hass: HomeAssistant
+    All Home Assistant state reads happen in ClimateProvider.read() before
+    constructing this dataclass. The pre-read values are passed directly,
+    making this class testable without mocking HA state.
+    """
+
     logger: ConfigContextAdapter
-    temp_entity: str
     temp_low: float
     temp_high: float
-    presence_entity: str
-    weather_entity: str
-    weather_condition: list[str]
-    outside_entity: str
     temp_switch: bool
     blind_type: str
     transparent_blind: bool
-    lux_entity: str
-    irradiance_entity: str
-    lux_threshold: int
-    irradiance_threshold: int
     temp_summer_outside: float
-    _use_lux: bool
-    _use_irradiance: bool
-
-    @property
-    def outside_temperature(self) -> str | float | None:
-        """Get outside temperature from configured entity or weather integration.
-
-        Tries outside_entity first, falls back to weather entity's temperature
-        attribute if available.
-
-        Returns:
-            Temperature value as float or string, or None if not available.
-
-        """
-        temp = None
-        if self.outside_entity:
-            temp = get_safe_state(
-                self.hass,
-                self.outside_entity,
-            )
-        elif self.weather_entity:
-            temp = state_attr(self.hass, self.weather_entity, "temperature")
-        return temp
-
-    @property
-    def inside_temperature(self) -> str | float | None:
-        """Get inside temperature from configured temperature entity.
-
-        Supports both sensor entities (direct state) and climate entities
-        (current_temperature attribute).
-
-        Returns:
-            Temperature value as float or string, or None if not configured.
-
-        """
-        if self.temp_entity is not None:
-            if get_domain(self.temp_entity) != "climate":
-                temp = get_safe_state(
-                    self.hass,
-                    self.temp_entity,
-                )
-            else:
-                temp = state_attr(self.hass, self.temp_entity, "current_temperature")
-            return temp
-        return None
+    # Pre-read values from ClimateProvider
+    outside_temperature: float | str | None
+    inside_temperature: float | str | None
+    is_presence: bool
+    is_sunny: bool
+    lux_below_threshold: bool
+    irradiance_below_threshold: bool
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -467,34 +328,6 @@ class ClimateCoverData:
         if self.inside_temperature is not None:
             return float(self.inside_temperature)
         return None
-
-    @property
-    def is_presence(self) -> bool:
-        """Check if people are present based on configured presence entity.
-
-        Supports multiple entity types with appropriate state interpretation:
-        - device_tracker: "home" = present
-        - zone: count > 0 = present
-        - binary_sensor/input_boolean: "on" = present
-
-        Returns:
-            True if presence detected or no presence entity configured (assume present).
-            False if presence entity indicates nobody home.
-
-        """
-        presence = None
-        if self.presence_entity is not None:
-            presence = get_safe_state(self.hass, self.presence_entity)
-        # set to true if no sensor is defined
-        if presence is not None:
-            domain = get_domain(self.presence_entity)
-            if domain == "device_tracker":
-                return presence == "home"
-            if domain == "zone":
-                return int(presence) > 0
-            if domain in ["binary_sensor", "input_boolean"]:
-                return presence == "on"
-        return True
 
     @property
     def is_winter(self) -> bool:
@@ -568,74 +401,22 @@ class ClimateCoverData:
         return is_it
 
     @property
-    def is_sunny(self) -> bool:
-        """Check if current weather condition allows solar radiation.
-
-        Compares current weather state against configured sunny weather conditions
-        (default: sunny, windy, partlycloudy, cloudy). Used in climate mode to
-        determine if calculated position should be used vs default position.
-
-        Returns:
-            True if weather state matches configured sunny conditions or weather
-            entity not configured. False if weather state indicates no solar
-            radiation (rainy, snowy, etc).
-
-        """
-        weather_state = None
-        if self.weather_entity is not None:
-            weather_state = get_safe_state(self.hass, self.weather_entity)
-        else:
-            self.logger.debug("is_sunny(): No weather entity defined")
-            return True
-        if self.weather_condition is not None:
-            matches = weather_state in self.weather_condition
-            self.logger.debug("is_sunny(): Weather: %s = %s", weather_state, matches)
-            return matches
-        # No weather condition defined, default to sunny
-        self.logger.debug("is_sunny(): No weather condition defined")
-        return True
-
-    @property
     def lux(self) -> bool:
         """Check if illuminance is below lux threshold indicating low light.
 
-        Used in climate mode to detect low light conditions where default position
-        should be used instead of calculated position for glare control.
-
-        Returns:
-            True if lux sensor value <= lux_threshold (low light detected).
-            False if lux not configured, sensor unavailable, or above threshold.
+        Returns the pre-read lux_below_threshold value from ClimateProvider.
 
         """
-        if not self._use_lux:
-            return False
-        if self.lux_entity is not None and self.lux_threshold is not None:
-            value = get_safe_state(self.hass, self.lux_entity)
-            if value is None:
-                return False
-            return float(value) <= self.lux_threshold
-        return False
+        return self.lux_below_threshold
 
     @property
     def irradiance(self) -> bool:
         """Check if solar irradiance is below threshold indicating low light.
 
-        Used in climate mode to detect low solar radiation conditions where default
-        position should be used instead of calculated position for glare control.
-
-        Returns:
-            True if irradiance sensor value <= irradiance_threshold (low radiation).
-            False if irradiance not configured, sensor unavailable, or above threshold.
+        Returns the pre-read irradiance_below_threshold value from ClimateProvider.
 
         """
-        if not self._use_irradiance:
-            return False
-        if self.irradiance_entity is not None and self.irradiance_threshold is not None:
-            value = get_safe_state(self.hass, self.irradiance_entity)
-            if value is None:
-                return False
-            return float(value) <= self.irradiance_threshold
-        return False
+        return self.irradiance_below_threshold
 
 
 @dataclass
@@ -643,6 +424,7 @@ class ClimateCoverState(NormalCoverState):
     """Compute state for climate control operation."""
 
     climate_data: ClimateCoverData
+    climate_strategy: ClimateStrategy | None = field(default=None, init=False)
 
     def normal_type_cover(self) -> int:
         """Determine state for horizontal and vertical covers with climate logic.
@@ -683,6 +465,7 @@ class ClimateCoverState(NormalCoverState):
             self.cover.logger.debug(
                 "n_w_p(): Winter mode active with sun in window = use 100 for solar heating"
             )
+            self.climate_strategy = ClimateStrategy.WINTER_HEATING
             return 100
 
         # Priority 2: Low light or non-sunny conditions
@@ -695,6 +478,7 @@ class ClimateCoverState(NormalCoverState):
             self.cover.logger.debug(
                 "n_w_p(): Low light or not sunny = use default position"
             )
+            self.climate_strategy = ClimateStrategy.LOW_LIGHT
             return round(self.cover.default)
 
         # Priority 3: Summer with transparent blinds
@@ -702,10 +486,12 @@ class ClimateCoverState(NormalCoverState):
             self.cover.logger.debug(
                 "n_w_p(): Summer with transparent blind = close to 0"
             )
+            self.climate_strategy = ClimateStrategy.SUMMER_COOLING
             return 0
 
         # Priority 4: Normal glare calculation
         self.cover.logger.debug("n_w_p(): Use calculated position for glare control")
+        self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return super().get_state()
 
     def normal_without_presence(self) -> int:
@@ -724,9 +510,21 @@ class ClimateCoverState(NormalCoverState):
         """
         if self.cover.valid:
             if self.climate_data.is_summer:
+                self.cover.logger.debug(
+                    "n_w/o_p(): Summer mode active with sun in window = close to 0"
+                )
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return 0
             if self.climate_data.is_winter:
+                self.cover.logger.debug(
+                    "n_w/o_p(): Winter mode active with sun in window = use 100"
+                )
+                self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return 100
+        self.cover.logger.debug(
+            "n_w/o_p(): Low light or not sunny = use default position"
+        )
+        self.climate_strategy = ClimateStrategy.LOW_LIGHT
         return round(self.cover.default)
 
     def tilt_with_presence(self, degrees: int) -> int:
@@ -752,6 +550,7 @@ class ClimateCoverState(NormalCoverState):
                 self.cover.logger.debug(
                     "tilt_w_p(): Summer mode = %s degrees", CLIMATE_SUMMER_TILT_ANGLE
                 )
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return round((CLIMATE_SUMMER_TILT_ANGLE / degrees) * 100)
 
             # Winter: Use calculated position for optimal light/heat
@@ -759,6 +558,7 @@ class ClimateCoverState(NormalCoverState):
                 self.cover.logger.debug(
                     "tilt_w_p(): Winter mode = use calculated position"
                 )
+                self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return super().get_state()
 
             # Low light or not sunny: Use calculated position
@@ -770,12 +570,14 @@ class ClimateCoverState(NormalCoverState):
                 self.cover.logger.debug(
                     "tilt_w_p(): Low light or not sunny = use calculated position"
                 )
+                self.climate_strategy = ClimateStrategy.LOW_LIGHT
                 return super().get_state()
 
         # Default: mostly open for natural light
         self.cover.logger.debug(
             "tilt_w_p(): Default = %s degrees", CLIMATE_DEFAULT_TILT_ANGLE
         )
+        self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
 
     def tilt_without_presence(self, degrees: int) -> int:
@@ -799,6 +601,7 @@ class ClimateCoverState(NormalCoverState):
         if tilt_cover.valid:
             if self.climate_data.is_summer:
                 # block out all light in summer
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return POSITION_CLOSED
             # Check for MODE2 (handles both string and enum)
             is_mode2 = (
@@ -807,8 +610,11 @@ class ClimateCoverState(NormalCoverState):
             )
             if self.climate_data.is_winter and is_mode2:
                 # parallel to sun beams, not possible with single direction
+                self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return round((beta + 90) / degrees * 100)
+            self.climate_strategy = ClimateStrategy.GLARE_CONTROL
             return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
+        self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return super().get_state()
 
     def tilt_state(self) -> int:
@@ -859,10 +665,10 @@ class ClimateCoverState(NormalCoverState):
         # Apply position limits using utility
         final_result = PositionConverter.apply_limits(
             result,
-            self.cover.min_pos,
-            self.cover.max_pos,
-            self.cover.min_pos_bool,
-            self.cover.max_pos_bool,
+            self.cover.config.min_pos,
+            self.cover.config.max_pos,
+            self.cover.config.min_pos_sun_only,
+            self.cover.config.max_pos_sun_only,
             self.cover.direct_sun_valid,
         )
 
@@ -878,12 +684,27 @@ class ClimateCoverState(NormalCoverState):
 class AdaptiveVerticalCover(AdaptiveGeneralCover):
     """Calculate state for Vertical blinds."""
 
-    distance: float
-    h_win: float
-    window_depth: float = (
-        0.0  # Window reveal/frame depth (meters), default 0 = disabled
-    )
-    sill_height: float = 0.0  # Height from floor to window bottom (meters), default 0 = floor-level
+    vert_config: VerticalConfig = None  # type: ignore[assignment]
+
+    @property
+    def distance(self) -> float:
+        """Get distance from vert_config."""
+        return self.vert_config.distance
+
+    @property
+    def h_win(self) -> float:
+        """Get window height from vert_config."""
+        return self.vert_config.h_win
+
+    @property
+    def window_depth(self) -> float:
+        """Get window depth from vert_config."""
+        return self.vert_config.window_depth
+
+    @property
+    def sill_height(self) -> float:
+        """Get sill height from vert_config."""
+        return self.vert_config.sill_height
 
     def _calculate_safety_margin(self, gamma: float, sol_elev: float) -> float:
         """Calculate angle-dependent safety margin multiplier (≥1.0).
@@ -943,10 +764,24 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Check edge cases first
         is_edge_case, edge_position = self._handle_edge_cases()
         if is_edge_case:
+            self.logger.debug(
+                "Vertical calc: edge case detected (elev=%.1f°, gamma=%.1f°) → %.3fm",
+                self.sol_elev,
+                self.gamma,
+                edge_position,
+            )
+            self._last_calc_details = {
+                "edge_case_detected": True,
+                "safety_margin": 1.0,
+                "effective_distance": self.distance,
+                "window_depth_contribution": 0.0,
+                "sill_height_offset": 0.0,
+            }
             return edge_position
 
         # Account for window depth at angles (creates additional shadow)
         effective_distance = self.distance
+        depth_contribution = 0.0
         if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
             # At angles, window depth creates additional horizontal offset
             depth_contribution = self.window_depth * sin(rad(abs(self.gamma)))
@@ -956,8 +791,11 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Sill at height S means blind bottom is S meters above floor,
         # providing S/tan(elevation) meters of "free" horizontal protection.
         # Subtract from effective_distance to account for this.
+        sill_offset = 0.0
         if self.sill_height > 0:
-            sill_offset = self.sill_height / max(tan(rad(self.sol_elev)), 0.05)  # ~2.9° minimum
+            sill_offset = self.sill_height / max(
+                tan(rad(self.sol_elev)), 0.05
+            )  # ~2.9° minimum
             effective_distance -= sill_offset
 
         # Base calculation: project glare zone to vertical blind height
@@ -967,8 +805,31 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Apply safety margin for extreme angles
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
         adjusted_height = base_height * safety_margin
+        result = float(np.clip(adjusted_height, 0, self.h_win))
 
-        return np.clip(adjusted_height, 0, self.h_win)
+        self.logger.debug(
+            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (depth=%.3f, sill=%.3f), "
+            "base=%.3f, margin=%.3f, adjusted=%.3f, clipped=%.3f",
+            self.sol_elev,
+            self.gamma,
+            self.distance,
+            effective_distance,
+            depth_contribution,
+            sill_offset,
+            base_height,
+            safety_margin,
+            adjusted_height,
+            result,
+        )
+        # Store for diagnostic sensor access
+        self._last_calc_details = {
+            "edge_case_detected": False,
+            "safety_margin": round(safety_margin, 4),
+            "effective_distance": round(effective_distance, 4),
+            "window_depth_contribution": round(depth_contribution, 4),
+            "sill_height_offset": round(sill_offset, 4),
+        }
+        return result
 
     def calculate_percentage(self) -> float:
         """Convert blind height to percentage for Home Assistant.
@@ -991,8 +852,17 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 class AdaptiveHorizontalCover(AdaptiveVerticalCover):
     """Calculate state for Horizontal blinds."""
 
-    awn_length: float = 2.0  # Default awning length (meters)
-    awn_angle: float = 0.0  # Default awning angle (degrees)
+    horiz_config: HorizontalConfig = None  # type: ignore[assignment]
+
+    @property
+    def awn_length(self) -> float:
+        """Get awning length from horiz_config."""
+        return self.horiz_config.awn_length
+
+    @property
+    def awn_angle(self) -> float:
+        """Get awning angle from horiz_config."""
+        return self.horiz_config.awn_angle
 
     def calculate_position(self) -> float:
         """Calculate awning extension length using trigonometric projection.
@@ -1019,6 +889,15 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
         length = ((self.h_win - vertical_position) * sin(rad(a_angle))) / sin(
             rad(c_angle)
         )
+        self.logger.debug(
+            "Horizontal calc: elev=%.1f°, gamma=%.1f°, awn_angle=%s°, "
+            "vertical_pos=%.3f, length=%.3f",
+            self.sol_elev,
+            self.gamma,
+            self.awn_angle,
+            vertical_position,
+            length,
+        )
         # return np.clip(length, 0, self.awn_length)
         return length
 
@@ -1041,9 +920,22 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
 class AdaptiveTiltCover(AdaptiveGeneralCover):
     """Calculate state for tilted blinds."""
 
-    slat_distance: float
-    depth: float
-    mode: TiltMode | str  # Accept both TiltMode enum and string for backward compatibility
+    tilt_config: TiltConfig = None  # type: ignore[assignment]
+
+    @property
+    def slat_distance(self) -> float:
+        """Get slat distance from tilt_config."""
+        return self.tilt_config.slat_distance
+
+    @property
+    def depth(self) -> float:
+        """Get depth from tilt_config."""
+        return self.tilt_config.depth
+
+    @property
+    def mode(self) -> TiltMode | str:
+        """Get mode from tilt_config."""
+        return self.tilt_config.mode
 
     @property
     def beta(self) -> float:
@@ -1091,6 +983,13 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         )
         result = np.rad2deg(slat)
 
+        self.logger.debug(
+            "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",
+            self.sol_elev,
+            self.gamma,
+            beta,
+            result,
+        )
         return result
 
     def calculate_percentage(self) -> float:

@@ -11,10 +11,6 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.calculation import (
-    AdaptiveVerticalCover,
-    NormalCoverState,
-)
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_HEIGHT,
     CONF_SUNSET_POS,
@@ -23,20 +19,38 @@ from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+    DefaultHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
+    ForceOverrideHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
+    ManualOverrideHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
+    MotionTimeoutHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
+from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 
 
 @pytest.fixture
-def cover_in_fov(hass, mock_logger):
+def cover_in_fov(mock_sun_data, mock_logger):
     """Create a vertical cover with sun directly in FOV (would calculate a tracking position)."""
-    return AdaptiveVerticalCover(
-        hass=hass,
+    from tests.cover_helpers import build_vertical_cover
+
+    return build_vertical_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=30.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
@@ -79,6 +93,17 @@ def make_coordinator(extra_attrs=None):
     coordinator.control_method = ControlMethod.SOLAR
     coordinator.config_entry = MagicMock()
     coordinator.config_entry.options = {}
+    coordinator._pipeline_result = None
+    coordinator._pipeline = PipelineRegistry(
+        [
+            ForceOverrideHandler(),
+            MotionTimeoutHandler(),
+            ManualOverrideHandler(),
+            ClimateHandler(),
+            SolarHandler(),
+            DefaultHandler(),
+        ]
+    )
 
     if extra_attrs:
         for k, v in extra_attrs.items():

@@ -56,9 +56,7 @@ def dt_check_time_passed(time: dt.datetime):
     return now >= time
 
 
-def check_cover_features(
-    hass: HomeAssistant, entity_id: str
-) -> dict[str, bool] | None:
+def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool] | None:
     """Check which features a cover entity supports.
 
     Returns:

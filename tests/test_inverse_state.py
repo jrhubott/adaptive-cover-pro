@@ -144,7 +144,11 @@ def test_no_inverse_state_open_close_flow():
     inverse_enabled = False
 
     # When inverse_state is disabled, use calculated position directly
-    position = calculated_position if not inverse_enabled else inverse_state(calculated_position)
+    position = (
+        calculated_position
+        if not inverse_enabled
+        else inverse_state(calculated_position)
+    )
 
     # Apply threshold check
     if position >= threshold:

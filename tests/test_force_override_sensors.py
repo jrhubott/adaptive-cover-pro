@@ -240,7 +240,6 @@ def test_state_property_logic_override_position_100():
     is_force_override_active = True
     override_position = 100
     default_state = 50
-    climate_state = 25
 
     if is_force_override_active:
         state = override_position

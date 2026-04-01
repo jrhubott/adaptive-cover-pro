@@ -4,6 +4,16 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from .cover_helpers import (  # noqa: F401 — re-exported for convenience
+    build_horizontal_cover,
+    build_tilt_cover,
+    build_vertical_cover,
+    make_cover_config,
+    make_horizontal_config,
+    make_tilt_config,
+    make_vertical_config,
+)
+
 
 @pytest.fixture
 def hass():
@@ -27,11 +37,9 @@ def mock_logger():
 
 @pytest.fixture
 def mock_sun_data():
-    """Return a mock SunData instance with predictable values."""
+    """Return a mock SunData instance."""
     sun_data = MagicMock()
-    sun_data.sun_azimuth = 180.0
-    sun_data.sun_elevation = 45.0
-    sun_data.sun_position.return_value = (180.0, 45.0)
+    sun_data.timezone = "UTC"
     return sun_data
 
 
@@ -123,29 +131,28 @@ def sample_climate_config():
 @pytest.fixture
 def mock_state():
     """Return a mock Home Assistant state object."""
+
     def _create_state(entity_id: str, state: str, attributes: dict | None = None):
         state_obj = MagicMock()
         state_obj.entity_id = entity_id
         state_obj.state = state
         state_obj.attributes = attributes or {}
         return state_obj
+
     return _create_state
 
 
 @pytest.fixture
-def vertical_cover_instance(hass, mock_logger):
+def vertical_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveVerticalCover instance for testing."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
-
-    return AdaptiveVerticalCover(
-        hass=hass,
+    return build_vertical_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
@@ -166,19 +173,16 @@ def vertical_cover_instance(hass, mock_logger):
 
 
 @pytest.fixture
-def horizontal_cover_instance(hass, mock_logger):
+def horizontal_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveHorizontalCover instance for testing."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveHorizontalCover
-
-    return AdaptiveHorizontalCover(
-        hass=hass,
+    return build_horizontal_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
@@ -201,19 +205,16 @@ def horizontal_cover_instance(hass, mock_logger):
 
 
 @pytest.fixture
-def tilt_cover_instance(hass, mock_logger):
+def tilt_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveTiltCover instance for testing."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
-
-    return AdaptiveTiltCover(
-        hass=hass,
+    return build_tilt_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
         sunset_pos=0,
         sunset_off=0,
         sunrise_off=0,
-        timezone="UTC",
+        sun_data=mock_sun_data,
         fov_left=45,
         fov_right=45,
         win_azi=180,
@@ -235,32 +236,22 @@ def tilt_cover_instance(hass, mock_logger):
 
 
 @pytest.fixture
-def climate_data_instance(hass, mock_logger, mock_state):
-    """ClimateCoverData instance with mocked entities."""
+def climate_data_instance(mock_logger):
+    """ClimateCoverData instance with pre-read values."""
     from custom_components.adaptive_cover_pro.calculation import ClimateCoverData
 
-    # Mock temperature sensor
-    temp_state = mock_state("sensor.outside_temp", "22.5", {})
-    hass.states.get.return_value = temp_state
-
     return ClimateCoverData(
-        hass=hass,
         logger=mock_logger,
-        temp_entity="sensor.inside_temp",
         temp_low=20.0,
         temp_high=25.0,
-        presence_entity="binary_sensor.presence",
-        weather_entity="weather.home",
-        weather_condition=["sunny", "partlycloudy"],
-        outside_entity="sensor.outside_temp",
         temp_switch=True,
         blind_type="cover_blind",
         transparent_blind=False,
-        lux_entity="sensor.lux",
-        irradiance_entity="sensor.solar",
-        lux_threshold=5000,
-        irradiance_threshold=300,
         temp_summer_outside=22.0,
-        _use_lux=False,
-        _use_irradiance=False,
+        outside_temperature="22.5",
+        inside_temperature=None,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
     )

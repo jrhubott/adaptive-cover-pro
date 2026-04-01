@@ -1,0 +1,14 @@
+export_config:
+  name: Export configuration
+  description: >-
+    Returns the cover configuration as JSON for use in the simulation notebook.
+    Call from Developer Tools > Services, then copy the response and paste it
+    into the CONFIG variable in notebooks/simulate_cover.ipynb.
+  fields:
+    config_entry_id:
+      name: Cover configuration
+      description: The Adaptive Cover Pro configuration entry to export.
+      required: true
+      selector:
+        config_entry:
+          integration: adaptive_cover_pro
