@@ -86,10 +86,15 @@ pre-commit run --all-files
 adaptive-cover/
 ├── custom_components/adaptive_cover_pro/
 │   ├── __init__.py              # Integration entry point
-│   ├── coordinator.py           # Data coordinator (orchestrator, ~1,839 lines)
+│   ├── coordinator.py           # Data coordinator (orchestrator, ~1,477 lines)
 │   ├── calculation.py           # Position calculations (pure, 0 HA imports)
 │   ├── config_flow.py           # Configuration UI
+│   ├── config_types.py          # CoverConfig typed dataclass
 │   ├── sun.py                   # Solar calculations (pure, 0 HA imports)
+│   ├── engine/                  # Next-gen calculation engine
+│   │   ├── sun_geometry.py      # SunGeometry dataclass
+│   │   └── covers/
+│   │       └── venetian.py      # VenetianCoverCalculation (dual-axis)
 │   ├── managers/                # Extracted coordinator responsibilities
 │   │   ├── manual_override.py   # Manual override detection & tracking
 │   │   ├── grace_period.py      # Per-command + startup grace periods
@@ -98,17 +103,21 @@ adaptive-cover/
 │   │   └── cover_command.py     # Cover service calls & delta checks
 │   ├── state/                   # HA boundary layer (state providers)
 │   │   ├── climate_provider.py  # Reads climate/weather/presence entities
+│   │   ├── cover_provider.py    # CoverProvider — reads cover entity state
+│   │   ├── snapshot.py          # SunSnapshot, CoverStateSnapshot dataclasses
 │   │   └── sun_provider.py      # Reads astral location from HA
 │   ├── pipeline/                # Override priority chain
 │   │   ├── registry.py          # Evaluates handlers in priority order
 │   │   ├── types.py             # PipelineContext, PipelineResult, DecisionStep
 │   │   ├── handler.py           # OverrideHandler base class
-│   │   └── handlers/            # 6 priority handlers
+│   │   └── handlers/            # 8 priority handlers
 │   │       ├── force_override.py    # Priority 100
+│   │       ├── wind.py              # Priority 95 (stub)
 │   │       ├── motion_timeout.py    # Priority 80
 │   │       ├── manual_override.py   # Priority 70
 │   │       ├── climate.py           # Priority 50
 │   │       ├── solar.py             # Priority 40
+│   │       ├── cloud_suppression.py # Priority 35 (stub)
 │   │       └── default.py           # Priority 0
 │   ├── diagnostics/             # Diagnostic data builder
 │   │   └── builder.py           # DiagnosticsBuilder + DiagnosticContext
@@ -127,7 +136,7 @@ adaptive-cover/
 │   ├── config_context_adapter.py # Logging adapter
 │   ├── manifest.json            # Integration metadata
 │   └── translations/            # i18n files
-├── tests/                       # Unit tests (657 tests)
+├── tests/                       # Unit tests (751 tests)
 │   ├── conftest.py              # Shared fixtures
 │   ├── test_calculation.py      # Core calculation tests
 │   ├── test_geometric_accuracy.py
@@ -148,6 +157,7 @@ adaptive-cover/
 │   ├── test_managers/           # Manager unit tests
 │   ├── test_pipeline/           # Pipeline handler tests
 │   ├── test_state/              # State provider tests
+│   ├── test_engine/             # Engine module tests
 │   └── test_diagnostics/        # Diagnostics builder tests
 ├── scripts/
 ├── docs/
@@ -356,7 +366,7 @@ Edit this file to create the test scenarios you need.
 This integration uses pytest for automated testing.
 
 **For comprehensive test documentation, see [UNIT_TESTS.md](UNIT_TESTS.md)** which includes:
-- Detailed test descriptions for all 172 tests
+- Detailed test descriptions for all 751 tests
 - Fixture documentation with usage examples
 - Testing patterns and best practices
 - Coverage goals and future expansion plans
@@ -394,29 +404,34 @@ pytest -v
 #### Test Structure
 
 - `tests/conftest.py` - Shared fixtures (hass mock, logger, configs, cover instances)
-- `tests/test_calculation.py` - Position calculation tests (129 tests, unit)
-  - Phase 1: AdaptiveGeneralCover properties (40 tests)
-  - Phase 2: Cover type classes (50 tests)
-  - Phase 3: NormalCoverState logic (20 tests)
-  - Phase 4: ClimateCoverData properties (40 tests)
-  - Phase 5: ClimateCoverState logic (50 tests)
-- `tests/test_helpers.py` - Helper function tests (29 tests, unit)
-- `tests/test_inverse_state.py` - Critical inverse state tests (14 tests, unit)
+- `tests/test_calculation.py` - Position calculation tests (unit)
+- `tests/test_helpers.py` - Helper function tests (unit)
+- `tests/test_inverse_state.py` - Critical inverse state tests (unit)
+- `tests/test_managers/` - Manager class unit tests
+- `tests/test_pipeline/` - Pipeline handler unit tests
+- `tests/test_state/` - State provider tests
+- `tests/test_diagnostics/` - Diagnostics builder tests
+- `tests/test_engine/` - Engine module tests (SunGeometry, VenetianCoverCalculation)
 
-**Total: 172 tests** (all passing)
+**Total: 751 tests** (all passing)
 
 #### Test Coverage
 
 Current test coverage status:
 
-| Module | Coverage | Tests | Status |
-|--------|----------|-------|--------|
-| **calculation.py** | 91% | 129 | ✅ Comprehensive |
-| **helpers.py** | 100% | 29 | ✅ Complete |
-| **const.py** | 100% | - | ✅ Complete |
-| **inverse_state** | 100% | 14 | ✅ Complete |
-| **coordinator.py** | 22% | - | 🔄 Future work |
-| **Overall** | 30% | 172 | 🔄 In progress |
+| Module | Coverage | Status |
+|--------|----------|--------|
+| **calculation.py** | 87% | ✅ Comprehensive |
+| **helpers.py** | 100% | ✅ Complete |
+| **const.py** | 100% | ✅ Complete |
+| **inverse_state** | 100% | ✅ Complete |
+| **pipeline/** | ~100% | ✅ Complete |
+| **managers/** | ~96% | ✅ Mostly complete |
+| **state/** | ~95% | ✅ Mostly complete |
+| **diagnostics/** | ~90% | ✅ Mostly complete |
+| **engine/** | ~90% | ✅ Mostly complete |
+| **coordinator.py** | ~34% | 🔄 Future work |
+| **Overall** | 61% | 🔄 In progress |
 
 See [UNIT_TESTS.md](UNIT_TESTS.md) for detailed coverage information and future expansion plans.
 
@@ -516,7 +531,7 @@ pip install jupyter matplotlib pvlib
 # Start Jupyter
 jupyter notebook
 
-# Open notebooks/test_env.ipynb
+# Open notebooks/simulate_cover.ipynb
 ```
 
 **Use cases:**
@@ -1134,7 +1149,7 @@ Install the recommended VS Code extensions (you'll be prompted when opening the 
 - **keesschollaart.vscode-home-assistant** - Home Assistant YAML schemas
 - **redhat.vscode-yaml** - YAML language support
 - **esbenp.prettier-vscode** - YAML/JSON formatting
-- **ms-toolsai.jupyter** - Notebook support for `notebooks/test_env.ipynb`
+- **ms-toolsai.jupyter** - Notebook support for `notebooks/simulate_cover.ipynb`
 
 Or install manually:
 

@@ -18,7 +18,7 @@ Adaptive Cover Pro is a Home Assistant custom integration that automatically con
 └─────────────────────────┬───────────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────────┐
-│              AdaptiveDataUpdateCoordinator  (~1,839 lines)      │
+│              AdaptiveDataUpdateCoordinator  (~1,477 lines)      │
 │  - Thin orchestrator: runs update cycle, routes events          │
 │  - Schedules refreshes (end-time, timed)                        │
 │  - Manages toggle properties (automatic_control, etc.)          │
@@ -51,6 +51,8 @@ All Home Assistant state reads are isolated here. The rest of the codebase has z
 |------|-------|-------|
 | `climate_provider.py` | `ClimateProvider` | Temp/weather/presence/lux/irradiance entities → `ClimateReadings` frozen dataclass |
 | `sun_provider.py` | `SunProvider` | Astral location from HA → pure `SunData` instance |
+| `cover_provider.py` | `CoverProvider` | Cover entity state from HA (position, state) |
+| `snapshot.py` | `SunSnapshot`, `CoverStateSnapshot` | Frozen dataclasses holding unified state for each update cycle |
 
 **Benefit:** Calculation engine and pipeline handlers are fully testable without HA mocks.
 
@@ -115,10 +117,12 @@ A pluggable priority chain replaces the previous `if/elif` override logic.
 | Handler | Priority | Condition |
 |---------|----------|-----------|
 | `force_override.py` | 100 | Force override sensor(s) active |
+| `wind.py` | 95 | Wind speed exceeds threshold (stub — passes through until sensors configured) |
 | `motion_timeout.py` | 80 | No motion detected within timeout |
 | `manual_override.py` | 70 | User manually moved the cover |
 | `climate.py` | 50 | Climate mode active and triggered |
 | `solar.py` | 40 | Sun in window FOV, direct sun tracking |
+| `cloud_suppression.py` | 35 | Cloud coverage suppresses solar radiation (stub — passes through until sensors configured) |
 | `default.py` | 0 | Fallback (default position) |
 
 **Adding a new override:** create one file in `pipeline/handlers/`, implement `OverrideHandler` (`pipeline/handler.py`), register in coordinator.
@@ -136,7 +140,20 @@ Builds:
 - Configuration diagnostics
 - Decision trace from `PipelineResult`
 
-### 7. Utility Modules
+### 7. Engine Modules (`engine/`)
+
+New-generation calculation engine for advanced cover types.
+
+| File | Class | Purpose |
+|------|-------|---------|
+| `engine/sun_geometry.py` | `SunGeometry` | Pure sun angle math (gamma, elevation, azimuth relationships) |
+| `engine/covers/venetian.py` | `VenetianCoverCalculation` | Dual-axis venetian blind calculations (position + tilt) |
+
+### 8. Configuration Types (`config_types.py`)
+
+`CoverConfig` — typed dataclass consolidating all cover configuration options. Replaces raw dict lookups throughout the codebase.
+
+### 9. Utility Modules
 
 | File | Purpose |
 |------|---------|
@@ -147,15 +164,15 @@ Builds:
 | `helpers.py` | General utility functions |
 | `services/configuration_service.py` | Config entry parsing, parameter extraction |
 
-### 8. Entity Base Classes (`entity_base.py`)
+### 10. Entity Base Classes (`entity_base.py`)
 
 - `AdaptiveCoverBaseEntity` — shared `device_info`, coordinator handling
 - `AdaptiveCoverSensorBase` — base for sensors
 - `AdaptiveCoverDiagnosticSensorBase` — base for diagnostic sensors
 
-### 9. Platform Entities
+### 11. Platform Entities
 
-**Sensor Platform** (`sensor.py`): Cover Position, Start/End Sun Times, Control Method, diagnostic sensors (sun azimuth/elevation, advanced diagnostics)
+**Sensor Platform** (`sensor.py`): Cover Position (consolidated — includes position explanation and control method as attributes), Start/End Sun Times, diagnostic sensors (sun azimuth/elevation, control status, decision trace, and more)
 
 **Switch Platform** (`switch.py`): Automatic Control, Climate Mode, Manual Override
 
@@ -241,20 +258,26 @@ Builds:
 
 ## Testing
 
-- **657 tests, 58% coverage**
+- **751 tests, 61% coverage**
 - Calculation engine tests require no HA mocks (zero HA imports in `calculation.py` and `sun.py`)
-- Each manager, pipeline handler, and state provider has dedicated test coverage
-- Key test files: `tests/test_calculation.py`, `tests/test_geometric_accuracy.py`, `tests/test_motion_control.py`, `tests/test_force_override_sensors.py`, `tests/test_control_state_reason.py`
+- Each manager, pipeline handler, state provider, and engine module has dedicated test coverage
+- Key test files: `tests/test_calculation.py`, `tests/test_geometric_accuracy.py`, `tests/test_motion_control.py`, `tests/test_force_override_sensors.py`, `tests/test_control_state_reason.py`, `tests/test_engine/`
 
 ## File Organization
 
 ```
 custom_components/adaptive_cover_pro/
   __init__.py                        # Integration entry point
-  coordinator.py                     # Thin orchestrator (~1,839 lines)
+  coordinator.py                     # Thin orchestrator (~1,477 lines)
   calculation.py                     # Pure calculation engine (0 HA imports)
   sun.py                             # Pure solar calculations (0 HA imports)
   config_flow.py                     # Configuration UI
+  config_types.py                    # CoverConfig typed dataclass
+
+  engine/                            # Next-gen calculation engine
+    sun_geometry.py                  # SunGeometry dataclass
+    covers/
+      venetian.py                    # VenetianCoverCalculation (dual-axis)
 
   managers/                          # Focused coordinator responsibilities
     manual_override.py               # AdaptiveCoverManager
@@ -265,6 +288,8 @@ custom_components/adaptive_cover_pro/
 
   state/                             # HA boundary layer (all HA reads)
     climate_provider.py              # ClimateProvider → ClimateReadings
+    cover_provider.py                # CoverProvider → cover entity state
+    snapshot.py                      # SunSnapshot, CoverStateSnapshot
     sun_provider.py                  # SunProvider → SunData
 
   pipeline/                          # Override priority chain
@@ -273,10 +298,12 @@ custom_components/adaptive_cover_pro/
     handler.py                       # OverrideHandler abstract base
     handlers/
       force_override.py              # Priority 100
+      wind.py                        # Priority 95 (stub)
       motion_timeout.py              # Priority 80
       manual_override.py             # Priority 70
       climate.py                     # Priority 50
       solar.py                       # Priority 40
+      cloud_suppression.py           # Priority 35 (stub)
       default.py                     # Priority 0
 
   diagnostics/

@@ -7,8 +7,8 @@ This document describes the unit test structure, organization, and coverage for 
 The test suite provides comprehensive coverage of the core calculation logic, manager classes, pipeline handlers, state providers, and diagnostics builder. Tests are organized by subsystem and use pytest with lightweight fixtures that avoid requiring a running Home Assistant instance.
 
 **Current Status:**
-- **Total Tests:** 657
-- **Overall Coverage:** 58% (platform and coordinator files not yet fully tested)
+- **Total Tests:** 751
+- **Overall Coverage:** 61% (platform and coordinator files not yet fully tested)
 - **calculation.py Coverage:** 91% (primary target achieved)
 - **Pipeline handlers:** 69% each
 - **State providers:** 96–100%
@@ -54,7 +54,12 @@ tests/
 │
 ├── test_state/                            # State provider tests
 │   ├── test_climate_provider.py           # ClimateProvider (29 tests)
+│   ├── test_cover_provider.py             # CoverProvider (cover entity state reads)
+│   ├── test_snapshot.py                   # SunSnapshot, CoverStateSnapshot dataclasses
 │   └── test_sun_provider.py               # SunProvider (4 tests)
+│
+├── test_engine/                           # Engine module tests
+│   └── test_venetian.py                   # VenetianCoverCalculation (dual-axis)
 │
 └── test_diagnostics/                      # Diagnostics builder tests
     └── test_builder.py                    # DiagnosticsBuilder (48 tests)
@@ -228,9 +233,15 @@ All handlers are tested for:
 - All handlers registered by default
 - Custom handler lists work correctly
 
-### test_state/ (33 tests total)
+### test_state/ (33+ tests total)
 
 State provider tests isolate HA-reading logic from calculation logic.
+
+**test_cover_provider.py — CoverProvider:**
+Tests for reading cover entity state (position, open/close state) from Home Assistant.
+
+**test_snapshot.py — SunSnapshot, CoverStateSnapshot:**
+Tests for the frozen dataclasses that hold unified state for each update cycle.
 
 **test_climate_provider.py (29 tests) — ClimateProvider:**
 
@@ -246,6 +257,14 @@ State provider tests isolate HA-reading logic from calculation logic.
 - `create_sun_data()` returns a `SunData` instance
 - Correct astral location lookup
 - Timezone handling
+
+### test_engine/test_venetian.py
+
+Tests for `VenetianCoverCalculation` — dual-axis venetian blind calculations:
+- Calculates both position and tilt angle simultaneously
+- Handles elevation and gamma inputs from `SunGeometry`
+- Edge cases for near-horizontal and near-vertical sun positions
+- Regression tests against known angle combinations
 
 ### test_diagnostics/test_builder.py (48 tests)
 
@@ -502,13 +521,17 @@ def test_edge_case_nan_handling(self, tilt_cover_instance):
 | inverse_state behavior | 100% | Complete |
 | managers/ | 83–100% | Mostly complete |
 | pipeline/handlers/ | ~69% each | In progress |
-| pipeline/registry.py | 38% | In progress |
+| pipeline/registry.py | ~100% | Complete |
 | state/climate_provider.py | 96% | Near complete |
 | state/sun_provider.py | 100% | Complete |
+| state/cover_provider.py | ~90% | Mostly complete |
+| state/snapshot.py | ~90% | Mostly complete |
+| engine/covers/venetian.py | ~90% | Mostly complete |
 | diagnostics/builder.py | ~100% | Complete |
 | coordinator.py | ~30% | Future work |
 | sensor.py | 29% | Future work |
 | switch.py | 0% | Future work |
+| **Overall** | **61%** | In progress |
 
 ### Missing Coverage in calculation.py (9%)
 
