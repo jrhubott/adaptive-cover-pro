@@ -604,15 +604,37 @@ def _make_motion_mgr(
     return mgr
 
 
-def _make_motion_status_sensor(coordinator):
-    """Create a motion status sensor with a mocked coordinator."""
+def _make_motion_status_sensor(coordinator, motion_sensors=None):
+    """Create a motion status sensor with a mocked coordinator.
+
+    Args:
+        coordinator: Mocked coordinator instance.
+        motion_sensors: List of sensor entity IDs. Defaults to a single
+            sensor so existing tests exercise the configured path.
+
+    """
     from custom_components.adaptive_cover_pro.sensor import (
         AdaptiveCoverMotionStatusSensor,
     )
 
+    if motion_sensors is None:
+        motion_sensors = ["binary_sensor.motion"]
+
+    config_entry = MagicMock()
+    config_entry.options.get.return_value = motion_sensors
+
     sensor = AdaptiveCoverMotionStatusSensor.__new__(AdaptiveCoverMotionStatusSensor)
     sensor.coordinator = coordinator
+    sensor.config_entry = config_entry
     return sensor
+
+
+def test_motion_status_sensor_not_configured():
+    """Sensor returns not_configured when no motion sensors are set up."""
+    coordinator = MagicMock()
+    sensor = _make_motion_status_sensor(coordinator, motion_sensors=[])
+    assert sensor.native_value == "not_configured"
+    assert sensor.extra_state_attributes is None
 
 
 def test_motion_status_sensor_waiting_for_data_no_history():
