@@ -9,18 +9,96 @@
           "mode": "Typ rolety"
         }
       },
+      "cover_entities": {
+        "title": "Cover Entities",
+        "description": "Select the cover entities this instance will control.",
+        "data": {
+          "group": "Krycie entity"
+        },
+        "data_description": {
+          "group": "Vyberte entity na riadenie prostredníctvom integrácie"
+        }
+      },
+      "geometry": {
+        "title": "Cover Geometry",
+        "description": "Configure cover dimensions. These measurements are used to calculate sun blocking position.",
+        "data": {
+          "window_height": "Výška okna",
+          "distance_shaded_area": "Zatienená oblasť",
+          "window_depth": "Window Depth (Reveal)",
+          "sill_height": "Window Sill Height",
+          "length_awning": "Dĺžka rozpätia markízy",
+          "angle": "Uhol markízy",
+          "slat_depth": "Hĺbka lamely",
+          "slat_distance": "Rozstup lamiel"
+        },
+        "data_description": {
+          "window_height": "Zadajte výšku okna v metroch",
+          "distance_shaded_area": "Vzdialenosť od krytu k zatienenej ploche v metroch",
+          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
+          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
+          "length_awning": "Celková dĺžka rozpätia v metroch",
+          "angle": "Uhol pripevnenej markízy meraný kolmo od steny k zemi",
+          "slat_depth": "Hĺbka každej jednotlivej lamely v centimetroch",
+          "slat_distance": "Vertikálna vzdialenosť medzi dvoma lamelami v centimetroch"
+        }
+      },
+      "sun_tracking": {
+        "title": "Sun Tracking",
+        "description": "Configure window orientation and sun tracking angles.",
+        "data": {
+          "set_azimuth": "Azimut okna",
+          "fov_left": "Zorné pole vľavo",
+          "fov_right": "Zorné pole vpravo",
+          "min_elevation": "Minimálna výška slnka",
+          "max_elevation": "Maximálna výška slnka",
+          "blind_spot": "Nastavenie mŕtveho uhla"
+        },
+        "data_description": {
+          "set_azimuth": "Upravte azimut",
+          "fov_left": "Uhol zorného poľa vľavo od stredu okna",
+          "fov_right": "Uhol zorného poľa vpravo od stredu okna",
+          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
+          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+        }
+      },
+      "position": {
+        "title": "Position Settings",
+        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "data": {
+          "default_percentage": "Predvolená poloha",
+          "max_position": "Maximálna pozícia",
+          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
+          "min_position": "Minimálna pozícia",
+          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
+          "sunset_position": "Poloha pri západe slnka",
+          "sunset_offset": "Posun západu slnka",
+          "sunrise_offset": "Posun východu slnka",
+          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
+          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
+        },
+        "data_description": {
+          "default_percentage": "Predvolená poloha krytu v percentách",
+          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
+          "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
+          "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
+          "sunset_position": "Pozícia na prepnutie po západe slnka",
+          "sunset_offset": "Posun (±) od času západu slnka v minútach",
+          "sunrise_offset": "Posun (±) od času východu slnka v minútach",
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
+          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+        }
+      },
       "automation": {
         "data": {
           "delta_position": "Minimálne nastavenie polohy",
           "delta_time": "Minimálny interval medzi zmenami polohy",
           "start_time": "Začiatočný čas",
           "start_entity": "Entita označujúca čas začiatku",
-          "manual_override_duration": "Trvanie manuálneho ovládania",
-          "manual_override_reset": "Resetovať trvanie manuálneho prepísania",
           "end_time": "Čas ukončenia",
           "end_entity": "Entita označujúca čas ukončenia",
-          "manual_threshold": "Prah ručného ovládania",
-          "manual_ignore_intermediate": "Ignorovať medzipolohy pri ručnom ovládaní (otváranie a zatváranie)",
           "return_sunset": "Vždy upravte polohu na predvolenú hodnotu západu slnka v čase ukončenia; Užitočné, ak je čas ukončenia pred skutočným západom slnka",
           "open_close_threshold": "Open/Close threshold"
         },
@@ -29,53 +107,43 @@
           "delta_time": "Minimálny časový interval medzi zmenami polohy; minimum sú 2 minúty",
           "start_time": "Začiatočný čas pre každý deň; pred týmto časom zostane kryt nehybný",
           "start_entity": "Entita predstavujúca stav počiatočného času, ktorý má prednosť pred pevným časom začiatku nastaveným vyššie. Užitočné na automatizáciu času začiatku s entitou",
-          "manual_override_duration": "Trvanie manuálneho ovládania pred resetovaním na automatické ovládanie",
-          "manual_override_reset": "Možnosť resetovania trvania manuálneho ovládania po každom manuálnom nastavení; ak je vypnutá, trvanie platí len pre prvé manuálne nastavenie",
           "end_time": "Čas ukončenia každého dňa; po tomto čase zostane kryt nehybný",
           "end_entity": "Entita predstavujúca stav času ukončenia, ktorý má prednosť pred pevným časom ukončenia nastaveným vyššie. Užitočné na automatizáciu času ukončenia s entitou",
+          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
-      "vertical": {
+      "manual_override": {
+        "title": "Manual Override",
+        "description": "Configure how manual position changes interact with automatic control.",
         "data": {
-          "set_azimuth": "Azimut okna",
-          "window_height": "Výška okna",
-          "distance_shaded_area": "Zatienená oblasť",
-          "default_percentage": "Predvolená poloha",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna pozícia",
-          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "fov_left": "Zorné pole vľavo",
-          "fov_right": "Zorné pole vpravo",
-          "group": "Krycie entity",
-          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "sunset_position": "Poloha pri západe slnka",
-          "sunset_offset": "Posun západu slnka",
-          "sunrise_offset": "Posun východu slnka",
-          "climate_mode": "Klimatický režim",
-          "blind_spot": "Nastavenie mŕtveho uhla",
-          "min_elevation": "Minimálna výška slnka",
-          "max_elevation": "Maximálna výška slnka",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
+          "manual_override_duration": "Trvanie manuálneho ovládania",
+          "manual_override_reset": "Resetovať trvanie manuálneho prepísania",
+          "manual_threshold": "Prah ručného ovládania",
+          "manual_ignore_intermediate": "Ignorovať medzipolohy pri ručnom ovládaní (otváranie a zatváranie)"
         },
         "data_description": {
-          "set_azimuth": "Upravte azimut",
-          "window_height": "Zadajte výšku okna v metroch",
-          "distance_shaded_area": "Vzdialenosť od krytu k zatienenej ploche v metroch",
-          "default_percentage": "Predvolená poloha krytu v percentách",
-          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
-          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
-          "fov_left": "Uhol zorného poľa vľavo od stredu okna",
-          "fov_right": "Uhol zorného poľa vpravo od stredu okna",
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
-          "sunset_position": "Pozícia na prepnutie po západe slnka",
-          "sunset_offset": "Posun (±) od času západu slnka v minútach",
-          "sunrise_offset": "Posun (±) od času východu slnka v minútach",
-          "climate_mode": "Nakonfigurujte premenné pre klimatický režim"
+          "manual_override_duration": "Trvanie manuálneho ovládania pred resetovaním na automatické ovládanie",
+          "manual_override_reset": "Možnosť resetovania trvania manuálneho ovládania po každom manuálnom nastavení; ak je vypnutá, trvanie platí len pre prvé manuálne nastavenie",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+        }
+      },
+      "motion_overrides": {
+        "title": "Motion & Force Overrides",
+        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+        "data": {
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration"
         },
-        "description": "Pridajte do snímača konfiguračné premenné",
-        "title": "Vertikálny kryt"
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
       },
       "climate": {
         "data": {
@@ -116,94 +184,6 @@
         },
         "title": "Poveternostné podmienky"
       },
-      "horizontal": {
-        "data": {
-          "set_azimuth": "Azimut okna",
-          "length_awning": "Dĺžka rozpätia markízy",
-          "window_height": "Dĺžka markízy",
-          "angle": "Uhol markízy",
-          "distance_shaded_area": "Zatienená oblasť",
-          "default_percentage": "Predvolená poloha",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna pozícia",
-          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "fov_left": "Zorné pole vľavo",
-          "fov_right": "Zorné pole vpravo",
-          "group": "Krycie entity",
-          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "sunset_position": "Poloha pri západe slnka",
-          "sunset_offset": "Posun západu slnka",
-          "sunrise_offset": "Posun východu slnka",
-          "climate_mode": "Klimatický režim",
-          "blind_spot": "Nastavenie mŕtveho uhla",
-          "min_elevation": "Minimálna výška slnka",
-          "max_elevation": "Maximálna výška slnka",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Zadajte azimut",
-          "window_height": "Nastavte výšku markízy od úrovne pracovnej plochy",
-          "length_awning": "Celková dĺžka rozpätia v metroch",
-          "angle": "Uhol pripevnenej markízy meraný kolmo od steny k zemi",
-          "distance_shaded_area": "Vzdialenosť od krytu k zatienenej ploche v metroch",
-          "default_percentage": "Predvolená poloha krytu v percentách",
-          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
-          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
-          "fov_left": "Stupne zorného poľa naľavo od stredu okna",
-          "fov_right": "Stupne zorného poľa vpravo od stredu okna",
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
-          "sunset_position": "Pozícia na prepnutie po západe slnka",
-          "sunset_offset": "Posun (±) od času západu slnka v minútach",
-          "sunrise_offset": "Posun (±) od času východu slnka v minútach",
-          "climate_mode": "Nakonfigurujte premenné pre klimatický režim"
-        },
-        "description": "Pridajte do snímača konfiguračné premenné",
-        "title": "Horizontálny kryt"
-      },
-      "tilt": {
-        "data": {
-          "set_azimuth": "Azimut okna",
-          "slat_depth": "Hĺbka lamely",
-          "slat_distance": "Rozstup lamiel",
-          "default_percentage": "Predvolená poloha",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna pozícia",
-          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "fov_left": "Zorné pole vľavo",
-          "fov_right": "Zorné pole vpravo",
-          "group": "Krycie entity",
-          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "sunset_position": "Poloha pri západe slnka",
-          "sunset_offset": "Posun západu slnka",
-          "sunrise_offset": "Posun východu slnka",
-          "climate_mode": "Klimatický režim",
-          "tilt_mode": "Typ pohybu",
-          "blind_spot": "Nastavenie mŕtveho uhla",
-          "min_elevation": "Minimálna výška slnka",
-          "max_elevation": "Maximálna výška slnka",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj kryt, ak nefunguje úplne pri 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Zadajte azimut",
-          "slat_depth": "Hĺbka každej jednotlivej lamely v centimetroch",
-          "slat_distance": "Vertikálna vzdialenosť medzi dvoma lamelami v centimetroch",
-          "default_percentage": "Predvolená poloha krytu v percentách",
-          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
-          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
-          "fov_left": "Stupne, ktoré treba zvážiť z ľavej strany stredu okna",
-          "fov_right": "Stupne, ktoré treba zvážiť z pravej strany stredu okna",
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
-          "sunset_position": "Pozícia na prechod po západe slnka",
-          "sunset_offset": "Posun (±) od času západu slnka v minútach",
-          "sunrise_offset": "Posun (±) od času východu slnka v minútach",
-          "climate_mode": "Nakonfigurujte premenné pre klimatický režim",
-          "tilt_mode": "Vyberte si typ pohybu"
-        },
-        "description": "Pridajte do snímača konfiguračné premenné",
-        "title": "Naklonený kryt"
-      },
       "blind_spot": {
         "data": {
           "blind_spot_left": "Začnite slepý uhol vľavo",
@@ -231,19 +211,52 @@
         },
         "title": "Úprava rozsahu",
         "description": "Upravte hodnoty, pri ktorých sa kryt efektívne otvára alebo zatvára. Ideálne pre kryty, ktoré sa úplne neotvoria pri 0 % alebo nezatvoria pri 100 %. \n Prvé dva posuvníky sú pre 2-bodové nastavenie, možnosti zoznamu sú pre viacbodové nastavenie"
+      },
+      "device_association": {
+        "title": "Link to Existing Device",
+        "description": "Optionally attach this integration's entities to an existing device (e.g., the physical blind motor). Select 'None' to keep them as a standalone Adaptive Cover virtual device.",
+        "data": {
+          "linked_device_id": "Attach to Device"
+        },
+        "data_description": {
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
+        }
+      },
+      "duplicate_select": {
+        "title": "Duplicate Cover — Select Source",
+        "description": "Choose which existing cover to duplicate settings from.",
+        "data": {
+          "source_entry": "Source cover"
+        }
+      },
+      "duplicate_configure": {
+        "title": "Duplicate Cover — Configure",
+        "description": "Enter the unique settings for the new cover. All other settings will be copied from the source.",
+        "data": {
+          "name": "Name",
+          "entities": "Cover entities",
+          "azimuth": "Window azimuth"
+        }
       }
+    },
+    "abort": {
+      "user_cancelled": "Action cancelled by user",
+      "source_not_found": "The source cover no longer exists."
     }
   },
   "options": {
     "step": {
       "init": {
         "menu_options": {
+          "cover_entities": "Cover Entities",
+          "geometry": "Cover Geometry",
+          "sun_tracking": "Sun Tracking",
+          "position": "Position Settings",
           "automation": "Upravte konfiguráciu automatizácie",
-          "blind": "Jemne dolaďte nastavenia žalúzie",
+          "manual_override": "Manual Override",
+          "motion_overrides": "Motion & Force Overrides",
           "climate": "Upraviť konfiguráciu klímy",
-          "weather": "Upraviť konfiguráciu počasia",
-          "blind_spot": "Nastavenie mŕtveho uhla",
-          "interp": "Úprava rozsahu"
+          "sync": "Sync settings to other covers"
         }
       },
       "automation": {
@@ -252,12 +265,8 @@
           "delta_time": "Minimálny interval medzi zmenami polohy",
           "start_time": "Začiatočný čas",
           "start_entity": "Entita označujúca čas začatia",
-          "manual_override_duration": "Trvanie manuálneho ovládania",
-          "manual_override_reset": "Resetovať trvanie manuálneho prepísania",
           "end_time": "Čas ukončenia",
           "end_entity": "Entita označujúca čas ukončenia",
-          "manual_threshold": "Prah ručného ovládania",
-          "manual_ignore_intermediate": "Ignorovať medzipolohy pri ručnom ovládaní (otváranie a zatváranie)",
           "return_sunset": "Vždy upravte polohu na predvolenú hodnotu západu slnka v čase ukončenia; Užitočné, ak je čas ukončenia pred skutočným západom slnka",
           "open_close_threshold": "Open/Close threshold"
         },
@@ -266,52 +275,125 @@
           "delta_time": "Minimálny časový interval medzi zmenami polohy; minimum sú 2 minúty",
           "start_time": "Začiatočný čas pre každý deň; pred týmto časom zostane kryt nehybný",
           "start_entity": "Entita predstavujúca stav počiatočného času, ktorý má prednosť pred pevným časom začiatku nastaveným vyššie. Užitočné na automatizáciu času začiatku s entitou",
-          "manual_override_duration": "Trvanie manuálneho ovládania pred resetovaním na automatické ovládanie",
-          "manual_override_reset": "Možnosť resetovania trvania manuálneho ovládania po každom manuálnom nastavení; ak je vypnutá, trvanie platí len pre prvé manuálne nastavenie",
           "end_time": "Čas ukončenia každého dňa; po tomto čase zostane kryt nehybný",
-          "end_entity": "Uistite sa, že pozícia je v čase ukončenia konzistentne nastavená na predvolené nastavenie západu slnka. To je obzvlášť výhodné, keď čas ukončenia predchádza skutočnému západu slnka."
+          "end_entity": "Uistite sa, že pozícia je v čase ukončenia konzistentne nastavená na predvolené nastavenie západu slnka. To je obzvlášť výhodné, keď čas ukončenia predchádza skutočnému západu slnka.",
+          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
-      "vertical": {
+      "cover_entities": {
+        "title": "Cover Entities",
+        "description": "Select the cover entities this instance will control.",
         "data": {
-          "set_azimuth": "Azimut okna",
+          "group": "Krycie entity"
+        },
+        "data_description": {
+          "group": "Vyberte entity na riadenie prostredníctvom integrácie"
+        }
+      },
+      "geometry": {
+        "title": "Cover Geometry",
+        "description": "Configure cover dimensions.",
+        "data": {
           "window_height": "Výška okna",
           "distance_shaded_area": "Zatienená oblasť",
-          "default_percentage": "Predvolená poloha",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna pozícia",
-          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
+          "window_depth": "Window Depth (Reveal)",
+          "sill_height": "Window Sill Height",
+          "length_awning": "Dĺžka rozpätia markízy",
+          "angle": "Uol markízy",
+          "slat_depth": "Hĺbka lamely",
+          "slat_distance": "Rozostup lamiel"
+        },
+        "data_description": {
+          "window_height": "Zadajte výšku okna v metroch",
+          "distance_shaded_area": "Vzdialenosť od krytu k zatienenej ploche v metroch",
+          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
+          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
+          "length_awning": "Celková dĺžka rozpätia v metroch",
+          "angle": "Uhol pripevnenej markízy meraný kolmo od steny k zemi",
+          "slat_depth": "Hĺbka každej jednotlivej lamely v centimetroch",
+          "slat_distance": "Vertikálna vzdialenosť medzi dvoma lamelami v centimetroch"
+        }
+      },
+      "sun_tracking": {
+        "title": "Sun Tracking",
+        "description": "Configure window orientation and sun tracking angles.",
+        "data": {
+          "set_azimuth": "Azimut okna",
           "fov_left": "Zorné pole vľavo",
           "fov_right": "Zorné pole vpravo",
-          "group": "Krycie entity",
-          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "sunset_position": "Poloha pri západe slnka",
-          "sunset_offset": "Posun západu slnka",
-          "sunrise_offset": "Posun východu slnka",
-          "climate_mode": "Klimatický režim",
-          "blind_spot": "Nastavenie mŕtveho uhla",
           "min_elevation": "Minimálna výška slnka",
           "max_elevation": "Maximálna výška slnka",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
+          "blind_spot": "Nastavenie mŕtveho uhla"
         },
         "data_description": {
           "set_azimuth": "Upravte azimut",
-          "window_height": "Zadajte výšku okna v metroch",
-          "distance_shaded_area": "Vzdialenosť od krytu k zatienenej ploche v metroch",
-          "default_percentage": "Predvolená poloha krytu v percentách",
-          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
-          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
           "fov_left": "Uhol zorného poľa vľavo od stredu okna",
           "fov_right": "Uhol zorného poľa vpravo od stredu okna",
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
+          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
+          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+        }
+      },
+      "position": {
+        "title": "Position Settings",
+        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "data": {
+          "default_percentage": "Predvolená poloha",
+          "max_position": "Maximálna pozícia",
+          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
+          "min_position": "Minimálna pozícia",
+          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
+          "sunset_position": "Poloha pri západe slnka",
+          "sunset_offset": "Posun západu slnka",
+          "sunrise_offset": "Posun východu slnka",
+          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
+          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
+        },
+        "data_description": {
+          "default_percentage": "Predvolená poloha krytu v percentách",
+          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
+          "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
+          "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
           "sunset_position": "Pozícia na prepnutie po západe slnka",
           "sunset_offset": "Posun (±) od času západu slnka v minútach",
           "sunrise_offset": "Posun (±) od času východu slnka v minútach",
-          "climate_mode": "Nakonfigurujte premenné pre klimatický režim"
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
+          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+        }
+      },
+      "manual_override": {
+        "title": "Manual Override",
+        "description": "Configure how manual position changes interact with automatic control.",
+        "data": {
+          "manual_override_duration": "Trvanie manuálneho ovládania",
+          "manual_override_reset": "Resetovať trvanie manuálneho prepísania",
+          "manual_threshold": "Prah ručného ovládania",
+          "manual_ignore_intermediate": "Ignorovať medzipolohy pri ručnom ovládaní (otváranie a zatváranie)"
         },
-        "description": "Pridajte do snímača konfiguračné premenné",
-        "title": "Vertikálny kryt"
+        "data_description": {
+          "manual_override_duration": "Trvanie manuálneho ovládania pred resetovaním na automatické ovládanie",
+          "manual_override_reset": "Možnosť resetovania trvania manuálneho ovládania po každom manuálnom nastavení; ak je vypnutá, trvanie platí len pre prvé manuálne nastavenie",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+        }
+      },
+      "motion_overrides": {
+        "title": "Motion & Force Overrides",
+        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+        "data": {
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration"
+        },
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
       },
       "climate": {
         "data": {
@@ -352,94 +434,6 @@
         },
         "title": "Poveternostné podmienky"
       },
-      "horizontal": {
-        "data": {
-          "set_azimuth": "Azimut okna",
-          "length_awning": "Dĺžka rozpätia markízy",
-          "window_height": "Dĺžka markízy",
-          "angle": "Uol markízy",
-          "distance_shaded_area": "Zatienená oblasť",
-          "default_percentage": "Predvolená poloha",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna pozícia",
-          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "fov_left": "Zorné pole vľavo",
-          "fov_right": "Zorné pole vpravo",
-          "group": "Krycie entity",
-          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "sunset_position": "Poloha pri západe slnka",
-          "sunset_offset": "Posun západu slnka",
-          "sunrise_offset": "Posun východu slnka",
-          "climate_mode": "Klimatický režim",
-          "blind_spot": "Nastavenie mŕtveho uhla",
-          "min_elevation": "Minimálna výška slnka",
-          "max_elevation": "Maximálna výška slnka",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Zadajte azimut",
-          "window_height": "Nastavte výšku markízy od úrovne pracovnej plochy",
-          "length_awning": "Celková dĺžka rozpätia v metroch",
-          "angle": "Uhol pripevnenej markízy meraný kolmo od steny k zemi",
-          "distance_shaded_area": "Vzdialenosť od krytu k zatienenej ploche v metroch",
-          "default_percentage": "Predvolená poloha krytu v percentách",
-          "min_position": "Minimálna nastaviteľná poloha krytu v percentách",
-          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
-          "fov_left": "Stupne zorného poľa naľavo od stredu okna",
-          "fov_right": "Stupne zorného poľa vpravo od stredu okna",
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
-          "sunset_position": "Pozícia na prepnutie po západe slnka",
-          "sunset_offset": "Posun (±) od času západu slnka v minútach",
-          "sunrise_offset": "Posun (±) od času východu slnka v minútach",
-          "climate_mode": "Nakonfigurujte premenné pre klimatický režim"
-        },
-        "description": "Pridajte do snímača konfiguračné premenné",
-        "title": "Horizontálny kryt"
-      },
-      "tilt": {
-        "data": {
-          "set_azimuth": "Azimut okna",
-          "slat_depth": "Hĺbka lamely",
-          "slat_distance": "Rozostup lamiel",
-          "default_percentage": "Predvolená poloha",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna pozícia",
-          "enable_min_position": "Minimálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "enable_max_position": "Maximálnu polohu vynucujte len vtedy, keď je slnko pred oknom",
-          "fov_left": "Zorné pole vľavo",
-          "fov_right": "Zorné pole vpravo",
-          "group": "Krycie entity",
-          "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "sunset_position": "Poloha pri západe slnka",
-          "sunset_offset": "Posun západu slnka",
-          "sunrise_offset": "Posun východu slnka",
-          "climate_mode": "Klimatický režim",
-          "tilt_mode": "Typ pohybu",
-          "blind_spot": "Nastavenie mŕtveho uhla",
-          "min_elevation": "Minimálna výška slnka",
-          "max_elevation": "Maximálna výška slnka",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Zadajte azimut",
-          "slat_depth": "Hĺbka každej jednotlivej lamely v centimetroch",
-          "slat_distance": "Vertikálna vzdialenosť medzi dvoma lamelami v centimetroch",
-          "default_percentage": "Predvolená poloha krytu v percentách",
-          "min_position": "Minimálna pozícia",
-          "max_position": "Maximálna nastaviteľná poloha krytu v percentách",
-          "fov_left": "Stupne, ktoré treba zvážiť z ľavej strany stredu okna",
-          "fov_right": "Stupne, ktoré treba zvážiť z pravej strany stredu okna",
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
-          "sunset_position": "Pozícia na prechod po západe slnka",
-          "sunset_offset": "Posun (±) od času západu slnka v minútach",
-          "sunrise_offset": "Posun (±) od času východu slnka v minútach",
-          "climate_mode": "Nakonfigurujte premenné pre klimatický režim",
-          "tilt_mode": "Vyberte si typ pohybu"
-        },
-        "description": "Pridajte do snímača konfiguračné premenné",
-        "title": "Naklonený kryt"
-      },
       "blind_spot": {
         "data": {
           "blind_spot_left": "Začnite slepý uhol vľavo",
@@ -467,7 +461,37 @@
         },
         "title": "Úprava rozsahu",
         "description": "Upravte hodnoty, pri ktorých sa kryt efektívne otvára alebo zatvára. Ideálne pre kryty, ktoré sa úplne neotvoria pri 0 % alebo nezatvoria pri 100 %. \n Prvé dva posuvníky sú pre 2-bodové nastavenie, možnosti zoznamu sú pre viacbodové nastavenie"
+      },
+      "device": {
+        "title": "Device Association",
+        "description": "Link this integration's entities to an existing device (e.g., the physical blind motor) or remove an existing link.",
+        "data": {
+          "linked_device_id": "Attach to Device"
+        },
+        "data_description": {
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
+        }
+      },
+      "sync": {
+        "title": "Sync Settings — Select Targets",
+        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "data": {
+          "target_entries": "Target covers"
+        }
+      },
+      "sync_confirm": {
+        "title": "Sync Settings — Confirm",
+        "description": "The following covers will have their shared settings overwritten:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
+        "data": {
+          "confirm": "Confirm sync"
+        }
       }
+    },
+    "abort": {
+      "no_covers_to_sync": "No other covers of the same type exist to sync to.",
+      "no_targets_selected": "No covers were selected to sync to.",
+      "user_cancelled": "Sync cancelled.",
+      "sync_complete": "Settings synced successfully."
     }
   },
   "selector": {
@@ -482,6 +506,40 @@
       "options": {
         "mode1": "jeden smer (0 % = zatvorené / 100 % = otvorené)",
         "mode2": "obojsmerné (0 % = zatvorené / 50 % = otvorené / 100 % = zatvorené)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "control_status": {
+        "state": {
+          "force_override_active": "Force override active",
+          "motion_timeout": "No motion - using default position"
+        }
+      },
+      "motion_status": {
+        "state": {
+          "not_configured": "Not Configured",
+          "motion_detected": "Motion Detected",
+          "timeout_pending": "Timeout Pending",
+          "no_motion": "No Motion",
+          "waiting_for_data": "Waiting for Data"
+        }
+      },
+      "decision_trace": {
+        "name": "Decision Trace",
+        "state": {
+          "unknown": "Unknown",
+          "solar": "Solar",
+          "summer": "Summer",
+          "winter": "Winter",
+          "default": "Default",
+          "manual_override": "Manual Override",
+          "motion_timeout": "Motion Timeout",
+          "force_override": "Force Override",
+          "wind_override": "Wind Override",
+          "cloud_suppression": "Cloud Suppression"
+        }
       }
     }
   }

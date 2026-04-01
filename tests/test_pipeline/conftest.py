@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineContext
 

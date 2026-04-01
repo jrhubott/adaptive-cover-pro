@@ -253,18 +253,24 @@ class TestEdgeCases:
     @pytest.mark.parametrize(
         "gamma,sol_elev",
         [
-            (0.0, 45.0),   # Direct front, mid elevation
+            (0.0, 45.0),  # Direct front, mid elevation
             (30.0, 30.0),  # Moderate angle
             (60.0, 60.0),  # Higher angle (below 85° gamma threshold)
-            (-45.0, 15.0), # Negative gamma
+            (-45.0, 15.0),  # Negative gamma
             (45.0, 45.0),  # 45 degree angle
         ],
     )
-    def test_edge_case_normal_angles_returns_false(self, base_cover_params, gamma, sol_elev):
+    def test_edge_case_normal_angles_returns_false(
+        self, base_cover_params, gamma, sol_elev
+    ):
         """Normal angles should not trigger edge case handling."""
-        cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+        cover = make_cover_with_angles(
+            base_cover_params, gamma=gamma, sol_elev=sol_elev
+        )
         is_edge_case, _ = cover._handle_edge_cases()
-        assert is_edge_case is False, f"False edge case at gamma={gamma}, elev={sol_elev}"
+        assert is_edge_case is False, (
+            f"False edge case at gamma={gamma}, elev={sol_elev}"
+        )
 
 
 class TestEnhancedCalculatePosition:

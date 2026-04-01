@@ -9,18 +9,96 @@
           "mode": "Tipo de persiana"
         }
       },
+      "cover_entities": {
+        "title": "Cover Entities",
+        "description": "Select the cover entities this instance will control.",
+        "data": {
+          "group": "Entidades de las persianas"
+        },
+        "data_description": {
+          "group": "Seleccionar entidades para controlar vía la integración"
+        }
+      },
+      "geometry": {
+        "title": "Cover Geometry",
+        "description": "Configure cover dimensions. These measurements are used to calculate sun blocking position.",
+        "data": {
+          "window_height": "Altura de la ventana",
+          "distance_shaded_area": "Área sombreada",
+          "window_depth": "Window Depth (Reveal)",
+          "sill_height": "Window Sill Height",
+          "length_awning": "Longitud del toldo",
+          "angle": "Ángulo del toldo",
+          "slat_depth": "Profundidad de la lama",
+          "slat_distance": "Espacio entre lamas"
+        },
+        "data_description": {
+          "window_height": "Indicar la altura de la ventana en metros",
+          "distance_shaded_area": "Distancia de la persiana al área sombreada en metros",
+          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
+          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
+          "length_awning": "Longitud total en metros",
+          "angle": "Ángulo del toldo fijado medido perpendicularmente desde la pared hasta el suelo",
+          "slat_depth": "Profundidad de cada lama individual en centímetros",
+          "slat_distance": "Distancia vertical entre dos lamas en centímetros"
+        }
+      },
+      "sun_tracking": {
+        "title": "Sun Tracking",
+        "description": "Configure window orientation and sun tracking angles.",
+        "data": {
+          "set_azimuth": "Azimut de la ventana",
+          "fov_left": "Campo de visión izquierdo",
+          "fov_right": "Campo de visión derecho",
+          "min_elevation": "Elevación mínima del sol",
+          "max_elevation": "Elevación máxima del sol",
+          "blind_spot": "Configura punto ciego"
+        },
+        "data_description": {
+          "set_azimuth": "Indicar azimut",
+          "fov_left": "Ángulo de visión hacia la izquierda del centro de la ventana",
+          "fov_right": "Ángulo de visión hacia la derecha del centro de la ventana",
+          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
+          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+        }
+      },
+      "position": {
+        "title": "Position Settings",
+        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "data": {
+          "default_percentage": "Posición por defecto",
+          "max_position": "Posición máxima",
+          "enable_max_position": "Forzar la posición máxima solo si el sol está enfrente de la ventana",
+          "min_position": "Posición mínima",
+          "enable_min_position": "Forzar la posición mínima solo si el sol está enfrente de la ventana",
+          "sunset_position": "Posición al ocaso",
+          "sunset_offset": "Desfase del Ocaso",
+          "sunrise_offset": "Desfase del Orto",
+          "inverse_state": "Invertir el estado (se necesita para algunas persianas que no siguen las directrices de HA)",
+          "interp": "Configurar posiciones personalizadas para posiciones abierto/cerrado de My Cover, si no funcionan sobre aperturas 0-100%"
+        },
+        "data_description": {
+          "default_percentage": "Posición por defecto de la persiana como porcentaje",
+          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
+          "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position": "Posición mínima ajustable de la persiana como porcentaje",
+          "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
+          "sunset_position": "Posición a la que cambiar tras el Ocaso",
+          "sunset_offset": "Desfase (±) desde el Ocaso en minutos",
+          "sunrise_offset": "Desfase (±) desde el Orto en minutos",
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
+          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+        }
+      },
       "automation": {
         "data": {
           "delta_position": "Ajuste de posición mínima",
           "delta_time": "Intervalo mínimo entre cambios de posición",
           "start_time": "Hora de comienzo",
           "start_entity": "Entidad para la hora de comienzo",
-          "manual_override_duration": "Duración de la anulación manual",
-          "manual_override_reset": "Duración del reseteo de la anulación manual",
           "end_time": "Hora de finalización",
           "end_entity": "Entidad para la hora de finalización",
-          "manual_threshold": "Umbral de la anulación manual",
-          "manual_ignore_intermediate": "Ignora las posiciones intermedias durante la anulación manual (apertura y cierre)",
           "return_sunset": "Siempre ajusta la posición a la por defecto al ocaso en la hora de finalización; Útil si la hora de finalización es antes del ocaso",
           "open_close_threshold": "Open/Close threshold"
         },
@@ -29,53 +107,43 @@
           "delta_time": "Intervalo mínimo de tiempo requerido entre cambios de posición; mínimo 2 minutos",
           "start_time": "Hora de inicio para cada día; antes de esta hora, la persiana permanecerá estacionaria",
           "start_entity": "Entidad que representa la hora de inicio, anulando lo hora de inicio configurada arriba. Útil para automatizar la hora de inicio con una entidad",
-          "manual_override_duration": "Duración del control manual antes de volver a control automático",
-          "manual_override_reset": "Opción para resetear la duración de la anulación manual después de cada ajuste manual; si se deshabilita, la duración solo se aplica al primer ajuste manual",
           "end_time": "Hora de finalización diaria; despues de esta hora, la persiana permanecerá estacionaria",
           "end_entity": "Entidad que representa la hora de finalización, anulando lo hora de finalización configurada arriba. Útil para automatizar la hora de finalización con una entidad",
+          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
-      "vertical": {
+      "manual_override": {
+        "title": "Manual Override",
+        "description": "Configure how manual position changes interact with automatic control.",
         "data": {
-          "set_azimuth": "Azimut de la ventana",
-          "window_height": "Altura de la ventana",
-          "distance_shaded_area": "Área sombreada",
-          "default_percentage": "Posición por defecto",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima",
-          "enable_min_position": "Forzar la posición mínima solo si el sol está enfrente de la ventana",
-          "enable_max_position": "Forzar la posición máxima solo si el sol está enfrente de la ventana",
-          "fov_left": "Campo de visión izquierdo",
-          "fov_right": "Campo de visión derecho",
-          "group": "Entidades de las persianas",
-          "inverse_state": "Invertir el estado (se necesita para algunas persianas que no siguen las directrices de HA)",
-          "sunset_position": "Posición al ocaso",
-          "sunset_offset": "Desfase del Ocaso",
-          "sunrise_offset": "Desfase del Orto",
-          "climate_mode": "Modo Clima",
-          "blind_spot": "Configura punto ciego",
-          "min_elevation": "Elevación mínima del sol",
-          "max_elevation": "Elevación máxima del sol",
-          "interp": "Configurar posiciones personalizadas para posiciones abierto/cerrado de My Cover, si no funcionan sobre aperturas 0-100%"
+          "manual_override_duration": "Duración de la anulación manual",
+          "manual_override_reset": "Duración del reseteo de la anulación manual",
+          "manual_threshold": "Umbral de la anulación manual",
+          "manual_ignore_intermediate": "Ignora las posiciones intermedias durante la anulación manual (apertura y cierre)"
         },
         "data_description": {
-          "set_azimuth": "Indicar azimut",
-          "window_height": "Indicar la altura de la ventana en metros",
-          "distance_shaded_area": "Distancia de la persiana al área sombreada en metros",
-          "default_percentage": "Posición por defecto de la persiana como porcentaje",
-          "min_position": "Posición mínima ajustable de la persiana como porcentaje",
-          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
-          "fov_left": "Ángulo de visión hacia la izquierda del centro de la ventana",
-          "fov_right": "Ángulo de visión hacia la derecha del centro de la ventana",
-          "group": "Seleccionar entidades para controlar vía la integración",
-          "sunset_position": "Posición a la que cambiar tras el Ocaso",
-          "sunset_offset": "Desfase (±) desde el Ocaso en minutos",
-          "sunrise_offset": "Desfase (±) desde el Orto en minutos",
-          "climate_mode": "Configurar variables para el modo clima"
+          "manual_override_duration": "Duración del control manual antes de volver a control automático",
+          "manual_override_reset": "Opción para resetear la duración de la anulación manual después de cada ajuste manual; si se deshabilita, la duración solo se aplica al primer ajuste manual",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+        }
+      },
+      "motion_overrides": {
+        "title": "Motion & Force Overrides",
+        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+        "data": {
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration"
         },
-        "description": "Agregar variables de configuración al sensor",
-        "title": "Persiana vertical"
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
       },
       "climate": {
         "data": {
@@ -116,94 +184,6 @@
         },
         "title": "Condiciones climáticas"
       },
-      "horizontal": {
-        "data": {
-          "set_azimuth": "Azimut de ventana",
-          "length_awning": "Longitud del toldo",
-          "window_height": "Altura del toldo",
-          "angle": "Ángulo del toldo",
-          "distance_shaded_area": "Área sombreada",
-          "default_percentage": "Posición predeterminada",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima",
-          "enable_min_position": "Sólo fuerce la posición mínima cuando el sol esté frente a la ventana",
-          "enable_max_position": "Sólo fuerce la posición máxima cuando el sol esté frente a la ventana",
-          "fov_left": "Campo de visión izquierdo",
-          "fov_right": "Campo de visión derecho",
-          "group": "Entidades de persiana",
-          "inverse_state": "Invertir el estado (necesario para algunas cubiertas que no siguen las pautas de HA)",
-          "sunset_position": "Posición al Ocaso",
-          "sunset_offset": "Desfase del Ocaso",
-          "sunrise_offset": "Desfase del Orto",
-          "climate_mode": "Modo Clima",
-          "blind_spot": "Configurar punto ciego",
-          "min_elevation": "Elevación mínima del sol",
-          "max_elevation": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %evación máxima del sol",
-          "interp": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Especifique el azimut",
-          "window_height": "Ajuste la altura del toldo desde el nivel del área de trabajo.",
-          "length_awning": "Longitud total en metros",
-          "angle": "Ángulo del toldo fijado medido perpendicularmente desde la pared hasta el suelo",
-          "distance_shaded_area": "Distancia de la portada al Área sombreada en metros",
-          "default_percentage": "Posición por defecto de la persiana como porcentaje",
-          "min_position": "Posición mínima de la cubierta ajustable como porcentaje",
-          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
-          "fov_left": "Grados del campo de visión a la izquierda del centro de la ventana",
-          "fov_right": "Grados del campo de visión a la derecha del centro de la ventana",
-          "group": "Seleccionar entidades para controlar vía integración",
-          "sunset_position": "Posición a la que cambiar después del Ocaso",
-          "sunset_offset": "Desfase (±) respecto del Ocaso en minutos",
-          "sunrise_offset": "Desfase (±) respecto del Orto en minutos",
-          "climate_mode": "Configurar variables para Modo Clima"
-        },
-        "description": "Agregar variables de configuración al sensor",
-        "title": "Persiana horizontal"
-      },
-      "tilt": {
-        "data": {
-          "set_azimuth": "Azimut de ventana",
-          "slat_depth": "Profundidad de la lama",
-          "slat_distance": "Espacio entre lamas",
-          "default_percentage": "Posición predeterminada",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima",
-          "enable_min_position": "Solo fuerce la posición máxima cuando el sol esté frente a la ventana",
-          "enable_max_position": "Forzar la posición máxima solo cuando el sol esté frente a la ventana",
-          "fov_left": "Campo de visión izquierdo",
-          "fov_right": "Campo de visión derecho",
-          "group": "Entidades de persiana",
-          "inverse_state": "Invertir el estado (necesario para algunas cubiertas que no siguen las pautas de HA)",
-          "sunset_position": "Posición al Ocaso",
-          "sunset_offset": "Desfase del Ocaso",
-          "sunrise_offset": "Desfase del Orto",
-          "climate_mode": "Modo Clima",
-          "tilt_mode": "Tipo de movimiento",
-          "blind_spot": "Configurar punto ciego",
-          "min_elevation": "Elevación mínima del sol",
-          "max_elevation": "Elevación máxima del sol",
-          "interp": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Especifique el azimut",
-          "slat_depth": "Profundidad de cada lama individual en centímetros",
-          "slat_distance": "Distancia vertical entre dos lamas en centímetros",
-          "default_percentage": "Posición por defecto de la persiana como porcentaje",
-          "min_position": "Posición mínima de la cubierta ajustable como porcentaje",
-          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
-          "fov_left": "Grados a considerar desde el lado izquierdo del centro de la ventana",
-          "fov_right": "Grados a considerar desde el lado derecho del centro de la ventana",
-          "group": "Seleccionar entidades para controlar vía integración",
-          "sunset_position": "Posición a la que hacer la transición después del Ocaso",
-          "sunset_offset": "Desfase (±) respecto del Ocaso en minutos",
-          "sunrise_offset": "Desfase (±) respecto del Orto en minutos",
-          "climate_mode": "Configurar variables para Modo Clima",
-          "tilt_mode": "Elija Tipo de movimiento"
-        },
-        "description": "Agregar variables de configuración al sensor",
-        "title": "Persiana inclinada"
-      },
       "blind_spot": {
         "data": {
           "blind_spot_left": "Inicio del punto ciego",
@@ -231,19 +211,52 @@
         },
         "title": "Rango de ajuste",
         "description": "Ajuste los valores a los que la cubierta se abre o cierra eficazmente. Ideal para cubiertas que no abren completamente al 0 % ni cierran al 100 %. \n Los dos primeros controles deslizantes son para un ajuste de 2 puntos, las opciones de lista son para un ajuste de varios puntos"
+      },
+      "device_association": {
+        "title": "Link to Existing Device",
+        "description": "Optionally attach this integration's entities to an existing device (e.g., the physical blind motor). Select 'None' to keep them as a standalone Adaptive Cover virtual device.",
+        "data": {
+          "linked_device_id": "Attach to Device"
+        },
+        "data_description": {
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
+        }
+      },
+      "duplicate_select": {
+        "title": "Duplicate Cover — Select Source",
+        "description": "Choose which existing cover to duplicate settings from.",
+        "data": {
+          "source_entry": "Source cover"
+        }
+      },
+      "duplicate_configure": {
+        "title": "Duplicate Cover — Configure",
+        "description": "Enter the unique settings for the new cover. All other settings will be copied from the source.",
+        "data": {
+          "name": "Name",
+          "entities": "Cover entities",
+          "azimuth": "Window azimuth"
+        }
       }
+    },
+    "abort": {
+      "user_cancelled": "Action cancelled by user",
+      "source_not_found": "The source cover no longer exists."
     }
   },
   "options": {
     "step": {
       "init": {
         "menu_options": {
+          "cover_entities": "Cover Entities",
+          "geometry": "Cover Geometry",
+          "sun_tracking": "Sun Tracking",
+          "position": "Position Settings",
           "automation": "Modificar la configuración de automatización",
-          "blind": "Ajuste fino de la configuración de las persianas",
+          "manual_override": "Manual Override",
+          "motion_overrides": "Motion & Force Overrides",
           "climate": "Editar configuración climática",
-          "weather": "Editar configuración climática",
-          "blind_spot": "Configurar punto ciego",
-          "interp": "Rango de ajuste"
+          "sync": "Sync settings to other covers"
         }
       },
       "automation": {
@@ -252,12 +265,8 @@
           "delta_time": "Intervalo mínimo entre cambios de posición",
           "start_time": "Hora de inicio",
           "start_entity": "Entidad que indica la hora de inicio",
-          "manual_override_duration": "Duración de la anulación manual",
-          "manual_override_reset": "Restablecer la duración de la anulación manual",
           "end_time": "Hora de finalización",
           "end_entity": "Entidad que indica la hora de finalización",
-          "manual_threshold": "Umbral de anulación manual",
-          "manual_ignore_intermediate": "Ignorar posiciones intermedias durante la anulación manual (apertura y cierre)",
           "return_sunset": "Ajustar siempre la posición a la predeterminada del Ocaso al momento de finalización; útil si el momento de finalización es anterior al Ocaso real",
           "open_close_threshold": "Open/Close threshold"
         },
@@ -266,53 +275,125 @@
           "delta_time": "Intervalo de tiempo mínimo entre cambios de posición; el mínimo es de 2 minutos",
           "start_time": "Hora de inicio de cada día; antes de esta hora, la cubierta permanecerá fija.",
           "start_entity": "Entidad que representa el estado de la hora de inicio, que anula la hora de inicio fija establecida anteriormente. Útil para automatizar la hora de inicio con una entidad.",
-          "manual_override_duration": "La duración del control manual antes de restablecer el control automático",
-          "manual_override_reset": "Opción para restablecer la duración de la anulación manual después de cada ajuste manual; si está deshabilitada, la duración solo se aplica al primer ajuste manual",
           "end_time": "Hora de finalización de cada día; después de esta hora, la cubierta permanecerá fija.",
           "end_entity": "Asegúrese de que la posición se ajuste a la configuración predeterminada del Ocaso antes de la hora de finalización. Esto es especialmente beneficioso cuando la hora de finalización precede a la del Ocaso real.",
+          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
-      "vertical": {
+      "cover_entities": {
+        "title": "Cover Entities",
+        "description": "Select the cover entities this instance will control.",
         "data": {
-          "set_azimuth": "Azimut de ventana",
+          "group": "Entidades de persiana"
+        },
+        "data_description": {
+          "group": "Seleccionar entidades para controlar via integración"
+        }
+      },
+      "geometry": {
+        "title": "Cover Geometry",
+        "description": "Configure cover dimensions.",
+        "data": {
           "window_height": "Altura de la ventana",
           "distance_shaded_area": "Área sombreada",
-          "default_percentage": "Posición predeterminada",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima",
-          "enable_min_position": "Sólo fuerce la posición máxima cuando el sol esté frente a la ventana",
-          "enable_max_position": "Forzar la posición máxima solo cuando el sol esté frente a la ventana",
+          "window_depth": "Window Depth (Reveal)",
+          "sill_height": "Window Sill Height",
+          "length_awning": "Longitud del toldo",
+          "angle": "Ángulo del toldo",
+          "slat_depth": "Profundidad de la lama",
+          "slat_distance": "Espacio entre lamas"
+        },
+        "data_description": {
+          "window_height": "Especifique la altura de la ventana en metros",
+          "distance_shaded_area": "Distancia desde la persiana área sombreada en metros",
+          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
+          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
+          "length_awning": "Longitud total en metros",
+          "angle": "Ángulo del toldo fijo medido perpendicularmente desde la pared hasta el suelo",
+          "slat_depth": "Profundidad de cada lama individual en centímetros",
+          "slat_distance": "Distancia vertical entre dos lamas en centímetros"
+        }
+      },
+      "sun_tracking": {
+        "title": "Sun Tracking",
+        "description": "Configure window orientation and sun tracking angles.",
+        "data": {
+          "set_azimuth": "Azimut de ventana",
           "fov_left": "Campo de visión izquierdo",
           "fov_right": "Campo de visión derecho",
-          "group": "Entidades de persiana",
-          "inverse_state": "Invertir el estado (necesario para algunas cubiertas que no siguen las pautas de HA)",
-          "sunset_position": "Posición al Ocaso",
-          "sunset_offset": "Desfase del Ocaso",
-          "sunrise_offset": "Desfase del Orto",
-          "climate_mode": "Modo Clima",
-          "blind_spot": "Configurar punto ciego",
           "min_elevation": "Elevación mínima del sol",
           "max_elevation": "Elevación máxima del sol",
-          "interp": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %"
+          "blind_spot": "Configurar punto ciego"
         },
         "data_description": {
           "set_azimuth": "Ajustar azimut",
-          "window_height": "Especifique la altura de la ventana en metros",
-          "distance_shaded_area": "Distancia desde la persiana área sombreada en metros",
-          "default_percentage": "Posición por defecto de la persiana como porcentaje",
-          "min_position": "Posición mínima de la cubierta ajustable como porcentaje",
-          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
           "fov_left": "Ángulo del campo de visión a la izquierda del centro de la ventana",
           "fov_right": "Ángulo del campo de visión a la derecha del centro de la ventana",
-          "group": "Seleccionar entidades para controlar via integración",
+          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
+          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+        }
+      },
+      "position": {
+        "title": "Position Settings",
+        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "data": {
+          "default_percentage": "Posición predeterminada",
+          "max_position": "Posición máxima",
+          "enable_max_position": "Forzar la posición máxima solo cuando el sol esté frente a la ventana",
+          "min_position": "Posición mínima",
+          "enable_min_position": "Sólo fuerce la posición máxima cuando el sol esté frente a la ventana",
+          "sunset_position": "Posición al Ocaso",
+          "sunset_offset": "Desfase del Ocaso",
+          "sunrise_offset": "Desfase del Orto",
+          "inverse_state": "Invertir el estado (necesario para algunas cubiertas que no siguen las pautas de HA)",
+          "interp": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %"
+        },
+        "data_description": {
+          "default_percentage": "Posición por defecto de la persiana como porcentaje",
+          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
+          "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position": "Posición mínima de la cubierta ajustable como porcentaje",
+          "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
           "sunset_position": "Posición a la que cambiar después del Ocaso",
           "sunset_offset": "Desfase (±) respecto del Ocaso en minutos",
           "sunrise_offset": "Desfase (±) respecto del Orto en minutos",
-          "climate_mode": "Configurar variables para Modo Clima"
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
+          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+        }
+      },
+      "manual_override": {
+        "title": "Manual Override",
+        "description": "Configure how manual position changes interact with automatic control.",
+        "data": {
+          "manual_override_duration": "Duración de la anulación manual",
+          "manual_override_reset": "Restablecer la duración de la anulación manual",
+          "manual_threshold": "Umbral de anulación manual",
+          "manual_ignore_intermediate": "Ignorar posiciones intermedias durante la anulación manual (apertura y cierre)"
         },
-        "description": "Agregar variables de configuración al sensor",
-        "title": "Persiana vertical"
+        "data_description": {
+          "manual_override_duration": "La duración del control manual antes de restablecer el control automático",
+          "manual_override_reset": "Opción para restablecer la duración de la anulación manual después de cada ajuste manual; si está deshabilitada, la duración solo se aplica al primer ajuste manual",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+        }
+      },
+      "motion_overrides": {
+        "title": "Motion & Force Overrides",
+        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+        "data": {
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration"
+        },
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
       },
       "climate": {
         "data": {
@@ -353,94 +434,6 @@
         },
         "title": "Condiciones climáticas"
       },
-      "horizontal": {
-        "data": {
-          "set_azimuth": "Azimut de ventana",
-          "length_awning": "Longitud del toldo",
-          "window_height": "Awning Height",
-          "angle": "Ángulo del toldo",
-          "distance_shaded_area": "Área sombreada",
-          "default_percentage": "Posición predeterminada",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima",
-          "enable_min_position": "Solo fuerce la posición máxima cuando el sol esté frente a la ventana",
-          "enable_max_position": "Forzar la posición máxima solo cuando el sol esté frente a la ventana",
-          "fov_left": "Campo de visión izquierdo",
-          "fov_right": "Campo de visión derecho",
-          "group": "Entidades de persiana",
-          "inverse_state": "Invertir el estado (necesario para algunas cubiertas que no siguen las pautas de HA)",
-          "sunset_position": "Posición al Ocaso",
-          "sunset_offset": "Desfase del Ocaso",
-          "sunrise_offset": "Desfase del Orto",
-          "climate_mode": "Modo Clima",
-          "blind_spot": "Configurar punto ciego",
-          "min_elevation": "Elevación mínima del sol",
-          "max_elevation": "Elevación máxima del sol",
-          "interp": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Especifique el azimut",
-          "window_height": "Ajuste la altura del toldo desde el nivel del área de trabajo.",
-          "length_awning": "Longitud total en metros",
-          "angle": "Ángulo del toldo fijo medido perpendicularmente desde la pared hasta el suelo",
-          "distance_shaded_area": "Distancia de la persiana al área sombreada en metros",
-          "default_percentage": "Posición por defecto de la persiana como porcentaje",
-          "min_position": "Posición mínima de la persiana ajustable como porcentaje",
-          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
-          "fov_left": "Grados del campo de visión a la izquierda del centro de la ventana",
-          "fov_right": "Grados del campo de visión a la derecha del centro de la ventana",
-          "group": "Seleccionar entidades para controlar via integración",
-          "sunset_position": "Posición a la que cambiar después del Ocaso",
-          "sunset_offset": "Desfase (±) respecto del Ocaso en minutos",
-          "sunrise_offset": "Desfase (±) respecto del Orto en minutos",
-          "climate_mode": "Configurar variables para Modo Clima"
-        },
-        "description": "Agregar variables de configuración al sensor",
-        "title": "Persiana horizontal"
-      },
-      "tilt": {
-        "data": {
-          "set_azimuth": "Azimut de la ventana",
-          "slat_depth": "Profundidad de la lama",
-          "slat_distance": "Espacio entre lamas",
-          "default_percentage": "Posición predeterminada",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima",
-          "enable_min_position": "Forzarla posición mínima solo cuando el sol esté frente a la ventana",
-          "enable_max_position": "Forzar la posición máxima solo cuando el sol esté frente a la ventana",
-          "fov_left": "Campo de visión izquierdo",
-          "fov_right": "Campo de visión derecho",
-          "group": "Entidades de las persianas",
-          "inverse_state": "Invertir el estado (necesario para algunas cubiertas que no siguen las pautas de HA)",
-          "sunset_position": "Posición al Ocaso",
-          "sunset_offset": "Desfase del Ocaso",
-          "sunrise_offset": "Desfase del Orto",
-          "climate_mode": "Modo Clima",
-          "tilt_mode": "tipo de movimiento",
-          "blind_spot": "Configurar punto ciego",
-          "min_elevation": "Elevación mínima del sol",
-          "max_elevation": "Elevación máxima del sol",
-          "interp": "Establezca posiciones de apertura y cierre personalizadas para My Cover, si no funciona completamente al 0-100 %"
-        },
-        "data_description": {
-          "set_azimuth": "Especifique el azimut",
-          "slat_depth": "Profundidad de cada lama individual en centímetros",
-          "slat_distance": "Distancia vertical entre dos lamas en centímetros",
-          "default_percentage": "Posición por defecto de la persiana como porcentaje",
-          "min_position": "Posición mínima",
-          "max_position": "Posición máxima ajustable de la persiana como porcentaje",
-          "fov_left": "Grados a considerar desde el lado izquierdo del centro de la ventana",
-          "fov_right": "Grados a considerar desde el lado derecho del centro de la ventana",
-          "group": "Seleccionar entidades para controlar via integración",
-          "sunset_position": "Posición a la que hacer la transición después del Ocaso",
-          "sunset_offset": "Desfase (±) respecto del Ocaso en minutos",
-          "sunrise_offset": "Desfase (±) respecto del Orto en minutos",
-          "climate_mode": "Configurar variables para Modo Clima",
-          "tilt_mode": "Elige el tipo de movimiento"
-        },
-        "description": "Agregar variables de configuración al sensor",
-        "title": "Persiana inclinada"
-      },
       "blind_spot": {
         "data": {
           "blind_spot_left": "Principio del punto ciego",
@@ -468,7 +461,37 @@
         },
         "title": "Rango de ajustes",
         "description": "Ajuste los valores con los que la persiana se abre o cierra. Ideal para persianas que no se abren completamente al 0 % ni se cierran al 100 %. Los dos primeros controles deslizantes son para un ajuste de 2 puntos; las opciones de lista son para un ajuste de varios puntos."
+      },
+      "device": {
+        "title": "Device Association",
+        "description": "Link this integration's entities to an existing device (e.g., the physical blind motor) or remove an existing link.",
+        "data": {
+          "linked_device_id": "Attach to Device"
+        },
+        "data_description": {
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
+        }
+      },
+      "sync": {
+        "title": "Sync Settings — Select Targets",
+        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "data": {
+          "target_entries": "Target covers"
+        }
+      },
+      "sync_confirm": {
+        "title": "Sync Settings — Confirm",
+        "description": "The following covers will have their shared settings overwritten:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
+        "data": {
+          "confirm": "Confirm sync"
+        }
       }
+    },
+    "abort": {
+      "no_covers_to_sync": "No other covers of the same type exist to sync to.",
+      "no_targets_selected": "No covers were selected to sync to.",
+      "user_cancelled": "Sync cancelled.",
+      "sync_complete": "Settings synced successfully."
     }
   },
   "selector": {
@@ -483,6 +506,40 @@
       "options": {
         "mode1": "dirección única (0% = cerrado / 100% = abierto)",
         "mode2": "bidireccional (0% = cerrado / 50% = abierto / 100% = cerrado)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "control_status": {
+        "state": {
+          "force_override_active": "Force override active",
+          "motion_timeout": "No motion - using default position"
+        }
+      },
+      "motion_status": {
+        "state": {
+          "not_configured": "Not Configured",
+          "motion_detected": "Motion Detected",
+          "timeout_pending": "Timeout Pending",
+          "no_motion": "No Motion",
+          "waiting_for_data": "Waiting for Data"
+        }
+      },
+      "decision_trace": {
+        "name": "Decision Trace",
+        "state": {
+          "unknown": "Unknown",
+          "solar": "Solar",
+          "summer": "Summer",
+          "winter": "Winter",
+          "default": "Default",
+          "manual_override": "Manual Override",
+          "motion_timeout": "Motion Timeout",
+          "force_override": "Force Override",
+          "wind_override": "Wind Override",
+          "cloud_suppression": "Cloud Suppression"
+        }
       }
     }
   }
