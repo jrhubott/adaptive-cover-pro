@@ -255,7 +255,7 @@
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
-          "automation": "Modify Automation Configuration",
+          "automation": "Schedule & Timing",
           "manual_override": "Manual Override",
           "motion_overrides": "Motion & Force Overrides",
           "climate": "Edit Climate Configuration",
