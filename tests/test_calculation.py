@@ -16,6 +16,7 @@ from custom_components.adaptive_cover_pro.calculation import (
     ClimateCoverData,
     ClimateCoverState,
 )
+from tests.cover_helpers import build_horizontal_cover
 
 
 @pytest.mark.unit
@@ -1210,12 +1211,8 @@ class TestNormalCoverStateHorizontalMinPosition:
         self, mock_datetime, mock_logger
     ):
         """Horizontal cover with vertical saturation must return >= 1 when sun is valid."""
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
-
         # distance=3, h_win=1.5, gamma~80°, elev=20° → vertical saturates at h_win → gap=0 → 0%
-        cover = AdaptiveHorizontalCover(
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=260.0,  # gamma ≈ 80° from win_azi=180
             sol_elev=20.0,
@@ -1280,11 +1277,7 @@ class TestNormalCoverStateHorizontalMinPosition:
         self, mock_datetime, sol_azi, sol_elev, mock_logger
     ):
         """Fix works across the full range of saturation angles."""
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
-
-        cover = AdaptiveHorizontalCover(
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=sol_azi,
             sol_elev=sol_elev,
@@ -1330,11 +1323,7 @@ class TestNormalCoverStateHorizontalMinPosition:
     @patch("custom_components.adaptive_cover_pro.calculation.datetime")
     def test_sun_not_valid_returns_default_zero(self, mock_datetime, mock_logger):
         """When sun is NOT valid, default=0 is returned unchanged (no clamping)."""
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
-
-        cover = AdaptiveHorizontalCover(
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=90.0,  # Way outside FOV (gamma=90° but FOV only ±45°)
             sol_elev=20.0,
@@ -2153,10 +2142,10 @@ def test_tilt_data_cm_to_meter_conversion():
     # Call the actual method
     result = config_service.get_tilt_data(options)
 
-    # Should convert cm to meters
-    assert result[0] == pytest.approx(0.02, abs=0.0001)  # 2.0 cm -> 0.02 m (distance)
-    assert result[1] == pytest.approx(0.025, abs=0.0001)  # 2.5 cm -> 0.025 m (depth)
-    assert result[2] == "mode2"
+    # Should convert cm to meters — result is a TiltConfig dataclass
+    assert result.slat_distance == pytest.approx(0.02, abs=0.0001)  # 2.0 cm -> 0.02 m
+    assert result.depth == pytest.approx(0.025, abs=0.0001)  # 2.5 cm -> 0.025 m
+    assert result.mode == "mode2"
 
 
 @pytest.mark.unit
@@ -2197,9 +2186,9 @@ def test_tilt_data_warns_on_small_values(caplog):
     with caplog.at_level(logging.WARNING):
         result = config_service.get_tilt_data(options)
 
-    # Should still convert (0.02 cm -> 0.0002 m) but log warning
-    assert result[0] == pytest.approx(0.0002, abs=0.00001)
-    assert result[1] == pytest.approx(0.00025, abs=0.00001)
+    # Should still convert (0.02 cm -> 0.0002 m) but log warning — result is TiltConfig
+    assert result.slat_distance == pytest.approx(0.0002, abs=0.00001)
+    assert result.depth == pytest.approx(0.00025, abs=0.00001)
 
     # Should have logged a warning
     assert any(

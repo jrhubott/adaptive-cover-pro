@@ -1146,9 +1146,7 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
             attrs["trace"] = trace
             attrs["reason"] = result.reason
 
-        diagnostics = (
-            self.coordinator.data.diagnostics if self.coordinator.data else {}
-        )
+        diagnostics = self.coordinator.data.diagnostics if self.coordinator.data else {}
         if diagnostics:
             attrs["sun_azimuth"] = diagnostics.get("sun_azimuth")
             attrs["sun_elevation"] = diagnostics.get("sun_elevation")

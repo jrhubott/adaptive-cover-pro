@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from ..config_context_adapter import ConfigContextAdapter
+from ..config_types import CoverConfig, HorizontalConfig, TiltConfig, VerticalConfig
 from ..const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
@@ -64,70 +65,72 @@ class ConfigurationService:
         self._lux_toggle = lux_toggle
         self._irradiance_toggle = irradiance_toggle
 
-    def get_common_data(self, options: dict) -> list:
+    def get_common_data(self, options: dict) -> CoverConfig:
         """Extract shared parameters.
 
         Returns:
-            List of common configuration values
+            CoverConfig with common configuration values
 
         """
-        return [
-            options.get(CONF_SUNSET_POS),
-            options.get(CONF_SUNSET_OFFSET),
-            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)),
-            options.get(CONF_FOV_LEFT),
-            options.get(CONF_FOV_RIGHT),
-            options.get(CONF_AZIMUTH),
-            options.get(CONF_DEFAULT_HEIGHT),
-            options.get(CONF_MAX_POSITION),
-            options.get(CONF_MIN_POSITION),
-            options.get(CONF_ENABLE_MAX_POSITION, False),
-            options.get(CONF_ENABLE_MIN_POSITION, False),
-            options.get(CONF_BLIND_SPOT_LEFT),
-            options.get(CONF_BLIND_SPOT_RIGHT),
-            options.get(CONF_BLIND_SPOT_ELEVATION),
-            options.get(CONF_ENABLE_BLIND_SPOT, False),
-            options.get(CONF_MIN_ELEVATION, None),
-            options.get(CONF_MAX_ELEVATION, None),
-        ]
+        return CoverConfig(
+            win_azi=options.get(CONF_AZIMUTH),
+            fov_left=options.get(CONF_FOV_LEFT),
+            fov_right=options.get(CONF_FOV_RIGHT),
+            h_def=options.get(CONF_DEFAULT_HEIGHT),
+            sunset_pos=options.get(CONF_SUNSET_POS),
+            sunset_off=options.get(CONF_SUNSET_OFFSET),
+            sunrise_off=options.get(
+                CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)
+            ),
+            max_pos=options.get(CONF_MAX_POSITION),
+            min_pos=options.get(CONF_MIN_POSITION),
+            max_pos_sun_only=options.get(CONF_ENABLE_MAX_POSITION, False),
+            min_pos_sun_only=options.get(CONF_ENABLE_MIN_POSITION, False),
+            blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
+            blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
+            blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),
+            blind_spot_on=options.get(CONF_ENABLE_BLIND_SPOT, False),
+            min_elevation=options.get(CONF_MIN_ELEVATION, None),
+            max_elevation=options.get(CONF_MAX_ELEVATION, None),
+        )
 
-    def get_vertical_data(self, options: dict) -> list:
+    def get_vertical_data(self, options: dict) -> VerticalConfig:
         """Extract vertical blind configuration.
 
         Returns:
-            List of [distance, window_height, window_depth, sill_height]
+            VerticalConfig with distance, window_height, window_depth, sill_height
 
         """
-        return [
-            options.get(CONF_DISTANCE),
-            options.get(CONF_HEIGHT_WIN),
-            options.get(
+        return VerticalConfig(
+            distance=options.get(CONF_DISTANCE),
+            h_win=options.get(CONF_HEIGHT_WIN),
+            window_depth=options.get(
                 CONF_WINDOW_DEPTH, 0.0
             ),  # Default 0.0 for backward compatibility
-            options.get(CONF_SILL_HEIGHT)
+            sill_height=options.get(CONF_SILL_HEIGHT)
             or 0.0,  # Default 0.0; handle None for non-vertical covers
-        ]
+        )
 
-    def get_horizontal_data(self, options: dict) -> list:
+    def get_horizontal_data(self, options: dict) -> HorizontalConfig:
         """Extract horizontal awning configuration.
 
         Returns:
-            List of [awning_length, awning_angle]
+            HorizontalConfig with awning_length, awning_angle
 
         """
-        return [
-            options.get(CONF_LENGTH_AWNING),
-            options.get(CONF_AWNING_ANGLE),
-        ]
+        return HorizontalConfig(
+            awn_length=options.get(CONF_LENGTH_AWNING),
+            awn_angle=options.get(CONF_AWNING_ANGLE),
+        )
 
-    def get_tilt_data(self, options: dict) -> list:
+    def get_tilt_data(self, options: dict) -> TiltConfig:
         """Extract tilt blind configuration.
 
         Converts slat dimensions from centimeters (as entered in UI) to meters
         (as required by calculation formulas).
 
         Returns:
-            List of [slat_distance_m, slat_depth_m, tilt_mode]
+            TiltConfig with slat_distance_m, slat_depth_m, tilt_mode
 
         """
         depth = options.get(CONF_TILT_DEPTH)
@@ -144,8 +147,8 @@ class ConfigurationService:
                 distance,
             )
 
-        return [
-            distance / 100,  # Convert cm to meters
-            depth / 100,  # Convert cm to meters
-            options.get(CONF_TILT_MODE),
-        ]
+        return TiltConfig(
+            slat_distance=distance / 100,  # Convert cm to meters
+            depth=depth / 100,  # Convert cm to meters
+            mode=options.get(CONF_TILT_MODE),
+        )

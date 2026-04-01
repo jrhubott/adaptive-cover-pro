@@ -17,10 +17,43 @@ from .const import (
     POSITION_CLOSED,
     WINDOW_DEPTH_GAMMA_THRESHOLD,
 )
+from .config_types import CoverConfig, HorizontalConfig, TiltConfig, VerticalConfig
 from .enums import ClimateStrategy, CoverType, TiltMode
 from .geometry import EdgeCaseHandler, SafetyMarginCalculator
 from .position_utils import PositionConverter
 from .sun import SunData
+
+
+_COVER_CONFIG_FIELDS = frozenset(
+    {
+        "win_azi",
+        "fov_left",
+        "fov_right",
+        "h_def",
+        "sunset_pos",
+        "sunset_off",
+        "sunrise_off",
+        "max_pos",
+        "min_pos",
+        "max_pos_sun_only",
+        "min_pos_sun_only",
+        "blind_spot_left",
+        "blind_spot_right",
+        "blind_spot_elevation",
+        "blind_spot_on",
+        "min_elevation",
+        "max_elevation",
+    }
+)
+
+_COVER_CONFIG_RENAMES = {
+    "max_pos_bool": "max_pos_sun_only",
+    "min_pos_bool": "min_pos_sun_only",
+}
+
+_VERT_CONFIG_FIELDS = frozenset({"distance", "h_win", "window_depth", "sill_height"})
+_HORIZ_CONFIG_FIELDS = frozenset({"awn_length", "awn_angle"})
+_TILT_CONFIG_FIELDS = frozenset({"slat_distance", "depth", "mode"})
 
 
 @dataclass
@@ -30,24 +63,61 @@ class AdaptiveGeneralCover(ABC):
     logger: ConfigContextAdapter
     sol_azi: float
     sol_elev: float
-    sunset_pos: int
-    sunset_off: int
-    sunrise_off: int
     sun_data: SunData
-    fov_left: int
-    fov_right: int
-    win_azi: int
-    h_def: int
-    max_pos: int
-    min_pos: int
-    max_pos_bool: bool
-    min_pos_bool: bool
-    blind_spot_left: int
-    blind_spot_right: int
-    blind_spot_elevation: int
-    blind_spot_on: bool
-    min_elevation: int
-    max_elevation: int
+    config: CoverConfig
+
+    def __getattr__(self, name: str) -> object:
+        """Route old flat field names to the appropriate config dataclass for reads.
+
+        Note: __getattr__ is only called when normal lookup fails, so this
+        won't intercept accesses to real dataclass fields (logger, sol_azi, etc.).
+        """
+        canonical = _COVER_CONFIG_RENAMES.get(name, name)
+        if canonical in _COVER_CONFIG_FIELDS:
+            # Access config via __dict__ to avoid infinite recursion
+            config = object.__getattribute__(self, "config")
+            return getattr(config, canonical)
+        if canonical in _VERT_CONFIG_FIELDS:
+            try:
+                vert_config = object.__getattribute__(self, "vert_config")
+                return getattr(vert_config, canonical)
+            except AttributeError:
+                pass
+        if canonical in _TILT_CONFIG_FIELDS:
+            try:
+                tilt_config = object.__getattribute__(self, "tilt_config")
+                return getattr(tilt_config, canonical)
+            except AttributeError:
+                pass
+        if canonical in _HORIZ_CONFIG_FIELDS:
+            try:
+                horiz_config = object.__getattribute__(self, "horiz_config")
+                return getattr(horiz_config, canonical)
+            except AttributeError:
+                pass
+        msg = f"'{type(self).__name__}' object has no attribute '{name}'"
+        raise AttributeError(msg)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        """Route old flat field names to the appropriate config dataclass for writes."""
+        canonical = _COVER_CONFIG_RENAMES.get(name, name)
+        if canonical in _COVER_CONFIG_FIELDS:
+            try:
+                object.__setattr__(self.config, canonical, value)
+            except AttributeError:
+                # During __init__, self.config may not exist yet
+                object.__setattr__(self, name, value)
+            return
+        if canonical in _VERT_CONFIG_FIELDS and hasattr(self, "vert_config"):
+            object.__setattr__(self.vert_config, canonical, value)
+            return
+        if canonical in _TILT_CONFIG_FIELDS and hasattr(self, "tilt_config"):
+            object.__setattr__(self.tilt_config, canonical, value)
+            return
+        if canonical in _HORIZ_CONFIG_FIELDS and hasattr(self, "horiz_config"):
+            object.__setattr__(self.horiz_config, canonical, value)
+            return
+        object.__setattr__(self, name, value)
 
     def solar_times(self) -> tuple[datetime | None, datetime | None]:
         """Calculate when sun enters and exits window's field of view today.
@@ -80,22 +150,24 @@ class AdaptiveGeneralCover(ABC):
         ) % 360
 
         # Elevation check — matches valid_elevation property logic
-        if self.min_elevation is None and self.max_elevation is None:
+        if self.config.min_elevation is None and self.config.max_elevation is None:
             valid_elev = elev > 0
-        elif self.min_elevation is None:
-            valid_elev = elev <= self.max_elevation
-        elif self.max_elevation is None:
-            valid_elev = elev >= self.min_elevation
+        elif self.config.min_elevation is None:
+            valid_elev = elev <= self.config.max_elevation
+        elif self.config.max_elevation is None:
+            valid_elev = elev >= self.config.min_elevation
         else:
-            valid_elev = (elev >= self.min_elevation) & (elev <= self.max_elevation)
+            valid_elev = (elev >= self.config.min_elevation) & (
+                elev <= self.config.max_elevation
+            )
 
         # Sunset/sunrise offset — exclude times within the offset windows.
         # Matches sunset_valid: True when after (sunset+offset) or before (sunrise+offset).
         # Convert series index to naive UTC for comparison with sun_data.sunset()/sunrise().
         sunset_utc = self.sun_data.sunset().replace(tzinfo=None)
         sunrise_utc = self.sun_data.sunrise().replace(tzinfo=None)
-        offset_sunset = sunset_utc + timedelta(minutes=self.sunset_off)
-        offset_sunrise = sunrise_utc + timedelta(minutes=self.sunrise_off)
+        offset_sunset = sunset_utc + timedelta(minutes=self.config.sunset_off)
+        offset_sunrise = sunrise_utc + timedelta(minutes=self.config.sunrise_off)
         times_utc = solpos.index.tz_convert("UTC").tz_localize(None)
         in_sun_window = (times_utc >= offset_sunrise) & (times_utc <= offset_sunset)
 
@@ -133,15 +205,17 @@ class AdaptiveGeneralCover(ABC):
 
         """
         if (
-            self.blind_spot_left is not None
-            and self.blind_spot_right is not None
-            and self.blind_spot_on
+            self.config.blind_spot_left is not None
+            and self.config.blind_spot_right is not None
+            and self.config.blind_spot_on
         ):
-            left_edge = self.fov_left - self.blind_spot_left
-            right_edge = self.fov_left - self.blind_spot_right
+            left_edge = self.config.fov_left - self.config.blind_spot_left
+            right_edge = self.config.fov_left - self.config.blind_spot_right
             blindspot = (self.gamma <= left_edge) & (self.gamma >= right_edge)
-            if self.blind_spot_elevation is not None:
-                blindspot = blindspot & (self.sol_elev <= self.blind_spot_elevation)
+            if self.config.blind_spot_elevation is not None:
+                blindspot = blindspot & (
+                    self.sol_elev <= self.config.blind_spot_elevation
+                )
             self.logger.debug("Is sun in blind spot? %s", blindspot)
             return blindspot
         return False
@@ -154,7 +228,7 @@ class AdaptiveGeneralCover(ABC):
             Minimum azimuth angle in degrees (0-360).
 
         """
-        azi_min_abs = (self.win_azi - self.fov_left + 360) % 360
+        azi_min_abs = (self.config.win_azi - self.config.fov_left + 360) % 360
         return azi_min_abs
 
     @property
@@ -165,7 +239,7 @@ class AdaptiveGeneralCover(ABC):
             Maximum azimuth angle in degrees (0-360).
 
         """
-        azi_max_abs = (self.win_azi + self.fov_right + 360) % 360
+        azi_max_abs = (self.config.win_azi + self.config.fov_right + 360) % 360
         return azi_max_abs
 
     @property
@@ -181,7 +255,7 @@ class AdaptiveGeneralCover(ABC):
 
         """
         # surface solar azimuth
-        gamma = (self.win_azi - self.sol_azi + 180) % 360 - 180
+        gamma = (self.config.win_azi - self.sol_azi + 180) % 360 - 180
         return gamma
 
     @property
@@ -196,13 +270,15 @@ class AdaptiveGeneralCover(ABC):
             False if sun below horizon or outside configured limits.
 
         """
-        if self.min_elevation is None and self.max_elevation is None:
+        if self.config.min_elevation is None and self.config.max_elevation is None:
             return self.sol_elev >= 0
-        if self.min_elevation is None:
-            return self.sol_elev <= self.max_elevation
-        if self.max_elevation is None:
-            return self.sol_elev >= self.min_elevation
-        within_range = self.min_elevation <= self.sol_elev <= self.max_elevation
+        if self.config.min_elevation is None:
+            return self.sol_elev <= self.config.max_elevation
+        if self.config.max_elevation is None:
+            return self.sol_elev >= self.config.min_elevation
+        within_range = (
+            self.config.min_elevation <= self.sol_elev <= self.config.max_elevation
+        )
         self.logger.debug("elevation within range? %s", within_range)
         return within_range
 
@@ -220,8 +296,8 @@ class AdaptiveGeneralCover(ABC):
 
         """
         # Use configured FOV values directly without clipping
-        azi_min = self.fov_left
-        azi_max = self.fov_right
+        azi_min = self.config.fov_left
+        azi_max = self.config.fov_right
 
         # valid sun positions are those within the blind's azimuth range and above the horizon (FOV)
         valid = (
@@ -245,9 +321,11 @@ class AdaptiveGeneralCover(ABC):
         """
         sunset = self.sun_data.sunset().replace(tzinfo=None)
         sunrise = self.sun_data.sunrise().replace(tzinfo=None)
-        after_sunset = datetime.utcnow() > (sunset + timedelta(minutes=self.sunset_off))
+        after_sunset = datetime.utcnow() > (
+            sunset + timedelta(minutes=self.config.sunset_off)
+        )
         before_sunrise = datetime.utcnow() < (
-            sunrise + timedelta(minutes=self.sunrise_off)
+            sunrise + timedelta(minutes=self.config.sunrise_off)
         )
         self.logger.debug(
             "After sunset plus offset? %s", (after_sunset or before_sunrise)
@@ -263,9 +341,9 @@ class AdaptiveGeneralCover(ABC):
             normal default position.
 
         """
-        default = self.h_def
-        if self.sunset_valid and self.sunset_pos is not None:
-            default = self.sunset_pos
+        default = self.config.h_def
+        if self.sunset_valid and self.config.sunset_pos is not None:
+            default = self.config.sunset_pos
         return default
 
     def fov(self) -> list[int]:
@@ -372,10 +450,10 @@ class NormalCoverState:
         # Apply position limits using utility
         return PositionConverter.apply_limits(
             int(state),
-            self.cover.min_pos,
-            self.cover.max_pos,
-            self.cover.min_pos_bool,
-            self.cover.max_pos_bool,
+            self.cover.config.min_pos,
+            self.cover.config.max_pos,
+            self.cover.config.min_pos_sun_only,
+            self.cover.config.max_pos_sun_only,
             dsv,
         )
 
@@ -759,10 +837,10 @@ class ClimateCoverState(NormalCoverState):
         # Apply position limits using utility
         final_result = PositionConverter.apply_limits(
             result,
-            self.cover.min_pos,
-            self.cover.max_pos,
-            self.cover.min_pos_bool,
-            self.cover.max_pos_bool,
+            self.cover.config.min_pos,
+            self.cover.config.max_pos,
+            self.cover.config.min_pos_sun_only,
+            self.cover.config.max_pos_sun_only,
             self.cover.direct_sun_valid,
         )
 
@@ -778,14 +856,27 @@ class ClimateCoverState(NormalCoverState):
 class AdaptiveVerticalCover(AdaptiveGeneralCover):
     """Calculate state for Vertical blinds."""
 
-    distance: float
-    h_win: float
-    window_depth: float = (
-        0.0  # Window reveal/frame depth (meters), default 0 = disabled
-    )
-    sill_height: float = (
-        0.0  # Height from floor to window bottom (meters), default 0 = floor-level
-    )
+    vert_config: VerticalConfig = None  # type: ignore[assignment]
+
+    @property
+    def distance(self) -> float:
+        """Get distance from vert_config."""
+        return self.vert_config.distance
+
+    @property
+    def h_win(self) -> float:
+        """Get window height from vert_config."""
+        return self.vert_config.h_win
+
+    @property
+    def window_depth(self) -> float:
+        """Get window depth from vert_config."""
+        return self.vert_config.window_depth
+
+    @property
+    def sill_height(self) -> float:
+        """Get sill height from vert_config."""
+        return self.vert_config.sill_height
 
     def _calculate_safety_margin(self, gamma: float, sol_elev: float) -> float:
         """Calculate angle-dependent safety margin multiplier (≥1.0).
@@ -933,8 +1024,17 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 class AdaptiveHorizontalCover(AdaptiveVerticalCover):
     """Calculate state for Horizontal blinds."""
 
-    awn_length: float = 2.0  # Default awning length (meters)
-    awn_angle: float = 0.0  # Default awning angle (degrees)
+    horiz_config: HorizontalConfig = None  # type: ignore[assignment]
+
+    @property
+    def awn_length(self) -> float:
+        """Get awning length from horiz_config."""
+        return self.horiz_config.awn_length
+
+    @property
+    def awn_angle(self) -> float:
+        """Get awning angle from horiz_config."""
+        return self.horiz_config.awn_angle
 
     def calculate_position(self) -> float:
         """Calculate awning extension length using trigonometric projection.
@@ -992,11 +1092,22 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
 class AdaptiveTiltCover(AdaptiveGeneralCover):
     """Calculate state for tilted blinds."""
 
-    slat_distance: float
-    depth: float
-    mode: (
-        TiltMode | str
-    )  # Accept both TiltMode enum and string for backward compatibility
+    tilt_config: TiltConfig = None  # type: ignore[assignment]
+
+    @property
+    def slat_distance(self) -> float:
+        """Get slat distance from tilt_config."""
+        return self.tilt_config.slat_distance
+
+    @property
+    def depth(self) -> float:
+        """Get depth from tilt_config."""
+        return self.tilt_config.depth
+
+    @property
+    def mode(self) -> TiltMode | str:
+        """Get mode from tilt_config."""
+        return self.tilt_config.mode
 
     @property
     def beta(self) -> float:

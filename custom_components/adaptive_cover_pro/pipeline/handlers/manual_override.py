@@ -26,8 +26,7 @@ class ManualOverrideHandler(OverrideHandler):
             position=ctx.calculated_position,
             control_method=ControlMethod.MANUAL,
             reason=(
-                f"manual override active — "
-                f"holding position {ctx.calculated_position}%"
+                f"manual override active — holding position {ctx.calculated_position}%"
             ),
             decision_trace=[],
         )

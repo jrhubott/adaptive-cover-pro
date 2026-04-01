@@ -4,6 +4,16 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from .cover_helpers import (  # noqa: F401 — re-exported for convenience
+    build_horizontal_cover,
+    build_tilt_cover,
+    build_vertical_cover,
+    make_cover_config,
+    make_horizontal_config,
+    make_tilt_config,
+    make_vertical_config,
+)
+
 
 @pytest.fixture
 def hass():
@@ -135,9 +145,7 @@ def mock_state():
 @pytest.fixture
 def vertical_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveVerticalCover instance for testing."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
-
-    return AdaptiveVerticalCover(
+    return build_vertical_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
@@ -167,9 +175,7 @@ def vertical_cover_instance(mock_sun_data, mock_logger):
 @pytest.fixture
 def horizontal_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveHorizontalCover instance for testing."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveHorizontalCover
-
-    return AdaptiveHorizontalCover(
+    return build_horizontal_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,
@@ -201,9 +207,7 @@ def horizontal_cover_instance(mock_sun_data, mock_logger):
 @pytest.fixture
 def tilt_cover_instance(mock_sun_data, mock_logger):
     """Real AdaptiveTiltCover instance for testing."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
-
-    return AdaptiveTiltCover(
+    return build_tilt_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,

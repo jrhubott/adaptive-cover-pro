@@ -41,8 +41,7 @@ class ClimateHandler(OverrideHandler):
             position=ctx.climate_position,
             control_method=method,
             reason=(
-                f"climate mode active ({season}) — "
-                f"position {ctx.climate_position}%"
+                f"climate mode active ({season}) — position {ctx.climate_position}%"
             ),
             decision_trace=[],
         )

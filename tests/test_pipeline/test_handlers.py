@@ -396,9 +396,18 @@ class TestDefaultHandler:
 @pytest.mark.parametrize(
     ("handler", "ctx_kwargs"),
     [
-        (ForceOverrideHandler(), {"force_override_active": True, "force_override_position": 10}),
-        (MotionTimeoutHandler(), {"motion_timeout_active": True, "default_position": 15}),
-        (ManualOverrideHandler(), {"manual_override_active": True, "calculated_position": 30}),
+        (
+            ForceOverrideHandler(),
+            {"force_override_active": True, "force_override_position": 10},
+        ),
+        (
+            MotionTimeoutHandler(),
+            {"motion_timeout_active": True, "default_position": 15},
+        ),
+        (
+            ManualOverrideHandler(),
+            {"manual_override_active": True, "calculated_position": 30},
+        ),
         (
             ClimateHandler(),
             {
@@ -423,7 +432,10 @@ def test_handler_result_has_non_empty_reason(handler, ctx_kwargs) -> None:
 @pytest.mark.parametrize(
     ("handler", "ctx_kwargs"),
     [
-        (ForceOverrideHandler(), {"force_override_active": True, "force_override_position": 10}),
+        (
+            ForceOverrideHandler(),
+            {"force_override_active": True, "force_override_position": 10},
+        ),
         (MotionTimeoutHandler(), {"motion_timeout_active": True}),
         (ManualOverrideHandler(), {"manual_override_active": True}),
         (

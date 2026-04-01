@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+from tests.cover_helpers import build_vertical_cover
 
 
 @pytest.fixture
@@ -53,7 +54,7 @@ def make_cover(mock_sun_data, mock_logger, **overrides) -> AdaptiveVerticalCover
         "h_win": 2.0,
     }
     defaults.update(overrides)
-    return AdaptiveVerticalCover(**defaults)
+    return build_vertical_cover(**defaults)
 
 
 class TestControlStateReasonDirectSun:

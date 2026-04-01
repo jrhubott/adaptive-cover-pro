@@ -12,6 +12,7 @@ import numpy as np
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+from tests.cover_helpers import build_vertical_cover
 
 
 def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
@@ -41,7 +42,7 @@ def make_cover_with_angles(
     params = base_params.copy()
     params["sol_azi"] = gamma_to_sol_azi(params["win_azi"], gamma)
     params["sol_elev"] = sol_elev
-    return AdaptiveVerticalCover(**params)
+    return build_vertical_cover(**params)
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ def mock_logger():
 
 @pytest.fixture
 def base_cover_params(mock_sun_data, mock_logger):
-    """Return base parameters for AdaptiveVerticalCover."""
+    """Return base parameters for AdaptiveVerticalCover (flat kwargs style)."""
     return {
         "logger": mock_logger,
         "sol_azi": 180.0,
@@ -85,7 +86,7 @@ def base_cover_params(mock_sun_data, mock_logger):
         "max_elevation": None,
         "distance": 0.5,  # 50cm glare zone
         "h_win": 2.1,  # 2.1m window height
-    }
+    }  # These flat kwargs are routed by build_vertical_cover() to typed configs
 
 
 class TestSafetyMargins:
@@ -97,14 +98,14 @@ class TestSafetyMargins:
         # For gamma=0: sol_azi = win_azi
         base_cover_params["sol_azi"] = 180.0  # Same as win_azi
         base_cover_params["sol_elev"] = 45.0
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         margin = cover._calculate_safety_margin(cover.gamma, cover.sol_elev)
         assert margin == 1.0
 
     def test_safety_margin_moderate_gamma_returns_baseline(self, base_cover_params):
         """Safety margin should be 1.0 for gamma <= 45°."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         for gamma in [0, 15, 30, 45]:
             margin = cover._calculate_safety_margin(gamma, 45.0)
@@ -112,7 +113,7 @@ class TestSafetyMargins:
 
     def test_safety_margin_extreme_gamma_increases(self, base_cover_params):
         """Safety margin should increase at extreme gamma angles."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         # Test progressive increase
         margin_60 = cover._calculate_safety_margin(60.0, 45.0)
@@ -124,7 +125,7 @@ class TestSafetyMargins:
 
     def test_safety_margin_low_elevation_increases(self, base_cover_params):
         """Safety margin should increase at low elevations."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         # Test progressive increase as elevation decreases
         margin_10 = cover._calculate_safety_margin(0.0, 10.0)
@@ -137,7 +138,7 @@ class TestSafetyMargins:
 
     def test_safety_margin_high_elevation_increases(self, base_cover_params):
         """Safety margin should increase at high elevations."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         # Test progressive increase as elevation increases
         margin_75 = cover._calculate_safety_margin(0.0, 75.0)
@@ -150,7 +151,7 @@ class TestSafetyMargins:
 
     def test_safety_margin_combined_extremes(self, base_cover_params):
         """Safety margin should combine gamma and elevation effects."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         # Extreme gamma + low elevation
         margin = cover._calculate_safety_margin(85.0, 5.0)
@@ -162,7 +163,7 @@ class TestSafetyMargins:
 
     def test_safety_margin_symmetric_gamma(self, base_cover_params):
         """Safety margin should be symmetric for positive/negative gamma."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         margin_pos = cover._calculate_safety_margin(70.0, 45.0)
         margin_neg = cover._calculate_safety_margin(-70.0, 45.0)
@@ -171,7 +172,7 @@ class TestSafetyMargins:
 
     def test_safety_margin_smoothstep_interpolation(self, base_cover_params):
         """Safety margin should use smooth interpolation (no sharp transitions)."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         # Test smooth transition in gamma range
         margins = [
@@ -473,9 +474,9 @@ class TestWindowDepth:
         # Configure with window_depth parameter
         params_with_depth = base_cover_params.copy()
         params_with_depth["window_depth"] = 0.0
-        cover_with_zero_depth = AdaptiveVerticalCover(**params_with_depth)
+        cover_with_zero_depth = build_vertical_cover(**params_with_depth)
         cover_with_zero_depth.sol_azi = gamma_to_sol_azi(
-            cover_with_zero_depth.win_azi, 30.0
+            cover_with_zero_depth.config.win_azi, 30.0
         )
         cover_with_zero_depth.sol_elev = 45.0
 
@@ -495,8 +496,10 @@ class TestWindowDepth:
 
         params_with_depth = base_cover_params.copy()
         params_with_depth["window_depth"] = 0.10  # 10cm window depth
-        cover_with_depth = AdaptiveVerticalCover(**params_with_depth)
-        cover_with_depth.sol_azi = gamma_to_sol_azi(cover_with_depth.win_azi, 45.0)
+        cover_with_depth = build_vertical_cover(**params_with_depth)
+        cover_with_depth.sol_azi = gamma_to_sol_azi(
+            cover_with_depth.config.win_azi, 45.0
+        )
         cover_with_depth.sol_elev = 45.0
 
         pos_no_depth = cover_no_depth.calculate_position()
@@ -515,8 +518,10 @@ class TestWindowDepth:
 
         params_with_depth = base_cover_params.copy()
         params_with_depth["window_depth"] = 0.10
-        cover_with_depth = AdaptiveVerticalCover(**params_with_depth)
-        cover_with_depth.sol_azi = gamma_to_sol_azi(cover_with_depth.win_azi, 5.0)
+        cover_with_depth = build_vertical_cover(**params_with_depth)
+        cover_with_depth.sol_azi = gamma_to_sol_azi(
+            cover_with_depth.config.win_azi, 5.0
+        )
         cover_with_depth.sol_elev = 45.0
 
         pos_no_depth = cover_no_depth.calculate_position()
@@ -532,8 +537,8 @@ class TestWindowDepth:
 
         positions = []
         for gamma in [10.0, 30.0, 50.0, 70.0]:
-            cover = AdaptiveVerticalCover(**params)
-            cover.sol_azi = gamma_to_sol_azi(cover.win_azi, gamma)
+            cover = build_vertical_cover(**params)
+            cover.sol_azi = gamma_to_sol_azi(cover.config.win_azi, gamma)
             cover.sol_elev = 45.0
             positions.append(cover.calculate_position())
 
@@ -554,8 +559,8 @@ class TestWindowDepth:
         params = base_cover_params.copy()
         for depth, description in test_depths:
             params["window_depth"] = depth
-            cover = AdaptiveVerticalCover(**params)
-            cover.sol_azi = gamma_to_sol_azi(cover.win_azi, 45.0)
+            cover = build_vertical_cover(**params)
+            cover.sol_azi = gamma_to_sol_azi(cover.config.win_azi, 45.0)
             cover.sol_elev = 45.0
 
             position = cover.calculate_position()
@@ -568,7 +573,7 @@ class TestWindowDepth:
     def test_window_depth_backward_compatibility(self, base_cover_params):
         """Cover without window_depth parameter should work (backward compatibility)."""
         # Create cover without window_depth parameter (old code style)
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
 
         # Should work and use default
         assert cover.window_depth == 0.0

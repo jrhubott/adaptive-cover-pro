@@ -1093,32 +1093,36 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
-        common = self._config_service.get_common_data(options)
-        # common is [sunset_pos, sunset_off, sunrise_off, fov_left, fov_right, ...]
-        # Insert sun_data after sunrise_off (index 3)
-        common_with_sun = common[:3] + [sun_data] + common[3:]
+        config = self._config_service.get_common_data(options)
+        sol_azi, sol_elev = self.pos_sun
 
         if self.is_blind_cover:
             cover_data = AdaptiveVerticalCover(
-                self.logger,
-                *self.pos_sun,
-                *common_with_sun,
-                *self._config_service.get_vertical_data(options),
+                logger=self.logger,
+                sol_azi=sol_azi,
+                sol_elev=sol_elev,
+                sun_data=sun_data,
+                config=config,
+                vert_config=self._config_service.get_vertical_data(options),
             )
         if self.is_awning_cover:
             cover_data = AdaptiveHorizontalCover(
-                self.logger,
-                *self.pos_sun,
-                *common_with_sun,
-                *self._config_service.get_vertical_data(options),
-                *self._config_service.get_horizontal_data(options),
+                logger=self.logger,
+                sol_azi=sol_azi,
+                sol_elev=sol_elev,
+                sun_data=sun_data,
+                config=config,
+                vert_config=self._config_service.get_vertical_data(options),
+                horiz_config=self._config_service.get_horizontal_data(options),
             )
         if self.is_tilt_cover:
             cover_data = AdaptiveTiltCover(
-                self.logger,
-                *self.pos_sun,
-                *common_with_sun,
-                *self._config_service.get_tilt_data(options),
+                logger=self.logger,
+                sol_azi=sol_azi,
+                sol_elev=sol_elev,
+                sun_data=sun_data,
+                config=config,
+                tilt_config=self._config_service.get_tilt_data(options),
             )
         return cover_data
 

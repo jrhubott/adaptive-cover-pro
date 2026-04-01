@@ -173,9 +173,9 @@ def mock_logger():
 @pytest.fixture
 def vertical_cover(mock_sun_data, mock_logger):
     """Vertical cover with sun directly in front."""
-    from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
+    from tests.cover_helpers import build_vertical_cover
 
-    return AdaptiveVerticalCover(
+    return build_vertical_cover(
         logger=mock_logger,
         sol_azi=180.0,
         sol_elev=45.0,

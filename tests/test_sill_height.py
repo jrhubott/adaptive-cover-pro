@@ -16,9 +16,9 @@ import pytest
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.calculation import (
-    AdaptiveHorizontalCover,
     AdaptiveVerticalCover,
 )
+from tests.cover_helpers import build_horizontal_cover, build_vertical_cover
 
 
 def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
@@ -83,7 +83,7 @@ def make_vertical_cover(
     params.update(overrides)
     params["sol_azi"] = gamma_to_sol_azi(params["win_azi"], gamma)
     params["sol_elev"] = sol_elev
-    return AdaptiveVerticalCover(**params)
+    return build_vertical_cover(**params)
 
 
 class TestBackwardCompatibility:
@@ -91,7 +91,7 @@ class TestBackwardCompatibility:
 
     def test_default_sill_height_is_zero(self, base_cover_params):
         """sill_height should default to 0.0 when not specified."""
-        cover = AdaptiveVerticalCover(**base_cover_params)
+        cover = build_vertical_cover(**base_cover_params)
         assert cover.sill_height == 0.0
 
     def test_explicit_zero_matches_default_at_normal_angle(self, base_cover_params):
@@ -103,8 +103,8 @@ class TestBackwardCompatibility:
         params_explicit["sill_height"] = 0.0
         params_explicit["sol_azi"] = gamma_to_sol_azi(params_explicit["win_azi"], 30.0)
 
-        cover_default = AdaptiveVerticalCover(**params_default)
-        cover_explicit = AdaptiveVerticalCover(**params_explicit)
+        cover_default = build_vertical_cover(**params_default)
+        cover_explicit = build_vertical_cover(**params_explicit)
 
         assert cover_default.calculate_position() == cover_explicit.calculate_position()
 
@@ -130,8 +130,8 @@ class TestBackwardCompatibility:
             params_zero_sill = params_no_sill.copy()
             params_zero_sill["sill_height"] = 0.0
 
-            pos_no_sill = AdaptiveVerticalCover(**params_no_sill).calculate_position()
-            pos_zero_sill = AdaptiveVerticalCover(
+            pos_no_sill = build_vertical_cover(**params_no_sill).calculate_position()
+            pos_zero_sill = build_vertical_cover(
                 **params_zero_sill
             ).calculate_position()
 
@@ -501,7 +501,7 @@ class TestHorizontalCoverSillHeight:
 
     def test_horizontal_cover_has_sill_height_field(self, mock_sun_data, mock_logger):
         """AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover."""
-        cover = AdaptiveHorizontalCover(
+        cover = build_horizontal_cover(
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
@@ -528,7 +528,7 @@ class TestHorizontalCoverSillHeight:
             awn_length=2.0,
             awn_angle=0,
         )
-        # sill_height defaults to 0.0 (inherited)
+        # sill_height defaults to 0.0 (in vert_config)
         assert cover.sill_height == 0.0
 
     def test_horizontal_cover_default_sill_vs_explicit_zero(
@@ -563,30 +563,27 @@ class TestHorizontalCoverSillHeight:
             "awn_angle": 0,
         }
 
-        cover_default = AdaptiveHorizontalCover(**common_params)
+        cover_default = build_horizontal_cover(**common_params)
 
         params_explicit = common_params.copy()
         params_explicit["sill_height"] = 0.0
-        cover_explicit = AdaptiveHorizontalCover(**params_explicit)
+        cover_explicit = build_horizontal_cover(**params_explicit)
 
         assert cover_default.calculate_position() == cover_explicit.calculate_position()
 
     def test_sill_height_not_in_horizontal_cover_config_schema(self):
-        """Verify sill_height is not exposed as a config option for horizontal covers.
+        """Verify sill_height is accessible on horizontal covers via vert_config.
 
-        AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover,
-        but sill_height is a vertical-cover-specific parameter. The config flow
-        should not expose it for horizontal covers. This test verifies the
-        dataclass field exists with its default only (no schema enforcement needed here
-        since schema lives in config_flow.py).
+        AdaptiveHorizontalCover inherits sill_height from AdaptiveVerticalCover
+        (via vert_config), but sill_height is a vertical-cover-specific parameter.
+        The config flow should not expose it for horizontal covers.
         """
-        from custom_components.adaptive_cover_pro.calculation import (
-            AdaptiveHorizontalCover,
-        )
+        from custom_components.adaptive_cover_pro.config_types import VerticalConfig
+
+        # sill_height is a field on VerticalConfig with default 0.0
         import dataclasses
 
-        # Check that sill_height is indeed a field with default 0.0 on the class
-        fields = {f.name: f for f in dataclasses.fields(AdaptiveHorizontalCover)}
+        fields = {f.name: f for f in dataclasses.fields(VerticalConfig)}
         assert "sill_height" in fields
         assert fields["sill_height"].default == 0.0
 

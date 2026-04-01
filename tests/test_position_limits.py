@@ -12,10 +12,10 @@ from unittest.mock import patch
 from datetime import datetime
 
 from custom_components.adaptive_cover_pro.calculation import (
-    AdaptiveVerticalCover,
     NormalCoverState,
 )
 from custom_components.adaptive_cover_pro.position_utils import PositionConverter
+from tests.cover_helpers import build_vertical_cover
 
 
 @pytest.mark.unit
@@ -125,7 +125,7 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
         # Set current time to after sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
-        cover = AdaptiveVerticalCover(
+        cover = build_vertical_cover(
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=-10.0,  # Sun below horizon
@@ -187,7 +187,7 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
         # Set current time to after sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
-        cover = AdaptiveVerticalCover(
+        cover = build_vertical_cover(
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=-10.0,  # Sun below horizon
@@ -241,7 +241,7 @@ def test_sun_in_window_with_conditional_min_pos(mock_sun_data, mock_logger):
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         # Sun directly in front, low elevation → calculated position would be low
-        cover = AdaptiveVerticalCover(
+        cover = build_vertical_cover(
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=15.0,  # Low sun → large calculated position
@@ -300,7 +300,7 @@ def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
         # Set current time to daytime (not sunset)
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
-        cover = AdaptiveVerticalCover(
+        cover = build_vertical_cover(
             logger=mock_logger,
             sol_azi=180.0,
             sol_elev=45.0,
