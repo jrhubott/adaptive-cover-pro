@@ -1169,6 +1169,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage the options."""
         menu_options = [
             "cover_entities",
+            "device",
             "geometry",
             "sun_tracking",
             "position",

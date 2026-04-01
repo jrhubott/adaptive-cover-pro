@@ -247,6 +247,7 @@
       "init": {
         "menu_options": {
           "cover_entities": "Cover Entities",
+          "device": "Device Association",
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
