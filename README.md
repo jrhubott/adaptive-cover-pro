@@ -231,62 +231,24 @@ During setup, the integration will automatically suggest a device name based on 
 
 ## Modes
 
-This component supports two strategy modes: A `basic` mode and a `climate comfort/energy saving` mode that works with presence and temperature detection.
+This component supports two calculation modes — **Basic** and **Climate** — both wrapped by a shared override pipeline. The pipeline evaluates handlers in priority order; the first handler that produces a result wins.
 
-```mermaid
-  graph TD
+### Override pipeline
 
-  A[("fa:fa-sun Sundata")]
-  A --> B["Basic Mode"]
-  A --> C["Climate Mode"]
+Regardless of which calculation mode is active, every position decision passes through the override pipeline:
 
-  subgraph "Basic Mode"
-      B --> BA("Sun within field of view")
-
-      BA --> |No| BC{{Default}}
-      BC --> BE("Time between sunset and sunrise?")
-      BE --> |Yes| BF["Return default"]
-      BE --> |No| BG["Return Sunset default"]
-
-      BA --> |Yes| BD("Elevation above 0?")
-      BD --> |Yes| BH{{"Calculated Position"}}
-      BD --> |No| BC
-  end
-
-  subgraph "Climate Mode"
-      C --> CA("Check Presence")
-  end
-
-  subgraph "Occupants"
-      CA --> |True| CB("Temperature above maximum comfort (summer)?")
-
-      CB --> |Yes| CD("Transparent blind?")
-      CB --> |No| CE("Lux/Irradiance below threshold or Weather is not sunny?")
-
-      CD --> |Yes| CF["Return fully closed (0%)"]
-      CD --> |No| B
-
-      CE --> |Yes| CG("Temperature below minimum comfort (winter) and sun infront of window and elevation > 0?")
-      CE --> |No| B
-
-      CG --> |Yes| CH["Return fully open (100%)"]
-      CG --> |No| BC
-  end
-
-  subgraph "No Occupants"
-      CA --> |False| CC("Sun infront of window and elevation > 0?")
-      CC --> |No| BC
-      CC --> |Yes| CI("Temperature above maximum comfort (summer)?")
-      CI --> |Yes| CF
-      CI --> |No| CJ("Temperature below minimum comfort (winter)")
-      CJ --> |Yes| CH
-      CJ --> |No| BC
-  end
-```
+| Priority | Override | Behavior |
+|----------|----------|----------|
+| 100 | **Force override** | Binary sensor(s) force cover to a fixed position — no other logic runs |
+| 80 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
+| 70 | **Manual override** | If the user physically moved the cover, automatic control is paused |
+| 50 | **Climate** | Active when Climate mode is enabled — applies temperature/presence/light strategy (see below) |
+| 40 | **Solar** | Active when sun is within the window's field of view and elevation limits — uses calculated sun-tracking position |
+| 0 | **Default** | Final fallback — returns the configured default position (or sunset position if applicable) |
 
 ### Basic mode
 
-This mode uses the calculated position when the sun is within the specified azimuth range of the window. Else it defaults to the default value or after sunset value depending on the time of day.
+The pipeline skips the Climate handler (priority 50). When the sun is within the configured field of view and above the minimum elevation, the integration uses the geometrically calculated blind position to block direct sunlight. Otherwise it falls back to the default position or the configured sunset position if the sun has set.
 
 ### Climate mode
 
@@ -295,36 +257,74 @@ This mode uses the calculated position when the sun is within the specified azim
 >
 > **Temperature Unit Consistency Required:** All temperature sensors must use the same unit system (°C or °F). The integration does not automatically convert between units. See [Known Limitations](#known-limitations--best-practices) for details.
 
-This mode calculates the position based on extra parameters for presence, indoor temperature, minimal comfort temperature, maximum comfort temperature and weather (optional).
-This mode is split up in two types of strategies; [Presence](https://github.com/jrhubott/adaptive-cover-pro?tab=readme-ov-file#presence) and [No Presence](https://github.com/jrhubott/adaptive-cover-pro?tab=readme-ov-file#no-presence).
+Climate mode enables the Climate handler (priority 50), which takes precedence over solar tracking. It uses indoor temperature, presence, weather, and light sensors to choose a strategy. Decisions are made in priority order — the first matching condition wins.
+
+```mermaid
+graph TD
+  A[("fa:fa-sun Sun data")] --> PIPE
+
+  subgraph PIPE ["Override Pipeline (all modes)"]
+    direction TB
+    P1["Force override active?"] -->|Yes| R_FORCE["Fixed position"]
+    P1 -->|No| P2["Motion timeout active?"]
+    P2 -->|Yes| R_MOTION["Default position"]
+    P2 -->|No| P3["Manual override active?"]
+    P3 -->|Yes| R_MANUAL["Hold position"]
+    P3 -->|No| MODE{"Climate mode\nenabled?"}
+  end
+
+  MODE -->|No| BASIC
+  MODE -->|Yes| CLIMATE
+
+  subgraph BASIC ["Basic Mode (Solar → Default)"]
+    direction TB
+    B1{"Sun in field\nof view?"}
+    B1 -->|Yes| B2["Calculated position"]
+    B1 -->|No| B3["Default / sunset position"]
+  end
+
+  subgraph CLIMATE ["Climate Mode"]
+    direction TB
+    CA{"Presence\ndetected?"}
+
+    CA -->|Yes / no sensor| CP1{"Winter?\n(temp < min comfort\n+ sun in window)"}
+    CP1 -->|Yes| CP_W["100% — fully open\n(solar heating)"]
+    CP1 -->|No| CP2{"Low light?\n(lux/irradiance below\nthreshold or not sunny)"}
+    CP2 -->|Yes| CP_L["Default position"]
+    CP2 -->|No| CP3{"Summer?\n(temp > max comfort\n+ transparent blind)"}
+    CP3 -->|Yes| CP_S["0% — fully closed\n(heat blocking)"]
+    CP3 -->|No| CP_G["Calculated position\n(glare control)"]
+
+    CA -->|No| CN1{"Sun in\nfield of view?"}
+    CN1 -->|No| CN_D["Default position"]
+    CN1 -->|Yes| CN2{"Summer?\n(temp > max comfort)"}
+    CN2 -->|Yes| CN_S["0% — fully closed"]
+    CN2 -->|No| CN3{"Winter?\n(temp < min comfort)"}
+    CN3 -->|Yes| CN_W["100% — fully open"]
+    CN3 -->|No| CN_D2["Default position"]
+  end
+```
 
 #### Climate strategies
 
-Climate mode uses a **priority-based decision system** to balance comfort, energy efficiency, and glare reduction:
+- **With Presence** (or no presence entity configured):
+  The objective is to reduce glare while providing daylight. Conditions are evaluated in this priority order:
 
-- **No Presence**:
-  Providing daylight to the room is no objective if there is no presence.
+  1. **Winter heating**: Indoor temperature below the minimum comfort threshold and sun in front of the window → open to 100% for passive solar heating. Takes priority over all other conditions.
+  2. **Low light**: Not summer, and light levels are low (lux/irradiance below threshold) or weather is not sunny → default position to maximise daylight.
+  3. **Summer cooling**: Indoor temperature above the maximum comfort threshold and blind is transparent → close to 0% to block heat.
+  4. **Glare control**: All other conditions (comfortable temperature, sunny day) → calculated sun-tracking position.
 
-  - **Below minimal comfort temperature (Winter Mode)**:
-    If the sun is above the horizon and the indoor temperature is below the minimal comfort temperature it opens the blind fully or tilt the slats to be parallel with the sun rays to allow for maximum solar radiation to heat up the room.
+- **Without Presence**:
+  The objective is energy efficiency; glare and daylight are not considered.
 
-  - **Above maximum comfort temperature (Summer Mode)**:
-    The objective is to not heat up the room any further by blocking out all possible radiation. All blinds close fully to block out light. <br> <br>
-    If the indoor temperature is between both thresholds the position defaults to the set default value based on the time of day.
+  - Sun in front of window and summer → **0%** (block heat)
+  - Sun in front of window and winter → **100%** (gain solar heat)
+  - Otherwise → **default position**
 
-- **Presence** (or no Presence Entity set):
-  The objective is to reduce glare while providing daylight to the room. The system uses the following priority order:
+**Weather integration**: A weather entity can be configured to identify sunny conditions (default states: `sunny`, `windy`, `partlycloudy`, `cloudy` — customisable). Winter heating (priority 1) activates regardless of weather or light levels.
 
-  1. **Winter Mode (Priority 1)**: When indoor temperature is below the minimal comfort threshold and the sun is in front of the window, blinds open to 100% for solar heating. This takes priority over all other conditions including light sensors and weather state.
-
-  2. **Low Light Conditions (Priority 2)**: When it's not summer and light levels are low (lux/irradiance below threshold) or weather is not sunny, the position defaults to the configured default value to allow more sunlight while minimizing glare.
-
-  3. **Summer Mode (Priority 3)**: When indoor temperature is above the maximum comfort threshold with transparent blinds, blinds close to 0% to block heat.
-
-  4. **Normal Glare Calculation (Priority 4)**: In all other conditions (comfortable temperature on sunny days), uses the basic sun-tracking calculation to reduce glare while providing daylight.
-
-  **Weather Integration**: If you configure a weather entity, the system checks if the current weather state indicates direct sunlight (default states: `sunny`, `windy`, `partlycloudy`, `cloudy` - customizable in weather options). However, winter mode (Priority 1) activates regardless of weather or light conditions when temperature thresholds are met. <br><br>
-  **Tilted Blinds**: Follow the same priority system, but in summer mode (when inside temperature exceeds maximum comfort), slats are positioned at 45 degrees as this is [found optimal](https://www.mdpi.com/1996-1073/13/7/1731) for heat blocking while maintaining some light.
+**Tilted blinds**: Follow the same strategies, with these differences in summer mode: slats are set to 45° (found [optimal](https://www.mdpi.com/1996-1073/13/7/1731) for heat blocking while maintaining some light) when presence is detected, and to 0% (fully closed) when no presence is detected.
 
 ## Variables
 
