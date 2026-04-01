@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-03-31
-**Current Version:** v2.7.17-beta.9
+**Current Version:** v2.8.0
 **Branch:** `dev` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -55,10 +55,10 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.8.0 | Major architecture rewrite: pure calc engine, state providers, override pipeline, manager classes, diagnostics builder, typed config. Decision Trace sensor, enriched Cover Position attrs, Venetian engine. 751 tests, 61% coverage. Consolidates 12 betas. |
 | v2.7.16 | Fix position sensor showing stale sun-calculated value after end_time (Issue #66); fix max_position/min_position sliders defaulting to 1%/no value |
 | v2.7.15 | Accept occupancy sensors in motion control selector (Issue #52); fix sunset_position not accepting blank value (Issue #55) |
 | v2.7.14 | Add `sill_height` parameter for windows above floor level (Issue #47) — raises blind when sill provides natural sun blocking |
-| v2.7.13 | Fix reset button race condition — suppress override re-detection during post-reset cover settling; add 30s timeout to wait loop |
 
 ---
 
