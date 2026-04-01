@@ -54,6 +54,9 @@ async def async_setup_entry(
         "last_motion_time",
         "last_position_verification",
         "position_verification_retries",
+        "position_explanation",
+        "calculated_position",
+        "Control_Method",
     ]
     for suffix in old_suffixes:
         old_uid = f"{config_entry.entry_id}_{suffix}"
@@ -92,12 +95,6 @@ async def async_setup_entry(
             coordinator,
         )
     )
-    entities.append(
-        AdaptiveCoverControlSensorEntity(
-            config_entry.entry_id, hass, config_entry, name, coordinator
-        )
-    )
-
     # Diagnostic sensors (always enabled)
 
     # Sun Position: combines Sun Azimuth + Sun Elevation + Gamma
@@ -110,20 +107,6 @@ async def async_setup_entry(
     # Control Status: combines Control Status + Reason + Time Window + Sun Validity
     entities.append(
         AdaptiveCoverControlStatusSensor(
-            config_entry.entry_id, hass, config_entry, name, coordinator
-        )
-    )
-
-    # Calculated Position
-    entities.append(
-        AdaptiveCoverCalculatedPositionSensor(
-            config_entry.entry_id, hass, config_entry, name, coordinator
-        )
-    )
-
-    # Position Explanation
-    entities.append(
-        AdaptiveCoverPositionExplanationSensor(
             config_entry.entry_id, hass, config_entry, name, coordinator
         )
     )
@@ -247,6 +230,12 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
             position_explanation = diagnostics.get("position_explanation")
             if position_explanation is not None:
                 attrs["position_explanation"] = position_explanation
+            attrs["raw_calculated_position"] = diagnostics.get("calculated_position")
+            calc_details = diagnostics.get("calculation_details")
+            if calc_details:
+                attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
+                attrs["safety_margin"] = calc_details.get("safety_margin")
+                attrs["effective_distance"] = calc_details.get("effective_distance")
         return attrs
 
 
@@ -280,37 +269,6 @@ class AdaptiveCoverTimeSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
     def native_value(self) -> str | None:
         """Handle when entity is added."""
         return self.data.states[self.key]
-
-
-class AdaptiveCoverControlSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
-    """Adaptive Cover Pro Control method Sensor."""
-
-    _attr_translation_key = "control"
-
-    def __init__(
-        self,
-        unique_id: str,
-        hass,
-        config_entry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-    ) -> None:
-        """Initialize adaptive_cover Sensor."""
-        super().__init__(
-            unique_id, hass, config_entry, coordinator, "Control_Method", None
-        )
-        self._sensor_name = "Control Method"
-        self.id = unique_id
-
-    @property
-    def name(self):
-        """Name of the entity."""
-        return self._sensor_name
-
-    @property
-    def native_value(self) -> str | None:
-        """Handle when entity is added."""
-        return self.data.states["control"]
 
 
 # ---------------------------------------------------------------------------
@@ -525,106 +483,6 @@ class AdaptiveCoverControlStatusSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
             ]
 
         attrs["last_updated"] = diagnostics.get("last_updated")
-
-        return attrs
-
-
-class AdaptiveCoverCalculatedPositionSensor(
-    AdaptiveCoverDiagnosticSensorBase, SensorEntity
-):
-    """Diagnostic sensor for calculated position with full decision chain."""
-
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = PERCENTAGE
-
-    def __init__(
-        self,
-        unique_id: str,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-    ) -> None:
-        """Initialize calculated position sensor."""
-        super().__init__(
-            unique_id,
-            hass,
-            config_entry,
-            coordinator,
-            "calculated_position",
-            "mdi:calculator",
-        )
-        self._sensor_name = "Calculated Position"
-
-    @property
-    def name(self) -> str:
-        """Name of the entity."""
-        return self._sensor_name
-
-    @property
-    def native_value(self) -> float | int | None:
-        """Return raw sun-calculated position."""
-        if self.data.diagnostics is None:
-            return None
-        return self.data.diagnostics.get("calculated_position")
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return full position decision chain attributes."""
-        if self.data.diagnostics is None:
-            return None
-        diagnostics = self.data.diagnostics
-        config = diagnostics.get("configuration", {})
-        calculated = diagnostics.get("calculated_position")
-        if calculated is None:
-            return None
-
-        attrs: dict[str, Any] = {
-            "sun_calculated_position": calculated,
-            "final_position": self.data.states.get("state"),
-            "direct_sun_valid": self.data.states.get("sun_motion"),
-        }
-
-        # Position limits
-        min_pos = config.get("min_position")
-        max_pos = config.get("max_position")
-        enable_min = config.get("enable_min_position", False)
-        enable_max = config.get("enable_max_position", False)
-
-        if min_pos is not None and enable_min and calculated < min_pos:
-            attrs["min_limit_applied"] = min_pos
-            attrs["limited_by"] = "min_position"
-
-        if max_pos is not None and enable_max and calculated > max_pos:
-            attrs["max_limit_applied"] = max_pos
-            attrs["limited_by"] = "max_position"
-
-        if config.get("inverse_state", False):
-            attrs["inverse_state_enabled"] = True
-
-        if config.get("interpolation", False):
-            attrs["interpolation_enabled"] = True
-
-        # Climate
-        climate_pos = diagnostics.get("calculated_position_climate")
-        if climate_pos is not None and climate_pos != calculated:
-            attrs["climate_position"] = climate_pos
-
-        if diagnostics.get("climate_strategy") is not None:
-            attrs["climate_strategy"] = diagnostics["climate_strategy"]
-
-        if diagnostics.get("position_explanation") is not None:
-            attrs["position_explanation"] = diagnostics["position_explanation"]
-
-        calc_details = diagnostics.get("calculation_details")
-        if calc_details:
-            attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
-            attrs["safety_margin"] = calc_details.get("safety_margin")
-            attrs["effective_distance"] = calc_details.get("effective_distance")
-            attrs["window_depth_contribution"] = calc_details.get(
-                "window_depth_contribution"
-            )
-            attrs["sill_height_offset"] = calc_details.get("sill_height_offset")
 
         return attrs
 
@@ -1046,47 +904,6 @@ class AdaptiveCoverClimateStatusSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 attrs["irradiance_active"] = climate_conditions["irradiance_active"]
 
         return attrs or None
-
-
-class AdaptiveCoverPositionExplanationSensor(
-    AdaptiveCoverDiagnosticSensorBase, SensorEntity
-):
-    """Diagnostic sensor showing the current position decision explanation.
-
-    State is the full position_explanation string so HA records it in state
-    history, enabling time-based troubleshooting.
-    """
-
-    def __init__(
-        self,
-        config_entry_id: str,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        name: str,
-        coordinator: AdaptiveDataUpdateCoordinator,
-    ):
-        """Initialize the sensor."""
-        super().__init__(
-            config_entry_id,
-            hass,
-            config_entry,
-            coordinator,
-            "position_explanation",
-            "mdi:text-box-outline",
-        )
-        self._sensor_name = "Position Explanation"
-
-    @property
-    def name(self) -> str:
-        """Name of the entity."""
-        return self._sensor_name
-
-    @property
-    def native_value(self) -> str | None:
-        """Return the position explanation string as the sensor state."""
-        if not self.data or not self.data.diagnostics:
-            return None
-        return self.data.diagnostics.get("position_explanation")
 
 
 class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, SensorEntity):
