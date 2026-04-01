@@ -13,191 +13,39 @@ This Custom-Integration provides sensors for vertical and horizontal blinds base
 
 This integration builds upon the template sensor from this forum post [Automatic Blinds](https://community.home-assistant.io/t/automatic-blinds-sunscreen-control-based-on-sun-platform/)
 
-## Credits
-
-**Adaptive Cover Pro** is a fork of the original [Adaptive Cover](https://github.com/basbruss/adaptive-cover) integration created by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**.
-
-This fork includes enhancements and modifications, but the core functionality and architecture are based on Bas Brussee's excellent work. Please visit the [original repository](https://github.com/basbruss/adaptive-cover) to see the upstream project and consider supporting the original author.
-
-## For Developers
-
-If you're interested in contributing to this project, please see the **[Development Guide (docs/DEVELOPMENT.md)](docs/DEVELOPMENT.md)** for comprehensive documentation on:
-- Setting up your development environment
-- Project structure and architecture
-- Development workflow and scripts
-- Testing strategies
-- **Release process** (automated with `./scripts/release`)
-- Code standards and best practices
-
-## Testing the Algorithms
-
-Want to visualize how the blinds will behave before installing? The **Jupyter notebook** (`notebooks/test_env.ipynb`) lets you test and visualize the position calculation algorithms without needing Home Assistant or physical covers.
-
-### Quick Start
-
-**1. Install Jupyter:**
-```bash
-pip install jupyter matplotlib pandas pvlib
-```
-
-**2. Run the notebook:**
-```bash
-# From the repository root
-jupyter notebook notebooks/test_env.ipynb
-```
-
-Or open in VS Code with the Jupyter extension installed.
-
-**3. Configure and run:**
-- Modify the configuration variables (location, window dimensions, orientation)
-- Run all cells (Cell → Run All)
-- Review the plots showing cover positions throughout the day
-
-### What You'll See
-
-The notebook generates two plots:
-- **Vertical Cover Plot** - Shows blind position based on sun position for up/down blinds
-- **Horizontal Cover Plot** - Shows awning extension for in/out awnings
-
-Each plot displays:
-- Sun elevation and azimuth over 24 hours
-- Calculated cover position overlaid
-- Sunrise/sunset times (red lines)
-- When sun enters/exits your window's field of view (yellow lines)
-
-### Example Configuration
-
-```python
-# Location (modify for your testing location)
-timezone = "America/New_York"  # Your timezone
-lat = 40.7128                  # Your latitude
-lon = -74.0060                 # Your longitude
-
-# Window properties
-windown_azimuth = 180          # 180 = South-facing
-window_fov_left = 90           # Field of view (degrees)
-window_fov_right = 90
-window_height = 3              # meters
-window_distance = 0.5          # Distance from window to blind (meters)
-```
-
-**Perfect for:**
-- Testing different window orientations before configuration
-- Experimenting with field of view angles
-- Validating behavior for your specific location
-- Understanding how the algorithm responds to sun position
-
-For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE.md#manual-testing).
-
-## Simulation Notebook — Visualize Your Actual Configuration
-
-The **simulation notebook** (`notebooks/simulate_cover.ipynb`) lets you visualize how your covers will behave for **any date or date range** using your real Home Assistant configuration — no guesswork, no manual parameter entry.
-
-### How It Works
-
-**Step 1: Export your cover's configuration from Home Assistant**
-
-1. Go to **Developer Tools → Services**
-2. Select **"Adaptive Cover Pro: Export Configuration"**
-3. In the **Cover configuration** field, select the cover you want to simulate
-4. Click **Call Service**
-5. Copy the entire YAML response that appears in the response panel
-
-**Step 2: Open the simulation notebook**
-
-```bash
-# From the repository root
-jupyter notebook notebooks/simulate_cover.ipynb
-```
-
-Or open in VS Code with the Jupyter extension.
-
-**Step 3: Paste your config and set the date**
-
-In **Cell 2**, replace the example YAML with your copied config and set your simulation parameters:
-
-```python
-CONFIG_YAML = """
-name: Living Room West
-cover_type: cover_blind
-# ... paste your exported YAML here
-"""
-
-START_DATE = "today"   # "today" or "YYYY-MM-DD" e.g. "2026-06-21"
-NUM_DAYS = 1           # 1 = single 24-hour day; increase for multi-day range
-```
-
-**Step 4: Run all cells (Cell → Run All)**
-
-### What You'll See
-
-**Single day (NUM_DAYS = 1):** A two-subplot figure per day showing:
-- **Top:** Sun elevation and azimuth over the full 24-hour period (00:00–24:00)
-- **Bottom:** Calculated cover position (%) with gamma angle on secondary axis
-- **Red dashed lines:** Sunrise and sunset
-- **Yellow dashed lines:** Sun enters/exits the window's field of view
-- **Shaded region:** Period when the sun is actively in front of your window
-
-**Multi-day range (NUM_DAYS > 1):** An additional overlay plot showing all days on the same 24-hour axis — useful for comparing seasonal behavior, e.g. a week around summer solstice vs. winter solstice.
-
-**Summary table:** Per-day stats including sunrise/sunset times, hours of direct sun exposure, and average/max cover position.
-
-### Example: Simulate Summer Solstice
-
-```python
-START_DATE = "2026-06-21"
-NUM_DAYS = 1
-```
-
-### Example: Compare a Full Week
-
-```python
-START_DATE = "2026-06-18"
-NUM_DAYS = 7
-```
-
-**Perfect for:**
-- Validating your window azimuth and field-of-view settings before deploying
-- Checking cover behavior on a specific date (e.g., before a holiday)
-- Comparing summer vs. winter behavior side-by-side
-- Debugging unexpected cover positions by replaying historical dates
-
 ## Table of Contents
 
-- [Adaptive Cover Pro](#adaptive-cover-pro)
-  - [Credits](#credits)
-  - [For Developers](#for-developers)
-  - [Testing the Algorithms](#testing-the-algorithms)
-    - [Quick Start](#quick-start)
-    - [What You'll See](#what-youll-see)
-    - [Example Configuration](#example-configuration)
-  - [Table of Contents](#table-of-contents)
-  - [Features](#features)
-  - [Known Limitations & Best Practices](#known-limitations--best-practices)
-  - [Installation](#installation)
-    - [HACS (Recommended)](#hacs-recommended)
-    - [Manual](#manual)
-  - [Migrating from Adaptive Cover](#migrating-from-adaptive-cover)
-    - [How to Import](#how-to-import)
-    - [What Gets Imported](#what-gets-imported)
-    - [After Import](#after-import)
-    - [Import from Options Menu](#import-from-options-menu)
-  - [Setup](#setup)
-  - [Cover Types](#cover-types)
-  - [Modes](#modes)
-    - [Basic mode](#basic-mode)
-    - [Climate mode](#climate-mode)
-      - [Climate strategies](#climate-strategies)
-  - [Variables](#variables)
-    - [Common](#common)
-    - [Vertical](#vertical)
-    - [Horizontal](#horizontal)
-    - [Tilt](#tilt)
-    - [Automation](#automation)
-    - [Climate](#climate)
-    - [Blindspot](#blindspot)
-  - [Entities](#entities)
-  - [Features Planned](#features-planned)
+- [Features](#features)
+- [Installation](#installation)
+  - [HACS (Recommended)](#hacs-recommended)
+  - [Manual](#manual)
+- [Migrating from Adaptive Cover](#migrating-from-adaptive-cover)
+  - [How to Import](#how-to-import)
+  - [What Gets Imported](#what-gets-imported)
+  - [After Import](#after-import)
+  - [Import from Options Menu](#import-from-options-menu)
+- [Setup](#setup)
+- [Cover Types](#cover-types)
+- [Modes](#modes)
+  - [Basic mode](#basic-mode)
+  - [Climate mode](#climate-mode)
+    - [Climate strategies](#climate-strategies)
+- [Variables](#variables)
+  - [Common](#common)
+  - [Vertical](#vertical)
+  - [Horizontal](#horizontal)
+  - [Tilt](#tilt)
+  - [Automation](#automation)
+  - [Climate](#climate)
+  - [Blindspot](#blindspot)
+- [Entities](#entities)
+- [Known Limitations & Best Practices](#known-limitations--best-practices)
+- [Troubleshooting](#troubleshooting)
+- [Enhanced Geometric Accuracy](#enhanced-geometric-accuracy)
+- [Testing the Algorithms](#testing-the-algorithms)
+- [Simulation Notebook](#simulation-notebook--visualize-your-actual-configuration)
+- [Credits](#credits)
+- [For Developers](#for-developers)
 
 ## Features
 
@@ -270,318 +118,6 @@ NUM_DAYS = 7
   - Optional window depth parameter for advanced precision
   - No configuration required - works automatically
   - Backward compatible - existing installations benefit immediately
-
-## Known Limitations & Best Practices
-
-### Temperature Unit Consistency
-**IMPORTANT:** All temperature sensors used in Climate mode must use the same unit system. The integration currently does not perform automatic unit conversion between Fahrenheit and Celsius.
-
-- If your `Indoor Temperature Entity` reports in Celsius, your `Outdoor Temperature Entity` must also report in Celsius
-- The `Minimum Comfort Temperature` and `Maximum Comfort Temperature` values should match your sensor units
-- Mixing °F and °C will result in incorrect calculations
-
-**Workaround:** Ensure all climate entities report in the same units, or use template sensors to convert them to a consistent unit.
-
-**Future:** Automatic unit system support is planned (see [Features Planned](#features-planned))
-
-### Start with Basic Mode
-If you're new to Adaptive Cover Pro, we strongly recommend:
-
-1. **Start with Basic Mode** - Configure and test basic sun position-based control first
-2. **Understand the calculations** - Observe how your covers respond to sun position throughout the day
-3. **Add Climate Mode gradually** - Once comfortable with Basic Mode, enable Climate Mode and add temperature/presence features incrementally
-
-Climate Mode introduces additional complexity with temperature thresholds, presence detection, and weather conditions. Understanding Basic Mode operation first will help you troubleshoot issues more effectively.
-
-### Venetian Blinds (Dual Control)
-Home Assistant cover entities can only control a single dimension (position OR tilt angle, not both simultaneously). For venetian blinds that support both vertical movement and slat tilting:
-
-**You must create TWO separate Adaptive Cover Pro instances:**
-1. **Vertical instance** - Controls up/down position using the same cover entity
-2. **Tilt instance** - Controls slat angle using the same cover entity
-
-**Example:**
-- Instance 1: "Adaptive Office Blind Vertical" → Controls `cover.office_blind` position (0-100%)
-- Instance 2: "Adaptive Office Blind Tilt" → Controls `cover.office_blind` tilt angle (0-100%)
-
-Both instances monitor the sun independently and send appropriate commands to the same physical device.
-
-### Weather Entity Reliability
-Weather entities in Home Assistant may not always reflect real-time conditions accurately, which can affect Climate Mode operation:
-
-- Weather forecasts may lag actual conditions
-- Some integrations update infrequently (e.g., hourly)
-- Not all weather services distinguish between types of cloud cover
-
-**Recommendations:**
-- Consider using **lux sensors** or **irradiance sensors** for more accurate real-time light level detection
-- The integration supports both `Lux Entity` and `Irradiance Entity` for direct sunlight measurement
-- If using weather entities, verify they update frequently enough for your needs (every 5-15 minutes is ideal)
-
-### Sensor Startup Reliability
-The integration gracefully handles sensors that are unavailable during Home Assistant startup (common with Zigbee2MQTT, Z-Wave, and other hub-based devices):
-
-- **Automatic recovery**: If temperature, lux, or irradiance sensors report `unavailable` or `None` during startup, the integration uses safe defaults and continues operating
-- **Typical startup time**: Zigbee2MQTT devices often take 20-60 seconds to initialize after Home Assistant starts
-- **No manual intervention required**: Once sensors become available, the integration automatically uses their values
-
-**What happens during startup:**
-- Missing lux/irradiance sensors → Defaults to "light available" (continues with weather-based operation)
-- Missing temperature sensors → Defaults to "comfortable" range (uses basic glare calculations)
-- Missing weather sensors → Uses sun position calculations only
-
-This ensures your covers operate correctly even during brief sensor outages or Home Assistant restarts.
-
-### Open/Close-Only Covers
-
-Covers that only support OPEN and CLOSE commands (no position control) are supported with threshold-based control:
-
-- The integration calculates position as normal (0-100%)
-- If calculated position ≥ threshold → cover opens
-- If calculated position < threshold → cover closes
-- Default threshold is 50% (adjustable in Automation settings, 1-99%)
-
-**Limitations:**
-- Granular position control is not possible
-- Intermediate positions are not available
-- Tilt covers must support SET_TILT_POSITION (open/close mode not supported)
-
-**Example Use Cases:**
-- Simple roller shutters with only up/down buttons
-- Garage doors with open/close only
-- Budget blinds without position feedback
-
-**Inverse State with Open/Close-Only Covers:**
-
-The "Inverse the state" option works with open/close-only covers by inverting the calculated position **before** comparing to the threshold:
-
-- Without inverse: Position 30% → 30% < 50% → CLOSE command
-- With inverse: Position 30% → inverted to 70% → 70% ≥ 50% → OPEN command
-
-This allows the integration to support covers with non-standard OPEN/CLOSE behavior that don't follow Home Assistant guidelines. Enable this option if your cover's OPEN and CLOSE commands appear to work backwards.
-
-### Response Time and Control Delays
-
-The integration uses periodic checks to balance responsiveness with system performance. Understanding these timing behaviors helps set appropriate expectations:
-
-**Time Window Transitions (Start/End Times):**
-- When start time or end time is reached, covers will respond within **1 minute**
-- The integration checks time window state every minute and triggers immediate action when transitions occur
-- Log messages will indicate: "Time window state changed: inactive → active" (or vice versa)
-
-**Sun Position Changes:**
-- Sun position changes trigger updates immediately
-- Temperature, weather, and presence sensor changes also trigger immediate updates
-- Delta position and delta time settings control how frequently covers actually move
-
-**After Home Assistant Restart:**
-- Covers are automatically repositioned during first refresh (typically within 30 seconds)
-- Target positions are calculated and stored even if covers don't need to move
-- Position verification begins immediately after first refresh
-
-**Position Verification:**
-- Every minute, the integration verifies covers reached their target positions
-- If a mismatch is detected (e.g., cover failed to move), automatic retry occurs
-- Up to 3 retry attempts before logging a warning
-
-**Why Not Instant?**
-- Periodic checks balance responsiveness with Home Assistant performance
-- Prevents excessive processor usage from continuous monitoring
-- 1-minute intervals are imperceptible for sun-based automation (sun moves slowly)
-- Immediate triggers still available for sun position, temperature, and sensor changes
-
-**Recommendation:**
-- For time-critical automations at specific times, consider using Home Assistant automations that trigger on time patterns instead of relying on start/end times
-- Start/end times are designed for daily operational windows, not precision timing
-
-## Enhanced Geometric Accuracy
-
-Adaptive Cover Pro includes sophisticated geometric calculations to ensure accurate sun blocking even at extreme sun angles. These improvements work automatically - no configuration required.
-
-### Angle-Dependent Safety Margins
-
-Safety margins automatically increase blind extension at extreme angles to compensate for geometric uncertainties:
-
-- **Horizontal angles (gamma)**: Up to 20% increase when sun is at extreme side angles (>45° from direct front)
-- **Low elevations**: Up to 15% increase when sun is near the horizon (<10° elevation)
-- **High elevations**: Up to 10% increase when sun is nearly overhead (>75° elevation)
-- **Combined extremes**: Margins multiply together (e.g., 85° gamma + 8° elevation ≈ 27% total increase)
-
-Margins activate automatically, use smoothstep interpolation for smooth transitions, and are zero at normal angles (gamma < 45°, 10° < elevation < 75°). Check the "Calculated Position" diagnostic sensor's `position_explanation` attribute to see the full decision chain, or compare it to the actual cover position to see the effect of safety margins.
-
-#### Edge Case Handling
-
-Automatic fallback positions for extreme conditions where standard calculations become unreliable:
-
-| Condition | Behavior | Reason |
-|-----------|----------|--------|
-| Elevation < 2° | Full window coverage | Sun nearly horizontal, precise calculation unreliable |
-| \|Gamma\| > 85° | Full window coverage | Sun perpendicular to window, standard formula unstable |
-| Elevation > 88° | Simplified calculation | Sun nearly overhead, path length correction minimal |
-
-### Optional Window Depth
-
-For users who want maximum precision, the **Window Depth** parameter accounts for window reveals/frames creating additional shadow at angled sun positions.
-
-#### Configuration
-
-Located in the vertical blind configuration screen:
-
-**Parameter:** Window Depth (Reveal)
-**Range:** 0.0 - 0.5 meters (0 - 50cm)
-**Default:** 0.0 (disabled)
-**Unit:** meters
-
-**Typical values:**
-- `0.0m` - Disabled (default)
-- `0.05m` (2 inches) - Flush-mounted windows
-- `0.10m` (4 inches) - Standard window frames
-- `0.15m` (6 inches) - Deep reveals or thick walls
-
-**How to measure:**
-1. Stand outside your building
-2. Measure from the outer wall surface to the inner edge of the window frame
-3. Convert to meters (1 inch ≈ 0.025m, 1 foot ≈ 0.30m)
-
-#### How It Works
-
-Window depth creates an additional horizontal offset at angled sun positions:
-
-```
-Outer wall surface
-    |
-    |<-- Window Depth -->|
-    |                    Window glass
-                         |
-                         Sun at angle
-```
-
-At angled sun positions (gamma > 10°), the window depth effectively extends the glare zone, requiring the blind to extend further to block sunlight.
-
-**Effect magnitude:**
-- **Zero effect** at gamma < 10° (sun directly in front)
-- **Minimal effect** at gamma 10-30° (1-3cm additional extension)
-- **Moderate effect** at gamma 30-60° (3-8cm additional extension)
-- **Significant effect** at gamma > 60° (8-15cm additional extension)
-
-**Example:**
-- Window depth: 0.10m (4 inches)
-- Sun angle: gamma = 45° from window normal
-- Additional blind extension: ≈7cm
-- Result: Tighter sun blocking at angled positions
-
-#### When to Use Window Depth
-
-**Enable window depth (set > 0) if:**
-- You notice sun "leaking" around the blind at extreme angles
-- Your windows have deep reveals (thick walls, recessed frames)
-- You want maximum precision for critical applications (art preservation, glare-sensitive workspaces)
-- You're willing to measure window depth accurately
-
-**Leave at default (0.0) if:**
-- Your windows are flush-mounted or nearly flush
-- Current sun blocking is satisfactory
-- You prefer simpler configuration
-
-#### Backward Compatibility
-
-- **Existing installations:** Unaffected — window_depth defaults to 0.0
-- **Optional enhancement:** Set window_depth > 0 only if needed
-- **No performance impact:** Adds minimal computational cost
-
-### Technical Details
-
-#### Safety Margin Formula
-
-The integration calculates safety margins using smoothstep interpolation for smooth transitions:
-
-```python
-# Gamma margin (horizontal angles)
-if gamma_abs > 45°:
-    t = (gamma_abs - 45°) / 45°  # 0 at 45°, 1 at 90°
-    smooth_t = t² × (3 - 2t)     # Smoothstep
-    margin += 0.2 × smooth_t     # Up to 20%
-
-# Elevation margins
-if elevation < 10°:
-    t = (10° - elevation) / 10°
-    margin += 0.15 × t  # Up to 15%
-elif elevation > 75°:
-    t = (elevation - 75°) / 15°
-    margin += 0.10 × t  # Up to 10%
-```
-
-#### Window Depth Contribution
-
-```python
-if window_depth > 0 and |gamma| > 10°:
-    depth_contribution = window_depth × sin(|gamma|)
-    effective_distance = base_distance + depth_contribution
-```
-
-#### Regression Testing
-
-All enhancements are verified to:
-- Maintain <5% deviation from baseline at normal angles
-- Never reduce protection (always ≥ baseline position)
-- Produce no NaN, infinity, or numerical errors
-- Provide smooth transitions across all angle ranges
-
-#### Test Coverage
-
-- 34 dedicated tests for geometric accuracy
-- 214 total integration tests (all passing)
-- 92% code coverage on calculation engine
-
-### Diagnostic Sensors
-
-Use the always-on diagnostic sensors to monitor enhanced geometric accuracy:
-
-**Key sensors:**
-- `Sun Position` — state is azimuth; attributes include `sun_elevation` and `gamma` (angle relative to window normal)
-- `Calculated Position` — raw geometric position before adjustments; `position_explanation` attribute shows the full decision chain
-- `Control Status` — shows why the cover is at its current position, including when safety margins are active
-
-Compare the `Calculated Position` sensor to the actual cover position to see the effect of safety margins.
-
-### Troubleshooting
-
-**Q: My blinds extend more than before at extreme angles**
-A: This is expected behavior. Safety margins automatically increase extension at challenging angles to ensure effective sun blocking. Check the `position_explanation` attribute on the "Calculated Position" diagnostic sensor to see the full decision chain, or compare "Calculated Position" to actual cover position to confirm margins are active.
-
-**Q: Should I enable window depth?**
-A: Only if you notice sun leaking at extreme angles or have deep window reveals (>10cm). Most users don't need this.
-
-**Q: Can I disable the safety margins?**
-A: No, safety margins are automatic and cannot be disabled. They're essential for reliable sun blocking at extreme angles. However, margins are zero at normal angles (gamma < 45°, 10° < elevation < 75°).
-
-**Q: How do I measure window depth accurately?**
-A: Use a tape measure or ruler to measure from the outer wall surface (outside your home) to the inner edge of the window frame. If you're unsure, leave at the default (0.0) — the automatic safety margins work well without it.
-
-**Q: How do I troubleshoot unexpected cover behavior over time?**
-A: Two built-in diagnostic sensors help with time-based troubleshooting:
-- **Position Explanation** — tracks *why* the cover is at its current position (e.g., "Sun tracking (45%) → Climate: Winter Heating → 100%"). Because the state itself is the explanation string, Home Assistant records its history — check the History panel to see how decisions changed over time.
-- **Last Skipped Action** — shows why the most recent automatic cover move was suppressed (e.g., "Position delta too small", "Manual override active", "Outside time window"). Useful when a cover doesn't move and you expect it to.
-
-For even deeper logging, enable debug logging in your `configuration.yaml`:
-
-```yaml
-logger:
-  default: warning
-  logs:
-    custom_components.adaptive_cover_pro: debug
-```
-
-Restart Home Assistant and check **Settings → System → Logs** or `home-assistant.log`. With debug logging active you will see detailed entries such as:
-
-```
-Position explanation changed: Sun tracking (45%) → Climate: Winter Heating → 100%
-Skipping cover.living_room_blind: position delta too small
-Vertical calc: elev=32.5°, gamma=18.3°, dist=2.500→2.500, base=1.234, margin=1.000, clipped=1.234
-Sun visibility transition detected: ON → OFF (sun left field of view)
-```
-
-Each log entry is prefixed with the device name so you can filter by device in multi-instance setups.
 
 ## Installation
 
@@ -966,9 +502,27 @@ Where `{device_name}` is the slugified version of the device name you configured
 - `binary_sensor.adaptive_living_room_blind_sun_infront`
 
 These entities are always available:
+
+---
+
+**`sensor.{device_name}_cover_position`**
+
+State: current target position (%) determined by the integration.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `reason` | Which pipeline rule is driving the position — answers *"what decision rule won?"* (e.g. `"no active condition — default position 100%"`). See [Understanding Reason vs. Position Explanation](#understanding-reason-vs-position-explanation). |
+| `position_explanation` | How the final position number was determined after the pipeline chose a position — answers *"where did this specific number come from?"* (e.g. `"Sunset Position (100%)"` or `"Sun Tracking (67%) → Max Position Limit → 80%"`). |
+| `control_method` | The winning pipeline handler: `solar`, `default`, `manual_override`, `force_override`, `motion_timeout`, `summer`, or `winter`. |
+| `raw_calculated_position` | The raw geometric sun-tracking position before any limits, climate adjustments, or inversion are applied. |
+| `edge_case_detected` | `true` when geometric edge-case handling was triggered (e.g. very low elevation or near-parallel sun angle). |
+| `safety_margin` | The safety margin multiplier applied to the geometric calculation (≥1.0; activates at steep gamma or low/high elevation). |
+| `effective_distance` | The effective distance used in the geometric calculation after sill height offset is applied. |
+
+---
+
 | Entities | Default | Description |
 | --------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `sensor.{device_name}_cover_position` | | Reflects the current state determined by predefined settings and factors such as sun position, weather, and temperature |
 | `sensor.{device_name}_control_method` | `solar` | **Cover Position Driver**: Shows what is currently controlling the cover position. Values (in priority order): **`force_override`** — a safety binary sensor is active; cover moves to the override position. **`motion_timeout`** — no occupancy detected after the configured timeout; cover returns to its default position. **`manual_override`** — you manually moved the cover; automatic control is paused. **`summer`** — climate mode active and temperature is above the max threshold; cover closes to block heat. **`winter`** — climate mode active and temperature is below the min threshold; cover opens to maximise solar heat gain. **`solar`** — sun is within the field of view; cover follows the calculated sun-position. **`default`** — sun is outside the field of view, elevation limits, blind spot, or the sunrise/sunset offset window; cover holds the default position. |
 | `sensor.{device_name}_start_sun` | | Shows the starting time when the sun enters the window's view, with an interval of every 5 minutes. |
 | `sensor.{device_name}_end_sun` | | Indicates the ending time when the sun exits the window's view, with an interval of every 5 minutes. |
@@ -990,33 +544,715 @@ When climate mode is setup you will also get these entities:
 
 These sensors are always created for every device (no configuration required). They help troubleshoot and monitor integration behavior.
 
-| Entity | Description |
-| ------ | ----------- |
-| `sensor.{device_name}_sun_position` | Current sun azimuth angle (state). Attributes: `sun_elevation`, `gamma` (angle relative to window normal), `fov_left`, `fov_right`, `azimuth_min`, `azimuth_max`, `in_fov`, `blind_spot_range` (when blind spot enabled). |
-| `sensor.{device_name}_control_status` | Current automation status: `active`, `automatic_control_off`, `manual_override`, `outside_time_window`, `sun_not_visible`. Attributes include all Control State Reason and Time Window details, plus `delta_position_threshold`, `delta_time_threshold_minutes`, `position_delta_from_last_action`, `seconds_since_last_action`, `last_updated`. |
-| `sensor.{device_name}_calculated_position` | Raw geometric position (%) before climate/limits/inversion. Attributes: `position_explanation` (full human-readable decision chain, e.g. `"Sun tracking (45%) → Climate: Winter Heating → 100%"`), `climate_strategy` (which climate branch applied: `winter_heating`, `summer_cooling`, `low_light`, `glare_control`), `sun_calculated_position` (raw geometry before any override), `final_position`, `direct_sun_valid`; limit/inversion/interpolation flags when active. |
-| `sensor.{device_name}_last_cover_action` | Most recent cover command. Attributes: `entity_id`, `service`, `position` (sent), `calculated_position`, `inverse_state_applied`, `timestamp`, `covers_controlled`; `threshold_used` and `threshold_comparison` for open/close-only covers. |
-| `sensor.{device_name}_manual_override_end_time` | When the current manual override expires and automatic control resumes. Unavailable when no override is active. Attributes: `per_entity` dict of expiry timestamps per cover entity ID. |
-| `sensor.{device_name}_position_verification` | Timestamp of the most recent position verification check. Attributes: `retry_count` (current retry count 0–3), `max_retries`, `per_entity` dict of last verification timestamps and retry counts per cover. |
-| `sensor.{device_name}_motion_status` | Timestamp when motion timeout fires (covers switch to default position). Only created when motion sensors are configured. Unavailable when no timeout pending. Attributes: `motion_timeout_seconds`, `last_motion_detected`. |
-| `sensor.{device_name}_climate_status` | Active temperature used for climate decisions (state). Only created when climate mode is configured. Attributes: `climate_conditions` (`Summer Mode` / `Winter Mode` / `Intermediate`), `inside_temperature`, `outside_temperature`, `is_summer`, `is_winter`, `is_presence`. |
-| `sensor.{device_name}_force_override_triggers` | Count of currently active force override sensors. Only created when force override sensors are configured. Attributes: `per_sensor` dict of sensor states, `total_configured`. |
-| `binary_sensor.{device_name}_position_mismatch` | Indicates a mismatch between target and actual cover position (problem class). Attributes: target position, actual position per entity, position delta, retry counts. |
+#### Understanding Reason vs. Position Explanation
 
-**Note:** Motion, climate, and force override sensors are only created when the corresponding features are configured.
+The `cover_position` sensor exposes two attributes that answer different questions about why a cover is at a given position:
 
-## Features Planned
+| Attribute | Layer | Answers | Example |
+| --------- | ----- | ------- | ------- |
+| **`reason`** | Pipeline (override priority chain) | *Which rule won?* | `"no active condition — default position 100%"` |
+| **`position_explanation`** | Calculation engine (post-pipeline) | *Where did this number come from?* | `"Sunset Position (100%)"` |
 
-- Manual override controls
+**`reason`** reflects the pipeline decision. The integration evaluates eight handlers in priority order — force override (100) → wind (95) → motion timeout (80) → manual override (70) → climate (50) → solar (40) → cloud suppression (35) → default (0). The `reason` tells you which handler claimed control and why it won.
 
-  - ~~Time to revert back to adaptive control~~
-  - ~~Reset button~~
-  - Wait until next manual/none adaptive change
+**`position_explanation`** reflects what happened *after* the pipeline chose a position. Even when the same handler wins, the final number can differ due to sunset/sunrise position settings, min/max position limits, inverse state, interpolation, or safety margins. The `position_explanation` traces those post-pipeline adjustments.
 
-- Support Home Assistant unit system (automatic conversion between °F/°C, meters/feet, etc.)
-  - This will resolve the current requirement for all temperature sensors to use matching units
-  - Will automatically handle conversions based on your Home Assistant unit system preference
+**Example:** The pipeline's `default` handler says *"no active condition — use default position"*. But the position explanation says `"Sunset Position (100%)"` because the default position was further resolved using the configured sunset position setting. Both point to 100% here, but they describe different stages of the decision.
 
-- ~~Algorithm to control radiation and/or illumination~~
+#### Diagnostic Sensor Reference
 
+---
 
+**`sensor.{device_name}_sun_position`**
+
+State: current sun azimuth (degrees, 0–360).
+
+| Attribute | Description |
+| --------- | ----------- |
+| `elevation` | Sun elevation above horizon (degrees). Tracking is suppressed outside the configured min/max elevation range. |
+| `min_elevation` / `max_elevation` | Configured elevation limits from your setup. |
+| `gamma` | Angle of the sun relative to the window's normal axis (degrees). Negative = sun is to the left of the window, positive = right. |
+| `gamma_interpretation` | Human-readable angle category: `nearly perpendicular` (<10°), `oblique angle` (10–45°), `steep angle` (45–80°), `nearly parallel` (>80°). Safety margins activate above 45°. |
+| `gamma_absolute_angle` | Absolute value of gamma. |
+| `gamma_direction` | `left`, `right`, or `center` relative to the window. |
+| `window_azimuth` | Configured window facing direction. |
+| `fov_left` / `fov_right` | Configured field-of-view angles (degrees left/right of window azimuth). |
+| `azimuth_min` / `azimuth_max` | Absolute azimuth bounds of the window's field of view. |
+| `in_fov` | `true` when the sun is within the field of view and tracking is active. |
+| `blind_spot_range` | Azimuth range of the blind spot (only present when blind spot is configured). |
+
+---
+
+**`sensor.{device_name}_control_status`**
+
+State: current automation status — `active`, `automatic_control_off`, `manual_override`, `outside_time_window`, or `sun_not_visible`.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `reason` | Human-readable explanation of the current status (e.g. `"Manual override active — automatic control paused"`). |
+| `automatic_control_enabled` | Whether the Automatic Control switch is on. |
+| `time_window_status` | `Active` when the current time is within the configured start/end window; `Outside Window` otherwise. |
+| `after_start_time` | Whether the current time is after the configured start time. |
+| `before_end_time` | Whether the current time is before the configured end time. |
+| `sun_validity_status` | `Valid`, `Invalid Elevation`, `In Blind Spot`, or `Invalid`. |
+| `valid_elevation` | Whether the sun's elevation is within the configured min/max range. |
+| `in_blind_spot` | Whether the sun is currently in the configured blind spot range. |
+| `manual_covers` | List of cover entity IDs currently in manual override (only present when status is `manual_override`). |
+| `delta_position_threshold` | Minimum position change (%) required before a new command is sent. |
+| `delta_time_threshold_minutes` | Minimum time (minutes) that must pass between commands. |
+| `position_delta_from_last_action` | Position change since the last command. Compare to `delta_position_threshold` to understand why a move was suppressed. |
+| `seconds_since_last_action` | Time elapsed since the last command. Compare to `delta_time_threshold_minutes`. |
+| `last_updated` | Timestamp of the most recent coordinator update. |
+
+---
+
+**`sensor.{device_name}_decision_trace`**
+
+State: the winning pipeline handler — `solar`, `default`, `manual_override`, `force_override`, `motion_timeout`, `summer`, `winter`, or `unknown`.
+
+Shows the full reasoning of the override priority chain. Eight handlers are evaluated in priority order; the first handler to claim control wins. This is the most detailed view of *why* the cover is at its current position.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `trace` | Ordered list of all evaluated handlers. Each entry has `handler` (name), `matched` (true if it claimed control), `reason` (why it did or didn't match), and `position` (what it would have set). |
+| `reason` | The winning handler's plain-language explanation — same value as the `reason` attribute on the Cover Position sensor. |
+| `sun_azimuth` / `sun_elevation` / `gamma` | Sun geometry snapshot at the time of the last decision. |
+| `in_field_of_view` | Whether the sun was in the window's field of view when the decision was made. |
+| `elevation_valid` | Whether the sun's elevation was within the configured range. |
+| `in_blind_spot` | Whether the sun was in the blind spot. |
+| `direct_sun_valid` | Whether the calculation engine considered direct sun tracking valid. |
+
+---
+
+**`sensor.{device_name}_last_cover_action`**
+
+State: timestamp of the most recent cover command sent.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `entity_id` | The cover entity the command was sent to. |
+| `service` | HA service called: `set_cover_position`, `open_cover`, or `close_cover`. |
+| `position` | The position value sent to the cover (after inverse state, if applicable). |
+| `calculated_position` | The position the integration calculated before sending (before inverse state). |
+| `inverse_state_applied` | `true` if the position was inverted before sending (for covers that use a reversed 0/100 scale). |
+| `timestamp` | When the command was sent. |
+| `covers_controlled` | Number of cover entities commanded at once. |
+| `threshold_used` | (Open/close-only covers) The threshold position used to decide open vs. close. |
+| `threshold_comparison` | (Open/close-only covers) Human-readable comparison, e.g. `"67 >= 50"`. |
+
+---
+
+**`sensor.{device_name}_last_skipped_action`**
+
+State: the reason the most recent automatic move was suppressed (e.g. `"Position delta too small"`, `"Manual override active"`, `"Outside time window"`). State is `"No action skipped"` when the last update sent a command successfully.
+
+Use this when a cover doesn't move and you expect it to — it tells you exactly why the command was suppressed.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `entity_id` | The cover that would have been commanded. |
+| `calculated_position` | The position the integration wanted to send. |
+| `timestamp` | When the skip occurred. |
+
+---
+
+**`sensor.{device_name}_manual_override_end_time`**
+
+State: timestamp when the most recent manual override expires and automatic control resumes. Unavailable when no override is active.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `per_entity` | Dict of cover entity ID → ISO timestamp showing the individual expiry time for each cover currently in manual override. |
+
+---
+
+**`sensor.{device_name}_position_verification`**
+
+State: current maximum retry count (0–3) across all controlled covers. Increments each time the integration re-sends a position command after detecting a mismatch between the target and actual cover position.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `max_retries` | Configured maximum number of retries before giving up. |
+| `retries_remaining` | How many more retries are available before the limit is reached. |
+| `per_entity_retries` | Dict of cover entity ID → current retry count. |
+| `last_verification` | Timestamp of the most recent verification check across all covers. |
+| `per_entity_verification` | Dict of cover entity ID → timestamp of last verification for that cover. |
+
+---
+
+**`sensor.{device_name}_motion_status`** *(only created when motion sensors are configured)*
+
+State: current motion control state — `motion_detected`, `timeout_pending`, `no_motion`, or `waiting_for_data`.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `motion_timeout_seconds` | Configured timeout (seconds) before covers return to default position after last motion. |
+| `motion_timeout_end_time` | ISO timestamp when the current timeout will fire (present when a timeout is pending or active). |
+| `last_motion_time` | ISO timestamp of the most recently detected motion event. |
+
+---
+
+**`sensor.{device_name}_climate_status`** *(only created when climate mode is configured)*
+
+State: current climate operating mode — `Summer Mode`, `Winter Mode`, or `Intermediate`.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `active_temperature` | The temperature value being used for climate decisions (indoor or outdoor, per your setting). |
+| `temperature_unit` | Unit of the active temperature (°C or °F). |
+| `indoor_temperature` | Current indoor temperature reading. |
+| `outdoor_temperature` | Current outdoor temperature reading. |
+| `temp_switch` | `true` when using outdoor temperature, `false` when using indoor. |
+| `is_presence` | Whether presence/occupancy is currently detected (when a presence entity is configured). |
+| `is_sunny` | Whether the weather entity or lux/irradiance reading indicates sunny conditions. |
+| `lux_active` | Whether the lux sensor reading is above the configured threshold (when lux sensor configured). |
+| `irradiance_active` | Whether the irradiance sensor reading is above the configured threshold (when irradiance sensor configured). |
+
+---
+
+**`sensor.{device_name}_force_override_triggers`** *(only created when force override sensors are configured)*
+
+State: count of force override binary sensors currently `on`. When non-zero, all automatic cover control is suspended and covers move to the configured override position.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `per_sensor` | Dict of sensor entity ID → current state (`on`, `off`, or `unavailable`). |
+| `total_configured` | Total number of force override sensors configured. |
+
+---
+
+**`binary_sensor.{device_name}_position_mismatch`** *(disabled by default)*
+
+State: `on` when any controlled cover's actual position differs from the target position by more than the tolerance threshold. Uses HA's `problem` device class — appears as a problem in the UI when active.
+
+| Attribute | Description |
+| --------- | ----------- |
+| `tolerance` | Position tolerance (%) — differences within this range are ignored. |
+| `entities` | Dict of cover entity ID → `target_position`, `actual_position`, `position_delta`, `mismatch` (true/false), `retry_count`. |
+
+---
+
+**Note:** Motion, climate, and force override sensors are only created when the corresponding features are configured. The `position_mismatch` binary sensor is created for all devices but is disabled by default — enable it in the entity registry if you want to track position drift.
+
+## Known Limitations & Best Practices
+
+### Temperature Unit Consistency
+**IMPORTANT:** All temperature sensors used in Climate mode must use the same unit system. The integration currently does not perform automatic unit conversion between Fahrenheit and Celsius.
+
+- If your `Indoor Temperature Entity` reports in Celsius, your `Outdoor Temperature Entity` must also report in Celsius
+- The `Minimum Comfort Temperature` and `Maximum Comfort Temperature` values should match your sensor units
+- Mixing °F and °C will result in incorrect calculations
+
+**Workaround:** Ensure all climate entities report in the same units, or use template sensors to convert them to a consistent unit.
+
+### Start with Basic Mode
+If you're new to Adaptive Cover Pro, we strongly recommend:
+
+1. **Start with Basic Mode** - Configure and test basic sun position-based control first
+2. **Understand the calculations** - Observe how your covers respond to sun position throughout the day
+3. **Add Climate Mode gradually** - Once comfortable with Basic Mode, enable Climate Mode and add temperature/presence features incrementally
+
+Climate Mode introduces additional complexity with temperature thresholds, presence detection, and weather conditions. Understanding Basic Mode operation first will help you troubleshoot issues more effectively.
+
+### Venetian Blinds (Dual Control)
+Home Assistant cover entities can only control a single dimension (position OR tilt angle, not both simultaneously). For venetian blinds that support both vertical movement and slat tilting:
+
+**You must create TWO separate Adaptive Cover Pro instances:**
+1. **Vertical instance** - Controls up/down position using the same cover entity
+2. **Tilt instance** - Controls slat angle using the same cover entity
+
+**Example:**
+- Instance 1: "Adaptive Office Blind Vertical" → Controls `cover.office_blind` position (0-100%)
+- Instance 2: "Adaptive Office Blind Tilt" → Controls `cover.office_blind` tilt angle (0-100%)
+
+Both instances monitor the sun independently and send appropriate commands to the same physical device.
+
+### Weather Entity Reliability
+Weather entities in Home Assistant may not always reflect real-time conditions accurately, which can affect Climate Mode operation:
+
+- Weather forecasts may lag actual conditions
+- Some integrations update infrequently (e.g., hourly)
+- Not all weather services distinguish between types of cloud cover
+
+**Recommendations:**
+- Consider using **lux sensors** or **irradiance sensors** for more accurate real-time light level detection
+- The integration supports both `Lux Entity` and `Irradiance Entity` for direct sunlight measurement
+- If using weather entities, verify they update frequently enough for your needs (every 5-15 minutes is ideal)
+
+### Sensor Startup Reliability
+The integration gracefully handles sensors that are unavailable during Home Assistant startup (common with Zigbee2MQTT, Z-Wave, and other hub-based devices):
+
+- **Automatic recovery**: If temperature, lux, or irradiance sensors report `unavailable` or `None` during startup, the integration uses safe defaults and continues operating
+- **Typical startup time**: Zigbee2MQTT devices often take 20-60 seconds to initialize after Home Assistant starts
+- **No manual intervention required**: Once sensors become available, the integration automatically uses their values
+
+**What happens during startup:**
+- Missing lux/irradiance sensors → Defaults to "light available" (continues with weather-based operation)
+- Missing temperature sensors → Defaults to "comfortable" range (uses basic glare calculations)
+- Missing weather sensors → Uses sun position calculations only
+
+This ensures your covers operate correctly even during brief sensor outages or Home Assistant restarts.
+
+### Open/Close-Only Covers
+
+Covers that only support OPEN and CLOSE commands (no position control) are supported with threshold-based control:
+
+- The integration calculates position as normal (0-100%)
+- If calculated position ≥ threshold → cover opens
+- If calculated position < threshold → cover closes
+- Default threshold is 50% (adjustable in Automation settings, 1-99%)
+
+**Limitations:**
+- Granular position control is not possible
+- Intermediate positions are not available
+- Tilt covers must support SET_TILT_POSITION (open/close mode not supported)
+
+**Example Use Cases:**
+- Simple roller shutters with only up/down buttons
+- Garage doors with open/close only
+- Budget blinds without position feedback
+
+**Inverse State with Open/Close-Only Covers:**
+
+The "Inverse the state" option works with open/close-only covers by inverting the calculated position **before** comparing to the threshold:
+
+- Without inverse: Position 30% → 30% < 50% → CLOSE command
+- With inverse: Position 30% → inverted to 70% → 70% ≥ 50% → OPEN command
+
+This allows the integration to support covers with non-standard OPEN/CLOSE behavior that don't follow Home Assistant guidelines. Enable this option if your cover's OPEN and CLOSE commands appear to work backwards.
+
+### Response Time and Control Delays
+
+The integration uses periodic checks to balance responsiveness with system performance. Understanding these timing behaviors helps set appropriate expectations:
+
+**Time Window Transitions (Start/End Times):**
+- When start time or end time is reached, covers will respond within **1 minute**
+- The integration checks time window state every minute and triggers immediate action when transitions occur
+- Log messages will indicate: "Time window state changed: inactive → active" (or vice versa)
+
+**Sun Position Changes:**
+- Sun position changes trigger updates immediately
+- Temperature, weather, and presence sensor changes also trigger immediate updates
+- Delta position and delta time settings control how frequently covers actually move
+
+**After Home Assistant Restart:**
+- Covers are automatically repositioned during first refresh (typically within 30 seconds)
+- Target positions are calculated and stored even if covers don't need to move
+- Position verification begins immediately after first refresh
+
+**Position Verification:**
+- Every minute, the integration verifies covers reached their target positions
+- If a mismatch is detected (e.g., cover failed to move), automatic retry occurs
+- Up to 3 retry attempts before logging a warning
+
+**Why Not Instant?**
+- Periodic checks balance responsiveness with Home Assistant performance
+- Prevents excessive processor usage from continuous monitoring
+- 1-minute intervals are imperceptible for sun-based automation (sun moves slowly)
+- Immediate triggers still available for sun position, temperature, and sensor changes
+
+**Recommendation:**
+- For time-critical automations at specific times, consider using Home Assistant automations that trigger on time patterns instead of relying on start/end times
+- Start/end times are designed for daily operational windows, not precision timing
+
+## Troubleshooting
+
+When a cover is at an unexpected position, use the diagnostic sensors to trace exactly why.
+
+### Step 1 — Check the Decision Trace
+
+The `sensor.{device_name}_decision_trace` sensor is the starting point. Its **state** tells you which pipeline handler won control:
+
+| State | Meaning |
+|-------|---------|
+| `solar` | Sun is in the window's field of view; cover follows sun tracking |
+| `default` | Sun is outside the field of view, elevation limits, or blind spot; cover is at default position |
+| `manual_override` | You manually adjusted the cover; automatic control is paused |
+| `force_override` | A safety binary sensor (rain, wind, etc.) is active; cover is at override position |
+| `motion_timeout` | No motion detected after the configured timeout; cover returned to default |
+| `summer` | Climate mode: temperature above max comfort threshold; cover closed to block heat |
+| `winter` | Climate mode: temperature below min comfort threshold; cover opened for solar heating |
+
+The **`trace` attribute** lists every handler evaluated — including why each one passed or was skipped — so you can see the full priority chain.
+
+### Step 2 — Check the Cover Position Attributes
+
+The `sensor.{device_name}_cover_position` sensor exposes two attributes that tell you more:
+
+- **`reason`** — which pipeline rule claimed control and why (e.g. `"no active condition — default position 100%"`)
+- **`position_explanation`** — where the final number came from after the pipeline decided (e.g. `"Sun Tracking (67%) → Max Position Limit → 80%"`)
+
+Together these answer "who won?" and "where did this specific number come from?"
+
+### Step 3 — Cover Isn't Moving When You Expect It To
+
+Check `sensor.{device_name}_last_skipped_action`. Its **state** is the exact reason the most recent automatic move was suppressed:
+
+- `"Position delta too small"` — change was less than the configured minimum delta
+- `"Time delta too small"` — not enough time has passed since the last move
+- `"Manual override active"` — automatic control is paused
+- `"Outside time window"` — current time is outside the configured start/end window
+- `"Automatic control disabled"` — the automatic control switch is off
+
+### Step 4 — Climate Mode Behavior
+
+If the decision trace shows `summer`, `winter`, or the cover is at an unexpected position while climate mode is enabled, check `sensor.{device_name}_climate_status`:
+
+- **State** — `Summer Mode`, `Winter Mode`, or `Intermediate`
+- **`active_temperature`** — the temperature value driving the decision
+- **`is_presence`** — whether occupancy is currently detected
+- **`is_sunny`** / **`lux_active`** / **`irradiance_active`** — current light condition readings
+
+### Step 5 — Force Override Active
+
+If the decision trace shows `force_override`, check `sensor.{device_name}_force_override_triggers`. The **`per_sensor` attribute** shows every configured binary sensor and its current state. Any sensor reporting `on` will override automatic control and move covers to the configured override position.
+
+### Step 6 — Motion Control Unexpected
+
+If motion control is configured and behavior is unexpected, check `sensor.{device_name}_motion_status`:
+
+- **State** — `motion_detected`, `timeout_pending`, `no_motion`, or `waiting_for_data`
+- **`motion_timeout_end_time`** — when the current timeout will fire
+- **`last_motion_time`** — timestamp of the most recent detected motion
+
+### Step 7 — Position Doesn't Match the Calculation
+
+If the cover moved but not to the expected position, check the `sun_position` and `cover_position` sensors:
+
+- **`sensor.{device_name}_sun_position`** — check `gamma` (angle of sun relative to window normal) and `elevation`. High `gamma` values (>45°) and low elevations (<10°) trigger automatic safety margins that extend the blind further.
+- **`raw_calculated_position`** on `cover_position` — the geometric position before limits, climate adjustments, or margins. Compare to the actual cover position to see the effect of safety margins, min/max limits, or interpolation.
+
+### Enable Debug Logging
+
+For the deepest detail, enable debug logging in `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.adaptive_cover_pro: debug
+```
+
+Restart Home Assistant and check **Settings → System → Logs**. With debug logging active you will see detailed entries such as:
+
+```
+Position explanation changed: Sun tracking (45%) → Climate: Winter Heating → 100%
+Skipping cover.living_room_blind: position delta too small
+Vertical calc: elev=32.5°, gamma=18.3°, dist=2.500→2.500, base=1.234, margin=1.000, clipped=1.234
+Sun visibility transition detected: ON → OFF (sun left field of view)
+```
+
+Each log entry is prefixed with the device name so you can filter by device in multi-instance setups.
+
+## Enhanced Geometric Accuracy
+
+Adaptive Cover Pro includes sophisticated geometric calculations to ensure accurate sun blocking even at extreme sun angles. These improvements work automatically - no configuration required.
+
+### Angle-Dependent Safety Margins
+
+Safety margins automatically increase blind extension at extreme angles to compensate for geometric uncertainties:
+
+- **Horizontal angles (gamma)**: Up to 20% increase when sun is at extreme side angles (>45° from direct front)
+- **Low elevations**: Up to 15% increase when sun is near the horizon (<10° elevation)
+- **High elevations**: Up to 10% increase when sun is nearly overhead (>75° elevation)
+- **Combined extremes**: Margins multiply together (e.g., 85° gamma + 8° elevation ≈ 27% total increase)
+
+Margins activate automatically, use smoothstep interpolation for smooth transitions, and are zero at normal angles (gamma < 45°, 10° < elevation < 75°). Check the "Calculated Position" diagnostic sensor's `position_explanation` attribute to see the full decision chain, or compare it to the actual cover position to see the effect of safety margins.
+
+#### Edge Case Handling
+
+Automatic fallback positions for extreme conditions where standard calculations become unreliable:
+
+| Condition | Behavior | Reason |
+|-----------|----------|--------|
+| Elevation < 2° | Full window coverage | Sun nearly horizontal, precise calculation unreliable |
+| \|Gamma\| > 85° | Full window coverage | Sun perpendicular to window, standard formula unstable |
+| Elevation > 88° | Simplified calculation | Sun nearly overhead, path length correction minimal |
+
+### Optional Window Depth
+
+For users who want maximum precision, the **Window Depth** parameter accounts for window reveals/frames creating additional shadow at angled sun positions.
+
+#### Configuration
+
+Located in the vertical blind configuration screen:
+
+**Parameter:** Window Depth (Reveal)
+**Range:** 0.0 - 0.5 meters (0 - 50cm)
+**Default:** 0.0 (disabled)
+**Unit:** meters
+
+**Typical values:**
+- `0.0m` - Disabled (default)
+- `0.05m` (2 inches) - Flush-mounted windows
+- `0.10m` (4 inches) - Standard window frames
+- `0.15m` (6 inches) - Deep reveals or thick walls
+
+**How to measure:**
+1. Stand outside your building
+2. Measure from the outer wall surface to the inner edge of the window frame
+3. Convert to meters (1 inch ≈ 0.025m, 1 foot ≈ 0.30m)
+
+#### How It Works
+
+Window depth creates an additional horizontal offset at angled sun positions:
+
+```
+Outer wall surface
+    |
+    |<-- Window Depth -->|
+    |                    Window glass
+                         |
+                         Sun at angle
+```
+
+At angled sun positions (gamma > 10°), the window depth effectively extends the glare zone, requiring the blind to extend further to block sunlight.
+
+**Effect magnitude:**
+- **Zero effect** at gamma < 10° (sun directly in front)
+- **Minimal effect** at gamma 10-30° (1-3cm additional extension)
+- **Moderate effect** at gamma 30-60° (3-8cm additional extension)
+- **Significant effect** at gamma > 60° (8-15cm additional extension)
+
+**Example:**
+- Window depth: 0.10m (4 inches)
+- Sun angle: gamma = 45° from window normal
+- Additional blind extension: ≈7cm
+- Result: Tighter sun blocking at angled positions
+
+#### When to Use Window Depth
+
+**Enable window depth (set > 0) if:**
+- You notice sun "leaking" around the blind at extreme angles
+- Your windows have deep reveals (thick walls, recessed frames)
+- You want maximum precision for critical applications (art preservation, glare-sensitive workspaces)
+- You're willing to measure window depth accurately
+
+**Leave at default (0.0) if:**
+- Your windows are flush-mounted or nearly flush
+- Current sun blocking is satisfactory
+- You prefer simpler configuration
+
+#### Backward Compatibility
+
+- **Existing installations:** Unaffected — window_depth defaults to 0.0
+- **Optional enhancement:** Set window_depth > 0 only if needed
+- **No performance impact:** Adds minimal computational cost
+
+### Technical Details
+
+#### Safety Margin Formula
+
+The integration calculates safety margins using smoothstep interpolation for smooth transitions:
+
+```python
+# Gamma margin (horizontal angles)
+if gamma_abs > 45°:
+    t = (gamma_abs - 45°) / 45°  # 0 at 45°, 1 at 90°
+    smooth_t = t² × (3 - 2t)     # Smoothstep
+    margin += 0.2 × smooth_t     # Up to 20%
+
+# Elevation margins
+if elevation < 10°:
+    t = (10° - elevation) / 10°
+    margin += 0.15 × t  # Up to 15%
+elif elevation > 75°:
+    t = (elevation - 75°) / 15°
+    margin += 0.10 × t  # Up to 10%
+```
+
+#### Window Depth Contribution
+
+```python
+if window_depth > 0 and |gamma| > 10°:
+    depth_contribution = window_depth × sin(|gamma|)
+    effective_distance = base_distance + depth_contribution
+```
+
+#### Regression Testing
+
+All enhancements are verified to:
+- Maintain <5% deviation from baseline at normal angles
+- Never reduce protection (always ≥ baseline position)
+- Produce no NaN, infinity, or numerical errors
+- Provide smooth transitions across all angle ranges
+
+#### Test Coverage
+
+- 34 dedicated tests for geometric accuracy
+- 214 total integration tests (all passing)
+- 92% code coverage on calculation engine
+
+### Diagnostic Sensors
+
+Use the always-on diagnostic sensors to monitor enhanced geometric accuracy:
+
+**Key sensors:**
+- `Sun Position` — state is sun azimuth; attributes include `sun_elevation` and `gamma` (angle of sun relative to window normal). `gamma` is the key input to safety margins — values above 45° or below 10° elevation trigger increased extension.
+- `Calculated Position` — raw geometric sun-tracking position before any overrides, climate adjustments, or limits; the `position_explanation` attribute on the **Cover Position** sensor shows the full decision chain after all adjustments
+- `Control Status` — current automation status and why the cover is or isn't moving
+
+Compare the `Calculated Position` sensor to the actual cover position to see the effect of safety margins.
+
+### Troubleshooting
+
+**Q: My blinds extend more than before at extreme angles**
+A: This is expected behavior. Safety margins automatically increase extension at challenging angles to ensure effective sun blocking. Check the `position_explanation` attribute on the "Calculated Position" diagnostic sensor to see the full decision chain, or compare "Calculated Position" to actual cover position to confirm margins are active.
+
+**Q: Should I enable window depth?**
+A: Only if you notice sun leaking at extreme angles or have deep window reveals (>10cm). Most users don't need this.
+
+**Q: Can I disable the safety margins?**
+A: No, safety margins are automatic and cannot be disabled. They're essential for reliable sun blocking at extreme angles. However, margins are zero at normal angles (gamma < 45°, 10° < elevation < 75°).
+
+**Q: How do I measure window depth accurately?**
+A: Use a tape measure or ruler to measure from the outer wall surface (outside your home) to the inner edge of the window frame. If you're unsure, leave at the default (0.0) — the automatic safety margins work well without it.
+
+## Testing the Algorithms
+
+Want to visualize how the blinds will behave before installing? The **Jupyter notebook** (`notebooks/test_env.ipynb`) lets you test and visualize the position calculation algorithms without needing Home Assistant or physical covers.
+
+### Quick Start
+
+**1. Install Jupyter:**
+```bash
+pip install jupyter matplotlib pandas pvlib
+```
+
+**2. Run the notebook:**
+```bash
+# From the repository root
+jupyter notebook notebooks/test_env.ipynb
+```
+
+Or open in VS Code with the Jupyter extension installed.
+
+**3. Configure and run:**
+- Modify the configuration variables (location, window dimensions, orientation)
+- Run all cells (Cell → Run All)
+- Review the plots showing cover positions throughout the day
+
+### What You'll See
+
+The notebook generates two plots:
+- **Vertical Cover Plot** - Shows blind position based on sun position for up/down blinds
+- **Horizontal Cover Plot** - Shows awning extension for in/out awnings
+
+Each plot displays:
+- Sun elevation and azimuth over 24 hours
+- Calculated cover position overlaid
+- Sunrise/sunset times (red lines)
+- When sun enters/exits your window's field of view (yellow lines)
+
+### Example Configuration
+
+```python
+# Location (modify for your testing location)
+timezone = "America/New_York"  # Your timezone
+lat = 40.7128                  # Your latitude
+lon = -74.0060                 # Your longitude
+
+# Window properties
+windown_azimuth = 180          # 180 = South-facing
+window_fov_left = 90           # Field of view (degrees)
+window_fov_right = 90
+window_height = 3              # meters
+window_distance = 0.5          # Distance from window to blind (meters)
+```
+
+**Perfect for:**
+- Testing different window orientations before configuration
+- Experimenting with field of view angles
+- Validating behavior for your specific location
+- Understanding how the algorithm responds to sun position
+
+For detailed documentation, see the [Manual Testing section in CLAUDE.md](CLAUDE.md#manual-testing).
+
+## Simulation Notebook — Visualize Your Actual Configuration
+
+The **simulation notebook** (`notebooks/simulate_cover.ipynb`) lets you visualize how your covers will behave for **any date or date range** using your real Home Assistant configuration — no guesswork, no manual parameter entry.
+
+### How It Works
+
+**Step 1: Export your cover's configuration from Home Assistant**
+
+1. Go to **Developer Tools → Services**
+2. Select **"Adaptive Cover Pro: Export Configuration"**
+3. In the **Cover configuration** field, select the cover you want to simulate
+4. Click **Call Service**
+5. Copy the entire YAML response that appears in the response panel
+
+**Step 2: Open the simulation notebook**
+
+```bash
+# From the repository root
+jupyter notebook notebooks/simulate_cover.ipynb
+```
+
+Or open in VS Code with the Jupyter extension.
+
+**Step 3: Paste your config and set the date**
+
+In **Cell 2**, replace the example YAML with your copied config and set your simulation parameters:
+
+```python
+CONFIG_YAML = """
+name: Living Room West
+cover_type: cover_blind
+# ... paste your exported YAML here
+"""
+
+START_DATE = "today"   # "today" or "YYYY-MM-DD" e.g. "2026-06-21"
+NUM_DAYS = 1           # 1 = single 24-hour day; increase for multi-day range
+```
+
+**Step 4: Run all cells (Cell → Run All)**
+
+### What You'll See
+
+**Single day (NUM_DAYS = 1):** A two-subplot figure per day showing:
+- **Top:** Sun elevation and azimuth over the full 24-hour period (00:00–24:00)
+- **Bottom:** Calculated cover position (%) with gamma angle on secondary axis
+- **Red dashed lines:** Sunrise and sunset
+- **Yellow dashed lines:** Sun enters/exits the window's field of view
+- **Shaded region:** Period when the sun is actively in front of your window
+
+**Multi-day range (NUM_DAYS > 1):** An additional overlay plot showing all days on the same 24-hour axis — useful for comparing seasonal behavior, e.g. a week around summer solstice vs. winter solstice.
+
+**Summary table:** Per-day stats including sunrise/sunset times, hours of direct sun exposure, and average/max cover position.
+
+### Example: Simulate Summer Solstice
+
+```python
+START_DATE = "2026-06-21"
+NUM_DAYS = 1
+```
+
+### Example: Compare a Full Week
+
+```python
+START_DATE = "2026-06-18"
+NUM_DAYS = 7
+```
+
+**Perfect for:**
+- Validating your window azimuth and field-of-view settings before deploying
+- Checking cover behavior on a specific date (e.g., before a holiday)
+- Comparing summer vs. winter behavior side-by-side
+- Debugging unexpected cover positions by replaying historical dates
+
+## Credits
+
+**Adaptive Cover Pro** is a fork of the original [Adaptive Cover](https://github.com/basbruss/adaptive-cover) integration created by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**.
+
+This fork includes enhancements and modifications, but the core functionality and architecture are based on Bas Brussee's excellent work. Please visit the [original repository](https://github.com/basbruss/adaptive-cover) to see the upstream project and consider supporting the original author.
+
+## For Developers
+
+If you're interested in contributing to this project, please see the **[Development Guide (docs/DEVELOPMENT.md)](docs/DEVELOPMENT.md)** for comprehensive documentation on:
+- Setting up your development environment
+- Project structure and architecture
+- Development workflow and scripts
+- Testing strategies
+- **Release process** (automated with `./scripts/release`)
+- Code standards and best practices
