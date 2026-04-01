@@ -25,6 +25,7 @@ from .const import (
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
+from .enums import ControlMethod
 
 
 async def async_setup_entry(
@@ -910,7 +911,8 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
     """Diagnostic sensor showing the full pipeline decision trace."""
 
     _attr_translation_key = "decision_trace"
-    _attr_native_unit_of_measurement = ""
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [m.value for m in ControlMethod] + ["unknown"]
 
     def __init__(
         self,
