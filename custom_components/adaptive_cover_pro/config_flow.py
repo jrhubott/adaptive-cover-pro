@@ -1110,16 +1110,31 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             )
 
         source_azimuth = source_entry.options.get(CONF_AZIMUTH, 180)
+        sensor_type = source_entry.data.get(CONF_SENSOR_TYPE)
+        if sensor_type == SensorType.TILT:
+            cover_entity_selector = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    multiple=True,
+                    filter=selector.EntityFilterSelectorConfig(
+                        domain="cover",
+                        supported_features=[
+                            "cover.CoverEntityFeature.SET_TILT_POSITION"
+                        ],
+                    ),
+                )
+            )
+        else:
+            cover_entity_selector = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    multiple=True,
+                    filter=selector.EntityFilterSelectorConfig(domain="cover"),
+                )
+            )
 
         schema = vol.Schema(
             {
                 vol.Required("name"): selector.TextSelector(),
-                vol.Optional(CONF_ENTITIES, default=[]): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="cover",
-                        multiple=True,
-                    )
-                ),
+                vol.Optional(CONF_ENTITIES, default=[]): cover_entity_selector,
                 vol.Required(
                     CONF_AZIMUTH, default=source_azimuth
                 ): selector.NumberSelector(
@@ -1174,14 +1189,22 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             (CONF_LUX_ENTITY, "Lux"),
             (CONF_IRRADIANCE_ENTITY, "Irradiance"),
             (CONF_OUTSIDETEMP_ENTITY, "Outside temperature"),
-            (CONF_FORCE_OVERRIDE_SENSORS, "Force override sensors"),
-            (CONF_MOTION_SENSORS, "Motion sensors"),
         ]
 
         for conf_key, label in optional_entities:
             entity_id = legacy_entry.options.get(conf_key)
             if entity_id and not entity_reg.async_get(entity_id):
                 errors.append(f"{label} entity not found: {entity_id}")
+
+        for conf_key, label in [
+            (CONF_FORCE_OVERRIDE_SENSORS, "Force override sensors"),
+            (CONF_MOTION_SENSORS, "Motion sensors"),
+        ]:
+            entity_ids = legacy_entry.options.get(conf_key, [])
+            if isinstance(entity_ids, list):
+                for eid in entity_ids:
+                    if eid and not entity_reg.async_get(eid):
+                        errors.append(f"{label} entity not found: {eid}")
 
         return {"valid": len(errors) == 0, "errors": errors}
 
@@ -1350,11 +1373,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_entries_selected")  # type: ignore[return-value]
 
         # Get the current entry being processed (or start with the first)
-        current_index = getattr(self, "import_index", 0)
+        current_index = self.import_index
 
         if current_index >= len(selected_ids):
             # All entries processed, show completion
-            imported_count = self.context.get("imported_count", 0)
+            imported_count = self.imported_count
             self.hass.components.persistent_notification.async_create(  # type: ignore[attr-defined]
                 message=(
                     f"Successfully imported {imported_count} Adaptive Cover "
@@ -1422,7 +1445,6 @@ class OptionsFlowHandler(OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-        # super().__init__(config_entry)
         self._config_entry = config_entry
         self.current_config: dict = dict(config_entry.data)
         self.options = dict(config_entry.options)
@@ -1687,7 +1709,9 @@ class OptionsFlowHandler(OptionsFlow):
             ):
                 return self.async_show_form(
                     step_id="interp",
-                    data_schema=INTERPOLATION_OPTIONS,
+                    data_schema=self.add_suggested_values_to_schema(
+                        INTERPOLATION_OPTIONS, user_input
+                    ),
                     errors={
                         CONF_INTERP_LIST_NEW: "Must have same length as 'Interpolation' list"
                     },
