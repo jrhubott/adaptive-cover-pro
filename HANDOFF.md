@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-03-31
-**Current Version:** v2.8.0
+**Date:** 2026-04-01
+**Current Version:** v2.9.0
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -30,7 +30,7 @@ The integration was fully rewritten with a layered architecture:
 
 ### Tests
 
-751 passing, 0 failing.
+778 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -47,7 +47,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | `diagnostics/` | ~90% |
 | `engine/` | ~90% |
 | `coordinator.py` | ~34% (HA integration code, hard to unit test) |
-| `config_flow.py` | 0% (UI flow) |
+| `config_flow.py` | ~0% (UI flow, hard to unit test) |
 | `sensor.py` / `switch.py` | 0% (platform code) |
 | **Total** | **61%** |
 
@@ -55,6 +55,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.9.0 | Config flow redesign: 10 focused steps replacing per-type mega-forms, options menu mirrors initial flow, climate always accessible, manual override and motion as dedicated steps, legacy AdaptiveCover import removed. 778 tests. |
 | v2.8.0 | Major architecture rewrite: pure calc engine, state providers, override pipeline, manager classes, diagnostics builder, typed config. Decision Trace sensor, enriched Cover Position attrs, Venetian engine. 751 tests, 61% coverage. Consolidates 12 betas. |
 | v2.7.16 | Fix position sensor showing stale sun-calculated value after end_time (Issue #66); fix max_position/min_position sliders defaulting to 1%/no value |
 | v2.7.15 | Accept occupancy sensors in motion control selector (Issue #52); fix sunset_position not accepting blank value (Issue #55) |
