@@ -6,7 +6,6 @@ import asyncio
 import datetime as dt
 from dataclasses import dataclass
 
-import numpy as np
 import pytz
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import (
@@ -97,15 +96,14 @@ from .const import (
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
 from .enums import ControlMethod
-from .helpers import (
-    get_datetime_from_str,
-    get_safe_state,
-)
 from .managers.cover_command import CoverCommandService, build_special_positions
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
 from .managers.position_verification import PositionVerificationManager
+from .managers.time_window import TimeWindowManager
+from .managers.toggles import ToggleManager
+from .position_utils import interpolate_position
 from .pipeline.handlers.climate import ClimateHandler
 from .pipeline.handlers.default import DefaultHandler
 from .pipeline.handlers.force_override import ForceOverrideHandler
@@ -167,20 +165,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.set_config_name(self.config_entry.data.get("name"))
         self._cover_type = self.config_entry.data.get("sensor_type")
         self._climate_mode = self.config_entry.options.get(CONF_CLIMATE_MODE, False)
-        self._switch_mode = True if self._climate_mode else False
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)
         self._use_interpolation = self.config_entry.options.get(CONF_INTERP, False)
         self._track_end_time = self.config_entry.options.get(CONF_RETURN_SUNSET)
-        self._temp_toggle = None
-        self._automatic_control = None
-        self._manual_toggle = None
-        self._lux_toggle = None
-        self._irradiance_toggle = None
-        self._return_to_default_toggle = None
-        self._start_time = None
+        # Toggle state manager (switch entities delegate here)
+        self._toggles = ToggleManager()
+        self._toggles.switch_mode = bool(self._climate_mode)
         self._sun_end_time = None
         self._sun_start_time = None
-        # self._end_time = None
         self.manual_reset = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_RESET, False
         )
@@ -234,9 +226,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.config_entry,
             self.logger,
             self._cover_type,
-            self._temp_toggle,
-            self._lux_toggle,
-            self._irradiance_toggle,
+            self._toggles.temp_toggle,
+            self._toggles.lux_toggle,
+            self._toggles.irradiance_toggle,
         )
 
         # Climate state provider
@@ -271,8 +263,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
         )
 
-        # Track time window state transitions (for responsive end time handling)
-        self._last_time_window_state: bool | None = None
+        # Time window manager (start/end time checks)
+        self._time_mgr = TimeWindowManager(hass=self.hass, logger=self.logger)
 
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
@@ -385,17 +377,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_timed_refresh(self, event) -> None:
         """Control state at end time."""
-
         now = dt.datetime.now()
-        if self.end_time is not None:
-            time = self.end_time
-        if self.end_time_entity is not None:
-            time = get_safe_state(self.hass, self.end_time_entity)
+        end = self._time_mgr.end_time
 
-        self.logger.debug("Checking timed refresh. End time: %s, now: %s", time, now)
+        self.logger.debug("Checking timed refresh. End time: %s, now: %s", end, now)
 
-        time_check = now - get_datetime_from_str(time)
-        if time is not None and (time_check <= dt.timedelta(seconds=5)):
+        if end is not None and (now - end) <= dt.timedelta(seconds=5):
             self.timed_refresh = True
             self.logger.debug("Timed refresh triggered")
             await self.async_refresh()
@@ -657,7 +644,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # pre-interpolation/inverse, excluding force/motion early returns)
         base_position = (
             self.climate_state
-            if self._switch_mode and self.climate_state is not None
+            if self._toggles.switch_mode and self.climate_state is not None
             else self.default_state
         )
 
@@ -673,18 +660,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
             motion_timeout_active=self.is_motion_timeout_active,
             manual_override_active=self.manager.binary_cover_manual,
-            climate_mode_enabled=self._switch_mode,
+            climate_mode_enabled=self._toggles.switch_mode,
             climate_is_summer=bool(
                 self._climate_mode
                 and self.climate_data
                 and self.climate_data.is_summer
-                and self._switch_mode
+                and self._toggles.switch_mode
             ),
             climate_is_winter=bool(
                 self._climate_mode
                 and self.climate_data
                 and self.climate_data.is_winter
-                and self._switch_mode
+                and self._toggles.switch_mode
             ),
         )
         self._pipeline_result = self._pipeline.evaluate(ctx)
@@ -1047,10 +1034,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.entities = options.get(CONF_ENTITIES, [])
         self.min_change = options.get(CONF_DELTA_POSITION, 1)
         self.time_threshold = options.get(CONF_DELTA_TIME, 2)
-        self.start_time = options.get(CONF_START_TIME)
-        self.start_time_entity = options.get(CONF_START_ENTITY)
-        self.end_time = options.get(CONF_END_TIME)
-        self.end_time_entity = options.get(CONF_END_ENTITY)
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
         self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2})
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
@@ -1059,6 +1042,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.normal_list = options.get(CONF_INTERP_LIST)
         self.new_list = options.get(CONF_INTERP_LIST_NEW)
         self._cmd_svc.update_threshold(options.get(CONF_OPEN_CLOSE_THRESHOLD, 50))
+        self._time_mgr.update_config(
+            start_time=options.get(CONF_START_TIME),
+            start_time_entity=options.get(CONF_START_ENTITY),
+            end_time=options.get(CONF_END_TIME),
+            end_time_entity=options.get(CONF_END_ENTITY),
+        )
         self._motion_mgr.update_config(
             sensors=options.get(CONF_MOTION_SENSORS, []),
             timeout_seconds=options.get(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT),
@@ -1073,7 +1062,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         self.manager.add_covers(self.entities)
-        if not self._manual_toggle:
+        if not self._toggles.manual_toggle:
             for entity in self.manager.manual_controlled:
                 self.manager.reset(entity)
 
@@ -1128,88 +1117,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @property
     def check_adaptive_time(self):
-        """Check if current time is within operational window.
-
-        Returns:
-            True if current time is after start time and before end time,
-            False otherwise. Returns True if no time restrictions configured.
-
-        """
-        if self._start_time and self._end_time and self._start_time > self._end_time:
-            self.logger.error("Start time is after end time")
-        return self.before_end_time and self.after_start_time
+        """Check if current time is within operational window — delegates to TimeWindowManager."""
+        return self._time_mgr.is_active
 
     @property
     def after_start_time(self):
-        """Check if current time is after start time.
-
-        Returns:
-            True if current time is after configured start time (from entity
-            or static config), False otherwise. Returns True if no start time
-            configured.
-
-        """
-        now = dt.datetime.now()
-        if self.start_time_entity is not None:
-            time = get_datetime_from_str(
-                get_safe_state(self.hass, self.start_time_entity)
-            )
-            self.logger.debug(
-                "Start time: %s, now: %s, now >= time: %s ", time, now, now >= time
-            )
-            self._start_time = time
-            return now >= time
-        if self.start_time is not None:
-            time = get_datetime_from_str(self.start_time)
-
-            self.logger.debug(
-                "Start time: %s, now: %s, now >= time: %s", time, now, now >= time
-            )
-            self._start_time
-            return now >= time
-        return True
+        """Check if current time is after start time — delegates to TimeWindowManager."""
+        return self._time_mgr.after_start_time
 
     @property
     def _end_time(self) -> dt.datetime | None:
-        """Get end time from entity or config.
-
-        Returns:
-            End time datetime object from end_time_entity state or end_time
-            config value. Handles midnight (00:00) by adding one day. Returns
-            None if no end time configured.
-
-        """
-        time = None
-        if self.end_time_entity is not None:
-            time = get_datetime_from_str(
-                get_safe_state(self.hass, self.end_time_entity)
-            )
-        elif self.end_time is not None:
-            time = get_datetime_from_str(self.end_time)
-            if time.time() == dt.time(0, 0):
-                time = time + dt.timedelta(days=1)
-        return time
+        """Get end time — delegates to TimeWindowManager."""
+        return self._time_mgr.end_time
 
     @property
     def before_end_time(self):
-        """Check if current time is before end time.
-
-        Returns:
-            True if current time is before configured end time (from entity
-            or static config), False otherwise. Returns True if no end time
-            configured.
-
-        """
-        if self._end_time is not None:
-            now = dt.datetime.now()
-            self.logger.debug(
-                "End time: %s, now: %s, now < time: %s",
-                self._end_time,
-                now,
-                now < self._end_time,
-            )
-            return now < self._end_time
-        return True
+        """Check if current time is before end time — delegates to TimeWindowManager."""
+        return self._time_mgr.before_end_time
 
     def _get_current_position(self, entity) -> int | None:
         """Get current position of cover — delegates to CoverCommandService."""
@@ -1298,10 +1222,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             weather_entity=options.get(CONF_WEATHER_ENTITY),
             weather_condition=options.get(CONF_WEATHER_STATE),
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
-            use_lux=bool(self._lux_toggle),
+            use_lux=bool(self._toggles.lux_toggle),
             lux_entity=options.get(CONF_LUX_ENTITY),
             lux_threshold=options.get(CONF_LUX_THRESHOLD),
-            use_irradiance=bool(self._irradiance_toggle),
+            use_irradiance=bool(self._toggles.irradiance_toggle),
             irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
             irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
         )
@@ -1309,7 +1233,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             logger=self.logger,
             temp_low=options.get(CONF_TEMP_LOW),
             temp_high=options.get(CONF_TEMP_HIGH),
-            temp_switch=bool(self._temp_toggle),
+            temp_switch=bool(self._toggles.temp_toggle),
             blind_type=self._cover_type,
             transparent_blind=options.get(CONF_TRANSPARENT_BLIND, False),
             temp_summer_outside=options.get(CONF_OUTSIDE_THRESHOLD),
@@ -1358,14 +1282,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             check_adaptive_time=self.check_adaptive_time,
             after_start_time=self.after_start_time,
             before_end_time=self.before_end_time,
-            start_time=self._start_time,
+            start_time=self._time_mgr.start_time_value,
             end_time=self._end_time,
             automatic_control=self.automatic_control,
             last_cover_action=self.last_cover_action,
             last_skipped_action=self.last_skipped_action,
             min_change=self.min_change,
             time_threshold=self.time_threshold,
-            switch_mode=self._switch_mode,
+            switch_mode=self._toggles.switch_mode,
             inverse_state=self._inverse_state,
             use_interpolation=self._use_interpolation,
             default_state=self.default_state,
@@ -1418,7 +1342,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Post-processing: interpolation and inverse state
         if self._use_interpolation:
-            state = self.interpolate_states(state)
+            state = interpolate_position(
+                state,
+                self.start_value,
+                self.end_value,
+                self.normal_list,
+                self.new_list,
+            )
 
         if self._inverse_state and self._use_interpolation:
             self.logger.info("Inverse state is not supported with interpolation")
@@ -1428,206 +1358,89 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         return state
 
-    def interpolate_states(self, state):
-        """Interpolate state using custom ranges.
-
-        Maps position from normal range to custom range using linear interpolation.
-        Supports both simple start/end values or complex multi-point lists.
-
-        Args:
-            state: Position in normal range
-
-        Returns:
-            Interpolated position in custom range, or original state if no
-            interpolation configured
-
-        """
-        normal_range = [0, 100]
-        new_range = []
-        if self.start_value is not None and self.end_value is not None:
-            new_range = [self.start_value, self.end_value]
-        if self.normal_list and self.new_list:
-            normal_range = list(map(int, self.normal_list))
-            new_range = list(map(int, self.new_list))
-        if new_range:
-            state = np.interp(state, normal_range, new_range)
-        return state
+    # --- Toggle property delegates (switch entities use setattr) ---
 
     @property
     def switch_mode(self):
-        """Climate mode toggle property.
-
-        Returns:
-            True if climate mode is active, False for basic mode
-
-        """
-        return self._switch_mode
+        """Climate mode toggle — delegates to ToggleManager."""
+        return self._toggles.switch_mode
 
     @switch_mode.setter
     def switch_mode(self, value):
-        """Set climate mode toggle.
-
-        Args:
-            value: True to enable climate mode, False for basic mode
-
-        """
-        self._switch_mode = value
+        """Set climate mode toggle."""
+        self._toggles.switch_mode = value
 
     @property
     def temp_toggle(self):
-        """Temperature entity toggle property.
-
-        Returns:
-            True if using outside temperature, False if using inside temperature,
-            None if not configured
-
-        """
-        return self._temp_toggle
+        """Temperature entity toggle — delegates to ToggleManager."""
+        return self._toggles.temp_toggle
 
     @temp_toggle.setter
     def temp_toggle(self, value):
-        """Set temperature entity toggle.
-
-        Args:
-            value: True for outside temperature, False for inside temperature
-
-        """
-        self._temp_toggle = value
+        """Set temperature entity toggle."""
+        self._toggles.temp_toggle = value
 
     @property
     def automatic_control(self):
-        """Automatic control toggle property.
-
-        Returns:
-            True if automatic control is enabled, False if disabled, None if
-            not configured
-
-        """
-        return self._automatic_control
+        """Automatic control toggle — delegates to ToggleManager."""
+        return self._toggles.automatic_control
 
     @automatic_control.setter
     def automatic_control(self, value):
-        """Set automatic control toggle.
-
-        Args:
-            value: True to enable automatic control, False to disable
-
-        """
-        self._automatic_control = value
+        """Set automatic control toggle."""
+        self._toggles.automatic_control = value
 
     @property
     def manual_toggle(self):
-        """Manual override detection toggle property.
-
-        Returns:
-            True if manual override detection is enabled, False if disabled,
-            None if not configured
-
-        """
-        return self._manual_toggle
+        """Manual override detection toggle — delegates to ToggleManager."""
+        return self._toggles.manual_toggle
 
     @manual_toggle.setter
     def manual_toggle(self, value):
-        """Set manual override detection toggle.
-
-        Args:
-            value: True to enable manual override detection, False to disable
-
-        """
-        self._manual_toggle = value
+        """Set manual override detection toggle."""
+        self._toggles.manual_toggle = value
 
     @property
     def lux_toggle(self):
-        """Lux entity toggle property.
-
-        Returns:
-            True if using lux sensor, False if not using, None if not configured
-
-        """
-        return self._lux_toggle
+        """Lux entity toggle — delegates to ToggleManager."""
+        return self._toggles.lux_toggle
 
     @lux_toggle.setter
     def lux_toggle(self, value):
-        """Set lux entity toggle.
-
-        Args:
-            value: True to use lux sensor, False to not use
-
-        """
-        self._lux_toggle = value
+        """Set lux entity toggle."""
+        self._toggles.lux_toggle = value
 
     @property
     def irradiance_toggle(self):
-        """Irradiance entity toggle property.
-
-        Returns:
-            True if using irradiance sensor, False if not using, None if not
-            configured
-
-        """
-        return self._irradiance_toggle
+        """Irradiance entity toggle — delegates to ToggleManager."""
+        return self._toggles.irradiance_toggle
 
     @irradiance_toggle.setter
     def irradiance_toggle(self, value):
-        """Set irradiance entity toggle.
-
-        Args:
-            value: True to use irradiance sensor, False to not use
-
-        """
-        self._irradiance_toggle = value
+        """Set irradiance entity toggle."""
+        self._toggles.irradiance_toggle = value
 
     @property
     def return_to_default_toggle(self):
-        """Return to default toggle property.
-
-        Returns:
-            True if covers should return to default when automatic control is
-            disabled, False otherwise, None if not configured
-
-        """
-        return self._return_to_default_toggle
+        """Return to default toggle — delegates to ToggleManager."""
+        return self._toggles.return_to_default_toggle
 
     @return_to_default_toggle.setter
     def return_to_default_toggle(self, value):
-        """Set return to default toggle.
-
-        Args:
-            value: True to return to default on control disable, False otherwise
-
-        """
-        self._return_to_default_toggle = value
+        """Set return to default toggle."""
+        self._toggles.return_to_default_toggle = value
 
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
-        """Check if time window state has changed and trigger refresh if needed.
+        """Check time window transitions — delegates to TimeWindowManager."""
 
-        This method detects when the operational time window changes state
-        (e.g., when end time is reached) and triggers appropriate actions.
-        Provides <1 minute response time for time window changes.
-        """
-        # Initialize tracking on first call
-        if self._last_time_window_state is None:
-            self._last_time_window_state = self.check_adaptive_time
-            return
+        async def _trigger_timed_refresh():
+            self.timed_refresh = True
+            await self.async_refresh()
 
-        current_state = self.check_adaptive_time
-
-        # If state changed, trigger appropriate action
-        if current_state != self._last_time_window_state:
-            self.logger.info(
-                "Time window state changed: %s → %s",
-                "active" if self._last_time_window_state else "inactive",
-                "active" if current_state else "inactive",
-            )
-            self._last_time_window_state = current_state
-
-            # If we just left the time window, return covers to default position
-            if not current_state and self._track_end_time:
-                self.logger.info(
-                    "End time reached, returning covers to default position"
-                )
-                self.timed_refresh = True
-                await self.async_refresh()
+        await self._time_mgr.check_transition(
+            track_end_time=self._track_end_time,
+            refresh_callback=_trigger_timed_refresh,
+        )
 
     def _check_sun_validity_transition(self) -> bool:
         """Check if sun validity state has changed from False to True.

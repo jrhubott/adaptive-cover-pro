@@ -777,14 +777,15 @@ class TestPositionExplanationChangeDetection:
         type(coord).check_adaptive_time = PropertyMock(return_value=True)
         type(coord).after_start_time = PropertyMock(return_value=True)
         type(coord).before_end_time = PropertyMock(return_value=True)
-        coord._start_time = None
-        coord._end_time = None
+        coord._time_mgr = MagicMock()
+        coord._time_mgr.start_time_value = None
         type(coord).automatic_control = PropertyMock(return_value=True)
         type(coord).last_cover_action = PropertyMock(return_value={})
         type(coord).last_skipped_action = PropertyMock(return_value={})
         coord.min_change = 5
         coord.time_threshold = 2
-        coord._switch_mode = False
+        coord._toggles = MagicMock()
+        coord._toggles.switch_mode = False
         coord._inverse_state = False
         coord._use_interpolation = False
         coord.default_state = 50
