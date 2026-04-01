@@ -1,6 +1,6 @@
 """Tests for ClimateProvider — reads HA state into ClimateReadings."""
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,14 +16,6 @@ def hass():
     h = MagicMock()
     h.states.get.return_value = None
     return h
-
-
-@pytest.fixture
-def mock_logger():
-    """Mock logger."""
-    logger = MagicMock()
-    logger.debug = Mock()
-    return logger
 
 
 @pytest.fixture

@@ -9,7 +9,6 @@ Tests Phase 1 improvements:
 
 import pytest
 import numpy as np
-from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
 from tests.cover_helpers import build_vertical_cover
@@ -43,20 +42,6 @@ def make_cover_with_angles(
     params["sol_azi"] = gamma_to_sol_azi(params["win_azi"], gamma)
     params["sol_elev"] = sol_elev
     return build_vertical_cover(**params)
-
-
-@pytest.fixture
-def mock_sun_data():
-    """Create a mock SunData instance."""
-    sun_data = MagicMock()
-    sun_data.timezone = "UTC"
-    return sun_data
-
-
-@pytest.fixture
-def mock_logger():
-    """Create a mock logger."""
-    return MagicMock()
 
 
 @pytest.fixture
@@ -265,25 +250,21 @@ class TestEdgeCases:
         is_edge_case, _ = cover._handle_edge_cases()
         assert is_edge_case is False
 
-    def test_edge_case_normal_angles_returns_false(self, base_cover_params):
-        """Normal angles should not trigger edge case handling."""
-        # Test various normal angles
-        test_cases = [
-            (0.0, 45.0),  # Direct front, mid elevation
+    @pytest.mark.parametrize(
+        "gamma,sol_elev",
+        [
+            (0.0, 45.0),   # Direct front, mid elevation
             (30.0, 30.0),  # Moderate angle
             (60.0, 60.0),  # Higher angle (below 85° gamma threshold)
-            (-45.0, 15.0),  # Negative gamma
+            (-45.0, 15.0), # Negative gamma
             (45.0, 45.0),  # 45 degree angle
-        ]
-
-        for gamma, sol_elev in test_cases:
-            cover = make_cover_with_angles(
-                base_cover_params, gamma=gamma, sol_elev=sol_elev
-            )
-            is_edge_case, _ = cover._handle_edge_cases()
-            assert is_edge_case is False, (
-                f"False edge case at gamma={gamma}, elev={sol_elev}"
-            )
+        ],
+    )
+    def test_edge_case_normal_angles_returns_false(self, base_cover_params, gamma, sol_elev):
+        """Normal angles should not trigger edge case handling."""
+        cover = make_cover_with_angles(base_cover_params, gamma=gamma, sol_elev=sol_elev)
+        is_edge_case, _ = cover._handle_edge_cases()
+        assert is_edge_case is False, f"False edge case at gamma={gamma}, elev={sol_elev}"
 
 
 class TestEnhancedCalculatePosition:

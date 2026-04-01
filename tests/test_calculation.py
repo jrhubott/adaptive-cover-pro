@@ -907,15 +907,12 @@ class TestAdaptiveHorizontalCover:
         assert 0 <= percentage <= 200
 
     @pytest.mark.unit
-    def test_awning_angle_variations(self, horizontal_cover_instance):
+    @pytest.mark.parametrize("angle", [0, 15, 30, 45])
+    def test_awning_angle_variations(self, horizontal_cover_instance, angle):
         """Test various awning angles."""
-        angles = [0, 15, 30, 45]
-        results = []
-        for angle in angles:
-            horizontal_cover_instance.awn_angle = angle
-            results.append(horizontal_cover_instance.calculate_position())
-        # All should produce valid results
-        assert all(r >= 0 for r in results)
+        horizontal_cover_instance.awn_angle = angle
+        result = horizontal_cover_instance.calculate_position()
+        assert result >= 0
 
 
 class TestAdaptiveTiltCover:
@@ -946,56 +943,53 @@ class TestAdaptiveTiltCover:
 
     @pytest.mark.unit
     def test_calculate_percentage_mode1(self, tilt_cover_instance):
-        """Test percentage conversion in mode1."""
+        """Test percentage conversion in mode1 raises ValueError when math is invalid.
+
+        The default tilt cover instance produces NaN in calculate_position() due to
+        a negative sqrt (slat geometry at 45° elevation with depth=0.02, distance=0.03).
+        round(NaN) raises ValueError in Python 3.11+.
+        """
         tilt_cover_instance.mode = "mode1"
-        try:
-            percentage = tilt_cover_instance.calculate_percentage()
-            # Mode1: 90° = 100%, but round(NaN) raises ValueError
-            assert 0 <= percentage <= 100
-        except ValueError:
-            # ValueError from round(NaN) is expected for invalid math
-            pass
+        with pytest.raises(ValueError):
+            tilt_cover_instance.calculate_percentage()
 
     @pytest.mark.unit
     def test_calculate_percentage_mode2(self, tilt_cover_instance):
-        """Test percentage conversion in mode2."""
+        """Test percentage conversion in mode2 raises ValueError when math is invalid.
+
+        The default tilt cover instance produces NaN in calculate_position() due to
+        a negative sqrt (slat geometry at 45° elevation with depth=0.02, distance=0.03).
+        round(NaN) raises ValueError in Python 3.11+.
+        """
         tilt_cover_instance.mode = "mode2"
-        try:
-            percentage = tilt_cover_instance.calculate_percentage()
-            # Mode2: 180° = 100%, but round(NaN) raises ValueError
-            assert 0 <= percentage <= 100
-        except ValueError:
-            # ValueError from round(NaN) is expected for invalid math
-            pass
+        with pytest.raises(ValueError):
+            tilt_cover_instance.calculate_percentage()
 
     @pytest.mark.unit
-    def test_slat_depth_variations(self, tilt_cover_instance):
+    @pytest.mark.parametrize("depth", [0.01, 0.02, 0.03, 0.04])
+    def test_slat_depth_variations(self, tilt_cover_instance, depth):
         """Test with different slat depths."""
-        depths = [0.01, 0.02, 0.03, 0.04]
-        for depth in depths:
-            tilt_cover_instance.depth = depth
-            angle = tilt_cover_instance.calculate_position()
-            # Can produce NaN for invalid math (negative sqrt)
-            assert (0 <= angle <= 180) or np.isnan(angle)
+        tilt_cover_instance.depth = depth
+        angle = tilt_cover_instance.calculate_position()
+        # Can produce NaN for invalid math (negative sqrt)
+        assert (0 <= angle <= 180) or np.isnan(angle)
 
     @pytest.mark.unit
-    def test_slat_distance_variations(self, tilt_cover_instance):
+    @pytest.mark.parametrize("distance", [0.02, 0.03, 0.04, 0.05])
+    def test_slat_distance_variations(self, tilt_cover_instance, distance):
         """Test with different slat distances."""
-        distances = [0.02, 0.03, 0.04, 0.05]
-        for distance in distances:
-            tilt_cover_instance.slat_distance = distance
-            angle = tilt_cover_instance.calculate_position()
-            # Can produce NaN for invalid math (negative sqrt)
-            assert (0 <= angle <= 180) or np.isnan(angle)
+        tilt_cover_instance.slat_distance = distance
+        angle = tilt_cover_instance.calculate_position()
+        # Can produce NaN for invalid math (negative sqrt)
+        assert (0 <= angle <= 180) or np.isnan(angle)
 
     @pytest.mark.unit
-    def test_beta_with_different_sun_angles(self, tilt_cover_instance):
+    @pytest.mark.parametrize("elev", [10, 30, 45, 60, 80])
+    def test_beta_with_different_sun_angles(self, tilt_cover_instance, elev):
         """Test beta calculation with various sun positions."""
-        elevations = [10, 30, 45, 60, 80]
-        for elev in elevations:
-            tilt_cover_instance.sol_elev = elev
-            beta = tilt_cover_instance.beta
-            assert isinstance(beta, (float, np.floating))
+        tilt_cover_instance.sol_elev = elev
+        beta = tilt_cover_instance.beta
+        assert isinstance(beta, (float, np.floating))
 
     @pytest.mark.unit
     def test_position_with_gamma_angle(self, tilt_cover_instance):

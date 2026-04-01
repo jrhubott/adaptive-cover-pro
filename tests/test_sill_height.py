@@ -13,7 +13,6 @@ import math
 
 import numpy as np
 import pytest
-from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.calculation import (
     AdaptiveVerticalCover,
@@ -28,20 +27,6 @@ def gamma_to_sol_azi(win_azi: float, gamma: float) -> float:
     Solving for sol_azi: sol_azi = (win_azi - gamma) % 360
     """
     return (win_azi - gamma) % 360
-
-
-@pytest.fixture
-def mock_sun_data():
-    """Create a mock SunData instance."""
-    sun_data = MagicMock()
-    sun_data.timezone = "UTC"
-    return sun_data
-
-
-@pytest.fixture
-def mock_logger():
-    """Create a mock logger."""
-    return MagicMock()
 
 
 @pytest.fixture

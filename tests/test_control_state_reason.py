@@ -6,24 +6,10 @@ sunset offset, and blind spot.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import patch, PropertyMock
 
 from custom_components.adaptive_cover_pro.calculation import AdaptiveVerticalCover
 from tests.cover_helpers import build_vertical_cover
-
-
-@pytest.fixture
-def mock_sun_data():
-    """Return a mock SunData instance."""
-    sun_data = MagicMock()
-    sun_data.timezone = "UTC"
-    return sun_data
-
-
-@pytest.fixture
-def mock_logger():
-    """Return a mock logger."""
-    return MagicMock()
 
 
 def make_cover(mock_sun_data, mock_logger, **overrides) -> AdaptiveVerticalCover:

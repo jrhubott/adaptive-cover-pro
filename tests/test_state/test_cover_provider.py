@@ -20,12 +20,6 @@ def hass():
 
 
 @pytest.fixture
-def mock_logger():
-    """Return a mock logger."""
-    return MagicMock()
-
-
-@pytest.fixture
 def provider(hass, mock_logger):
     """Return a CoverProvider instance."""
     return CoverProvider(hass=hass, logger=mock_logger)
