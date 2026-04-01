@@ -646,6 +646,7 @@
       },
       "motion_status": {
         "state": {
+          "not_configured": "Not Configured",
           "motion_detected": "Motion Detected",
           "timeout_pending": "Timeout Pending",
           "no_motion": "No Motion",

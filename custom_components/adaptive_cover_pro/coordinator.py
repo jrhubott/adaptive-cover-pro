@@ -29,14 +29,8 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .calculation import (
-    AdaptiveHorizontalCover,
-    AdaptiveTiltCover,
-    AdaptiveVerticalCover,
-    ClimateCoverData,
-    ClimateCoverState,
-    NormalCoverState,
-)
+from .calculation import ClimateCoverData, ClimateCoverState, NormalCoverState
+from .engine.covers import AdaptiveHorizontalCover, AdaptiveTiltCover, AdaptiveVerticalCover
 from .config_context_adapter import ConfigContextAdapter
 from .services.configuration_service import ConfigurationService
 from .const import (
@@ -653,7 +647,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return self._sun_start_time, self._sun_end_time
 
     async def _async_update_data(self) -> AdaptiveCoverData:
-        """Main coordinator update cycle: calculate position, send commands, build diagnostics."""
+        """Run the main coordinator update cycle: calculate position, send commands, build diagnostics."""
         self.logger.debug("Updating data")
         if self.first_refresh:
             self._cached_options = self.config_entry.options

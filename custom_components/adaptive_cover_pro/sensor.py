@@ -147,14 +147,12 @@ async def async_setup_entry(
         )
     )
 
-    # Motion Status: combines Motion Timeout End + Last Motion Time
-    # (only when motion sensors are configured)
-    if config_entry.options.get(CONF_MOTION_SENSORS):
-        entities.append(
-            AdaptiveCoverMotionStatusSensor(
-                config_entry.entry_id, hass, config_entry, name, coordinator
-            )
+    # Motion Status: always created; shows not_configured when no sensors set
+    entities.append(
+        AdaptiveCoverMotionStatusSensor(
+            config_entry.entry_id, hass, config_entry, name, coordinator
         )
+    )
 
     # Force Override Triggers (only when force override sensors are configured)
     if config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS):
@@ -698,7 +696,15 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
     """Diagnostic sensor showing current motion control state."""
 
     _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.ENUM
     _attr_translation_key = "motion_status"
+    _attr_options = [
+        "not_configured",
+        "motion_detected",
+        "timeout_pending",
+        "no_motion",
+        "waiting_for_data",
+    ]
 
     def __init__(
         self,
@@ -727,6 +733,8 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
     @property
     def native_value(self) -> str:
         """Return motion control state as a human-readable string."""
+        if not self.config_entry.options.get(CONF_MOTION_SENSORS):
+            return "not_configured"
         mgr = self.coordinator._motion_mgr
         if mgr.last_motion_time is None:
             return "waiting_for_data"
@@ -746,6 +754,8 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return motion timeout config, end time, and last motion time."""
+        if not self.config_entry.options.get(CONF_MOTION_SENSORS):
+            return None
         mgr = self.coordinator._motion_mgr
         attrs: dict[str, Any] = {
             "motion_timeout_seconds": mgr._timeout_seconds,

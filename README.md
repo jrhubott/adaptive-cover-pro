@@ -107,7 +107,7 @@ This integration builds upon the template sensor from this forum post [Automatic
     - **Last Cover Action** — most recent cover command with full details
     - **Manual Override End Time** — when automatic control will resume
     - **Position Verification** — last check time and retry count combined
-    - **Motion Status** — timeout end time and last motion time (when motion sensors configured)
+    - **Motion Status** — motion control state; shows `not_configured` when no motion sensors are set up
     - **Climate Status** — active temperature and climate strategy combined (when climate mode enabled)
     - **Force Override Triggers** — count and per-sensor status (when force override sensors configured)
 
@@ -532,6 +532,7 @@ State: current target position (%) determined by the integration.
 | `switch.{device_name}_manual_override` | `on` | **Manual Override Detection Switch**: Enables automatic detection of manual position changes. When enabled, the integration monitors your covers and pauses automatic control if you manually adjust a cover's position (via physical controls, app, or automation). The cover remains in manual mode for the configured duration (default: 15 minutes), after which automatic control resumes. This allows you to temporarily take control without disabling automation entirely. Turn this switch off to disable manual override detection and always apply calculated positions. |
 | `switch.{device_name}_return_to_default_when_disabled` (vertical & horizontal only) | `off` | When enabled, covers automatically return to their default position when automatic control is turned off. Useful for retracting awnings or setting blinds to a safe position. |
 | `button.{device_name}_reset_manual_override` | `on` | Resets manual override tags for all covers; if `switch.{device_name}_automatic_control` is on, it also restores blinds to their correct positions. |
+| `sensor.{device_name}_manual_override_end_time` | | Timestamp showing when the manual override expires and automatic control resumes. Unknown when no override is active. Includes a `per_entity` attribute with individual expiry times per cover. See [diagnostic sensor reference](#diagnostic-sensor-reference) for full details. |
 
 When climate mode is setup you will also get these entities:
 
@@ -658,7 +659,7 @@ Use this when a cover doesn't move and you expect it to — it tells you exactly
 
 **`sensor.{device_name}_manual_override_end_time`**
 
-State: timestamp when the most recent manual override expires and automatic control resumes. Unavailable when no override is active.
+State: timestamp when the most recent manual override expires and automatic control resumes. Unknown when no override is active.
 
 | Attribute | Description |
 | --------- | ----------- |
@@ -680,9 +681,9 @@ State: current maximum retry count (0–3) across all controlled covers. Increme
 
 ---
 
-**`sensor.{device_name}_motion_status`** *(only created when motion sensors are configured)*
+**`sensor.{device_name}_motion_status`**
 
-State: current motion control state — `motion_detected`, `timeout_pending`, `no_motion`, or `waiting_for_data`.
+State: current motion control state — `not_configured`, `motion_detected`, `timeout_pending`, `no_motion`, or `waiting_for_data`. Shows `not_configured` when no motion sensors have been set up; attributes are absent in this state.
 
 | Attribute | Description |
 | --------- | ----------- |
@@ -1240,6 +1241,11 @@ NUM_DAYS = 7
 - Checking cover behavior on a specific date (e.g., before a holiday)
 - Comparing summer vs. winter behavior side-by-side
 - Debugging unexpected cover positions by replaying historical dates
+
+## References
+
+- [Optimal Control of Venetian Blinds for Minimizing Energy Use and Maximizing Daylight](https://www.mdpi.com/1996-1073/13/7/1731) — Academic paper (MDPI Energies, 2020) used for the venetian blind tilt optimization algorithm
+- [Automatic Blinds/Sunscreen Control Based on Sun Platform](https://community.home-assistant.io/t/automatic-blinds-sunscreen-control-based-on-sun-platform/573818) — Home Assistant community post with in-depth explanation of the calculation variables
 
 ## Credits
 

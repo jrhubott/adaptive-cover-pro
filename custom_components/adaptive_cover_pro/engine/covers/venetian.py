@@ -5,9 +5,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ...calculation import AdaptiveTiltCover, AdaptiveVerticalCover
 from ...config_types import CoverConfig, TiltConfig, VerticalConfig
 from ...sun import SunData
+from .tilt import AdaptiveTiltCover
+from .vertical import AdaptiveVerticalCover
 
 
 @dataclass(frozen=True)
