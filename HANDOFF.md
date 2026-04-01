@@ -17,18 +17,20 @@ The integration was fully rewritten with a layered architecture:
 
 | Layer | Package | Purpose |
 |-------|---------|---------|
-| HA Boundary | `state/` | `ClimateProvider`, `SunProvider` — all HA reads happen here |
+| HA Boundary | `state/` | `ClimateProvider`, `SunProvider`, `CoverProvider`, `SunSnapshot`, `CoverStateSnapshot` — all HA reads happen here |
 | Calculation | `calculation.py`, `sun.py` | Pure math, 0 HA imports |
-| Pipeline | `pipeline/` | 6 pluggable override handlers with priority ordering |
+| Engine | `engine/` | `SunGeometry`, `VenetianCoverCalculation` — next-gen calculation engine |
+| Config Types | `config_types.py` | `CoverConfig` typed dataclass |
+| Pipeline | `pipeline/` | 8 pluggable override handlers (wind and cloud_suppression are stubs) |
 | Managers | `managers/` | 5 focused classes extracted from coordinator |
 | Diagnostics | `diagnostics/` | `DiagnosticsBuilder` with decision trace |
-| Coordinator | `coordinator.py` | Thin orchestrator (~1,839 lines, was 2,700) |
+| Coordinator | `coordinator.py` | Thin orchestrator (~1,477 lines) |
 
 **Adding a new override:** Create handler in `pipeline/handlers/`, register in coordinator `__init__`. No coordinator logic changes.
 
 ### Tests
 
-657 passing, 0 failing.
+751 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -43,10 +45,11 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | `managers/` | ~96% |
 | `state/` | ~95% |
 | `diagnostics/` | ~90% |
+| `engine/` | ~90% |
 | `coordinator.py` | ~34% (HA integration code, hard to unit test) |
 | `config_flow.py` | 0% (UI flow) |
 | `sensor.py` / `switch.py` | 0% (platform code) |
-| **Total** | **58%** |
+| **Total** | **61%** |
 
 ### Recent Releases
 
