@@ -113,6 +113,8 @@ from .pipeline.handlers.solar import SolarHandler
 from .pipeline.registry import PipelineRegistry
 from .pipeline.types import PipelineContext
 from .state.climate_provider import ClimateProvider
+from .state.cover_provider import CoverProvider
+from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
 
 
@@ -236,6 +238,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Sun data provider
         self._sun_provider = SunProvider(hass=self.hass)
+
+        # Cover entity state provider
+        self._cover_provider = CoverProvider(hass=self.hass, logger=self.logger)
+
+        # Current state snapshot (built at start of each update cycle)
+        self._snapshot: CoverStateSnapshot | None = None
 
         # Diagnostics builder (extracted from coordinator)
         self._diagnostics_builder = DiagnosticsBuilder()
@@ -733,6 +741,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         options = self.config_entry.options
         self._update_options(options)
+
+        # Build unified state snapshot for this update cycle
+        _sun_azimuth = state_attr(self.hass, "sun.sun", "azimuth")
+        _sun_elevation = state_attr(self.hass, "sun.sun", "elevation")
+        self._snapshot = CoverStateSnapshot(
+            sun=SunSnapshot(
+                azimuth=_sun_azimuth if _sun_azimuth is not None else 0.0,
+                elevation=_sun_elevation if _sun_elevation is not None else 0.0,
+            ),
+            climate=None,  # Populated later when climate mode data is read
+            cover_positions=self._cover_provider.read_positions(
+                self.entities, self._cover_type
+            ),
+            cover_capabilities=self._cover_provider.read_all_capabilities(
+                self.entities
+            ),
+            motion_detected=self.is_motion_detected,
+            force_override_active=self.is_force_override_active,
+        )
 
         # Get data for the blind and update manager
         cover_data = self.get_blind_data(options=options)
