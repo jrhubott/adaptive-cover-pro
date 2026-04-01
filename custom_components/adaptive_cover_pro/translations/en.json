@@ -9,22 +9,96 @@
           "mode": "Type of blind"
         }
       },
+      "cover_entities": {
+        "title": "Cover Entities",
+        "description": "Select the cover entities this instance will control.",
+        "data": {
+          "group": "Cover Entities"
+        },
+        "data_description": {
+          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows."
+        }
+      },
+      "geometry": {
+        "title": "Cover Geometry",
+        "description": "Configure cover dimensions. These measurements are used to calculate sun blocking position.",
+        "data": {
+          "window_height": "Window Height",
+          "distance_shaded_area": "Shaded area",
+          "window_depth": "Window Depth (Reveal)",
+          "sill_height": "Window Sill Height",
+          "length_awning": "Awning Span Length",
+          "angle": "Awning Angle",
+          "slat_depth": "Slat Depth",
+          "slat_distance": "Slat Spacing"
+        },
+        "data_description": {
+          "window_height": "Height of your window in meters (from bottom to top of the glass area). Examples: Standard door = 2.0m, Small window = 1.5m, Floor-to-ceiling = 2.5m. Measure from where the cover starts to where it ends when fully extended. Used to calculate optimal cover position to block direct sunlight. Note: 1 meter ≈ 3.3 feet.",
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be.",
+          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
+          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
+          "length_awning": "Maximum extension length of your awning in meters (fully extended). Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0-3.0m, Small window awning = 1.0-1.5m, Large commercial = 4.0m+. Used to calculate how far the awning needs to extend to block sun.",
+          "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
+          "slat_depth": "Width of each slat (measure one slat front to back). Common sizes: Mini blinds (1 inch) = 2.5cm, Standard blinds (2 inch) = 5cm, Wide slats (2.5-3 inch) = 6.5-7.5cm. Measure a single slat with a ruler for precise sun blocking calculation.",
+          "slat_distance": "Vertical spacing between slat centers. Measure from the middle of one slat to the middle of the next slat (vertically). Usually slightly more than slat depth to allow overlap when closed. Common: 3-8cm depending on blind type. Used to calculate optimal tilt angle."
+        }
+      },
+      "sun_tracking": {
+        "title": "Sun Tracking",
+        "description": "Configure window orientation and sun tracking angles.",
+        "data": {
+          "set_azimuth": "Window Azimuth",
+          "fov_left": "Field of view left",
+          "fov_right": "Field of view right",
+          "min_elevation": "Minimum Elevation of the sun",
+          "max_elevation": "Maximum Elevation of the sun",
+          "blind_spot": "Setup Blindspot"
+        },
+        "data_description": {
+          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
+          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
+          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
+          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
+          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+        }
+      },
+      "position": {
+        "title": "Position Settings",
+        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "data": {
+          "default_percentage": "Default Position",
+          "max_position": "Maximum Position",
+          "enable_max_position": "Apply max only during sun tracking",
+          "min_position": "Minimum Position",
+          "enable_min_position": "Apply min only during sun tracking",
+          "sunset_position": "Sunset Position",
+          "sunset_offset": "Sunset Offset",
+          "sunrise_offset": "Sunrise Offset",
+          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
+          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
+        },
+        "data_description": {
+          "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
+          "max_position": "Maximum cover position limit (0-100%). Cover will never go above this value. Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). This creates an upper boundary for all automatic positions.",
+          "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position": "Minimum cover position limit (0-99%). Cover will never go below this value. Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
+          "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
+          "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
+          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
+          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
+          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+        }
+      },
       "automation": {
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
-          "manual_override_duration": "Duration of manual override",
-          "manual_override_reset": "Reset Manual override duration",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
-          "force_override_position": "Force override position",
-          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
-          "motion_timeout": "Motion timeout duration",
-          "manual_threshold": "Manual override threshold",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
           "open_close_threshold": "Open/Close threshold"
         },
@@ -33,71 +107,43 @@
           "delta_time": "Minimum time (minutes) between cover adjustments. Prevents rapid position changes. Typical values: 2-3 min (very responsive, may be noisy), 5-10 min (balanced, recommended), 15-20 min (slow, gentle adjustments). If sun changes rapidly (clouds, shadows), integration waits this long before adjusting again. Reduces motor wear and provides smoother operation. Minimum is 2 minutes.",
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
-          "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
-          "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
-          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
-          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
-          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
-      "vertical": {
+      "manual_override": {
+        "title": "Manual Override",
+        "description": "Configure how manual position changes interact with automatic control.",
         "data": {
-          "set_azimuth": "Window Azimuth",
-          "window_height": "Window Height",
-          "distance_shaded_area": "Shaded area",
-          "window_depth": "Window Depth (Reveal)",
-          "sill_height": "Window Sill Height",
-          "default_percentage": "Default Position",
-          "max_position": "Maximum Position",
-          "enable_max_position": "Apply max only during sun tracking",
-          "min_position": "Minimum Position",
-          "enable_min_position": "Apply min only during sun tracking",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
-          "group": "Cover Entities",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "sunset_position": "Sunset Position",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "climate_mode": "Climate Mode",
-          "blind_spot": "Setup Blindspot",
-          "min_elevation": "Minimum Elevation of the sun",
-          "max_elevation": "Maximum Elevation of the sun",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
+          "manual_override_duration": "Duration of manual override",
+          "manual_override_reset": "Reset Manual override duration",
+          "manual_threshold": "Manual override threshold",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)"
         },
         "data_description": {
-          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
-          "window_height": "Height of your window in meters (from bottom to top of the glass area). Examples: Standard door = 2.0m, Small window = 1.5m, Floor-to-ceiling = 2.5m. Measure from where the cover starts to where it ends when fully extended. Used to calculate optimal cover position to block direct sunlight. Note: 1 meter ≈ 3.3 feet.",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be.",
-          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
-          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
-          "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
-          "max_position": "Maximum cover position limit (0-100%). Cover will never go above this value. Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). This creates an upper boundary for all automatic positions.",
-          "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
-          "min_position": "Minimum cover position limit (0-99%). Cover will never go below this value. Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
-          "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
-          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
-          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
-          "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, cover behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor (indoor or outdoor). Optional: Presence sensor, weather integration, lux sensor. Recommended for energy efficiency and comfort.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
-          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
+          "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+        }
+      },
+      "motion_overrides": {
+        "title": "Motion & Force Overrides",
+        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+        "data": {
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration"
         },
-        "description": "Configure your vertical blind or shade. Adjust window orientation, size, and tracking behavior.",
-        "title": "Vertical cover"
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
       },
       "climate": {
         "data": {
@@ -137,109 +183,6 @@
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
         "title": "Weather Conditions"
-      },
-      "horizontal": {
-        "data": {
-          "set_azimuth": "Window Azimuth",
-          "length_awning": "Awning Span Length",
-          "window_height": "Awning Height",
-          "angle": "Awning Angle",
-          "distance_shaded_area": "Shaded area",
-          "window_depth": "Window Depth (Reveal)",
-          "default_percentage": "Default Position",
-          "max_position": "Maximum Position",
-          "enable_max_position": "Apply max only during sun tracking",
-          "min_position": "Minimum Position",
-          "enable_min_position": "Apply min only during sun tracking",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
-          "group": "Cover Entities",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "sunset_position": "Sunset Position",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "climate_mode": "Climate Mode",
-          "blind_spot": "Setup Blindspot",
-          "min_elevation": "Minimum Elevation of the sun",
-          "max_elevation": "Maximum Elevation of the sun",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
-        },
-        "data_description": {
-          "set_azimuth": "Direction your window/door faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing patio door = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your awning points so it can calculate sun angles accurately.",
-          "window_height": "Height of the awning mounting point from the ground or work area level (in meters). This is the vertical distance from the floor/patio to where the awning is attached to the wall. Examples: Standard door height = 2.0-2.5m, Upper window = 3.0m. Used to calculate sun angle and shadow projection.",
-          "length_awning": "Maximum extension length of your awning in meters (fully extended). Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0-3.0m, Small window awning = 1.0-1.5m, Large commercial = 4.0m+. Used to calculate how far the awning needs to extend to block sun.",
-          "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the covered area (in meters). This defines your acceptable 'glare zone' from the building wall outward. The awning extension adjusts to maintain this boundary as the sun moves. Common: Patio seating (1.5-2.0m), Doorway only (0.5-1.0m), Full patio (2.5-3.5m). KEY CONCEPT: LARGER value = MORE sunlight allowed farther from wall = awning EXTENDS MORE; SMALLER value = LESS sunlight into area = awning RETRACTS MORE. Measure from the wall to where you want the sun boundary to be.",
-          "default_percentage": "Awning position when sun is not in front (0-100%). 0% = Fully retracted (protected, stored), 50% = Half extended, 100% = Fully extended (maximum coverage). This is the 'rest position' used when sun tracking is not active. Most users set to 0% to protect awning when not needed.",
-          "max_position": "Maximum awning extension limit (0-100%). Awning will never extend beyond this value. Use this to: prevent full extension (set to 80%), keep some retraction for wind safety (set to 70%), protect from over-extension (set to 95%). This creates an upper boundary for all automatic positions.",
-          "enable_max_position": "Controls WHEN maximum extension limit applies. UNCHECKED (default, recommended): Maximum extension applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Awning never extends beyond max value. CHECKED (advanced): Maximum extension ONLY applies when sun is directly in front of opening. During default/fallback states, awning can extend beyond max value. Most users should leave this UNCHECKED for consistent protection.",
-          "min_position": "Minimum awning extension limit (0-99%). Awning will never retract below this value. Use this to: maintain some shade at all times (set to 20-30%), prevent full retraction (set to 10%), protect from jamming when fully closed (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
-          "enable_min_position": "Controls WHEN minimum extension limit applies. UNCHECKED (default, recommended): Minimum extension applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Awning never retracts below min value. CHECKED (advanced): Minimum extension ONLY applies when sun is directly in front of opening. During default/fallback states, awning can retract below min value. Most users should leave this UNCHECKED for consistent protection.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side (in degrees). Standard patios: 45° (90° total coverage with both sides), Wide patios: 60-75°, Narrow doors: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side (in degrees). Standard patios: 45° (90° total coverage with both sides), Wide patios: 60-75°, Narrow doors: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
-          "group": "Select the cover entities to control via this integration instance. You can select multiple awnings to control them as a group (all will receive the same position commands). Only select awnings that serve this particular area - create separate integration instances for different locations.",
-          "inverse_state": "Enable for awnings where position logic is reversed. Standard: 0 = retracted, 100 = extended. Inverted: 0 = extended, 100 = retracted. Check this ONLY if your awning shows opposite behavior, 100% retracts instead of extends, or documentation says 'inverted' or 'reversed'. Test your awning manually first to confirm. Most awnings don't need this.",
-          "sunset_position": "Awning position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Retract for protection (0% = fully retracted, recommended), Partial extension for evening use (30-50%), Keep extended (100%). When set, this overrides the default position after sun sets.",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want awning to stay extended a bit past sunset. Use negative value (e.g., -30) to retract early for safety.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want delayed morning extension. Combines with Start Time setting (uses whichever is later).",
-          "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, awning behavior changes by season: WINTER (cold) retracts on sunny days to allow solar heat gain into building; SUMMER (hot) extends fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, pergola). When enabled, you define an azimuth + elevation range where sun is blocked. Awning ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 20° to ignore very low sun that clears the awning. Leave empty to track sun at all elevations.",
-          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 70° to ignore high sun that doesn't reach under cover. Leave empty to track sun at all elevations.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: awning doesn't move linearly, prefer certain ranges (more retracted or more extended), calibrate for unusual awning behavior. Leave disabled for normal operation. Lists must have equal length."
-        },
-        "description": "Configure your horizontal awning or canopy. Adjust orientation, dimensions, and extension behavior for optimal sun protection.",
-        "title": "Horizontal cover"
-      },
-      "tilt": {
-        "data": {
-          "set_azimuth": "Window Azimuth",
-          "slat_depth": "Slat Depth",
-          "slat_distance": "Slat Spacing",
-          "default_percentage": "Default Position",
-          "max_position": "Maximum Position",
-          "enable_max_position": "Apply max only during sun tracking",
-          "min_position": "Minimum Position",
-          "enable_min_position": "Apply min only during sun tracking",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
-          "group": "Cover Entities",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "sunset_position": "Sunset Position",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "climate_mode": "Climate Mode",
-          "tilt_mode": "Type of movement",
-          "blind_spot": "Setup Blindspot",
-          "min_elevation": "Minimum Elevation of the sun",
-          "max_elevation": "Maximum Elevation of the sun",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
-        },
-        "data_description": {
-          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: An east-facing window = 90°. Use a compass app or check sun position to determine. This tells the integration where your window points so it can calculate the optimal slat angle to block direct sunlight.",
-          "slat_depth": "Width of each slat (measure one slat front to back). Common sizes: Mini blinds (1 inch) = 2.5cm, Standard blinds (2 inch) = 5cm, Wide slats (2.5-3 inch) = 6.5-7.5cm. Measure a single slat with a ruler for precise sun blocking calculation.",
-          "slat_distance": "Vertical spacing between slat centers. Measure from the middle of one slat to the middle of the next slat (vertically). Usually slightly more than slat depth to allow overlap when closed. Common: 3-8cm depending on blind type. Used to calculate optimal tilt angle.",
-          "default_percentage": "Slat tilt position when sun is not in front of window (0-100%). 0% = Closed horizontal (privacy, darkness), 50% = Partially open (balanced), 100% = Fully open (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
-          "max_position": "Maximum slat tilt limit (0-100%). Slats will never open beyond this value. Use this to: keep some privacy at all times (set to 70-80%), never fully open (set to 90%), prevent maximum tilt (set to 95%). This creates an upper boundary for all automatic tilt angles.",
-          "enable_max_position": "Controls WHEN maximum tilt limit applies. UNCHECKED (default, recommended): Maximum tilt applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Slats never tilt beyond max value. CHECKED (advanced): Maximum tilt ONLY applies when sun is directly in front of window. During default/fallback states, slats can tilt beyond max value. Most users should leave this UNCHECKED for consistent privacy protection.",
-          "min_position": "Minimum slat tilt limit (0-99%). Slats will never close below this value. Use this to: maintain some light at all times (set to 20-30%), never fully close (set to 10%), keep some visibility (set to 15%). This creates a lower boundary for all automatic tilt angles. Works with 'Apply min only during sun tracking' toggle below.",
-          "enable_min_position": "Controls WHEN minimum tilt limit applies. UNCHECKED (default, recommended): Minimum tilt applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Slats never close below min value. CHECKED (advanced): Minimum tilt ONLY applies when sun is directly in front of window. During default/fallback states, slats can close below min value. Most users should leave this UNCHECKED for consistent light/visibility.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
-          "group": "Select the cover entities to control via this integration instance. You can select multiple venetian blinds to control them as a group (all will receive the same tilt commands). Only select blinds that serve this particular window - create separate integration instances for different windows.",
-          "inverse_state": "Enable for blinds where tilt logic is reversed. Standard: 0 = closed/horizontal, 100 = open/vertical. Inverted: 0 = open/vertical, 100 = closed/horizontal. Check this ONLY if your blind shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your blind manually first to confirm. Most blinds don't need this.",
-          "sunset_position": "Slat tilt position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Closed for privacy (0%), Partially open for view (30-50%), Open for night view (100%). When set, this overrides the default position after sun sets.",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want blinds to stay in tracking mode a bit past sunset. Use negative value (e.g., -30) to close early for evening privacy.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
-          "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, slat behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
-          "tilt_mode": "Rotation range of your venetian blind slats. Mode 1 (90°): Standard blinds that rotate 0° (closed/horizontal) to 90° (open/vertical) in one direction. Mode 2 (180°): Premium blinds that can rotate fully through 180° (can tilt upward or downward). Check your blind specs or test manually. Most residential blinds use Mode 1. Mode 2 provides more fine-tuned sun control by allowing the slats to angle in either direction.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony above). When enabled, you define an azimuth + elevation range where sun is blocked. Slats adjust to default position when sun is in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 10° to ignore very low morning/evening sun. Leave empty to track sun at all elevations.",
-          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 65° to ignore high midday sun. Leave empty to track sun at all elevations.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated tilt positions to different actual positions using a curve. Use cases: blind doesn't tilt linearly, prefer certain angles (more closed or more open), calibrate for unusual blind behavior. Leave disabled for normal operation. Lists must have equal length."
-        },
-        "description": "Configure your tilted/venetian blind. Adjust window orientation, slat dimensions, and tilt behavior for optimal sun blocking and light control.",
-        "title": "Tilted cover"
       },
       "blind_spot": {
         "data": {
@@ -307,13 +250,14 @@
     "step": {
       "init": {
         "menu_options": {
+          "cover_entities": "Cover Entities",
+          "geometry": "Cover Geometry",
+          "sun_tracking": "Sun Tracking",
+          "position": "Position Settings",
           "automation": "Modify Automation Configuration",
-          "blind": "Fine-tune Blind Settings",
-          "device": "Device Association",
+          "manual_override": "Manual Override",
+          "motion_overrides": "Motion & Force Overrides",
           "climate": "Edit Climate Configuration",
-          "weather": "Edit Weather Configuration",
-          "blind_spot": "Setup Blindspot",
-          "interp": "Range Adjustment",
           "sync": "Sync settings to other covers"
         }
       },
@@ -323,16 +267,8 @@
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
-          "manual_override_duration": "Duration of manual override",
-          "manual_override_reset": "Reset Manual override duration",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
-          "force_override_position": "Force override position",
-          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
-          "motion_timeout": "Motion timeout duration",
-          "manual_threshold": "Manual override threshold",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
           "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
           "open_close_threshold": "Open/Close threshold"
         },
@@ -341,71 +277,125 @@
           "delta_time": "Minimum time (minutes) between cover adjustments. Prevents rapid position changes. Typical values: 2-3 min (very responsive, may be noisy), 5-10 min (balanced, recommended), 15-20 min (slow, gentle adjustments). If sun changes rapidly (clouds, shadows), integration waits this long before adjusting again. Reduces motor wear and provides smoother operation. Minimum is 2 minutes.",
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
-          "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
-          "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
-          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
-          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
-          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
-      "vertical": {
+      "cover_entities": {
+        "title": "Cover Entities",
+        "description": "Select the cover entities this instance will control.",
         "data": {
-          "set_azimuth": "Window Azimuth",
+          "group": "Cover Entities"
+        },
+        "data_description": {
+          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows."
+        }
+      },
+      "geometry": {
+        "title": "Cover Geometry",
+        "description": "Configure cover dimensions.",
+        "data": {
           "window_height": "Window Height",
           "distance_shaded_area": "Shaded area",
           "window_depth": "Window Depth (Reveal)",
           "sill_height": "Window Sill Height",
+          "length_awning": "Awning Span Length",
+          "angle": "Awning Angle",
+          "slat_depth": "Slat Depth",
+          "slat_distance": "Slat Spacing"
+        },
+        "data_description": {
+          "window_height": "Height of your window in meters (from bottom to top of the glass area). Examples: Standard door = 2.0m, Small window = 1.5m, Floor-to-ceiling = 2.5m. Measure from where the cover starts to where it ends when fully extended. Used to calculate optimal cover position to block direct sunlight. Note: 1 meter ≈ 3.3 feet.",
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be.",
+          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
+          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
+          "length_awning": "Maximum extension length of your awning in meters (fully extended). Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0-3.0m, Small window awning = 1.0-1.5m, Large commercial = 4.0m+. Used to calculate how far the awning needs to extend to block sun.",
+          "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
+          "slat_depth": "Width of each slat (measure one slat front to back). Common sizes: Mini blinds (1 inch) = 2.5cm, Standard blinds (2 inch) = 5cm, Wide slats (2.5-3 inch) = 6.5-7.5cm. Measure a single slat with a ruler for precise sun blocking calculation.",
+          "slat_distance": "Vertical spacing between slat centers. Measure from the middle of one slat to the middle of the next slat (vertically). Usually slightly more than slat depth to allow overlap when closed. Common: 3-8cm depending on blind type. Used to calculate optimal tilt angle."
+        }
+      },
+      "sun_tracking": {
+        "title": "Sun Tracking",
+        "description": "Configure window orientation and sun tracking angles.",
+        "data": {
+          "set_azimuth": "Window Azimuth",
+          "fov_left": "Field of view left",
+          "fov_right": "Field of view right",
+          "min_elevation": "Minimum Elevation of the sun",
+          "max_elevation": "Maximum Elevation of the sun",
+          "blind_spot": "Setup Blindspot"
+        },
+        "data_description": {
+          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
+          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
+          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
+          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
+          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+        }
+      },
+      "position": {
+        "title": "Position Settings",
+        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "data": {
           "default_percentage": "Default Position",
           "max_position": "Maximum Position",
           "enable_max_position": "Apply max only during sun tracking",
           "min_position": "Minimum Position",
           "enable_min_position": "Apply min only during sun tracking",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
-          "group": "Cover Entities",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "sunset_position": "Sunset Position",
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
-          "climate_mode": "Climate Mode",
-          "blind_spot": "Setup Blindspot",
-          "min_elevation": "Minimum Elevation of the sun",
-          "max_elevation": "Maximum Elevation of the sun",
+          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
         },
         "data_description": {
-          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
-          "window_height": "Height of your window in meters (from bottom to top of the glass area). Examples: Standard door = 2.0m, Small window = 1.5m, Floor-to-ceiling = 2.5m. Measure from where the cover starts to where it ends when fully extended. Used to calculate optimal cover position to block direct sunlight. Note: 1 meter ≈ 3.3 feet.",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be.",
-          "window_depth": "Depth of window reveal/frame from wall surface (meters). Optional parameter for advanced accuracy. Set to 0 (default) to disable. Typical values: Flush mount = 0.05m (2in), Standard frame = 0.10m (4in), Deep reveal = 0.15m (6in). Window depth provides additional sun blocking at angled sun positions. Measure from the outer wall surface to the inner edge of the window frame. Only affects calculation at angles >10°.",
-          "sill_height": "Height from the floor to the bottom of your window (in meters). Set to 0 (default) for floor-level windows or when unknown. For a window with its bottom edge 1 meter above the floor, set this to 1.0. This improves calculation accuracy for raised windows — without it, the blind closes slightly more than necessary. Range: 0.0–3.0m. Measure from the floor to the bottom edge of the glass area (the sill). Note: h_win (window height) is still measured from bottom to top of glass — these are independent measurements.",
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
           "max_position": "Maximum cover position limit (0-100%). Cover will never go above this value. Use this to: prevent cover from fully opening (set to 80%), keep some shade at all times (set to 60-70%), protect from jamming at top (set to 95%). This creates an upper boundary for all automatic positions.",
           "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
           "min_position": "Minimum cover position limit (0-99%). Cover will never go below this value. Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
           "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
-          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
-          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
-          "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, cover behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor (indoor or outdoor). Optional: Presence sensor, weather integration, lux sensor. Recommended for energy efficiency and comfort.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
-          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+        }
+      },
+      "manual_override": {
+        "title": "Manual Override",
+        "description": "Configure how manual position changes interact with automatic control.",
+        "data": {
+          "manual_override_duration": "Duration of manual override",
+          "manual_override_reset": "Reset Manual override duration",
+          "manual_threshold": "Manual override threshold",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)"
         },
-        "description": "Configure your vertical blind or shade. Adjust window orientation, size, and tracking behavior.",
-        "title": "Vertical cover"
+        "data_description": {
+          "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
+          "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
+          "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+        }
+      },
+      "motion_overrides": {
+        "title": "Motion & Force Overrides",
+        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+        "data": {
+          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
+          "force_override_position": "Force override position",
+          "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
+          "motion_timeout": "Motion timeout duration"
+        },
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
+          "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
       },
       "climate": {
         "data": {
@@ -445,109 +435,6 @@
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
         "title": "Weather Conditions"
-      },
-      "horizontal": {
-        "data": {
-          "set_azimuth": "Window Azimuth",
-          "length_awning": "Awning Span Length",
-          "window_height": "Awning Height",
-          "angle": "Awning Angle",
-          "distance_shaded_area": "Shaded area",
-          "window_depth": "Window Depth (Reveal)",
-          "default_percentage": "Default Position",
-          "max_position": "Maximum Position",
-          "enable_max_position": "Apply max only during sun tracking",
-          "min_position": "Minimum Position",
-          "enable_min_position": "Apply min only during sun tracking",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
-          "group": "Cover Entities",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "sunset_position": "Sunset Position",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "climate_mode": "Climate Mode",
-          "blind_spot": "Setup Blindspot",
-          "min_elevation": "Minimum Elevation of the sun",
-          "max_elevation": "Maximum Elevation of the sun",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
-        },
-        "data_description": {
-          "set_azimuth": "Direction your window/door faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing patio door = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your awning points so it can calculate sun angles accurately.",
-          "window_height": "Height of the awning mounting point from the ground or work area level (in meters). This is the vertical distance from the floor/patio to where the awning is attached to the wall. Examples: Standard door height = 2.0-2.5m, Upper window = 3.0m. Used to calculate sun angle and shadow projection.",
-          "length_awning": "Maximum extension length of your awning in meters (fully extended). Measure from mounting point to the end of the fabric when fully out. Examples: Standard patio awning = 2.0-3.0m, Small window awning = 1.0-1.5m, Large commercial = 4.0m+. Used to calculate how far the awning needs to extend to block sun.",
-          "angle": "Angle of the awning when extended (0-45°). 0° = Horizontal/flat (maximum coverage), 15° = Slight slope (typical for drainage), 30° = Steep slope (strong sun angle), 45° = Very steep (rarely used). Check your awning manufacturer specs. Most awnings are 0-15°. Affects shadow calculation for proper sun blocking.",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the covered area (in meters). This defines your acceptable 'glare zone' from the building wall outward. The awning extension adjusts to maintain this boundary as the sun moves. Common: Patio seating (1.5-2.0m), Doorway only (0.5-1.0m), Full patio (2.5-3.5m). KEY CONCEPT: LARGER value = MORE sunlight allowed farther from wall = awning EXTENDS MORE; SMALLER value = LESS sunlight into area = awning RETRACTS MORE. Measure from the wall to where you want the sun boundary to be.",
-          "default_percentage": "Awning position when sun is not in front (0-100%). 0% = Fully retracted (protected, stored), 50% = Half extended, 100% = Fully extended (maximum coverage). This is the 'rest position' used when sun tracking is not active. Most users set to 0% to protect awning when not needed.",
-          "max_position": "Maximum awning extension limit (0-100%). Awning will never extend beyond this value. Use this to: prevent full extension (set to 80%), keep some retraction for wind safety (set to 70%), protect from over-extension (set to 95%). This creates an upper boundary for all automatic positions.",
-          "enable_max_position": "Controls WHEN maximum extension limit applies. UNCHECKED (default, recommended): Maximum extension applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Awning never extends beyond max value. CHECKED (advanced): Maximum extension ONLY applies when sun is directly in front of opening. During default/fallback states, awning can extend beyond max value. Most users should leave this UNCHECKED for consistent protection.",
-          "min_position": "Minimum awning extension limit (0-99%). Awning will never retract below this value. Use this to: maintain some shade at all times (set to 20-30%), prevent full retraction (set to 10%), protect from jamming when fully closed (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
-          "enable_min_position": "Controls WHEN minimum extension limit applies. UNCHECKED (default, recommended): Minimum extension applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Awning never retracts below min value. CHECKED (advanced): Minimum extension ONLY applies when sun is directly in front of opening. During default/fallback states, awning can retract below min value. Most users should leave this UNCHECKED for consistent protection.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side (in degrees). Standard patios: 45° (90° total coverage with both sides), Wide patios: 60-75°, Narrow doors: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side (in degrees). Standard patios: 45° (90° total coverage with both sides), Wide patios: 60-75°, Narrow doors: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
-          "group": "Select the cover entities to control via this integration instance. You can select multiple awnings to control them as a group (all will receive the same position commands). Only select awnings that serve this particular area - create separate integration instances for different locations.",
-          "inverse_state": "Enable for awnings where position logic is reversed. Standard: 0 = retracted, 100 = extended. Inverted: 0 = extended, 100 = retracted. Check this ONLY if your awning shows opposite behavior, 100% retracts instead of extends, or documentation says 'inverted' or 'reversed'. Test your awning manually first to confirm. Most awnings don't need this.",
-          "sunset_position": "Awning position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Retract for protection (0% = fully retracted, recommended), Partial extension for evening use (30-50%), Keep extended (100%). When set, this overrides the default position after sun sets.",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want awning to stay extended a bit past sunset. Use negative value (e.g., -30) to retract early for safety.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want delayed morning extension. Combines with Start Time setting (uses whichever is later).",
-          "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, awning behavior changes by season: WINTER (cold) retracts on sunny days to allow solar heat gain into building; SUMMER (hot) extends fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, pergola). When enabled, you define an azimuth + elevation range where sun is blocked. Awning ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 20° to ignore very low sun that clears the awning. Leave empty to track sun at all elevations.",
-          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 70° to ignore high sun that doesn't reach under cover. Leave empty to track sun at all elevations.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: awning doesn't move linearly, prefer certain ranges (more retracted or more extended), calibrate for unusual awning behavior. Leave disabled for normal operation. Lists must have equal length."
-        },
-        "description": "Configure your horizontal awning or canopy. Adjust orientation, dimensions, and extension behavior for optimal sun protection.",
-        "title": "Horizontal cover"
-      },
-      "tilt": {
-        "data": {
-          "set_azimuth": "Window Azimuth",
-          "slat_depth": "Slat Depth",
-          "slat_distance": "Slat Spacing",
-          "default_percentage": "Default Position",
-          "max_position": "Maximum Position",
-          "enable_max_position": "Apply max only during sun tracking",
-          "min_position": "Minimum Position",
-          "enable_min_position": "Apply min only during sun tracking",
-          "fov_left": "Field of view left",
-          "fov_right": "Field of view right",
-          "group": "Cover Entities",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "sunset_position": "Sunset Position",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "climate_mode": "Climate Mode",
-          "tilt_mode": "Type of movement",
-          "blind_spot": "Setup Blindspot",
-          "min_elevation": "Minimum Elevation of the sun",
-          "max_elevation": "Maximum Elevation of the sun",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
-        },
-        "data_description": {
-          "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: An east-facing window = 90°. Use a compass app or check sun position to determine. This tells the integration where your window points so it can calculate the optimal slat angle to block direct sunlight.",
-          "slat_depth": "Width of each slat (measure one slat front to back). Common sizes: Mini blinds (1 inch) = 2.5cm, Standard blinds (2 inch) = 5cm, Wide slats (2.5-3 inch) = 6.5-7.5cm. Measure a single slat with a ruler for precise sun blocking calculation.",
-          "slat_distance": "Vertical spacing between slat centers. Measure from the middle of one slat to the middle of the next slat (vertically). Usually slightly more than slat depth to allow overlap when closed. Common: 3-8cm depending on blind type. Used to calculate optimal tilt angle.",
-          "default_percentage": "Slat tilt position when sun is not in front of window (0-100%). 0% = Closed horizontal (privacy, darkness), 50% = Partially open (balanced), 100% = Fully open (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
-          "max_position": "Maximum slat tilt limit (0-100%). Slats will never open beyond this value. Use this to: keep some privacy at all times (set to 70-80%), never fully open (set to 90%), prevent maximum tilt (set to 95%). This creates an upper boundary for all automatic tilt angles.",
-          "enable_max_position": "Controls WHEN maximum tilt limit applies. UNCHECKED (default, recommended): Maximum tilt applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Slats never tilt beyond max value. CHECKED (advanced): Maximum tilt ONLY applies when sun is directly in front of window. During default/fallback states, slats can tilt beyond max value. Most users should leave this UNCHECKED for consistent privacy protection.",
-          "min_position": "Minimum slat tilt limit (0-99%). Slats will never close below this value. Use this to: maintain some light at all times (set to 20-30%), never fully close (set to 10%), keep some visibility (set to 15%). This creates a lower boundary for all automatic tilt angles. Works with 'Apply min only during sun tracking' toggle below.",
-          "enable_min_position": "Controls WHEN minimum tilt limit applies. UNCHECKED (default, recommended): Minimum tilt applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Slats never close below min value. CHECKED (advanced): Minimum tilt ONLY applies when sun is directly in front of window. During default/fallback states, slats can close below min value. Most users should leave this UNCHECKED for consistent light/visibility.",
-          "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
-          "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
-          "group": "Select the cover entities to control via this integration instance. You can select multiple venetian blinds to control them as a group (all will receive the same tilt commands). Only select blinds that serve this particular window - create separate integration instances for different windows.",
-          "inverse_state": "Enable for blinds where tilt logic is reversed. Standard: 0 = closed/horizontal, 100 = open/vertical. Inverted: 0 = open/vertical, 100 = closed/horizontal. Check this ONLY if your blind shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your blind manually first to confirm. Most blinds don't need this.",
-          "sunset_position": "Slat tilt position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Closed for privacy (0%), Partially open for view (30-50%), Open for night view (100%). When set, this overrides the default position after sun sets.",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want blinds to stay in tracking mode a bit past sunset. Use negative value (e.g., -30) to close early for evening privacy.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
-          "climate_mode": "Enable advanced climate-aware control based on temperature and weather. When enabled, slat behavior changes by season: WINTER (cold) opens fully on sunny days to gain solar heat; SUMMER (hot) closes fully to prevent overheating; INTERMEDIATE uses normal sun tracking. Requires: Temperature sensor. Optional: Presence, weather, lux sensors. Recommended for energy efficiency.",
-          "tilt_mode": "Rotation range of your venetian blind slats. Mode 1 (90°): Standard blinds that rotate 0° (closed/horizontal) to 90° (open/vertical) in one direction. Mode 2 (180°): Premium blinds that can rotate fully through 180° (can tilt upward or downward). Check your blind specs or test manually. Most residential blinds use Mode 1. Mode 2 provides more fine-tuned sun control by allowing the slats to angle in either direction.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony above). When enabled, you define an azimuth + elevation range where sun is blocked. Slats adjust to default position when sun is in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 10° to ignore very low morning/evening sun. Leave empty to track sun at all elevations.",
-          "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 65° to ignore high midday sun. Leave empty to track sun at all elevations.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated tilt positions to different actual positions using a curve. Use cases: blind doesn't tilt linearly, prefer certain angles (more closed or more open), calibrate for unusual blind behavior. Leave disabled for normal operation. Lists must have equal length."
-        },
-        "description": "Configure your tilted/venetian blind. Adjust window orientation, slat dimensions, and tilt behavior for optimal sun blocking and light control.",
-        "title": "Tilted cover"
       },
       "blind_spot": {
         "data": {
