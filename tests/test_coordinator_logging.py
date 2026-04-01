@@ -47,6 +47,7 @@ class TestHandleCallServiceLogging:
             }
 
         cmd_svc.record_skipped_action.side_effect = _record_side_effect
+        cmd_svc.check_time_delta = MagicMock(return_value=True)
         coord._cmd_svc = cmd_svc
 
         # last_skipped_action property returns _cmd_svc dict
@@ -58,15 +59,12 @@ class TestHandleCallServiceLogging:
         coord.async_handle_call_service = (
             AdaptiveDataUpdateCoordinator.async_handle_call_service.__get__(coord)
         )
-        coord._record_skipped_action = (
-            AdaptiveDataUpdateCoordinator._record_skipped_action.__get__(coord)
-        )
         coord.async_set_position = AsyncMock()
 
         # Default: all conditions pass
         coord.check_adaptive_time = True
         coord.check_position_delta = MagicMock(return_value=True)
-        coord.check_time_delta = MagicMock(return_value=True)
+        coord.time_threshold = 2
         coord.manager = MagicMock()
         coord.manager.is_cover_manual = MagicMock(return_value=False)
 
@@ -104,7 +102,7 @@ class TestHandleCallServiceLogging:
     async def test_skips_time_delta_too_small(self):
         """Logs and records skip when time delta too small."""
         coord = self._make_coordinator()
-        coord.check_time_delta.return_value = False
+        coord._cmd_svc.check_time_delta.return_value = False
 
         await coord.async_handle_call_service("cover.test", 50, {})
 
@@ -139,53 +137,29 @@ class TestHandleCallServiceLogging:
 
 
 class TestRecordSkippedAction:
-    """_record_skipped_action stores correct data."""
+    """CoverCommandService.record_skipped_action stores correct data."""
 
-    def _make_coordinator(self):
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
+    def test_stores_entity_reason_position(self):
+        """Stores entity_id, reason, calculated_position, and timestamp."""
         from custom_components.adaptive_cover_pro.managers.cover_command import (
             CoverCommandService,
         )
 
-        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-
-        # Wire a CoverCommandService mock so record_skipped_action works
-        cmd_svc = MagicMock(spec=CoverCommandService)
-        cmd_svc.last_skipped_action = {}
-
-        def _record_side_effect(entity, reason, state):
-            import datetime as dt
-
-            cmd_svc.last_skipped_action = {
-                "entity_id": entity,
-                "reason": reason,
-                "calculated_position": state,
-                "timestamp": dt.datetime.now(dt.UTC).isoformat(),
-            }
-
-        cmd_svc.record_skipped_action.side_effect = _record_side_effect
-        coord._cmd_svc = cmd_svc
-
-        type(coord).last_skipped_action = property(
-            lambda self: self._cmd_svc.last_skipped_action
+        cmd_svc = CoverCommandService.__new__(CoverCommandService)
+        cmd_svc.last_skipped_action = {
+            "entity_id": None,
+            "reason": None,
+            "calculated_position": None,
+            "timestamp": None,
+        }
+        cmd_svc.record_skipped_action(
+            "cover.living_room", "Outside time window", 75
         )
 
-        coord._record_skipped_action = (
-            AdaptiveDataUpdateCoordinator._record_skipped_action.__get__(coord)
-        )
-        return coord
-
-    def test_stores_entity_reason_position(self):
-        """Stores entity_id, reason, calculated_position, and timestamp."""
-        coord = self._make_coordinator()
-        coord._record_skipped_action("cover.living_room", "Outside time window", 75)
-
-        assert coord.last_skipped_action["entity_id"] == "cover.living_room"
-        assert coord.last_skipped_action["reason"] == "Outside time window"
-        assert coord.last_skipped_action["calculated_position"] == 75
-        assert coord.last_skipped_action["timestamp"] is not None
+        assert cmd_svc.last_skipped_action["entity_id"] == "cover.living_room"
+        assert cmd_svc.last_skipped_action["reason"] == "Outside time window"
+        assert cmd_svc.last_skipped_action["calculated_position"] == 75
+        assert cmd_svc.last_skipped_action["timestamp"] is not None
 
 
 class TestCancelMotionTimeoutLogging:

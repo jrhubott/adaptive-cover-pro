@@ -151,16 +151,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     }
 
     def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize coordinator with config entry and setup state tracking.
-
-        Sets up the data update coordinator with all necessary state tracking,
-        entity listeners, manual override detection, position verification,
-        and grace period management for reliable cover control.
-
-        Args:
-            hass: Home Assistant instance
-
-        """
+        """Initialize coordinator."""
         super().__init__(hass, LOGGER, name=DOMAIN)
 
         self.logger = ConfigContextAdapter(_LOGGER)
@@ -300,15 +291,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return self._cmd_svc.last_skipped_action
 
     @property
-    def _open_close_threshold(self) -> int:
-        """Delegate to CoverCommandService threshold."""
-        return self._cmd_svc._open_close_threshold
-
-    def _get_cover_capabilities(self, entity: str) -> dict[str, bool]:
-        """Get cover capabilities — delegates to CoverCommandService."""
-        return self._cmd_svc.get_cover_capabilities(entity)
-
-    @property
     def is_tilt_cover(self) -> bool:
         """Check if this is a tilt cover."""
         return self._cover_type == "cover_tilt"
@@ -367,12 +349,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return self._motion_mgr.is_motion_timeout_active
 
-    def _read_position_with_capabilities(
-        self, entity: str, caps: dict[str, bool], state_obj: State | None = None
-    ) -> int | None:
-        """Read position based on cover type and capabilities — delegates to CoverCommandService."""
-        return self._cmd_svc.read_position_with_capabilities(entity, caps, state_obj)
-
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
         self.first_refresh = True
@@ -400,16 +376,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_check_entity_state_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
-        """Event handler for tracked entity state changes.
-
-        Called when any tracked entity (sun, temperature, weather, presence)
-        changes state. Triggers a coordinator refresh to recalculate positions
-        and update covers if needed.
-
-        Args:
-            event: State change event containing old and new state
-
-        """
+        """Trigger refresh when a tracked entity (sun, temp, weather, presence) changes."""
         entity_id = event.data.get("entity_id", "unknown")
         old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
@@ -424,17 +391,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_check_cover_state_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
-        """Event handler for cover entity state changes.
-
-        Called when a managed cover entity changes position. Used to detect
-        manual override (user-initiated position changes) by comparing actual
-        position to expected calculated position. Respects grace periods to
-        avoid false positives during command execution or HA restart.
-
-        Args:
-            event: State change event containing old and new state
-
-        """
+        """Detect manual overrides when a managed cover changes position."""
         self.logger.debug("Cover state change")
         data = event.data
         if data["old_state"] is None:
@@ -453,15 +410,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_check_motion_state_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
-        """Handle motion sensor state changes with debouncing.
-
-        Motion detected (on) → immediate response, cancel timeout
-        Motion stopped (off) → start timeout if no other sensors active
-
-        Args:
-            event: State change event containing old and new state
-
-        """
+        """Handle motion sensor changes: immediate on detection, debounced on stop."""
         data = event.data
         entity_id = data["entity_id"]
         new_state = data["new_state"]
@@ -496,14 +445,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
 
     def process_entity_state_change(self):
-        """Process cover state change for manual override detection.
-
-        Examines cover position changes to determine if they were user-initiated
-        (manual override) or automation-initiated. Handles grace periods to prevent
-        false positives during command execution, and ignores intermediate states
-        (opening/closing) if configured to do so.
-
-        """
+        """Check if cover position change was user-initiated (manual override detection)."""
         event = self.state_change_data
         self.logger.debug("Processing state change event: %s", event)
         entity_id = event.entity_id
@@ -522,10 +464,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 return  # Ignore ALL position changes during grace period
 
             # Grace period expired, check if we reached target
-            caps = self._get_cover_capabilities(entity_id)
+            caps = self._cmd_svc.get_cover_capabilities(entity_id)
 
             # Get position based on capability
-            position = self._read_position_with_capabilities(
+            position = self._cmd_svc.read_position_with_capabilities(
                 entity_id, caps, event.new_state
             )
 
@@ -595,16 +537,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._scheduled_time = self._end_time
 
     def _calculate_cover_state(self, cover_data, options) -> int:
-        """Calculate cover state and update internal state.
-
-        Args:
-            cover_data: Cover calculation data object
-            options: Configuration options
-
-        Returns:
-            Calculated state position
-
-        """
+        """Calculate cover state via pipeline and return final position."""
         # Access climate data if climate mode is enabled
         self.climate_strategy = None
         if self._climate_mode:
@@ -720,21 +653,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return self._sun_start_time, self._sun_end_time
 
     async def _async_update_data(self) -> AdaptiveCoverData:
-        """Orchestrate calculation and control in main coordinator update cycle.
-
-        Core update cycle that:
-        1. Updates configuration options
-        2. Calculates optimal cover positions based on sun/climate
-        3. Handles manual override detection and reset
-        4. Schedules end-time actions
-        5. Processes different update triggers (state change, first refresh, timed)
-        6. Updates solar times
-        7. Builds diagnostic data if enabled
-
-        Returns:
-            AdaptiveCoverData with current state, solar times, and diagnostics
-
-        """
+        """Main coordinator update cycle: calculate position, send commands, build diagnostics."""
         self.logger.debug("Updating data")
         if self.first_refresh:
             self._cached_options = self.config_entry.options
@@ -820,17 +739,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
     async def async_handle_state_change(self, state: int, options):
-        """Handle entity state change and send cover commands.
-
-        Called when tracked entities (sun, temperature, weather, presence) change.
-        Sends position commands to all managed covers if automatic control is enabled
-        and conditions are met (within time window, position/time delta, not manual).
-
-        Args:
-            state: Calculated cover position to set
-            options: Configuration options dictionary
-
-        """
+        """Send position commands to all covers when a tracked entity changes."""
         if self.automatic_control:
             for cover in self.entities:
                 await self.async_handle_call_service(cover, state, options)
@@ -840,18 +749,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("State change handled")
 
     async def async_handle_cover_state_change(self, state: int):
-        """Handle cover state change for manual override detection.
-
-        Processes cover position changes to detect manual overrides by comparing
-        actual position to expected position. Respects startup grace period
-        (30 seconds after HA restart) and command grace periods to prevent false
-        positives. Uses target_call for comparison when available to handle
-        open/close-only covers correctly.
-
-        Args:
-            state: Current calculated position for comparison
-
-        """
+        """Compare actual cover position to expected; set manual override if they differ."""
         if self.manual_toggle and self.automatic_control:
             # Check startup grace period FIRST to prevent false manual override
             # detection during HA restart when covers respond slowly
@@ -885,18 +783,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("Cover state change handled")
 
     async def async_handle_first_refresh(self, state: int, options):
-        """Handle first refresh after coordinator startup.
-
-        Called once after initial coordinator setup. Sets target positions for
-        all covers and sends positioning commands if conditions are met (within
-        time window, not manual, sufficient position delta). Always sets target
-        positions even if commands aren't sent to enable position verification.
-
-        Args:
-            state: Calculated cover position to set
-            options: Configuration options dictionary
-
-        """
+        """Set target positions and send initial positioning commands after startup."""
         if self.automatic_control:
             for cover in self.entities:
                 # Always set target position for verification, even if we don't send command
@@ -916,16 +803,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("First refresh handled")
 
     async def async_handle_timed_refresh(self, options):
-        """Handle timed refresh at end time.
-
-        Called when the configured end time is reached. Moves all covers to
-        the sunset position if automatic control is enabled and position delta
-        is sufficient. Applies inverse_state transformation if configured.
-
-        Args:
-            options: Configuration options dictionary containing CONF_SUNSET_POS
-
-        """
+        """Move covers to sunset position when the configured end time is reached."""
         sunset_pos_raw = options.get(CONF_SUNSET_POS)
         self.logger.debug(
             "This is a timed refresh, using sunset position: %s",
@@ -967,25 +845,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         if not self.check_adaptive_time:
             self.logger.debug("Skipping %s: outside time window", entity)
-            self._record_skipped_action(entity, "Outside time window", state)
+            self._cmd_svc.record_skipped_action(entity, "Outside time window", state)
             return
         if not self.check_position_delta(entity, state, options):
             self.logger.debug("Skipping %s: position delta too small", entity)
-            self._record_skipped_action(entity, "Position delta too small", state)
+            self._cmd_svc.record_skipped_action(entity, "Position delta too small", state)
             return
-        if not self.check_time_delta(entity):
+        if not self._cmd_svc.check_time_delta(entity, self.time_threshold):
             self.logger.debug("Skipping %s: time delta too small", entity)
-            self._record_skipped_action(entity, "Time delta too small", state)
+            self._cmd_svc.record_skipped_action(entity, "Time delta too small", state)
             return
         if self.manager.is_cover_manual(entity):
             self.logger.debug("Skipping %s: manual override active", entity)
-            self._record_skipped_action(entity, "Manual override active", state)
+            self._cmd_svc.record_skipped_action(entity, "Manual override active", state)
             return
         await self.async_set_position(entity, state)
-
-    def _record_skipped_action(self, entity: str, reason: str, state: int) -> None:
-        """Record a skipped cover action — delegates to CoverCommandService."""
-        self._cmd_svc.record_skipped_action(entity, reason, state)
 
     async def async_set_position(self, entity, state: int):
         """Set cover position.
@@ -999,22 +873,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         await self.async_set_manual_position(entity, state)
-
-    def _prepare_position_service_call(
-        self, entity: str, state: int, caps: dict[str, bool]
-    ) -> tuple[str | None, dict | None, bool]:
-        """Determine service and data based on capabilities — delegates to CoverCommandService."""
-        return self._cmd_svc.prepare_position_service_call(
-            entity, state, caps, inverse_state=self._inverse_state
-        )
-
-    def _track_cover_action(
-        self, entity: str, service: str, state: int, supports_position: bool
-    ) -> None:
-        """Track cover action for diagnostic sensor — delegates to CoverCommandService."""
-        self._cmd_svc.track_cover_action(
-            entity, service, state, supports_position, inverse_state=self._inverse_state
-        )
 
     async def async_set_manual_position(self, entity, state):
         """Call service to set cover position or open/close.
@@ -1033,15 +891,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if not self.check_position(entity, state):
             return
 
-        caps = self._get_cover_capabilities(entity)
-        service, service_data, supports_position = self._prepare_position_service_call(
-            entity, state, caps
+        caps = self._cmd_svc.get_cover_capabilities(entity)
+        service, service_data, supports_position = self._cmd_svc.prepare_position_service_call(
+            entity, state, caps, inverse_state=self._inverse_state
         )
 
         if service is None:
             return
 
-        self._track_cover_action(entity, service, state, supports_position)
+        self._cmd_svc.track_cover_action(
+            entity, service, state, supports_position, inverse_state=self._inverse_state
+        )
 
         self.logger.debug("Run %s with data %s", service, service_data)
         await self._cmd_svc.execute_service_call(service, service_data)
@@ -1094,20 +954,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.manager.reset(entity)
 
     def get_blind_data(self, options):
-        """Create appropriate cover class based on cover type.
-
-        Instantiates the correct calculation class (AdaptiveVerticalCover,
-        AdaptiveHorizontalCover, or AdaptiveTiltCover) based on the configured
-        cover type, passing current sun position and configuration data.
-
-        Args:
-            options: Configuration options dictionary
-
-        Returns:
-            Cover calculation object (AdaptiveVerticalCover, AdaptiveHorizontalCover,
-            or AdaptiveTiltCover)
-
-        """
+        """Instantiate the appropriate cover calculation class for the current type."""
         sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
         config = self._config_service.get_common_data(options)
         sol_azi, sol_elev = self.pos_sun
@@ -1205,19 +1052,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entity, state, self.min_change, special_positions
         )
 
-    def check_time_delta(self, entity):
-        """Check if time delta exceeds threshold — delegates to CoverCommandService.
-
-        Args:
-            entity: Cover entity ID to check
-
-        Returns:
-            True if time since last update exceeds time_threshold (minutes),
-            False otherwise. Returns True if entity has no last_updated time.
-
-        """
-        return self._cmd_svc.check_time_delta(entity, self.time_threshold)
-
     @property
     def pos_sun(self):
         """Get current sun azimuth and elevation.
@@ -1232,17 +1066,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ]
 
     def climate_mode_data(self, options, cover_data):
-        """Update climate mode data and control method.
-
-        Calculates climate-aware cover state and determines control method
-        (summer/winter/intermediate) based on temperature, presence, and weather
-        conditions. Stores climate data for diagnostic sensors.
-
-        Args:
-            options: Configuration options dictionary
-            cover_data: Cover calculation data object
-
-        """
+        """Calculate climate-aware cover state and store strategy for diagnostics."""
         readings = self._climate_provider.read(
             temp_entity=options.get(CONF_TEMP_ENTITY),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
@@ -1284,15 +1108,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
     def build_diagnostic_data(self) -> dict:
-        """Build complete diagnostic data via the extracted DiagnosticsBuilder.
-
-        Constructs a DiagnosticContext from coordinator state, delegates to
-        the builder, and handles position-explanation change-detection logging.
-
-        Returns:
-            Dictionary containing all diagnostic data
-
-        """
+        """Build diagnostic data from current coordinator state."""
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
             normal_cover_state=self.normal_cover_state,
@@ -1342,18 +1158,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @property
     def state(self) -> int:
-        """Get final state with pipeline result, interpolation, and inverse.
-
-        Determines final cover position by:
-        1. Using pipeline result position if available, otherwise default_state
-        2. For force override and motion timeout, returning position directly
-           (no interpolation/inverse — preserves legacy early-return behavior)
-        3. Applying interpolation and inverse_state transformations otherwise
-
-        Returns:
-            Final calculated cover position (0-100)
-
-        """
+        """Final cover position after pipeline, interpolation, and inverse_state transforms."""
         # Force override and motion timeout always take precedence
         # (even outside time window, skip interpolation/inverse)
         if self.is_force_override_active:
@@ -1532,18 +1337,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self._verify_entity_position(entity_id, now)
 
     async def _verify_entity_position(self, entity_id: str, now: dt.datetime) -> None:
-        """Verify single entity's position and retry if needed.
-
-        Checks if cover reached its target position within tolerance. If position
-        mismatch detected and delta check passes, retries up to MAX_POSITION_RETRIES
-        times. Compares against target_call (what was sent) not current calculation
-        to prevent false mismatches when sun moves between command and verification.
-
-        Args:
-            entity_id: Cover entity ID to verify
-            now: Current datetime
-
-        """
+        """Check if entity reached target position; retry up to MAX_POSITION_RETRIES times."""
         # Update last verification time FIRST for diagnostic tracking
         self._pos_verify_mgr.record_verification(entity_id, now)
 
