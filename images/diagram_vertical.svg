@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 0 700 420" width="700" height="420" font-family="sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 0 700 480" width="700" height="480" font-family="sans-serif">
   <!-- Background -->
-  <rect x="-100" width="700" height="420" fill="white"/>
+  <rect x="-100" width="700" height="480" fill="white"/>
 
   <!-- Title -->
   <text x="250" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Vertical Blind — Side Elevation View</text>
@@ -39,6 +39,29 @@
   <text x="150" y="178" font-size="13" fill="#1a6a1a" font-weight="bold">Window</text>
   <text x="150" y="194" font-size="13" fill="#1a6a1a" font-weight="bold">Height</text>
   <text x="150" y="211" font-size="12" fill="#1a6a1a">(e.g. 2.1 m)</text>
+
+  <!-- ===== SILL HEIGHT DIMENSION ===== -->
+  <!-- Dimension line from window bottom (y=285) to floor (y=360) -->
+  <line x1="200" y1="285" x2="200" y2="360" stroke="#5555cc" stroke-width="1.5"/>
+  <polygon points="200,285 195,297 205,297" fill="#5555cc"/>
+  <polygon points="200,360 195,348 205,348" fill="#5555cc"/>
+  <line x1="178" y1="285" x2="208" y2="285" stroke="#5555cc" stroke-width="1.5"/>
+  <line x1="178" y1="360" x2="208" y2="360" stroke="#5555cc" stroke-width="1.5"/>
+  <text x="215" y="322" font-size="13" fill="#5555cc" font-weight="bold">Sill</text>
+  <text x="215" y="338" font-size="13" fill="#5555cc" font-weight="bold">Height</text>
+  <text x="215" y="355" font-size="12" fill="#5555cc">(e.g. 0.8 m)</text>
+
+  <!-- ===== WINDOW DEPTH DIMENSION ===== -->
+  <!-- Horizontal line across the wall at window top, from outer wall (x=60) to inner glass (x=90) -->
+  <line x1="60" y1="72" x2="90" y2="72" stroke="#007a7a" stroke-width="1.5"/>
+  <polygon points="60,72 72,67 72,77" fill="#007a7a"/>
+  <polygon points="90,72 78,67 78,77" fill="#007a7a"/>
+  <!-- Tick marks -->
+  <line x1="60" y1="65" x2="60" y2="79" stroke="#007a7a" stroke-width="1.5"/>
+  <line x1="90" y1="65" x2="90" y2="79" stroke="#007a7a" stroke-width="1.5"/>
+  <!-- Label above -->
+  <text x="75" y="62" text-anchor="middle" font-size="11" fill="#007a7a" font-weight="bold">Window Depth</text>
+  <text x="75" y="48" text-anchor="middle" font-size="10" fill="#007a7a">(e.g. 0.10 m)</text>
 
   <!-- ===== GLARE ZONE DIMENSION ===== -->
   <line x1="108" y1="315" x2="310" y2="315" stroke="#aa2222" stroke-width="1.5"/>
@@ -82,16 +105,28 @@
   <rect x="332" y="315" width="16" height="20" fill="#6699cc" rx="2"/>
   <text x="370" y="340" font-size="11" fill="#555">← Protected area</text>
 
-  <!-- Legend box -->
-  <rect x="60" y="376" width="480" height="36" rx="4" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
-  <rect x="75" y="387" width="14" height="12" fill="#d4a96a" stroke="#a07040" stroke-width="1"/>
-  <text x="94" y="398" font-size="11" fill="#333">Vertical blind</text>
-  <line x1="200" y1="393" x2="220" y2="393" stroke="#1a6a1a" stroke-width="1.5"/>
-  <polygon points="200,393 209,389 209,397" fill="#1a6a1a"/>
-  <polygon points="220,393 211,389 211,397" fill="#1a6a1a"/>
-  <text x="226" y="398" font-size="11" fill="#333">Window Height</text>
-  <rect x="350" y="387" width="14" height="12" fill="#ffcccc" stroke="#aa2222" stroke-width="1" opacity="0.8"/>
-  <text x="369" y="398" font-size="11" fill="#333">Glare Zone</text>
-  <line x1="454" y1="393" x2="474" y2="393" stroke="#FFB300" stroke-width="2" stroke-dasharray="6,3"/>
-  <text x="479" y="398" font-size="11" fill="#333">Sun ray</text>
+  <!-- Legend box (two rows) -->
+  <rect x="60" y="384" width="480" height="80" rx="4" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
+  <!-- Row 1 -->
+  <rect x="75" y="395" width="14" height="12" fill="#d4a96a" stroke="#a07040" stroke-width="1"/>
+  <text x="94" y="406" font-size="11" fill="#333">Vertical blind</text>
+  <line x1="200" y1="401" x2="220" y2="401" stroke="#1a6a1a" stroke-width="1.5"/>
+  <polygon points="200,401 209,397 209,405" fill="#1a6a1a"/>
+  <polygon points="220,401 211,397 211,405" fill="#1a6a1a"/>
+  <text x="226" y="406" font-size="11" fill="#333">Window Height</text>
+  <rect x="350" y="395" width="14" height="12" fill="#ffcccc" stroke="#aa2222" stroke-width="1" opacity="0.8"/>
+  <text x="369" y="406" font-size="11" fill="#333">Glare Zone</text>
+  <line x1="454" y1="401" x2="474" y2="401" stroke="#FFB300" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="479" y="406" font-size="11" fill="#333">Sun ray</text>
+  <!-- Row 2 -->
+  <line x1="75" y1="425" x2="75" y2="437" stroke="#5555cc" stroke-width="1.5"/>
+  <line x1="89" y1="425" x2="89" y2="437" stroke="#5555cc" stroke-width="1.5"/>
+  <line x1="75" y1="431" x2="89" y2="431" stroke="#5555cc" stroke-width="1.5"/>
+  <text x="94" y="436" font-size="11" fill="#333">Sill Height</text>
+  <line x1="200" y1="425" x2="214" y2="425" stroke="#007a7a" stroke-width="1.5"/>
+  <line x1="200" y1="425" x2="200" y2="437" stroke="#007a7a" stroke-width="1.5"/>
+  <line x1="214" y1="425" x2="214" y2="437" stroke="#007a7a" stroke-width="1.5"/>
+  <line x1="207" y1="431" x2="207" y2="431" stroke="#007a7a" stroke-width="1.5"/>
+  <text x="220" y="436" font-size="11" fill="#333">Window Depth</text>
+  <text x="350" y="436" font-size="10" fill="#888">Sill Height: floor → window bottom  |  Window Depth: outer wall → glass</text>
 </svg>

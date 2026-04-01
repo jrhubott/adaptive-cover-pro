@@ -236,7 +236,7 @@ graph TD
 
   1. **Winter heating**: Indoor temperature below the minimum comfort threshold and sun in front of the window → open to 100% for passive solar heating. Takes priority over all other conditions.
   2. **Low light**: Not summer, and light levels are low (lux/irradiance below threshold) or weather is not sunny → default position to maximise daylight.
-  3. **Summer cooling**: Indoor temperature above the maximum comfort threshold and blind is transparent → close to 0% to block heat.
+  3. **Summer cooling**: Indoor temperature above the maximum comfort threshold **and the "Transparent blind" option is enabled** → close to 0% to block heat while still allowing diffused light through sheer fabric. If "Transparent blind" is off (opaque blind), this step is skipped and the calculated sun-tracking position is used instead.
   4. **Glare control**: All other conditions (comfortable temperature, sunny day) → calculated sun-tracking position.
 
 - **Without Presence**:
@@ -245,6 +245,10 @@ graph TD
   - Sun in front of window and summer → **0%** (block heat)
   - Sun in front of window and winter → **100%** (gain solar heat)
   - Otherwise → **default position**
+
+**Transparent blind**: A "transparent blind" is a see-through cover — sheer curtains, light-filtering roller shades, or any fabric you can see through. Enable this option if your blind lets light through even when fully closed. With it enabled, the integration closes the blind fully in summer to block solar heat gain while still allowing diffused light into the room. Leave it disabled for blackout blinds, wooden blinds, or any opaque cover — those already block direct sun at the calculated position without needing to close fully.
+
+> **Note:** The "Transparent blind" option only affects the *With Presence* path in Climate mode during summer conditions. The *Without Presence* path always closes to 0% in summer regardless of this setting.
 
 **Weather integration**: A weather entity can be configured to identify sunny conditions (default states: `sunny`, `windy`, `partlycloudy`, `cloudy` — customisable). Winter heating (priority 1) activates regardless of weather or light levels.
 
@@ -271,6 +275,29 @@ graph TD
 | Offset Sunset time            | 0       |       | Additional minutes before/after sunset                                                                   |
 | Offset Sunrise time           | 0       |       | Additional minutes before/after sunrise                                                                  |
 | Inverse State                 | False   |       | Calculates inverse state for covers fully closed at 100%                                                 |
+
+#### How to Measure Field of View
+
+Field of View (FOV) defines the horizontal angular range where the integration actively tracks the sun. Outside this range the sun is treated as "not in front of the window" and the cover returns to the default position.
+
+**Measurement steps:**
+1. Stand at the centre of the window, inside your room, looking straight out (perpendicular to the wall — this is the azimuth direction).
+2. Look left: find the furthest point where direct sunlight can enter through the window without being blocked by a wall, pillar, overhang, or neighbouring building. Estimate the angle between straight-ahead and that point. That is **FOV Left**.
+3. Repeat looking right for **FOV Right**.
+4. A smartphone protractor app (or a simple protractor held flat) makes this easier to measure accurately.
+
+**Recommended values by situation:**
+
+| Situation | FOV Left / Right |
+|-----------|-----------------|
+| Standard window, no obstructions | 45° each side |
+| Wide window or sliding glass door | 60–75° each side |
+| Narrow window or recessed into a thick wall | 30° each side |
+| Protecting furniture or artwork from any direct sun | Measure actual unobstructed angle (see below) |
+
+**Protecting fragile furniture or artwork:** The default 90° per side (180° total) is intentionally wide to work for most installations. However, if your goal is to prevent *any* direct sunlight from reaching a specific area, use the *actual* unobstructed angle your window allows — not the default. Measure from the window centre to the edge of whichever wall, column, or frame first blocks direct sun on each side. A tighter FOV means the blind engages as soon as direct sun could enter, and stays in the default (typically more closed) position at all other times.
+
+**Example:** A south-facing window set into a 60 cm thick wall may only allow direct sun within ±40° of perpendicular. Setting FOV Left and FOV Right to 40° each ensures the blind is always active during those hours, rather than the wider 90° default which would leave gaps.
 
 #### Position Limits: Min and Max Position
 
@@ -340,9 +367,10 @@ Interpolated List: [100, 75, 50, 25, 0]
 
 | Variables         | Default | Range | Description                                                                                 |
 | ----------------- | ------- | ----- | ------------------------------------------------------------------------------------------- |
-| Window Height     | 2.1     | 0.1-6 | Length of fully extended cover/window                                                       |
-| Sill Height       | 0.0     | 0.0-3.0 | Height from floor to bottom of window glass (meters). Set for windows not starting at floor level. Allows the blind to open more, as the sill already blocks low-angle sun. Range: 0.0–3.0m. |
-| Glare Zone        | 0.5     | 0.1-5 | Objects within this distance of the cover recieve direct sunlight. Measured horizontally from the bottom of the cover when fully extended |
+| Window Height     | 2.1     | 0.1-6   | Length of fully extended cover/window                                                       |
+| Sill Height       | 0.0     | 0.0-3.0 | Height from floor to bottom of window glass (meters). Set for windows not starting at floor level. Allows the blind to open more, as the sill already blocks low-angle sun. |
+| Window Depth      | 0.0     | 0.0-0.5 | Depth of window reveal/frame — distance from outer wall surface to glass (meters). Improves accuracy at oblique sun angles. See [Window Depth](#optional-window-depth) for details. |
+| Glare Zone        | 0.5     | 0.1-5   | How far into the room (measured horizontally from the wall) direct sunlight is allowed to reach. Smaller values keep the blind lower/more closed; larger values allow more sun deeper into the room. |
 
 ### Horizontal
 
