@@ -318,7 +318,7 @@ class DiagnosticsBuilder:
             diagnostics["sun_validity"] = {
                 "valid": cover.valid,
                 "valid_elevation": cover.valid_elevation,
-                "in_blind_spot": getattr(cover, "in_blind_spot", None),
+                "in_blind_spot": getattr(cover, "is_sun_in_blind_spot", None),
             }
         return diagnostics
 
@@ -344,12 +344,8 @@ class DiagnosticsBuilder:
                 "is_winter": ctx.climate_data.is_winter,
                 "is_presence": ctx.climate_data.is_presence,
                 "is_sunny": ctx.climate_data.is_sunny,
-                "lux_active": ctx.climate_data.lux
-                if ctx.climate_data._use_lux
-                else None,
-                "irradiance_active": ctx.climate_data.irradiance
-                if ctx.climate_data._use_irradiance
-                else None,
+                "lux_below_threshold": ctx.climate_data.lux_below_threshold,
+                "irradiance_below_threshold": ctx.climate_data.irradiance_below_threshold,
             }
 
         return diagnostics

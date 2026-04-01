@@ -25,7 +25,7 @@ def _make_cover(
     gamma: float = 10.0,
     valid: bool = True,
     valid_elevation: bool = True,
-    in_blind_spot: bool = False,
+    is_sun_in_blind_spot: bool = False,
     direct_sun_valid: bool = True,
     sunset_valid: bool = False,
     sunset_pos: float | None = None,
@@ -38,7 +38,7 @@ def _make_cover(
         gamma=gamma,
         valid=valid,
         valid_elevation=valid_elevation,
-        in_blind_spot=in_blind_spot,
+        is_sun_in_blind_spot=is_sun_in_blind_spot,
         direct_sun_valid=direct_sun_valid,
         sunset_valid=sunset_valid,
         sunset_pos=sunset_pos,
@@ -464,10 +464,8 @@ class TestClimateDiagnostics:
         cd.is_winter = True
         cd.is_presence = True
         cd.is_sunny = True
-        cd._use_lux = False
-        cd._use_irradiance = False
-        cd.lux = None
-        cd.irradiance = None
+        cd.lux_below_threshold = False
+        cd.irradiance_below_threshold = False
         return cd
 
     def test_climate_data_present(self, builder: DiagnosticsBuilder):
