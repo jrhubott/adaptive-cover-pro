@@ -255,7 +255,8 @@
           "manual_override": "Manual Override",
           "motion_overrides": "Motion & Force Overrides",
           "climate": "Bewerk Klimaatconfiguratie",
-          "sync": "Sync settings to other covers"
+          "sync": "Sync settings to other covers",
+          "done": "Save & Exit"
         }
       },
       "automation": {

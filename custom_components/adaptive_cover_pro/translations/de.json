@@ -257,7 +257,8 @@
           "manual_override": "Manual Override",
           "motion_overrides": "Motion & Force Overrides",
           "climate": "Klimakonfiguration bearbeiten",
-          "sync": "Sync settings to other covers"
+          "sync": "Sync settings to other covers",
+          "done": "Save & Exit"
         }
       },
       "automation": {

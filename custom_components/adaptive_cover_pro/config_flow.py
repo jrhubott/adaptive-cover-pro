@@ -1178,6 +1178,7 @@ class OptionsFlowHandler(OptionsFlow):
             "motion_overrides",
             "climate",
             "sync",
+            "done",
         ]
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
@@ -1191,7 +1192,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Adjust cover entities."""
         if user_input is not None:
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
 
         schema = _build_cover_entity_schema(self.sensor_type)
         return self.async_show_form(
@@ -1205,7 +1206,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Adjust geometry parameters."""
         if user_input is not None:
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
 
         schema = _get_geometry_schema(self.sensor_type)
         return self.async_show_form(
@@ -1234,7 +1235,7 @@ class OptionsFlowHandler(OptionsFlow):
                     },
                 )
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="sun_tracking",
             data_schema=self.add_suggested_values_to_schema(
@@ -1246,7 +1247,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Adjust position settings."""
         if user_input is not None:
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="position",
             data_schema=self.add_suggested_values_to_schema(
@@ -1259,7 +1260,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="automation",
             data_schema=self.add_suggested_values_to_schema(
@@ -1274,7 +1275,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             self.optional_entities([CONF_MANUAL_THRESHOLD], user_input)
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="manual_override",
             data_schema=self.add_suggested_values_to_schema(
@@ -1288,7 +1289,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage motion and force override sensors."""
         if user_input is not None:
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="motion_overrides",
             data_schema=self.add_suggested_values_to_schema(
@@ -1308,12 +1309,12 @@ class OptionsFlowHandler(OptionsFlow):
                 self.options[CONF_DEVICE_ID] = device_id
             else:
                 self.options.pop(CONF_DEVICE_ID, None)
-            return await self._update_options()
+            return await self.async_step_init()
 
         if not devices:
             # No devices available — clear any stale association and update immediately
             self.options.pop(CONF_DEVICE_ID, None)
-            return await self._update_options()
+            return await self.async_step_init()
 
         current_device = self.options.get(CONF_DEVICE_ID) or _standalone_sentinel
         options_list = [
@@ -1428,7 +1429,7 @@ class OptionsFlowHandler(OptionsFlow):
                     },
                 )
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="interp",
             data_schema=self.add_suggested_values_to_schema(
@@ -1478,7 +1479,7 @@ class OptionsFlowHandler(OptionsFlow):
                     },
                 )
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="blind_spot",
             data_schema=self.add_suggested_values_to_schema(
@@ -1509,7 +1510,7 @@ class OptionsFlowHandler(OptionsFlow):
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
                 )
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="climate",
             data_schema=self.add_suggested_values_to_schema(
@@ -1521,13 +1522,19 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage weather conditions."""
         if user_input is not None:
             self.options.update(user_input)
-            return await self._update_options()
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="weather",
             data_schema=self.add_suggested_values_to_schema(
                 WEATHER_OPTIONS, user_input or self.options
             ),
         )
+
+    async def async_step_done(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Save and exit the options flow."""
+        return await self._update_options()
 
     async def _update_options(self) -> FlowResult:
         """Update config entry options."""
