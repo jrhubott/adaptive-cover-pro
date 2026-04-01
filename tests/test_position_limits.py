@@ -120,7 +120,7 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
     """
     # Mock sunset_valid to return True (after sunset)
     with patch(
-        "custom_components.adaptive_cover_pro.calculation.datetime"
+        "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to after sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
@@ -182,7 +182,7 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
     """
     # Mock sunset_valid to return True (after sunset)
     with patch(
-        "custom_components.adaptive_cover_pro.calculation.datetime"
+        "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to after sunset
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
@@ -235,7 +235,7 @@ def test_sun_in_window_with_conditional_min_pos(mock_sun_data, mock_logger):
     """Test min_pos applied during sun in window with enable_min_position = True."""
     # Mock to NOT be sunset time
     with patch(
-        "custom_components.adaptive_cover_pro.calculation.datetime"
+        "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to daytime
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -295,7 +295,7 @@ def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
     """Test that direct_sun_valid uses 'and' operator (not bitwise '&')."""
     # This test verifies the fix for the secondary issue in #24
     with patch(
-        "custom_components.adaptive_cover_pro.calculation.datetime"
+        "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to daytime (not sunset)
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)

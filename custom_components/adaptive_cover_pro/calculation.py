@@ -1,12 +1,13 @@
 """Generate values for all types of covers."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import cast
 
 import numpy as np
-import pandas as pd
 from numpy import cos, sin, tan
 from numpy import radians as rad
 
@@ -18,6 +19,7 @@ from .const import (
     WINDOW_DEPTH_GAMMA_THRESHOLD,
 )
 from .config_types import CoverConfig, HorizontalConfig, TiltConfig, VerticalConfig
+from .engine.sun_geometry import SunGeometry
 from .enums import ClimateStrategy, CoverType, TiltMode
 from .geometry import EdgeCaseHandler, SafetyMarginCalculator
 from .position_utils import PositionConverter
@@ -65,6 +67,17 @@ class AdaptiveGeneralCover(ABC):
     sol_elev: float
     sun_data: SunData
     config: CoverConfig
+
+    @property
+    def solar(self) -> SunGeometry:
+        """Build a SunGeometry from current field values (always fresh)."""
+        return SunGeometry(
+            self.sol_azi,
+            self.sol_elev,
+            self.sun_data,
+            self.config,
+            self.logger,
+        )
 
     def __getattr__(self, name: str) -> object:
         """Route old flat field names to the appropriate config dataclass for reads.
@@ -119,187 +132,58 @@ class AdaptiveGeneralCover(ABC):
             return
         object.__setattr__(self, name, value)
 
-    def solar_times(self) -> tuple[datetime | None, datetime | None]:
-        """Calculate when sun enters and exits window's field of view today.
-
-        Uses today's solar position data to determine the time window when the sun
-        is within the configured azimuth field of view, elevation limits, and outside
-        the sunset/sunrise offset periods. Matches the same conditions used by
-        direct_sun_valid so that "End Sun Time" accurately reflects when automatic
-        sun tracking genuinely ends.
-
-        Returns:
-            Tuple of (start_time, end_time) as datetime objects. Returns (None, None)
-            if sun never enters the field of view today.
-
-        """
-        df_today = pd.DataFrame(
-            {
-                "azimuth": self.sun_data.solar_azimuth,
-                "elevation": self.sun_data.solar_elevation,
-            }
-        )
-        solpos = df_today.set_index(self.sun_data.times)
-
-        alpha = solpos["azimuth"]
-        elev = solpos["elevation"]
-
-        # Azimuth in FOV
-        in_fov = (alpha - self.azi_min_abs) % 360 <= (
-            self.azi_max_abs - self.azi_min_abs
-        ) % 360
-
-        # Elevation check — matches valid_elevation property logic
-        if self.config.min_elevation is None and self.config.max_elevation is None:
-            valid_elev = elev > 0
-        elif self.config.min_elevation is None:
-            valid_elev = elev <= self.config.max_elevation
-        elif self.config.max_elevation is None:
-            valid_elev = elev >= self.config.min_elevation
-        else:
-            valid_elev = (elev >= self.config.min_elevation) & (
-                elev <= self.config.max_elevation
-            )
-
-        # Sunset/sunrise offset — exclude times within the offset windows.
-        # Matches sunset_valid: True when after (sunset+offset) or before (sunrise+offset).
-        # Convert series index to naive UTC for comparison with sun_data.sunset()/sunrise().
-        sunset_utc = self.sun_data.sunset().replace(tzinfo=None)
-        sunrise_utc = self.sun_data.sunrise().replace(tzinfo=None)
-        offset_sunset = sunset_utc + timedelta(minutes=self.config.sunset_off)
-        offset_sunrise = sunrise_utc + timedelta(minutes=self.config.sunrise_off)
-        times_utc = solpos.index.tz_convert("UTC").tz_localize(None)
-        in_sun_window = (times_utc >= offset_sunrise) & (times_utc <= offset_sunset)
-
-        frame = in_fov & valid_elev & in_sun_window
-
-        if solpos[frame].empty:
-            return None, None
-        else:
-            return (
-                solpos[frame].index[0].to_pydatetime(),
-                solpos[frame].index[-1].to_pydatetime(),
-            )
-
-    @property
-    def _get_azimuth_edges(self) -> tuple[int, int]:
-        """Get absolute azimuth boundaries of window's field of view.
-
-        Returns:
-            Tuple of (min_azimuth, max_azimuth) in degrees (0-360).
-
-        """
-        return (self.azi_min_abs, self.azi_max_abs)
-
-    @property
-    def is_sun_in_blind_spot(self) -> bool:
-        """Check if sun is currently within configured blind spot area.
-
-        Blind spots are areas where the calculated position should not be used
-        (e.g., architectural obstructions, tree coverage). Defined by horizontal
-        angles (left/right) and optional elevation limit.
-
-        Returns:
-            True if sun is within blind spot area and blind spot enabled.
-            False if blind spot not configured, disabled, or sun outside area.
-
-        """
-        if (
-            self.config.blind_spot_left is not None
-            and self.config.blind_spot_right is not None
-            and self.config.blind_spot_on
-        ):
-            left_edge = self.config.fov_left - self.config.blind_spot_left
-            right_edge = self.config.fov_left - self.config.blind_spot_right
-            blindspot = (self.gamma <= left_edge) & (self.gamma >= right_edge)
-            if self.config.blind_spot_elevation is not None:
-                blindspot = blindspot & (
-                    self.sol_elev <= self.config.blind_spot_elevation
-                )
-            self.logger.debug("Is sun in blind spot? %s", blindspot)
-            return blindspot
-        return False
+    # ------------------------------------------------------------------
+    # Leaf properties delegated to SunGeometry
+    # ------------------------------------------------------------------
 
     @property
     def azi_min_abs(self) -> int:
-        """Calculate absolute minimum azimuth of window's field of view.
-
-        Returns:
-            Minimum azimuth angle in degrees (0-360).
-
-        """
-        azi_min_abs = (self.config.win_azi - self.config.fov_left + 360) % 360
-        return azi_min_abs
+        """Delegate to SunGeometry.azi_min_abs."""
+        return self.solar.azi_min_abs
 
     @property
     def azi_max_abs(self) -> int:
-        """Calculate absolute maximum azimuth of window's field of view.
-
-        Returns:
-            Maximum azimuth angle in degrees (0-360).
-
-        """
-        azi_max_abs = (self.config.win_azi + self.config.fov_right + 360) % 360
-        return azi_max_abs
+        """Delegate to SunGeometry.azi_max_abs."""
+        return self.solar.azi_max_abs
 
     @property
     def gamma(self) -> float:
-        """Calculate gamma (surface solar azimuth).
-
-        Gamma is the horizontal angle between the window's perpendicular and the
-        sun's position, normalized to -180 to +180 degrees. Positive values indicate
-        sun to the right of window normal, negative to the left.
-
-        Returns:
-            Gamma angle in degrees (-180 to +180).
-
-        """
-        # surface solar azimuth
-        gamma = (self.config.win_azi - self.sol_azi + 180) % 360 - 180
-        return gamma
+        """Delegate to SunGeometry.gamma."""
+        return self.solar.gamma
 
     @property
     def valid_elevation(self) -> bool:
-        """Check if sun elevation is within configured limits.
+        """Delegate to SunGeometry.valid_elevation."""
+        return self.solar.valid_elevation
 
-        Used to exclude times when sun is too low (glare not an issue) or too high
-        (directly overhead, no horizontal glare).
+    @property
+    def sunset_valid(self) -> bool:
+        """Delegate to SunGeometry.sunset_valid."""
+        return self.solar.sunset_valid
 
-        Returns:
-            True if sun elevation within configured min/max range (or no limits set).
-            False if sun below horizon or outside configured limits.
+    @property
+    def is_sun_in_blind_spot(self) -> bool:
+        """Delegate to SunGeometry.is_sun_in_blind_spot."""
+        return self.solar.is_sun_in_blind_spot
 
-        """
-        if self.config.min_elevation is None and self.config.max_elevation is None:
-            return self.sol_elev >= 0
-        if self.config.min_elevation is None:
-            return self.sol_elev <= self.config.max_elevation
-        if self.config.max_elevation is None:
-            return self.sol_elev >= self.config.min_elevation
-        within_range = (
-            self.config.min_elevation <= self.sol_elev <= self.config.max_elevation
-        )
-        self.logger.debug("elevation within range? %s", within_range)
-        return within_range
+    def solar_times(self) -> tuple[datetime | None, datetime | None]:
+        """Delegate to SunGeometry.solar_times()."""
+        return self.solar.solar_times()
+
+    # ------------------------------------------------------------------
+    # Compound properties (kept here so tests can patch individual parts)
+    # ------------------------------------------------------------------
+
+    @property
+    def _get_azimuth_edges(self) -> tuple[int, int]:
+        """Get absolute azimuth boundaries of window's field of view."""
+        return (self.azi_min_abs, self.azi_max_abs)
 
     @property
     def valid(self) -> bool:
-        """Check if sun is in front of window within field of view.
-
-        Combines azimuth check (gamma within FOV) and elevation check to determine
-        if sun is positioned where it could create glare. Does not consider blind
-        spots or sunset offset.
-
-        Returns:
-            True if sun within configured azimuth field of view and valid elevation.
-            False if sun behind window, outside FOV, or elevation invalid.
-
-        """
-        # Use configured FOV values directly without clipping
+        """Check if sun is in front of window within field of view."""
         azi_min = self.config.fov_left
         azi_max = self.config.fov_right
-
-        # valid sun positions are those within the blind's azimuth range and above the horizon (FOV)
         valid = (
             (self.gamma < azi_min) & (self.gamma > -azi_max) & (self.valid_elevation)
         )
@@ -307,66 +191,20 @@ class AdaptiveGeneralCover(ABC):
         return valid
 
     @property
-    def sunset_valid(self) -> bool:
-        """Check if current time is within sunset/sunrise offset period.
-
-        Determines if default "sunset position" should be used instead of calculated
-        position. Useful for returning covers to a preferred night position or
-        accounting for late/early twilight.
-
-        Returns:
-            True if current time is after (sunset + offset) or before (sunrise + offset).
-            False during normal daytime operation.
-
-        """
-        sunset = self.sun_data.sunset().replace(tzinfo=None)
-        sunrise = self.sun_data.sunrise().replace(tzinfo=None)
-        after_sunset = datetime.utcnow() > (
-            sunset + timedelta(minutes=self.config.sunset_off)
-        )
-        before_sunrise = datetime.utcnow() < (
-            sunrise + timedelta(minutes=self.config.sunrise_off)
-        )
-        self.logger.debug(
-            "After sunset plus offset? %s", (after_sunset or before_sunrise)
-        )
-        return after_sunset or before_sunrise
-
-    @property
     def default(self) -> float:
-        """Get default position considering sunset offset.
-
-        Returns:
-            Sunset position if within sunset/sunrise offset period, otherwise
-            normal default position.
-
-        """
+        """Get default position considering sunset offset."""
         default = self.config.h_def
         if self.sunset_valid and self.config.sunset_pos is not None:
             default = self.config.sunset_pos
         return default
 
     def fov(self) -> list[int]:
-        """Get absolute azimuth boundaries of field of view.
-
-        Returns:
-            List of [min_azimuth, max_azimuth] in degrees (0-360).
-
-        """
+        """Get absolute azimuth boundaries of field of view."""
         return [self.azi_min_abs, self.azi_max_abs]
 
     @property
     def direct_sun_valid(self) -> bool:
-        """Check if sun is directly in front with no exclusions.
-
-        Combines all sun position checks to determine if calculated position should
-        be used. Excludes blind spots and sunset offset periods.
-
-        Returns:
-            True if sun in FOV, not in blind spot, and not in sunset/sunrise offset.
-            False otherwise.
-
-        """
+        """Check if sun is directly in front with no exclusions."""
         result = self.valid and not self.sunset_valid and not self.is_sun_in_blind_spot
         self.logger.debug(
             "direct_sun_valid=%s (valid=%s, sunset_valid=%s, in_blind_spot=%s)",
@@ -379,17 +217,7 @@ class AdaptiveGeneralCover(ABC):
 
     @property
     def control_state_reason(self) -> str:
-        """Determine why the cover is tracking the sun or using the default position.
-
-        Evaluates conditions in the same priority order as direct_sun_valid to
-        provide a human-readable explanation for the current cover state. This
-        helps users understand why the cover is in its current position.
-
-        Returns:
-            Reason string: "Direct Sun", "Default: FOV Exit", "Default: Elevation Limit",
-            "Default: Sunset Offset", or "Default: Blind Spot".
-
-        """
+        """Determine why the cover is tracking the sun or using the default position."""
         if self.direct_sun_valid:
             return "Direct Sun"
         if self.sunset_valid:

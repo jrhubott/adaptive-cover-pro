@@ -216,7 +216,7 @@ def builder():
 class TestClimateStrategyNormalWithPresence:
     """ClimateCoverState sets climate_strategy correctly for normal_with_presence."""
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_winter_heating_strategy(
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
@@ -270,7 +270,7 @@ class TestClimateStrategyNormalWithPresence:
         assert result == 100
         assert state_handler.climate_strategy == ClimateStrategy.WINTER_HEATING
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_low_light_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
         """Not summer + low lux → LOW_LIGHT."""
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -310,7 +310,7 @@ class TestClimateStrategyNormalWithPresence:
 
         assert state_handler.climate_strategy == ClimateStrategy.LOW_LIGHT
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_summer_cooling_strategy(
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
@@ -359,7 +359,7 @@ class TestClimateStrategyNormalWithPresence:
         assert result == 0
         assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_glare_control_strategy(
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
@@ -416,7 +416,7 @@ class TestClimateStrategyNormalWithPresence:
 class TestClimateStrategyNormalWithoutPresence:
     """ClimateCoverState sets climate_strategy correctly for normal_without_presence."""
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_summer_cooling_without_presence(
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
@@ -463,7 +463,7 @@ class TestClimateStrategyNormalWithoutPresence:
         assert result == 0
         assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_winter_heating_without_presence(
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
@@ -510,7 +510,7 @@ class TestClimateStrategyNormalWithoutPresence:
         assert result == 100
         assert state_handler.climate_strategy == ClimateStrategy.WINTER_HEATING
 
-    @patch("custom_components.adaptive_cover_pro.calculation.datetime")
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_low_light_without_presence_no_sun(
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
