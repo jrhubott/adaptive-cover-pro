@@ -3,16 +3,10 @@
   "config": {
     "step": {
       "user": {
-        "description": "Found {legacy_count} Adaptive Cover configuration(s) that can be imported",
         "data": {
           "name": "Name",
           "blueprint": "Add blueprint to HomeAssistant",
           "mode": "Type of blind"
-        },
-        "menu_options": {
-          "create_new": "Create new configuration",
-          "import_legacy": "Import from Adaptive Cover ({legacy_count} found)",
-          "duplicate_existing": "Duplicate existing cover"
         }
       },
       "automation": {
@@ -277,20 +271,6 @@
         "title": "Range Adjustment",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
-      "import_select": {
-        "title": "Select Configurations to Import",
-        "description": "Choose which Adaptive Cover configurations to import to Adaptive Cover Pro. All settings will be preserved.",
-        "data": {
-          "selected_entries": "Configurations to import"
-        }
-      },
-      "import_review": {
-        "title": "Review Import",
-        "description": "Ready to import the following configurations:\n\n{entries_summary}\n\nNote: Your original Adaptive Cover entries will remain unchanged.",
-        "data": {
-          "confirm": "Confirm import"
-        }
-      },
       "device_association": {
         "title": "Link to Existing Device",
         "description": "Optionally attach this integration's entities to an existing device (e.g., the physical blind motor). Select 'None' to keep them as a standalone Adaptive Cover virtual device.",
@@ -319,12 +299,7 @@
       }
     },
     "abort": {
-      "no_legacy_entries": "No Adaptive Cover configurations found to import",
-      "user_cancelled": "Import cancelled by user",
-      "validation_failed": "Import validation failed. Please fix these issues:\n\n{errors}\n\nYou can try importing again after fixing missing entities.",
-      "no_entries_selected": "No entries were selected for import",
-      "import_successful": "Import completed successfully",
-      "import_failed": "Import failed - no valid entries to import",
+      "user_cancelled": "Action cancelled by user",
       "source_not_found": "The source cover no longer exists."
     }
   },
