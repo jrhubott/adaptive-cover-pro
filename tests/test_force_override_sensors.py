@@ -25,7 +25,8 @@ def mock_coordinator(hass):
     coordinator.check_adaptive_time = True
     coordinator.default_state = 50
     coordinator.climate_state = 75
-    coordinator._switch_mode = False
+    coordinator._toggles = MagicMock()
+    coordinator._toggles.switch_mode = False
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
     return coordinator

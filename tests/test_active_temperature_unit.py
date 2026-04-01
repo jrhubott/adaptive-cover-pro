@@ -99,8 +99,8 @@ def test_climate_status_attributes_include_temperature(
             "is_winter": False,
             "is_presence": True,
             "is_sunny": True,
-            "lux_active": None,
-            "irradiance_active": None,
+            "lux_below_threshold": False,
+            "irradiance_below_threshold": False,
         },
     }
     sensor.coordinator = mock_coordinator
