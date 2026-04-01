@@ -7,10 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.config_context_adapter import (
+    ConfigContextAdapter,
+)
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
+from custom_components.adaptive_cover_pro.calculation import ClimateCoverData
 from custom_components.adaptive_cover_pro.const import ControlStatus
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
@@ -455,18 +459,21 @@ class TestClimateDiagnostics:
     """Climate diagnostics section tests."""
 
     def _make_climate_data(self):
-        cd = MagicMock()
-        cd.get_current_temperature = 22.5
-        cd.inside_temperature = 23.0
-        cd.outside_temperature = 18.0
-        cd.temp_switch = "inside"
-        cd.is_summer = False
-        cd.is_winter = True
-        cd.is_presence = True
-        cd.is_sunny = True
-        cd.lux_below_threshold = False
-        cd.irradiance_below_threshold = False
-        return cd
+        return ClimateCoverData(
+            logger=MagicMock(spec=ConfigContextAdapter),
+            temp_low=20.0,
+            temp_high=25.0,
+            temp_switch=True,
+            blind_type="cover_blind",
+            transparent_blind=False,
+            temp_summer_outside=22.5,
+            outside_temperature="22.5",
+            inside_temperature="23.0",
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+        )
 
     def test_climate_data_present(self, builder: DiagnosticsBuilder):
         """Climate data fields appear when climate mode is enabled."""

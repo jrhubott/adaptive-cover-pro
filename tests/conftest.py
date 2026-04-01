@@ -4,6 +4,12 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from homeassistant.core import State
+
+from custom_components.adaptive_cover_pro.config_context_adapter import (
+    ConfigContextAdapter,
+)
+
 from .cover_helpers import (  # noqa: F401 — re-exported for convenience
     build_horizontal_cover,
     build_tilt_cover,
@@ -27,7 +33,7 @@ def hass():
 @pytest.fixture
 def mock_logger():
     """Return a mock ConfigContextAdapter logger."""
-    logger = MagicMock()
+    logger = MagicMock(spec=ConfigContextAdapter)
     logger.debug = Mock()
     logger.info = Mock()
     logger.warning = Mock()
@@ -133,7 +139,7 @@ def mock_state():
     """Return a mock Home Assistant state object."""
 
     def _create_state(entity_id: str, state: str, attributes: dict | None = None):
-        state_obj = MagicMock()
+        state_obj = MagicMock(spec=State)
         state_obj.entity_id = entity_id
         state_obj.state = state
         state_obj.attributes = attributes or {}

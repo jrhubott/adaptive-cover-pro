@@ -7,7 +7,7 @@ Tests cover:
 
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -90,7 +90,7 @@ def _make_cover(
         gamma=10.0,
         valid=True,
         valid_elevation=True,
-        in_blind_spot=False,
+        is_sun_in_blind_spot=False,
         direct_sun_valid=direct_sun_valid,
         sunset_valid=sunset_valid,
         sunset_pos=sunset_pos,
@@ -149,25 +149,6 @@ def _base_ctx(**overrides):
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def mock_sun_data():
-    """Mock SunData instance."""
-    sun_data = MagicMock()
-    sun_data.timezone = "UTC"
-    return sun_data
-
-
-@pytest.fixture
-def mock_logger():
-    """Mock logger."""
-    logger = MagicMock()
-    logger.debug = Mock()
-    logger.info = Mock()
-    logger.warning = Mock()
-    logger.error = Mock()
-    return logger
 
 
 @pytest.fixture
