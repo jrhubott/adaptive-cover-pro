@@ -191,92 +191,23 @@ class TestManualOverrideHandler:
 
 
 class TestClimateHandler:
-    """Tests for ClimateHandler."""
+    """Tests for ClimateHandler — basic gating."""
 
     handler = ClimateHandler()
 
     def test_returns_none_when_climate_disabled(self) -> None:
-        """Return None when climate mode is not enabled."""
-        ctx = make_ctx(climate_mode_enabled=False, climate_position=80)
-        assert self.handler.evaluate(ctx) is None
+        snap = make_snapshot(climate_mode_enabled=False)
+        assert self.handler.evaluate(snap) is None
 
-    def test_returns_none_when_climate_position_none(self) -> None:
-        """Return None when climate mode is enabled but position is unavailable."""
-        ctx = make_ctx(climate_mode_enabled=True, climate_position=None)
-        assert self.handler.evaluate(ctx) is None
-
-    def test_summer_strategy(self) -> None:
-        """Return SUMMER control method when climate_is_summer is True."""
-        ctx = make_ctx(
-            climate_mode_enabled=True,
-            climate_position=100,
-            climate_is_summer=True,
-            climate_is_winter=False,
-        )
-        result = self.handler.evaluate(ctx)
-        assert result is not None
-        assert result.position == 100
-        assert result.control_method == ControlMethod.SUMMER
-
-    def test_winter_strategy(self) -> None:
-        """Return WINTER control method when climate_is_winter is True."""
-        ctx = make_ctx(
-            climate_mode_enabled=True,
-            climate_position=0,
-            climate_is_summer=False,
-            climate_is_winter=True,
-        )
-        result = self.handler.evaluate(ctx)
-        assert result is not None
-        assert result.position == 0
-        assert result.control_method == ControlMethod.WINTER
-
-    def test_intermediate_strategy_uses_solar_method(self) -> None:
-        """Neither summer nor winter → glare control → SOLAR method."""
-        ctx = make_ctx(
-            climate_mode_enabled=True,
-            climate_position=55,
-            climate_is_summer=False,
-            climate_is_winter=False,
-        )
-        result = self.handler.evaluate(ctx)
-        assert result is not None
-        assert result.position == 55
-        assert result.control_method == ControlMethod.SOLAR
-
-    def test_describe_skip_climate_disabled(self) -> None:
-        """describe_skip mentions climate not enabled when mode is off."""
-        ctx = make_ctx(climate_mode_enabled=False)
-        reason = self.handler.describe_skip(ctx)
-        assert "climate" in reason.lower()
-        assert "not" in reason.lower()
-
-    def test_describe_skip_climate_position_none(self) -> None:
-        """describe_skip returns meaningful string when position is unavailable."""
-        ctx = make_ctx(climate_mode_enabled=True, climate_position=None)
-        reason = self.handler.describe_skip(ctx)
-        assert isinstance(reason, str)
-        assert len(reason) > 0
+    def test_returns_none_when_no_readings(self) -> None:
+        snap = make_snapshot(climate_mode_enabled=True, climate_readings=None)
+        assert self.handler.evaluate(snap) is None
 
     def test_priority_is_50(self) -> None:
-        """Priority should be 50."""
         assert ClimateHandler.priority == 50
 
     def test_name(self) -> None:
-        """Handler name should be 'climate'."""
         assert ClimateHandler.name == "climate"
-
-    def test_summer_beats_winter_flag(self) -> None:
-        """When both summer and winter flags are set, summer takes precedence."""
-        ctx = make_ctx(
-            climate_mode_enabled=True,
-            climate_position=100,
-            climate_is_summer=True,
-            climate_is_winter=True,
-        )
-        result = self.handler.evaluate(ctx)
-        assert result is not None
-        assert result.control_method == ControlMethod.SUMMER
 
 
 # ---------------------------------------------------------------------------

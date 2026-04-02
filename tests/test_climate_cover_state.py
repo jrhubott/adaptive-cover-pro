@@ -544,9 +544,13 @@ class TestClimateCoverState:
 
         with patch.object(
             type(tilt_cover_instance), "valid", new_callable=PropertyMock
-        ) as mock_valid:
+        ) as mock_valid, patch.object(
+            type(tilt_cover_instance), "direct_sun_valid", new_callable=PropertyMock
+        ) as mock_dsv:
             mock_valid.return_value = True
+            mock_dsv.return_value = True
             tilt_cover_instance.tilt_degrees = 90
+            tilt_cover_instance.calculate_percentage = MagicMock(return_value=50.0)
 
             climate_data = _make_climate(
                 mock_logger,
@@ -557,13 +561,9 @@ class TestClimateCoverState:
             )
 
             state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
+            result = state_handler.tilt_with_presence(90)
 
-            with patch.object(
-                NormalCoverState, "get_state", return_value=50
-            ) as mock_get_state:
-                result = state_handler.tilt_with_presence(90)
-
-                mock_get_state.assert_called_once()
-                default_80_degrees = 80 / 90 * 100  # ~88.9%
-                assert result != pytest.approx(default_80_degrees, abs=1)
-                assert result == 50
+            # Winter mode with sun valid → uses _solar_position() → calculate_percentage()
+            default_80_degrees = 80 / 90 * 100  # ~88.9%
+            assert result != pytest.approx(default_80_degrees, abs=1)
+            assert result == 50
