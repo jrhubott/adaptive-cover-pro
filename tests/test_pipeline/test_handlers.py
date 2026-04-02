@@ -125,39 +125,42 @@ class TestManualOverrideHandler:
 
     handler = ManualOverrideHandler()
 
-    def test_matches_when_active(self) -> None:
-        """Return result with MANUAL method when manual override is active."""
-        ctx = make_ctx(manual_override_active=True, calculated_position=42)
-        result = self.handler.evaluate(ctx)
+    def test_returns_none_when_inactive(self) -> None:
+        snap = make_snapshot(manual_override_active=False)
+        assert self.handler.evaluate(snap) is None
+
+    def test_matches_when_active_sun_valid(self) -> None:
+        """When manual override active + sun valid, return solar position."""
+        snap = make_snapshot(
+            manual_override_active=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=60.0,
+        )
+        result = self.handler.evaluate(snap)
         assert result is not None
-        assert result.position == 42
+        assert result.position == 60
         assert result.control_method == ControlMethod.MANUAL
 
-    def test_returns_none_when_inactive(self) -> None:
-        """Return None when manual override is not active."""
-        ctx = make_ctx(manual_override_active=False)
-        assert self.handler.evaluate(ctx) is None
-
-    def test_uses_calculated_position(self) -> None:
-        """Use the calculated_position value from context."""
-        ctx = make_ctx(manual_override_active=True, calculated_position=77)
-        result = self.handler.evaluate(ctx)
+    def test_matches_when_active_sun_invalid(self) -> None:
+        """When manual override active + sun not valid, return default."""
+        snap = make_snapshot(
+            manual_override_active=True,
+            direct_sun_valid=False,
+            cover_default=25.0,
+        )
+        result = self.handler.evaluate(snap)
         assert result is not None
-        assert result.position == 77
+        assert result.control_method == ControlMethod.MANUAL
 
     def test_describe_skip_meaningful(self) -> None:
-        """describe_skip returns a non-empty string mentioning manual."""
-        ctx = make_ctx(manual_override_active=False)
-        reason = self.handler.describe_skip(ctx)
-        assert isinstance(reason, str)
+        snap = make_snapshot(manual_override_active=False)
+        reason = self.handler.describe_skip(snap)
         assert "manual" in reason.lower()
 
     def test_priority_is_70(self) -> None:
-        """Priority should be 70."""
         assert ManualOverrideHandler.priority == 70
 
     def test_name(self) -> None:
-        """Handler name should be 'manual_override'."""
         assert ManualOverrideHandler.name == "manual_override"
 
 
