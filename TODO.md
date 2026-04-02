@@ -1,3 +1,7 @@
+HACS
+
+- Monitor hacs/default#6130 — submission in review queue, waiting for HACS team review
+
 Testing
 
 - Add test files for coordinator.py (44%), config_flow.py (20%), sensor.py (38%), binary_sensor.py (0%), switch.py (0%)
