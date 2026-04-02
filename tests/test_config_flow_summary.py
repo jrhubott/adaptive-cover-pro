@@ -617,63 +617,63 @@ def test_priority_section_always_present():
 def test_priority_always_on_handlers_active():
     """Manual, Solar, and Default are always shown as ✅."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    assert "✅Manual(70)" in summary
-    assert "✅Solar(40)" in summary
-    assert "✅Default(0)" in summary
+    assert "✅Manual" in summary
+    assert "✅Solar" in summary
+    assert "✅Default" in summary
 
 
 def test_priority_force_override_active_with_sensors():
     """Force Override shows ✅ when sensors are configured."""
     cfg = {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"], CONF_FORCE_OVERRIDE_POSITION: 100}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "✅Force(100)" in summary
+    assert "✅Force" in summary
 
 
 def test_priority_force_override_not_configured():
     """Force Override shows ❌ when no sensors are set."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    assert "❌Force(100)" in summary
+    assert "❌Force" in summary
 
 
 def test_priority_weather_override_active_with_sensors():
     """Weather Override shows ✅ when sensors are configured."""
     cfg = {CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind", CONF_WEATHER_OVERRIDE_POSITION: 0}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "✅Weather(90)" in summary
+    assert "✅Weather" in summary
 
 
 def test_priority_weather_override_not_configured():
     """Weather Override shows ❌ when no weather sensors are set."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    assert "❌Weather(90)" in summary
+    assert "❌Weather" in summary
 
 
 def test_priority_motion_timeout_active():
     """Motion Timeout shows ✅ when sensors are configured."""
     cfg = {CONF_MOTION_SENSORS: ["binary_sensor.motion"], CONF_DEFAULT_HEIGHT: 45}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "✅Motion(80)" in summary
+    assert "✅Motion" in summary
 
 
 def test_priority_cloud_suppression_active():
     """Cloud Suppression shows ✅ when enabled."""
     cfg = {CONF_CLOUD_SUPPRESSION: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "✅Cloud(60)" in summary
+    assert "✅Cloud" in summary
 
 
 def test_priority_climate_active():
     """Climate shows ✅ when climate mode is on."""
     cfg = {CONF_CLIMATE_MODE: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "✅Climate(50)" in summary
+    assert "✅Climate" in summary
 
 
 def test_priority_glare_zone_active_for_vertical():
     """Glare Zone shows ✅ for vertical blind when enabled."""
     cfg = {CONF_ENABLE_GLARE_ZONES: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "✅Glare(45)" in summary
+    assert "✅Glare" in summary
 
 
 def test_priority_glare_zone_hidden_for_awning():
@@ -700,15 +700,15 @@ def test_priority_all_nine_handlers_full_config():
     cfg = _full_vertical()
     summary = _build_config_summary(cfg, SensorType.BLIND)
     for token in [
-        "✅Force(100)",
-        "✅Weather(90)",
-        "✅Motion(80)",
-        "✅Manual(70)",
-        "✅Cloud(60)",
-        "✅Climate(50)",
-        "✅Glare(45)",
-        "✅Solar(40)",
-        "✅Default(0)",
+        "✅Force",
+        "✅Weather",
+        "✅Motion",
+        "✅Manual",
+        "✅Cloud",
+        "✅Climate",
+        "✅Glare",
+        "✅Solar",
+        "✅Default",
     ]:
         assert token in summary, f"Expected '{token}' in summary"
 

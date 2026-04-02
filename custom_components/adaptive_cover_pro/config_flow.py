@@ -1008,7 +1008,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     # =========================================================================
     def _ch(active: bool, short: str, pri: int) -> str:
         mark = "✅" if active else "❌"
-        return f"{mark}{short}({pri})"
+        return f"{mark}{short}"
 
     chain = [
         _ch(has_force, "Force", 100),
