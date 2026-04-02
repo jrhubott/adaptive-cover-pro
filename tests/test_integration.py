@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
-from custom_components.adaptive_cover_pro.calculation import (
+from custom_components.adaptive_cover_pro.calculation import NormalCoverState
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
-    NormalCoverState,
 )
 from custom_components.adaptive_cover_pro.config_context_adapter import (
     ConfigContextAdapter,

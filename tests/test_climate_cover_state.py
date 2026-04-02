@@ -5,8 +5,8 @@ import numpy as np
 from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime
 
-from custom_components.adaptive_cover_pro.calculation import (
-    NormalCoverState,
+from custom_components.adaptive_cover_pro.calculation import NormalCoverState
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )

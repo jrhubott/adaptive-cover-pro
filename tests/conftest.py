@@ -244,7 +244,7 @@ def tilt_cover_instance(mock_sun_data, mock_logger):
 @pytest.fixture
 def climate_data_instance(mock_logger):
     """ClimateCoverData instance with pre-read values."""
-    from custom_components.adaptive_cover_pro.calculation import ClimateCoverData
+    from custom_components.adaptive_cover_pro.pipeline.handlers.climate import ClimateCoverData
 
     return ClimateCoverData(
         logger=mock_logger,

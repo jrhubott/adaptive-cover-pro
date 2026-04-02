@@ -2,7 +2,7 @@
 
 import pytest
 
-from custom_components.adaptive_cover_pro.calculation import ClimateCoverData
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import ClimateCoverData
 
 
 def _make_climate(mock_logger, **overrides):

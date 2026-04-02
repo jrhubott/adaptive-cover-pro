@@ -7,10 +7,6 @@ Geometry classes have moved to engine/covers/:
   AdaptiveTiltCover     → engine/covers/tilt.py
 
 Re-exported here for backward compatibility with existing consumers.
-
-ClimateCoverData and ClimateCoverState have moved to:
-  pipeline/handlers/climate.py
-Re-exported here for backward compatibility.
 """
 
 from __future__ import annotations
@@ -23,7 +19,6 @@ from .engine.covers import (
     AdaptiveTiltCover,
     AdaptiveVerticalCover,
 )
-from .pipeline.handlers.climate import ClimateCoverData, ClimateCoverState
 from .position_utils import PositionConverter
 
 __all__ = [
@@ -31,8 +26,6 @@ __all__ = [
     "AdaptiveHorizontalCover",
     "AdaptiveTiltCover",
     "AdaptiveVerticalCover",
-    "ClimateCoverData",
-    "ClimateCoverState",
     "NormalCoverState",
 ]
 

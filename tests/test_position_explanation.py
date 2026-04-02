@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.calculation import (
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )

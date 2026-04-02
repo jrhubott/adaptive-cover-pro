@@ -21,9 +21,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression im
     CloudSuppressionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
+from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 
-from tests.test_pipeline.conftest import make_ctx
+from tests.test_pipeline.conftest import make_snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -235,87 +236,142 @@ class TestCloudSuppressionPipelineIntegration:
     def test_cloud_suppression_overrides_solar_handler(self) -> None:
         """Cloud suppression (priority 60) fires before solar (priority 40)."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=True,
+        snapshot = make_snapshot(
             direct_sun_valid=True,  # solar would normally fire
-            calculated_position=30,
+            calculate_percentage_return=30,
             default_position=80,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.CLOUD
         assert result.position == 80
 
     def test_solar_fires_when_cloud_suppression_inactive(self) -> None:
         """When cloud suppression is off, solar handler controls position."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=False,
+        snapshot = make_snapshot(
             direct_sun_valid=True,
-            calculated_position=35,
+            calculate_percentage_return=35,
             default_position=80,
+            climate_readings=make_weather_readings(is_sunny=True),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=False,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.SOLAR
         assert result.position == 35
 
     def test_default_when_both_cloud_and_solar_inactive(self) -> None:
         """Default handler takes over when cloud suppression and solar are both off."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=False,
+        snapshot = make_snapshot(
             direct_sun_valid=False,
+            cover_default=60,
             default_position=60,
+            climate_readings=make_weather_readings(is_sunny=True),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=False,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.DEFAULT
         assert result.position == 60
 
     def test_cloud_suppression_uses_default_position(self) -> None:
         """Cloud suppression returns the default position, not the calculated one."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=True,
+        snapshot = make_snapshot(
             direct_sun_valid=True,
-            calculated_position=10,
+            calculate_percentage_return=10,
             default_position=50,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.position == 50
 
     def test_cloud_suppression_defers_to_force_override(self) -> None:
         """Force override (priority 100) beats cloud suppression (priority 60)."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=True,
-            force_override_active=True,
+        snapshot = make_snapshot(
+            force_override_sensors={"binary_sensor.test": True},
             force_override_position=0,
             default_position=80,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.FORCE
 
     def test_cloud_suppression_defers_to_manual_override(self) -> None:
         """Manual override (priority 70) beats cloud suppression (priority 60)."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=True,
+        snapshot = make_snapshot(
             manual_override_active=True,
-            calculated_position=40,
+            calculate_percentage_return=40,
             default_position=80,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.MANUAL
 
     def test_cloud_suppression_overrides_climate(self) -> None:
         """Cloud suppression (priority 60) fires before climate handler (priority 50)."""
         registry = self._make_registry()
-        ctx = make_ctx(
-            cloud_suppression_active=True,
+        snapshot = make_snapshot(
             climate_mode_enabled=True,
-            climate_position=20,
-            climate_is_summer=True,
             default_position=70,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+            ),
         )
-        result = registry.evaluate(ctx)
+        result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.CLOUD
         assert result.position == 70

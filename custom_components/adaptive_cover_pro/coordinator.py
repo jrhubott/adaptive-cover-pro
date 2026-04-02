@@ -29,7 +29,8 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .calculation import ClimateCoverData, ClimateCoverState, NormalCoverState
+from .calculation import NormalCoverState
+from .pipeline.handlers.climate import ClimateCoverData, ClimateCoverState
 from .engine.covers import (
     AdaptiveHorizontalCover,
     AdaptiveTiltCover,
