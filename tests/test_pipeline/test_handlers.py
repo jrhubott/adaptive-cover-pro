@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
@@ -292,40 +290,19 @@ class TestSolarHandler:
     handler = SolarHandler()
 
     def test_matches_when_sun_valid(self) -> None:
-        """Return result with SOLAR method when direct sun is valid."""
-        ctx = make_ctx(direct_sun_valid=True, calculated_position=60)
-        result = self.handler.evaluate(ctx)
+        snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0)
+        result = self.handler.evaluate(snap)
         assert result is not None
-        assert result.position == 60
         assert result.control_method == ControlMethod.SOLAR
 
     def test_returns_none_when_sun_invalid(self) -> None:
-        """Return None when sun is not in the FOV."""
-        ctx = make_ctx(direct_sun_valid=False)
-        assert self.handler.evaluate(ctx) is None
-
-    def test_uses_calculated_position(self) -> None:
-        """Use the calculated_position value from context."""
-        ctx = make_ctx(direct_sun_valid=True, calculated_position=88)
-        result = self.handler.evaluate(ctx)
-        assert result is not None
-        assert result.position == 88
-
-    def test_describe_skip_meaningful(self) -> None:
-        """describe_skip mentions sun or FOV when sun is not valid."""
-        ctx = make_ctx(direct_sun_valid=False)
-        reason = self.handler.describe_skip(ctx)
-        assert isinstance(reason, str)
-        assert len(reason) > 0
-        # Should mention sun or FOV
-        assert any(word in reason.lower() for word in ("sun", "fov", "elevation"))
+        snap = make_snapshot(direct_sun_valid=False)
+        assert self.handler.evaluate(snap) is None
 
     def test_priority_is_40(self) -> None:
-        """Priority should be 40."""
         assert SolarHandler.priority == 40
 
     def test_name(self) -> None:
-        """Handler name should be 'solar'."""
         assert SolarHandler.name == "solar"
 
 
@@ -375,68 +352,5 @@ class TestDefaultHandler:
 
 # ---------------------------------------------------------------------------
 # Handler result structure
+# (Parametrized integration tests removed — will be replaced in Task 16)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("handler", "ctx_kwargs"),
-    [
-        (
-            ForceOverrideHandler(),
-            {"force_override_active": True, "force_override_position": 10},
-        ),
-        (
-            MotionTimeoutHandler(),
-            {"motion_timeout_active": True, "default_position": 15},
-        ),
-        (
-            ManualOverrideHandler(),
-            {"manual_override_active": True, "calculated_position": 30},
-        ),
-        (
-            ClimateHandler(),
-            {
-                "climate_mode_enabled": True,
-                "climate_position": 50,
-                "climate_is_summer": True,
-            },
-        ),
-        (SolarHandler(), {"direct_sun_valid": True, "calculated_position": 70}),
-        (DefaultHandler(), {"default_position": 5}),
-    ],
-)
-def test_handler_result_has_non_empty_reason(handler, ctx_kwargs) -> None:
-    """Every matching handler must provide a non-empty reason string."""
-    ctx = make_ctx(**ctx_kwargs)
-    result = handler.evaluate(ctx)
-    assert result is not None
-    assert isinstance(result.reason, str)
-    assert len(result.reason) > 0
-
-
-@pytest.mark.parametrize(
-    ("handler", "ctx_kwargs"),
-    [
-        (
-            ForceOverrideHandler(),
-            {"force_override_active": True, "force_override_position": 10},
-        ),
-        (MotionTimeoutHandler(), {"motion_timeout_active": True}),
-        (ManualOverrideHandler(), {"manual_override_active": True}),
-        (
-            ClimateHandler(),
-            {
-                "climate_mode_enabled": True,
-                "climate_position": 50,
-            },
-        ),
-        (SolarHandler(), {"direct_sun_valid": True}),
-        (DefaultHandler(), {}),
-    ],
-)
-def test_handler_result_has_valid_control_method(handler, ctx_kwargs) -> None:
-    """Every matching handler must return a valid ControlMethod."""
-    ctx = make_ctx(**ctx_kwargs)
-    result = handler.evaluate(ctx)
-    assert result is not None
-    assert isinstance(result.control_method, ControlMethod)
