@@ -9,7 +9,7 @@ from custom_components.adaptive_cover_pro.config_types import (
     VerticalConfig,
 )
 from custom_components.adaptive_cover_pro.engine.covers.vertical import (
-    _glare_zone_effective_distance,
+    glare_zone_effective_distance as _glare_zone_effective_distance,
 )
 from tests.cover_helpers import build_vertical_cover
 
@@ -145,67 +145,53 @@ class TestGlareZoneCalculation:
         result = cover_empty.calculate_position()
         assert result == pytest.approx(baseline, rel=1e-6)
 
-    def test_active_zone_farther_than_base_extends_position(self):
-        """Zone farther than base distance → higher blind position."""
-        zone = GlareZone(name="Desk", x=0.0, y=200.0, radius=30.0)
-        zones_cfg = GlareZonesConfig(zones=[zone], window_width=200.0)
-        cover = self._make_cover(glare_zones=zones_cfg, active_zone_names={"Desk"})
+    def test_effective_distance_override_farther_than_base_extends_position(self):
+        """effective_distance_override larger than base → higher blind position.
 
-        baseline_cover = self._make_cover(glare_zones=None)
-        baseline = baseline_cover.calculate_position()
-        result = cover.calculate_position()
+        The glare loop has moved to GlareZoneHandler; calculate_position now
+        accepts an override directly.
+        """
+        cover = self._make_cover(glare_zones=None)
+        baseline = cover.calculate_position()
+
+        # Simulate what GlareZoneHandler would pass: a farther zone distance
+        zone_distance = 2.0  # metres — farther than base (0.5 m)
+        result = cover.calculate_position(effective_distance_override=zone_distance)
 
         assert result > baseline
 
-    def test_active_zone_closer_than_base_does_not_reduce(self):
-        """Zone closer than base distance → position is still the base (max wins)."""
-        zone = GlareZone(name="Near", x=0.0, y=30.0, radius=0.0)
-        zones_cfg = GlareZonesConfig(zones=[zone], window_width=200.0)
-        cover = self._make_cover(glare_zones=zones_cfg, active_zone_names={"Near"})
+    def test_effective_distance_override_closer_than_base_still_lowers(self):
+        """effective_distance_override smaller than base → lower blind position.
 
-        baseline_cover = self._make_cover(glare_zones=None)
-        baseline = baseline_cover.calculate_position()
-        result = cover.calculate_position()
+        GlareZoneHandler is responsible for taking max(base, zone_dist);
+        calculate_position just uses whatever override is supplied.
+        """
+        cover = self._make_cover(glare_zones=None)
+        baseline = cover.calculate_position()
 
+        # Closer override should produce a lower or equal position
+        result = cover.calculate_position(effective_distance_override=0.1)
+        assert result <= baseline
+
+    def test_no_override_uses_base_distance(self):
+        """Without effective_distance_override, base distance is used."""
+        cover = self._make_cover(glare_zones=None)
+        baseline = cover.calculate_position()
+        result = cover.calculate_position(effective_distance_override=None)
         assert result == pytest.approx(baseline, rel=1e-6)
 
-    def test_inactive_zone_does_not_affect_position(self):
-        """Zone present in config but not in active_zone_names → ignored."""
+    def test_glare_zone_loop_no_longer_in_calculate_position(self):
+        """active_zone_names no longer affects calculate_position() output."""
         zone = GlareZone(name="Desk", x=0.0, y=200.0, radius=30.0)
         zones_cfg = GlareZonesConfig(zones=[zone], window_width=200.0)
-        cover = self._make_cover(glare_zones=zones_cfg, active_zone_names=set())
-
-        baseline_cover = self._make_cover(glare_zones=None)
-        baseline = baseline_cover.calculate_position()
-        result = cover.calculate_position()
-
-        assert result == pytest.approx(baseline, rel=1e-6)
-
-    def test_multiple_zones_max_wins(self):
-        """Two active zones: position equals the farther one."""
-        zone1 = GlareZone(name="Near", x=0.0, y=80.0, radius=0.0)
-        zone2 = GlareZone(name="Far", x=0.0, y=250.0, radius=0.0)
-        zones_cfg = GlareZonesConfig(zones=[zone1, zone2], window_width=200.0)
-        cover = self._make_cover(
-            glare_zones=zones_cfg,
-            active_zone_names={"Near", "Far"},
+        cover_with = self._make_cover(glare_zones=zones_cfg, active_zone_names={"Desk"})
+        cover_without = self._make_cover(glare_zones=None)
+        assert cover_with.calculate_position() == pytest.approx(
+            cover_without.calculate_position(), rel=1e-6
         )
-        cover_far_only = self._make_cover(
-            glare_zones=GlareZonesConfig(zones=[zone2], window_width=200.0),
-            active_zone_names={"Far"},
-        )
-        result = cover.calculate_position()
-        far_result = cover_far_only.calculate_position()
-        assert result == pytest.approx(far_result, rel=1e-6)
 
-    def test_zone_unreachable_through_window_falls_back_to_base(self):
-        """Zone whose sun ray exits the window frame → treated as if inactive."""
-        zone = GlareZone(name="Corner", x=300.0, y=200.0, radius=0.0)
-        zones_cfg = GlareZonesConfig(zones=[zone], window_width=10.0)
-        cover = self._make_cover(glare_zones=zones_cfg, active_zone_names={"Corner"})
-
-        baseline_cover = self._make_cover(glare_zones=None)
-        baseline = baseline_cover.calculate_position()
-        result = cover.calculate_position()
-
-        assert result == pytest.approx(baseline, rel=1e-6)
+    def test_zone_geometry_function_returns_correct_distance(self):
+        """glare_zone_effective_distance returns metres for a reachable zone."""
+        zone = GlareZone(name="Desk", x=0.0, y=200.0, radius=0.0)
+        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=200.0)
+        assert dist == pytest.approx(2.0, rel=1e-6)  # 200 cm → 2.0 m

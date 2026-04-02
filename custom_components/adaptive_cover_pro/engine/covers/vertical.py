@@ -15,7 +15,7 @@ from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
 
 
-def _glare_zone_effective_distance(
+def glare_zone_effective_distance(
     zone: GlareZone,
     gamma: float,
     window_half_width: float,
@@ -115,26 +115,23 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             self.sol_elev, self.gamma, self.distance, self.h_win
         )
 
-    def calculate_position(self) -> float:
+    def calculate_position(
+        self, effective_distance_override: float | None = None
+    ) -> float:
         """Calculate blind height with enhanced geometric accuracy.
 
-        Implements Phase 1 and Phase 2 geometric enhancements (v2.7.0+):
-
         Phase 1 (Automatic):
-        - Edge case handling: Safe fallbacks for extreme sun angles (elev<2°, |gamma|>85°)
-        - Safety margins: Angle-dependent multipliers (1.0-1.45x) for better sun blocking:
-          * Gamma margin: 1.0 at 45° → 1.2 at 90° (smoothstep)
-          * Low elevation: 1.0 at 10° → 1.15 at 0° (linear)
-          * High elevation: 1.0 at 75° → 1.1 at 90° (linear)
-        - Smooth transitions: Prevents jarring position changes
+        - Edge case handling: Safe fallbacks for extreme sun angles
+        - Safety margins: Angle-dependent multipliers (1.0-1.45x)
 
         Phase 2 (Optional):
         - Window depth: Accounts for window reveals/frames (0.0-0.5m)
-        - Only active when window_depth > 0 and |gamma| > 10°
-        - Adds horizontal offset: depth × sin(|gamma|)
         - Sill height: Accounts for windows not starting at floor level (0.0-3.0m)
-        - Only active when sill_height > 0
-        - Subtracts horizontal offset: sill_height / tan(elevation), capped at 0.05 minimum
+
+        Args:
+            effective_distance_override: When provided by a pipeline handler (e.g.
+                GlareZoneHandler), use this as the effective base distance instead
+                of self.distance. Window depth and sill adjustments still apply.
 
         Returns:
             Blind height in meters (0 to h_win).
@@ -160,51 +157,33 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             }
             return edge_position
 
-        # Gather all distances to protect: base + any active glare zones
-        distances_to_protect: list[float] = [self.distance]
-        glare_zones_contributing: list[str] = []
+        # Use override from handler (e.g. GlareZoneHandler) or base distance
+        if effective_distance_override is not None:
+            effective_distance_base = effective_distance_override
+            effective_distance_source = "glare_zone"
+        else:
+            effective_distance_base = self.distance
+            effective_distance_source = "base"
 
-        if self.glare_zones and self.active_zone_names:
-            window_half_width = self.glare_zones.window_width / 2.0
-            for zone in self.glare_zones.zones:
-                if zone.name not in self.active_zone_names:
-                    continue
-                zone_dist = _glare_zone_effective_distance(
-                    zone, self.gamma, window_half_width
-                )
-                if zone_dist is not None:
-                    distances_to_protect.append(zone_dist)
-                    glare_zones_contributing.append(zone.name)
-
-        effective_distance_base = max(distances_to_protect)
         effective_distance = effective_distance_base
-        effective_distance_source = (
-            "glare_zone"
-            if glare_zones_contributing and effective_distance_base > self.distance
-            else "base"
-        )
 
         # Account for window depth at angles (creates additional shadow)
         depth_contribution = 0.0
         if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
-            # At angles, window depth creates additional horizontal offset
-            depth_contribution = self.window_depth * sin(rad(abs(self.gamma)))
+            depth_contribution = self.window_depth * float(sin(rad(abs(self.gamma))))
             effective_distance += depth_contribution
 
         # Account for window sill height (window not starting at floor)
-        # Sill at height S means blind bottom is S meters above floor,
-        # providing S/tan(elevation) meters of "free" horizontal protection.
-        # Subtract from effective_distance to account for this.
         sill_offset = 0.0
         if self.sill_height > 0:
             sill_offset = self.sill_height / max(
-                tan(rad(self.sol_elev)), 0.05
+                float(tan(rad(self.sol_elev))), 0.05
             )  # ~2.9° minimum
             effective_distance -= sill_offset
 
-        # Base calculation: project glare zone to vertical blind height
-        path_length = effective_distance / cos(rad(self.gamma))
-        base_height = path_length * tan(rad(self.sol_elev))
+        # Base calculation: project to vertical blind height
+        path_length = effective_distance / float(cos(rad(self.gamma)))
+        base_height = path_length * float(tan(rad(self.sol_elev)))
 
         # Apply safety margin for extreme angles
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
@@ -212,8 +191,9 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         result = float(np.clip(adjusted_height, 0, self.h_win))
 
         self.logger.debug(
-            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (depth=%.3f, sill=%.3f), "
-            "base=%.3f, margin=%.3f, adjusted=%.3f, clipped=%.3f, source=%s",
+            "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f "
+            "(depth=%.3f, sill=%.3f), base=%.3f, margin=%.3f, adjusted=%.3f, "
+            "clipped=%.3f, source=%s",
             self.sol_elev,
             self.gamma,
             self.distance,
@@ -226,29 +206,31 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             result,
             effective_distance_source,
         )
-        # Store for diagnostic sensor access
         self._last_calc_details = {
             "edge_case_detected": False,
             "safety_margin": round(safety_margin, 4),
             "effective_distance": round(effective_distance, 4),
             "window_depth_contribution": round(depth_contribution, 4),
             "sill_height_offset": round(sill_offset, 4),
-            "glare_zones_active": glare_zones_contributing,
+            "glare_zones_active": [],  # populated by GlareZoneHandler via diagnostics
             "effective_distance_source": effective_distance_source,
         }
         return result
 
-    def calculate_percentage(self) -> float:
+    def calculate_percentage(
+        self, effective_distance_override: float | None = None
+    ) -> float:
         """Convert blind height to percentage for Home Assistant.
 
-        Converts calculated blind height (meters) to percentage (0-100) for
-        cover entity position attribute.
+        Args:
+            effective_distance_override: Passed through to calculate_position().
+                Used by GlareZoneHandler to override base distance.
 
         Returns:
             Position as percentage (0-100).
 
         """
-        position = self.calculate_position()
+        position = self.calculate_position(effective_distance_override)
         self.logger.debug(
             "Converting height to percentage: %s / %s * 100", position, self.h_win
         )
