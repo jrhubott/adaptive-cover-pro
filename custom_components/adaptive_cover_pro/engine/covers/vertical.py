@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy import cos, sin, tan
@@ -58,6 +58,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
     """Calculate state for Vertical blinds."""
 
     vert_config: VerticalConfig = None  # type: ignore[assignment]
+    active_zone_names: set[str] = field(default_factory=set)
+
+    @property
+    def glare_zones(self) -> GlareZonesConfig | None:
+        """Get glare zones config from vert_config."""
+        return self.vert_config.glare_zones
 
     @property
     def distance(self) -> float:
@@ -152,8 +158,29 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             }
             return edge_position
 
+        # Gather all distances to protect: base + any active glare zones
+        distances_to_protect: list[float] = [self.distance]
+        glare_zones_contributing: list[str] = []
+
+        if self.glare_zones and self.active_zone_names:
+            window_half_width = self.glare_zones.window_width / 2.0
+            for zone in self.glare_zones.zones:
+                if zone.name not in self.active_zone_names:
+                    continue
+                zone_dist = _glare_zone_effective_distance(
+                    zone, self.gamma, window_half_width
+                )
+                if zone_dist is not None:
+                    distances_to_protect.append(zone_dist)
+                    glare_zones_contributing.append(zone.name)
+
+        effective_distance_base = max(distances_to_protect)
+        effective_distance_source = (
+            "glare_zone" if glare_zones_contributing else "base"
+        )
+
         # Account for window depth at angles (creates additional shadow)
-        effective_distance = self.distance
+        effective_distance = effective_distance_base
         depth_contribution = 0.0
         if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
             # At angles, window depth creates additional horizontal offset
@@ -182,7 +209,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 
         self.logger.debug(
             "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f (depth=%.3f, sill=%.3f), "
-            "base=%.3f, margin=%.3f, adjusted=%.3f, clipped=%.3f",
+            "base=%.3f, margin=%.3f, adjusted=%.3f, clipped=%.3f, source=%s",
             self.sol_elev,
             self.gamma,
             self.distance,
@@ -193,6 +220,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             safety_margin,
             adjusted_height,
             result,
+            effective_distance_source,
         )
         # Store for diagnostic sensor access
         self._last_calc_details = {
@@ -201,6 +229,8 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             "effective_distance": round(effective_distance, 4),
             "window_depth_contribution": round(depth_contribution, 4),
             "sill_height_offset": round(sill_offset, 4),
+            "glare_zones_active": glare_zones_contributing,
+            "effective_distance_source": effective_distance_source,
         }
         return result
 
