@@ -102,3 +102,6 @@ class ControlMethod(StrEnum):
 
     CLOUD = "cloud_suppression"
     """Cloud coverage suppresses solar radiation; covers use default position."""
+
+    GLARE_ZONE = "glare_zone"
+    """Glare zone protection active; cover extends to shield a floor zone."""
