@@ -8,11 +8,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
-import pytest
-
-from custom_components.adaptive_cover_pro.const import CONF_CLOUD_SUPPRESSION
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
@@ -178,14 +174,16 @@ class TestCloudSuppressionPipelineIntegration:
     """Test that cloud suppression correctly overrides solar in the pipeline."""
 
     def _make_registry(self) -> PipelineRegistry:
-        return PipelineRegistry([
-            ForceOverrideHandler(),
-            ManualOverrideHandler(),
-            CloudSuppressionHandler(),
-            ClimateHandler(),
-            SolarHandler(),
-            DefaultHandler(),
-        ])
+        return PipelineRegistry(
+            [
+                ForceOverrideHandler(),
+                ManualOverrideHandler(),
+                CloudSuppressionHandler(),
+                ClimateHandler(),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
 
     def test_cloud_suppression_overrides_solar_handler(self) -> None:
         """Cloud suppression (priority 60) fires before solar (priority 40)."""

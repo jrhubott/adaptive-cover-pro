@@ -430,6 +430,36 @@ MOTION_OVERRIDES_SCHEMA = vol.Schema(
 
 CLIMATE_SCHEMA = vol.Schema(
     {
+        # --- Light & Weather (works without climate mode) ---
+        vol.Optional(
+            CONF_WEATHER_ENTITY, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(domain="weather")
+        ),
+        vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(
+                domain=["sensor"], device_class="illuminance"
+            )
+        ),
+        vol.Optional(CONF_LUX_THRESHOLD, default=1000): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="lux"
+            )
+        ),
+        vol.Optional(
+            CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(
+                domain=["sensor"], device_class="irradiance"
+            )
+        ),
+        vol.Optional(CONF_IRRADIANCE_THRESHOLD, default=300): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W/m²"
+            )
+        ),
+        vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
+        # --- Climate Mode (temperature-based control) ---
         vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
@@ -472,35 +502,7 @@ CLIMATE_SCHEMA = vol.Schema(
                 domain=["device_tracker", "zone", "binary_sensor", "input_boolean"]
             )
         ),
-        vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(
-                domain=["sensor"], device_class="illuminance"
-            )
-        ),
-        vol.Optional(CONF_LUX_THRESHOLD, default=1000): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="lux"
-            )
-        ),
-        vol.Optional(
-            CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(
-                domain=["sensor"], device_class="irradiance"
-            )
-        ),
-        vol.Optional(CONF_IRRADIANCE_THRESHOLD, default=300): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W/m²"
-            )
-        ),
         vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_WEATHER_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(domain="weather")
-        ),
-        vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
     }
 )
 
