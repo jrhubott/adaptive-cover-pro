@@ -45,6 +45,7 @@ def make_vertical_config(**overrides) -> VerticalConfig:
         "h_win": 2.0,
         "window_depth": 0.0,
         "sill_height": 0.0,
+        "glare_zones": None,
     }
     defaults.update(overrides)
     return VerticalConfig(**defaults)
@@ -101,7 +102,7 @@ _COVER_CONFIG_FIELDS = {
 }
 
 # VerticalConfig field names
-_VERT_CONFIG_FIELDS = {"distance", "h_win", "window_depth", "sill_height"}
+_VERT_CONFIG_FIELDS = {"distance", "h_win", "window_depth", "sill_height", "glare_zones"}
 
 # HorizontalConfig field names
 _HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle"}
