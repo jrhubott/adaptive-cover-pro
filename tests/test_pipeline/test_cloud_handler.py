@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
@@ -43,6 +42,8 @@ def _make_options(enabled: bool = True) -> ClimateOptions:
 
 
 class TestCloudSuppressionHandler:
+    """Test CloudSuppressionHandler."""
+
     handler = CloudSuppressionHandler()
 
     def test_returns_none_when_feature_disabled(self) -> None:
@@ -102,7 +103,9 @@ class TestCloudSuppressionHandler:
     def test_activates_when_irradiance_below_threshold(self) -> None:
         """Activate when solar irradiance is below threshold."""
         snap = make_snapshot(
-            climate_readings=_make_readings(is_sunny=True, irradiance_below_threshold=True),
+            climate_readings=_make_readings(
+                is_sunny=True, irradiance_below_threshold=True
+            ),
             climate_options=_make_options(enabled=True),
         )
         result = self.handler.evaluate(snap)
@@ -131,7 +134,9 @@ class TestCloudSuppressionHandler:
         assert result.position == 55
 
     def test_priority_is_60(self) -> None:
+        """CloudSuppressionHandler has priority 60."""
         assert CloudSuppressionHandler.priority == 60
 
     def test_name(self) -> None:
+        """CloudSuppressionHandler name is 'cloud_suppression'."""
         assert CloudSuppressionHandler.name == "cloud_suppression"

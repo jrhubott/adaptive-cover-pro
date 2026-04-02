@@ -10,17 +10,32 @@ from custom_components.adaptive_cover_pro.engine.covers.vertical import (
     AdaptiveVerticalCover,
     glare_zone_effective_distance,  # public name
 )
-from custom_components.adaptive_cover_pro.config_types import CoverConfig, VerticalConfig
+from custom_components.adaptive_cover_pro.config_types import (
+    CoverConfig,
+    VerticalConfig,
+)
 
 
 def _make_cover(distance: float = 3.0, h_win: float = 2.2) -> AdaptiveVerticalCover:
     """Build a minimal AdaptiveVerticalCover for testing."""
     config = CoverConfig(
-        win_azi=180, fov_left=90, fov_right=90, h_def=0,
-        sunset_pos=None, sunset_off=0, sunrise_off=0,
-        max_pos=100, min_pos=0, max_pos_sun_only=False, min_pos_sun_only=False,
-        blind_spot_left=None, blind_spot_right=None, blind_spot_elevation=None,
-        blind_spot_on=False, min_elevation=None, max_elevation=None,
+        win_azi=180,
+        fov_left=90,
+        fov_right=90,
+        h_def=0,
+        sunset_pos=None,
+        sunset_off=0,
+        sunrise_off=0,
+        max_pos=100,
+        min_pos=0,
+        max_pos_sun_only=False,
+        min_pos_sun_only=False,
+        blind_spot_left=None,
+        blind_spot_right=None,
+        blind_spot_elevation=None,
+        blind_spot_on=False,
+        min_elevation=None,
+        max_elevation=None,
     )
     vert_config = VerticalConfig(distance=distance, h_win=h_win)
     sun_data = MagicMock()
@@ -38,9 +53,6 @@ def _make_cover(distance: float = 3.0, h_win: float = 2.2) -> AdaptiveVerticalCo
 
 def test_glare_zone_effective_distance_is_public() -> None:
     """glare_zone_effective_distance must be importable without underscore."""
-    from custom_components.adaptive_cover_pro.engine.covers.vertical import (
-        glare_zone_effective_distance,
-    )
     assert callable(glare_zone_effective_distance)
 
 
@@ -63,8 +75,10 @@ def test_effective_distance_override_increases_position() -> None:
 def test_glare_zone_loop_removed_from_calculate_position() -> None:
     """active_zone_names on cover no longer affects calculate_position result."""
     from custom_components.adaptive_cover_pro.config_types import (
-        GlareZone, GlareZonesConfig,
+        GlareZone,
+        GlareZonesConfig,
     )
+
     cover = _make_cover(distance=3.0)
     zone = GlareZone(name="desk", x=0.0, y=400.0, radius=30.0)
     glare_cfg = GlareZonesConfig(zones=[zone], window_width=120.0)

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
-from custom_components.adaptive_cover_pro.pipeline.handlers.climate import ClimateHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
@@ -77,10 +78,12 @@ class TestClimateHandlerGating:
     handler = ClimateHandler()
 
     def test_returns_none_when_climate_disabled(self) -> None:
+        """Climate disabled → handler returns None."""
         snap = make_snapshot(climate_mode_enabled=False)
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_climate_readings(self) -> None:
+        """Missing climate readings → handler returns None."""
         snap = make_snapshot(
             climate_mode_enabled=True,
             climate_readings=None,
@@ -89,6 +92,7 @@ class TestClimateHandlerGating:
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_climate_options(self) -> None:
+        """Missing climate options → handler returns None."""
         snap = make_snapshot(
             climate_mode_enabled=True,
             climate_readings=_make_readings(),
@@ -169,6 +173,8 @@ class TestClimateHandlerGlareControl:
 
 
 class TestClimateHandlerMetadata:
+    """Test ClimateHandler metadata and behavior."""
+
     handler = ClimateHandler()
 
     def test_result_includes_climate_strategy(self) -> None:
@@ -185,7 +191,9 @@ class TestClimateHandlerMetadata:
         assert result.climate_strategy is not None
 
     def test_priority_is_50(self) -> None:
+        """ClimateHandler has priority 50."""
         assert ClimateHandler.priority == 50
 
     def test_name(self) -> None:
+        """ClimateHandler name is 'climate'."""
         assert ClimateHandler.name == "climate"

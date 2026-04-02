@@ -5,7 +5,6 @@ import numpy as np
 from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime
 
-from custom_components.adaptive_cover_pro.calculation import NormalCoverState
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
@@ -542,11 +541,14 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        with patch.object(
-            type(tilt_cover_instance), "valid", new_callable=PropertyMock
-        ) as mock_valid, patch.object(
-            type(tilt_cover_instance), "direct_sun_valid", new_callable=PropertyMock
-        ) as mock_dsv:
+        with (
+            patch.object(
+                type(tilt_cover_instance), "valid", new_callable=PropertyMock
+            ) as mock_valid,
+            patch.object(
+                type(tilt_cover_instance), "direct_sun_valid", new_callable=PropertyMock
+            ) as mock_dsv,
+        ):
             mock_valid.return_value = True
             mock_dsv.return_value = True
             tilt_cover_instance.tilt_degrees = 90

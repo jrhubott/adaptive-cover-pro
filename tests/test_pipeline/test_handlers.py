@@ -21,6 +21,7 @@ def test_pipeline_snapshot_is_importable() -> None:
         ClimateOptions,
         PipelineSnapshot,
     )
+
     assert ClimateOptions is not None
     assert PipelineSnapshot is not None
 
@@ -75,6 +76,7 @@ class TestForceOverrideHandler:
         assert result.position == 75
 
     def test_uses_force_override_position(self) -> None:
+        """Position comes from force_override_position."""
         snap = make_snapshot(
             force_override_sensors={"binary_sensor.s": True},
             force_override_position=10,
@@ -84,14 +86,17 @@ class TestForceOverrideHandler:
         assert result.position == 10
 
     def test_describe_skip_mentions_force(self) -> None:
+        """describe_skip mentions 'force' when skipped."""
         snap = make_snapshot(force_override_sensors={})
         reason = self.handler.describe_skip(snap)
         assert "force" in reason.lower()
 
     def test_priority_is_100(self) -> None:
+        """ForceOverrideHandler has priority 100 (highest)."""
         assert ForceOverrideHandler.priority == 100
 
     def test_name(self) -> None:
+        """ForceOverrideHandler name is 'force_override'."""
         assert ForceOverrideHandler.name == "force_override"
 
 
@@ -125,14 +130,17 @@ class TestMotionTimeoutHandler:
         assert result.position == 33
 
     def test_describe_skip_meaningful(self) -> None:
+        """describe_skip mentions 'motion' when skipped."""
         snap = make_snapshot(motion_timeout_active=False)
         reason = self.handler.describe_skip(snap)
         assert "motion" in reason.lower()
 
     def test_priority_is_80(self) -> None:
+        """MotionTimeoutHandler has priority 80."""
         assert MotionTimeoutHandler.priority == 80
 
     def test_name(self) -> None:
+        """MotionTimeoutHandler name is 'motion_timeout'."""
         assert MotionTimeoutHandler.name == "motion_timeout"
 
 
@@ -147,6 +155,7 @@ class TestManualOverrideHandler:
     handler = ManualOverrideHandler()
 
     def test_returns_none_when_inactive(self) -> None:
+        """Return None when manual override not active."""
         snap = make_snapshot(manual_override_active=False)
         assert self.handler.evaluate(snap) is None
 
@@ -174,14 +183,17 @@ class TestManualOverrideHandler:
         assert result.control_method == ControlMethod.MANUAL
 
     def test_describe_skip_meaningful(self) -> None:
+        """describe_skip mentions 'manual' when skipped."""
         snap = make_snapshot(manual_override_active=False)
         reason = self.handler.describe_skip(snap)
         assert "manual" in reason.lower()
 
     def test_priority_is_70(self) -> None:
+        """ManualOverrideHandler has priority 70."""
         assert ManualOverrideHandler.priority == 70
 
     def test_name(self) -> None:
+        """ManualOverrideHandler name is 'manual_override'."""
         assert ManualOverrideHandler.name == "manual_override"
 
 
@@ -196,17 +208,21 @@ class TestClimateHandler:
     handler = ClimateHandler()
 
     def test_returns_none_when_climate_disabled(self) -> None:
+        """Climate disabled → return None."""
         snap = make_snapshot(climate_mode_enabled=False)
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_readings(self) -> None:
+        """No climate readings → return None."""
         snap = make_snapshot(climate_mode_enabled=True, climate_readings=None)
         assert self.handler.evaluate(snap) is None
 
     def test_priority_is_50(self) -> None:
+        """ClimateHandler has priority 50."""
         assert ClimateHandler.priority == 50
 
     def test_name(self) -> None:
+        """ClimateHandler name is 'climate'."""
         assert ClimateHandler.name == "climate"
 
 
@@ -221,19 +237,23 @@ class TestSolarHandler:
     handler = SolarHandler()
 
     def test_matches_when_sun_valid(self) -> None:
+        """Sun valid → return SOLAR method."""
         snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.SOLAR
 
     def test_returns_none_when_sun_invalid(self) -> None:
+        """Sun invalid → return None."""
         snap = make_snapshot(direct_sun_valid=False)
         assert self.handler.evaluate(snap) is None
 
     def test_priority_is_40(self) -> None:
+        """SolarHandler has priority 40."""
         assert SolarHandler.priority == 40
 
     def test_name(self) -> None:
+        """SolarHandler name is 'solar'."""
         assert SolarHandler.name == "solar"
 
 
@@ -269,12 +289,15 @@ class TestDefaultHandler:
         assert result.position == 0
 
     def test_priority_is_0(self) -> None:
+        """DefaultHandler has priority 0 (lowest)."""
         assert DefaultHandler.priority == 0
 
     def test_name(self) -> None:
+        """DefaultHandler name is 'default'."""
         assert DefaultHandler.name == "default"
 
     def test_describe_skip_returns_string(self) -> None:
+        """describe_skip returns meaningful string."""
         snap = make_snapshot()
         reason = self.handler.describe_skip(snap)
         assert isinstance(reason, str)

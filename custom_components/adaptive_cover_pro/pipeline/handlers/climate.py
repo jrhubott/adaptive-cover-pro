@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from ...const import CLIMATE_DEFAULT_TILT_ANGLE, CLIMATE_SUMMER_TILT_ANGLE, POSITION_CLOSED
+from ...const import (
+    CLIMATE_DEFAULT_TILT_ANGLE,
+    CLIMATE_SUMMER_TILT_ANGLE,
+    POSITION_CLOSED,
+)
 from ...engine.covers import AdaptiveGeneralCover, AdaptiveTiltCover
 from ...enums import ClimateStrategy, ControlMethod, CoverType, TiltMode
 from ...position_utils import PositionConverter
@@ -69,7 +73,10 @@ class ClimateCoverData:
     @property
     def outside_high(self) -> bool:
         """True when outdoor temperature exceeds temp_summer_outside."""
-        if self.temp_summer_outside is not None and self.outside_temperature is not None:
+        if (
+            self.temp_summer_outside is not None
+            and self.outside_temperature is not None
+        ):
             return float(self.outside_temperature) > self.temp_summer_outside
         return True
 
@@ -82,10 +89,12 @@ class ClimateCoverData:
 
     @property
     def lux(self) -> bool:
+        """Return whether lux is below threshold."""
         return self.lux_below_threshold
 
     @property
     def irradiance(self) -> bool:
+        """Return whether irradiance is below threshold."""
         return self.irradiance_below_threshold
 
 

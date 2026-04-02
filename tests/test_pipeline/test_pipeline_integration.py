@@ -6,7 +6,9 @@ from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
     CloudSuppressionHandler,
 )
-from custom_components.adaptive_cover_pro.pipeline.handlers.default import DefaultHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+    DefaultHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
     ForceOverrideHandler,
 )
@@ -24,14 +26,16 @@ from tests.test_pipeline.conftest import make_snapshot
 
 
 def _make_registry() -> PipelineRegistry:
-    return PipelineRegistry([
-        ForceOverrideHandler(),
-        MotionTimeoutHandler(),
-        ManualOverrideHandler(),
-        CloudSuppressionHandler(),
-        SolarHandler(),
-        DefaultHandler(),
-    ])
+    return PipelineRegistry(
+        [
+            ForceOverrideHandler(),
+            MotionTimeoutHandler(),
+            ManualOverrideHandler(),
+            CloudSuppressionHandler(),
+            SolarHandler(),
+            DefaultHandler(),
+        ]
+    )
 
 
 def _cloudy_readings() -> ClimateReadings:
@@ -48,8 +52,11 @@ def _cloudy_readings() -> ClimateReadings:
 
 def _cloud_options() -> ClimateOptions:
     return ClimateOptions(
-        temp_low=None, temp_high=None, temp_switch=False,
-        transparent_blind=False, temp_summer_outside=None,
+        temp_low=None,
+        temp_high=None,
+        temp_switch=False,
+        transparent_blind=False,
+        temp_summer_outside=None,
         cloud_suppression_enabled=True,
     )
 
@@ -130,8 +137,12 @@ class TestPipelineIntegration:
         result = self.registry.evaluate(snap)
         handler_names = {step.handler for step in result.decision_trace}
         expected = {
-            "force_override", "motion_timeout", "manual_override",
-            "cloud_suppression", "solar", "default",
+            "force_override",
+            "motion_timeout",
+            "manual_override",
+            "cloud_suppression",
+            "solar",
+            "default",
         }
         assert handler_names == expected
 

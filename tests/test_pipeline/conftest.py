@@ -70,7 +70,9 @@ def make_snapshot(
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,
-        force_override_sensors=force_override_sensors if force_override_sensors is not None else {},
+        force_override_sensors=force_override_sensors
+        if force_override_sensors is not None
+        else {},
         force_override_position=force_override_position,
         manual_override_active=manual_override_active,
         motion_timeout_active=motion_timeout_active,

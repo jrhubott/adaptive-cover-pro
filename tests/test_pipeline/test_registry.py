@@ -35,7 +35,9 @@ ALL_HANDLERS = [
 ]
 
 
-def _make_climate_cover(*, direct_sun_valid: bool = True, calculate_percentage_return: float = 50.0) -> MagicMock:
+def _make_climate_cover(
+    *, direct_sun_valid: bool = True, calculate_percentage_return: float = 50.0
+) -> MagicMock:
     """Build a mock cover suitable for ClimateHandler (needs .valid and .logger)."""
     cover = MagicMock()
     cover.direct_sun_valid = direct_sun_valid

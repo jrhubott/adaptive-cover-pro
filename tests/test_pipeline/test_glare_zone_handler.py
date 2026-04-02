@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from custom_components.adaptive_cover_pro.config_types import (
     GlareZone,
@@ -52,6 +51,8 @@ def _make_glare_config(
 
 
 class TestGlareZoneHandlerGating:
+    """Test GlareZoneHandler gating conditions."""
+
     handler = GlareZoneHandler()
 
     def test_returns_none_for_awning_cover(self) -> None:
@@ -60,14 +61,17 @@ class TestGlareZoneHandlerGating:
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_for_tilt_cover(self) -> None:
+        """GlareZoneHandler does not apply to tilt covers."""
         snap = make_snapshot(cover_type="cover_tilt")
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_glare_zones(self) -> None:
+        """Returns None when no glare zones are configured."""
         snap = make_snapshot(cover_type="cover_blind", glare_zones=None)
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_no_active_zones(self) -> None:
+        """Returns None when no zones are currently active."""
         snap = make_snapshot(
             cover_type="cover_blind",
             glare_zones=_make_glare_config(),
@@ -88,6 +92,8 @@ class TestGlareZoneHandlerGating:
 
 
 class TestGlareZoneHandlerLogic:
+    """Test GlareZoneHandler calculation logic."""
+
     handler = GlareZoneHandler()
 
     def test_returns_glare_zone_control_method_when_active(self) -> None:
@@ -148,7 +154,9 @@ class TestGlareZoneHandlerLogic:
         assert result is None
 
     def test_priority_is_45(self) -> None:
+        """GlareZoneHandler has priority 45."""
         assert GlareZoneHandler.priority == 45
 
     def test_name(self) -> None:
+        """GlareZoneHandler name is 'glare_zone'."""
         assert GlareZoneHandler.name == "glare_zone"

@@ -14,7 +14,9 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
-from custom_components.adaptive_cover_pro.pipeline.handlers.climate import ClimateCoverData
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateCoverData,
+)
 from custom_components.adaptive_cover_pro.const import ControlStatus
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from custom_components.adaptive_cover_pro.pipeline.handlers.wind import WindOverrideHandler
+from custom_components.adaptive_cover_pro.pipeline.handlers.wind import (
+    WindOverrideHandler,
+)
 from tests.test_pipeline.conftest import make_snapshot
 
 
@@ -17,12 +19,15 @@ class TestWindOverrideHandler:
         assert self.handler.evaluate(snap) is None
 
     def test_priority_is_90(self) -> None:
+        """WindOverrideHandler has priority 90."""
         assert WindOverrideHandler.priority == 90
 
     def test_name(self) -> None:
+        """WindOverrideHandler name is 'wind'."""
         assert WindOverrideHandler.name == "wind"
 
     def test_describe_skip_meaningful(self) -> None:
+        """describe_skip returns meaningful string."""
         snap = make_snapshot()
         reason = self.handler.describe_skip(snap)
         assert isinstance(reason, str)

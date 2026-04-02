@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
@@ -12,6 +11,8 @@ from tests.test_pipeline.conftest import make_snapshot
 
 
 class TestSolarHandler:
+    """Test SolarHandler."""
+
     handler = SolarHandler()
 
     def test_returns_none_when_sun_not_valid(self) -> None:
@@ -58,12 +59,15 @@ class TestSolarHandler:
         assert result.position <= 80
 
     def test_describe_skip_mentions_sun(self) -> None:
+        """describe_skip mentions sun or FOV when skipped."""
         snap = make_snapshot(direct_sun_valid=False)
         reason = self.handler.describe_skip(snap)
         assert any(word in reason.lower() for word in ("sun", "fov", "elevation"))
 
     def test_priority_is_40(self) -> None:
+        """SolarHandler has priority 40."""
         assert SolarHandler.priority == 40
 
     def test_name(self) -> None:
+        """SolarHandler name is 'solar'."""
         assert SolarHandler.name == "solar"

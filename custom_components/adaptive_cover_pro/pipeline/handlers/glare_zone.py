@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
-from ...engine.covers.vertical import AdaptiveVerticalCover, glare_zone_effective_distance
+from ...engine.covers.vertical import (
+    AdaptiveVerticalCover,
+    glare_zone_effective_distance,
+)
 from ...enums import ControlMethod
 from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
@@ -55,7 +58,9 @@ class GlareZoneHandler(OverrideHandler):
             # No zone requires deeper coverage — let SolarHandler handle it
             return None
 
-        state = int(round(cover.calculate_percentage(effective_distance_override=max_distance)))
+        state = int(
+            round(cover.calculate_percentage(effective_distance_override=max_distance))
+        )
         state = max(state, 1)
         position = PositionConverter.apply_limits(
             state,
