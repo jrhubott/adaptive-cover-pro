@@ -37,40 +37,63 @@ class TestForceOverrideHandler:
 
     handler = ForceOverrideHandler()
 
-    def test_matches_when_active(self) -> None:
-        """Return result with FORCE method when force override is active."""
-        ctx = make_ctx(force_override_active=True, force_override_position=5)
-        result = self.handler.evaluate(ctx)
+    def test_returns_none_when_no_sensors(self) -> None:
+        """Return None when no force override sensors are configured."""
+        snap = make_snapshot(force_override_sensors={})
+        assert self.handler.evaluate(snap) is None
+
+    def test_returns_none_when_all_sensors_off(self) -> None:
+        """Return None when all sensors are off."""
+        snap = make_snapshot(
+            force_override_sensors={
+                "binary_sensor.wind": False,
+                "binary_sensor.rain": False,
+            }
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_matches_when_any_sensor_on(self) -> None:
+        """Return FORCE result when any sensor is on."""
+        snap = make_snapshot(
+            force_override_sensors={
+                "binary_sensor.wind": False,
+                "binary_sensor.rain": True,
+            },
+            force_override_position=5,
+        )
+        result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 5
         assert result.control_method == ControlMethod.FORCE
 
-    def test_returns_none_when_inactive(self) -> None:
-        """Return None when force override is not active."""
-        ctx = make_ctx(force_override_active=False)
-        assert self.handler.evaluate(ctx) is None
-
-    def test_uses_force_override_position(self) -> None:
-        """Use the force_override_position value from context."""
-        ctx = make_ctx(force_override_active=True, force_override_position=75)
-        result = self.handler.evaluate(ctx)
+    def test_matches_when_single_sensor_on(self) -> None:
+        """Return FORCE result when exactly one sensor is on."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.alert": True},
+            force_override_position=75,
+        )
+        result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 75
 
-    def test_describe_skip_meaningful(self) -> None:
-        """describe_skip returns a non-empty string mentioning force."""
-        ctx = make_ctx(force_override_active=False)
-        reason = self.handler.describe_skip(ctx)
-        assert isinstance(reason, str)
-        assert len(reason) > 0
+    def test_uses_force_override_position(self) -> None:
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=10,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 10
+
+    def test_describe_skip_mentions_force(self) -> None:
+        snap = make_snapshot(force_override_sensors={})
+        reason = self.handler.describe_skip(snap)
         assert "force" in reason.lower()
 
     def test_priority_is_100(self) -> None:
-        """Priority should be 100 (highest)."""
         assert ForceOverrideHandler.priority == 100
 
     def test_name(self) -> None:
-        """Handler name should be 'force_override'."""
         assert ForceOverrideHandler.name == "force_override"
 
 
