@@ -2,9 +2,7 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from custom_components.adaptive_cover_pro.config_types import GlareZone, GlareZonesConfig
+from custom_components.adaptive_cover_pro.config_types import GlareZonesConfig
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_WINDOW_WIDTH,
