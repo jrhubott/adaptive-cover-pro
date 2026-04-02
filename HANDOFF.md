@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-01
-**Current Version:** v2.9.0
+**Current Version:** v2.9.2
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -30,7 +30,7 @@ The integration was fully rewritten with a layered architecture:
 
 ### Tests
 
-778 passing, 0 failing.
+800 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -55,6 +55,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.9.2 | Suppress glare control in low light (Issue #65): new toggle in Climate Settings uses weather/lux/irradiance to skip glare control when no real sun. Config flow menu fixes. 800 tests. |
+| v2.9.1 | Config flow menu ordering fixes; climate menu renamed to Climate Configuration. |
 | v2.9.0 | Config flow redesign: 10 focused steps replacing per-type mega-forms, options menu mirrors initial flow, climate always accessible, manual override and motion as dedicated steps, legacy AdaptiveCover import removed. 778 tests. |
 | v2.8.0 | Major architecture rewrite: pure calc engine, state providers, override pipeline, manager classes, diagnostics builder, typed config. Decision Trace sensor, enriched Cover Position attrs, Venetian engine. 751 tests, 61% coverage. Consolidates 12 betas. |
 | v2.7.16 | Fix position sensor showing stale sun-calculated value after end_time (Issue #66); fix max_position/min_position sliders defaulting to 1%/no value |
@@ -68,7 +70,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | # | Title | Notes |
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt — architecture now supports dual-axis via pipeline |
-| [#31](https://github.com/jrhubott/adaptive-cover/issues/31) | Suppress cover adjustment based on cloud coverage sensor | Create `pipeline/handlers/cloud_suppression.py` |
+| [#31](https://github.com/jrhubott/adaptive-cover/issues/31) | Suppress cover adjustment based on cloud coverage sensor | CloudSuppressionHandler implemented (v2.9.2); dedicated cloud sensor support still pending |
 | [#29](https://github.com/jrhubott/adaptive-cover/issues/29) | Keep heat in — close non-sun-exposed covers in winter | Extend climate handler or add new pipeline handler |
 | [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | Create `pipeline/handlers/wind.py` with priority 90 |
 | [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times |
