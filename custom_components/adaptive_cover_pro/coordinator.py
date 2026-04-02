@@ -30,7 +30,6 @@ from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .calculation import NormalCoverState
-from .pipeline.handlers.climate import ClimateCoverData, ClimateCoverState
 from .engine.covers import (
     AdaptiveHorizontalCover,
     AdaptiveTiltCover,
@@ -72,13 +71,10 @@ from .const import (
     CONF_START_TIME,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
-    CONF_TEMP_ENTITY,
     CONF_TEMP_LOW,
     CONF_TEMP_HIGH,
-    CONF_PRESENCE_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
-    CONF_OUTSIDETEMP_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
     CONF_CLOUD_SUPPRESSION,
@@ -106,15 +102,19 @@ from .managers.position_verification import PositionVerificationManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
 from .position_utils import interpolate_position
-from .pipeline.handlers.climate import ClimateHandler
-from .pipeline.handlers.cloud_suppression import CloudSuppressionHandler
-from .pipeline.handlers.default import DefaultHandler
-from .pipeline.handlers.force_override import ForceOverrideHandler
-from .pipeline.handlers.manual_override import ManualOverrideHandler
-from .pipeline.handlers.motion_timeout import MotionTimeoutHandler
-from .pipeline.handlers.solar import SolarHandler
+from .pipeline.handlers import (
+    ClimateHandler,
+    CloudSuppressionHandler,
+    DefaultHandler,
+    ForceOverrideHandler,
+    GlareZoneHandler,
+    ManualOverrideHandler,
+    MotionTimeoutHandler,
+    SolarHandler,
+    WindOverrideHandler,
+)
 from .pipeline.registry import PipelineRegistry
-from .pipeline.types import PipelineContext
+from .pipeline.types import ClimateOptions, PipelineSnapshot
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
@@ -204,10 +204,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._pipeline = PipelineRegistry(
             [
                 ForceOverrideHandler(),
+                WindOverrideHandler(),
                 MotionTimeoutHandler(),
                 ManualOverrideHandler(),
                 CloudSuppressionHandler(),
                 ClimateHandler(),
+                GlareZoneHandler(),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -545,10 +547,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Calculate cover state via pipeline and return final position."""
         # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
         self._read_weather_conditions(options)
-        # Access climate data if climate mode is enabled
         self.climate_strategy = None
-        if self._climate_mode:
-            self.climate_mode_data(options, cover_data)
 
         # When outside the configured start_time/end_time window,
         # report the position the cover was actually commanded to
@@ -588,48 +587,44 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.raw_calculated_position = cover_data.default
         self.logger.debug("Raw calculated position: %s", self.raw_calculated_position)
 
-        # Determine the base position (what the old state property would return
-        # pre-interpolation/inverse, excluding force/motion early returns)
-        base_position = (
-            self.climate_state
-            if self._toggles.switch_mode and self.climate_state is not None
-            else self.default_state
-        )
+        # Build snapshot with raw state — handlers evaluate their own conditions
+        glare_zones_cfg = None
+        active_zone_names: set[str] = set()
+        if self.is_blind_cover:
+            options_local = self.config_entry.options
+            glare_zones_cfg = self._config_service.get_glare_zones_config(options_local)
+            if glare_zones_cfg is not None:
+                for idx, zone in enumerate(glare_zones_cfg.zones):
+                    if getattr(self, f"glare_zone_{idx}", True):
+                        active_zone_names.add(zone.name)
 
-        # Run pipeline to determine control method and position
-        ctx = PipelineContext(
-            calculated_position=base_position,
-            climate_position=self.climate_state,
-            default_position=self.default_state,
-            raw_calculated_position=self.raw_calculated_position,
-            in_time_window=True,
-            direct_sun_valid=cover_data.direct_sun_valid,
-            force_override_active=self.is_force_override_active,
-            force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
-            motion_timeout_active=self.is_motion_timeout_active,
-            manual_override_active=self.manager.binary_cover_manual,
+        snapshot = PipelineSnapshot(
+            cover=cover_data,
+            config=cover_data.config,
+            cover_type=self._cover_type,
+            default_position=int(round(cover_data.default)),
+            climate_readings=self._weather_readings,
             climate_mode_enabled=self._toggles.switch_mode,
-            climate_is_summer=bool(
-                self._climate_mode
-                and self.climate_data
-                and self.climate_data.is_summer
-                and self._toggles.switch_mode
-            ),
-            climate_is_winter=bool(
-                self._climate_mode
-                and self.climate_data
-                and self.climate_data.is_winter
-                and self._toggles.switch_mode
-            ),
-            cloud_suppression_active=self._is_cloud_suppression_active(),
+            climate_options=self._build_climate_options(options),
+            force_override_sensors=self._read_force_sensor_states(options),
+            force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
+            manual_override_active=self.manager.binary_cover_manual,
+            motion_timeout_active=self.is_motion_timeout_active,
+            glare_zones=glare_zones_cfg,
+            active_zone_names=active_zone_names,
         )
-        self._pipeline_result = self._pipeline.evaluate(ctx)
+        self._pipeline_result = self._pipeline.evaluate(snapshot)
         self.control_method = self._pipeline_result.control_method
         self.logger.debug(
             "Pipeline result: %s → %s",
             self.control_method,
             self._pipeline_result.position,
         )
+
+        # Update climate diagnostics from pipeline result
+        if self._pipeline_result.climate_state is not None:
+            self.climate_state = self._pipeline_result.climate_state
+            self.climate_strategy = self._pipeline_result.climate_strategy
 
         return self.state
 
@@ -1111,64 +1106,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
         )
 
-    def _is_cloud_suppression_active(self) -> bool:
-        """Return True when weather/lux/irradiance/cloud-coverage indicate no real direct sun."""
-        if not self.config_entry.options.get(CONF_CLOUD_SUPPRESSION, False):
-            return False
-        if self._weather_readings is None:
-            return False
-        return bool(
-            not self._weather_readings.is_sunny
-            or self._weather_readings.lux_below_threshold
-            or self._weather_readings.irradiance_below_threshold
-            or self._weather_readings.cloud_coverage_above_threshold
-        )
-
-    def climate_mode_data(self, options, cover_data):
-        """Calculate climate-aware cover state and store strategy for diagnostics."""
-        cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
-        readings = self._climate_provider.read(
-            temp_entity=options.get(CONF_TEMP_ENTITY),
-            outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
-            weather_entity=options.get(CONF_WEATHER_ENTITY),
-            weather_condition=options.get(CONF_WEATHER_STATE),
-            presence_entity=options.get(CONF_PRESENCE_ENTITY),
-            use_lux=bool(self._toggles.lux_toggle),
-            lux_entity=options.get(CONF_LUX_ENTITY),
-            lux_threshold=options.get(CONF_LUX_THRESHOLD),
-            use_irradiance=bool(self._toggles.irradiance_toggle),
-            irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
-            irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
-            use_cloud_coverage=cloud_suppression_enabled,
-            cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
-            cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
-        )
-        climate = ClimateCoverData(
-            logger=self.logger,
+    def _build_climate_options(self, options) -> ClimateOptions:
+        """Build ClimateOptions from config entry options."""
+        return ClimateOptions(
             temp_low=options.get(CONF_TEMP_LOW),
             temp_high=options.get(CONF_TEMP_HIGH),
             temp_switch=bool(self._toggles.temp_toggle),
-            blind_type=self._cover_type,
             transparent_blind=options.get(CONF_TRANSPARENT_BLIND, False),
             temp_summer_outside=options.get(CONF_OUTSIDE_THRESHOLD),
-            outside_temperature=readings.outside_temperature,
-            inside_temperature=readings.inside_temperature,
-            is_presence=readings.is_presence,
-            is_sunny=readings.is_sunny,
-            lux_below_threshold=readings.lux_below_threshold,
-            irradiance_below_threshold=readings.irradiance_below_threshold,
+            cloud_suppression_enabled=bool(options.get(CONF_CLOUD_SUPPRESSION, False)),
         )
-        climate_cover_state = ClimateCoverState(cover_data, climate)
-        self.climate_state = round(climate_cover_state.get_state())
-        self.climate_data = climate_cover_state.climate_data  # Store for P1 diagnostics
-        self.climate_strategy = (
-            climate_cover_state.climate_strategy
-        )  # Store for diagnostics
-        self.logger.debug(
-            "Climate mode: strategy=%s, state=%s%%",
-            self.climate_strategy.value if self.climate_strategy else "none",
-            self.climate_state,
-        )
+
+    def _read_force_sensor_states(self, options) -> dict[str, bool]:
+        """Read force override sensor states from HA into a plain dict."""
+        sensors = options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
+        return {
+            sensor: bool(
+                (state := self.hass.states.get(sensor)) and state.state == "on"
+            )
+            for sensor in sensors
+        }
 
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""

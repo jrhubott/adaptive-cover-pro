@@ -27,7 +27,11 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     SolarHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-from custom_components.adaptive_cover_pro.pipeline.types import PipelineContext
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
+    PipelineSnapshot,
+)
+from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from custom_components.adaptive_cover_pro.sun import SunData
 
 from .cover_helpers import (
@@ -102,35 +106,33 @@ def _make_pipeline() -> PipelineRegistry:
     )
 
 
-def _build_pipeline_context(
+def _build_pipeline_snapshot(
     cover,
-    calculated_position: int,
     *,
-    climate_position: int | None = None,
     climate_mode_enabled: bool = False,
-    climate_is_summer: bool = False,
-    climate_is_winter: bool = False,
-    force_override_active: bool = False,
+    climate_readings: ClimateReadings | None = None,
+    climate_options: ClimateOptions | None = None,
+    force_override_sensors: dict[str, bool] | None = None,
     force_override_position: int = 0,
     motion_timeout_active: bool = False,
     manual_override_active: bool = False,
-    in_time_window: bool = True,
-) -> PipelineContext:
-    """Build a PipelineContext from a real cover instance and calculated position."""
-    return PipelineContext(
-        calculated_position=calculated_position,
-        climate_position=climate_position,
+    cover_type: str = "cover_blind",
+) -> PipelineSnapshot:
+    """Build a PipelineSnapshot from a real cover instance."""
+    return PipelineSnapshot(
+        cover=cover,
+        config=cover.config,
+        cover_type=cover_type,
         default_position=int(cover.default),
-        raw_calculated_position=calculated_position,
-        in_time_window=in_time_window,
-        direct_sun_valid=cover.direct_sun_valid,
-        force_override_active=force_override_active,
-        force_override_position=force_override_position,
-        motion_timeout_active=motion_timeout_active,
-        manual_override_active=manual_override_active,
+        climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
-        climate_is_summer=climate_is_summer,
-        climate_is_winter=climate_is_winter,
+        climate_options=climate_options,
+        force_override_sensors=force_override_sensors or {},
+        force_override_position=force_override_position,
+        manual_override_active=manual_override_active,
+        motion_timeout_active=motion_timeout_active,
+        glare_zones=None,
+        active_zone_names=set(),
     )
 
 
@@ -216,8 +218,8 @@ class TestEndToEndIntegration:
             assert 0 <= calc_pos <= 100
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(cover, calc_pos)
-            result = pipeline.evaluate(ctx)
+            snapshot = _build_pipeline_snapshot(cover, cover_type="cover_blind")
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.SOLAR
             assert 0 <= result.position <= 100
@@ -266,8 +268,8 @@ class TestEndToEndIntegration:
             assert calc_pos == 50  # h_def
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(cover, calc_pos)
-            result = pipeline.evaluate(ctx)
+            snapshot = _build_pipeline_snapshot(cover, cover_type="cover_blind")
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.DEFAULT
             assert result.position == 50
@@ -323,14 +325,31 @@ class TestEndToEndIntegration:
             assert climate_state.climate_strategy == ClimateStrategy.WINTER_HEATING
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(
-                cover,
-                climate_pos,
-                climate_position=climate_pos,
-                climate_mode_enabled=True,
-                climate_is_winter=True,
+            climate_readings = ClimateReadings(
+                outside_temperature=15.0,
+                inside_temperature=None,
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
             )
-            result = pipeline.evaluate(ctx)
+            climate_options = ClimateOptions(
+                temp_low=20.0,
+                temp_high=25.0,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=22.0,
+                cloud_suppression_enabled=False,
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_blind",
+                climate_mode_enabled=True,
+                climate_readings=climate_readings,
+                climate_options=climate_options,
+            )
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.WINTER
             assert result.position == 100
@@ -393,14 +412,31 @@ class TestEndToEndIntegration:
             assert climate_state.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(
-                cover,
-                climate_pos,
-                climate_position=climate_pos,
-                climate_mode_enabled=True,
-                climate_is_summer=True,
+            climate_readings = ClimateReadings(
+                outside_temperature=30.0,
+                inside_temperature=None,
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
             )
-            result = pipeline.evaluate(ctx)
+            climate_options = ClimateOptions(
+                temp_low=20.0,
+                temp_high=25.0,
+                temp_switch=True,
+                transparent_blind=True,
+                temp_summer_outside=22.0,
+                cloud_suppression_enabled=False,
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_blind",
+                climate_mode_enabled=True,
+                climate_readings=climate_readings,
+                climate_options=climate_options,
+            )
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.SUMMER
             assert result.position == 0
@@ -453,13 +489,13 @@ class TestEndToEndIntegration:
             calc_pos = normal_state.get_state()
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(
+            snapshot = _build_pipeline_snapshot(
                 cover,
-                calc_pos,
-                force_override_active=True,
+                cover_type="cover_blind",
+                force_override_sensors={"binary_sensor.force": True},
                 force_override_position=75,
             )
-            result = pipeline.evaluate(ctx)
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.FORCE
             assert result.position == 75
@@ -513,8 +549,10 @@ class TestEndToEndIntegration:
             calc_pos = normal_state.get_state()
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(cover, calc_pos, manual_override_active=True)
-            result = pipeline.evaluate(ctx)
+            snapshot = _build_pipeline_snapshot(
+                cover, cover_type="cover_blind", manual_override_active=True
+            )
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.MANUAL
             winning = next(s for s in result.decision_trace if s.matched)
@@ -562,8 +600,10 @@ class TestEndToEndIntegration:
             calc_pos = normal_state.get_state()
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(cover, calc_pos, motion_timeout_active=True)
-            result = pipeline.evaluate(ctx)
+            snapshot = _build_pipeline_snapshot(
+                cover, cover_type="cover_blind", motion_timeout_active=True
+            )
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.MOTION
             assert result.position == int(cover.default)
@@ -616,8 +656,8 @@ class TestEndToEndIntegration:
             assert 0 <= calc_pos <= 100
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(cover, calc_pos)
-            result = pipeline.evaluate(ctx)
+            snapshot = _build_pipeline_snapshot(cover, cover_type="cover_awning")
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.SOLAR
 
@@ -667,8 +707,8 @@ class TestEndToEndIntegration:
             assert 0 <= calc_pos <= 100
 
             pipeline = _make_pipeline()
-            ctx = _build_pipeline_context(cover, calc_pos)
-            result = pipeline.evaluate(ctx)
+            snapshot = _build_pipeline_snapshot(cover, cover_type="cover_tilt")
+            result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.SOLAR
 
