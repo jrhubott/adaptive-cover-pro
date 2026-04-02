@@ -1,7 +1,5 @@
 """Tests for glare zone data model and geometry."""
 
-import pytest
-
 from custom_components.adaptive_cover_pro.config_types import (
     GlareZone,
     GlareZonesConfig,
