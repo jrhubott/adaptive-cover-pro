@@ -82,19 +82,21 @@ def _glare_zone_effective_distance(
     """
     gamma_rad = radians(gamma)
 
-    # Nearest point on zone circle toward the sun
-    nearest_x = zone.x - zone.radius * sin(gamma_rad)   # cm
+    # Nearest point on zone circle facing the incoming sun.
+    # Sun comes from direction (sin γ, −cos γ) in floor XY, so the
+    # first-hit point on the circle is offset toward that source.
+    nearest_x = zone.x + zone.radius * sin(gamma_rad)   # cm
     nearest_y = zone.y - zone.radius * cos(gamma_rad)   # cm
 
     # Zone must be in front of the window
     if nearest_y <= 0:
         return None
 
-    # Check if sun ray from this point passes through the window
-    # Project the point back to the window plane along the sun direction
-    x_at_window = nearest_x - nearest_y * tan(gamma_rad)
+    # Project back to find which window X position the sun ray enters from.
+    # A ray hitting floor point (fx, fy) entered the window at x_w = fx + fy * tan(γ).
+    x_at_window = nearest_x + nearest_y * tan(gamma_rad)
     if abs(x_at_window) > window_half_width:
-        return None   # Sun ray exits the window frame — zone already blocked laterally
+        return None   # Sun ray enters outside the window opening — zone naturally blocked
 
     return nearest_y / 100.0  # cm → meters
 ```
