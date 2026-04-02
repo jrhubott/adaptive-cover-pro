@@ -3,15 +3,32 @@
   "config": {
     "step": {
       "user": {
-        "description": "Found {legacy_count} Adaptive Cover configuration(s) that can be imported",
+        "menu_options": {
+          "create_new": "Create new cover",
+          "duplicate_existing": "Duplicate from existing cover"
+        }
+      },
+      "create_new": {
+        "title": "Create New Cover",
         "data": {
           "name": "Name",
-          "blueprint": "Add blueprint to HomeAssistant",
           "mode": "Type of blind"
-        },
-        "menu_options": {
-          "create_new": "Create new configuration",
-          "import_legacy": "Import from Adaptive Cover ({legacy_count} found)"
+        }
+      },
+      "duplicate_select": {
+        "title": "Duplicate Cover — Select Source",
+        "description": "Choose which existing cover to copy settings from.",
+        "data": {
+          "source_entry": "Source cover"
+        }
+      },
+      "duplicate_configure": {
+        "title": "Duplicate Cover — Configure",
+        "description": "Enter the unique settings for the new cover. All other settings will be copied from the source.",
+        "data": {
+          "name": "Name",
+          "group": "Cover entities",
+          "set_azimuth": "Window azimuth"
         }
       },
       "automation": {
@@ -518,6 +535,20 @@
       "options": {
         "mode1": "single direction (0% = closed / 100% = open)",
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
+      }
+    },
+    "sync_categories": {
+      "options": {
+        "geometry": "Window Dimensions",
+        "sun_tracking": "Sun Tracking (FOV, elevation limits)",
+        "blind_spot": "Blind Spot Configuration",
+        "position": "Position Settings (defaults, sunset, offsets)",
+        "interp": "Interpolation Values",
+        "automation": "Schedule & Timing (deltas, start/end times)",
+        "manual_override": "Manual Override",
+        "motion_overrides": "Motion & Force Overrides",
+        "climate": "Climate (temperature, presence, lux, irradiance)",
+        "weather": "Weather Conditions"
       }
     }
   },

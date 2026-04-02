@@ -3,9 +3,15 @@
   "config": {
     "step": {
       "user": {
+        "menu_options": {
+          "create_new": "Create new cover",
+          "duplicate_existing": "Duplicate from existing cover"
+        }
+      },
+      "create_new": {
+        "title": "Create New Cover",
         "data": {
           "name": "Name",
-          "blueprint": "Add blueprint to HomeAssistant",
           "mode": "Type of blind"
         }
       },
@@ -491,14 +497,21 @@
       },
       "sync": {
         "title": "Sync Settings — Select Targets",
-        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "description": "Choose which covers to copy settings to. You will select which setting categories to sync in the next step.",
         "data": {
           "target_entries": "Target covers"
         }
       },
+      "sync_categories": {
+        "title": "Sync Settings — Select Categories",
+        "description": "Choose which setting groups to copy. Only selected categories will be overwritten on target covers.",
+        "data": {
+          "sync_categories": "Categories to sync"
+        }
+      },
       "sync_confirm": {
         "title": "Sync Settings — Confirm",
-        "description": "The following covers will have their shared settings overwritten:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
+        "description": "The following categories will be overwritten:\n\n{categories_summary}\n\nOn these covers:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
         "data": {
           "confirm": "Confirm sync"
         }
@@ -507,6 +520,7 @@
     "abort": {
       "no_covers_to_sync": "No other covers of the same type exist to sync to.",
       "no_targets_selected": "No covers were selected to sync to.",
+      "no_categories_selected": "No categories were selected to sync.",
       "user_cancelled": "Sync cancelled.",
       "sync_complete": "Settings synced successfully."
     }
@@ -557,6 +571,20 @@
       "options": {
         "mode1": "single direction (0% = closed / 100% = open)",
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
+      }
+    },
+    "sync_categories": {
+      "options": {
+        "geometry": "Window Dimensions",
+        "sun_tracking": "Sun Tracking (FOV, elevation limits)",
+        "blind_spot": "Blind Spot Configuration",
+        "position": "Position Settings (defaults, sunset, offsets)",
+        "interp": "Interpolation Values",
+        "automation": "Schedule & Timing (deltas, start/end times)",
+        "manual_override": "Manual Override",
+        "motion_overrides": "Motion & Force Overrides",
+        "climate": "Climate (temperature, presence, lux, irradiance)",
+        "weather": "Weather Conditions"
       }
     }
   }
