@@ -68,6 +68,8 @@ CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"
 CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_DEVICE_ID = "linked_device_id"
+CONF_ENABLE_GLARE_ZONES = "enable_glare_zones"
+CONF_WINDOW_WIDTH = "window_width"
 
 
 CONF_DELTA_POSITION = "delta_position"
