@@ -17,6 +17,16 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
 from tests.test_pipeline.conftest import make_ctx
 
 
+def test_pipeline_snapshot_is_importable() -> None:
+    """PipelineSnapshot and ClimateOptions must be importable from pipeline.types."""
+    from custom_components.adaptive_cover_pro.pipeline.types import (
+        ClimateOptions,
+        PipelineSnapshot,
+    )
+    assert ClimateOptions is not None
+    assert PipelineSnapshot is not None
+
+
 # ---------------------------------------------------------------------------
 # ForceOverrideHandler
 # ---------------------------------------------------------------------------
