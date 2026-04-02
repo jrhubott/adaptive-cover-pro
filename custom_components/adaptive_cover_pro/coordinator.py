@@ -81,6 +81,8 @@ from .const import (
     CONF_OUTSIDE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_LUX_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -104,6 +106,7 @@ from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
 from .position_utils import interpolate_position
 from .pipeline.handlers.climate import ClimateHandler
+from .pipeline.handlers.cloud_suppression import CloudSuppressionHandler
 from .pipeline.handlers.default import DefaultHandler
 from .pipeline.handlers.force_override import ForceOverrideHandler
 from .pipeline.handlers.manual_override import ManualOverrideHandler
@@ -202,6 +205,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 ForceOverrideHandler(),
                 MotionTimeoutHandler(),
                 ManualOverrideHandler(),
+                CloudSuppressionHandler(),
                 ClimateHandler(),
                 SolarHandler(),
                 DefaultHandler(),
@@ -1073,7 +1077,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ]
 
     def _read_weather_conditions(self, options) -> None:
-        """Read weather/lux/irradiance into self._weather_readings (always runs)."""
+        """Read weather/lux/irradiance/cloud-coverage into self._weather_readings (always runs)."""
+        cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
         self._weather_readings = self._climate_provider.read(
             weather_entity=options.get(CONF_WEATHER_ENTITY),
             weather_condition=options.get(CONF_WEATHER_STATE),
@@ -1083,10 +1088,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             use_irradiance=bool(self._toggles.irradiance_toggle),
             irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
             irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
+            use_cloud_coverage=cloud_suppression_enabled,
+            cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
+            cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
         )
 
     def _is_cloud_suppression_active(self) -> bool:
-        """Return True when weather/lux/irradiance indicate no real direct sun."""
+        """Return True when weather/lux/irradiance/cloud-coverage indicate no real direct sun."""
         if not self.config_entry.options.get(CONF_CLOUD_SUPPRESSION, False):
             return False
         if self._weather_readings is None:
@@ -1095,10 +1103,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             not self._weather_readings.is_sunny
             or self._weather_readings.lux_below_threshold
             or self._weather_readings.irradiance_below_threshold
+            or self._weather_readings.cloud_coverage_above_threshold
         )
 
     def climate_mode_data(self, options, cover_data):
         """Calculate climate-aware cover state and store strategy for diagnostics."""
+        cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
         readings = self._climate_provider.read(
             temp_entity=options.get(CONF_TEMP_ENTITY),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
@@ -1111,6 +1121,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             use_irradiance=bool(self._toggles.irradiance_toggle),
             irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
             irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
+            use_cloud_coverage=cloud_suppression_enabled,
+            cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
+            cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
         )
         climate = ClimateCoverData(
             logger=self.logger,
