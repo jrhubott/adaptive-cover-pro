@@ -115,6 +115,8 @@ def _build_pipeline_snapshot(
     force_override_position: int = 0,
     motion_timeout_active: bool = False,
     manual_override_active: bool = False,
+    weather_override_active: bool = False,
+    weather_override_position: int = 0,
     cover_type: str = "cover_blind",
 ) -> PipelineSnapshot:
     """Build a PipelineSnapshot from a real cover instance."""
@@ -130,6 +132,8 @@ def _build_pipeline_snapshot(
         force_override_position=force_override_position,
         manual_override_active=manual_override_active,
         motion_timeout_active=motion_timeout_active,
+        weather_override_active=weather_override_active,
+        weather_override_position=weather_override_position,
         glare_zones=None,
         active_zone_names=set(),
     )
@@ -146,6 +150,7 @@ def _build_diagnostic_context(
     climate_strategy: ClimateStrategy | None = None,
     climate_mode: bool = False,
     is_force_override_active: bool = False,
+    is_weather_override_active: bool = False,
     is_motion_timeout_active: bool = False,
     is_manual_override_active: bool = False,
     force_override_position: int = 0,
@@ -163,6 +168,7 @@ def _build_diagnostic_context(
         control_method=pipeline_result.control_method,
         pipeline_result=pipeline_result,
         is_force_override_active=is_force_override_active,
+        is_weather_override_active=is_weather_override_active,
         is_motion_timeout_active=is_motion_timeout_active,
         is_manual_override_active=is_manual_override_active,
         check_adaptive_time=True,

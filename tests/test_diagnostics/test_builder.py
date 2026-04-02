@@ -74,6 +74,7 @@ def _base_ctx(**overrides) -> DiagnosticContext:
         "control_method": ControlMethod.SOLAR,
         "pipeline_result": None,
         "is_force_override_active": False,
+        "is_weather_override_active": False,
         "is_motion_timeout_active": False,
         "is_manual_override_active": False,
         "check_adaptive_time": True,

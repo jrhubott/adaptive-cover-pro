@@ -531,7 +531,7 @@
           "manual_override": "Manual Override",
           "motion_timeout": "Motion Timeout",
           "force_override": "Force Override",
-          "wind_override": "Wind Override",
+          "weather_override": "Weather Override",
           "cloud_suppression": "Cloud Suppression"
         }
       }

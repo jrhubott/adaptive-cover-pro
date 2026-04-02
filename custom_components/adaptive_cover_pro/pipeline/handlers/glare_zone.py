@@ -48,7 +48,9 @@ class GlareZoneHandler(OverrideHandler):
             zone = zones_by_name.get(zone_name)
             if zone is None:
                 continue
-            zone_dist = glare_zone_effective_distance(zone, cover.gamma, window_half_width)
+            zone_dist = glare_zone_effective_distance(
+                zone, cover.gamma, window_half_width
+            )
             if zone_dist is not None:
                 zone_results.append((zone_name, zone_dist))
 

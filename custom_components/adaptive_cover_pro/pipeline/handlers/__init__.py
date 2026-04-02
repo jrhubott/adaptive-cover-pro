@@ -8,7 +8,7 @@ from .glare_zone import GlareZoneHandler
 from .manual_override import ManualOverrideHandler
 from .motion_timeout import MotionTimeoutHandler
 from .solar import SolarHandler
-from .wind import WindOverrideHandler
+from .weather import WeatherOverrideHandler
 
 __all__ = [
     "ClimateHandler",
@@ -19,5 +19,5 @@ __all__ = [
     "ManualOverrideHandler",
     "MotionTimeoutHandler",
     "SolarHandler",
-    "WindOverrideHandler",
+    "WeatherOverrideHandler",
 ]

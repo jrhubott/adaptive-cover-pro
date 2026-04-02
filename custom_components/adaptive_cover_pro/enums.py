@@ -73,7 +73,7 @@ class ControlMethod(StrEnum):
     """What is currently driving the cover position.
 
     Priority order (highest to lowest):
-    FORCE > WIND > MOTION > MANUAL > CLOUD > SUMMER/WINTER > SOLAR > DEFAULT
+    FORCE > WEATHER > MOTION > MANUAL > CLOUD > SUMMER/WINTER > SOLAR > DEFAULT
     """
 
     SOLAR = "solar"
@@ -97,8 +97,8 @@ class ControlMethod(StrEnum):
     FORCE = "force_override"
     """A force override binary sensor is active; cover moves to the override position."""
 
-    WIND = "wind_override"
-    """Wind speed exceeds threshold; covers retract for safety."""
+    WEATHER = "weather_override"
+    """Weather conditions (wind/rain/storm) exceed thresholds; covers retract for safety."""
 
     CLOUD = "cloud_suppression"
     """Cloud coverage suppresses solar radiation; covers use default position."""

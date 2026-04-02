@@ -48,6 +48,8 @@ def make_snapshot(
     force_override_position: int = 0,
     manual_override_active: bool = False,
     motion_timeout_active: bool = False,
+    weather_override_active: bool = False,
+    weather_override_position: int = 0,
     glare_zones=None,
     active_zone_names: set[str] | frozenset[str] | None = None,
     # Convenience: configure mock cover
@@ -76,6 +78,10 @@ def make_snapshot(
         force_override_position=force_override_position,
         manual_override_active=manual_override_active,
         motion_timeout_active=motion_timeout_active,
+        weather_override_active=weather_override_active,
+        weather_override_position=weather_override_position,
         glare_zones=glare_zones,
-        active_zone_names=frozenset(active_zone_names) if active_zone_names is not None else frozenset(),
+        active_zone_names=frozenset(active_zone_names)
+        if active_zone_names is not None
+        else frozenset(),
     )

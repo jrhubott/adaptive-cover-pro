@@ -547,6 +547,7 @@
         "automation": "Schedule & Timing (deltas, start/end times)",
         "manual_override": "Manual Override",
         "motion_overrides": "Motion & Force Overrides",
+        "weather_override": "Weather Override",
         "climate": "Climate (temperature, presence, lux, irradiance)",
         "weather": "Weather Conditions"
       }
@@ -565,7 +566,7 @@
           "manual_override": "Manual Override",
           "motion_timeout": "Motion Timeout",
           "force_override": "Force Override",
-          "wind_override": "Wind Override",
+          "weather_override": "Weather Override",
           "cloud_suppression": "Cloud Suppression"
         }
       }

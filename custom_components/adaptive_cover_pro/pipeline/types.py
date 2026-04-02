@@ -59,6 +59,10 @@ class PipelineSnapshot:
     manual_override_active: bool
     motion_timeout_active: bool
 
+    # Weather override state (from WeatherManager)
+    weather_override_active: bool
+    weather_override_position: int
+
     # Glare zones (vertical covers only — None for awning/tilt)
     glare_zones: GlareZonesConfig | None
     active_zone_names: frozenset[str]

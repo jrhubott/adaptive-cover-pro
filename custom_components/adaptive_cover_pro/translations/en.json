@@ -151,6 +151,36 @@
           "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
         }
       },
+      "weather_override": {
+        "title": "Weather Override",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
+        "data": {
+          "weather_wind_speed_sensor": "Wind speed sensor",
+          "weather_wind_direction_sensor": "Wind direction sensor (optional)",
+          "weather_wind_speed_threshold": "Wind speed threshold",
+          "weather_wind_direction_tolerance": "Wind direction tolerance",
+          "weather_rain_sensor": "Rain rate sensor",
+          "weather_rain_threshold": "Rain rate threshold",
+          "weather_is_raining_sensor": "Is Raining binary sensor",
+          "weather_is_windy_sensor": "Is Windy binary sensor",
+          "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
+          "weather_override_position": "Override position",
+          "weather_timeout": "Clear delay"
+        },
+        "data_description": {
+          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
+          "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
+          "weather_wind_speed_threshold": "Wind speed threshold that activates the override. Unit must match your sensor (km/h, m/s, or mph — no conversion is applied).",
+          "weather_wind_direction_tolerance": "How many degrees from the window azimuth to consider wind as 'hitting' this window. Example: window faces south (180°), tolerance 45° → wind from 135°-225° triggers override.",
+          "weather_rain_sensor": "Numeric sensor reporting rain rate (mm/h). Override activates when value meets or exceeds the threshold. Leave empty to ignore rain rate.",
+          "weather_rain_threshold": "Rain rate threshold (mm/h) that activates the override.",
+          "weather_is_raining_sensor": "Binary sensor for rain detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
+          "weather_override_position": "Position (0-100%) to move covers to when weather override is active. Default: 0% (fully retracted).",
+          "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
+        }
+      },
       "climate": {
         "data": {
           "weather_entity": "Weather entity (optional)",
@@ -319,6 +349,7 @@
           "automation": "Schedule & Timing",
           "manual_override": "Manual Override",
           "motion_overrides": "Motion & Force Overrides",
+          "weather_override": "Weather Override",
           "climate": "Climate Configuration",
           "weather": "Weather Conditions",
           "sync": "Sync settings to other covers",
@@ -459,6 +490,36 @@
           "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
           "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+        }
+      },
+      "weather_override": {
+        "title": "Weather Override",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
+        "data": {
+          "weather_wind_speed_sensor": "Wind speed sensor",
+          "weather_wind_direction_sensor": "Wind direction sensor (optional)",
+          "weather_wind_speed_threshold": "Wind speed threshold",
+          "weather_wind_direction_tolerance": "Wind direction tolerance",
+          "weather_rain_sensor": "Rain rate sensor",
+          "weather_rain_threshold": "Rain rate threshold",
+          "weather_is_raining_sensor": "Is Raining binary sensor",
+          "weather_is_windy_sensor": "Is Windy binary sensor",
+          "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
+          "weather_override_position": "Override position",
+          "weather_timeout": "Clear delay"
+        },
+        "data_description": {
+          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
+          "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
+          "weather_wind_speed_threshold": "Wind speed threshold that activates the override. Unit must match your sensor (km/h, m/s, or mph — no conversion is applied).",
+          "weather_wind_direction_tolerance": "How many degrees from the window azimuth to consider wind as 'hitting' this window. Example: window faces south (180°), tolerance 45° → wind from 135°-225° triggers override.",
+          "weather_rain_sensor": "Numeric sensor reporting rain rate (mm/h). Override activates when value meets or exceeds the threshold. Leave empty to ignore rain rate.",
+          "weather_rain_threshold": "Rain rate threshold (mm/h) that activates the override.",
+          "weather_is_raining_sensor": "Binary sensor for rain detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
+          "weather_override_position": "Position (0-100%) to move covers to when weather override is active. Default: 0% (fully retracted).",
+          "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
       },
       "climate": {
@@ -644,7 +705,7 @@
           "manual_override": "Manual Override",
           "motion_timeout": "Motion Timeout",
           "force_override": "Force Override",
-          "wind_override": "Wind Override",
+          "weather_override": "Weather Override",
           "cloud_suppression": "Cloud Suppression"
         }
       }
@@ -680,6 +741,7 @@
         "automation": "Schedule & Timing (deltas, start/end times)",
         "manual_override": "Manual Override",
         "motion_overrides": "Motion & Force Overrides",
+        "weather_override": "Weather Override",
         "climate": "Climate (temperature, presence, lux, irradiance)",
         "weather": "Weather Conditions"
       }

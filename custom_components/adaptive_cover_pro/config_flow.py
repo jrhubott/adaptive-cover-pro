@@ -86,11 +86,26 @@ from .const import (
     CONF_TILT_MODE,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_RAIN_THRESHOLD,
+    CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_STATE,
+    CONF_WEATHER_TIMEOUT,
+    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+    CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
+    CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_MOTION_TIMEOUT,
+    DEFAULT_WEATHER_RAIN_THRESHOLD,
+    DEFAULT_WEATHER_TIMEOUT,
+    DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
+    DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DOMAIN,
     SensorType,
 )
@@ -433,6 +448,90 @@ MOTION_OVERRIDES_SCHEMA = vol.Schema(
     }
 )
 
+WEATHER_OVERRIDE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(
+            CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        vol.Optional(
+            CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        vol.Optional(
+            CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            default=DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=200,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="km/h",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+            default=DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=5,
+                max=180,
+                step=5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        vol.Optional(
+            CONF_WEATHER_RAIN_THRESHOLD, default=DEFAULT_WEATHER_RAIN_THRESHOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=0.5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="mm/h",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor"])
+        ),
+        vol.Optional(
+            CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor"])
+        ),
+        vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor"], multiple=True)
+        ),
+        vol.Optional(
+            CONF_WEATHER_OVERRIDE_POSITION, default=0
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_TIMEOUT, default=DEFAULT_WEATHER_TIMEOUT
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=3600,
+                step=30,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="seconds",
+            )
+        ),
+    }
+)
+
 CLIMATE_SCHEMA = vol.Schema(
     {
         # --- Light & Weather (works without climate mode) ---
@@ -696,6 +795,21 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_FORCE_OVERRIDE_POSITION,
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
+        }
+    ),
+    "weather_override": frozenset(
+        {
+            CONF_WEATHER_WIND_SPEED_SENSOR,
+            CONF_WEATHER_WIND_DIRECTION_SENSOR,
+            CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+            CONF_WEATHER_RAIN_SENSOR,
+            CONF_WEATHER_RAIN_THRESHOLD,
+            CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_SEVERE_SENSORS,
+            CONF_WEATHER_OVERRIDE_POSITION,
+            CONF_WEATHER_TIMEOUT,
         }
     ),
     "climate": frozenset(
@@ -1096,9 +1210,30 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure motion and force override sensors."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_climate()
+            return await self.async_step_weather_override()
         return self.async_show_form(
             step_id="motion_overrides", data_schema=MOTION_OVERRIDES_SCHEMA
+        )
+
+    async def async_step_weather_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure weather-based safety overrides."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_WIND_SPEED_SENSOR,
+                    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+                    CONF_WEATHER_RAIN_SENSOR,
+                    CONF_WEATHER_IS_RAINING_SENSOR,
+                    CONF_WEATHER_IS_WINDY_SENSOR,
+                ],
+                user_input,
+            )
+            self.config.update(user_input)
+            return await self.async_step_climate()
+        return self.async_show_form(
+            step_id="weather_override", data_schema=WEATHER_OVERRIDE_SCHEMA
         )
 
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
@@ -1409,6 +1544,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "automation",
                 "manual_override",
                 "motion_overrides",
+                "weather_override",
                 "climate",
             ]
         )
@@ -1540,6 +1676,30 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="motion_overrides",
             data_schema=self.add_suggested_values_to_schema(
                 MOTION_OVERRIDES_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_weather_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage weather-based safety overrides."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_WIND_SPEED_SENSOR,
+                    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+                    CONF_WEATHER_RAIN_SENSOR,
+                    CONF_WEATHER_IS_RAINING_SENSOR,
+                    CONF_WEATHER_IS_WINDY_SENSOR,
+                ],
+                user_input,
+            )
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="weather_override",
+            data_schema=self.add_suggested_values_to_schema(
+                WEATHER_OVERRIDE_SCHEMA, user_input or self.options
             ),
         )
 
@@ -1680,6 +1840,7 @@ class OptionsFlowHandler(OptionsFlow):
             "automation": "Schedule & Timing",
             "manual_override": "Manual Override",
             "motion_overrides": "Motion & Force Overrides",
+            "weather_override": "Weather Override",
             "climate": "Climate",
             "weather": "Weather Conditions",
         }

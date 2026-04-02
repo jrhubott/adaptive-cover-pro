@@ -53,6 +53,17 @@ from .const import (
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
+    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+    CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_RAIN_THRESHOLD,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_TIMEOUT,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -91,6 +102,10 @@ from .const import (
     POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
     DEFAULT_MOTION_TIMEOUT,
+    DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+    DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
+    DEFAULT_WEATHER_RAIN_THRESHOLD,
+    DEFAULT_WEATHER_TIMEOUT,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
 from .enums import ControlMethod
@@ -98,6 +113,7 @@ from .managers.cover_command import CoverCommandService, build_special_positions
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
+from .managers.weather import WeatherManager
 from .managers.position_verification import PositionVerificationManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
@@ -111,7 +127,7 @@ from .pipeline.handlers import (
     ManualOverrideHandler,
     MotionTimeoutHandler,
     SolarHandler,
-    WindOverrideHandler,
+    WeatherOverrideHandler,
 )
 from .pipeline.registry import PipelineRegistry
 from .pipeline.types import ClimateOptions, PipelineSnapshot
@@ -200,11 +216,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         # Motion control tracking
         self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
+        # Weather override tracking
+        self._weather_mgr = WeatherManager(hass=self.hass, logger=self.logger)
         # Override pipeline
         self._pipeline = PipelineRegistry(
             [
                 ForceOverrideHandler(),
-                WindOverrideHandler(),
+                WeatherOverrideHandler(),
                 MotionTimeoutHandler(),
                 ManualOverrideHandler(),
                 CloudSuppressionHandler(),
@@ -356,6 +374,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return self._motion_mgr.is_motion_timeout_active
 
+    @property
+    def is_weather_override_active(self) -> bool:
+        """Check if weather override is active (conditions met or in clear-delay).
+
+        Returns:
+            True when a weather condition is active or the clear-delay timeout
+            has not yet expired. False when no sensors configured (feature disabled).
+
+        """
+        return self._weather_mgr.is_weather_override_active
+
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
         self.first_refresh = True
@@ -413,6 +442,51 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self.async_refresh()
         else:
             self.logger.debug("Old state is unknown, not processing")
+
+    async def async_check_weather_state_change(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Handle weather sensor state changes.
+
+        Activates the override immediately when any condition exceeds its threshold.
+        Starts a clear-delay timeout when all conditions drop back below thresholds,
+        so covers stay retracted briefly during intermittent gusts or rain showers.
+        """
+        data = event.data
+        entity_id = data["entity_id"]
+        new_state = data["new_state"]
+
+        if new_state is None:
+            return
+
+        self.logger.debug(
+            "Weather sensor %s state changed to %s",
+            entity_id,
+            new_state.state,
+        )
+
+        is_now_active = self._weather_mgr.is_any_condition_active
+
+        if is_now_active:
+            if not self._weather_mgr._override_active:
+                self.logger.info(
+                    "Weather conditions active (%s) — retracting covers", entity_id
+                )
+                self._weather_mgr.record_conditions_active()
+                self.state_change = True
+                await self.async_refresh()
+            # Already active: refresh so the pipeline re-evaluates position
+            else:
+                self.state_change = True
+                await self.async_refresh()
+        else:
+            if self._weather_mgr._override_active:
+                self.logger.info(
+                    "Weather conditions cleared (%s) — starting clear-delay timeout",
+                    entity_id,
+                )
+                self._weather_mgr.cancel_weather_timeout()
+                self._start_weather_timeout()
 
     async def async_check_motion_state_change(
         self, event: Event[EventStateChangedData]
@@ -520,6 +594,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Cancel motion timeout task."""
         self._motion_mgr.cancel_motion_timeout()
 
+    def _start_weather_timeout(self) -> None:
+        """Start weather clear-delay timeout."""
+
+        async def _refresh_with_state_change() -> None:
+            self.state_change = True
+            await self.async_refresh()
+
+        self._weather_mgr.start_weather_timeout(
+            refresh_callback=_refresh_with_state_change
+        )
+
+    def _cancel_weather_timeout(self) -> None:
+        """Cancel weather clear-delay timeout task."""
+        self._weather_mgr.cancel_weather_timeout()
+
     @callback
     def _async_cancel_update_listener(self) -> None:
         """Cancel the scheduled update."""
@@ -610,6 +699,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
             manual_override_active=self.manager.binary_cover_manual,
             motion_timeout_active=self.is_motion_timeout_active,
+            weather_override_active=self.is_weather_override_active,
+            weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
             glare_zones=glare_zones_cfg,
             active_zone_names=frozenset(active_zone_names),
         )
@@ -953,6 +1044,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sensors=options.get(CONF_MOTION_SENSORS, []),
             timeout_seconds=options.get(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT),
         )
+        self._weather_mgr.update_config(
+            wind_speed_sensor=options.get(CONF_WEATHER_WIND_SPEED_SENSOR),
+            wind_direction_sensor=options.get(CONF_WEATHER_WIND_DIRECTION_SENSOR),
+            wind_speed_threshold=options.get(
+                CONF_WEATHER_WIND_SPEED_THRESHOLD, DEFAULT_WEATHER_WIND_SPEED_THRESHOLD
+            ),
+            wind_direction_tolerance=options.get(
+                CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+                DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
+            ),
+            win_azi=options.get(CONF_AZIMUTH, 180),
+            rain_sensor=options.get(CONF_WEATHER_RAIN_SENSOR),
+            rain_threshold=options.get(
+                CONF_WEATHER_RAIN_THRESHOLD, DEFAULT_WEATHER_RAIN_THRESHOLD
+            ),
+            is_raining_sensor=options.get(CONF_WEATHER_IS_RAINING_SENSOR),
+            is_windy_sensor=options.get(CONF_WEATHER_IS_WINDY_SENSOR),
+            severe_sensors=options.get(CONF_WEATHER_SEVERE_SENSORS, []),
+            timeout_seconds=options.get(CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT),
+        )
 
     def _update_manager_and_covers(self):
         """Update manager with cover entities.
@@ -1134,6 +1245,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             control_method=self.control_method,
             pipeline_result=self._pipeline_result,
             is_force_override_active=self.is_force_override_active,
+            is_weather_override_active=self.is_weather_override_active,
             is_motion_timeout_active=self.is_motion_timeout_active,
             is_manual_override_active=self.manager.binary_cover_manual,
             check_adaptive_time=self.check_adaptive_time,
@@ -1480,6 +1592,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Cancel motion timeout task
         self._cancel_motion_timeout()
+
+        # Cancel weather clear-delay timeout task
+        self._cancel_weather_timeout()
 
         # Stop position verification
         self._stop_position_verification()
