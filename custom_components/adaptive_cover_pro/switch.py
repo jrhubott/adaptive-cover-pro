@@ -125,10 +125,12 @@ async def async_setup_entry(
 
     # Glare zone switches — one per configured zone for vertical covers
     if sensor_type == "cover_blind" and config_entry.options.get(CONF_ENABLE_GLARE_ZONES):
-        for idx in range(1, 5):
+        for idx in range(1, 5):  # idx is 1-based (matches config option keys)
             zone_name = config_entry.options.get(f"glare_zone_{idx}_name", "")
             if not zone_name:
                 continue
+            # Key is 0-based to match coordinator.glare_zone_0 / glare_zone_1 etc.
+            zone_key = f"glare_zone_{idx - 1}"
             switches.append(
                 AdaptiveCoverSwitch(
                     config_entry.entry_id,
@@ -137,7 +139,7 @@ async def async_setup_entry(
                     coordinator,
                     f"Glare Zone: {zone_name}",
                     True,
-                    f"glare_zone_{idx - 1}",
+                    zone_key,
                 )
             )
 

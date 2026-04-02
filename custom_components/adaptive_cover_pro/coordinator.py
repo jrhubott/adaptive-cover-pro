@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytz
 from homeassistant.config_entries import ConfigEntry
@@ -724,7 +724,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         glare_active = False
         if hasattr(cover_data, "_last_calc_details"):
             details = cover_data._last_calc_details  # noqa: SLF001
-            glare_active = bool(details.get("glare_zones_active"))
+            glare_active = len(details.get("glare_zones_active", [])) > 0
 
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
@@ -981,8 +981,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             vert_config = self._config_service.get_vertical_data(options)
             glare_zones_cfg = self._config_service.get_glare_zones_config(options)
             if glare_zones_cfg is not None:
-                from dataclasses import replace
-
                 vert_config = replace(vert_config, glare_zones=glare_zones_cfg)
             cover_data = AdaptiveVerticalCover(
                 logger=self.logger,
