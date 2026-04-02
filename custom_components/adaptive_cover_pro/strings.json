@@ -286,12 +286,24 @@
     "step": {
       "init": {
         "menu_options": {
-          "automation": "Modify Automation Configuration",
-          "blind": "Fine-tune Blind Settings",
-          "climate": "Edit Climate Configuration",
-          "weather": "Edit Weather Configuration",
-          "blind_spot": "Setup Blindspot",
-          "interp": "Range Adjustment"
+          "cover_entities": "Cover Entities",
+          "geometry": "Cover Geometry",
+          "sun_tracking": "Sun Tracking",
+          "position": "Position Settings",
+          "blind_spot": "Blind Spot",
+          "glare_zones": "Glare Zones",
+          "interp": "Interpolation",
+          "automation": "Schedule & Timing",
+          "climate": "Climate Configuration",
+          "weather": "Weather Conditions",
+          "manual_override": "Manual Override",
+          "force_override": "Force Override",
+          "motion_override": "Motion Override",
+          "weather_override": "Weather Override",
+          "device": "Device Association",
+          "summary": "Configuration Summary",
+          "sync": "Sync Settings to Other Covers",
+          "done": "Save & Exit"
         }
       },
       "automation": {

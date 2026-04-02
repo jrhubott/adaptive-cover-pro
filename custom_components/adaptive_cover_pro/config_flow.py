@@ -1448,8 +1448,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure cover geometry dimensions."""
         if user_input is not None:
             self.config.update(user_input)
-            if self.type_blind == SensorType.BLIND:
-                return await self.async_step_glare_zones()
             return await self.async_step_sun_tracking()
 
         schema = _get_geometry_schema(self.type_blind)
@@ -1459,7 +1457,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure glare zone definitions (initial flow)."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_sun_tracking()
+            if self.config.get(CONF_INTERP):
+                return await self.async_step_interp()
+            return await self.async_step_automation()
 
         schema = _build_glare_zones_schema(self.config)
         return self.async_show_form(step_id="glare_zones", data_schema=schema)
@@ -1492,6 +1492,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             if self.config.get(CONF_ENABLE_BLIND_SPOT):
                 return await self.async_step_blind_spot()
+            if self.type_blind == SensorType.BLIND:
+                return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
             return await self.async_step_automation()
@@ -1539,6 +1541,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
+            if self.type_blind == SensorType.BLIND:
+                return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
             return await self.async_step_automation()
@@ -1927,33 +1931,44 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
+        # ── Core Setup ───────────────────────────────────────────────
         menu_options = [
             "cover_entities",
-            "device",
             "geometry",
             "sun_tracking",
         ]
+
+        # ── Position & Zones ─────────────────────────────────────────
+        menu_options.append("position")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
         if self.sensor_type == SensorType.BLIND:
             menu_options.append("glare_zones")
-        menu_options.append("position")
         if self.options.get(CONF_INTERP):
             menu_options.append("interp")
+
+        # ── Schedule & Automation ────────────────────────────────────
+        menu_options.append("automation")
+
+        # ── Climate & Weather ────────────────────────────────────────
+        menu_options.append("climate")
+        if self.options.get(CONF_WEATHER_ENTITY):
+            menu_options.append("weather")
+
+        # ── Override Controls ────────────────────────────────────────
         menu_options.extend(
             [
-                "automation",
                 "manual_override",
                 "force_override",
                 "motion_override",
                 "weather_override",
-                "climate",
             ]
         )
-        if self.options.get(CONF_WEATHER_ENTITY):
-            menu_options.append("weather")
+
+        # ── Admin ────────────────────────────────────────────────────
         menu_options.extend(
             [
+                "device",
                 "summary",
                 "sync",
                 "done",

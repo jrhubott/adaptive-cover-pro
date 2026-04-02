@@ -261,18 +261,20 @@
       "init": {
         "menu_options": {
           "cover_entities": "Cover Entities",
-          "device": "Device Association",
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
+          "glare_zones": "Glare Zones",
           "interp": "Interpolation",
           "automation": "Modificar la configuración de automatización",
+          "climate": "Editar configuración climática",
+          "weather": "Weather Conditions",
           "manual_override": "Manual Override",
           "force_override": "Force Override",
           "motion_override": "Motion Override",
-          "climate": "Editar configuración climática",
-          "weather": "Weather Conditions",
+          "weather_override": "Weather Override",
+          "device": "Device Association",
           "summary": "Configuration Summary",
           "sync": "Sync settings to other covers",
           "done": "Save & Exit"
