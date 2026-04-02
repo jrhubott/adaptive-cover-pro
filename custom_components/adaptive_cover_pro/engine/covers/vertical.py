@@ -8,11 +8,49 @@ import numpy as np
 from numpy import cos, sin, tan
 from numpy import radians as rad
 
-from ...config_types import VerticalConfig
+from ...config_types import GlareZone, GlareZonesConfig, VerticalConfig
 from ...const import WINDOW_DEPTH_GAMMA_THRESHOLD
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
+
+
+def _glare_zone_effective_distance(
+    zone: GlareZone,
+    gamma: float,
+    window_half_width: float,
+) -> float | None:
+    """Convert a glare zone to an effective distance (metres) for this sun angle.
+
+    Returns the perpendicular depth into the room (in metres) that the blind
+    must shade to protect the nearest edge of the zone circle. Returns None if
+    the sun cannot reach this zone through the window opening at angle gamma.
+
+    Args:
+        zone: The glare zone definition (x, y in cm, radius in cm).
+        gamma: Surface solar azimuth in degrees (positive = sun to the right).
+        window_half_width: Half the window width in cm.
+
+    """
+    gamma_rad = rad(gamma)
+
+    # First-hit point on the zone circle: the point facing the incoming sun.
+    # Sun arrives from direction (sin γ, −cos γ) on the floor XY plane,
+    # so the facing point is offset from centre in that direction.
+    nearest_x = zone.x + zone.radius * sin(gamma_rad)
+    nearest_y = zone.y - zone.radius * cos(gamma_rad)
+
+    # Zone must be in front of the window wall
+    if nearest_y <= 0:
+        return None
+
+    # Project back to find where the sun ray enters the window.
+    # A ray hitting floor point (fx, fy) entered at x_w = fx + fy * tan(γ).
+    x_at_window = nearest_x + nearest_y * tan(gamma_rad)
+    if abs(x_at_window) > window_half_width:
+        return None  # Ray enters outside the window opening — zone is naturally blocked
+
+    return nearest_y / 100.0  # cm → metres
 
 
 @dataclass
