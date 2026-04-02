@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from ...enums import ControlMethod
+from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
-from ..types import PipelineContext, PipelineResult
+from ..types import PipelineResult, PipelineSnapshot
 
 
 class MotionTimeoutHandler(OverrideHandler):
@@ -18,17 +19,24 @@ class MotionTimeoutHandler(OverrideHandler):
     name = "motion_timeout"
     priority = 80
 
-    def evaluate(self, ctx: PipelineContext) -> PipelineResult | None:
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return default position when motion timeout is active."""
-        if not ctx.motion_timeout_active:
+        if not snapshot.motion_timeout_active:
             return None
+        position = PositionConverter.apply_limits(
+            int(round(snapshot.cover.default)),
+            snapshot.config.min_pos,
+            snapshot.config.max_pos,
+            snapshot.config.min_pos_sun_only,
+            snapshot.config.max_pos_sun_only,
+            snapshot.cover.direct_sun_valid,
+        )
         return PipelineResult(
-            position=ctx.default_position,
+            position=position,
             control_method=ControlMethod.MOTION,
-            reason=f"motion timeout active — default position {ctx.default_position}%",
-            decision_trace=[],
+            reason=f"motion timeout active — default position {position}%",
         )
 
-    def describe_skip(self, ctx: PipelineContext) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
         """Reason when motion timeout is not active."""
         return "motion timeout not active"

@@ -85,38 +85,33 @@ class TestMotionTimeoutHandler:
     handler = MotionTimeoutHandler()
 
     def test_matches_when_active(self) -> None:
-        """Return result with MOTION method when motion timeout is active."""
-        ctx = make_ctx(motion_timeout_active=True, default_position=20)
-        result = self.handler.evaluate(ctx)
+        """Return MOTION method when motion timeout is active."""
+        snap = make_snapshot(motion_timeout_active=True, cover_default=20.0)
+        result = self.handler.evaluate(snap)
         assert result is not None
-        assert result.position == 20
         assert result.control_method == ControlMethod.MOTION
 
     def test_returns_none_when_inactive(self) -> None:
         """Return None when motion timeout is not active."""
-        ctx = make_ctx(motion_timeout_active=False)
-        assert self.handler.evaluate(ctx) is None
+        snap = make_snapshot(motion_timeout_active=False)
+        assert self.handler.evaluate(snap) is None
 
-    def test_uses_default_position(self) -> None:
-        """Use the default_position value from context."""
-        ctx = make_ctx(motion_timeout_active=True, default_position=33)
-        result = self.handler.evaluate(ctx)
+    def test_uses_cover_default_position(self) -> None:
+        """Return position based on cover.default when timeout active."""
+        snap = make_snapshot(motion_timeout_active=True, cover_default=33.0)
+        result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 33
 
     def test_describe_skip_meaningful(self) -> None:
-        """describe_skip returns a non-empty string mentioning motion."""
-        ctx = make_ctx(motion_timeout_active=False)
-        reason = self.handler.describe_skip(ctx)
-        assert isinstance(reason, str)
+        snap = make_snapshot(motion_timeout_active=False)
+        reason = self.handler.describe_skip(snap)
         assert "motion" in reason.lower()
 
     def test_priority_is_80(self) -> None:
-        """Priority should be 80."""
         assert MotionTimeoutHandler.priority == 80
 
     def test_name(self) -> None:
-        """Handler name should be 'motion_timeout'."""
         assert MotionTimeoutHandler.name == "motion_timeout"
 
 
