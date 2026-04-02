@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-01
-**Current Version:** v2.9.2
+**Current Version:** v2.9.3
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -55,6 +55,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.9.3 | Translation fixes and config flow polish: missing menu labels, climate mode help text, cloud suppression clarification, reordered climate settings. |
 | v2.9.2 | Suppress glare control in low light (Issue #65): new toggle in Climate Settings uses weather/lux/irradiance to skip glare control when no real sun. Config flow menu fixes. 800 tests. |
 | v2.9.1 | Config flow menu ordering fixes; climate menu renamed to Climate Configuration. |
 | v2.9.0 | Config flow redesign: 10 focused steps replacing per-type mega-forms, options menu mirrors initial flow, climate always accessible, manual override and motion as dedicated steps, legacy AdaptiveCover import removed. 778 tests. |
