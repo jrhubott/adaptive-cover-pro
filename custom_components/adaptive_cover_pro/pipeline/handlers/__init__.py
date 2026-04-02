@@ -1,6 +1,7 @@
 """Built-in override handlers for the pipeline."""
 
 from .climate import ClimateHandler
+from .cloud_suppression import CloudSuppressionHandler
 from .default import DefaultHandler
 from .force_override import ForceOverrideHandler
 from .manual_override import ManualOverrideHandler
@@ -9,6 +10,7 @@ from .solar import SolarHandler
 
 __all__ = [
     "ClimateHandler",
+    "CloudSuppressionHandler",
     "DefaultHandler",
     "ForceOverrideHandler",
     "ManualOverrideHandler",

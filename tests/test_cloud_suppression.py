@@ -36,8 +36,9 @@ def make_weather_readings(
     is_sunny: bool = True,
     lux_below_threshold: bool = False,
     irradiance_below_threshold: bool = False,
+    cloud_coverage_above_threshold: bool = False,
 ) -> ClimateReadings:
-    """Build ClimateReadings with the weather/lux/irradiance fields set."""
+    """Build ClimateReadings with the weather/lux/irradiance/cloud-coverage fields set."""
     return ClimateReadings(
         outside_temperature=None,
         inside_temperature=None,
@@ -45,6 +46,7 @@ def make_weather_readings(
         is_sunny=is_sunny,
         lux_below_threshold=lux_below_threshold,
         irradiance_below_threshold=irradiance_below_threshold,
+        cloud_coverage_above_threshold=cloud_coverage_above_threshold,
     )
 
 
@@ -61,6 +63,7 @@ def _is_cloud_suppression_active(
         not weather_readings.is_sunny
         or weather_readings.lux_below_threshold
         or weather_readings.irradiance_below_threshold
+        or weather_readings.cloud_coverage_above_threshold
     )
 
 
@@ -163,6 +166,50 @@ class TestIsCloudSuppressionActive:
             is_sunny=True, lux_below_threshold=False, irradiance_below_threshold=False
         )
         assert _is_cloud_suppression_active(True, readings) is False
+
+    # -- Cloud coverage conditions --
+
+    def test_active_when_cloud_coverage_above_threshold(self) -> None:
+        """Cloud coverage above threshold activates cloud suppression."""
+        readings = make_weather_readings(cloud_coverage_above_threshold=True)
+        assert _is_cloud_suppression_active(True, readings) is True
+
+    def test_inactive_when_cloud_coverage_below_threshold(self) -> None:
+        """Cloud coverage below threshold (cloud_coverage_above_threshold=False) → inactive."""
+        readings = make_weather_readings(cloud_coverage_above_threshold=False)
+        assert _is_cloud_suppression_active(True, readings) is False
+
+    def test_active_when_cloud_coverage_above_regardless_of_weather(self) -> None:
+        """Cloud coverage above threshold activates even when weather says sunny."""
+        readings = make_weather_readings(
+            is_sunny=True, cloud_coverage_above_threshold=True
+        )
+        assert _is_cloud_suppression_active(True, readings) is True
+
+    def test_active_when_all_four_conditions_indicate_low_light(self) -> None:
+        """All four low-light conditions → active."""
+        readings = make_weather_readings(
+            is_sunny=False,
+            lux_below_threshold=True,
+            irradiance_below_threshold=True,
+            cloud_coverage_above_threshold=True,
+        )
+        assert _is_cloud_suppression_active(True, readings) is True
+
+    def test_inactive_when_all_four_conditions_indicate_sun(self) -> None:
+        """All four sunny conditions → inactive."""
+        readings = make_weather_readings(
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        assert _is_cloud_suppression_active(True, readings) is False
+
+    def test_cloud_coverage_disabled_by_toggle(self) -> None:
+        """Toggle off → inactive even when cloud coverage is above threshold."""
+        readings = make_weather_readings(cloud_coverage_above_threshold=True)
+        assert _is_cloud_suppression_active(False, readings) is False
 
 
 # ---------------------------------------------------------------------------

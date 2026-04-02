@@ -337,6 +337,89 @@ class TestClimateReadings:
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
         )
         with pytest.raises(AttributeError):
             readings.outside_temperature = 99.0
+
+
+# ---------------------------------------------------------------------------
+# Cloud coverage
+# ---------------------------------------------------------------------------
+
+
+class TestCloudCoverage:
+    """Tests for _read_cloud_coverage()."""
+
+    @pytest.mark.unit
+    def test_above_threshold(self, provider, hass):
+        """Cloud coverage at or above threshold → True (overcast)."""
+        hass.states.get.return_value = _mock_state("sensor.cloud", "80")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+        )
+        assert readings.cloud_coverage_above_threshold is True
+
+    @pytest.mark.unit
+    def test_at_threshold(self, provider, hass):
+        """Cloud coverage exactly at threshold → True."""
+        hass.states.get.return_value = _mock_state("sensor.cloud", "75")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+        )
+        assert readings.cloud_coverage_above_threshold is True
+
+    @pytest.mark.unit
+    def test_below_threshold(self, provider, hass):
+        """Cloud coverage below threshold → False (clear sky)."""
+        hass.states.get.return_value = _mock_state("sensor.cloud", "40")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+
+    @pytest.mark.unit
+    def test_disabled(self, provider):
+        """Feature disabled → False regardless of sensor."""
+        readings = provider.read(use_cloud_coverage=False)
+        assert readings.cloud_coverage_above_threshold is False
+
+    @pytest.mark.unit
+    def test_no_entity(self, provider):
+        """No entity configured → False."""
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity=None,
+            cloud_coverage_threshold=75,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+
+    @pytest.mark.unit
+    def test_no_threshold(self, provider, hass):
+        """No threshold configured → False."""
+        hass.states.get.return_value = _mock_state("sensor.cloud", "90")
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=None,
+        )
+        assert readings.cloud_coverage_above_threshold is False
+
+    @pytest.mark.unit
+    def test_unavailable_sensor(self, provider, hass):
+        """Unavailable sensor → False."""
+        unavailable = MagicMock()
+        unavailable.state = "unavailable"
+        hass.states.get.return_value = unavailable
+        readings = provider.read(
+            use_cloud_coverage=True,
+            cloud_coverage_entity="sensor.cloud",
+            cloud_coverage_threshold=75,
+        )
+        assert readings.cloud_coverage_above_threshold is False

@@ -25,6 +25,7 @@ class ClimateReadings:
     is_sunny: bool
     lux_below_threshold: bool
     irradiance_below_threshold: bool
+    cloud_coverage_above_threshold: bool
 
 
 class ClimateProvider:
@@ -49,6 +50,9 @@ class ClimateProvider:
         use_irradiance: bool = False,
         irradiance_entity: str | None = None,
         irradiance_threshold: int | None = None,
+        use_cloud_coverage: bool = False,
+        cloud_coverage_entity: str | None = None,
+        cloud_coverage_threshold: int | None = None,
     ) -> ClimateReadings:
         """Read all climate entities and return a frozen snapshot."""
         return ClimateReadings(
@@ -61,6 +65,9 @@ class ClimateProvider:
             lux_below_threshold=self._read_lux(use_lux, lux_entity, lux_threshold),
             irradiance_below_threshold=self._read_irradiance(
                 use_irradiance, irradiance_entity, irradiance_threshold
+            ),
+            cloud_coverage_above_threshold=self._read_cloud_coverage(
+                use_cloud_coverage, cloud_coverage_entity, cloud_coverage_threshold
             ),
         )
 
@@ -154,4 +161,20 @@ class ClimateProvider:
             if value is None:
                 return False
             return float(value) <= irradiance_threshold
+        return False
+
+    def _read_cloud_coverage(
+        self,
+        use_cloud_coverage: bool,
+        cloud_coverage_entity: str | None,
+        cloud_coverage_threshold: int | None,
+    ) -> bool:
+        """Check if cloud coverage is at or above threshold (overcast)."""
+        if not use_cloud_coverage:
+            return False
+        if cloud_coverage_entity is not None and cloud_coverage_threshold is not None:
+            value = get_safe_state(self._hass, cloud_coverage_entity)
+            if value is None:
+                return False
+            return float(value) >= cloud_coverage_threshold
         return False
