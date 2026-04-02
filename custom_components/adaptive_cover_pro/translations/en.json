@@ -504,16 +504,10 @@
         }
       },
       "sync": {
-        "title": "Sync Settings — Select Targets",
-        "description": "Choose which covers to copy settings to. You will select which setting categories to sync in the next step.",
+        "title": "Sync Settings",
+        "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.",
         "data": {
-          "target_entries": "Target covers"
-        }
-      },
-      "sync_categories": {
-        "title": "Sync Settings — Select Categories",
-        "description": "Choose which setting groups to copy. Only selected categories will be overwritten on target covers.",
-        "data": {
+          "target_entries": "Target covers",
           "sync_categories": "Categories to sync"
         }
       },
