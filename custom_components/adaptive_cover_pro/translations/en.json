@@ -241,7 +241,19 @@
           "glare_zone_1_name": "Name for this zone (e.g. 'Desk'). Leave blank to skip.",
           "glare_zone_1_x": "Left/right offset from window centre in cm. Positive = right.",
           "glare_zone_1_y": "Distance into the room in cm (perpendicular to window).",
-          "glare_zone_1_radius": "Protection radius around the zone centre in cm."
+          "glare_zone_1_radius": "Protection radius around the zone centre in cm.",
+          "glare_zone_2_name": "Name for this zone (e.g. 'Sofa'). Leave blank to skip.",
+          "glare_zone_2_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_2_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_2_radius": "Protection radius around the zone centre in cm.",
+          "glare_zone_3_name": "Name for this zone (e.g. 'Dining Table'). Leave blank to skip.",
+          "glare_zone_3_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_3_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_3_radius": "Protection radius around the zone centre in cm.",
+          "glare_zone_4_name": "Name for this zone (e.g. 'Bed'). Leave blank to skip.",
+          "glare_zone_4_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_4_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_4_radius": "Protection radius around the zone centre in cm."
         }
       },
       "interp": {
@@ -555,7 +567,19 @@
           "glare_zone_1_name": "Name for this zone (e.g. 'Desk'). Leave blank to skip.",
           "glare_zone_1_x": "Left/right offset from window centre in cm. Positive = right.",
           "glare_zone_1_y": "Distance into the room in cm (perpendicular to window).",
-          "glare_zone_1_radius": "Protection radius around the zone centre in cm."
+          "glare_zone_1_radius": "Protection radius around the zone centre in cm.",
+          "glare_zone_2_name": "Name for this zone (e.g. 'Sofa'). Leave blank to skip.",
+          "glare_zone_2_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_2_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_2_radius": "Protection radius around the zone centre in cm.",
+          "glare_zone_3_name": "Name for this zone (e.g. 'Dining Table'). Leave blank to skip.",
+          "glare_zone_3_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_3_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_3_radius": "Protection radius around the zone centre in cm.",
+          "glare_zone_4_name": "Name for this zone (e.g. 'Bed'). Leave blank to skip.",
+          "glare_zone_4_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_4_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_4_radius": "Protection radius around the zone centre in cm."
         }
       },
       "device": {
