@@ -155,6 +155,8 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                 "effective_distance": self.distance,
                 "window_depth_contribution": 0.0,
                 "sill_height_offset": 0.0,
+                "glare_zones_active": [],
+                "effective_distance_source": "edge_case",
             }
             return edge_position
 
@@ -175,12 +177,14 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                     glare_zones_contributing.append(zone.name)
 
         effective_distance_base = max(distances_to_protect)
+        effective_distance = effective_distance_base
         effective_distance_source = (
-            "glare_zone" if glare_zones_contributing else "base"
+            "glare_zone"
+            if glare_zones_contributing and effective_distance_base > self.distance
+            else "base"
         )
 
         # Account for window depth at angles (creates additional shadow)
-        effective_distance = effective_distance_base
         depth_contribution = 0.0
         if self.window_depth > 0 and abs(self.gamma) > WINDOW_DEPTH_GAMMA_THRESHOLD:
             # At angles, window depth creates additional horizontal offset

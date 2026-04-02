@@ -1,6 +1,7 @@
 """Tests for glare zone data model and geometry."""
 
 import pytest
+from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.config_types import (
     GlareZone,
@@ -10,6 +11,7 @@ from custom_components.adaptive_cover_pro.config_types import (
 from custom_components.adaptive_cover_pro.engine.covers.vertical import (
     _glare_zone_effective_distance,
 )
+from tests.cover_helpers import build_vertical_cover
 
 
 class TestGlareZoneDataModel:
@@ -106,11 +108,6 @@ class TestGlareZoneGeometry:
         zone = GlareZone(name="Z", x=-100.0, y=200.0, radius=0.0)
         dist = _glare_zone_effective_distance(zone, gamma=-30.0, window_half_width=150.0)
         assert dist is None
-
-
-from unittest.mock import MagicMock
-
-from tests.cover_helpers import build_vertical_cover, make_vertical_config
 
 
 class TestGlareZoneCalculation:
