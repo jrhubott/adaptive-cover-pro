@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-01
-**Current Version:** v2.10.0
+**Current Version:** v2.11.0
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -21,7 +21,7 @@ The integration was fully rewritten with a layered architecture:
 | Calculation | `calculation.py`, `sun.py` | Pure math, 0 HA imports |
 | Engine | `engine/` | `SunGeometry`, `VenetianCoverCalculation` — next-gen calculation engine |
 | Config Types | `config_types.py` | `CoverConfig` typed dataclass |
-| Pipeline | `pipeline/` | 8 pluggable override handlers (wind and cloud_suppression are stubs) |
+| Pipeline | `pipeline/` | 8 pluggable override handlers (wind is a stub; cloud_suppression is fully active at priority 60) |
 | Managers | `managers/` | 5 focused classes extracted from coordinator |
 | Diagnostics | `diagnostics/` | `DiagnosticsBuilder` with decision trace |
 | Coordinator | `coordinator.py` | Thin orchestrator (~1,477 lines) |
@@ -30,7 +30,7 @@ The integration was fully rewritten with a layered architecture:
 
 ### Tests
 
-800 passing, 0 failing.
+813 passing, 0 failing.
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -55,6 +55,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.11.0 | Cloud coverage sensor support (Issue #94): percentage-based sensor as fourth OR signal for cloud suppression; CloudSuppressionHandler now registered in pipeline at priority 60. |
 | v2.10.0 | Sync category selection, duplicate cover flow, remove legacy import dead code. |
 | v2.9.4 | Hotfix: `AttributeError` on `_position_tolerance` crashing position mismatch binary sensors on startup and during updates. |
 | v2.9.3 | Translation fixes and config flow polish: missing menu labels, climate mode help text, cloud suppression clarification, reordered climate settings. |
