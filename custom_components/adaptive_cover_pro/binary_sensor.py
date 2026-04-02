@@ -146,7 +146,7 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
                 continue
 
             delta = abs(target - actual)
-            if delta > self.coordinator._position_tolerance:
+            if delta > self.coordinator._pos_verify_mgr.position_tolerance:
                 return True
 
         return False
@@ -155,7 +155,7 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return additional attributes."""
         attrs: dict[str, Any] = {
-            "tolerance": self.coordinator._position_tolerance,
+            "tolerance": self.coordinator._pos_verify_mgr.position_tolerance,
         }
 
         # Add per-entity details
