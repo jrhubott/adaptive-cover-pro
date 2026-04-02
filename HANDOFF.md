@@ -21,7 +21,7 @@ The integration was fully rewritten with a layered architecture. The pipeline no
 | Calculation | `calculation.py`, `sun.py` | Pure math, 0 HA imports |
 | Engine | `engine/` | `SunGeometry`, `VenetianCoverCalculation` — next-gen calculation engine |
 | Config Types | `config_types.py` | `CoverConfig` typed dataclass |
-| Pipeline | `pipeline/` | 9 pluggable override handlers (self-contained plugins; wind is a stub) |
+| Pipeline | `pipeline/` | 9 pluggable override handlers (self-contained plugins) |
 | Managers | `managers/` | 5 focused classes extracted from coordinator |
 | Diagnostics | `diagnostics/` | `DiagnosticsBuilder` with decision trace |
 | Coordinator | `coordinator.py` | Thin orchestrator (~1,477 lines) |
@@ -30,7 +30,7 @@ The integration was fully rewritten with a layered architecture. The pipeline no
 
 **Handlers (priority order):**
 ```
-force_override(100) > wind(90, stub) > motion_timeout(80) > manual_override(70) > 
+force_override(100) > weather(90) > motion_timeout(80) > manual_override(70) > 
 cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
 ```
 

@@ -546,7 +546,8 @@
         "interp": "Interpolation Values",
         "automation": "Schedule & Timing (deltas, start/end times)",
         "manual_override": "Manual Override",
-        "motion_overrides": "Motion & Force Overrides",
+        "force_override": "Force Override",
+        "motion_override": "Motion Override",
         "weather_override": "Weather Override",
         "climate": "Climate (temperature, presence, lux, irradiance)",
         "weather": "Weather Conditions"

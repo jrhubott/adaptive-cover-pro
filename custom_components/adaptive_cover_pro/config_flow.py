@@ -410,7 +410,7 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-MOTION_OVERRIDES_SCHEMA = vol.Schema(
+FORCE_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_FORCE_OVERRIDE_SENSORS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -427,6 +427,11 @@ MOTION_OVERRIDES_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+    }
+)
+
+MOTION_OVERRIDE_SCHEMA = vol.Schema(
+    {
         vol.Optional(CONF_MOTION_SENSORS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
                 domain=["binary_sensor"],
@@ -1129,10 +1134,14 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_IGNORE_INTERMEDIATE,
         }
     ),
-    "motion_overrides": frozenset(
+    "force_override": frozenset(
         {
             CONF_FORCE_OVERRIDE_SENSORS,
             CONF_FORCE_OVERRIDE_POSITION,
+        }
+    ),
+    "motion_override": frozenset(
+        {
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
         }
@@ -1539,20 +1548,31 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.optional_entities([CONF_MANUAL_THRESHOLD], user_input)
             self.config.update(user_input)
-            return await self.async_step_motion_overrides()
+            return await self.async_step_force_override()
         return self.async_show_form(
             step_id="manual_override", data_schema=MANUAL_OVERRIDE_SCHEMA
         )
 
-    async def async_step_motion_overrides(
+    async def async_step_force_override(
         self, user_input: dict[str, Any] | None = None
     ):
-        """Configure motion and force override sensors."""
+        """Configure force override sensors."""
+        if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_motion_override()
+        return self.async_show_form(
+            step_id="force_override", data_schema=FORCE_OVERRIDE_SCHEMA
+        )
+
+    async def async_step_motion_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure motion/occupancy-based control."""
         if user_input is not None:
             self.config.update(user_input)
             return await self.async_step_weather_override()
         return self.async_show_form(
-            step_id="motion_overrides", data_schema=MOTION_OVERRIDES_SCHEMA
+            step_id="motion_override", data_schema=MOTION_OVERRIDE_SCHEMA
         )
 
     async def async_step_weather_override(
@@ -1894,7 +1914,8 @@ class OptionsFlowHandler(OptionsFlow):
             [
                 "automation",
                 "manual_override",
-                "motion_overrides",
+                "force_override",
+                "motion_override",
                 "weather_override",
                 "climate",
             ]
@@ -2017,17 +2038,31 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         )
 
-    async def async_step_motion_overrides(
+    async def async_step_force_override(
         self, user_input: dict[str, Any] | None = None
     ):
-        """Manage motion and force override sensors."""
+        """Manage force override sensors."""
         if user_input is not None:
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
-            step_id="motion_overrides",
+            step_id="force_override",
             data_schema=self.add_suggested_values_to_schema(
-                MOTION_OVERRIDES_SCHEMA, user_input or self.options
+                FORCE_OVERRIDE_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_motion_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage motion/occupancy-based control."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="motion_override",
+            data_schema=self.add_suggested_values_to_schema(
+                MOTION_OVERRIDE_SCHEMA, user_input or self.options
             ),
         )
 
@@ -2191,7 +2226,8 @@ class OptionsFlowHandler(OptionsFlow):
             "interp": "Interpolation Values",
             "automation": "Schedule & Timing",
             "manual_override": "Manual Override",
-            "motion_overrides": "Motion & Force Overrides",
+            "force_override": "Force Override",
+            "motion_override": "Motion Override",
             "weather_override": "Weather Override",
             "climate": "Climate",
             "weather": "Weather Conditions",
