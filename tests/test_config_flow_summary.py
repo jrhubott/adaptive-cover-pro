@@ -64,6 +64,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_TIMEOUT,
+    CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WINDOW_DEPTH,
@@ -144,6 +145,8 @@ def _full_vertical() -> dict:
             CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud_coverage",
             CONF_CLOUD_COVERAGE_THRESHOLD: 50,
             CONF_CLOUD_SUPPRESSION: True,
+            CONF_ENABLE_GLARE_ZONES: True,
+            CONF_WINDOW_WIDTH: 150,
         }
     )
     return cfg
@@ -452,10 +455,13 @@ def test_overrides_section_hidden_when_empty():
 
 
 def test_weather_override_section_hidden_when_no_sensors():
-    """Weather override section hidden when no sensors."""
+    """Weather Override details section is hidden when no sensors are configured."""
     cfg = {}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Weather Override" not in summary
+    # The priority chain always shows the handler, but the details section should be absent
+    assert "Rain Rate Sensor" not in summary
+    assert "Wind Speed Sensor" not in summary
+    assert "Is-Raining Sensor" not in summary
 
 
 def test_weather_override_wind_sensor_shown():
@@ -596,3 +602,143 @@ def test_full_vertical_config_smoke():
     assert "sensor.lux" in summary
     assert "sensor.cloud_coverage" in summary
     assert "Cloud Suppression: Enabled" in summary
+
+
+# ---------------------------------------------------------------------------
+# Override Priority section
+# ---------------------------------------------------------------------------
+
+
+def test_priority_section_always_present():
+    """Override Priority section appears even with an empty config."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    assert "Override Priority" in summary
+
+
+def test_priority_always_on_handlers_always_shown():
+    """Manual Override, Solar Tracking, and Default are always shown as active."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    assert "Manual Override (70)" in summary
+    assert "holds calculated position" in summary
+    assert "Solar Tracking (40)" in summary
+    assert "calculated (sun position)" in summary
+    assert "Default (0)" in summary
+
+
+def test_priority_force_override_active_with_sensors():
+    """Force Override shows active and its position when sensors are configured."""
+    cfg = {
+        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
+        CONF_FORCE_OVERRIDE_POSITION: 100,
+        CONF_DEFAULT_HEIGHT: 60,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Force Override (100)" in summary
+    force_line = [line for line in summary.splitlines() if "Force Override (100)" in line][0]
+    assert "not configured" not in force_line
+    assert "100%" in force_line
+
+
+def test_priority_force_override_not_configured():
+    """Force Override shows not configured when no sensors are set."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    force_line = [line for line in summary.splitlines() if "Force Override (100)" in line][0]
+    assert "not configured" in force_line
+
+
+def test_priority_weather_override_active_with_sensors():
+    """Weather Override shows active and its position when sensors are configured."""
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_DEFAULT_HEIGHT: 60,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    weather_line = [line for line in summary.splitlines() if "Weather Override (90)" in line][0]
+    assert "not configured" not in weather_line
+
+
+def test_priority_weather_override_not_configured():
+    """Weather Override shows not configured when no weather sensors are set."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    weather_line = [line for line in summary.splitlines() if "Weather Override (90)" in line][0]
+    assert "not configured" in weather_line
+
+
+def test_priority_motion_timeout_shows_default_position():
+    """Motion Timeout shows the default position when configured."""
+    cfg = {
+        CONF_MOTION_SENSORS: ["binary_sensor.motion"],
+        CONF_DEFAULT_HEIGHT: 45,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    motion_line = [line for line in summary.splitlines() if "Motion Timeout (80)" in line][0]
+    assert "45%" in motion_line
+    assert "not configured" not in motion_line
+
+
+def test_priority_cloud_suppression_active():
+    """Cloud Suppression shows active and default position when enabled."""
+    cfg = {CONF_CLOUD_SUPPRESSION: True, CONF_DEFAULT_HEIGHT: 30}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    cloud_line = [line for line in summary.splitlines() if "Cloud Suppression (60)" in line][0]
+    assert "not configured" not in cloud_line
+    assert "30%" in cloud_line
+
+
+def test_priority_climate_active():
+    """Climate shows active and description when climate mode is on."""
+    cfg = {CONF_CLIMATE_MODE: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    climate_line = [line for line in summary.splitlines() if "Climate (50)" in line][0]
+    assert "not configured" not in climate_line
+    assert "climate strategy" in climate_line
+
+
+def test_priority_glare_zone_active_for_vertical():
+    """Glare Zone entry appears and is active for vertical blinds."""
+    cfg = {CONF_ENABLE_GLARE_ZONES: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Glare Zone (45)" in summary
+    glare_line = [line for line in summary.splitlines() if "Glare Zone (45)" in line][0]
+    assert "not configured" not in glare_line
+
+
+def test_priority_glare_zone_hidden_for_awning():
+    """Glare Zone entry is omitted for awning covers."""
+    summary = _build_config_summary({CONF_ENABLE_GLARE_ZONES: True}, SensorType.AWNING)
+    assert "Glare Zone" not in summary
+
+
+def test_priority_glare_zone_hidden_for_tilt():
+    """Glare Zone entry is omitted for tilt covers."""
+    summary = _build_config_summary({}, SensorType.TILT)
+    assert "Glare Zone" not in summary
+
+
+def test_priority_default_position_reflects_config():
+    """Default handler shows the configured default height."""
+    cfg = {CONF_DEFAULT_HEIGHT: 75}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    default_line = [line for line in summary.splitlines() if "Default (0)" in line][0]
+    assert "75%" in default_line
+
+
+def test_priority_all_nine_handlers_full_config():
+    """Full config shows all nine handlers, all active."""
+    cfg = _full_vertical()
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    for handler in [
+        "Force Override (100)",
+        "Weather Override (90)",
+        "Motion Timeout (80)",
+        "Manual Override (70)",
+        "Cloud Suppression (60)",
+        "Climate (50)",
+        "Glare Zone (45)",
+        "Solar Tracking (40)",
+        "Default (0)",
+    ]:
+        assert handler in summary
+        handler_line = [line for line in summary.splitlines() if handler in line][0]
+        assert "not configured" not in handler_line

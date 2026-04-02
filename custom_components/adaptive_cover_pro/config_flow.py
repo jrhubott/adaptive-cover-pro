@@ -709,6 +709,66 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if sensor_type:
         lines.append(f"**Cover Type:** {type_labels.get(sensor_type, sensor_type)}")
 
+    # --- Override Priority chain ---
+    default_pos = config.get(CONF_DEFAULT_HEIGHT, 0)
+    force_pos = config.get(CONF_FORCE_OVERRIDE_POSITION, 0)
+    weather_pos = config.get(CONF_WEATHER_OVERRIDE_POSITION, 0)
+
+    has_force = bool(config.get(CONF_FORCE_OVERRIDE_SENSORS))
+    has_weather = any([
+        config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
+        config.get(CONF_WEATHER_RAIN_SENSOR),
+        config.get(CONF_WEATHER_IS_RAINING_SENSOR),
+        config.get(CONF_WEATHER_IS_WINDY_SENSOR),
+        bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
+    ])
+    has_motion = bool(config.get(CONF_MOTION_SENSORS))
+    has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
+    has_climate = bool(config.get(CONF_CLIMATE_MODE))
+    has_glare = bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
+
+    def _active(label: str, pos_desc: str) -> str:
+        return f"  ✅ {label} → {pos_desc}"
+
+    def _inactive(label: str) -> str:
+        return f"  ❌ {label} — not configured"
+
+    priority_lines: list[str] = []
+    priority_lines.append(
+        _active("Force Override (100)", f"{force_pos}%") if has_force
+        else _inactive("Force Override (100)")
+    )
+    priority_lines.append(
+        _active("Weather Override (90)", f"{weather_pos}%") if has_weather
+        else _inactive("Weather Override (90)")
+    )
+    priority_lines.append(
+        _active("Motion Timeout (80)", f"default ({default_pos}%)") if has_motion
+        else _inactive("Motion Timeout (80)")
+    )
+    priority_lines.append(
+        _active("Manual Override (70)", "holds calculated position")  # always active
+    )
+    priority_lines.append(
+        _active("Cloud Suppression (60)", f"default ({default_pos}%)") if has_cloud
+        else _inactive("Cloud Suppression (60)")
+    )
+    priority_lines.append(
+        _active("Climate (50)", "calculated (climate strategy)") if has_climate
+        else _inactive("Climate (50)")
+    )
+    if sensor_type == SensorType.BLIND or sensor_type is None:
+        priority_lines.append(
+            _active("Glare Zone (45)", "calculated (glare protection)") if has_glare
+            else _inactive("Glare Zone (45)")
+        )
+    priority_lines.append(_active("Solar Tracking (40)", "calculated (sun position)")),
+    priority_lines.append(_active("Default (0)", f"default ({default_pos}%)"))
+
+    lines.append("")
+    lines.append("**Override Priority (highest wins):**")
+    lines.extend(priority_lines)
+
     # --- Cover entities ---
     entities = config.get(CONF_ENTITIES) or []
     if entities:
