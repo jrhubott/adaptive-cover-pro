@@ -553,3 +553,437 @@ class TestClimateCoverState:
             default_80_degrees = 80 / 90 * 100  # ~88.9%
             assert result != pytest.approx(default_80_degrees, abs=1)
             assert result == 50
+
+
+class TestIssue71IrradianceSummerFix:
+    """Regression tests for Issue #71.
+
+    Irradiance (and lux/weather) should suppress glare control even in summer.
+    When irradiance is below the configured threshold, there is no direct sun to
+    block, so covers should remain at the default (open) position rather than
+    closing based on solar position.
+    """
+
+    # ------------------------------------------------------------------
+    # normal_with_presence — summer + low irradiance
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_low_irradiance_with_presence_uses_default(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Summer + irradiance below threshold + presence → LOW_LIGHT (default/open).
+
+        This is the core regression for Issue #71: irradiance was previously
+        ignored when is_summer=True, causing covers to close regardless.
+        """
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",   # Above temp_high (25) → summer
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=True,  # Pyranometer says: no direct sun
+            )
+
+            state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
+            result = state_handler.normal_with_presence()
+
+            # Irradiance is low → should use default (open), not solar/closed
+            assert result == int(round(vertical_cover_instance.default))
+            assert state_handler.climate_strategy.name == "LOW_LIGHT"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_low_lux_with_presence_uses_default(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Summer + lux below threshold + presence → LOW_LIGHT (default/open)."""
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=True,  # Lux sensor says: no direct sun
+            )
+
+            state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
+            result = state_handler.normal_with_presence()
+
+            assert result == int(round(vertical_cover_instance.default))
+            assert state_handler.climate_strategy.name == "LOW_LIGHT"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_not_sunny_weather_with_presence_uses_default(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Summer + cloudy weather + presence → LOW_LIGHT (default/open)."""
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=True,
+                is_sunny=False,  # Cloudy
+            )
+
+            state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
+            result = state_handler.normal_with_presence()
+
+            assert result == int(round(vertical_cover_instance.default))
+            assert state_handler.climate_strategy.name == "LOW_LIGHT"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_sunny_high_irradiance_with_presence_uses_solar(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Summer + high irradiance + presence → GLARE_CONTROL (solar position).
+
+        When irradiance IS above threshold, summer glare control should still apply.
+        """
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=False,  # High irradiance → sun is present
+                lux_below_threshold=False,
+            )
+
+            state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
+            result = state_handler.normal_with_presence()
+
+            # High irradiance + summer → glare control (not default)
+            assert result != int(round(vertical_cover_instance.default))
+            assert state_handler.climate_strategy.name == "GLARE_CONTROL"
+
+    # ------------------------------------------------------------------
+    # normal_without_presence — summer + low irradiance
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_low_irradiance_without_presence_uses_default(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Summer + irradiance below threshold + no presence → LOW_LIGHT (default)."""
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=False,
+                is_sunny=True,
+                irradiance_below_threshold=True,  # Pyranometer: no direct sun
+            )
+
+            state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
+            result = state_handler.normal_without_presence()
+
+            # Irradiance low → default (open), not summer cooling (0)
+            assert result == int(round(vertical_cover_instance.default))
+            assert result != 0
+            assert state_handler.climate_strategy.name == "LOW_LIGHT"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_sunny_high_irradiance_without_presence_closes(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Summer + high irradiance + no presence → SUMMER_COOLING (0%).
+
+        Regression check: existing summer cooling behavior should be preserved
+        when irradiance is NOT low.
+        """
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with patch.object(
+            type(vertical_cover_instance), "valid", new_callable=PropertyMock
+        ) as mock_valid:
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                is_presence=False,
+                is_sunny=True,
+                irradiance_below_threshold=False,
+                lux_below_threshold=False,
+            )
+
+            state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
+            result = state_handler.normal_without_presence()
+
+            assert result == 0
+            assert state_handler.climate_strategy.name == "SUMMER_COOLING"
+
+    # ------------------------------------------------------------------
+    # tilt_with_presence — summer + low irradiance
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_tilt_summer_low_irradiance_with_presence_uses_solar(
+        self, mock_datetime, tilt_cover_instance, mock_logger
+    ):
+        """Tilt cover: summer + irradiance below threshold + presence → solar position.
+
+        For tilt covers, LOW_LIGHT uses _solar_position() not default.
+        """
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        tilt_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        tilt_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with (
+            patch.object(
+                type(tilt_cover_instance), "valid", new_callable=PropertyMock
+            ) as mock_valid,
+            patch.object(
+                type(tilt_cover_instance), "direct_sun_valid", new_callable=PropertyMock
+            ) as mock_dsv,
+        ):
+            mock_valid.return_value = True
+            mock_dsv.return_value = True
+            tilt_cover_instance.calculate_percentage = MagicMock(return_value=42.0)
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                blind_type="cover_tilt",
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=True,
+            )
+
+            state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
+            result = state_handler.tilt_with_presence(90)
+
+            # Low irradiance → LOW_LIGHT solar position (not summer cooling angle)
+            summer_cooling_pos = round((45 / 90) * 100)  # CLIMATE_SUMMER_TILT_ANGLE=45
+            assert result != summer_cooling_pos
+            assert state_handler.climate_strategy.name == "LOW_LIGHT"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_tilt_summer_high_irradiance_with_presence_uses_summer_cooling(
+        self, mock_datetime, tilt_cover_instance, mock_logger
+    ):
+        """Tilt cover: summer + high irradiance + presence → SUMMER_COOLING angle."""
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        tilt_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        tilt_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with (
+            patch.object(
+                type(tilt_cover_instance), "valid", new_callable=PropertyMock
+            ) as mock_valid,
+            patch.object(
+                type(tilt_cover_instance), "direct_sun_valid", new_callable=PropertyMock
+            ) as mock_dsv,
+        ):
+            mock_valid.return_value = True
+            mock_dsv.return_value = True
+            tilt_cover_instance.calculate_percentage = MagicMock(return_value=42.0)
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                blind_type="cover_tilt",
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=False,
+                lux_below_threshold=False,
+            )
+
+            state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
+            result = state_handler.tilt_with_presence(90)
+
+            # High irradiance + summer → summer cooling angle
+            from custom_components.adaptive_cover_pro.const import CLIMATE_SUMMER_TILT_ANGLE
+            expected = round((CLIMATE_SUMMER_TILT_ANGLE / 90) * 100)
+            assert result == expected
+            assert state_handler.climate_strategy.name == "SUMMER_COOLING"
+
+    # ------------------------------------------------------------------
+    # tilt_without_presence — summer + low irradiance
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_tilt_summer_low_irradiance_without_presence_uses_solar(
+        self, mock_datetime, tilt_cover_instance, mock_logger
+    ):
+        """Tilt cover: summer + irradiance below threshold + no presence → solar position."""
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        tilt_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        tilt_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with (
+            patch.object(
+                type(tilt_cover_instance), "valid", new_callable=PropertyMock
+            ) as mock_valid,
+            patch.object(
+                type(tilt_cover_instance), "direct_sun_valid", new_callable=PropertyMock
+            ) as mock_dsv,
+        ):
+            mock_valid.return_value = True
+            mock_dsv.return_value = True
+            tilt_cover_instance.calculate_percentage = MagicMock(return_value=35.0)
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                blind_type="cover_tilt",
+                is_presence=False,
+                is_sunny=True,
+                irradiance_below_threshold=True,
+            )
+
+            state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
+            result = state_handler.tilt_without_presence(90)
+
+            # Low irradiance → LOW_LIGHT (solar position), not POSITION_CLOSED
+            assert result != 0  # Not fully closed
+            assert state_handler.climate_strategy.name == "LOW_LIGHT"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_tilt_summer_high_irradiance_without_presence_closes(
+        self, mock_datetime, tilt_cover_instance, mock_logger
+    ):
+        """Tilt cover: summer + high irradiance + no presence → POSITION_CLOSED.
+
+        Regression check: existing tilt summer cooling behavior preserved.
+        """
+        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        tilt_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 7, 1, 18, 0, 0)
+        )
+        tilt_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 7, 1, 6, 0, 0)
+        )
+
+        with (
+            patch.object(
+                type(tilt_cover_instance), "valid", new_callable=PropertyMock
+            ) as mock_valid,
+        ):
+            mock_valid.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                blind_type="cover_tilt",
+                is_presence=False,
+                is_sunny=True,
+                irradiance_below_threshold=False,
+                lux_below_threshold=False,
+            )
+
+            state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
+            result = state_handler.tilt_without_presence(90)
+
+            from custom_components.adaptive_cover_pro.const import POSITION_CLOSED
+            assert result == POSITION_CLOSED
+            assert state_handler.climate_strategy.name == "SUMMER_COOLING"

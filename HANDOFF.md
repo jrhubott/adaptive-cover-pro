@@ -42,7 +42,7 @@ cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
 
 ### Tests
 
-854 passing, 0 failing.
+972 passing, 0 failing.
 Run: `venv/bin/python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -53,7 +53,8 @@ Run: `venv/bin/python -m pytest tests/ -v`
 | `geometry.py` | 100% |
 | `position_utils.py` | 100% |
 | `enums.py` | 97% |
-| `pipeline/` | 100% |
+| `pipeline/handlers/climate.py` | ~79% |
+| `pipeline/` (other) | 100% |
 | `managers/` | ~96% |
 | `state/` | ~95% |
 | `diagnostics/` | ~90% |
@@ -68,6 +69,7 @@ Run: `venv/bin/python -m pytest tests/ -v`
 | Version | Highlights |
 |---------|-----------|
 | v2.11.0 | Cloud coverage sensor support (Issue #94): percentage-based sensor as fourth OR signal for cloud suppression; CloudSuppressionHandler now registered in pipeline at priority 60. |
+| (pending) | fix(climate): Irradiance/lux/weather now suppress glare control in summer mode (Issue #71). Low-light check moved before season check in all four ClimateCoverState methods. 10 regression tests added. |
 | v2.10.0 | Sync category selection, duplicate cover flow, remove legacy import dead code. |
 | v2.9.4 | Hotfix: `AttributeError` on `_position_tolerance` crashing position mismatch binary sensors on startup and during updates. |
 | v2.9.3 | Translation fixes and config flow polish: missing menu labels, climate mode help text, cloud suppression clarification, reordered climate settings. |

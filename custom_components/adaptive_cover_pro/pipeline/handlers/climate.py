@@ -141,7 +141,9 @@ class ClimateCoverState:
         if self.climate_data.is_winter and self.cover.valid:
             self.climate_strategy = ClimateStrategy.WINTER_HEATING
             return 100
-        if not is_summer and (
+        # Low-light check applies in ALL seasons — if irradiance/lux indicates
+        # no real sun (even in summer), use default position rather than closing.
+        if (
             self.climate_data.lux
             or self.climate_data.irradiance
             or not self.climate_data.is_sunny
@@ -157,6 +159,15 @@ class ClimateCoverState:
     def normal_without_presence(self) -> int:
         """Climate strategy for normal covers without occupants."""
         if self.cover.valid:
+            # Low-light check overrides season logic — if irradiance/lux indicates
+            # no real sun (even in summer), use default position rather than closing.
+            if (
+                self.climate_data.lux
+                or self.climate_data.irradiance
+                or not self.climate_data.is_sunny
+            ):
+                self.climate_strategy = ClimateStrategy.LOW_LIGHT
+                return int(round(self.cover.default))
             if self.climate_data.is_summer:
                 self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return 0
@@ -169,19 +180,23 @@ class ClimateCoverState:
     def tilt_with_presence(self, degrees: int) -> int:
         """Climate strategy for tilt covers with occupants present."""
         if self.cover.valid:
-            if self.climate_data.is_summer:
-                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
-                return round((CLIMATE_SUMMER_TILT_ANGLE / degrees) * 100)
-            if self.climate_data.is_winter:
+            if self.climate_data.is_summer and self.climate_data.is_winter:
+                # Conflicting season signals — fall through to glare control
+                pass
+            elif self.climate_data.is_winter:
                 self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return self._solar_position()
-            if (
+            elif (
                 self.climate_data.lux
                 or self.climate_data.irradiance
                 or not self.climate_data.is_sunny
             ):
+                # Low-light check applies in ALL seasons for tilt covers too
                 self.climate_strategy = ClimateStrategy.LOW_LIGHT
                 return self._solar_position()
+            elif self.climate_data.is_summer:
+                self.climate_strategy = ClimateStrategy.SUMMER_COOLING
+                return round((CLIMATE_SUMMER_TILT_ANGLE / degrees) * 100)
         self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
 
@@ -190,6 +205,14 @@ class ClimateCoverState:
         tilt_cover = cast(AdaptiveTiltCover, self.cover)
         beta = np.rad2deg(tilt_cover.beta)
         if tilt_cover.valid:
+            # Low-light check applies before summer cooling
+            if (
+                self.climate_data.lux
+                or self.climate_data.irradiance
+                or not self.climate_data.is_sunny
+            ):
+                self.climate_strategy = ClimateStrategy.LOW_LIGHT
+                return self._solar_position()
             if self.climate_data.is_summer:
                 self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return POSITION_CLOSED
