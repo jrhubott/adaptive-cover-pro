@@ -41,18 +41,22 @@ class GlareZoneHandler(OverrideHandler):
         cover = cast(AdaptiveVerticalCover, snapshot.cover)
         window_half_width = snapshot.glare_zones.window_width / 2.0
         base_distance = cover.distance
-        max_distance = base_distance
-        contributing_zones: list[str] = []
 
-        for zone in snapshot.glare_zones.zones:
-            if zone.name not in snapshot.active_zone_names:
+        zones_by_name = {z.name: z for z in snapshot.glare_zones.zones}
+        zone_results: list[tuple[str, float]] = []
+        for zone_name in snapshot.active_zone_names:
+            zone = zones_by_name.get(zone_name)
+            if zone is None:
                 continue
-            zone_dist = glare_zone_effective_distance(
-                zone, cover.gamma, window_half_width
-            )
-            if zone_dist is not None and zone_dist > max_distance:
-                max_distance = zone_dist
-                contributing_zones.append(zone.name)
+            zone_dist = glare_zone_effective_distance(zone, cover.gamma, window_half_width)
+            if zone_dist is not None:
+                zone_results.append((zone_name, zone_dist))
+
+        if not zone_results:
+            return None
+
+        max_distance = max(d for _, d in zone_results)
+        contributing_zones = [name for name, d in zone_results if d == max_distance]
 
         if max_distance <= base_distance:
             # No zone requires deeper coverage — let SolarHandler handle it

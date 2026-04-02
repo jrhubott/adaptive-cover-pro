@@ -11,10 +11,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
 )
 
 
-def _make_climate(mock_logger, **overrides):
+def _make_climate(**overrides):
     """Build a ClimateCoverData with sensible defaults and optional overrides."""
     defaults = {
-        "logger": mock_logger,
         "temp_low": 20.0,
         "temp_high": 25.0,
         "temp_switch": False,
@@ -49,7 +48,7 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = _make_climate(mock_logger, is_presence=True)
+        climate_data = _make_climate(is_presence=True)
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.normal_type_cover()
@@ -69,7 +68,7 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = _make_climate(mock_logger, is_presence=False)
+        climate_data = _make_climate(is_presence=False)
 
         state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
         result = state_handler.normal_type_cover()
@@ -90,7 +89,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="18.0",  # Below temp_low (20)
             is_sunny=False,  # Cloudy
             is_presence=True,
@@ -116,7 +114,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="21.0",
             is_sunny=False,
             is_presence=True,
@@ -142,7 +139,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="26.0",
             outside_temperature="28.0",
             temp_high=25.0,
@@ -172,7 +168,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="22.0",  # Between temp_low and temp_high
             is_sunny=True,
             is_presence=True,
@@ -198,7 +193,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="27.0",
             outside_temperature="30.0",
             temp_high=25.0,
@@ -226,7 +220,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="18.0",
             is_presence=False,
         )
@@ -254,7 +247,6 @@ class TestClimateCoverState:
         vertical_cover_instance.sol_azi = 90.0
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="22.0",
             is_presence=False,
         )
@@ -269,7 +261,7 @@ class TestClimateCoverState:
         """Test tilt_state with mode1 (90 degrees)."""
         tilt_cover_instance.mode = "mode1"
 
-        climate_data = _make_climate(mock_logger, blind_type="cover_tilt")
+        climate_data = _make_climate(blind_type="cover_tilt")
 
         state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
         result = state_handler.tilt_state()
@@ -280,7 +272,7 @@ class TestClimateCoverState:
         """Test tilt_state with mode2 (180 degrees)."""
         tilt_cover_instance.mode = "mode2"
 
-        climate_data = _make_climate(mock_logger, blind_type="cover_tilt")
+        climate_data = _make_climate(blind_type="cover_tilt")
 
         state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
         result = state_handler.tilt_state()
@@ -301,7 +293,6 @@ class TestClimateCoverState:
         )
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="22.0",
             is_sunny=True,
             is_presence=True,
@@ -323,7 +314,7 @@ class TestClimateCoverState:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = _make_climate(mock_logger, blind_type="cover_tilt")
+        climate_data = _make_climate(blind_type="cover_tilt")
 
         state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
         try:
@@ -350,7 +341,6 @@ class TestClimateCoverState:
         vertical_cover_instance.max_pos_bool = False
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="22.0",
             is_sunny=True,
             is_presence=True,
@@ -377,7 +367,6 @@ class TestClimateCoverState:
         vertical_cover_instance.min_pos_bool = False
 
         climate_data = _make_climate(
-            mock_logger,
             inside_temperature="22.0",
             is_sunny=True,
             is_presence=True,
@@ -416,7 +405,6 @@ class TestClimateCoverState:
             mock_valid.return_value = True
 
             climate_data = _make_climate(
-                mock_logger,
                 inside_temperature="18.0",  # Below temp_low (20) = winter
                 is_sunny=True,
                 is_presence=True,
@@ -448,7 +436,6 @@ class TestClimateCoverState:
             mock_valid.return_value = True
 
             climate_data = _make_climate(
-                mock_logger,
                 inside_temperature="18.0",  # Below temp_low (20) = winter
                 is_sunny=False,  # Cloudy
                 is_presence=True,
@@ -478,7 +465,6 @@ class TestClimateCoverState:
             mock_valid.return_value = True
 
             climate_data = _make_climate(
-                mock_logger,
                 inside_temperature="18.0",  # Below temp_low (20) = winter
                 is_sunny=True,
                 is_presence=True,
@@ -514,7 +500,6 @@ class TestClimateCoverState:
             mock_valid.return_value = True
 
             climate_data = _make_climate(
-                mock_logger,
                 inside_temperature="22.0",  # Between temp_low and temp_high
                 is_sunny=True,
                 is_presence=True,
@@ -555,7 +540,6 @@ class TestClimateCoverState:
             tilt_cover_instance.calculate_percentage = MagicMock(return_value=50.0)
 
             climate_data = _make_climate(
-                mock_logger,
                 inside_temperature="18.0",  # Below temp_low (20) = winter
                 blind_type="cover_tilt",
                 is_sunny=True,

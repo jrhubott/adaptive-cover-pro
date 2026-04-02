@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class ClimateOptions:
     """Climate configuration thresholds for the ClimateHandler."""
 
@@ -30,7 +30,7 @@ class ClimateOptions:
     cloud_suppression_enabled: bool
 
 
-@dataclass
+@dataclass(frozen=True)
 class PipelineSnapshot:
     """Raw state passed to all pipeline handlers.
 
@@ -61,7 +61,7 @@ class PipelineSnapshot:
 
     # Glare zones (vertical covers only — None for awning/tilt)
     glare_zones: GlareZonesConfig | None
-    active_zone_names: set[str]
+    active_zone_names: frozenset[str]
 
 
 # ---------------------------------------------------------------------------

@@ -43,17 +43,19 @@ class TestSolarHandler:
 
     def test_applies_max_position_limit(self) -> None:
         """Max position limit is applied when configured."""
+        from tests.test_pipeline.conftest import _make_mock_cover
+
         config = MagicMock()
         config.min_pos = None
         config.max_pos = 80
         config.min_pos_sun_only = False
         config.max_pos_sun_only = False
-        snap = make_snapshot(
+        cover = _make_mock_cover(
             direct_sun_valid=True,
             calculate_percentage_return=95.0,
+            config=config,
         )
-        snap.cover.config = config
-        snap.config = config
+        snap = make_snapshot(cover=cover)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position <= 80

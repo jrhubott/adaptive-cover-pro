@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
-
 import pytest
 
-from custom_components.adaptive_cover_pro.config_context_adapter import (
-    ConfigContextAdapter,
-)
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
@@ -462,7 +457,6 @@ class TestClimateDiagnostics:
 
     def _make_climate_data(self):
         return ClimateCoverData(
-            logger=MagicMock(spec=ConfigContextAdapter),
             temp_low=20.0,
             temp_high=25.0,
             temp_switch=True,

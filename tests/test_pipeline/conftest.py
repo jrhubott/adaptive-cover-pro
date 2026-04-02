@@ -49,7 +49,7 @@ def make_snapshot(
     manual_override_active: bool = False,
     motion_timeout_active: bool = False,
     glare_zones=None,
-    active_zone_names: set[str] | None = None,
+    active_zone_names: set[str] | frozenset[str] | None = None,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -77,5 +77,5 @@ def make_snapshot(
         manual_override_active=manual_override_active,
         motion_timeout_active=motion_timeout_active,
         glare_zones=glare_zones,
-        active_zone_names=active_zone_names if active_zone_names is not None else set(),
+        active_zone_names=frozenset(active_zone_names) if active_zone_names is not None else frozenset(),
     )

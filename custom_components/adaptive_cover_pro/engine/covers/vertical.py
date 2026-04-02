@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 from numpy import cos, sin, tan
@@ -58,7 +58,6 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
     """Calculate state for Vertical blinds."""
 
     vert_config: VerticalConfig = None  # type: ignore[assignment]
-    active_zone_names: set[str] = field(default_factory=set)
 
     @property
     def glare_zones(self) -> GlareZonesConfig | None:

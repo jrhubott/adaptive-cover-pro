@@ -153,6 +153,65 @@ class TestGlareZoneHandlerLogic:
         result = self.handler.evaluate(snap)
         assert result is None
 
+    def test_two_zones_with_equal_max_distance_both_in_reason(self) -> None:
+        """Both zones appear in the reason string when they share the maximum distance."""
+        # Two zones at the same y (perpendicular distance from window wall) with gamma=0.
+        # nearest_y = zone.y - zone.radius * cos(0) = zone.y - radius.
+        # For zone_a: nearest_y = 500 - 0 = 500 → effective_distance = 5.0m
+        # For zone_b: nearest_y = 530 - 30 = 500 → effective_distance = 5.0m
+        zone_a = GlareZone(name="desk_left", x=0.0, y=500.0, radius=0.0)
+        zone_b = GlareZone(name="desk_right", x=0.0, y=530.0, radius=30.0)
+        glare_cfg = GlareZonesConfig(
+            zones=[zone_a, zone_b],
+            window_width=400.0,
+        )
+        cover = _make_vertical_cover(
+            distance=1.0,  # base distance 1m < 5m zone distance
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=80.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"desk_left", "desk_right"},
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.GLARE_ZONE
+        assert "desk_left" in result.reason
+        assert "desk_right" in result.reason
+
+    def test_blocked_zone_ignored_valid_zone_used(self) -> None:
+        """Handler uses the valid zone's distance when one zone is naturally blocked."""
+        # zone_blocked: x far outside the window half-width → returns None
+        # x_at_window = x + y * tan(gamma). At gamma=0, x_at_window = x.
+        # window_half_width = 100.0cm, so any |x| > 100 is blocked.
+        zone_blocked = GlareZone(name="blocked", x=500.0, y=300.0, radius=0.0)
+        zone_valid = GlareZone(name="valid", x=0.0, y=400.0, radius=0.0)
+        glare_cfg = GlareZonesConfig(
+            zones=[zone_blocked, zone_valid],
+            window_width=200.0,  # half-width = 100cm
+        )
+        cover = _make_vertical_cover(
+            distance=1.0,  # 1m < 4m zone_valid distance
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=70.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"blocked", "valid"},
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.GLARE_ZONE
+        assert "valid" in result.reason
+        assert "blocked" not in result.reason
+
     def test_priority_is_45(self) -> None:
         """GlareZoneHandler has priority 45."""
         assert GlareZoneHandler.priority == 45

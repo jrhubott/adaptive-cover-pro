@@ -611,7 +611,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             manual_override_active=self.manager.binary_cover_manual,
             motion_timeout_active=self.is_motion_timeout_active,
             glare_zones=glare_zones_cfg,
-            active_zone_names=active_zone_names,
+            active_zone_names=frozenset(active_zone_names),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
         self.control_method = self._pipeline_result.control_method
@@ -986,12 +986,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 config=config,
                 vert_config=vert_config,
             )
-            if glare_zones_cfg is not None:
-                active_names: set[str] = set()
-                for idx, zone in enumerate(glare_zones_cfg.zones):
-                    if getattr(self, f"glare_zone_{idx}", True):
-                        active_names.add(zone.name)
-                cover_data.active_zone_names = active_names
         if self.is_awning_cover:
             cover_data = AdaptiveHorizontalCover(
                 logger=self.logger,

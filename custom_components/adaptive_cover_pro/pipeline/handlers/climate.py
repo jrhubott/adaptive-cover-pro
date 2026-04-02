@@ -8,7 +8,7 @@ climate strategy self-contained in one plugin handler file.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import numpy as np
 
@@ -23,10 +23,6 @@ from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
 from ..types import PipelineResult, PipelineSnapshot
 
-if TYPE_CHECKING:
-    from ...config_context_adapter import ConfigContextAdapter
-
-
 # ---------------------------------------------------------------------------
 # Climate data container (moved from calculation.py)
 # ---------------------------------------------------------------------------
@@ -40,7 +36,6 @@ class ClimateCoverData:
     constructing this dataclass.
     """
 
-    logger: ConfigContextAdapter
     temp_low: float
     temp_high: float
     temp_switch: bool
@@ -253,7 +248,6 @@ class ClimateHandler(OverrideHandler):
         r = snapshot.climate_readings
 
         climate_data = ClimateCoverData(
-            logger=snapshot.cover.logger,
             temp_low=opts.temp_low,
             temp_high=opts.temp_high,
             temp_switch=opts.temp_switch,

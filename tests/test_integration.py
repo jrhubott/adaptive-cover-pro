@@ -71,10 +71,9 @@ def _make_sun_data() -> MagicMock:
     return sun_data
 
 
-def _make_climate_data(logger: MagicMock, **overrides) -> ClimateCoverData:
+def _make_climate_data(**overrides) -> ClimateCoverData:
     """Real ClimateCoverData with sensible defaults; accepts field overrides."""
     defaults = {
-        "logger": logger,
         "temp_low": 20.0,
         "temp_high": 25.0,
         "temp_switch": True,
@@ -311,7 +310,6 @@ class TestEndToEndIntegration:
             )
 
             climate_data = _make_climate_data(
-                logger,
                 outside_temperature=15.0,  # below temp_low=20 → winter
                 is_sunny=True,
                 is_presence=True,
@@ -398,7 +396,6 @@ class TestEndToEndIntegration:
             )
 
             climate_data = _make_climate_data(
-                logger,
                 outside_temperature=30.0,  # above temp_high=25 and temp_summer_outside=22 → summer
                 transparent_blind=True,
                 is_sunny=True,
