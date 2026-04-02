@@ -14,6 +14,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import (
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
+    CONF_ENABLE_GLARE_ZONES,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
@@ -121,6 +122,24 @@ async def async_setup_entry(
             switches.append(lux_switch)
         if irradiance_entity:
             switches.append(irradiance_switch)
+
+    # Glare zone switches — one per configured zone for vertical covers
+    if sensor_type == "cover_blind" and config_entry.options.get(CONF_ENABLE_GLARE_ZONES):
+        for idx in range(1, 5):
+            zone_name = config_entry.options.get(f"glare_zone_{idx}_name", "")
+            if not zone_name:
+                continue
+            switches.append(
+                AdaptiveCoverSwitch(
+                    config_entry.entry_id,
+                    hass,
+                    config_entry,
+                    coordinator,
+                    f"Glare Zone: {zone_name}",
+                    True,
+                    f"glare_zone_{idx - 1}",
+                )
+            )
 
     async_add_entities(switches)
 
