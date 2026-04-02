@@ -1,7 +1,6 @@
 """Tests for glare zone data model and geometry."""
 
 import pytest
-from math import cos, radians, sin, tan
 
 from custom_components.adaptive_cover_pro.config_types import (
     GlareZone,
@@ -96,3 +95,14 @@ class TestGlareZoneGeometry:
         zone = GlareZone(name="Z", x=0.0, y=300.0, radius=0.0)
         dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=200.0)
         assert dist == pytest.approx(3.00, abs=1e-6)
+
+    def test_zone_offset_negative_gamma(self):
+        """Zone offset left, sun from right (negative gamma): ray misses narrow window."""
+        # Zone at x=-100, y=200, r=0; gamma=-30 (sun from right)
+        # nearest_x = -100 + 0*sin(-30) = -100
+        # nearest_y = 200 - 0*cos(-30) = 200
+        # x_at_window = -100 + 200*tan(-30) ≈ -100 - 115.47 = -215.47
+        # abs(-215.47) > 150 → None (ray exits left of window)
+        zone = GlareZone(name="Z", x=-100.0, y=200.0, radius=0.0)
+        dist = _glare_zone_effective_distance(zone, gamma=-30.0, window_half_width=150.0)
+        assert dist is None

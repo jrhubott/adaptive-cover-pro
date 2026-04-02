@@ -37,8 +37,8 @@ def _glare_zone_effective_distance(
     # First-hit point on the zone circle: the point facing the incoming sun.
     # Sun arrives from direction (sin γ, −cos γ) on the floor XY plane,
     # so the facing point is offset from centre in that direction.
-    nearest_x = zone.x + zone.radius * sin(gamma_rad)
-    nearest_y = zone.y - zone.radius * cos(gamma_rad)
+    nearest_x = zone.x + zone.radius * float(sin(gamma_rad))
+    nearest_y = zone.y - zone.radius * float(cos(gamma_rad))
 
     # Zone must be in front of the window wall
     if nearest_y <= 0:
@@ -46,7 +46,7 @@ def _glare_zone_effective_distance(
 
     # Project back to find where the sun ray enters the window.
     # A ray hitting floor point (fx, fy) entered at x_w = fx + fy * tan(γ).
-    x_at_window = nearest_x + nearest_y * tan(gamma_rad)
+    x_at_window = nearest_x + nearest_y * float(tan(gamma_rad))
     if abs(x_at_window) > window_half_width:
         return None  # Ray enters outside the window opening — zone is naturally blocked
 
