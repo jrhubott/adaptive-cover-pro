@@ -210,7 +210,12 @@ def test_minimal_vertical_contains_key_fields():
 
 def test_geometry_vertical_optional_fields_omitted_when_zero():
     """Window depth and sill height of 0 do not appear."""
-    cfg = {CONF_HEIGHT_WIN: 2.0, CONF_DISTANCE: 0.5, CONF_WINDOW_DEPTH: 0.0, CONF_SILL_HEIGHT: 0.0}
+    cfg = {
+        CONF_HEIGHT_WIN: 2.0,
+        CONF_DISTANCE: 0.5,
+        CONF_WINDOW_DEPTH: 0.0,
+        CONF_SILL_HEIGHT: 0.0,
+    }
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "reveal" not in summary
     assert "sill" not in summary
@@ -218,7 +223,12 @@ def test_geometry_vertical_optional_fields_omitted_when_zero():
 
 def test_geometry_vertical_optional_fields_shown_when_nonzero():
     """Window depth and sill height appear when > 0."""
-    cfg = {CONF_HEIGHT_WIN: 2.0, CONF_DISTANCE: 0.5, CONF_WINDOW_DEPTH: 0.1, CONF_SILL_HEIGHT: 0.5}
+    cfg = {
+        CONF_HEIGHT_WIN: 2.0,
+        CONF_DISTANCE: 0.5,
+        CONF_WINDOW_DEPTH: 0.1,
+        CONF_SILL_HEIGHT: 0.5,
+    }
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "reveal" in summary
     assert "sill" in summary
@@ -624,7 +634,10 @@ def test_priority_always_on_handlers_active():
 
 def test_priority_force_override_active_with_sensors():
     """Force Override shows ✅ when sensors are configured."""
-    cfg = {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"], CONF_FORCE_OVERRIDE_POSITION: 100}
+    cfg = {
+        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
+        CONF_FORCE_OVERRIDE_POSITION: 100,
+    }
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "✅Force" in summary
 
@@ -637,7 +650,10 @@ def test_priority_force_override_not_configured():
 
 def test_priority_weather_override_active_with_sensors():
     """Weather Override shows ✅ when sensors are configured."""
-    cfg = {CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind", CONF_WEATHER_OVERRIDE_POSITION: 0}
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "✅Weather" in summary
 

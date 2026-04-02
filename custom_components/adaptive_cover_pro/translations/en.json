@@ -205,7 +205,8 @@
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
           "presence_entity": "Presence entity (optional)",
-          "transparent_blind": "Transparent blind"
+          "transparent_blind": "Transparent blind",
+          "winter_close_insulation": "Winter insulation mode"
         },
         "data_description": {
           "weather_entity": "Optional weather integration for cloud-aware control. When weather = cloudy/rainy: Skips winter solar gain (no sun to capture), Returns to default position (no overheating risk). When weather = sunny/clear: Applies full climate strategies. Leave empty to assume always sunny (simpler). Recommended if you have weather integration - avoids unnecessary closes.",
@@ -222,7 +223,8 @@
           "temp_high": "Temperature threshold for SUMMER mode (in your system units). When temperature > this value: Cover closes fully to prevent overheating. Recommended values: °C: 23-25°C (73-77°F), °F: 73-77°F. Adjust based on your cooling preference. Lower value = summer mode sooner (aggressive cooling). Higher value = summer mode later (tolerate more heat).",
           "outside_temp": "Optional outdoor temperature sensor for better summer detection. When set, summer mode requires BOTH: Indoor temperature > high threshold AND Outdoor temperature > outside threshold. Prevents closing covers when it's cool outside (open for breeze). Leave empty to use only indoor temperature. Recommended if you have outdoor sensor - improves comfort.",
           "presence_entity": "Optional presence sensor (home/away detection). Supported types: device_tracker, person, zone, binary_sensor. When AWAY: Summer closes fully (save on AC), Winter opens on sunny days (passive solar heating). When HOME: Use normal climate strategies with weather awareness. Leave empty to always assume someone is home. Saves energy when away, maintains comfort when home.",
-          "transparent_blind": "Check this if your blind is see-through (sheer/light fabric). Changes summer behavior: Transparent ON closes to 0% in summer (block heat, keep light). Transparent OFF uses calculated position. Transparent blinds reduce heat but allow light through. Leave unchecked for opaque/blackout blinds."
+          "transparent_blind": "Check this if your blind is see-through (sheer/light fabric). Changes summer behavior: Transparent ON closes to 0% in summer (block heat, keep light). Transparent OFF uses calculated position. Transparent blinds reduce heat but allow light through. Leave unchecked for opaque/blackout blinds.",
+          "winter_close_insulation": "Close covers in winter when the sun is not hitting the window. Provides insulation by keeping cold air out and warmth in. When the sun enters the window's field of view, covers will open for solar heating as normal."
         },
         "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
         "title": "Climate settings"
@@ -560,7 +562,8 @@
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
           "presence_entity": "Presence entity (optional)",
-          "transparent_blind": "Transparent blind"
+          "transparent_blind": "Transparent blind",
+          "winter_close_insulation": "Winter insulation mode"
         },
         "data_description": {
           "weather_entity": "Optional weather integration for cloud-aware control. When weather = cloudy/rainy: Skips winter solar gain (no sun to capture), Returns to default position (no overheating risk). When weather = sunny/clear: Applies full climate strategies. Leave empty to assume always sunny (simpler). Recommended if you have weather integration - avoids unnecessary closes.",
@@ -577,7 +580,8 @@
           "temp_high": "Temperature threshold for SUMMER mode (in your system units). When temperature > this value: Cover closes fully to prevent overheating. Recommended values: °C: 23-25°C (73-77°F), °F: 73-77°F. Adjust based on your cooling preference. Lower value = summer mode sooner (aggressive cooling). Higher value = summer mode later (tolerate more heat).",
           "outside_temp": "Optional outdoor temperature sensor for better summer detection. When set, summer mode requires BOTH: Indoor temperature > high threshold AND Outdoor temperature > outside threshold. Prevents closing covers when it's cool outside (open for breeze). Leave empty to use only indoor temperature. Recommended if you have outdoor sensor - improves comfort.",
           "presence_entity": "Optional presence sensor (home/away detection). Supported types: device_tracker, person, zone, binary_sensor. When AWAY: Summer closes fully (save on AC), Winter opens on sunny days (passive solar heating). When HOME: Use normal climate strategies with weather awareness. Leave empty to always assume someone is home. Saves energy when away, maintains comfort when home.",
-          "transparent_blind": "Check this if your blind is see-through (sheer/light fabric). Changes summer behavior: Transparent ON closes to 0% in summer (block heat, keep light). Transparent OFF uses calculated position. Transparent blinds reduce heat but allow light through. Leave unchecked for opaque/blackout blinds."
+          "transparent_blind": "Check this if your blind is see-through (sheer/light fabric). Changes summer behavior: Transparent ON closes to 0% in summer (block heat, keep light). Transparent OFF uses calculated position. Transparent blinds reduce heat but allow light through. Leave unchecked for opaque/blackout blinds.",
+          "winter_close_insulation": "Close covers in winter when the sun is not hitting the window. Provides insulation by keeping cold air out and warmth in. When the sun enters the window's field of view, covers will open for solar heating as normal."
         },
         "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
         "title": "Climate settings"

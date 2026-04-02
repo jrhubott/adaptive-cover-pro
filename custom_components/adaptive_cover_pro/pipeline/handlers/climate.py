@@ -48,6 +48,7 @@ class ClimateCoverData:
     is_sunny: bool
     lux_below_threshold: bool
     irradiance_below_threshold: bool
+    winter_close_insulation: bool
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -141,6 +142,10 @@ class ClimateCoverState:
         if self.climate_data.is_winter and self.cover.valid:
             self.climate_strategy = ClimateStrategy.WINTER_HEATING
             return 100
+        # Close for insulation when in winter and sun not hitting window.
+        if self.climate_data.is_winter and self.climate_data.winter_close_insulation:
+            self.climate_strategy = ClimateStrategy.WINTER_INSULATION
+            return 0
         # Low-light check applies in ALL seasons — if irradiance/lux indicates
         # no real sun (even in summer), use default position rather than closing.
         if (
@@ -174,6 +179,10 @@ class ClimateCoverState:
             if self.climate_data.is_winter:
                 self.climate_strategy = ClimateStrategy.WINTER_HEATING
                 return 100
+        # Close for insulation when in winter and sun not hitting window.
+        if self.climate_data.is_winter and self.climate_data.winter_close_insulation:
+            self.climate_strategy = ClimateStrategy.WINTER_INSULATION
+            return 0
         self.climate_strategy = ClimateStrategy.LOW_LIGHT
         return int(round(self.cover.default))
 
@@ -197,6 +206,10 @@ class ClimateCoverState:
             elif self.climate_data.is_summer:
                 self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return round((CLIMATE_SUMMER_TILT_ANGLE / degrees) * 100)
+        # Close for insulation when in winter and sun not hitting window.
+        if self.climate_data.is_winter and self.climate_data.winter_close_insulation:
+            self.climate_strategy = ClimateStrategy.WINTER_INSULATION
+            return POSITION_CLOSED
         self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
 
@@ -225,6 +238,10 @@ class ClimateCoverState:
                 return round((beta + 90) / degrees * 100)
             self.climate_strategy = ClimateStrategy.GLARE_CONTROL
             return round((CLIMATE_DEFAULT_TILT_ANGLE / degrees) * 100)
+        # Close for insulation when in winter and sun not hitting window.
+        if self.climate_data.is_winter and self.climate_data.winter_close_insulation:
+            self.climate_strategy = ClimateStrategy.WINTER_INSULATION
+            return POSITION_CLOSED
         self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return self._solar_position()
 
@@ -283,6 +300,7 @@ class ClimateHandler(OverrideHandler):
             is_sunny=r.is_sunny,
             lux_below_threshold=r.lux_below_threshold,
             irradiance_below_threshold=r.irradiance_below_threshold,
+            winter_close_insulation=opts.winter_close_insulation,
         )
 
         climate_cover_state = ClimateCoverState(snapshot.cover, climate_data)

@@ -28,6 +28,7 @@ class ClimateOptions:
     transparent_blind: bool
     temp_summer_outside: float | None
     cloud_suppression_enabled: bool
+    winter_close_insulation: bool
 
 
 @dataclass(frozen=True)

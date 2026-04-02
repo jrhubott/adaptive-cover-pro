@@ -248,6 +248,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=True,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)
@@ -269,6 +270,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=False,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)
@@ -290,6 +292,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=False,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)
@@ -311,6 +314,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=True,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)
@@ -331,6 +335,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=True,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)
@@ -351,6 +356,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=True,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)
@@ -370,6 +376,7 @@ class TestCloudSuppressionPipelineIntegration:
                 transparent_blind=False,
                 temp_summer_outside=None,
                 cloud_suppression_enabled=True,
+                winter_close_insulation=False,
             ),
         )
         result = registry.evaluate(snapshot)

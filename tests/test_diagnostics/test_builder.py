@@ -470,6 +470,7 @@ class TestClimateDiagnostics:
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            winter_close_insulation=False,
         )
 
     def test_climate_data_present(self, builder: DiagnosticsBuilder):

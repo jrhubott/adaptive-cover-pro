@@ -38,6 +38,7 @@ def _make_options(enabled: bool = True) -> ClimateOptions:
         transparent_blind=False,
         temp_summer_outside=None,
         cloud_suppression_enabled=enabled,
+        winter_close_insulation=False,
     )
 
 

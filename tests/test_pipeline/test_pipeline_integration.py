@@ -58,6 +58,7 @@ def _cloud_options() -> ClimateOptions:
         transparent_blind=False,
         temp_summer_outside=None,
         cloud_suppression_enabled=True,
+        winter_close_insulation=False,
     )
 
 

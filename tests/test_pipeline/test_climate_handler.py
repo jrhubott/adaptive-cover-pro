@@ -42,6 +42,7 @@ def _make_options(
     temp_switch=False,
     transparent_blind=False,
     temp_summer_outside=None,
+    winter_close_insulation=False,
 ) -> ClimateOptions:
     return ClimateOptions(
         temp_low=temp_low,
@@ -50,6 +51,7 @@ def _make_options(
         transparent_blind=transparent_blind,
         temp_summer_outside=temp_summer_outside,
         cloud_suppression_enabled=False,
+        winter_close_insulation=winter_close_insulation,
     )
 
 
@@ -197,3 +199,164 @@ class TestClimateHandlerMetadata:
     def test_name(self) -> None:
         """ClimateHandler name is 'climate'."""
         assert ClimateHandler.name == "climate"
+
+
+class TestWinterInsulation:
+    """Tests for the winter insulation feature (Issue #29).
+
+    When winter_close_insulation=True and it is winter and the sun is NOT
+    in the window's FOV, the cover should close (0%) for heat retention.
+    Priority: winter heating (sun in FOV) > winter insulation (sun not in FOV).
+    """
+
+    handler = ClimateHandler()
+
+    # ------------------------------------------------------------------
+    # normal_with_presence
+    # ------------------------------------------------------------------
+
+    def test_insulation_closes_cover_with_presence(self) -> None:
+        """Winter + no sun in FOV + insulation enabled + presence → close (0%)."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 0
+
+    def test_insulation_disabled_uses_default_with_presence(self) -> None:
+        """Winter + no sun in FOV + insulation DISABLED + presence → glare/default strategy."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=False),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        # Insulation is off → strategy is GLARE_CONTROL (not WINTER_INSULATION)
+        from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+
+        assert result.climate_strategy != ClimateStrategy.WINTER_INSULATION
+
+    def test_winter_heating_takes_priority_over_insulation_with_presence(self) -> None:
+        """Winter + sun in FOV → open (100%), not closed for insulation."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        cover.valid = True
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    # ------------------------------------------------------------------
+    # normal_without_presence
+    # ------------------------------------------------------------------
+
+    def test_insulation_closes_cover_without_presence(self) -> None:
+        """Winter + no sun in FOV + insulation enabled + no presence → close (0%)."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=False),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 0
+
+    def test_insulation_disabled_without_presence_uses_default(self) -> None:
+        """Winter + no sun in FOV + insulation DISABLED + no presence → LOW_LIGHT strategy."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=False),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=False),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        # Insulation is off → strategy is LOW_LIGHT (not WINTER_INSULATION)
+        from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+
+        assert result.climate_strategy != ClimateStrategy.WINTER_INSULATION
+
+    def test_winter_heating_takes_priority_without_presence(self) -> None:
+        """Winter + sun in FOV → open (100%), even when insulation is enabled."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        cover.valid = True
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=False),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    # ------------------------------------------------------------------
+    # Not-winter: insulation has no effect
+    # ------------------------------------------------------------------
+
+    def test_insulation_no_effect_in_summer(self) -> None:
+        """Summer + insulation enabled → summer cooling logic, not insulation."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0, is_presence=True),
+            climate_options=_make_options(temp_high=26.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        # Summer cooling with transparent_blind=False → solar position, not 0
+        assert result.control_method == ControlMethod.SUMMER
+
+    def test_insulation_no_effect_in_intermediate_season(self) -> None:
+        """Intermediate temp + insulation enabled → glare/default, not closed."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0, is_presence=True),
+            climate_options=_make_options(
+                temp_low=18.0, temp_high=26.0, winter_close_insulation=True
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.SOLAR
+
+    # ------------------------------------------------------------------
+    # climate mode off: insulation has no effect
+    # ------------------------------------------------------------------
+
+    def test_insulation_no_effect_when_climate_mode_off(self) -> None:
+        """Climate mode disabled → handler skips entirely regardless of insulation."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=False,
+            climate_readings=_make_readings(inside_temperature=15.0),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is None

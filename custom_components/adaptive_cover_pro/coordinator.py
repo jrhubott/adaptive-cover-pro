@@ -88,6 +88,7 @@ from .const import (
     CONF_WEATHER_STATE,
     CONF_OUTSIDE_THRESHOLD,
     CONF_TRANSPARENT_BLIND,
+    CONF_WINTER_CLOSE_INSULATION,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
@@ -1220,6 +1221,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             transparent_blind=options.get(CONF_TRANSPARENT_BLIND, False),
             temp_summer_outside=options.get(CONF_OUTSIDE_THRESHOLD),
             cloud_suppression_enabled=bool(options.get(CONF_CLOUD_SUPPRESSION, False)),
+            winter_close_insulation=bool(
+                options.get(CONF_WINTER_CLOSE_INSULATION, False)
+            ),
         )
 
     def _read_force_sensor_states(self, options) -> dict[str, bool]:

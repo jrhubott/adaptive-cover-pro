@@ -86,6 +86,7 @@ def _make_climate_data(**overrides) -> ClimateCoverData:
         "is_sunny": True,
         "lux_below_threshold": False,
         "irradiance_below_threshold": False,
+        "winter_close_insulation": False,
     }
     defaults.update(overrides)
     return ClimateCoverData(**defaults)
@@ -345,6 +346,7 @@ class TestEndToEndIntegration:
                 transparent_blind=False,
                 temp_summer_outside=22.0,
                 cloud_suppression_enabled=False,
+                winter_close_insulation=False,
             )
             snapshot = _build_pipeline_snapshot(
                 cover,
@@ -431,6 +433,7 @@ class TestEndToEndIntegration:
                 transparent_blind=True,
                 temp_summer_outside=22.0,
                 cloud_suppression_enabled=False,
+                winter_close_insulation=False,
             )
             snapshot = _build_pipeline_snapshot(
                 cover,

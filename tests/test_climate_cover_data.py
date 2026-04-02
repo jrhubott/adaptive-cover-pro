@@ -22,6 +22,7 @@ def _make_climate(**overrides):
         "is_sunny": True,
         "lux_below_threshold": False,
         "irradiance_below_threshold": False,
+        "winter_close_insulation": False,
     }
     defaults.update(overrides)
     return ClimateCoverData(**defaults)

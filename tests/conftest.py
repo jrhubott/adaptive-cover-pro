@@ -261,4 +261,5 @@ def climate_data_instance():
         is_sunny=True,
         lux_below_threshold=False,
         irradiance_below_threshold=False,
+        winter_close_insulation=False,
     )

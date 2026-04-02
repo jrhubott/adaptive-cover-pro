@@ -85,6 +85,7 @@ from .const import (
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
     CONF_TRANSPARENT_BLIND,
+    CONF_WINTER_CLOSE_INSULATION,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
@@ -624,6 +625,9 @@ CLIMATE_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_WINTER_CLOSE_INSULATION, default=False
+        ): selector.BooleanSelector(),
     }
 )
 
@@ -722,17 +726,21 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     manual_dur = config.get(CONF_MANUAL_OVERRIDE_DURATION)
 
     has_force = bool(config.get(CONF_FORCE_OVERRIDE_SENSORS))
-    has_weather = any([
-        config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
-        config.get(CONF_WEATHER_RAIN_SENSOR),
-        config.get(CONF_WEATHER_IS_RAINING_SENSOR),
-        config.get(CONF_WEATHER_IS_WINDY_SENSOR),
-        bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
-    ])
+    has_weather = any(
+        [
+            config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
+            config.get(CONF_WEATHER_RAIN_SENSOR),
+            config.get(CONF_WEATHER_IS_RAINING_SENSOR),
+            config.get(CONF_WEATHER_IS_WINDY_SENSOR),
+            bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
+        ]
+    )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
-    has_glare = bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
+    has_glare = (
+        bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
+    )
 
     lines: list[str] = []
 
@@ -817,7 +825,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if elev_parts:
         sun_parts.append(f"elevation {' and '.join(elev_parts)}")
     sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
-    lines.append(f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight.")
+    lines.append(
+        f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight."
+    )
 
     # Timing window
     start_time = config.get(CONF_START_TIME)
@@ -835,7 +845,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     elif end_entity:
         timing_parts.append(f"until {end_entity}")
     if timing_parts or sunset_pos is not None:
-        timing_str = " ".join(timing_parts) if timing_parts else "Active during daylight"
+        timing_str = (
+            " ".join(timing_parts) if timing_parts else "Active during daylight"
+        )
         if sunset_pos is not None:
             timing_str += f". After end time/sunset → {sunset_pos}%"
         lines.append(f"🕒 {timing_str}.")
@@ -851,7 +863,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         if bs_e is not None:
             bs_parts.append(f"up to {bs_e}° elevation")
         bs_str = " ".join(bs_parts)
-        lines.append(f"🟥 Blind spot: ignores sun at {bs_str} (e.g. tree or roof overhang).")
+        lines.append(
+            f"🟥 Blind spot: ignores sun at {bs_str} (e.g. tree or roof overhang)."
+        )
 
     # Glare zones (vertical only)
     if has_glare:
@@ -867,7 +881,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         if width:
             gz_parts.append(f"{width}cm window")
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
-        lines.append(f"🔆 Glare zones: lowers blind to protect floor areas from direct sun{gz_str}.")
+        lines.append(
+            f"🔆 Glare zones: lowers blind to protect floor areas from direct sun{gz_str}."
+        )
 
     # Climate / cloud suppression (before force/weather so users understand layering)
     if has_climate:
@@ -893,22 +909,28 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
 
     if has_cloud:
         cloud_parts = []
-        if (v := config.get(CONF_LUX_ENTITY)):
+        if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
             cloud_parts.append(f"lux < {t} lx" if t is not None else f"lux ({v})")
-        if (v := config.get(CONF_IRRADIANCE_ENTITY)):
+        if v := config.get(CONF_IRRADIANCE_ENTITY):
             t = config.get(CONF_IRRADIANCE_THRESHOLD)
-            cloud_parts.append(f"irradiance < {t} W/m²" if t is not None else f"irradiance ({v})")
-        if (v := config.get(CONF_CLOUD_COVERAGE_ENTITY)):
+            cloud_parts.append(
+                f"irradiance < {t} W/m²" if t is not None else f"irradiance ({v})"
+            )
+        if v := config.get(CONF_CLOUD_COVERAGE_ENTITY):
             t = config.get(CONF_CLOUD_COVERAGE_THRESHOLD)
             cloud_parts.append(f"cloud > {t}%" if t is not None else f"cloud ({v})")
         cloud_str = f" when {', '.join(cloud_parts)}" if cloud_parts else ""
-        lines.append(f"☁️ Cloud suppression: skips sun tracking{cloud_str} → default ({default_pos}%).")
-    elif any([
-        config.get(CONF_LUX_ENTITY),
-        config.get(CONF_IRRADIANCE_ENTITY),
-        config.get(CONF_CLOUD_COVERAGE_ENTITY),
-    ]):
+        lines.append(
+            f"☁️ Cloud suppression: skips sun tracking{cloud_str} → default ({default_pos}%)."
+        )
+    elif any(
+        [
+            config.get(CONF_LUX_ENTITY),
+            config.get(CONF_IRRADIANCE_ENTITY),
+            config.get(CONF_CLOUD_COVERAGE_ENTITY),
+        ]
+    ):
         # Sensors configured but suppression toggle off — mention them as informational
         sensor_names = []
         if config.get(CONF_LUX_ENTITY):
@@ -917,7 +939,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
             sensor_names.append("irradiance")
         if config.get(CONF_CLOUD_COVERAGE_ENTITY):
             sensor_names.append("cloud coverage")
-        lines.append(f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off.")
+        lines.append(
+            f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off."
+        )
 
     # Manual override
     mo_parts = []
@@ -929,7 +953,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if config.get(CONF_MANUAL_OVERRIDE_RESET):
         mo_parts.append("resets on next move")
     mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
-    lines.append(f"✋ Manual override: pauses automatic control when you move the cover{mo_str}.")
+    lines.append(
+        f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
+    )
 
     # Motion timeout
     if has_motion:
@@ -1025,10 +1051,12 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     ]
     if sensor_type == SensorType.BLIND or sensor_type is None:
         chain.append(_ch(has_glare, "Glare", 45))
-    chain.extend([
-        _ch(True, "Solar", 40),
-        _ch(True, "Default", 0),
-    ])
+    chain.extend(
+        [
+            _ch(True, "Solar", 40),
+            _ch(True, "Default", 0),
+        ]
+    )
 
     lines.append("")
     lines.append("**Decision Priority** (highest wins, ✅ active ❌ not configured)")
@@ -1179,6 +1207,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
             CONF_TRANSPARENT_BLIND,
+            CONF_WINTER_CLOSE_INSULATION,
         }
     ),
     "weather": frozenset(
@@ -1553,9 +1582,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="manual_override", data_schema=MANUAL_OVERRIDE_SCHEMA
         )
 
-    async def async_step_force_override(
-        self, user_input: dict[str, Any] | None = None
-    ):
+    async def async_step_force_override(self, user_input: dict[str, Any] | None = None):
         """Configure force override sensors."""
         if user_input is not None:
             self.config.update(user_input)
@@ -1725,6 +1752,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
                 CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
                 CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),
+                CONF_WINTER_CLOSE_INSULATION: self.config.get(
+                    CONF_WINTER_CLOSE_INSULATION, False
+                ),
                 CONF_INTERP: self.config.get(CONF_INTERP),
                 CONF_INTERP_START: self.config.get(CONF_INTERP_START, None),
                 CONF_INTERP_END: self.config.get(CONF_INTERP_END, None),
@@ -2038,9 +2068,7 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         )
 
-    async def async_step_force_override(
-        self, user_input: dict[str, Any] | None = None
-    ):
+    async def async_step_force_override(self, user_input: dict[str, Any] | None = None):
         """Manage force override sensors."""
         if user_input is not None:
             self.options.update(user_input)

@@ -48,6 +48,7 @@ def make_climate_data(hass, **overrides):
         "is_sunny": True,
         "lux_below_threshold": False,
         "irradiance_below_threshold": False,
+        "winter_close_insulation": False,
     }
     defaults.update(overrides)
     # Remove keys not in ClimateCoverData (e.g. 'hass' passed by callers)
@@ -64,6 +65,7 @@ def make_climate_data(hass, **overrides):
         "is_sunny",
         "lux_below_threshold",
         "irradiance_below_threshold",
+        "winter_close_insulation",
     }
     filtered = {k: v for k, v in defaults.items() if k in valid_keys}
     return ClimateCoverData(**filtered)
@@ -309,6 +311,7 @@ class TestClimateStrategyNormalWithPresence:
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            winter_close_insulation=False,
         )
 
         with (
@@ -357,6 +360,7 @@ class TestClimateStrategyNormalWithPresence:
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            winter_close_insulation=False,
         )
 
         with (

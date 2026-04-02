@@ -26,6 +26,7 @@ def _make_climate(**overrides):
         "is_sunny": True,
         "lux_below_threshold": False,
         "irradiance_below_threshold": False,
+        "winter_close_insulation": False,
     }
     defaults.update(overrides)
     return ClimateCoverData(**defaults)
@@ -410,6 +411,7 @@ class TestClimateCoverState:
                 is_presence=True,
                 lux_below_threshold=False,
                 irradiance_below_threshold=False,
+                winter_close_insulation=False,
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -592,13 +594,14 @@ class TestIssue71IrradianceSummerFix:
             mock_valid.return_value = True
 
             climate_data = _make_climate(
-                inside_temperature="27.0",   # Above temp_high (25) → summer
+                inside_temperature="27.0",  # Above temp_high (25) → summer
                 outside_temperature="30.0",
                 temp_high=25.0,
                 temp_summer_outside=22.0,
                 is_presence=True,
                 is_sunny=True,
                 irradiance_below_threshold=True,  # Pyranometer says: no direct sun
+                winter_close_insulation=False,
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -707,6 +710,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=True,
                 is_sunny=True,
                 irradiance_below_threshold=False,  # High irradiance → sun is present
+                winter_close_insulation=False,
                 lux_below_threshold=False,
             )
 
@@ -748,6 +752,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=False,
                 is_sunny=True,
                 irradiance_below_threshold=True,  # Pyranometer: no direct sun
+                winter_close_insulation=False,
             )
 
             state_handler = ClimateCoverState(vertical_cover_instance, climate_data)
@@ -789,6 +794,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=False,
                 is_sunny=True,
                 irradiance_below_threshold=False,
+                winter_close_insulation=False,
                 lux_below_threshold=False,
             )
 
@@ -840,6 +846,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=True,
                 is_sunny=True,
                 irradiance_below_threshold=True,
+                winter_close_insulation=False,
             )
 
             state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
@@ -885,6 +892,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=True,
                 is_sunny=True,
                 irradiance_below_threshold=False,
+                winter_close_insulation=False,
                 lux_below_threshold=False,
             )
 
@@ -892,7 +900,10 @@ class TestIssue71IrradianceSummerFix:
             result = state_handler.tilt_with_presence(90)
 
             # High irradiance + summer → summer cooling angle
-            from custom_components.adaptive_cover_pro.const import CLIMATE_SUMMER_TILT_ANGLE
+            from custom_components.adaptive_cover_pro.const import (
+                CLIMATE_SUMMER_TILT_ANGLE,
+            )
+
             expected = round((CLIMATE_SUMMER_TILT_ANGLE / 90) * 100)
             assert result == expected
             assert state_handler.climate_strategy.name == "SUMMER_COOLING"
@@ -936,6 +947,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=False,
                 is_sunny=True,
                 irradiance_below_threshold=True,
+                winter_close_insulation=False,
             )
 
             state_handler = ClimateCoverState(tilt_cover_instance, climate_data)
@@ -978,6 +990,7 @@ class TestIssue71IrradianceSummerFix:
                 is_presence=False,
                 is_sunny=True,
                 irradiance_below_threshold=False,
+                winter_close_insulation=False,
                 lux_below_threshold=False,
             )
 
@@ -985,5 +998,6 @@ class TestIssue71IrradianceSummerFix:
             result = state_handler.tilt_without_presence(90)
 
             from custom_components.adaptive_cover_pro.const import POSITION_CLOSED
+
             assert result == POSITION_CLOSED
             assert state_handler.climate_strategy.name == "SUMMER_COOLING"

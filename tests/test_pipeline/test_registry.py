@@ -89,6 +89,7 @@ def _climate_options_summer() -> ClimateOptions:
         transparent_blind=False,
         temp_summer_outside=None,
         cloud_suppression_enabled=False,
+        winter_close_insulation=False,
     )
 
 
@@ -101,6 +102,7 @@ def _climate_options_winter() -> ClimateOptions:
         transparent_blind=False,
         temp_summer_outside=None,
         cloud_suppression_enabled=False,
+        winter_close_insulation=False,
     )
 
 

@@ -52,6 +52,9 @@ class ClimateStrategy(Enum):
     """Climate control strategies."""
 
     WINTER_HEATING = "winter_heating"  # Open for solar heating
+    WINTER_INSULATION = (
+        "winter_insulation"  # Close for heat retention when sun not hitting window
+    )
     SUMMER_COOLING = "summer_cooling"  # Close for heat blocking
     LOW_LIGHT = "low_light"  # Use default position
     GLARE_CONTROL = "glare_control"  # Use calculated position
