@@ -1173,19 +1173,23 @@ class OptionsFlowHandler(OptionsFlow):
             "geometry",
             "sun_tracking",
             "position",
-            "automation",
-            "manual_override",
-            "motion_overrides",
-            "climate",
-            "sync",
-            "done",
         ]
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
         if self.options.get(CONF_INTERP):
             menu_options.append("interp")
+        menu_options.extend([
+            "automation",
+            "manual_override",
+            "motion_overrides",
+            "climate",
+        ])
         if self.options.get(CONF_WEATHER_ENTITY):
             menu_options.append("weather")
+        menu_options.extend([
+            "sync",
+            "done",
+        ])
         return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
