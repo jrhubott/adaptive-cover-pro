@@ -884,7 +884,9 @@ git commit -m "feat(glare-zones): Add constants and configuration service method
 
 ---
 
-## Task 5: Config Flow — Geometry Step and Glare Zones Step
+## Task 5: Config Flow — Glare Zones as Top-Level Menu Item
+
+**Design change (user feedback):** Glare Zones must appear as a permanent top-level menu item in the options flow for all vertical covers — not gated behind an enable toggle in the geometry step. The enable toggle (`CONF_ENABLE_GLARE_ZONES`) and `window_width` field move inside the glare_zones step itself. In the initial setup flow, the glare_zones step always follows geometry for vertical covers.
 
 **Files:**
 - Modify: `custom_components/adaptive_cover_pro/config_flow.py`
@@ -902,61 +904,70 @@ Open `custom_components/adaptive_cover_pro/config_flow.py`. In the `from .const 
     CONF_WINDOW_WIDTH,
 ```
 
-- [ ] **Step 5.2: Add window_width and enable_glare_zones fields to GEOMETRY_VERTICAL_SCHEMA**
+- [ ] **Step 5.2: Add SensorType import if not present**
 
-`GEOMETRY_VERTICAL_SCHEMA` is defined starting at line 116. Add these two fields after the existing `CONF_SILL_HEIGHT` entry, before the closing `}`:
+Search: `grep -n "SensorType" custom_components/adaptive_cover_pro/config_flow.py`
+
+If not found, add to imports:
 
 ```python
-        vol.Optional(CONF_WINDOW_WIDTH, default=100): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10,
-                max=500,
-                step=1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
-            )
-        ),
-        vol.Optional(CONF_ENABLE_GLARE_ZONES, default=False): selector.BooleanSelector(),
+from .enums import SensorType
 ```
 
-- [ ] **Step 5.3: Define GLARE_ZONES_SCHEMA at module level**
+- [ ] **Step 5.3: Define _build_glare_zones_schema at module level**
 
-Add after `GEOMETRY_VERTICAL_SCHEMA` (around line 157), before `GEOMETRY_HORIZONTAL_SCHEMA`:
+Add after `GEOMETRY_VERTICAL_SCHEMA` (around line 157), before `GEOMETRY_HORIZONTAL_SCHEMA`.
+
+The glare_zones step includes the enable toggle, window_width, and all 4 zone slots in one form:
 
 ```python
 def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
-    """Build the glare zones schema showing all 4 zone slots."""
-    schema_dict = {}
+    """Build the glare zones schema: enable toggle, window width, and 4 zone slots."""
+    opts = options or {}
+    schema_dict: dict = {
+        vol.Optional(CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)): (
+            selector.BooleanSelector()
+        ),
+        vol.Optional(CONF_WINDOW_WIDTH, default=opts.get(CONF_WINDOW_WIDTH, 100)): (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=500, step=1,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        ),
+    }
     for i in range(1, 5):
         prefix = f"glare_zone_{i}"
-        schema_dict[vol.Optional(f"{prefix}_name", default="")] = (
+        schema_dict[vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))] = (
             selector.TextSelector()
         )
-        schema_dict[
-            vol.Optional(f"{prefix}_x", default=options.get(f"{prefix}_x", 0) if options else 0)
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=-500, max=500, step=10,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
+        schema_dict[vol.Optional(f"{prefix}_x", default=opts.get(f"{prefix}_x", 0))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-500, max=500, step=10,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
             )
         )
-        schema_dict[
-            vol.Optional(f"{prefix}_y", default=options.get(f"{prefix}_y", 100) if options else 100)
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0, max=1000, step=10,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
+        schema_dict[vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 100))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=1000, step=10,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
             )
         )
-        schema_dict[
-            vol.Optional(f"{prefix}_radius", default=options.get(f"{prefix}_radius", 30) if options else 30)
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10, max=200, step=5,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
+        schema_dict[vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 30))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=200, step=5,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
             )
         )
     return vol.Schema(schema_dict)
@@ -964,23 +975,14 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
 
 - [ ] **Step 5.4: Add async_step_glare_zones to ConfigFlowHandler (initial setup)**
 
-In `ConfigFlowHandler`, `async_step_geometry` (around line 893) currently ends with:
-
-```python
-            return await self.async_step_sun_tracking()
-```
-
-Update the geometry step to chain through glare zones for vertical covers:
+In `ConfigFlowHandler`, `async_step_geometry` (around line 893) currently ends with `return await self.async_step_sun_tracking()`. Update it to always chain to glare_zones for vertical covers:
 
 ```python
     async def async_step_geometry(self, user_input: dict[str, Any] | None = None):
         """Configure cover geometry dimensions."""
         if user_input is not None:
             self.config.update(user_input)
-            if (
-                self.type_blind == SensorType.BLIND
-                and user_input.get(CONF_ENABLE_GLARE_ZONES)
-            ):
+            if self.type_blind == SensorType.BLIND:
                 return await self.async_step_glare_zones()
             return await self.async_step_sun_tracking()
 
@@ -999,7 +1001,7 @@ Update the geometry step to chain through glare zones for vertical covers:
 
 - [ ] **Step 5.5: Add async_step_glare_zones to AdaptiveCoverOptionsFlow**
 
-In `AdaptiveCoverOptionsFlow`, `async_step_geometry` (around line 1364) currently returns to `async_step_init`. Leave that unchanged but add the new method after it:
+In `AdaptiveCoverOptionsFlow`, add the method after `async_step_geometry` (around line 1377):
 
 ```python
     async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
@@ -1015,22 +1017,14 @@ In `AdaptiveCoverOptionsFlow`, `async_step_geometry` (around line 1364) currentl
         )
 ```
 
-- [ ] **Step 5.6: Add glare_zones to the options menu in async_step_init**
+- [ ] **Step 5.6: Add glare_zones as a permanent top-level menu item in async_step_init**
 
-In `async_step_init` (around line 1327), the options menu adds `"blind_spot"` conditionally. Add `"glare_zones"` with the same pattern, after the `blind_spot` entry:
+In `async_step_init` (around line 1327), add `"glare_zones"` **always** for vertical covers — not behind any conditional. Add it after the `blind_spot` / `interp` conditional block, before `"automation"`:
 
 ```python
-        if self.options.get(CONF_ENABLE_GLARE_ZONES) and self.sensor_type == SensorType.BLIND:
+        if self.sensor_type == SensorType.BLIND:
             menu_options.append("glare_zones")
 ```
-
-Also add `SensorType` import if not already imported — check the top of `config_flow.py`. `SensorType` is from `.enums`. If not imported, add:
-
-```python
-from .enums import SensorType
-```
-
-(Search the file first: `grep "SensorType" custom_components/adaptive_cover_pro/config_flow.py` — if it's already imported via a different path, use that.)
 
 - [ ] **Step 5.7: Verify config flow runs without errors**
 
@@ -1052,7 +1046,7 @@ Expected: all passing.
 
 ```bash
 git add custom_components/adaptive_cover_pro/config_flow.py
-git commit -m "feat(glare-zones): Add window_width and glare_zones config flow steps"
+git commit -m "feat(glare-zones): Add glare_zones as top-level options menu item"
 ```
 
 ---
@@ -1300,37 +1294,23 @@ No tests — translations are loaded at runtime by HA.
 - [ ] **Step 9.1: Find the relevant sections in en.json**
 
 ```bash
-grep -n "blind_spot\|sill_height\|window_depth\|step.*geometry\|step.*position" \
+grep -n "blind_spot\|sill_height\|step.*geometry\|step.*blind_spot" \
   custom_components/adaptive_cover_pro/translations/en.json | head -30
 ```
 
-This shows you where geometry step translations live and how blind_spot is structured.
+This shows you where the blind_spot step is structured (use as a model for glare_zones).
 
-- [ ] **Step 9.2: Add window_width and enable_glare_zones to the geometry step**
+- [ ] **Step 9.2: Add the glare_zones step**
 
-In the `"geometry"` step `"data"` section, add:
-
-```json
-"window_width": "Window Width",
-"enable_glare_zones": "Enable Glare Zones"
-```
-
-And in `"data_description"` (if that section exists for geometry):
-
-```json
-"window_width": "Width of the window in cm. Used to determine which floor areas can receive direct sunlight.",
-"enable_glare_zones": "Define specific floor areas (desk, table, couch) where you want to block direct sunlight."
-```
-
-- [ ] **Step 9.3: Add the glare_zones step**
-
-In the `"step"` section, add a new `"glare_zones"` entry. Pattern it after `"blind_spot"`. Example:
+In the `"step"` section, add a new `"glare_zones"` entry. Pattern it after `"blind_spot"`. The step includes the enable toggle and window_width (they live here, not in geometry):
 
 ```json
 "glare_zones": {
   "title": "Glare Zones",
   "description": "Define up to 4 floor areas to protect from direct sunlight. Leave a zone name blank to skip it. Coordinates are relative to the window centre projected onto the floor.",
   "data": {
+    "enable_glare_zones": "Enable Glare Zones",
+    "window_width": "Window Width",
     "glare_zone_1_name": "Zone 1 Name",
     "glare_zone_1_x": "Zone 1 X Position",
     "glare_zone_1_y": "Zone 1 Y Position",
