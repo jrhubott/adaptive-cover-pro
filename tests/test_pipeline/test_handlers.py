@@ -14,7 +14,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     SolarHandler,
 )
 
-from tests.test_pipeline.conftest import make_ctx, make_snapshot
+from tests.test_pipeline.conftest import make_snapshot
 
 
 def test_pipeline_snapshot_is_importable() -> None:
@@ -324,7 +324,7 @@ class TestDefaultHandler:
 
     def test_returns_default_position(self) -> None:
         """Return the default_position with DEFAULT method."""
-        snap = make_snapshot(default_position=42)
+        snap = make_snapshot(cover_default=42)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 42
@@ -332,7 +332,7 @@ class TestDefaultHandler:
 
     def test_zero_default_position(self) -> None:
         """Handle default_position=0 correctly (falsy value check)."""
-        snap = make_snapshot(default_position=0)
+        snap = make_snapshot(cover_default=0)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 0

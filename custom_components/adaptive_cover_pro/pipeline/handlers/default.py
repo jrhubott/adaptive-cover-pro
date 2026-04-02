@@ -22,7 +22,7 @@ class DefaultHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
         """Return the default position as the final fallback."""
         position = PositionConverter.apply_limits(
-            snapshot.default_position,
+            int(round(snapshot.cover.default)),
             snapshot.config.min_pos,
             snapshot.config.max_pos,
             snapshot.config.min_pos_sun_only,
