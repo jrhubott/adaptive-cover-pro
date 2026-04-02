@@ -1502,7 +1502,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_sync(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Select target covers to sync settings to."""
+        """Select target covers and setting categories to sync."""
         current_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
         other_entries = [
             e
@@ -1514,12 +1514,22 @@ class OptionsFlowHandler(OptionsFlow):
         if not other_entries:
             return self.async_abort(reason="no_covers_to_sync")  # type: ignore[return-value]
 
+        available = [
+            cat
+            for cat, keys in SYNC_CATEGORIES.items()
+            if any(k in self._config_entry.options for k in keys)
+        ]
+
         if user_input is not None:
             targets = user_input.get("target_entries", [])
             if not targets:
                 return self.async_abort(reason="no_targets_selected")  # type: ignore[return-value]
+            selected = user_input.get("sync_categories", [])
+            if not selected:
+                return self.async_abort(reason="no_categories_selected")  # type: ignore[return-value]
             self.selected_sync_targets = targets
-            return await self.async_step_sync_categories()
+            self.selected_sync_categories = selected
+            return await self.async_step_sync_confirm()
 
         return self.async_show_form(  # type: ignore[return-value]
             step_id="sync",
@@ -1533,33 +1543,7 @@ class OptionsFlowHandler(OptionsFlow):
                                 for e in other_entries
                             ],
                         )
-                    )
-                }
-            ),
-        )
-
-    async def async_step_sync_categories(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Select which setting categories to sync."""
-        if user_input is not None:
-            selected = user_input.get("sync_categories", [])
-            if not selected:
-                return self.async_abort(reason="no_categories_selected")  # type: ignore[return-value]
-            self.selected_sync_categories = selected
-            return await self.async_step_sync_confirm()
-
-        # Only show categories that have at least one key present in source entry's options
-        available = [
-            cat
-            for cat, keys in SYNC_CATEGORIES.items()
-            if any(k in self._config_entry.options for k in keys)
-        ]
-
-        return self.async_show_form(  # type: ignore[return-value]
-            step_id="sync_categories",
-            data_schema=vol.Schema(
-                {
+                    ),
                     vol.Required(
                         "sync_categories", default=available
                     ): selector.SelectSelector(
@@ -1568,7 +1552,7 @@ class OptionsFlowHandler(OptionsFlow):
                             options=available,
                             translation_key="sync_categories",
                         )
-                    )
+                    ),
                 }
             ),
         )
