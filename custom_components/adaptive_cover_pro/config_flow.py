@@ -785,9 +785,9 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
     """Build the glare zones schema: enable toggle, window width, and 4 zone slots."""
     opts = options or {}
     schema_dict: dict = {
-        vol.Optional(CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)): (
-            selector.BooleanSelector()
-        ),
+        vol.Optional(
+            CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)
+        ): (selector.BooleanSelector()),
         vol.Optional(CONF_WINDOW_WIDTH, default=opts.get(CONF_WINDOW_WIDTH, 100)): (
             selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -802,9 +802,9 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
     }
     for i in range(1, 5):
         prefix = f"glare_zone_{i}"
-        schema_dict[vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))] = (
-            selector.TextSelector()
-        )
+        schema_dict[
+            vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))
+        ] = selector.TextSelector()
         schema_dict[vol.Optional(f"{prefix}_x", default=opts.get(f"{prefix}_x", 0))] = (
             selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -816,26 +816,26 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
                 )
             )
         )
-        schema_dict[vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 100))] = (
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=1000,
-                    step=10,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="cm",
-                )
+        schema_dict[
+            vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 100))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1000,
+                step=10,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
             )
         )
-        schema_dict[vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 30))] = (
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=10,
-                    max=200,
-                    step=5,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="cm",
-                )
+        schema_dict[
+            vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 30))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=200,
+                step=5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
             )
         )
     return vol.Schema(schema_dict)

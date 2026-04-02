@@ -124,7 +124,9 @@ async def async_setup_entry(
             switches.append(irradiance_switch)
 
     # Glare zone switches — one per configured zone for vertical covers
-    if sensor_type == "cover_blind" and config_entry.options.get(CONF_ENABLE_GLARE_ZONES):
+    if sensor_type == "cover_blind" and config_entry.options.get(
+        CONF_ENABLE_GLARE_ZONES
+    ):
         for idx in range(1, 5):  # idx is 1-based (matches config option keys)
             zone_name = config_entry.options.get(f"glare_zone_{idx}_name", "")
             if not zone_name:

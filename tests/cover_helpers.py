@@ -102,7 +102,13 @@ _COVER_CONFIG_FIELDS = {
 }
 
 # VerticalConfig field names
-_VERT_CONFIG_FIELDS = {"distance", "h_win", "window_depth", "sill_height", "glare_zones"}
+_VERT_CONFIG_FIELDS = {
+    "distance",
+    "h_win",
+    "window_depth",
+    "sill_height",
+    "glare_zones",
+}
 
 # HorizontalConfig field names
 _HORIZ_CONFIG_FIELDS = {"awn_length", "awn_angle"}

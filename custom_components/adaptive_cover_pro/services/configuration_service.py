@@ -10,7 +10,14 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from ..config_context_adapter import ConfigContextAdapter
-from ..config_types import CoverConfig, GlareZone, GlareZonesConfig, HorizontalConfig, TiltConfig, VerticalConfig
+from ..config_types import (
+    CoverConfig,
+    GlareZone,
+    GlareZonesConfig,
+    HorizontalConfig,
+    TiltConfig,
+    VerticalConfig,
+)
 from ..const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
