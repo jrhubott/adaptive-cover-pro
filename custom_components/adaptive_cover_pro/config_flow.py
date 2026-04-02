@@ -24,6 +24,7 @@ from .const import (
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
+    CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
@@ -499,6 +500,7 @@ CLIMATE_SCHEMA = vol.Schema(
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain="weather")
         ),
+        vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
     }
 )
 
@@ -1009,6 +1011,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_OUTSIDE_THRESHOLD: self.config.get(CONF_OUTSIDE_THRESHOLD),
                 CONF_DEVICE_ID: self.config.get(CONF_DEVICE_ID),
                 CONF_RETURN_SUNSET: self.config.get(CONF_RETURN_SUNSET, False),
+                CONF_CLOUD_SUPPRESSION: self.config.get(CONF_CLOUD_SUPPRESSION, False),
             },
         )
 
@@ -1150,6 +1153,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
         return f"{name} ({suffix} {counter})"
 
+
 class OptionsFlowHandler(OptionsFlow):
     """Options to adjust parameters."""
 
@@ -1178,18 +1182,22 @@ class OptionsFlowHandler(OptionsFlow):
             menu_options.append("blind_spot")
         if self.options.get(CONF_INTERP):
             menu_options.append("interp")
-        menu_options.extend([
-            "automation",
-            "manual_override",
-            "motion_overrides",
-            "climate",
-        ])
+        menu_options.extend(
+            [
+                "automation",
+                "manual_override",
+                "motion_overrides",
+                "climate",
+            ]
+        )
         if self.options.get(CONF_WEATHER_ENTITY):
             menu_options.append("weather")
-        menu_options.extend([
-            "sync",
-            "done",
-        ])
+        menu_options.extend(
+            [
+                "sync",
+                "done",
+            ]
+        )
         return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
