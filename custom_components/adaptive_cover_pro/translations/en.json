@@ -212,6 +212,38 @@
         "title": "Blind spot configuration",
         "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
       },
+      "glare_zones": {
+        "title": "Glare Zones",
+        "description": "Define up to 4 floor areas to protect from direct sunlight. Leave a zone name blank to skip it. Coordinates are relative to the window centre projected onto the floor.",
+        "data": {
+          "enable_glare_zones": "Enable Glare Zones",
+          "window_width": "Window Width",
+          "glare_zone_1_name": "Zone 1 Name",
+          "glare_zone_1_x": "Zone 1 X Position",
+          "glare_zone_1_y": "Zone 1 Y Position",
+          "glare_zone_1_radius": "Zone 1 Radius",
+          "glare_zone_2_name": "Zone 2 Name",
+          "glare_zone_2_x": "Zone 2 X Position",
+          "glare_zone_2_y": "Zone 2 Y Position",
+          "glare_zone_2_radius": "Zone 2 Radius",
+          "glare_zone_3_name": "Zone 3 Name",
+          "glare_zone_3_x": "Zone 3 X Position",
+          "glare_zone_3_y": "Zone 3 Y Position",
+          "glare_zone_3_radius": "Zone 3 Radius",
+          "glare_zone_4_name": "Zone 4 Name",
+          "glare_zone_4_x": "Zone 4 X Position",
+          "glare_zone_4_y": "Zone 4 Y Position",
+          "glare_zone_4_radius": "Zone 4 Radius"
+        },
+        "data_description": {
+          "enable_glare_zones": "When enabled, the blind will lower to shade all active floor zones.",
+          "window_width": "Width of the window in cm. Used to determine which zones can receive sunlight.",
+          "glare_zone_1_name": "Name for this zone (e.g. 'Desk'). Leave blank to skip.",
+          "glare_zone_1_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_1_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_1_radius": "Protection radius around the zone centre in cm."
+        }
+      },
       "interp": {
         "data": {
           "interp_start": "Value where opening starts",
@@ -270,6 +302,7 @@
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
+          "glare_zones": "Glare Zones",
           "interp": "Interpolation",
           "automation": "Schedule & Timing",
           "manual_override": "Manual Override",
@@ -493,6 +526,38 @@
         "title": "Range Adjustment",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
+      "glare_zones": {
+        "title": "Glare Zones",
+        "description": "Define up to 4 floor areas to protect from direct sunlight. Leave a zone name blank to skip it. Coordinates are relative to the window centre projected onto the floor.",
+        "data": {
+          "enable_glare_zones": "Enable Glare Zones",
+          "window_width": "Window Width",
+          "glare_zone_1_name": "Zone 1 Name",
+          "glare_zone_1_x": "Zone 1 X Position",
+          "glare_zone_1_y": "Zone 1 Y Position",
+          "glare_zone_1_radius": "Zone 1 Radius",
+          "glare_zone_2_name": "Zone 2 Name",
+          "glare_zone_2_x": "Zone 2 X Position",
+          "glare_zone_2_y": "Zone 2 Y Position",
+          "glare_zone_2_radius": "Zone 2 Radius",
+          "glare_zone_3_name": "Zone 3 Name",
+          "glare_zone_3_x": "Zone 3 X Position",
+          "glare_zone_3_y": "Zone 3 Y Position",
+          "glare_zone_3_radius": "Zone 3 Radius",
+          "glare_zone_4_name": "Zone 4 Name",
+          "glare_zone_4_x": "Zone 4 X Position",
+          "glare_zone_4_y": "Zone 4 Y Position",
+          "glare_zone_4_radius": "Zone 4 Radius"
+        },
+        "data_description": {
+          "enable_glare_zones": "When enabled, the blind will lower to shade all active floor zones.",
+          "window_width": "Width of the window in cm. Used to determine which zones can receive sunlight.",
+          "glare_zone_1_name": "Name for this zone (e.g. 'Desk'). Leave blank to skip.",
+          "glare_zone_1_x": "Left/right offset from window centre in cm. Positive = right.",
+          "glare_zone_1_y": "Distance into the room in cm (perpendicular to window).",
+          "glare_zone_1_radius": "Protection radius around the zone centre in cm."
+        }
+      },
       "device": {
         "title": "Device Association",
         "description": "Link this integration's entities to an existing device (e.g., the physical blind motor) or remove an existing link.",
@@ -559,6 +624,12 @@
           "cloud_suppression": "Cloud Suppression"
         }
       }
+    },
+    "switch": {
+      "glare_zone_0": {"name": "Glare Zone 1"},
+      "glare_zone_1": {"name": "Glare Zone 2"},
+      "glare_zone_2": {"name": "Glare Zone 3"},
+      "glare_zone_3": {"name": "Glare Zone 4"}
     }
   },
   "selector": {
