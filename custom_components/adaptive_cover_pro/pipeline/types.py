@@ -14,35 +14,6 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Legacy context — kept for backward compatibility during migration.
-# Remove after all handlers are migrated to PipelineSnapshot (Task 15).
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class PipelineContext:
-    """Input to the override pipeline. DEPRECATED: use PipelineSnapshot."""
-
-    calculated_position: int
-    climate_position: int | None
-    default_position: int
-    raw_calculated_position: int
-    in_time_window: bool
-    direct_sun_valid: bool
-    force_override_active: bool
-    force_override_position: int
-    motion_timeout_active: bool
-    manual_override_active: bool
-    climate_mode_enabled: bool
-    climate_is_summer: bool
-    climate_is_winter: bool
-
-    wind_active: bool = False
-    wind_retract_position: int = 100
-    cloud_suppression_active: bool = False
-
-
-# ---------------------------------------------------------------------------
 # New snapshot — raw state for self-contained plugin handlers
 # ---------------------------------------------------------------------------
 
@@ -94,7 +65,7 @@ class PipelineSnapshot:
 
 
 # ---------------------------------------------------------------------------
-# Output types (shared by both PipelineContext and PipelineSnapshot flows)
+# Output types
 # ---------------------------------------------------------------------------
 
 

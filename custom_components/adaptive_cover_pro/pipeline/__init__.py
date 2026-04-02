@@ -6,12 +6,11 @@ the final cover position and control method for each update cycle.
 
 from .handler import OverrideHandler
 from .registry import PipelineRegistry
-from .types import DecisionStep, PipelineContext, PipelineResult
+from .types import DecisionStep, PipelineResult
 
 __all__ = [
     "DecisionStep",
     "OverrideHandler",
-    "PipelineContext",
     "PipelineRegistry",
     "PipelineResult",
 ]
