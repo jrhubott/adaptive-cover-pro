@@ -720,6 +720,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
 
+        # Determine glare_active from last calculation details (vertical covers only)
+        glare_active = False
+        if hasattr(cover_data, "_last_calc_details"):
+            details = cover_data._last_calc_details  # noqa: SLF001
+            glare_active = bool(details.get("glare_zones_active"))
+
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
             states={
@@ -730,6 +736,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "sun_motion": normal_cover.direct_sun_valid,
                 "manual_override": self.manager.binary_cover_manual,
                 "manual_list": self.manager.manual_controlled,
+                "glare_active": glare_active,
             },
             attributes={
                 "default": options.get(CONF_DEFAULT_HEIGHT),
@@ -971,14 +978,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sol_azi, sol_elev = self.pos_sun
 
         if self.is_blind_cover:
+            vert_config = self._config_service.get_vertical_data(options)
+            glare_zones_cfg = self._config_service.get_glare_zones_config(options)
+            if glare_zones_cfg is not None:
+                from dataclasses import replace
+
+                vert_config = replace(vert_config, glare_zones=glare_zones_cfg)
             cover_data = AdaptiveVerticalCover(
                 logger=self.logger,
                 sol_azi=sol_azi,
                 sol_elev=sol_elev,
                 sun_data=sun_data,
                 config=config,
-                vert_config=self._config_service.get_vertical_data(options),
+                vert_config=vert_config,
             )
+            if glare_zones_cfg is not None:
+                active_names: set[str] = set()
+                for idx, zone in enumerate(glare_zones_cfg.zones):
+                    if getattr(self, f"glare_zone_{idx}", True):
+                        active_names.add(zone.name)
+                cover_data.active_zone_names = active_names
         if self.is_awning_cover:
             cover_data = AdaptiveHorizontalCover(
                 logger=self.logger,
