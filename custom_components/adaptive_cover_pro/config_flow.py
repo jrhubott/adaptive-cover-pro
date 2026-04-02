@@ -692,6 +692,250 @@ def _get_azimuth_edges(data) -> int:
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
+def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa: C901, PLR0912, PLR0915
+    """Build a human-readable summary of the current configuration.
+
+    Returns a formatted string suitable for use as a config-flow description
+    placeholder.  Only sections/fields that have meaningful values are included.
+    """
+    lines: list[str] = []
+
+    # --- Cover type ---
+    type_labels = {
+        SensorType.BLIND: "Vertical Blind",
+        SensorType.AWNING: "Horizontal Awning",
+        SensorType.TILT: "Venetian / Tilt Blind",
+    }
+    if sensor_type:
+        lines.append(f"**Cover Type:** {type_labels.get(sensor_type, sensor_type)}")
+
+    # --- Cover entities ---
+    entities = config.get(CONF_ENTITIES) or []
+    if entities:
+        lines.append("")
+        lines.append("**Cover Entities:**")
+        for eid in entities:
+            lines.append(f"  • {eid}")
+
+    # --- Geometry ---
+    geo_lines: list[str] = []
+    if sensor_type in (SensorType.BLIND, None):
+        if (v := config.get(CONF_HEIGHT_WIN)) is not None:
+            geo_lines.append(f"  Window Height: {v} m")
+        if (v := config.get(CONF_DISTANCE)) is not None:
+            geo_lines.append(f"  Shaded Area Distance: {v} m")
+        if (v := config.get(CONF_WINDOW_DEPTH)) and v > 0:
+            geo_lines.append(f"  Window Depth (Reveal): {v} m")
+        if (v := config.get(CONF_SILL_HEIGHT)) and v > 0:
+            geo_lines.append(f"  Sill Height: {v} m")
+    elif sensor_type == SensorType.AWNING:
+        if (v := config.get(CONF_LENGTH_AWNING)) is not None:
+            geo_lines.append(f"  Awning Length: {v} m")
+        if (v := config.get(CONF_AWNING_ANGLE)) is not None:
+            geo_lines.append(f"  Awning Angle: {v}°")
+        if (v := config.get(CONF_HEIGHT_WIN)) is not None:
+            geo_lines.append(f"  Window Height: {v} m")
+        if (v := config.get(CONF_DISTANCE)) is not None:
+            geo_lines.append(f"  Shaded Area Distance: {v} m")
+    elif sensor_type == SensorType.TILT:
+        if (v := config.get(CONF_TILT_DEPTH)) is not None:
+            geo_lines.append(f"  Slat Depth: {v} cm")
+        if (v := config.get(CONF_TILT_DISTANCE)) is not None:
+            geo_lines.append(f"  Slat Spacing: {v} cm")
+        if (v := config.get(CONF_TILT_MODE)) is not None:
+            geo_lines.append(f"  Tilt Mode: {v}")
+    if geo_lines:
+        lines.append("")
+        lines.append("**Geometry:**")
+        lines.extend(geo_lines)
+
+    # --- Glare Zones (vertical only) ---
+    if sensor_type == SensorType.BLIND and config.get(CONF_ENABLE_GLARE_ZONES):
+        gz_lines: list[str] = ["  Glare Zones: Enabled"]
+        if (v := config.get(CONF_WINDOW_WIDTH)):
+            gz_lines.append(f"  Window Width: {v} cm")
+        active_zones = [
+            config.get(f"glare_zone_{i}_name")
+            for i in range(1, 5)
+            if config.get(f"glare_zone_{i}_name")
+        ]
+        if active_zones:
+            gz_lines.append(f"  Active Zones: {', '.join(active_zones)}")
+        lines.append("")
+        lines.append("**Glare Zones:**")
+        lines.extend(gz_lines)
+
+    # --- Sun Tracking ---
+    sun_lines: list[str] = []
+    if (v := config.get(CONF_AZIMUTH)) is not None:
+        sun_lines.append(f"  Azimuth: {v}°")
+    fov_l = config.get(CONF_FOV_LEFT)
+    fov_r = config.get(CONF_FOV_RIGHT)
+    if fov_l is not None and fov_r is not None:
+        sun_lines.append(f"  Field of View: {fov_l}° left, {fov_r}° right")
+    if (v := config.get(CONF_MIN_ELEVATION)) is not None:
+        sun_lines.append(f"  Min Elevation: {v}°")
+    if (v := config.get(CONF_MAX_ELEVATION)) is not None:
+        sun_lines.append(f"  Max Elevation: {v}°")
+    if sun_lines:
+        lines.append("")
+        lines.append("**Sun Tracking:**")
+        lines.extend(sun_lines)
+
+    # --- Position ---
+    pos_lines: list[str] = []
+    if (v := config.get(CONF_DEFAULT_HEIGHT)) is not None:
+        pos_lines.append(f"  Default Height: {v}%")
+    min_pos = config.get(CONF_MIN_POSITION)
+    enable_min = config.get(CONF_ENABLE_MIN_POSITION)
+    if min_pos is not None:
+        qualifier = " (during sun tracking only)" if enable_min else ""
+        pos_lines.append(f"  Min Position: {min_pos}%{qualifier}")
+    max_pos = config.get(CONF_MAX_POSITION)
+    enable_max = config.get(CONF_ENABLE_MAX_POSITION)
+    if max_pos is not None:
+        qualifier = " (during sun tracking only)" if enable_max else ""
+        pos_lines.append(f"  Max Position: {max_pos}%{qualifier}")
+    if (v := config.get(CONF_SUNSET_POS)) is not None:
+        pos_lines.append(f"  Sunset Position: {v}%")
+    if config.get(CONF_INVERSE_STATE):
+        pos_lines.append("  Inverse State: Yes")
+    if config.get(CONF_INTERP):
+        pos_lines.append("  Interpolation: Enabled")
+    if pos_lines:
+        lines.append("")
+        lines.append("**Position:**")
+        lines.extend(pos_lines)
+
+    # --- Blind Spot ---
+    if config.get(CONF_ENABLE_BLIND_SPOT):
+        bs_lines: list[str] = []
+        if (v := config.get(CONF_BLIND_SPOT_LEFT)) is not None:
+            bs_lines.append(f"  Left Edge: {v}°")
+        if (v := config.get(CONF_BLIND_SPOT_RIGHT)) is not None:
+            bs_lines.append(f"  Right Edge: {v}°")
+        if (v := config.get(CONF_BLIND_SPOT_ELEVATION)) is not None:
+            bs_lines.append(f"  Max Elevation: {v}°")
+        if bs_lines:
+            lines.append("")
+            lines.append("**Blind Spot:**")
+            lines.extend(bs_lines)
+
+    # --- Automation ---
+    auto_lines: list[str] = []
+    if (v := config.get(CONF_DELTA_POSITION)) is not None:
+        auto_lines.append(f"  Min Position Change: {v}%")
+    if (v := config.get(CONF_DELTA_TIME)) is not None:
+        auto_lines.append(f"  Min Interval: {v} min")
+    if (v := config.get(CONF_START_TIME)):
+        auto_lines.append(f"  Start Time: {v}")
+    elif (v := config.get(CONF_START_ENTITY)):
+        auto_lines.append(f"  Start Entity: {v}")
+    if (v := config.get(CONF_END_TIME)):
+        auto_lines.append(f"  End Time: {v}")
+    elif (v := config.get(CONF_END_ENTITY)):
+        auto_lines.append(f"  End Entity: {v}")
+    if auto_lines:
+        lines.append("")
+        lines.append("**Automation:**")
+        lines.extend(auto_lines)
+
+    # --- Manual Override ---
+    mo_lines: list[str] = []
+    if (v := config.get(CONF_MANUAL_OVERRIDE_DURATION)) is not None:
+        mo_lines.append(f"  Duration: {v} min")
+    if (v := config.get(CONF_MANUAL_THRESHOLD)) is not None:
+        mo_lines.append(f"  Position Threshold: {v}%")
+    if config.get(CONF_MANUAL_OVERRIDE_RESET):
+        mo_lines.append("  Reset on New Command: Yes")
+    if mo_lines:
+        lines.append("")
+        lines.append("**Manual Override:**")
+        lines.extend(mo_lines)
+
+    # --- Motion & Force Overrides ---
+    ovr_lines: list[str] = []
+    motion_sensors = config.get(CONF_MOTION_SENSORS) or []
+    if motion_sensors:
+        ovr_lines.append(f"  Motion Sensors: {len(motion_sensors)} configured")
+        if (v := config.get(CONF_MOTION_TIMEOUT)) is not None:
+            ovr_lines.append(f"  Motion Timeout: {v} s")
+    force_sensors = config.get(CONF_FORCE_OVERRIDE_SENSORS) or []
+    if force_sensors:
+        ovr_lines.append(f"  Force Override Sensors: {len(force_sensors)} configured")
+        if (v := config.get(CONF_FORCE_OVERRIDE_POSITION)) is not None:
+            ovr_lines.append(f"  Force Override Position: {v}%")
+    if ovr_lines:
+        lines.append("")
+        lines.append("**Motion & Force Overrides:**")
+        lines.extend(ovr_lines)
+
+    # --- Weather Override ---
+    wx_lines: list[str] = []
+    if (v := config.get(CONF_WEATHER_WIND_SPEED_SENSOR)):
+        wx_lines.append(f"  Wind Speed Sensor: {v}")
+        threshold = config.get(CONF_WEATHER_WIND_SPEED_THRESHOLD)
+        if threshold is not None:
+            wx_lines.append(f"  Wind Speed Threshold: {threshold} km/h")
+    if (v := config.get(CONF_WEATHER_RAIN_SENSOR)):
+        wx_lines.append(f"  Rain Rate Sensor: {v}")
+        threshold = config.get(CONF_WEATHER_RAIN_THRESHOLD)
+        if threshold is not None:
+            wx_lines.append(f"  Rain Threshold: {threshold} mm/h")
+    if (v := config.get(CONF_WEATHER_IS_RAINING_SENSOR)):
+        wx_lines.append(f"  Is-Raining Sensor: {v}")
+    if (v := config.get(CONF_WEATHER_IS_WINDY_SENSOR)):
+        wx_lines.append(f"  Is-Windy Sensor: {v}")
+    severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
+    if severe:
+        wx_lines.append(f"  Severe Weather Sensors: {len(severe)} configured")
+    if wx_lines:
+        if (v := config.get(CONF_WEATHER_TIMEOUT)) is not None:
+            wx_lines.append(f"  Clear Delay: {v} s")
+        lines.append("")
+        lines.append("**Weather Override:**")
+        lines.extend(wx_lines)
+
+    # --- Climate ---
+    cl_lines: list[str] = []
+    if config.get(CONF_CLIMATE_MODE):
+        cl_lines.append("  Climate Mode: Enabled")
+    if (v := config.get(CONF_TEMP_ENTITY)):
+        cl_lines.append(f"  Indoor Temp: {v}")
+        lo = config.get(CONF_TEMP_LOW)
+        hi = config.get(CONF_TEMP_HIGH)
+        if lo is not None and hi is not None:
+            cl_lines.append(f"  Thresholds: {lo}°C (low) / {hi}°C (high)")
+    if (v := config.get(CONF_OUTSIDETEMP_ENTITY)):
+        cl_lines.append(f"  Outside Temp: {v}")
+        if (ot := config.get(CONF_OUTSIDE_THRESHOLD)) is not None:
+            cl_lines.append(f"  Outside Threshold: {ot}°C")
+    if (v := config.get(CONF_PRESENCE_ENTITY)):
+        cl_lines.append(f"  Presence: {v}")
+    if (v := config.get(CONF_WEATHER_ENTITY)):
+        cl_lines.append(f"  Weather Entity: {v}")
+    if (v := config.get(CONF_LUX_ENTITY)):
+        cl_lines.append(f"  Lux Sensor: {v}")
+        if (t := config.get(CONF_LUX_THRESHOLD)) is not None:
+            cl_lines.append(f"  Lux Threshold: {t} lx")
+    if (v := config.get(CONF_IRRADIANCE_ENTITY)):
+        cl_lines.append(f"  Irradiance Sensor: {v}")
+        if (t := config.get(CONF_IRRADIANCE_THRESHOLD)) is not None:
+            cl_lines.append(f"  Irradiance Threshold: {t} W/m²")
+    if (v := config.get(CONF_CLOUD_COVERAGE_ENTITY)):
+        cl_lines.append(f"  Cloud Coverage Sensor: {v}")
+        if (t := config.get(CONF_CLOUD_COVERAGE_THRESHOLD)) is not None:
+            cl_lines.append(f"  Cloud Coverage Threshold: {t}%")
+    if config.get(CONF_CLOUD_SUPPRESSION):
+        cl_lines.append("  Cloud Suppression: Enabled")
+    if cl_lines:
+        lines.append("")
+        lines.append("**Climate:**")
+        lines.extend(cl_lines)
+
+    return "\n".join(lines) if lines else "No configuration captured yet."
+
+
 async def _get_devices_from_entities(
     hass: HomeAssistant, entity_ids: list[str]
 ) -> dict[str, str]:
@@ -1259,15 +1503,26 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             if self.config.get(CONF_WEATHER_ENTITY):
                 return await self.async_step_weather()
-            return await self.async_step_update()
+            return await self.async_step_summary()
         return self.async_show_form(step_id="climate", data_schema=CLIMATE_SCHEMA)
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None):
         """Manage weather conditions."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_update()
+            return await self.async_step_summary()
         return self.async_show_form(step_id="weather", data_schema=WEATHER_OPTIONS)
+
+    async def async_step_summary(self, user_input: dict[str, Any] | None = None):
+        """Show a read-only summary of all collected configuration before creating the entry."""
+        if user_input is not None:
+            return await self.async_step_update()
+        summary_text = _build_config_summary(self.config, self.type_blind)
+        return self.async_show_form(
+            step_id="summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={"summary": summary_text},
+        )
 
     async def async_step_update(self, user_input: dict[str, Any] | None = None):
         """Create entry."""
@@ -1552,6 +1807,7 @@ class OptionsFlowHandler(OptionsFlow):
             menu_options.append("weather")
         menu_options.extend(
             [
+                "summary",
                 "sync",
                 "done",
             ]
@@ -1974,6 +2230,19 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 WEATHER_OPTIONS, user_input or self.options
             ),
+        )
+
+    async def async_step_summary(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show a read-only summary of the current configuration."""
+        if user_input is not None:
+            return await self.async_step_init()
+        summary_text = _build_config_summary(self.options, self.sensor_type)
+        return self.async_show_form(
+            step_id="summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={"summary": summary_text},
         )
 
     async def async_step_done(

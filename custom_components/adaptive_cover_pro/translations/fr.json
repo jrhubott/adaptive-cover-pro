@@ -237,6 +237,10 @@
           "entities": "Cover entities",
           "azimuth": "Window azimuth"
         }
+      },
+      "summary": {
+        "title": "Configuration Summary",
+        "description": "{summary}"
       }
     },
     "abort": {
@@ -260,6 +264,7 @@
           "motion_overrides": "Motion & Force Overrides",
           "climate": "Modifier la configuration climatique",
           "weather": "Weather Conditions",
+          "summary": "Configuration Summary",
           "sync": "Sync settings to other covers",
           "done": "Save & Exit"
         }
@@ -483,6 +488,10 @@
         "data": {
           "target_entries": "Target covers"
         }
+      },
+      "summary": {
+        "title": "Configuration Summary",
+        "description": "{summary}"
       },
       "sync_confirm": {
         "title": "Sync Settings — Confirm",
