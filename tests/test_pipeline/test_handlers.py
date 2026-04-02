@@ -14,7 +14,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     SolarHandler,
 )
 
-from tests.test_pipeline.conftest import make_ctx
+from tests.test_pipeline.conftest import make_ctx, make_snapshot
 
 
 def test_pipeline_snapshot_is_importable() -> None:
@@ -319,44 +319,35 @@ class TestDefaultHandler:
     handler = DefaultHandler()
 
     def test_always_matches(self) -> None:
-        """DefaultHandler must return a result for any context."""
-        for flag in (True, False):
-            ctx = make_ctx(
-                direct_sun_valid=flag,
-                force_override_active=flag,
-                motion_timeout_active=flag,
-                manual_override_active=flag,
-            )
-            result = self.handler.evaluate(ctx)
-            assert result is not None, "DefaultHandler must always match"
+        """DefaultHandler must return a result for any snapshot."""
+        snap = make_snapshot()
+        result = self.handler.evaluate(snap)
+        assert result is not None
 
     def test_returns_default_position(self) -> None:
-        """Return the default_position from context with DEFAULT method."""
-        ctx = make_ctx(default_position=42)
-        result = self.handler.evaluate(ctx)
+        """Return the default_position with DEFAULT method."""
+        snap = make_snapshot(default_position=42)
+        result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 42
         assert result.control_method == ControlMethod.DEFAULT
 
     def test_zero_default_position(self) -> None:
         """Handle default_position=0 correctly (falsy value check)."""
-        ctx = make_ctx(default_position=0)
-        result = self.handler.evaluate(ctx)
+        snap = make_snapshot(default_position=0)
+        result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 0
 
     def test_priority_is_0(self) -> None:
-        """Priority should be 0 (lowest)."""
         assert DefaultHandler.priority == 0
 
     def test_name(self) -> None:
-        """Handler name should be 'default'."""
         assert DefaultHandler.name == "default"
 
     def test_describe_skip_returns_string(self) -> None:
-        """describe_skip returns a non-empty string."""
-        ctx = make_ctx()
-        reason = self.handler.describe_skip(ctx)
+        snap = make_snapshot()
+        reason = self.handler.describe_skip(snap)
         assert isinstance(reason, str)
         assert len(reason) > 0
 
