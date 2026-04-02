@@ -31,6 +31,7 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
+    CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
@@ -87,6 +88,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_WINDOW_DEPTH,
+    CONF_WINDOW_WIDTH,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_MOTION_TIMEOUT,
     DOMAIN,
@@ -779,6 +781,66 @@ def _get_geometry_schema(sensor_type: str) -> vol.Schema:
     return GEOMETRY_VERTICAL_SCHEMA
 
 
+def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
+    """Build the glare zones schema: enable toggle, window width, and 4 zone slots."""
+    opts = options or {}
+    schema_dict: dict = {
+        vol.Optional(CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)): (
+            selector.BooleanSelector()
+        ),
+        vol.Optional(CONF_WINDOW_WIDTH, default=opts.get(CONF_WINDOW_WIDTH, 100)): (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10,
+                    max=500,
+                    step=1,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        ),
+    }
+    for i in range(1, 5):
+        prefix = f"glare_zone_{i}"
+        schema_dict[vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))] = (
+            selector.TextSelector()
+        )
+        schema_dict[vol.Optional(f"{prefix}_x", default=opts.get(f"{prefix}_x", 0))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-500,
+                    max=500,
+                    step=10,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        )
+        schema_dict[vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 100))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1000,
+                    step=10,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        )
+        schema_dict[vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 30))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10,
+                    max=200,
+                    step=5,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        )
+    return vol.Schema(schema_dict)
+
+
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
@@ -894,10 +956,21 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure cover geometry dimensions."""
         if user_input is not None:
             self.config.update(user_input)
+            if self.type_blind == SensorType.BLIND:
+                return await self.async_step_glare_zones()
             return await self.async_step_sun_tracking()
 
         schema = _get_geometry_schema(self.type_blind)
         return self.async_show_form(step_id="geometry", data_schema=schema)
+
+    async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
+        """Configure glare zone definitions (initial flow)."""
+        if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_sun_tracking()
+
+        schema = _build_glare_zones_schema(self.config)
+        return self.async_show_form(step_id="glare_zones", data_schema=schema)
 
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
         """Configure sun tracking parameters."""
@@ -1326,6 +1399,8 @@ class OptionsFlowHandler(OptionsFlow):
         ]
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
+        if self.sensor_type == SensorType.BLIND:
+            menu_options.append("glare_zones")
         menu_options.append("position")
         if self.options.get(CONF_INTERP):
             menu_options.append("interp")
@@ -1373,6 +1448,18 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, user_input or self.options
             ),
+        )
+
+    async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
+        """Configure glare zone definitions (options)."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+
+        schema = _build_glare_zones_schema(self.options)
+        return self.async_show_form(
+            step_id="glare_zones",
+            data_schema=self.add_suggested_values_to_schema(schema, self.options),
         )
 
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
