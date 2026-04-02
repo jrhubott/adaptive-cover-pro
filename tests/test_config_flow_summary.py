@@ -1,4 +1,4 @@
-"""Tests for _build_config_summary() in config_flow.py."""
+"""Tests for _build_config_summary() in config_flow.py — narrative format."""
 
 from __future__ import annotations
 
@@ -60,11 +60,11 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_TIMEOUT,
-    CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WINDOW_DEPTH,
@@ -74,7 +74,7 @@ from custom_components.adaptive_cover_pro.const import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
@@ -130,6 +130,7 @@ def _full_vertical() -> dict:
             CONF_WEATHER_IS_WINDY_SENSOR: "binary_sensor.is_windy",
             CONF_WEATHER_SEVERE_SENSORS: ["binary_sensor.hail", "binary_sensor.storm"],
             CONF_WEATHER_TIMEOUT: 600,
+            CONF_WEATHER_OVERRIDE_POSITION: 0,
             CONF_CLIMATE_MODE: True,
             CONF_TEMP_ENTITY: "sensor.indoor_temp",
             CONF_TEMP_LOW: 16,
@@ -153,81 +154,78 @@ def _full_vertical() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Cover type label tests
+# Section 1: Your Cover
 # ---------------------------------------------------------------------------
 
 
 def test_summary_shows_vertical_type():
-    """Summary shows vertical type."""
+    """Cover type label appears in Your Cover section."""
     summary = _build_config_summary({}, SensorType.BLIND)
     assert "Vertical Blind" in summary
 
 
 def test_summary_shows_awning_type():
-    """Summary shows awning type."""
+    """Awning type label appears in Your Cover section."""
     summary = _build_config_summary({}, SensorType.AWNING)
     assert "Horizontal Awning" in summary
 
 
 def test_summary_shows_tilt_type():
-    """Summary shows tilt type."""
+    """Tilt type label appears in Your Cover section."""
     summary = _build_config_summary({}, SensorType.TILT)
     assert "Venetian" in summary or "Tilt" in summary
 
 
 def test_summary_no_type_graceful():
-    """Summary no type graceful."""
+    """None sensor type does not crash."""
     summary = _build_config_summary({}, None)
-    # Should not crash and should return something
     assert isinstance(summary, str)
-
-
-# ---------------------------------------------------------------------------
-# Empty / minimal config
-# ---------------------------------------------------------------------------
+    assert len(summary) > 0
 
 
 def test_empty_config_returns_string():
-    """An empty config must not raise and must return a non-empty string."""
+    """Empty config returns a non-empty string without crashing."""
     summary = _build_config_summary({}, SensorType.BLIND)
     assert isinstance(summary, str)
     assert len(summary) > 0
 
 
-def test_minimal_vertical_contains_key_fields():
-    """Minimal vertical contains key fields."""
-    cfg = _minimal_vertical()
+def test_entity_included_in_your_cover():
+    """Cover entity ID appears in the Your Cover line."""
+    cfg = {CONF_ENTITIES: ["cover.living_room"]}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "180°" in summary  # azimuth
-    assert "2.1 m" in summary  # window height
-    assert "0.5 m" in summary  # distance
-    assert "60%" in summary  # default height
     assert "cover.living_room" in summary
 
 
-# ---------------------------------------------------------------------------
-# Section-specific tests — Geometry
-# ---------------------------------------------------------------------------
+def test_minimal_vertical_contains_key_fields():
+    """Minimal vertical config shows entity, dimensions, and azimuth."""
+    cfg = _minimal_vertical()
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "cover.living_room" in summary
+    assert "2.1m" in summary
+    assert "0.5m" in summary
+    assert "180°" in summary
+    assert "60%" in summary
 
 
 def test_geometry_vertical_optional_fields_omitted_when_zero():
-    """window_depth and sill_height of 0 should not appear in summary."""
+    """Window depth and sill height of 0 do not appear."""
     cfg = {CONF_HEIGHT_WIN: 2.0, CONF_DISTANCE: 0.5, CONF_WINDOW_DEPTH: 0.0, CONF_SILL_HEIGHT: 0.0}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Window Depth" not in summary
-    assert "Sill Height" not in summary
+    assert "reveal" not in summary
+    assert "sill" not in summary
 
 
 def test_geometry_vertical_optional_fields_shown_when_nonzero():
-    """Geometry vertical optional fields shown when nonzero."""
+    """Window depth and sill height appear when > 0."""
     cfg = {CONF_HEIGHT_WIN: 2.0, CONF_DISTANCE: 0.5, CONF_WINDOW_DEPTH: 0.1, CONF_SILL_HEIGHT: 0.5}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Window Depth" in summary
-    assert "Sill Height" in summary
+    assert "reveal" in summary
+    assert "sill" in summary
 
 
 def test_geometry_awning_shows_awning_fields():
-    """Geometry awning shows awning fields."""
+    """Awning dimensions appear in plain-English format."""
     cfg = {
         CONF_LENGTH_AWNING: 3.0,
         CONF_AWNING_ANGLE: 15,
@@ -235,60 +233,32 @@ def test_geometry_awning_shows_awning_fields():
         CONF_DISTANCE: 0.5,
     }
     summary = _build_config_summary(cfg, SensorType.AWNING)
-    assert "Awning Length" in summary
-    assert "3.0 m" in summary
+    assert "3.0m awning" in summary
     assert "15°" in summary
 
 
 def test_geometry_tilt_shows_tilt_fields():
-    """Geometry tilt shows tilt fields."""
+    """Tilt slat dimensions appear."""
     cfg = {CONF_TILT_DEPTH: 3.0, CONF_TILT_DISTANCE: 4.0, CONF_TILT_MODE: "mode1"}
     summary = _build_config_summary(cfg, SensorType.TILT)
-    assert "Slat Depth" in summary
-    assert "Slat Spacing" in summary
+    assert "slat depth 3.0cm" in summary
+    assert "spacing 4.0cm" in summary
     assert "mode1" in summary
 
 
 # ---------------------------------------------------------------------------
-# Glare Zones
+# Section 2: How It Decides — Sun Tracking
 # ---------------------------------------------------------------------------
 
 
-def test_glare_zones_hidden_when_disabled():
-    """Glare zones hidden when disabled."""
-    cfg = {CONF_ENABLE_GLARE_ZONES: False, CONF_WINDOW_WIDTH: 150}
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Glare Zones" not in summary
-
-
-def test_glare_zones_shown_when_enabled():
-    """Glare zones shown when enabled."""
-    cfg = {
-        CONF_ENABLE_GLARE_ZONES: True,
-        CONF_WINDOW_WIDTH: 150,
-        "glare_zone_1_name": "Desk",
-        "glare_zone_2_name": "",
-    }
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Glare Zones" in summary
-    assert "150 cm" in summary
-    assert "Desk" in summary
-
-
-def test_glare_zones_not_shown_for_awning():
-    """Glare zones not shown for awning."""
-    cfg = {CONF_ENABLE_GLARE_ZONES: True, CONF_WINDOW_WIDTH: 100}
-    summary = _build_config_summary(cfg, SensorType.AWNING)
-    assert "Glare Zones" not in summary
-
-
-# ---------------------------------------------------------------------------
-# Sun Tracking
-# ---------------------------------------------------------------------------
+def test_sun_tracking_always_present():
+    """☀️ solar tracking bullet always appears."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    assert "Tracks the sun" in summary
 
 
 def test_sun_tracking_fov_shown():
-    """Sun tracking fov shown."""
+    """Azimuth and FOV are embedded in the solar tracking bullet."""
     cfg = {CONF_AZIMUTH: 200, CONF_FOV_LEFT: 80, CONF_FOV_RIGHT: 70}
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "200°" in summary
@@ -297,77 +267,55 @@ def test_sun_tracking_fov_shown():
 
 
 def test_sun_tracking_optional_elevation_omitted():
-    """Sun tracking optional elevation omitted."""
+    """Elevation limits are absent when not configured."""
     cfg = {CONF_AZIMUTH: 180}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Min Elevation" not in summary
-    assert "Max Elevation" not in summary
+    assert "above" not in summary
+    assert "below" not in summary
 
 
 def test_sun_tracking_elevation_shown_when_set():
-    """Sun tracking elevation shown when set."""
+    """Elevation limits appear when configured."""
     cfg = {CONF_AZIMUTH: 180, CONF_MIN_ELEVATION: 5, CONF_MAX_ELEVATION: 70}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Min Elevation" in summary
-    assert "Max Elevation" in summary
-    assert "5°" in summary
-    assert "70°" in summary
+    assert "above 5°" in summary
+    assert "below 70°" in summary
 
 
 # ---------------------------------------------------------------------------
-# Position section
+# Section 2: Timing
 # ---------------------------------------------------------------------------
 
 
-def test_position_min_max_with_qualifier():
-    """Position min max with qualifier."""
-    cfg = {
-        CONF_MIN_POSITION: 5,
-        CONF_ENABLE_MIN_POSITION: True,
-        CONF_MAX_POSITION: 90,
-        CONF_ENABLE_MAX_POSITION: False,
-    }
+def test_automation_times_shown():
+    """Start and end times appear in the timing bullet."""
+    cfg = {CONF_START_TIME: "07:00", CONF_END_TIME: "21:00"}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "5%" in summary
-    assert "90%" in summary
-    assert "during sun tracking only" in summary  # enable_min is True
+    assert "07:00" in summary
+    assert "21:00" in summary
 
 
-def test_position_inverse_state_shown():
-    """Position inverse state shown."""
-    cfg = {CONF_INVERSE_STATE: True}
+def test_sunset_position_shown():
+    """Sunset/end-of-day position appears in timing bullet."""
+    cfg = {CONF_SUNSET_POS: 0}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Inverse State" in summary
-
-
-def test_position_inverse_state_hidden_when_false():
-    """Position inverse state hidden when false."""
-    cfg = {CONF_INVERSE_STATE: False}
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Inverse State" not in summary
-
-
-def test_position_interp_shown():
-    """Position interp shown."""
-    cfg = {CONF_INTERP: True}
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Interpolation" in summary
+    assert "sunset" in summary.lower() or "end time" in summary.lower()
 
 
 # ---------------------------------------------------------------------------
-# Blind Spot
+# Section 2: Blind Spot
 # ---------------------------------------------------------------------------
 
 
 def test_blind_spot_hidden_when_disabled():
-    """Blind spot hidden when disabled."""
+    """Blind spot bullet absent when not enabled."""
     cfg = {CONF_ENABLE_BLIND_SPOT: False}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Blind Spot" not in summary
+    assert "Blind spot" not in summary
 
 
 def test_blind_spot_shown_when_enabled():
-    """Blind spot shown when enabled."""
+    """Blind spot bullet shows the degree range."""
     cfg = {
         CONF_ENABLE_BLIND_SPOT: True,
         CONF_BLIND_SPOT_LEFT: 10,
@@ -375,140 +323,52 @@ def test_blind_spot_shown_when_enabled():
         CONF_BLIND_SPOT_ELEVATION: 40,
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Blind Spot" in summary
+    assert "Blind spot" in summary
     assert "10°" in summary
     assert "20°" in summary
     assert "40°" in summary
 
 
 # ---------------------------------------------------------------------------
-# Automation
+# Section 2: Glare Zones
 # ---------------------------------------------------------------------------
 
 
-def test_automation_times_shown():
-    """Automation times shown."""
-    cfg = {CONF_START_TIME: "07:00", CONF_END_TIME: "21:00", CONF_DELTA_POSITION: 3, CONF_DELTA_TIME: 5}
+def test_glare_zones_hidden_when_disabled():
+    """Glare zone bullet absent when not enabled."""
+    cfg = {CONF_ENABLE_GLARE_ZONES: False, CONF_WINDOW_WIDTH: 150}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "07:00" in summary
-    assert "21:00" in summary
-    assert "3%" in summary
-    assert "5 min" in summary
+    assert "Glare zones" not in summary
 
 
-# ---------------------------------------------------------------------------
-# Manual Override
-# ---------------------------------------------------------------------------
-
-
-def test_manual_override_shown():
-    """Manual override shown."""
+def test_glare_zones_shown_when_enabled():
+    """Glare zone bullet appears with zone names and window width."""
     cfg = {
-        CONF_MANUAL_OVERRIDE_DURATION: 60,
-        CONF_MANUAL_THRESHOLD: 3,
-        CONF_MANUAL_OVERRIDE_RESET: True,
+        CONF_ENABLE_GLARE_ZONES: True,
+        CONF_WINDOW_WIDTH: 150,
+        "glare_zone_1_name": "Desk",
+        "glare_zone_2_name": "",
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Manual Override" in summary
-    assert "60 min" in summary
-    assert "3%" in summary
-    assert "Reset on New Command" in summary
+    assert "Glare zones" in summary
+    assert "150cm" in summary
+    assert "Desk" in summary
+
+
+def test_glare_zones_not_shown_for_awning():
+    """Glare zone bullet absent for awning type."""
+    cfg = {CONF_ENABLE_GLARE_ZONES: True, CONF_WINDOW_WIDTH: 100}
+    summary = _build_config_summary(cfg, SensorType.AWNING)
+    assert "Glare zones" not in summary
 
 
 # ---------------------------------------------------------------------------
-# Motion & Force Overrides
-# ---------------------------------------------------------------------------
-
-
-def test_motion_sensors_count_shown():
-    """Motion sensors count shown."""
-    cfg = {
-        CONF_MOTION_SENSORS: ["binary_sensor.a", "binary_sensor.b"],
-        CONF_MOTION_TIMEOUT: 300,
-    }
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Motion Sensors: 2" in summary
-    assert "300 s" in summary
-
-
-def test_force_override_sensors_shown():
-    """Force override sensors shown."""
-    cfg = {
-        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
-        CONF_FORCE_OVERRIDE_POSITION: 100,
-    }
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Force Override Sensors: 1" in summary
-    assert "100%" in summary
-
-
-def test_overrides_section_hidden_when_empty():
-    """Overrides section hidden when empty."""
-    cfg = {CONF_MOTION_SENSORS: [], CONF_FORCE_OVERRIDE_SENSORS: []}
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Motion & Force Overrides" not in summary
-
-
-# ---------------------------------------------------------------------------
-# Weather Override
-# ---------------------------------------------------------------------------
-
-
-def test_weather_override_section_hidden_when_no_sensors():
-    """Weather Override details section is hidden when no sensors are configured."""
-    cfg = {}
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    # The priority chain always shows the handler, but the details section should be absent
-    assert "Rain Rate Sensor" not in summary
-    assert "Wind Speed Sensor" not in summary
-    assert "Is-Raining Sensor" not in summary
-
-
-def test_weather_override_wind_sensor_shown():
-    """Weather override wind sensor shown."""
-    cfg = {
-        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
-        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
-        CONF_WEATHER_TIMEOUT: 120,
-    }
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Weather Override" in summary
-    assert "sensor.wind" in summary
-    assert "60 km/h" in summary
-    assert "120 s" in summary
-
-
-def test_weather_override_rain_sensor_shown():
-    """Weather override rain sensor shown."""
-    cfg = {
-        CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
-        CONF_WEATHER_RAIN_THRESHOLD: 5.0,
-    }
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Rain Rate Sensor" in summary
-    assert "5.0 mm/h" in summary
-
-
-def test_weather_override_binary_sensors_shown():
-    """Weather override binary sensors shown."""
-    cfg = {
-        CONF_WEATHER_IS_RAINING_SENSOR: "binary_sensor.rain",
-        CONF_WEATHER_IS_WINDY_SENSOR: "binary_sensor.wind",
-        CONF_WEATHER_SEVERE_SENSORS: ["binary_sensor.hail"],
-    }
-    summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Is-Raining Sensor" in summary
-    assert "Is-Windy Sensor" in summary
-    assert "Severe Weather Sensors: 1" in summary
-
-
-# ---------------------------------------------------------------------------
-# Climate
+# Section 2: Climate
 # ---------------------------------------------------------------------------
 
 
 def test_climate_mode_shown():
-    """Climate mode shown."""
+    """Climate mode bullet appears with temp range and sensors."""
     cfg = {
         CONF_CLIMATE_MODE: True,
         CONF_TEMP_ENTITY: "sensor.temp",
@@ -516,229 +376,392 @@ def test_climate_mode_shown():
         CONF_TEMP_HIGH: 24,
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Climate Mode: Enabled" in summary
+    assert "Climate mode" in summary
+    assert "16" in summary
+    assert "24" in summary
     assert "sensor.temp" in summary
-    assert "16°C" in summary
-    assert "24°C" in summary
 
 
 def test_climate_weather_entity_shown():
-    """Climate weather entity shown."""
-    cfg = {CONF_WEATHER_ENTITY: "weather.home"}
+    """Weather entity appears in climate bullet."""
+    cfg = {CONF_CLIMATE_MODE: True, CONF_WEATHER_ENTITY: "weather.home"}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Climate" in summary
     assert "weather.home" in summary
 
 
-def test_climate_lux_and_irradiance_shown():
-    """Climate lux and irradiance shown."""
+def test_climate_lux_and_irradiance_shown_with_suppression():
+    """Lux and irradiance thresholds appear in cloud suppression bullet."""
     cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
         CONF_LUX_ENTITY: "sensor.lux",
         CONF_LUX_THRESHOLD: 500,
         CONF_IRRADIANCE_ENTITY: "sensor.irr",
         CONF_IRRADIANCE_THRESHOLD: 150,
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "sensor.lux" in summary
     assert "500 lx" in summary
-    assert "sensor.irr" in summary
     assert "150 W/m²" in summary
 
 
 def test_climate_cloud_coverage_shown():
-    """Climate cloud coverage shown."""
+    """Cloud coverage threshold appears in cloud suppression bullet."""
     cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
         CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
         CONF_CLOUD_COVERAGE_THRESHOLD: 60,
-        CONF_CLOUD_SUPPRESSION: True,
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "sensor.cloud" in summary
     assert "60%" in summary
-    assert "Cloud Suppression: Enabled" in summary
+    assert "Cloud suppression" in summary
 
 
-# ---------------------------------------------------------------------------
-# Full vertical — smoke test
-# ---------------------------------------------------------------------------
-
-
-def test_full_vertical_config_smoke():
-    """Full vertical config should produce a summary without errors."""
-    cfg = _full_vertical()
+def test_light_sensors_without_suppression_noted():
+    """Light sensors configured but suppression off shows informational note."""
+    cfg = {CONF_LUX_ENTITY: "sensor.lux", CONF_CLOUD_SUPPRESSION: False}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-
-    # Cover type
-    assert "Vertical Blind" in summary
-    # Entity
-    assert "cover.living_room" in summary
-    # Geometry
-    assert "2.1 m" in summary
-    assert "0.1 m" in summary  # window_depth
-    assert "0.5 m" in summary  # sill_height
-    # Sun tracking
-    assert "180°" in summary
-    # Position
-    assert "60%" in summary
-    assert "Inverse State" in summary
-    assert "Interpolation" in summary
-    # Blind spot
-    assert "Blind Spot" in summary
-    # Automation
-    assert "07:30" in summary
-    assert "20:00" in summary
-    # Manual override
-    assert "120 min" in summary
-    # Motion & Force
-    assert "Motion Sensors: 2" in summary
-    assert "Force Override Sensors: 1" in summary
-    # Weather override
-    assert "Weather Override" in summary
-    assert "sensor.wind_speed" in summary
-    # Climate
-    assert "Climate Mode: Enabled" in summary
-    assert "sensor.indoor_temp" in summary
-    assert "weather.home" in summary
-    assert "sensor.lux" in summary
-    assert "sensor.cloud_coverage" in summary
-    assert "Cloud Suppression: Enabled" in summary
+    assert "lux" in summary
+    assert "cloud suppression is off" in summary
 
 
 # ---------------------------------------------------------------------------
-# Override Priority section
+# Section 2: Manual Override
+# ---------------------------------------------------------------------------
+
+
+def test_manual_override_always_present():
+    """Manual override bullet always appears (it's always active)."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    assert "Manual override" in summary
+
+
+def test_manual_override_duration_shown():
+    """Override duration appears in the manual override bullet."""
+    cfg = {CONF_MANUAL_OVERRIDE_DURATION: 60}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "60 min" in summary
+
+
+def test_manual_override_reset_shown():
+    """Reset-on-new-command flag appears."""
+    cfg = {CONF_MANUAL_OVERRIDE_RESET: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "resets on next move" in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Motion Timeout
+# ---------------------------------------------------------------------------
+
+
+def test_motion_sensors_count_shown():
+    """Motion sensor count and timeout appear in the motion bullet."""
+    cfg = {
+        CONF_MOTION_SENSORS: ["binary_sensor.a", "binary_sensor.b"],
+        CONF_MOTION_TIMEOUT: 300,
+        CONF_DEFAULT_HEIGHT: 60,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Motion-based" in summary
+    assert "300s" in summary
+    assert "60%" in summary
+
+
+def test_motion_section_hidden_when_no_sensors():
+    """Motion bullet absent when no motion sensors configured."""
+    cfg = {CONF_MOTION_SENSORS: []}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Motion-based" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Weather Override
+# ---------------------------------------------------------------------------
+
+
+def test_weather_override_section_hidden_when_no_sensors():
+    """Weather safety bullet absent when no weather sensors configured."""
+    cfg = {}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Weather safety" not in summary
+
+
+def test_weather_override_wind_sensor_shown():
+    """Wind threshold appears in weather safety bullet."""
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_TIMEOUT: 120,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Weather safety" in summary
+    assert "60 km/h" in summary
+    assert "120s" in summary
+
+
+def test_weather_override_rain_sensor_shown():
+    """Rain threshold appears in weather safety bullet."""
+    cfg = {
+        CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+        CONF_WEATHER_RAIN_THRESHOLD: 5.0,
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "5.0 mm/h" in summary
+
+
+def test_weather_override_binary_sensors_shown():
+    """is-raining, is-windy, and severe sensor count appear."""
+    cfg = {
+        CONF_WEATHER_IS_RAINING_SENSOR: "binary_sensor.rain",
+        CONF_WEATHER_IS_WINDY_SENSOR: "binary_sensor.wind",
+        CONF_WEATHER_SEVERE_SENSORS: ["binary_sensor.hail"],
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "is-raining" in summary
+    assert "is-windy" in summary
+    assert "severe weather" in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Force Override
+# ---------------------------------------------------------------------------
+
+
+def test_force_override_section_hidden_when_no_sensors():
+    """Force override bullet absent when no force sensors configured."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    assert "Force override" not in summary
+
+
+def test_force_override_shown_with_position():
+    """Force override bullet appears with sensor count and position."""
+    cfg = {
+        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
+        CONF_FORCE_OVERRIDE_POSITION: 100,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Force override" in summary
+    assert "100%" in summary
+    assert "overrides everything else" in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 3: Position Limits
+# ---------------------------------------------------------------------------
+
+
+def test_position_limits_section_present_with_values():
+    """Position Limits section appears when min/max/default are set."""
+    cfg = {CONF_MIN_POSITION: 5, CONF_MAX_POSITION: 90, CONF_DEFAULT_HEIGHT: 60}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Position Limits" in summary
+    assert "5%" in summary
+    assert "90%" in summary
+    assert "60%" in summary
+
+
+def test_position_limits_sun_tracking_qualifier():
+    """'during sun tracking only' appears when enable_min or enable_max is set."""
+    cfg = {
+        CONF_MIN_POSITION: 5,
+        CONF_ENABLE_MIN_POSITION: True,
+        CONF_MAX_POSITION: 90,
+        CONF_ENABLE_MAX_POSITION: False,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "during sun tracking only" in summary
+
+
+def test_position_inverse_state_shown():
+    """Inverse state appears in Position Limits."""
+    cfg = {CONF_INVERSE_STATE: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Inverse state" in summary
+
+
+def test_position_inverse_state_hidden_when_false():
+    """Inverse state absent when disabled."""
+    cfg = {CONF_INVERSE_STATE: False}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Inverse state" not in summary
+
+
+def test_position_interp_shown():
+    """Interpolation flag appears in Position Limits."""
+    cfg = {CONF_INTERP: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Interpolation" in summary
+
+
+def test_delta_position_and_time_shown():
+    """Delta position and time appear in Position Limits."""
+    cfg = {CONF_DELTA_POSITION: 3, CONF_DELTA_TIME: 5}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "3%" in summary
+    assert "5 min" in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 4: Decision Priority chain
 # ---------------------------------------------------------------------------
 
 
 def test_priority_section_always_present():
-    """Override Priority section appears even with an empty config."""
+    """Decision Priority section always appears."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    assert "Override Priority" in summary
+    assert "Decision Priority" in summary
 
 
-def test_priority_always_on_handlers_always_shown():
-    """Manual Override, Solar Tracking, and Default are always shown as active."""
+def test_priority_always_on_handlers_active():
+    """Manual, Solar, and Default are always shown as ✅."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    assert "Manual Override (70)" in summary
-    assert "holds calculated position" in summary
-    assert "Solar Tracking (40)" in summary
-    assert "calculated (sun position)" in summary
-    assert "Default (0)" in summary
+    assert "✅Manual(70)" in summary
+    assert "✅Solar(40)" in summary
+    assert "✅Default(0)" in summary
 
 
 def test_priority_force_override_active_with_sensors():
-    """Force Override shows active and its position when sensors are configured."""
-    cfg = {
-        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
-        CONF_FORCE_OVERRIDE_POSITION: 100,
-        CONF_DEFAULT_HEIGHT: 60,
-    }
+    """Force Override shows ✅ when sensors are configured."""
+    cfg = {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"], CONF_FORCE_OVERRIDE_POSITION: 100}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Force Override (100)" in summary
-    force_line = [line for line in summary.splitlines() if "Force Override (100)" in line][0]
-    assert "not configured" not in force_line
-    assert "100%" in force_line
+    assert "✅Force(100)" in summary
 
 
 def test_priority_force_override_not_configured():
-    """Force Override shows not configured when no sensors are set."""
+    """Force Override shows ❌ when no sensors are set."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    force_line = [line for line in summary.splitlines() if "Force Override (100)" in line][0]
-    assert "not configured" in force_line
+    assert "❌Force(100)" in summary
 
 
 def test_priority_weather_override_active_with_sensors():
-    """Weather Override shows active and its position when sensors are configured."""
-    cfg = {
-        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
-        CONF_WEATHER_OVERRIDE_POSITION: 0,
-        CONF_DEFAULT_HEIGHT: 60,
-    }
+    """Weather Override shows ✅ when sensors are configured."""
+    cfg = {CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind", CONF_WEATHER_OVERRIDE_POSITION: 0}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    weather_line = [line for line in summary.splitlines() if "Weather Override (90)" in line][0]
-    assert "not configured" not in weather_line
+    assert "✅Weather(90)" in summary
 
 
 def test_priority_weather_override_not_configured():
-    """Weather Override shows not configured when no weather sensors are set."""
+    """Weather Override shows ❌ when no weather sensors are set."""
     summary = _build_config_summary({}, SensorType.BLIND)
-    weather_line = [line for line in summary.splitlines() if "Weather Override (90)" in line][0]
-    assert "not configured" in weather_line
+    assert "❌Weather(90)" in summary
 
 
-def test_priority_motion_timeout_shows_default_position():
-    """Motion Timeout shows the default position when configured."""
-    cfg = {
-        CONF_MOTION_SENSORS: ["binary_sensor.motion"],
-        CONF_DEFAULT_HEIGHT: 45,
-    }
+def test_priority_motion_timeout_active():
+    """Motion Timeout shows ✅ when sensors are configured."""
+    cfg = {CONF_MOTION_SENSORS: ["binary_sensor.motion"], CONF_DEFAULT_HEIGHT: 45}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    motion_line = [line for line in summary.splitlines() if "Motion Timeout (80)" in line][0]
-    assert "45%" in motion_line
-    assert "not configured" not in motion_line
+    assert "✅Motion(80)" in summary
 
 
 def test_priority_cloud_suppression_active():
-    """Cloud Suppression shows active and default position when enabled."""
-    cfg = {CONF_CLOUD_SUPPRESSION: True, CONF_DEFAULT_HEIGHT: 30}
+    """Cloud Suppression shows ✅ when enabled."""
+    cfg = {CONF_CLOUD_SUPPRESSION: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    cloud_line = [line for line in summary.splitlines() if "Cloud Suppression (60)" in line][0]
-    assert "not configured" not in cloud_line
-    assert "30%" in cloud_line
+    assert "✅Cloud(60)" in summary
 
 
 def test_priority_climate_active():
-    """Climate shows active and description when climate mode is on."""
+    """Climate shows ✅ when climate mode is on."""
     cfg = {CONF_CLIMATE_MODE: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    climate_line = [line for line in summary.splitlines() if "Climate (50)" in line][0]
-    assert "not configured" not in climate_line
-    assert "climate strategy" in climate_line
+    assert "✅Climate(50)" in summary
 
 
 def test_priority_glare_zone_active_for_vertical():
-    """Glare Zone entry appears and is active for vertical blinds."""
+    """Glare Zone shows ✅ for vertical blind when enabled."""
     cfg = {CONF_ENABLE_GLARE_ZONES: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Glare Zone (45)" in summary
-    glare_line = [line for line in summary.splitlines() if "Glare Zone (45)" in line][0]
-    assert "not configured" not in glare_line
+    assert "✅Glare(45)" in summary
 
 
 def test_priority_glare_zone_hidden_for_awning():
-    """Glare Zone entry is omitted for awning covers."""
+    """Glare Zone entry is omitted entirely for awning covers."""
     summary = _build_config_summary({CONF_ENABLE_GLARE_ZONES: True}, SensorType.AWNING)
-    assert "Glare Zone" not in summary
+    assert "Glare" not in summary
 
 
 def test_priority_glare_zone_hidden_for_tilt():
-    """Glare Zone entry is omitted for tilt covers."""
+    """Glare Zone entry is omitted entirely for tilt covers."""
     summary = _build_config_summary({}, SensorType.TILT)
-    assert "Glare Zone" not in summary
+    assert "Glare" not in summary
 
 
-def test_priority_default_position_reflects_config():
-    """Default handler shows the configured default height."""
+def test_priority_default_position_reflected():
+    """Default handler shows the configured default height in the narrative."""
     cfg = {CONF_DEFAULT_HEIGHT: 75}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    default_line = [line for line in summary.splitlines() if "Default (0)" in line][0]
-    assert "75%" in default_line
+    assert "75%" in summary
 
 
 def test_priority_all_nine_handlers_full_config():
-    """Full config shows all nine handlers, all active."""
+    """Full config shows all nine handlers as ✅ in the priority chain."""
     cfg = _full_vertical()
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    for handler in [
-        "Force Override (100)",
-        "Weather Override (90)",
-        "Motion Timeout (80)",
-        "Manual Override (70)",
-        "Cloud Suppression (60)",
-        "Climate (50)",
-        "Glare Zone (45)",
-        "Solar Tracking (40)",
-        "Default (0)",
+    for token in [
+        "✅Force(100)",
+        "✅Weather(90)",
+        "✅Motion(80)",
+        "✅Manual(70)",
+        "✅Cloud(60)",
+        "✅Climate(50)",
+        "✅Glare(45)",
+        "✅Solar(40)",
+        "✅Default(0)",
     ]:
-        assert handler in summary
-        handler_line = [line for line in summary.splitlines() if handler in line][0]
-        assert "not configured" not in handler_line
+        assert token in summary, f"Expected '{token}' in summary"
+
+
+# ---------------------------------------------------------------------------
+# Full smoke test
+# ---------------------------------------------------------------------------
+
+
+def test_full_vertical_config_smoke():
+    """Full vertical config produces a complete summary without errors."""
+    cfg = _full_vertical()
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+
+    # Section headers
+    assert "Your Cover" in summary
+    assert "How It Decides" in summary
+    assert "Position Limits" in summary
+    assert "Decision Priority" in summary
+
+    # Entity
+    assert "cover.living_room" in summary
+    # Geometry
+    assert "2.1m" in summary
+    assert "reveal 0.1m" in summary
+    assert "sill 0.5m" in summary
+    # Sun tracking
+    assert "180°" in summary
+    # Blind spot
+    assert "Blind spot" in summary
+    assert "10°" in summary
+    # Timing
+    assert "07:30" in summary
+    assert "20:00" in summary
+    # Manual override
+    assert "120 min" in summary
+    # Motion
+    assert "Motion-based" in summary
+    assert "300s" in summary
+    # Weather
+    assert "Weather safety" in summary
+    assert "50 km/h" in summary
+    # Climate
+    assert "Climate mode" in summary
+    assert "sensor.indoor_temp" in summary
+    assert "weather.home" in summary
+    # Cloud suppression
+    assert "Cloud suppression" in summary
+    assert "1000 lx" in summary
+    # Force override
+    assert "Force override" in summary
+    # Position limits
+    assert "10%" in summary
+    assert "95%" in summary
+    assert "Inverse state" in summary
+    assert "Interpolation" in summary

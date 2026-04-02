@@ -36,6 +36,7 @@ This integration builds upon the template sensor from this forum post [Automatic
   - [Blindspot](#blindspot)
 - [Entities](#entities)
 - [Known Limitations & Best Practices](#known-limitations--best-practices)
+- [Configuration Summary](#configuration-summary)
 - [Troubleshooting](#troubleshooting)
 - [Enhanced Geometric Accuracy](#enhanced-geometric-accuracy)
 - [Testing the Algorithms](#testing-the-algorithms)
@@ -115,6 +116,16 @@ This integration builds upon the template sensor from this forum post [Automatic
   - No configuration required - works automatically
   - Backward compatible - existing installations benefit immediately
 
+- **Configuration Summary** (built-in review screen)
+  - Shown at the end of initial setup before the entry is created
+  - Also accessible any time from the options menu as **Configuration Summary**
+  - Combines all settings into a single, plain-English view organized into four sections:
+    - **Your Cover** — what is being controlled and the physical window dimensions
+    - **How It Decides** — a narrative explanation of every active rule in priority order (sun tracking, timing, blind spot, glare zones, climate, cloud suppression, manual override, motion timeout, weather safety, force override)
+    - **Position Limits** — default position, min/max range, delta thresholds, and flags like inverse state and interpolation — all on one line
+    - **Decision Priority** — a compact one-line reference showing all 9 pipeline handlers with ✅ (active) or ❌ (not configured) status
+  - Only configured features are shown — unconfigured sections are omitted to keep the summary concise
+
 ## Installation
 
 ### HACS (Recommended)
@@ -143,6 +154,38 @@ Each type has its own specific parameters to setup a sensor. To setup the sensor
 During setup, the integration will automatically suggest a device name based on the first cover entity you select, prefixed with "Adaptive" (e.g., "Living Room Blind" becomes "Adaptive Living Room Blind"). You can modify this suggested name if desired.
 
 **Enhanced Configuration UI:** The setup flow includes comprehensive descriptions for every configuration field, with practical examples, recommended values, and explanations of technical terms. Each field now provides context about why it matters and how it affects cover behavior, making configuration easier for both new and experienced users.
+
+**Configuration Summary:** After completing all setup steps, a summary screen shows your entire configuration in plain English before the entry is created. It explains what your cover will control, how each active rule works, and shows the full override priority chain at a glance. The same summary is always accessible from the options menu under **Configuration Summary** — useful when reviewing or troubleshooting a cover's behavior.
+
+Example summary output:
+
+```
+Your Cover
+Vertical Blind controlling cover.living_room_blind
+2.1m tall window, blocking sun 0.5m from the glass
+
+How It Decides
+☀️ Tracks the sun (azimuth 180°, ±90°/90° field of view) and calculates position
+   to block direct sunlight.
+🕒 from 07:30 until 20:00. After end time/sunset → 0%.
+✋ Manual override: pauses automatic control when you move the cover
+   (pauses for 120 min, threshold 5%, resets on next move).
+🌡️ Climate mode: adjusts strategy for heating/cooling
+   (comfort range 16–24°C, using sensor.indoor_temp, weather: weather.home).
+☁️ Cloud suppression: skips sun tracking when lux < 1000 lx → default (60%).
+🌧️ Weather safety: if wind > 50 km/h → covers retract to 0% (waits 600s
+   after clearing).
+🔒 Force override: if any of 1 sensor is on → covers go to 100%
+   (overrides everything else).
+
+Position Limits
+Range: 10%–95% (during sun tracking only) · Default: 60% · Min change: 2% ·
+Min interval: 2 min · Inverse state · Interpolation on
+
+Decision Priority (highest wins, ✅ active ❌ not configured)
+✅Force(100) → ✅Weather(90) → ❌Motion(80) → ✅Manual(70) → ✅Cloud(60)
+→ ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
+```
 
 ## Cover Types
 
@@ -807,6 +850,52 @@ The integration uses periodic checks to balance responsiveness with system perfo
 **Recommendation:**
 - For time-critical automations at specific times, consider using Home Assistant automations that trigger on time patterns instead of relying on start/end times
 - Start/end times are designed for daily operational windows, not precision timing
+
+## Configuration Summary
+
+The **Configuration Summary** gives you a plain-English view of everything you've configured for a cover — without having to click through each settings page.
+
+### Where to find it
+
+- **During initial setup:** Shown automatically as the last step before the integration entry is created. Review your settings and click Submit to confirm.
+- **At any time:** Open a cover's options (Settings → Devices & Services → Adaptive Cover Pro → Configure) and choose **Configuration Summary** from the menu.
+
+### What it shows
+
+The summary is organized into four sections:
+
+**Your Cover** — the cover type, entity IDs being controlled, and physical dimensions (window height, shaded area distance, optional reveal depth and sill height for vertical blinds; awning length and angle for awnings; slat depth and spacing for tilt blinds).
+
+**How It Decides** — a narrative explanation of every active rule in the order they are evaluated. Each bullet explains what triggers the rule and what the cover does:
+- ☀️ Sun tracking — azimuth, field of view, and elevation limits
+- 🕒 Timing — active window (start/end times) and sunset/end-time position
+- 🟥 Blind spot — angular range where an obstruction blocks the sun
+- 🔆 Glare zones — named floor areas protected from direct sunlight (vertical blinds only)
+- 🌡️ Climate mode — temperature-based open/close strategy with entities and thresholds
+- ☁️ Cloud suppression — skips sun tracking when lux, irradiance, or cloud coverage indicate no direct sun
+- 📊 Light sensors (informational) — noted when configured but suppression is off
+- ✋ Manual override — pause duration, position threshold, and reset behavior
+- 🚶 Motion-based control — sensor count, timeout, and fallback position
+- 🌧️ Weather safety — active weather conditions (wind speed, rain rate, binary sensors) and retract position
+- 🔒 Force override — sensor count, target position, and the note that it overrides everything else
+
+Only rules that are configured and active are shown. Unconfigured features are omitted.
+
+**Position Limits** — a compact one-line summary of the default position, min/max range (with a note if the range only applies during sun tracking), minimum position change, minimum interval between moves, and any active flags (inverse state, interpolation).
+
+**Decision Priority** — a single line showing all 9 pipeline handlers in priority order with ✅ (active in your config) or ❌ (not configured) for each:
+```
+✅Force(100) → ✅Weather(90) → ❌Motion(80) → ✅Manual(70) → ✅Cloud(60)
+ → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
+```
+This answers the common question: *"what overrides what?"* — the leftmost ✅ handler that fires wins.
+
+### When it's useful
+
+- **Before saving a new cover** — catch a misconfigured threshold or missing sensor before the cover goes live.
+- **After changing settings** — confirm the change had the effect you expected.
+- **When troubleshooting** — the priority chain shows at a glance which handlers are active and whether the right one would fire. For deeper per-turn diagnostics, see [Step 1 — Check the Decision Trace](#step-1--check-the-decision-trace).
+- **Sharing your config** — the summary is self-contained and human-readable, making it easy to share when asking for help.
 
 ## Troubleshooting
 
