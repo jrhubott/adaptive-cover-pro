@@ -253,10 +253,13 @@
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
+          "blind_spot": "Blind Spot",
+          "interp": "Interpolation",
           "automation": "Modificar la configuración de automatización",
           "manual_override": "Manual Override",
           "motion_overrides": "Motion & Force Overrides",
           "climate": "Editar configuración climática",
+          "weather": "Weather Conditions",
           "sync": "Sync settings to other covers",
           "done": "Save & Exit"
         }
