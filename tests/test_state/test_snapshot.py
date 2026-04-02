@@ -170,6 +170,7 @@ class TestCoverStateSnapshot:
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
         )
         snap = CoverStateSnapshot(
             sun=self._make_sun(),

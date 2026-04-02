@@ -47,6 +47,8 @@ from .const import (
     CONF_INTERP_LIST_NEW,
     CONF_INTERP_START,
     CONF_INVERSE_STATE,
+    CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_LENGTH_AWNING,
@@ -85,6 +87,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_WINDOW_DEPTH,
+    DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_MOTION_TIMEOUT,
     DOMAIN,
     SensorType,
@@ -458,6 +461,18 @@ CLIMATE_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W/m²"
             )
         ),
+        vol.Optional(
+            CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(domain=["sensor"])
+        ),
+        vol.Optional(
+            CONF_CLOUD_COVERAGE_THRESHOLD, default=DEFAULT_CLOUD_COVERAGE_THRESHOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+            )
+        ),
         vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
         # --- Climate Mode (temperature-based control) ---
         vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
@@ -688,6 +703,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_LUX_THRESHOLD,
             CONF_IRRADIANCE_ENTITY,
             CONF_IRRADIANCE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_ENTITY,
+            CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLIMATE_MODE,
             CONF_TEMP_ENTITY,
@@ -1138,6 +1155,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_LUX_THRESHOLD: self.config.get(CONF_LUX_THRESHOLD),
                 CONF_IRRADIANCE_ENTITY: self.config.get(CONF_IRRADIANCE_ENTITY),
                 CONF_IRRADIANCE_THRESHOLD: self.config.get(CONF_IRRADIANCE_THRESHOLD),
+                CONF_CLOUD_COVERAGE_ENTITY: self.config.get(CONF_CLOUD_COVERAGE_ENTITY),
+                CONF_CLOUD_COVERAGE_THRESHOLD: self.config.get(
+                    CONF_CLOUD_COVERAGE_THRESHOLD
+                ),
                 CONF_OUTSIDE_THRESHOLD: self.config.get(CONF_OUTSIDE_THRESHOLD),
                 CONF_DEVICE_ID: self.config.get(CONF_DEVICE_ID),
                 CONF_RETURN_SUNSET: self.config.get(CONF_RETURN_SUNSET, False),

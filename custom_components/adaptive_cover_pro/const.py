@@ -64,6 +64,8 @@ CONF_LUX_ENTITY = "lux_entity"
 CONF_LUX_THRESHOLD = "lux_threshold"
 CONF_IRRADIANCE_ENTITY = "irradiance_entity"
 CONF_IRRADIANCE_THRESHOLD = "irradiance_threshold"
+CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"
+CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_DEVICE_ID = "linked_device_id"
 
@@ -94,6 +96,9 @@ STARTUP_GRACE_PERIOD_SECONDS = (
 
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection
+
+# Cloud coverage constants
+DEFAULT_CLOUD_COVERAGE_THRESHOLD = 75  # 75% cloud coverage = overcast
 
 STRATEGY_MODE_BASIC = "basic"
 STRATEGY_MODE_CLIMATE = "climate"
