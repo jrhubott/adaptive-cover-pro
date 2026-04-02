@@ -599,14 +599,132 @@ async def _get_devices_from_entities(
 
 _SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
 
+# Maps each syncable category (matching options menu names) to its config keys.
+# Used by the sync flow to let users choose which setting groups to copy.
+SYNC_CATEGORIES: dict[str, frozenset[str]] = {
+    "geometry": frozenset(
+        {
+            CONF_HEIGHT_WIN,
+            CONF_DISTANCE,
+            CONF_WINDOW_DEPTH,
+            CONF_SILL_HEIGHT,
+            CONF_LENGTH_AWNING,
+            CONF_AWNING_ANGLE,
+            CONF_TILT_DEPTH,
+            CONF_TILT_DISTANCE,
+            CONF_TILT_MODE,
+        }
+    ),
+    "sun_tracking": frozenset(
+        {
+            CONF_FOV_LEFT,
+            CONF_FOV_RIGHT,
+            CONF_MIN_ELEVATION,
+            CONF_MAX_ELEVATION,
+            CONF_ENABLE_BLIND_SPOT,
+        }
+    ),
+    "blind_spot": frozenset(
+        {
+            CONF_BLIND_SPOT_LEFT,
+            CONF_BLIND_SPOT_RIGHT,
+            CONF_BLIND_SPOT_ELEVATION,
+        }
+    ),
+    "position": frozenset(
+        {
+            CONF_DEFAULT_HEIGHT,
+            CONF_MAX_POSITION,
+            CONF_ENABLE_MAX_POSITION,
+            CONF_MIN_POSITION,
+            CONF_ENABLE_MIN_POSITION,
+            CONF_SUNSET_POS,
+            CONF_SUNSET_OFFSET,
+            CONF_SUNRISE_OFFSET,
+            CONF_INVERSE_STATE,
+            CONF_INTERP,
+        }
+    ),
+    "interp": frozenset(
+        {
+            CONF_INTERP_START,
+            CONF_INTERP_END,
+            CONF_INTERP_LIST,
+            CONF_INTERP_LIST_NEW,
+        }
+    ),
+    "automation": frozenset(
+        {
+            CONF_DELTA_POSITION,
+            CONF_DELTA_TIME,
+            CONF_START_TIME,
+            CONF_START_ENTITY,
+            CONF_END_TIME,
+            CONF_END_ENTITY,
+            CONF_OPEN_CLOSE_THRESHOLD,
+            CONF_RETURN_SUNSET,
+        }
+    ),
+    "manual_override": frozenset(
+        {
+            CONF_MANUAL_OVERRIDE_DURATION,
+            CONF_MANUAL_OVERRIDE_RESET,
+            CONF_MANUAL_THRESHOLD,
+            CONF_MANUAL_IGNORE_INTERMEDIATE,
+        }
+    ),
+    "motion_overrides": frozenset(
+        {
+            CONF_FORCE_OVERRIDE_SENSORS,
+            CONF_FORCE_OVERRIDE_POSITION,
+            CONF_MOTION_SENSORS,
+            CONF_MOTION_TIMEOUT,
+        }
+    ),
+    "climate": frozenset(
+        {
+            CONF_WEATHER_ENTITY,
+            CONF_LUX_ENTITY,
+            CONF_LUX_THRESHOLD,
+            CONF_IRRADIANCE_ENTITY,
+            CONF_IRRADIANCE_THRESHOLD,
+            CONF_CLOUD_SUPPRESSION,
+            CONF_CLIMATE_MODE,
+            CONF_TEMP_ENTITY,
+            CONF_TEMP_LOW,
+            CONF_TEMP_HIGH,
+            CONF_OUTSIDETEMP_ENTITY,
+            CONF_OUTSIDE_THRESHOLD,
+            CONF_PRESENCE_ENTITY,
+            CONF_TRANSPARENT_BLIND,
+        }
+    ),
+    "weather": frozenset(
+        {
+            CONF_WEATHER_STATE,
+        }
+    ),
+}
 
-def _extract_shared_options(entry: ConfigEntry) -> dict[str, Any]:
+
+def _extract_shared_options(
+    entry: ConfigEntry,
+    categories: list[str] | None = None,
+) -> dict[str, Any]:
     """Return options safe to copy across covers.
 
     Excludes per-window fields: CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID.
-    All other options (dimensions, automation, climate, motion, etc.) are shared.
+    When categories is None, returns all shared options (used by duplicate flow).
+    When categories is a list, returns only options belonging to those categories.
     """
-    return {k: v for k, v in entry.options.items() if k not in _SHARED_OPTIONS_EXCLUDED}
+    if categories is None:
+        return {
+            k: v for k, v in entry.options.items() if k not in _SHARED_OPTIONS_EXCLUDED
+        }
+    allowed_keys = frozenset().union(
+        *(SYNC_CATEGORIES[c] for c in categories if c in SYNC_CATEGORIES)
+    )
+    return {k: v for k, v in entry.options.items() if k in allowed_keys}
 
 
 def _build_cover_entity_schema(sensor_type: str) -> vol.Schema:
@@ -667,13 +785,23 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return OptionsFlowHandler(config_entry)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Handle the initial step."""
+        """Handle the initial step — show menu if other covers exist, else go straight to create."""
+        acp_entries = self.hass.config_entries.async_entries(DOMAIN)
+        if acp_entries:
+            return self.async_show_menu(
+                step_id="user",
+                menu_options=["create_new", "duplicate_existing"],
+            )
+        return await self.async_step_create_new()
+
+    async def async_step_create_new(self, user_input: dict[str, Any] | None = None):
+        """Handle create new cover flow."""
         if user_input:
             self.config = user_input
             self.type_blind = self.config[CONF_MODE]
             return await self.async_step_cover_entities()
         return self.async_show_form(
-            step_id="user",
+            step_id="create_new",
             data_schema=CONFIG_SCHEMA,
         )
 
@@ -1017,11 +1145,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_create_new(self, user_input: dict[str, Any] | None = None):
-        """Handle create new configuration flow."""
-        # Redirect to original user flow
-        return await self.async_step_user(user_input)
-
     async def async_step_duplicate_existing(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -1168,6 +1291,7 @@ class OptionsFlowHandler(OptionsFlow):
             self.current_config.get(CONF_SENSOR_TYPE) or SensorType.BLIND
         )
         self.selected_sync_targets: list[str] = []
+        self.selected_sync_categories: list[str] = []
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -1178,10 +1302,10 @@ class OptionsFlowHandler(OptionsFlow):
             "device",
             "geometry",
             "sun_tracking",
-            "position",
         ]
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
+        menu_options.append("position")
         if self.options.get(CONF_INTERP):
             menu_options.append("interp")
         menu_options.extend(
@@ -1374,7 +1498,7 @@ class OptionsFlowHandler(OptionsFlow):
             if not targets:
                 return self.async_abort(reason="no_targets_selected")  # type: ignore[return-value]
             self.selected_sync_targets = targets
-            return await self.async_step_sync_confirm()
+            return await self.async_step_sync_categories()
 
         return self.async_show_form(  # type: ignore[return-value]
             step_id="sync",
@@ -1393,13 +1517,50 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         )
 
+    async def async_step_sync_categories(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select which setting categories to sync."""
+        if user_input is not None:
+            selected = user_input.get("sync_categories", [])
+            if not selected:
+                return self.async_abort(reason="no_categories_selected")  # type: ignore[return-value]
+            self.selected_sync_categories = selected
+            return await self.async_step_sync_confirm()
+
+        # Only show categories that have at least one key present in source entry's options
+        available = [
+            cat
+            for cat, keys in SYNC_CATEGORIES.items()
+            if any(k in self._config_entry.options for k in keys)
+        ]
+
+        return self.async_show_form(  # type: ignore[return-value]
+            step_id="sync_categories",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "sync_categories", default=available
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            multiple=True,
+                            options=available,
+                            translation_key="sync_categories",
+                        )
+                    )
+                }
+            ),
+        )
+
     async def async_step_sync_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Confirm and execute sync to selected covers."""
         if user_input is not None:
             if user_input.get("confirm"):
-                shared_options = _extract_shared_options(self._config_entry)
+                shared_options = _extract_shared_options(
+                    self._config_entry, categories=self.selected_sync_categories
+                )
                 for entry_id in self.selected_sync_targets:
                     target = self.hass.config_entries.async_get_entry(entry_id)
                     if target:
@@ -1417,13 +1578,31 @@ class OptionsFlowHandler(OptionsFlow):
             if target:
                 target_titles.append(f"• {target.title}")
 
+        # Build summary of selected categories using friendly names
+        _category_labels = {
+            "geometry": "Window Dimensions",
+            "sun_tracking": "Sun Tracking",
+            "blind_spot": "Blind Spot Configuration",
+            "position": "Position Settings",
+            "interp": "Interpolation Values",
+            "automation": "Schedule & Timing",
+            "manual_override": "Manual Override",
+            "motion_overrides": "Motion & Force Overrides",
+            "climate": "Climate",
+            "weather": "Weather Conditions",
+        }
+        category_lines = [
+            f"• {_category_labels.get(c, c)}" for c in self.selected_sync_categories
+        ]
+
         return self.async_show_form(  # type: ignore[return-value]
             step_id="sync_confirm",
             data_schema=vol.Schema(
                 {vol.Required("confirm", default=True): selector.BooleanSelector()}
             ),
             description_placeholders={
-                "entries_summary": "\n".join(target_titles) or "(none selected)"
+                "entries_summary": "\n".join(target_titles) or "(none selected)",
+                "categories_summary": "\n".join(category_lines) or "(none selected)",
             },
         )
 
