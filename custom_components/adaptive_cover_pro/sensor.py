@@ -736,6 +736,9 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
         if not self.config_entry.options.get(CONF_MOTION_SENSORS):
             return "not_configured"
         mgr = self.coordinator._motion_mgr
+        if mgr._motion_timeout_active:
+            return "no_motion"
+
         if mgr.last_motion_time is None:
             return "waiting_for_data"
 
@@ -745,9 +748,6 @@ class AdaptiveCoverMotionStatusSensor(AdaptiveCoverDiagnosticSensorBase, SensorE
         task = mgr._motion_timeout_task
         if task is not None and not task.done():
             return "timeout_pending"
-
-        if mgr._motion_timeout_active:
-            return "no_motion"
 
         return "waiting_for_data"
 

@@ -451,8 +451,12 @@ def test_determine_control_status_force_override_precedence():
     assert result == ControlStatus.FORCE_OVERRIDE_ACTIVE
 
 
-def test_state_property_motion_timeout_returns_default():
-    """Test state property returns default position during motion timeout."""
+def test_state_property_motion_timeout_uses_pipeline_result():
+    """Test state property uses pipeline result position during motion timeout.
+
+    The pipeline MotionTimeoutHandler computes position with min/max limits applied.
+    The state property must not bypass the pipeline result with raw default_state.
+    """
     from custom_components.adaptive_cover_pro.enums import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
@@ -462,20 +466,24 @@ def test_state_property_motion_timeout_returns_default():
     coordinator = MagicMock()
     coordinator.default_state = 60
     coordinator.logger = MagicMock()
+    coordinator._use_interpolation = False
+    coordinator._inverse_state = False
+    coordinator._pipeline_bypasses_auto_control = False
 
     # Mock property access for direct checks in state property
     type(coordinator).is_force_override_active = property(lambda self: False)
     type(coordinator).is_motion_timeout_active = property(lambda self: True)
 
-    # Pipeline result indicates motion timeout with default position
+    # Pipeline result has limits applied — position differs from raw default_state
     coordinator._pipeline_result = PipelineResult(
-        position=60,
+        position=10,
         control_method=ControlMethod.MOTION,
-        reason="motion timeout active",
+        reason="motion timeout active — default position 10%",
     )
 
     result = AdaptiveDataUpdateCoordinator.state.fget(coordinator)
-    assert result == 60
+    # Must return the pipeline result (10), not the raw default_state (60)
+    assert result == 10
 
 
 def test_state_property_force_override_precedence():
@@ -778,3 +786,102 @@ def test_motion_status_sensor_no_timestamp_device_class():
         getattr(AdaptiveCoverMotionStatusSensor, "_attr_device_class", None)
         != SensorDeviceClass.TIMESTAMP
     )
+
+
+# --- Startup initialization tests ---
+
+
+def test_set_no_motion_activates_immediately():
+    """set_no_motion() sets _motion_timeout_active without starting a task."""
+    hass = MagicMock()
+    logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+
+    mgr.set_no_motion()
+
+    assert mgr._motion_timeout_active is True
+    assert mgr._motion_timeout_task is None
+
+
+def test_set_no_motion_cancels_pending_timeout():
+    """set_no_motion() cancels any running timeout task."""
+    hass = MagicMock()
+    logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+
+    task = MagicMock()
+    task.done.return_value = False
+    mgr._motion_timeout_task = task
+
+    mgr.set_no_motion()
+
+    task.cancel.assert_called_once()
+    assert mgr._motion_timeout_active is True
+
+
+def test_check_initial_motion_state_all_off_sets_no_motion():
+    """_check_initial_motion_state sets no_motion when all sensors are off at startup."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import CONF_MOTION_SENSORS
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options.get.return_value = ["binary_sensor.motion"]
+    type(coordinator).is_motion_detected = property(lambda self: False)
+
+    AdaptiveDataUpdateCoordinator._check_initial_motion_state(coordinator)
+
+    coordinator._motion_mgr.set_no_motion.assert_called_once()
+
+
+def test_check_initial_motion_state_sensor_on_no_action():
+    """_check_initial_motion_state does nothing when motion is detected at startup."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options.get.return_value = ["binary_sensor.motion"]
+    type(coordinator).is_motion_detected = property(lambda self: True)
+
+    AdaptiveDataUpdateCoordinator._check_initial_motion_state(coordinator)
+
+    coordinator._motion_mgr.set_no_motion.assert_not_called()
+
+
+def test_check_initial_motion_state_no_sensors_noop():
+    """_check_initial_motion_state does nothing when no motion sensors are configured."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options.get.return_value = []
+
+    AdaptiveDataUpdateCoordinator._check_initial_motion_state(coordinator)
+
+    coordinator._motion_mgr.set_no_motion.assert_not_called()
+
+
+def test_motion_status_sensor_startup_no_motion():
+    """Sensor shows no_motion at startup when sensors are configured but all off.
+
+    set_no_motion() sets _motion_timeout_active=True without last_motion_time.
+    The sensor must check _motion_timeout_active before last_motion_time so it
+    shows no_motion rather than waiting_for_data.
+    """
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(
+        last_motion_time=None,
+        timeout_active=True,
+        timeout_task=None,
+    )
+    type(coordinator).is_motion_detected = property(lambda self: False)
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "no_motion"
+
+
