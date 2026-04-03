@@ -111,7 +111,9 @@
           "end_entity": "Entidad que representa la hora de finalización, anulando lo hora de finalización configurada arriba. Útil para automatizar la hora de finalización con una entidad",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Modificar la configuración de automatización",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -181,7 +183,7 @@
           "irradiance_threshold": "Umbral para el sensor de irradiancia, por encima de este valor se debe reducir el deslumbramiento"
         },
         "description": "Añadir variables de configuración climática adicionales.",
-        "title": "Configuraciones climáticas"
+        "title": "Editar configuración climática"
       },
       "weather": {
         "data": {
@@ -203,7 +205,7 @@
           "blind_spot_right": "Borde derecho del punto ciego",
           "blind_spot_elevation": "Cualquier valor igual o inferior se considera dentro del punto ciego. Resulta útil si el sol puede iluminar el objeto en el punto ciego."
         },
-        "title": "Blindspot",
+        "title": "Blind Spot",
         "description": "Configurar el punto ciego para la persiana. Estos valores son grados relativos al ancho del campo de visión. Donde 0 es la posición más a la izquierda, tomada del parámetro Campo de visión izquierdo."
       },
       "interp": {
@@ -217,7 +219,7 @@
           "interp_list": "Lista de valores de interpolación, donde 0 es completamente cerrado y 100 es completamente abierto",
           "interp_list_new": "Rango personalizado de valores de interpolación, donde el inicio debe representar cerrado y el final abierto"
         },
-        "title": "Rango de ajuste",
+        "title": "Position Calibration",
         "description": "Ajuste los valores a los que la cubierta se abre o cierra eficazmente. Ideal para cubiertas que no abren completamente al 0 % ni cierran al 100 %. \n Los dos primeros controles deslizantes son para un ajuste de 2 puntos, las opciones de lista son para un ajuste de varios puntos"
       },
       "device_association": {
@@ -300,7 +302,9 @@
           "end_entity": "Asegúrese de que la posición se ajuste a la configuración predeterminada del Ocaso antes de la hora de finalización. Esto es especialmente beneficioso cuando la hora de finalización precede a la del Ocaso real.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Modificar la configuración de automatización",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -452,7 +456,7 @@
           "irradiance_threshold": "Umbral para el sensor de irradiancia, por encima de este valor se debe reducir el deslumbramiento"
         },
         "description": "Añadir variables de configuración climática adicionales.",
-        "title": "Climate settings"
+        "title": "Editar configuración climática"
       },
       "weather": {
         "data": {
@@ -474,7 +478,7 @@
           "blind_spot_right": "Borde derecho del punto ciego",
           "blind_spot_elevation": "Cualquier valor igual o inferior se considera dentro del punto ciego. Resulta útil si el sol puede iluminar el objeto en el punto ciego."
         },
-        "title": "Blindspot",
+        "title": "Blind Spot",
         "description": "Configure el punto ciego para la persiana. Estos valores son grados relativos al ancho del campo de visión. Donde 0 es la posición más a la izquierda, tomada del parámetro Campo de visión izquierdo."
       },
       "interp": {
@@ -488,7 +492,7 @@
           "interp_list": "Lista de valores de interpolación, donde 0 está completamente cerrado y 100 está completamente abierto",
           "interp_list_new": "Rango personalizado de valores de interpolación, donde el inicio debe representar cerrado y el final abierto"
         },
-        "title": "Rango de ajustes",
+        "title": "Position Calibration",
         "description": "Ajuste los valores con los que la persiana se abre o cierra. Ideal para persianas que no se abren completamente al 0 % ni se cierran al 100 %. Los dos primeros controles deslizantes son para un ajuste de 2 puntos; las opciones de lista son para un ajuste de varios puntos."
       },
       "device": {

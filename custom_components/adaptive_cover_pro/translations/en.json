@@ -100,6 +100,8 @@
         }
       },
       "automation": {
+        "title": "Schedule & Timing",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control.",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
@@ -229,7 +231,7 @@
           "winter_close_insulation": "Close covers in winter when the sun is not hitting the window. Provides insulation by keeping cold air out and warmth in. When the sun enters the window's field of view, covers will open for solar heating as normal."
         },
         "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
-        "title": "Climate settings"
+        "title": "Climate Configuration"
       },
       "weather": {
         "data": {
@@ -251,7 +253,7 @@
           "blind_spot_right": "Right edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary, must be > left edge). Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 20. This marks where the obstruction ends horizontally. Creates a 'don't track sun here' zone between left and right edges.",
           "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance."
         },
-        "title": "Blind spot configuration",
+        "title": "Blind Spot",
         "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
       },
       "glare_zones": {
@@ -309,7 +311,7 @@
           "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as Custom interpolation list. Used for advanced non-linear calibration. Leave empty for normal operation.",
           "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as List of interpolation. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
-        "title": "Range Adjustment",
+        "title": "Position Calibration",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
       "device_association": {
@@ -373,6 +375,8 @@
         }
       },
       "automation": {
+        "title": "Schedule & Timing",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control.",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
@@ -586,7 +590,7 @@
           "winter_close_insulation": "Close covers in winter when the sun is not hitting the window. Provides insulation by keeping cold air out and warmth in. When the sun enters the window's field of view, covers will open for solar heating as normal."
         },
         "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
-        "title": "Climate settings"
+        "title": "Climate Configuration"
       },
       "weather": {
         "data": {
@@ -608,7 +612,7 @@
           "blind_spot_right": "Right edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary, must be > left edge). Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 20. This marks where the obstruction ends horizontally. Creates a 'don't track sun here' zone between left and right edges.",
           "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance."
         },
-        "title": "Blind spot configuration",
+        "title": "Blind Spot",
         "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
       },
       "interp": {
@@ -624,7 +628,7 @@
           "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as Custom interpolation list. Used for advanced non-linear calibration. Leave empty for normal operation.",
           "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as List of interpolation. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
-        "title": "Range Adjustment",
+        "title": "Position Calibration",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
       "glare_zones": {

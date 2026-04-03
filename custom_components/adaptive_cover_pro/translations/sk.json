@@ -111,7 +111,9 @@
           "end_entity": "Entita predstavujúca stav času ukončenia, ktorý má prednosť pred pevným časom ukončenia nastaveným vyššie. Užitočné na automatizáciu času ukončenia s entitou",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Upravte konfiguráciu automatizácie",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -181,7 +183,7 @@
           "irradiance_threshold": "Prahová hodnota pre snímač ožiarenia, nad touto hodnotou by sa malo oslnenie znížiť"
         },
         "description": "Pridajte ďalšie premenné konfigurácie klímy.",
-        "title": "Nastavenia klímy"
+        "title": "Upraviť konfiguráciu klímy"
       },
       "weather": {
         "data": {
@@ -203,7 +205,7 @@
           "blind_spot_right": "Pravý okraj slepého uhla",
           "blind_spot_elevation": "Akákoľvek hodnota, ktorá sa rovná alebo je nižšia, sa berie do úvahy v rámci slepého bodu. Užitočné, ak slnko môže svietiť na objekt v mŕtvom uhle"
         },
-        "title": "Mŕtvy uhol",
+        "title": "Blind Spot",
         "description": "Nastavenie slepého uhla pre kryt. Tieto hodnoty sú relatívne stupne k šírke zorného poľa. Kde 0 je pozícia úplne vľavo od ľavého parametra zorného poľa."
       },
       "interp": {
@@ -217,7 +219,7 @@
           "interp_list": "Zoznam hodnôt interpolácie, kde 0 je úplne uzavretá a 100 je úplne otvorená",
           "interp_list_new": "Vlastný rozsah interpolačných hodnôt, kde začiatok by mal predstavovať uzavretý a koniec otvorený"
         },
-        "title": "Úprava rozsahu",
+        "title": "Position Calibration",
         "description": "Upravte hodnoty, pri ktorých sa kryt efektívne otvára alebo zatvára. Ideálne pre kryty, ktoré sa úplne neotvoria pri 0 % alebo nezatvoria pri 100 %. \n Prvé dva posuvníky sú pre 2-bodové nastavenie, možnosti zoznamu sú pre viacbodové nastavenie"
       },
       "device_association": {
@@ -300,7 +302,9 @@
           "end_entity": "Uistite sa, že pozícia je v čase ukončenia konzistentne nastavená na predvolené nastavenie západu slnka. To je obzvlášť výhodné, keď čas ukončenia predchádza skutočnému západu slnka.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Upravte konfiguráciu automatizácie",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -452,7 +456,7 @@
           "irradiance_threshold": "Prahová hodnota pre snímač ožiarenia, nad touto hodnotou by sa malo oslnenie znížiť"
         },
         "description": "Pridajte ďalšie premenné konfigurácie klímy.",
-        "title": "Nastavenia klímy"
+        "title": "Upraviť konfiguráciu klímy"
       },
       "weather": {
         "data": {
@@ -474,7 +478,7 @@
           "blind_spot_right": "Pravý okraj slepého uhla",
           "blind_spot_elevation": "Akákoľvek hodnota, ktorá sa rovná alebo je nižšia, sa berie do úvahy v rámci slepého bodu. Užitočné, ak slnko môže svietiť na objekt v mŕtvom uhle"
         },
-        "title": "Mŕtvy uhol",
+        "title": "Blind Spot",
         "description": "Nastavenie slepého uhla pre kryt. Tieto hodnoty sú relatívne stupne k šírke zorného poľa. Kde 0 je pozícia úplne vľavo od ľavého parametra zorného poľa."
       },
       "interp": {
@@ -488,7 +492,7 @@
           "interp_list": "Zoznam hodnôt interpolácie, kde 0 je úplne uzavretá a 100 je úplne otvorená",
           "interp_list_new": "Vlastný rozsah interpolačných hodnôt, kde začiatok by mal predstavovať uzavretý a koniec otvorený"
         },
-        "title": "Úprava rozsahu",
+        "title": "Position Calibration",
         "description": "Upravte hodnoty, pri ktorých sa kryt efektívne otvára alebo zatvára. Ideálne pre kryty, ktoré sa úplne neotvoria pri 0 % alebo nezatvoria pri 100 %. \n Prvé dva posuvníky sú pre 2-bodové nastavenie, možnosti zoznamu sú pre viacbodové nastavenie"
       },
       "device": {

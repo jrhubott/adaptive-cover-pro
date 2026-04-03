@@ -111,7 +111,9 @@
           "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Modifier la configuration de l'automatisation",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -181,7 +183,7 @@
           "irradiance_threshold": "Seuil pour le capteur d'irradiance, au-dessus de cette valeur, l'éblouissement doit être réduit"
         },
         "description": "Ajouter des variables de configuration climatique supplémentaires.",
-        "title": "Paramètres climatiques"
+        "title": "Modifier la configuration climatique"
       },
       "weather": {
         "data": {
@@ -203,7 +205,7 @@
           "blind_spot_right": "Bord droit de l'angle mort",
           "blind_spot_elevation": "Toute valeur égale ou inférieure est prise en compte dans l'angle mort. Utile si le soleil peut briller sur l'objet dans l'angle mort"
         },
-        "title": "Angle Mort",
+        "title": "Blind Spot",
         "description": "Configurez l'angle mort pour lE VOLET. Ces valeurs sont des degrés relatifs à la largeur du champ de vision. Où 0 est la position la plus à gauche prise à partir du paramètre gauche du champ de vision."
       },
       "interp": {
@@ -217,7 +219,7 @@
           "interp_list": "Liste de valeurs d'interpolation, où 0 est complètement fermé et 100 est complètement ouvert",
           "interp_list_new": "Plage personnalisée de valeurs d'interpolation, où le début doit représenter fermé et la fin ouverte"
         },
-        "title": "Réglage de la plage",
+        "title": "Position Calibration",
         "description": "Ajustez les valeurs auxquelles votre Vvolet s'ouvre ou se ferme efficacement. Idéal pour les volets qui ne s'ouvrent pas complètement à 0 % ou ne se ferment pas à 100 %. \n Les deux premiers curseurs sont destinés à un réglage à 2 points, les options de liste sont destinées à un réglage à plusieurs points"
       },
       "device_association": {
@@ -300,7 +302,9 @@
           "end_entity": "Assurez-vous que la position est systématiquement ajustée au paramètre de coucher de soleil par défaut à l'heure de fin. Ceci est particulièrement utile lorsque l'heure de fin précède le coucher de soleil réel.",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Modifier la configuration de l'automatisation",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -452,7 +456,7 @@
           "irradiance_threshold": "Seuil pour le capteur d'irradiance, au-dessus de cette valeur, l'éblouissement doit être réduit"
         },
         "description": "Ajouter des variables de configuration climatique supplémentaires.",
-        "title": "Paramètres climatiques"
+        "title": "Modifier la configuration climatique"
       },
       "weather": {
         "data": {
@@ -474,7 +478,7 @@
           "blind_spot_right": "Bord droit de l'angle mort",
           "blind_spot_elevation": "Toute valeur égale ou inférieure est prise en compte dans l'angle mort. Utile si le soleil peut briller sur l'objet dans l'angle mort"
         },
-        "title": "Blindspot",
+        "title": "Blind Spot",
         "description": "Configurez l'angle mort pour le volet. Ces valeurs sont des degrés relatifs à la largeur du champ de vision. Où 0 est la position la plus à gauche prise à partir du paramètre gauche du champ de vision."
       },
       "interp": {
@@ -488,7 +492,7 @@
           "interp_list": "Liste de valeurs d'interpolation, où 0 est complètement fermé et 100 est complètement ouvert",
           "interp_list_new": "Plage personnalisée de valeurs d'interpolation, où le début doit représenter fermé et la fin ouverte"
         },
-        "title": "Réglage de la plage",
+        "title": "Position Calibration",
         "description": "Ajustez les valeurs auxquelles votre volet s'ouvre ou se ferme efficacement. Idéal pour les volets qui ne s'ouvrent pas complètement à 0 % ou ne se ferment pas à 100 %. \n Les deux premiers curseurs sont destinés à un réglage à 2 points, les options de liste sont destinées à un réglage à plusieurs points"
       },
       "device": {

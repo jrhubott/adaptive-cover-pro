@@ -111,7 +111,9 @@
           "end_entity": "Entität, die den Endzeitstatus angibt und die feste Endzeit überschreibt. Nützlich zur Automatisierung der Endzeit mit einer Entität",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Automatisierungskonfiguration ändern",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -181,7 +183,7 @@
           "irradiance_threshold": "Schwellenwert für den Strahlungssensor; oberhalb dieses Werts sollte Blendung reduziert werden"
         },
         "description": "Zusätzliche Konfigurationsvariablen für das Klima hinzufügen.",
-        "title": "Klimaeinstellungen"
+        "title": "Klimakonfiguration bearbeiten"
       },
       "weather": {
         "data": {
@@ -203,7 +205,7 @@
           "blind_spot_right": "Rechte Kante der blinden Zone",
           "blind_spot_elevation": "Alle Werte, die gleich oder kleiner sind, gelten als innerhalb der blinden Zone. Nützlich, wenn die Sonne über ein Objekt in der blinden Zone scheinen kann"
         },
-        "title": "Blinde Zone",
+        "title": "Blind Spot",
         "description": "Blinde Zone für die Abdeckung einrichten. Diese Werte sind relative Gradwerte zur Breite des Sichtfelds, wobei 0 die linkeste Position darstellt, die vom Parameter 'FOV links' des Sichtfeldes genommen wird."
       },
       "interp": {
@@ -217,7 +219,7 @@
           "interp_list": "Liste der Interpolationswerte, bei denen 0 vollständig geschlossen und 100 vollständig offen ist",
           "interp_list_new": "Benutzerdefinierter Bereich von Interpolationswerten, wobei der Beginn geschlossen und das Ende offen darstellen sollte"
         },
-        "title": "Bereichsanpassung",
+        "title": "Position Calibration",
         "description": "Passen Sie die Werte an, bei denen Ihre Abdeckung effektiv öffnet oder schließt. Ideal für Abdeckungen, die nicht vollständig bei 0% öffnen oder bei 100% schließen. \n Die ersten beiden Schieberegler sind für eine 2-Punkte-Anpassung, die Listenauswahl ist für eine Mehrpunkt-Anpassung."
       },
       "device_association": {
@@ -300,7 +302,9 @@
           "end_entity": "Stellt sicher, dass die Position bis zur Endzeit auf die Standard-Sonnenuntergangseinstellung zurückgesetzt wird, insbesondere wenn die Endzeit vor dem tatsächlichen Sonnenuntergang liegt",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Automatisierungskonfiguration ändern",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -452,7 +456,7 @@
           "irradiance_threshold": "Schwellenwert für den Bestrahlungsstärke-Sensor, oberhalb dessen Blendung reduziert werden sollte"
         },
         "description": "Zusätzliche Klima-Konfigurationsvariablen hinzufügen.",
-        "title": "Klimaeinstellungen"
+        "title": "Klimakonfiguration bearbeiten"
       },
       "weather": {
         "data": {
@@ -474,7 +478,7 @@
           "blind_spot_right": "Rechte Kante der blinden Zone",
           "blind_spot_elevation": "Alle Werte, die gleich oder kleiner sind, gelten als innerhalb der blinden Zone. Nützlich, wenn die Sonne über ein Objekt in der blinden Zone scheinen kann"
         },
-        "title": "Blinde Zone",
+        "title": "Blind Spot",
         "description": "Blinde Zone für die Abdeckung einrichten. Diese Werte sind relative Gradwerte zur Breite des Sichtfelds, wobei 0 die linkeste Position darstellt, die vom Parameter 'FOV links' des Sichtfeldes genommen wird."
       },
       "interp": {
@@ -488,7 +492,7 @@
           "interp_list": "Liste der Interpolationswerte, bei denen 0 vollständig geschlossen und 100 vollständig offen ist",
           "interp_list_new": "Benutzerdefinierter Bereich von Interpolationswerten, wobei der Beginn geschlossen und das Ende offen darstellen sollte"
         },
-        "title": "Bereichsanpassung",
+        "title": "Position Calibration",
         "description": "Passen Sie die Werte an, bei denen Ihre Abdeckung effektiv öffnet oder schließt. Ideal für Abdeckungen, die nicht vollständig bei 0% öffnen oder bei 100% schließen. \n Die ersten beiden Schieberegler sind für eine 2-Punkte-Anpassung, die Listenauswahl ist für eine Mehrpunkt-Anpassung."
       },
       "device": {

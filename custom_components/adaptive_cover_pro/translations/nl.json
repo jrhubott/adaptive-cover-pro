@@ -111,7 +111,9 @@
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Wijzig Automatiseringsinstellingen",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -179,7 +181,7 @@
           "irradiance_threshold": "Drempelwaarde voor stralingsintensiteitssensor, boven deze waarde moet schittering worden verminderd"
         },
         "description": "Voeg additionele klimaat configuratie variabelen toe. Weer and Aanwezigheid entiteiten zijn optioneel",
-        "title": "Klimaat instellingen"
+        "title": "Bewerk Klimaatconfiguratie"
       },
       "weather": {
         "data": {
@@ -201,7 +203,7 @@
           "blind_spot_right": "Rechter rand van de schaduwzone",
           "blind_spot_elevation": "Elke waarde gelijk aan of minder wordt beschouwd binnen de schaduwzone. Handig als de zon over het object in de schaduwzone kan schijnen"
         },
-        "title": "Schaduwzone",
+        "title": "Blind Spot",
         "description": "Stel de schaduwzone in voor de afdekking. Deze waarden zijn relatieve graden tot de breedte van het gezichtsveld. Waar 0 de meest linkse positie is, genomen van de linkse parameter van het gezichtsveld."
       },
       "interp": {
@@ -215,7 +217,7 @@
           "interp_list": "Lijst van interpolatiewaarden, waarbij 0 volledig gesloten is en 100 volledig open",
           "interp_list_new": "Aangepast bereik van interpolatiewaarden, waarbij het begin gesloten moet vertegenwoordigen en het einde open"
         },
-        "title": "Bereik Aanpassing",
+        "title": "Position Calibration",
         "description": "Pas de waarden aan waarbij jouw Cover effectief opent of sluit. Ideaal voor Covers die niet volledig openen bij 0% of sluiten bij 100%."
       },
       "device_association": {
@@ -298,7 +300,9 @@
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
           "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Wijzig Automatiseringsinstellingen",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -440,7 +444,7 @@
           "temp_high": "Maximale comfortabele temperatuur"
         },
         "description": "Voeg additionele klimaat configuratie variabelen toe. Weer and Aanwezigheid entiteiten zijn optioneel",
-        "title": "Klimaat instellingen"
+        "title": "Bewerk Klimaatconfiguratie"
       },
       "weather": {
         "data": {
@@ -462,7 +466,7 @@
           "blind_spot_right": "Rechter rand van de schaduwzone",
           "blind_spot_elevation": "Elke waarde gelijk aan of minder wordt beschouwd binnen de schaduwzone. Handig als de zon over het object in de schaduwzone kan schijnen"
         },
-        "title": "Schaduwzone",
+        "title": "Blind Spot",
         "description": "Stel de schaduwzone in voor de afdekking. Deze waarden zijn relatieve graden tot de breedte van het gezichtsveld. Waar 0 de meest linkse positie is, genomen van de linkse parameter van het gezichtsveld."
       },
       "interp": {
@@ -476,7 +480,7 @@
           "interp_list": "Lijst van interpolatiewaarden, waarbij 0 volledig gesloten is en 100 volledig open",
           "interp_list_new": "Aangepast bereik van interpolatiewaarden, waarbij het begin gesloten moet vertegenwoordigen en het einde open"
         },
-        "title": "Bereik Aanpassing",
+        "title": "Position Calibration",
         "description": "Pas de waarden aan waarbij jouw Cover effectief opent of sluit. Ideaal voor Covers die niet volledig openen bij 0% of sluiten bij 100%."
       },
       "device": {
