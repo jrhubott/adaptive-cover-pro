@@ -92,6 +92,11 @@ Only **1 issue remains open:**
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Architecture supports dual-axis via pipeline; needs config flow enhancement to expose dual-axis setup for single entity covers |
 
+**Recently Closed:**
+| # | Title | Resolution |
+|---|-------|------------|
+| [#100](https://github.com/jrhubott/adaptive-cover/issues/100) | Self-explanatory icons for switch entities | ✅ Fixed in PR #101 — all entities now have semantic icons via `icons.json` |
+
 ## Pending Upstream PRs
 
 | PR | Repo | Description | Status |
