@@ -8,10 +8,27 @@
         }
       },
       "manual_override": {
-        "default": "mdi:cog-outline",
+        "default": "mdi:hand-back-left",
         "state": {
-          "off": "mdi:cog-sync-outline"
+          "off": "mdi:hand-back-left-off"
         }
+      },
+      "glare_active": {
+        "default": "mdi:white-balance-sunny",
+        "state": {
+          "off": "mdi:weather-sunny-off"
+        }
+      },
+      "position_mismatch": {
+        "default": "mdi:alert-circle-outline",
+        "state": {
+          "off": "mdi:check-circle-outline"
+        }
+      }
+    },
+    "button": {
+      "reset_manual_override": {
+        "default": "mdi:hand-back-left-off"
       }
     },
     "sensor": {
@@ -25,16 +42,31 @@
     },
     "switch": {
       "automatic_control": {
-        "default": "mdi:toggle-switch-outline",
+        "default": "mdi:window-shutter-auto",
         "state": {
-          "off": "mdi:toggle-switch-off-outline"
+          "off": "mdi:window-shutter"
+        }
+      },
+      "manual_toggle": {
+        "default": "mdi:hand-back-left",
+        "state": {
+          "off": "mdi:hand-back-left-off"
+        }
+      },
+      "return_to_default_toggle": {
+        "default": "mdi:restore"
+      },
+      "switch_mode": {
+        "default": "mdi:home-thermometer",
+        "state": {
+          "off": "mdi:home-thermometer-outline"
         }
       },
       "temp_toggle": {
-        "default": "mdi:thermometer"
-      },
-      "switch_mode": {
-        "default": "mdi:home-thermometer-outline"
+        "default": "mdi:thermometer",
+        "state": {
+          "off": "mdi:thermometer-off"
+        }
       },
       "lux_toggle": {
         "default": "mdi:brightness-5",
@@ -43,9 +75,33 @@
         }
       },
       "irradiance_toggle": {
-        "default": "mdi:sun-wireless-outline",
+        "default": "mdi:sun-wireless",
         "state": {
-          "off": "mdi:sun-wireless"
+          "off": "mdi:sun-wireless-outline"
+        }
+      },
+      "glare_zone_0": {
+        "default": "mdi:blinds",
+        "state": {
+          "off": "mdi:blinds-open"
+        }
+      },
+      "glare_zone_1": {
+        "default": "mdi:blinds",
+        "state": {
+          "off": "mdi:blinds-open"
+        }
+      },
+      "glare_zone_2": {
+        "default": "mdi:blinds",
+        "state": {
+          "off": "mdi:blinds-open"
+        }
+      },
+      "glare_zone_3": {
+        "default": "mdi:blinds",
+        "state": {
+          "off": "mdi:blinds-open"
         }
       }
     }

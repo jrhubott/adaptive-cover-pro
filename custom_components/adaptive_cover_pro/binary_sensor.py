@@ -127,6 +127,7 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_entity_registry_enabled_default = False  # P1 sensor
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "position_mismatch"
 
     def __init__(
         self,
