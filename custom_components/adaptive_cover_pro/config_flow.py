@@ -2265,6 +2265,11 @@ class OptionsFlowHandler(OptionsFlow):
         """Confirm and execute sync to selected covers."""
         if user_input is not None:
             if user_input.get("confirm"):
+                # Save current cover's settings first so sync copies the latest values
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=dict(self.options),
+                )
                 shared_options = _extract_shared_options(
                     self._config_entry, categories=self.selected_sync_categories
                 )
@@ -2275,8 +2280,7 @@ class OptionsFlowHandler(OptionsFlow):
                             target,
                             options={**target.options, **shared_options},
                         )
-                return self.async_abort(reason="sync_complete")  # type: ignore[return-value]
-            return self.async_abort(reason="user_cancelled")  # type: ignore[return-value]
+            return await self.async_step_init()
 
         # Build summary of selected targets
         target_titles = []
