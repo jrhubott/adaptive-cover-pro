@@ -28,17 +28,18 @@ The integration was fully rewritten with a layered architecture. The pipeline no
 
 **Adding a new override:** Create one handler file + register in `pipeline/handlers/__init__`. Each handler is self-contained: owns its condition evaluation AND position computation. No coordinator logic changes.
 
-**Handlers (priority order):**
-```
-force_override(100) > weather(90) > motion_timeout(80) > manual_override(70) > 
-cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
-```
-
 **Handler architecture:** Each handler in `pipeline/handlers/` is independent:
 - Condition evaluation: Does this handler apply to the current snapshot?
 - Position computation: If matched, what position should be used?
 - `ClimateHandler` contains `ClimateCoverData` + `ClimateCoverState` (moved from `calculation.py`)
-- `GlareZoneHandler` (priority 45) extracts glare zone logic from `AdaptiveVerticalCover.calculate_position()`
+- `GlareZoneHandler` (priority 45) — glare zone protection
+- `WeatherHandler` (priority 90) — wind/rain/severe weather handling
+
+**Handlers (priority order) — v2.12.0:**
+```
+force_override(100) > weather(90) > motion_timeout(80) > manual_override(70) > 
+cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
+```
 
 ### Tests
 
@@ -85,11 +86,11 @@ Run: `venv/bin/python -m pytest tests/ -v`
 
 ## Open Issues (Backlog)
 
+Only **1 issue remains open:**
+
 | # | Title | Notes |
 |---|-------|-------|
-| [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt — architecture now supports dual-axis via pipeline |
-| [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | `pipeline/handlers/weather.py` added in v2.12.0 with wind support (priority 90) |
-| [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times |
+| [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Architecture supports dual-axis via pipeline; needs config flow enhancement to expose dual-axis setup for single entity covers |
 
 ## Pending Upstream PRs
 
