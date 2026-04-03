@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from custom_components.adaptive_cover_pro.calculation import (
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )
@@ -33,10 +33,9 @@ from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlM
 # ---------------------------------------------------------------------------
 
 
-def make_climate_data(hass, mock_logger, **overrides):
+def make_climate_data(hass, **overrides):
     """Build a ClimateCoverData with minimal defaults."""
     defaults = {
-        "logger": mock_logger,
         "temp_low": 20.0,
         "temp_high": 25.0,
         "temp_switch": False,
@@ -49,11 +48,11 @@ def make_climate_data(hass, mock_logger, **overrides):
         "is_sunny": True,
         "lux_below_threshold": False,
         "irradiance_below_threshold": False,
+        "winter_close_insulation": False,
     }
     defaults.update(overrides)
     # Remove keys not in ClimateCoverData (e.g. 'hass' passed by callers)
     valid_keys = {
-        "logger",
         "temp_low",
         "temp_high",
         "temp_switch",
@@ -66,6 +65,7 @@ def make_climate_data(hass, mock_logger, **overrides):
         "is_sunny",
         "lux_below_threshold",
         "irradiance_below_threshold",
+        "winter_close_insulation",
     }
     filtered = {k: v for k, v in defaults.items() if k in valid_keys}
     return ClimateCoverData(**filtered)
@@ -119,6 +119,7 @@ def _base_ctx(**overrides):
         "control_method": ControlMethod.SOLAR,
         "pipeline_result": None,
         "is_force_override_active": False,
+        "is_weather_override_active": False,
         "is_motion_timeout_active": False,
         "is_manual_override_active": False,
         "check_adaptive_time": True,
@@ -212,7 +213,6 @@ class TestClimateStrategyNormalWithPresence:
 
         climate_data = make_climate_data(
             hass,
-            mock_logger,
             is_presence=True,
             temp_low=20.0,
             temp_high=25.0,
@@ -263,7 +263,7 @@ class TestClimateStrategyNormalWithPresence:
         )
 
         climate_data = make_climate_data(
-            hass, mock_logger, is_presence=True, lux_below_threshold=True
+            hass, is_presence=True, lux_below_threshold=True
         )
 
         with (
@@ -306,12 +306,12 @@ class TestClimateStrategyNormalWithPresence:
 
         climate_data = make_climate_data(
             hass,
-            mock_logger,
             transparent_blind=True,
             is_presence=True,
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            winter_close_insulation=False,
         )
 
         with (
@@ -355,12 +355,12 @@ class TestClimateStrategyNormalWithPresence:
 
         climate_data = make_climate_data(
             hass,
-            mock_logger,
             transparent_blind=False,
             is_presence=True,
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            winter_close_insulation=False,
         )
 
         with (
@@ -410,7 +410,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 6, 21, 5, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger, is_presence=False)
+        climate_data = make_climate_data(hass, is_presence=False)
 
         with (
             patch.object(
@@ -457,7 +457,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger, is_presence=False)
+        climate_data = make_climate_data(hass, is_presence=False)
 
         with (
             patch.object(
@@ -504,7 +504,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, mock_logger, is_presence=False)
+        climate_data = make_climate_data(hass, is_presence=False)
 
         with (
             patch.object(

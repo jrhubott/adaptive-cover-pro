@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .types import PipelineContext, PipelineResult
+from .types import PipelineResult, PipelineSnapshot
 
 
 class OverrideHandler(ABC):
@@ -21,9 +21,9 @@ class OverrideHandler(ABC):
     priority: int
 
     @abstractmethod
-    def evaluate(self, ctx: PipelineContext) -> PipelineResult | None:
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return PipelineResult to claim position, or None to pass."""
 
-    def describe_skip(self, ctx: PipelineContext) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
         """Reason string when this handler does not match."""
         return "not active"

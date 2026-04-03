@@ -31,6 +31,7 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
+    CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_END_ENTITY,
@@ -84,11 +85,28 @@ from .const import (
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
     CONF_TRANSPARENT_BLIND,
+    CONF_WINTER_CLOSE_INSULATION,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_OVERRIDE_POSITION,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_RAIN_THRESHOLD,
+    CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_STATE,
+    CONF_WEATHER_TIMEOUT,
+    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+    CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
+    CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WINDOW_DEPTH,
+    CONF_WINDOW_WIDTH,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_MOTION_TIMEOUT,
+    DEFAULT_WEATHER_RAIN_THRESHOLD,
+    DEFAULT_WEATHER_TIMEOUT,
+    DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
+    DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DOMAIN,
     SensorType,
 )
@@ -393,7 +411,7 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-MOTION_OVERRIDES_SCHEMA = vol.Schema(
+FORCE_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_FORCE_OVERRIDE_SENSORS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -410,6 +428,11 @@ MOTION_OVERRIDES_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+    }
+)
+
+MOTION_OVERRIDE_SCHEMA = vol.Schema(
+    {
         vol.Optional(CONF_MOTION_SENSORS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
                 domain=["binary_sensor"],
@@ -422,6 +445,90 @@ MOTION_OVERRIDES_SCHEMA = vol.Schema(
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=30,
+                max=3600,
+                step=30,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="seconds",
+            )
+        ),
+    }
+)
+
+WEATHER_OVERRIDE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(
+            CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        vol.Optional(
+            CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        vol.Optional(
+            CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            default=DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=200,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="km/h",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+            default=DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=5,
+                max=180,
+                step=5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="°",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        vol.Optional(
+            CONF_WEATHER_RAIN_THRESHOLD, default=DEFAULT_WEATHER_RAIN_THRESHOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=0.5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="mm/h",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor"])
+        ),
+        vol.Optional(
+            CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor"])
+        ),
+        vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor"], multiple=True)
+        ),
+        vol.Optional(
+            CONF_WEATHER_OVERRIDE_POSITION, default=0
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_TIMEOUT, default=DEFAULT_WEATHER_TIMEOUT
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
                 max=3600,
                 step=30,
                 mode=selector.NumberSelectorMode.SLIDER,
@@ -518,6 +625,9 @@ CLIMATE_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_WINTER_CLOSE_INSULATION, default=False
+        ): selector.BooleanSelector(),
     }
 )
 
@@ -589,6 +699,370 @@ INTERPOLATION_OPTIONS = vol.Schema(
 def _get_azimuth_edges(data) -> int:
     """Calculate azimuth edges."""
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
+
+
+def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa: C901, PLR0912, PLR0915
+    """Build a narrative summary of the current configuration.
+
+    Produces four sections:
+      1. Your Cover  — what is controlled and physical setup
+      2. How It Decides — plain-English explanation of the active decision chain
+      3. Position Limits — compact one-liner for range/default/flags
+      4. Decision Priority — compact chain showing active/inactive handlers
+    """
+    # ---- Gather all values up front ----------------------------------------
+    type_labels = {
+        SensorType.BLIND: "Vertical Blind",
+        SensorType.AWNING: "Horizontal Awning",
+        SensorType.TILT: "Venetian / Tilt Blind",
+    }
+    type_label = type_labels.get(sensor_type, "Cover") if sensor_type else "Cover"
+
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    default_pos = config.get(CONF_DEFAULT_HEIGHT, 0)
+    force_pos = config.get(CONF_FORCE_OVERRIDE_POSITION, 0)
+    weather_pos = config.get(CONF_WEATHER_OVERRIDE_POSITION, 0)
+    motion_timeout = config.get(CONF_MOTION_TIMEOUT, 300)
+    manual_dur = config.get(CONF_MANUAL_OVERRIDE_DURATION)
+
+    has_force = bool(config.get(CONF_FORCE_OVERRIDE_SENSORS))
+    has_weather = any(
+        [
+            config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
+            config.get(CONF_WEATHER_RAIN_SENSOR),
+            config.get(CONF_WEATHER_IS_RAINING_SENSOR),
+            config.get(CONF_WEATHER_IS_WINDY_SENSOR),
+            bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
+        ]
+    )
+    has_motion = bool(config.get(CONF_MOTION_SENSORS))
+    has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
+    has_climate = bool(config.get(CONF_CLIMATE_MODE))
+    has_glare = (
+        bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
+    )
+
+    lines: list[str] = []
+
+    # =========================================================================
+    # Section 1: Your Cover
+    # =========================================================================
+    lines.append("**Your Cover**")
+
+    # Type + entities
+    if entities:
+        entity_str = ", ".join(entities)
+        lines.append(f"{type_label} controlling {entity_str}")
+    else:
+        lines.append(type_label)
+
+    # Physical dimensions in plain English
+    if sensor_type in (SensorType.BLIND, None):
+        h = config.get(CONF_HEIGHT_WIN)
+        d = config.get(CONF_DISTANCE)
+        depth = config.get(CONF_WINDOW_DEPTH) or 0
+        sill = config.get(CONF_SILL_HEIGHT) or 0
+        dim_parts = []
+        if h is not None:
+            dim_parts.append(f"{h}m tall window")
+        if d is not None:
+            dim_parts.append(f"blocking sun {d}m from the glass")
+        extras = []
+        if depth > 0:
+            extras.append(f"reveal {depth}m")
+        if sill > 0:
+            extras.append(f"sill {sill}m")
+        dim_str = ", ".join(dim_parts)
+        if extras:
+            dim_str += f" ({', '.join(extras)})"
+        if dim_str:
+            lines.append(dim_str)
+    elif sensor_type == SensorType.AWNING:
+        parts = []
+        if (v := config.get(CONF_LENGTH_AWNING)) is not None:
+            parts.append(f"{v}m awning")
+        if (v := config.get(CONF_AWNING_ANGLE)) is not None:
+            parts.append(f"angled at {v}°")
+        if (v := config.get(CONF_HEIGHT_WIN)) is not None:
+            parts.append(f"{v}m window height")
+        if (v := config.get(CONF_DISTANCE)) is not None:
+            parts.append(f"blocking sun {v}m from wall")
+        if parts:
+            lines.append(", ".join(parts))
+    elif sensor_type == SensorType.TILT:
+        parts = []
+        if (v := config.get(CONF_TILT_DEPTH)) is not None:
+            parts.append(f"slat depth {v}cm")
+        if (v := config.get(CONF_TILT_DISTANCE)) is not None:
+            parts.append(f"spacing {v}cm")
+        if (v := config.get(CONF_TILT_MODE)) is not None:
+            parts.append(f"mode: {v}")
+        if parts:
+            lines.append(", ".join(parts))
+
+    # =========================================================================
+    # Section 2: How It Decides
+    # =========================================================================
+    lines.append("")
+    lines.append("**How It Decides**")
+
+    # Solar tracking (always present, establishes the baseline)
+    azimuth = config.get(CONF_AZIMUTH)
+    fov_l = config.get(CONF_FOV_LEFT)
+    fov_r = config.get(CONF_FOV_RIGHT)
+    min_elev = config.get(CONF_MIN_ELEVATION)
+    max_elev = config.get(CONF_MAX_ELEVATION)
+    sun_parts = []
+    if azimuth is not None:
+        sun_parts.append(f"azimuth {azimuth}°")
+    if fov_l is not None and fov_r is not None:
+        sun_parts.append(f"±{fov_l}°/{fov_r}° field of view")
+    elev_parts = []
+    if min_elev is not None:
+        elev_parts.append(f"above {min_elev}°")
+    if max_elev is not None:
+        elev_parts.append(f"below {max_elev}°")
+    if elev_parts:
+        sun_parts.append(f"elevation {' and '.join(elev_parts)}")
+    sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
+    lines.append(
+        f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight."
+    )
+
+    # Timing window
+    start_time = config.get(CONF_START_TIME)
+    start_entity = config.get(CONF_START_ENTITY)
+    end_time = config.get(CONF_END_TIME)
+    end_entity = config.get(CONF_END_ENTITY)
+    sunset_pos = config.get(CONF_SUNSET_POS)
+    timing_parts = []
+    if start_time:
+        timing_parts.append(f"from {start_time}")
+    elif start_entity:
+        timing_parts.append(f"from {start_entity}")
+    if end_time:
+        timing_parts.append(f"until {end_time}")
+    elif end_entity:
+        timing_parts.append(f"until {end_entity}")
+    if timing_parts or sunset_pos is not None:
+        timing_str = (
+            " ".join(timing_parts) if timing_parts else "Active during daylight"
+        )
+        if sunset_pos is not None:
+            timing_str += f". After end time/sunset → {sunset_pos}%"
+        lines.append(f"🕒 {timing_str}.")
+
+    # Blind spot
+    if config.get(CONF_ENABLE_BLIND_SPOT):
+        bs_l = config.get(CONF_BLIND_SPOT_LEFT)
+        bs_r = config.get(CONF_BLIND_SPOT_RIGHT)
+        bs_e = config.get(CONF_BLIND_SPOT_ELEVATION)
+        bs_parts = []
+        if bs_l is not None and bs_r is not None:
+            bs_parts.append(f"{bs_l}°–{bs_r}°")
+        if bs_e is not None:
+            bs_parts.append(f"up to {bs_e}° elevation")
+        bs_str = " ".join(bs_parts)
+        lines.append(
+            f"🟥 Blind spot: ignores sun at {bs_str} (e.g. tree or roof overhang)."
+        )
+
+    # Glare zones (vertical only)
+    if has_glare:
+        zone_names = [
+            config.get(f"glare_zone_{i}_name")
+            for i in range(1, 5)
+            if config.get(f"glare_zone_{i}_name")
+        ]
+        width = config.get(CONF_WINDOW_WIDTH)
+        gz_parts = []
+        if zone_names:
+            gz_parts.append(f"zones: {', '.join(zone_names)}")
+        if width:
+            gz_parts.append(f"{width}cm window")
+        gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
+        lines.append(
+            f"🔆 Glare zones: lowers blind to protect floor areas from direct sun{gz_str}."
+        )
+
+    # Climate / cloud suppression (before force/weather so users understand layering)
+    if has_climate:
+        cl_parts = []
+        lo = config.get(CONF_TEMP_LOW)
+        hi = config.get(CONF_TEMP_HIGH)
+        temp_entity = config.get(CONF_TEMP_ENTITY)
+        if lo is not None and hi is not None:
+            cl_parts.append(f"comfort range {lo}–{hi}°C")
+        if temp_entity:
+            cl_parts.append(f"using {temp_entity}")
+        outside = config.get(CONF_OUTSIDETEMP_ENTITY)
+        if outside:
+            cl_parts.append(f"outside: {outside}")
+        weather_ent = config.get(CONF_WEATHER_ENTITY)
+        if weather_ent:
+            cl_parts.append(f"weather: {weather_ent}")
+        presence = config.get(CONF_PRESENCE_ENTITY)
+        if presence:
+            cl_parts.append(f"presence: {presence}")
+        cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
+        lines.append(f"🌡️ Climate mode: adjusts strategy for heating/cooling{cl_str}.")
+
+    if has_cloud:
+        cloud_parts = []
+        if v := config.get(CONF_LUX_ENTITY):
+            t = config.get(CONF_LUX_THRESHOLD)
+            cloud_parts.append(f"lux < {t} lx" if t is not None else f"lux ({v})")
+        if v := config.get(CONF_IRRADIANCE_ENTITY):
+            t = config.get(CONF_IRRADIANCE_THRESHOLD)
+            cloud_parts.append(
+                f"irradiance < {t} W/m²" if t is not None else f"irradiance ({v})"
+            )
+        if v := config.get(CONF_CLOUD_COVERAGE_ENTITY):
+            t = config.get(CONF_CLOUD_COVERAGE_THRESHOLD)
+            cloud_parts.append(f"cloud > {t}%" if t is not None else f"cloud ({v})")
+        cloud_str = f" when {', '.join(cloud_parts)}" if cloud_parts else ""
+        lines.append(
+            f"☁️ Cloud suppression: skips sun tracking{cloud_str} → default ({default_pos}%)."
+        )
+    elif any(
+        [
+            config.get(CONF_LUX_ENTITY),
+            config.get(CONF_IRRADIANCE_ENTITY),
+            config.get(CONF_CLOUD_COVERAGE_ENTITY),
+        ]
+    ):
+        # Sensors configured but suppression toggle off — mention them as informational
+        sensor_names = []
+        if config.get(CONF_LUX_ENTITY):
+            sensor_names.append("lux")
+        if config.get(CONF_IRRADIANCE_ENTITY):
+            sensor_names.append("irradiance")
+        if config.get(CONF_CLOUD_COVERAGE_ENTITY):
+            sensor_names.append("cloud coverage")
+        lines.append(
+            f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off."
+        )
+
+    # Manual override
+    mo_parts = []
+    if manual_dur is not None:
+        mo_parts.append(f"pauses for {manual_dur} min")
+    threshold = config.get(CONF_MANUAL_THRESHOLD)
+    if threshold is not None:
+        mo_parts.append(f"threshold {threshold}%")
+    if config.get(CONF_MANUAL_OVERRIDE_RESET):
+        mo_parts.append("resets on next move")
+    mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
+    lines.append(
+        f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
+    )
+
+    # Motion timeout
+    if has_motion:
+        n = len(config.get(CONF_MOTION_SENSORS) or [])
+        sensor_word = "sensor" if n == 1 else "sensors"
+        lines.append(
+            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
+            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
+        )
+
+    # Weather safety override
+    if has_weather:
+        wx_parts = []
+        wind_sensor = config.get(CONF_WEATHER_WIND_SPEED_SENSOR)
+        wind_thresh = config.get(CONF_WEATHER_WIND_SPEED_THRESHOLD)
+        rain_sensor = config.get(CONF_WEATHER_RAIN_SENSOR)
+        rain_thresh = config.get(CONF_WEATHER_RAIN_THRESHOLD)
+        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR)
+        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
+        severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
+        if wind_sensor and wind_thresh is not None:
+            wx_parts.append(f"wind > {wind_thresh} km/h")
+        if rain_sensor and rain_thresh is not None:
+            wx_parts.append(f"rain > {rain_thresh} mm/h")
+        if is_rain:
+            wx_parts.append("is-raining")
+        if is_wind:
+            wx_parts.append("is-windy")
+        if severe:
+            wx_parts.append(f"{len(severe)} severe weather sensor(s)")
+        wx_condition = " or ".join(wx_parts) if wx_parts else "weather condition"
+        wx_delay = config.get(CONF_WEATHER_TIMEOUT)
+        delay_str = f" (waits {wx_delay}s after clearing)" if wx_delay else ""
+        lines.append(
+            f"🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{delay_str}."
+        )
+
+    # Force override (hardest safety — listed last in narrative since it's a "trump card")
+    if has_force:
+        n = len(config.get(CONF_FORCE_OVERRIDE_SENSORS) or [])
+        sensor_word = "sensor" if n == 1 else "sensors"
+        lines.append(
+            f"🔒 Force override: if any of {n} {sensor_word} is on → covers go to {force_pos}% "
+            f"(overrides everything else)."
+        )
+
+    # =========================================================================
+    # Section 3: Position Limits
+    # =========================================================================
+    limit_parts = []
+    min_pos = config.get(CONF_MIN_POSITION)
+    max_pos = config.get(CONF_MAX_POSITION)
+    enable_min = config.get(CONF_ENABLE_MIN_POSITION)
+    enable_max = config.get(CONF_ENABLE_MAX_POSITION)
+    if min_pos is not None or max_pos is not None:
+        lo_str = f"{min_pos}%" if min_pos is not None else "0%"
+        hi_str = f"{max_pos}%" if max_pos is not None else "100%"
+        qualifier = ""
+        if enable_min or enable_max:
+            qualifier = " (during sun tracking only)"
+        limit_parts.append(f"Range: {lo_str}–{hi_str}{qualifier}")
+    if default_pos is not None:
+        limit_parts.append(f"Default: {default_pos}%")
+    delta_pos = config.get(CONF_DELTA_POSITION)
+    delta_time = config.get(CONF_DELTA_TIME)
+    if delta_pos is not None:
+        limit_parts.append(f"Min change: {delta_pos}%")
+    if delta_time is not None:
+        limit_parts.append(f"Min interval: {delta_time} min")
+    if config.get(CONF_INVERSE_STATE):
+        limit_parts.append("Inverse state")
+    if config.get(CONF_INTERP):
+        limit_parts.append("Interpolation on")
+    if limit_parts:
+        lines.append("")
+        lines.append("**Position Limits**")
+        lines.append(" · ".join(limit_parts))
+
+    # =========================================================================
+    # Section 4: Decision Priority (compact reference)
+    # =========================================================================
+    def _ch(active: bool, short: str, pri: int) -> str:
+        mark = "✅" if active else "❌"
+        return f"{mark}{short}"
+
+    chain = [
+        _ch(has_force, "Force", 100),
+        _ch(has_weather, "Weather", 90),
+        _ch(has_motion, "Motion", 80),
+        _ch(True, "Manual", 70),
+        _ch(has_cloud, "Cloud", 60),
+        _ch(has_climate, "Climate", 50),
+    ]
+    if sensor_type == SensorType.BLIND or sensor_type is None:
+        chain.append(_ch(has_glare, "Glare", 45))
+    chain.extend(
+        [
+            _ch(True, "Solar", 40),
+            _ch(True, "Default", 0),
+        ]
+    )
+
+    lines.append("")
+    lines.append("**Decision Priority** (highest wins, ✅ active ❌ not configured)")
+    lines.append(" → ".join(chain))
+
+    return "\n".join(lines)
 
 
 async def _get_devices_from_entities(
@@ -688,12 +1162,31 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_IGNORE_INTERMEDIATE,
         }
     ),
-    "motion_overrides": frozenset(
+    "force_override": frozenset(
         {
             CONF_FORCE_OVERRIDE_SENSORS,
             CONF_FORCE_OVERRIDE_POSITION,
+        }
+    ),
+    "motion_override": frozenset(
+        {
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
+        }
+    ),
+    "weather_override": frozenset(
+        {
+            CONF_WEATHER_WIND_SPEED_SENSOR,
+            CONF_WEATHER_WIND_DIRECTION_SENSOR,
+            CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+            CONF_WEATHER_RAIN_SENSOR,
+            CONF_WEATHER_RAIN_THRESHOLD,
+            CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_SEVERE_SENSORS,
+            CONF_WEATHER_OVERRIDE_POSITION,
+            CONF_WEATHER_TIMEOUT,
         }
     ),
     "climate": frozenset(
@@ -714,6 +1207,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
             CONF_TRANSPARENT_BLIND,
+            CONF_WINTER_CLOSE_INSULATION,
         }
     ),
     "weather": frozenset(
@@ -777,6 +1271,66 @@ def _get_geometry_schema(sensor_type: str) -> vol.Schema:
     if sensor_type == SensorType.TILT:
         return GEOMETRY_TILT_SCHEMA
     return GEOMETRY_VERTICAL_SCHEMA
+
+
+def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
+    """Build the glare zones schema: enable toggle, window width, and 4 zone slots."""
+    opts = options or {}
+    schema_dict: dict = {
+        vol.Optional(
+            CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)
+        ): (selector.BooleanSelector()),
+        vol.Optional(CONF_WINDOW_WIDTH, default=opts.get(CONF_WINDOW_WIDTH, 100)): (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10,
+                    max=500,
+                    step=1,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        ),
+    }
+    for i in range(1, 5):
+        prefix = f"glare_zone_{i}"
+        schema_dict[
+            vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))
+        ] = selector.TextSelector()
+        schema_dict[vol.Optional(f"{prefix}_x", default=opts.get(f"{prefix}_x", 0))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-500,
+                    max=500,
+                    step=10,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="cm",
+                )
+            )
+        )
+        schema_dict[
+            vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 100))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1000,
+                step=10,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
+            )
+        )
+        schema_dict[
+            vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 30))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=200,
+                step=5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
+            )
+        )
+    return vol.Schema(schema_dict)
 
 
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -899,6 +1453,17 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         schema = _get_geometry_schema(self.type_blind)
         return self.async_show_form(step_id="geometry", data_schema=schema)
 
+    async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
+        """Configure glare zone definitions (initial flow)."""
+        if user_input is not None:
+            self.config.update(user_input)
+            if self.config.get(CONF_INTERP):
+                return await self.async_step_interp()
+            return await self.async_step_automation()
+
+        schema = _build_glare_zones_schema(self.config)
+        return self.async_show_form(step_id="glare_zones", data_schema=schema)
+
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
         """Configure sun tracking parameters."""
         if user_input is not None:
@@ -927,6 +1492,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             if self.config.get(CONF_ENABLE_BLIND_SPOT):
                 return await self.async_step_blind_spot()
+            if self.type_blind == SensorType.BLIND:
+                return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
             return await self.async_step_automation()
@@ -974,6 +1541,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
+            if self.type_blind == SensorType.BLIND:
+                return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
             return await self.async_step_automation()
@@ -1012,20 +1581,50 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.optional_entities([CONF_MANUAL_THRESHOLD], user_input)
             self.config.update(user_input)
-            return await self.async_step_motion_overrides()
+            return await self.async_step_force_override()
         return self.async_show_form(
             step_id="manual_override", data_schema=MANUAL_OVERRIDE_SCHEMA
         )
 
-    async def async_step_motion_overrides(
+    async def async_step_force_override(self, user_input: dict[str, Any] | None = None):
+        """Configure force override sensors."""
+        if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_motion_override()
+        return self.async_show_form(
+            step_id="force_override", data_schema=FORCE_OVERRIDE_SCHEMA
+        )
+
+    async def async_step_motion_override(
         self, user_input: dict[str, Any] | None = None
     ):
-        """Configure motion and force override sensors."""
+        """Configure motion/occupancy-based control."""
         if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_weather_override()
+        return self.async_show_form(
+            step_id="motion_override", data_schema=MOTION_OVERRIDE_SCHEMA
+        )
+
+    async def async_step_weather_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure weather-based safety overrides."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_WIND_SPEED_SENSOR,
+                    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+                    CONF_WEATHER_RAIN_SENSOR,
+                    CONF_WEATHER_IS_RAINING_SENSOR,
+                    CONF_WEATHER_IS_WINDY_SENSOR,
+                ],
+                user_input,
+            )
             self.config.update(user_input)
             return await self.async_step_climate()
         return self.async_show_form(
-            step_id="motion_overrides", data_schema=MOTION_OVERRIDES_SCHEMA
+            step_id="weather_override", data_schema=WEATHER_OVERRIDE_SCHEMA
         )
 
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
@@ -1051,15 +1650,26 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             if self.config.get(CONF_WEATHER_ENTITY):
                 return await self.async_step_weather()
-            return await self.async_step_update()
+            return await self.async_step_summary()
         return self.async_show_form(step_id="climate", data_schema=CLIMATE_SCHEMA)
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None):
         """Manage weather conditions."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_update()
+            return await self.async_step_summary()
         return self.async_show_form(step_id="weather", data_schema=WEATHER_OPTIONS)
+
+    async def async_step_summary(self, user_input: dict[str, Any] | None = None):
+        """Show a read-only summary of all collected configuration before creating the entry."""
+        if user_input is not None:
+            return await self.async_step_update()
+        summary_text = _build_config_summary(self.config, self.type_blind)
+        return self.async_show_form(
+            step_id="summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={"summary": summary_text},
+        )
 
     async def async_step_update(self, user_input: dict[str, Any] | None = None):
         """Create entry."""
@@ -1146,6 +1756,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
                 CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
                 CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),
+                CONF_WINTER_CLOSE_INSULATION: self.config.get(
+                    CONF_WINTER_CLOSE_INSULATION, False
+                ),
                 CONF_INTERP: self.config.get(CONF_INTERP),
                 CONF_INTERP_START: self.config.get(CONF_INTERP_START, None),
                 CONF_INTERP_END: self.config.get(CONF_INTERP_END, None),
@@ -1318,29 +1931,45 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
+        # ── Core Setup ───────────────────────────────────────────────
         menu_options = [
             "cover_entities",
-            "device",
             "geometry",
             "sun_tracking",
         ]
+
+        # ── Position & Zones ─────────────────────────────────────────
+        menu_options.append("position")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
-        menu_options.append("position")
+        if self.sensor_type == SensorType.BLIND:
+            menu_options.append("glare_zones")
         if self.options.get(CONF_INTERP):
             menu_options.append("interp")
-        menu_options.extend(
-            [
-                "automation",
-                "manual_override",
-                "motion_overrides",
-                "climate",
-            ]
-        )
+
+        # ── Schedule & Automation ────────────────────────────────────
+        menu_options.append("automation")
+
+        # ── Climate & Weather ────────────────────────────────────────
+        menu_options.append("climate")
         if self.options.get(CONF_WEATHER_ENTITY):
             menu_options.append("weather")
+
+        # ── Override Controls ────────────────────────────────────────
         menu_options.extend(
             [
+                "manual_override",
+                "force_override",
+                "motion_override",
+                "weather_override",
+            ]
+        )
+
+        # ── Admin ────────────────────────────────────────────────────
+        menu_options.extend(
+            [
+                "device",
+                "summary",
                 "sync",
                 "done",
             ]
@@ -1373,6 +2002,18 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, user_input or self.options
             ),
+        )
+
+    async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
+        """Configure glare zone definitions (options)."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+
+        schema = _build_glare_zones_schema(self.options)
+        return self.async_show_form(
+            step_id="glare_zones",
+            data_schema=self.add_suggested_values_to_schema(schema, self.options),
         )
 
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
@@ -1442,17 +2083,53 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         )
 
-    async def async_step_motion_overrides(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Manage motion and force override sensors."""
+    async def async_step_force_override(self, user_input: dict[str, Any] | None = None):
+        """Manage force override sensors."""
         if user_input is not None:
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
-            step_id="motion_overrides",
+            step_id="force_override",
             data_schema=self.add_suggested_values_to_schema(
-                MOTION_OVERRIDES_SCHEMA, user_input or self.options
+                FORCE_OVERRIDE_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_motion_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage motion/occupancy-based control."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="motion_override",
+            data_schema=self.add_suggested_values_to_schema(
+                MOTION_OVERRIDE_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_weather_override(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage weather-based safety overrides."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_WIND_SPEED_SENSOR,
+                    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+                    CONF_WEATHER_RAIN_SENSOR,
+                    CONF_WEATHER_IS_RAINING_SENSOR,
+                    CONF_WEATHER_IS_WINDY_SENSOR,
+                ],
+                user_input,
+            )
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="weather_override",
+            data_schema=self.add_suggested_values_to_schema(
+                WEATHER_OVERRIDE_SCHEMA, user_input or self.options
             ),
         )
 
@@ -1592,7 +2269,9 @@ class OptionsFlowHandler(OptionsFlow):
             "interp": "Interpolation Values",
             "automation": "Schedule & Timing",
             "manual_override": "Manual Override",
-            "motion_overrides": "Motion & Force Overrides",
+            "force_override": "Force Override",
+            "motion_override": "Motion Override",
+            "weather_override": "Weather Override",
             "climate": "Climate",
             "weather": "Weather Conditions",
         }
@@ -1726,6 +2405,19 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 WEATHER_OPTIONS, user_input or self.options
             ),
+        )
+
+    async def async_step_summary(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show a read-only summary of the current configuration."""
+        if user_input is not None:
+            return await self.async_step_init()
+        summary_text = _build_config_summary(self.options, self.sensor_type)
+        return self.async_show_form(
+            step_id="summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={"summary": summary_text},
         )
 
     async def async_step_done(

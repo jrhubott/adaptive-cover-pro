@@ -1,6 +1,6 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-01
+**Date:** 2026-04-02
 **Current Version:** v2.11.0
 **Branch:** `main` (clean)
 
@@ -11,9 +11,9 @@
 
 ## Current State
 
-### Architecture (Post-Rewrite)
+### Architecture (Post-Plugin Refactor)
 
-The integration was fully rewritten with a layered architecture:
+The integration was fully rewritten with a layered architecture. The pipeline now uses a plugin architecture where each handler is self-contained:
 
 | Layer | Package | Purpose |
 |-------|---------|---------|
@@ -21,17 +21,29 @@ The integration was fully rewritten with a layered architecture:
 | Calculation | `calculation.py`, `sun.py` | Pure math, 0 HA imports |
 | Engine | `engine/` | `SunGeometry`, `VenetianCoverCalculation` — next-gen calculation engine |
 | Config Types | `config_types.py` | `CoverConfig` typed dataclass |
-| Pipeline | `pipeline/` | 8 pluggable override handlers (wind is a stub; cloud_suppression is fully active at priority 60) |
+| Pipeline | `pipeline/` | 9 pluggable override handlers (self-contained plugins) |
 | Managers | `managers/` | 5 focused classes extracted from coordinator |
 | Diagnostics | `diagnostics/` | `DiagnosticsBuilder` with decision trace |
 | Coordinator | `coordinator.py` | Thin orchestrator (~1,477 lines) |
 
-**Adding a new override:** Create handler in `pipeline/handlers/`, register in coordinator `__init__`. No coordinator logic changes.
+**Adding a new override:** Create one handler file + register in `pipeline/handlers/__init__`. Each handler is self-contained: owns its condition evaluation AND position computation. No coordinator logic changes.
+
+**Handlers (priority order):**
+```
+force_override(100) > weather(90) > motion_timeout(80) > manual_override(70) > 
+cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
+```
+
+**Handler architecture:** Each handler in `pipeline/handlers/` is independent:
+- Condition evaluation: Does this handler apply to the current snapshot?
+- Position computation: If matched, what position should be used?
+- `ClimateHandler` contains `ClimateCoverData` + `ClimateCoverState` (moved from `calculation.py`)
+- `GlareZoneHandler` (priority 45) extracts glare zone logic from `AdaptiveVerticalCover.calculate_position()`
 
 ### Tests
 
-813 passing, 0 failing.
-Run: `source venv/bin/activate && python -m pytest tests/ -v`
+972 passing, 0 failing.
+Run: `venv/bin/python -m pytest tests/ -v`
 
 | Module | Coverage |
 |--------|----------|
@@ -41,7 +53,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | `geometry.py` | 100% |
 | `position_utils.py` | 100% |
 | `enums.py` | 97% |
-| `pipeline/` | 100% |
+| `pipeline/handlers/climate.py` | ~79% |
+| `pipeline/` (other) | 100% |
 | `managers/` | ~96% |
 | `state/` | ~95% |
 | `diagnostics/` | ~90% |
@@ -56,6 +69,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | Version | Highlights |
 |---------|-----------|
 | v2.11.0 | Cloud coverage sensor support (Issue #94): percentage-based sensor as fourth OR signal for cloud suppression; CloudSuppressionHandler now registered in pipeline at priority 60. |
+| (pending) | fix(climate): Irradiance/lux/weather now suppress glare control in summer mode (Issue #71). Low-light check moved before season check in all four ClimateCoverState methods. 10 regression tests added. |
 | v2.10.0 | Sync category selection, duplicate cover flow, remove legacy import dead code. |
 | v2.9.4 | Hotfix: `AttributeError` on `_position_tolerance` crashing position mismatch binary sensors on startup and during updates. |
 | v2.9.3 | Translation fixes and config flow polish: missing menu labels, climate mode help text, cloud suppression clarification, reordered climate settings. |
@@ -86,3 +100,30 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons | ✅ Resolved — not needed (local brand/ folder) |
 
 No open pull requests on this repo.
+
+---
+
+## Key Patterns & Architecture Notes
+
+### Pipeline Plugin Architecture
+
+**What Changed:** Handlers are now fully self-contained plugins that own both condition evaluation and position computation. This eliminates coordinator logic for adding new overrides.
+
+**How It Works:**
+1. Each handler in `pipeline/handlers/` implements `OverrideHandler.evaluate(snapshot)` 
+2. Handler decides whether to activate: returns `PipelineResult` (with position) or `None` (skip me)
+3. No coordinator changes needed — just create handler file + register in `__init__`
+
+**Handler Independence:**
+- `ClimateHandler` owns all climate logic + `ClimateCoverData` + `ClimateCoverState` (previously in `calculation.py`)
+- `GlareZoneHandler` owns glare zone distance calculation (extracted from `AdaptiveVerticalCover.calculate_position()`)
+- Vertical cover's `calculate_position()` no longer has glare loop; pass `effective_distance_override` to use pre-computed glare distances
+- Each handler is a complete business unit: condition + computation + result building
+
+**Adding a Handler (Template):**
+1. Create `pipeline/handlers/my_handler.py`
+2. Subclass `OverrideHandler` with `priority` (0-100) and `name` ("my_override")
+3. Implement `evaluate(snapshot)` → return `PipelineResult` or `None`
+4. Register in `pipeline/handlers/__init__.py` imports and in coordinator
+
+**Testing:** 854 tests cover all 9 handlers with full condition and computation coverage (100% pipeline module).

@@ -40,6 +40,7 @@ class DiagnosticContext:
 
     # Overrides
     is_force_override_active: bool
+    is_weather_override_active: bool
     is_motion_timeout_active: bool
     is_manual_override_active: bool
 
@@ -229,6 +230,9 @@ class DiagnosticsBuilder:
 
         if ctx.is_force_override_active:
             return ControlStatus.FORCE_OVERRIDE_ACTIVE
+
+        if ctx.is_weather_override_active:
+            return ControlStatus.WEATHER_OVERRIDE_ACTIVE
 
         if ctx.is_motion_timeout_active:
             return ControlStatus.MOTION_TIMEOUT

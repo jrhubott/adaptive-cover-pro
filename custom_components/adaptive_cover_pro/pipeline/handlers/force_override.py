@@ -4,29 +4,34 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..types import PipelineContext, PipelineResult
+from ..types import PipelineResult, PipelineSnapshot
 
 
 class ForceOverrideHandler(OverrideHandler):
-    """Return the force-override position when a safety sensor is active.
+    """Return the force-override position when any safety sensor is active.
 
     Priority 100 — evaluated before all other handlers.
+    Evaluates the raw sensor states from snapshot.force_override_sensors
+    directly; any sensor in the "on" state activates the override.
     """
 
     name = "force_override"
     priority = 100
 
-    def evaluate(self, ctx: PipelineContext) -> PipelineResult | None:
-        """Return override position when force override is active."""
-        if not ctx.force_override_active:
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
+        """Return override position when any force override sensor is on."""
+        if not snapshot.force_override_sensors:
             return None
+        if not any(snapshot.force_override_sensors.values()):
+            return None
+        active = [e for e, on in snapshot.force_override_sensors.items() if on]
+        pos = snapshot.force_override_position
         return PipelineResult(
-            position=ctx.force_override_position,
+            position=pos,
             control_method=ControlMethod.FORCE,
-            reason=f"force override active — position {ctx.force_override_position}%",
-            decision_trace=[],
+            reason=f"force override active ({', '.join(active)}) — position {pos}%",
         )
 
-    def describe_skip(self, ctx: PipelineContext) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
         """Reason when force override is not active."""
         return "force override not active"

@@ -129,18 +129,26 @@
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
         }
       },
-      "motion_overrides": {
-        "title": "Motion & Force Overrides",
-        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+      "force_override": {
+        "title": "Force Override",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position.",
         "data": {
-          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
-          "force_override_position": "Force override position",
+          "force_override_sensors": "Force override sensors",
+          "force_override_position": "Force override position"
+        },
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = fully closed/retracted, 100% = fully open. Default: 0%."
+        }
+      },
+      "motion_override": {
+        "title": "Motion Override",
+        "description": "Configure motion and occupancy sensors for presence-based automatic control.",
+        "data": {
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
           "motion_timeout": "Motion timeout duration"
         },
         "data_description": {
-          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
           "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
         }
@@ -237,6 +245,10 @@
           "entities": "Cover entities",
           "azimuth": "Window azimuth"
         }
+      },
+      "summary": {
+        "title": "Configuration Summary",
+        "description": "{summary}"
       }
     },
     "abort": {
@@ -249,18 +261,22 @@
       "init": {
         "menu_options": {
           "cover_entities": "Cover Entities",
-          "device": "Device Association",
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
+          "glare_zones": "Glare Zones",
           "interp": "Interpolation",
           "automation": "Automatisierungskonfiguration ändern",
-          "manual_override": "Manual Override",
-          "motion_overrides": "Motion & Force Overrides",
           "climate": "Klimakonfiguration bearbeiten",
           "weather": "Weather Conditions",
-          "sync": "Sync settings to other covers",
+          "manual_override": "Manual Override",
+          "force_override": "Force Override",
+          "motion_override": "Motion Override",
+          "weather_override": "Weather Override",
+          "device": "Device Association",
+          "summary": "Configuration Summary",
+          "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
         }
       },
@@ -384,18 +400,26 @@
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
         }
       },
-      "motion_overrides": {
-        "title": "Motion & Force Overrides",
-        "description": "Configure force override sensors (safety) and motion/occupancy-based control.",
+      "force_override": {
+        "title": "Force Override",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position.",
         "data": {
-          "force_override_sensors": "Force override sensors (rain, wind, etc.)",
-          "force_override_position": "Force override position",
+          "force_override_sensors": "Force override sensors",
+          "force_override_position": "Force override position"
+        },
+        "data_description": {
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings. Manual control still works. Leave empty to disable this feature.",
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = fully closed/retracted, 100% = fully open. Default: 0%."
+        }
+      },
+      "motion_override": {
+        "title": "Motion Override",
+        "description": "Configure motion and occupancy sensors for presence-based automatic control.",
+        "data": {
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
           "motion_timeout": "Motion timeout duration"
         },
         "data_description": {
-          "force_override_sensors": "Binary sensors that override automatic control and move covers to the force override position when active. Use for weather safety: rain sensors (move to 0% to prevent water damage), wind sensors (move to 0% to prevent mechanical damage), security sensors (move to 100% during alarm). When ANY selected sensor is 'on', ALL covers move to the configured position. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. Examples: 0% = fully closed/retracted (rain/wind protection), 100% = fully open (security/emergency access). Default: 0%.",
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
           "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
         }
@@ -478,14 +502,18 @@
         }
       },
       "sync": {
-        "title": "Sync Settings — Select Targets",
+        "title": "Copy Settings — Select Targets",
         "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
         "data": {
           "target_entries": "Target covers"
         }
       },
+      "summary": {
+        "title": "Configuration Summary",
+        "description": "{summary}"
+      },
       "sync_confirm": {
-        "title": "Sync Settings — Confirm",
+        "title": "Copy Settings — Confirm",
         "description": "The following covers will have their shared settings overwritten:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
         "data": {
           "confirm": "Confirm sync"
@@ -542,7 +570,7 @@
           "manual_override": "Manual Override",
           "motion_timeout": "Motion Timeout",
           "force_override": "Force Override",
-          "wind_override": "Wind Override",
+          "weather_override": "Weather Override",
           "cloud_suppression": "Cloud Suppression"
         }
       }

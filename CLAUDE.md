@@ -66,7 +66,7 @@ This integration follows Home Assistant's **Data Coordinator Pattern** with a la
 
 **`pipeline/`** - Override Priority Chain (pluggable handlers)
 - `registry.py` - `PipelineRegistry` evaluates handlers in priority order, builds decision trace
-- 8 handlers: `force_override`(100) > `wind`(95, stub) > `motion_timeout`(80) > `manual_override`(70) > `cloud_suppression`(60) > `climate`(50) > `solar`(40) > `default`(0)
+- 9 handlers: `force_override`(100) > `weather`(90) > `motion_timeout`(80) > `manual_override`(70) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
 - `wind.py` is a registered stub — it passes through until wind sensors are configured
 - Adding a new override = create one handler file + register in coordinator
 
@@ -715,7 +715,7 @@ Users can monitor geometric accuracy via the always-on diagnostic sensors:
     - False (default): Limits always enforced
     - True: Limits only during direct sun tracking
 - Automation settings (delta position/time, start/end times, manual override)
-- Force override settings:
+- Force override settings (separate config screen from Motion Override):
   - `force_override_sensors` - Optional list of binary sensor entity IDs that globally disable automatic control when any sensor is "on"
   - `force_override_position` - Position (0-100%) to move covers to when force override is active (default: 0%)
 - Motion control settings:
@@ -795,7 +795,7 @@ adaptive-cover/
 │   │   ├── handler.py           # OverrideHandler base class
 │   │   └── handlers/            # 8 priority handlers
 │   │       ├── force_override.py    # Priority 100
-│   │       ├── wind.py              # Priority 95 (stub)
+│   │       ├── wind.py              # Priority 90 (stub)
 │   │       ├── motion_timeout.py    # Priority 80
 │   │       ├── manual_override.py   # Priority 70
 │   │       ├── cloud_suppression.py # Priority 60

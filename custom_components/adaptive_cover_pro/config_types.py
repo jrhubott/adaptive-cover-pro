@@ -8,6 +8,29 @@ from .enums import TiltMode
 
 
 @dataclass
+class GlareZone:
+    """A single glare protection zone on the floor.
+
+    Coordinates are relative to the window centre projected onto the floor:
+      x = along the wall (positive = right when facing window from inside), cm
+      y = into the room (perpendicular to window), cm — must be positive
+    """
+
+    name: str
+    x: float
+    y: float
+    radius: float
+
+
+@dataclass
+class GlareZonesConfig:
+    """All glare zone configuration for a vertical cover."""
+
+    zones: list[GlareZone]
+    window_width: float  # cm — used to check if a sun ray can reach a zone
+
+
+@dataclass
 class CoverConfig:
     """Common configuration for all cover types."""
 
@@ -38,6 +61,7 @@ class VerticalConfig:
     h_win: float
     window_depth: float = 0.0
     sill_height: float = 0.0
+    glare_zones: GlareZonesConfig | None = None
 
 
 @dataclass

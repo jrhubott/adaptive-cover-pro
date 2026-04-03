@@ -54,6 +54,7 @@ CONF_BLIND_SPOT_ELEVATION = "blind_spot_elevation"
 CONF_MIN_ELEVATION = "min_elevation"
 CONF_MAX_ELEVATION = "max_elevation"
 CONF_TRANSPARENT_BLIND = "transparent_blind"
+CONF_WINTER_CLOSE_INSULATION = "winter_close_insulation"
 CONF_CLOUD_SUPPRESSION = "cloud_suppression"
 CONF_INTERP_START = "interp_start"
 CONF_INTERP_END = "interp_end"
@@ -68,6 +69,21 @@ CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"
 CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_DEVICE_ID = "linked_device_id"
+CONF_ENABLE_GLARE_ZONES = "enable_glare_zones"
+CONF_WINDOW_WIDTH = "window_width"
+
+# Weather override
+CONF_WEATHER_WIND_SPEED_SENSOR = "weather_wind_speed_sensor"
+CONF_WEATHER_WIND_DIRECTION_SENSOR = "weather_wind_direction_sensor"
+CONF_WEATHER_WIND_SPEED_THRESHOLD = "weather_wind_speed_threshold"
+CONF_WEATHER_WIND_DIRECTION_TOLERANCE = "weather_wind_direction_tolerance"
+CONF_WEATHER_RAIN_SENSOR = "weather_rain_sensor"
+CONF_WEATHER_RAIN_THRESHOLD = "weather_rain_threshold"
+CONF_WEATHER_IS_RAINING_SENSOR = "weather_is_raining_sensor"
+CONF_WEATHER_IS_WINDY_SENSOR = "weather_is_windy_sensor"
+CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"
+CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
+CONF_WEATHER_TIMEOUT = "weather_timeout"
 
 
 CONF_DELTA_POSITION = "delta_position"
@@ -96,6 +112,12 @@ STARTUP_GRACE_PERIOD_SECONDS = (
 
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection
+
+# Weather override constants
+DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = 50.0  # km/h (threshold unit must match sensor)
+DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE = 45  # degrees each side of window azimuth
+DEFAULT_WEATHER_RAIN_THRESHOLD = 1.0  # mm/h
+DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after conditions clear
 
 # Cloud coverage constants
 DEFAULT_CLOUD_COVERAGE_THRESHOLD = 75  # 75% cloud coverage = overcast
@@ -127,6 +149,7 @@ class ControlStatus:
     AUTOMATIC_CONTROL_OFF = "automatic_control_off"
     SUN_NOT_VISIBLE = "sun_not_visible"
     FORCE_OVERRIDE_ACTIVE = "force_override_active"
+    WEATHER_OVERRIDE_ACTIVE = "weather_override_active"
     MOTION_TIMEOUT = "motion_timeout"
 
 

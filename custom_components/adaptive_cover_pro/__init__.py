@@ -19,6 +19,12 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
     DOMAIN,
     _LOGGER,
 )
@@ -86,6 +92,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass,
                 _motion_sensors,
                 coordinator.async_check_motion_state_change,
+            )
+        )
+
+    # Register weather sensor listeners separately (need custom handler for clear-delay)
+    _weather_sensor_ids: list[str] = []
+    for _key in [
+        CONF_WEATHER_WIND_SPEED_SENSOR,
+        CONF_WEATHER_WIND_DIRECTION_SENSOR,
+        CONF_WEATHER_RAIN_SENSOR,
+        CONF_WEATHER_IS_RAINING_SENSOR,
+        CONF_WEATHER_IS_WINDY_SENSOR,
+    ]:
+        _val = entry.options.get(_key)
+        if _val:
+            _weather_sensor_ids.append(_val)
+    _weather_sensor_ids.extend(entry.options.get(CONF_WEATHER_SEVERE_SENSORS, []))
+
+    if _weather_sensor_ids:
+        entry.async_on_unload(
+            async_track_state_change_event(
+                hass,
+                _weather_sensor_ids,
+                coordinator.async_check_weather_state_change,
             )
         )
 

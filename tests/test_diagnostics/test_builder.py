@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
-
 import pytest
 
-from custom_components.adaptive_cover_pro.config_context_adapter import (
-    ConfigContextAdapter,
-)
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
-from custom_components.adaptive_cover_pro.calculation import ClimateCoverData
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateCoverData,
+)
 from custom_components.adaptive_cover_pro.const import ControlStatus
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
@@ -77,6 +74,7 @@ def _base_ctx(**overrides) -> DiagnosticContext:
         "control_method": ControlMethod.SOLAR,
         "pipeline_result": None,
         "is_force_override_active": False,
+        "is_weather_override_active": False,
         "is_motion_timeout_active": False,
         "is_manual_override_active": False,
         "check_adaptive_time": True,
@@ -460,7 +458,6 @@ class TestClimateDiagnostics:
 
     def _make_climate_data(self):
         return ClimateCoverData(
-            logger=MagicMock(spec=ConfigContextAdapter),
             temp_low=20.0,
             temp_high=25.0,
             temp_switch=True,
@@ -473,6 +470,7 @@ class TestClimateDiagnostics:
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
+            winter_close_insulation=False,
         )
 
     def test_climate_data_present(self, builder: DiagnosticsBuilder):

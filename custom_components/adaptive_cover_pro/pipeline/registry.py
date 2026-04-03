@@ -3,34 +3,22 @@
 from __future__ import annotations
 
 from .handler import OverrideHandler
-from .types import DecisionStep, PipelineContext, PipelineResult
+from .types import DecisionStep, PipelineResult, PipelineSnapshot
 
 
 class PipelineRegistry:
-    """Evaluates a set of :class:`OverrideHandler` instances in priority order.
-
-    Usage::
-
-        registry = PipelineRegistry([ForceOverrideHandler(), DefaultHandler(), ...])
-        result = registry.evaluate(ctx)
-    """
+    """Evaluates a set of :class:`OverrideHandler` instances in priority order."""
 
     def __init__(self, handlers: list[OverrideHandler]) -> None:
-        """Initialise the registry with the given handlers.
-
-        Handlers are sorted by priority (highest first) so that the most
-        important conditions are always evaluated before lower-priority ones.
-        """
-        # Sort descending by priority so highest priority is evaluated first.
+        """Initialise and sort handlers by priority descending."""
         self._handlers: list[OverrideHandler] = sorted(
             handlers, key=lambda h: h.priority, reverse=True
         )
 
-    def evaluate(self, ctx: PipelineContext) -> PipelineResult:
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
         """Evaluate all handlers and return the first matching result.
 
-        Builds a full :attr:`PipelineResult.decision_trace` of every handler
-        evaluated (matched or skipped).
+        Builds a full decision_trace of every handler evaluated.
 
         Raises:
             RuntimeError: if no handler matches (DefaultHandler must always match).
@@ -39,10 +27,9 @@ class PipelineRegistry:
         trace: list[DecisionStep] = []
 
         for index, handler in enumerate(self._handlers):
-            result = handler.evaluate(ctx)
+            result = handler.evaluate(snapshot)
 
             if result is not None:
-                # Record the winning handler.
                 trace.append(
                     DecisionStep(
                         handler=handler.name,
@@ -51,7 +38,6 @@ class PipelineRegistry:
                         position=result.position,
                     )
                 )
-                # Record all remaining handlers as skipped.
                 for skipped in self._handlers[index + 1 :]:
                     trace.append(
                         DecisionStep(
@@ -61,20 +47,20 @@ class PipelineRegistry:
                             position=None,
                         )
                     )
-                # Return a new result that carries the full trace.
                 return PipelineResult(
                     position=result.position,
                     control_method=result.control_method,
                     reason=result.reason,
                     decision_trace=trace,
+                    climate_state=result.climate_state,
+                    climate_strategy=result.climate_strategy,
                 )
 
-            # Handler did not match — record why and continue.
             trace.append(
                 DecisionStep(
                     handler=handler.name,
                     matched=False,
-                    reason=handler.describe_skip(ctx),
+                    reason=handler.describe_skip(snapshot),
                     position=None,
                 )
             )

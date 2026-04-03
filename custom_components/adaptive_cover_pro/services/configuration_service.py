@@ -10,7 +10,14 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from ..config_context_adapter import ConfigContextAdapter
-from ..config_types import CoverConfig, HorizontalConfig, TiltConfig, VerticalConfig
+from ..config_types import (
+    CoverConfig,
+    GlareZone,
+    GlareZonesConfig,
+    HorizontalConfig,
+    TiltConfig,
+    VerticalConfig,
+)
 from ..const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
@@ -20,6 +27,7 @@ from ..const import (
     CONF_DEFAULT_HEIGHT,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
+    CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_FOV_LEFT,
@@ -38,6 +46,7 @@ from ..const import (
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
+    CONF_WINDOW_WIDTH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -151,4 +160,34 @@ class ConfigurationService:
             slat_distance=distance / 100,  # Convert cm to meters
             depth=depth / 100,  # Convert cm to meters
             mode=options.get(CONF_TILT_MODE),
+        )
+
+    def get_glare_zones_config(self, options: dict) -> GlareZonesConfig | None:
+        """Build GlareZonesConfig from config entry options.
+
+        Returns None if glare zones are disabled or no zones have names.
+        """
+        if not options.get(CONF_ENABLE_GLARE_ZONES):
+            return None
+
+        zones = []
+        for i in range(1, 5):  # zones 1–4
+            name = options.get(f"glare_zone_{i}_name", "")
+            if not name:
+                continue
+            zones.append(
+                GlareZone(
+                    name=name,
+                    x=float(options.get(f"glare_zone_{i}_x", 0)),
+                    y=float(options.get(f"glare_zone_{i}_y", 100)),
+                    radius=float(options.get(f"glare_zone_{i}_radius", 30)),
+                )
+            )
+
+        if not zones:
+            return None
+
+        return GlareZonesConfig(
+            zones=zones,
+            window_width=float(options.get(CONF_WINDOW_WIDTH, 100)),
         )

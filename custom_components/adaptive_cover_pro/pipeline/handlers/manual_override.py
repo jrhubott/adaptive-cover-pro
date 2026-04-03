@@ -3,34 +3,55 @@
 from __future__ import annotations
 
 from ...enums import ControlMethod
+from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
-from ..types import PipelineContext, PipelineResult
+from ..types import PipelineResult, PipelineSnapshot
 
 
 class ManualOverrideHandler(OverrideHandler):
-    """Preserve the current (calculated) position while manual override is active.
+    """Preserve the sun-tracking position while manual override is active.
 
     Priority 70 — lower than force/motion, higher than climate/solar.
-    When the user manually moves the cover, automatic control is paused
-    and the last calculated position is kept rather than fighting the user.
+    When the user manually moves the cover, automatic control is paused.
+    The handler computes what the solar position would be (or default if
+    sun not in FOV) to avoid fighting the user.
     """
 
     name = "manual_override"
     priority = 70
 
-    def evaluate(self, ctx: PipelineContext) -> PipelineResult | None:
-        """Return calculated position when manual override is active."""
-        if not ctx.manual_override_active:
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
+        """Return computed position when manual override is active."""
+        if not snapshot.manual_override_active:
             return None
+
+        if snapshot.cover.direct_sun_valid:
+            state = int(round(snapshot.cover.calculate_percentage()))
+            state = max(state, 1)
+            position = PositionConverter.apply_limits(
+                state,
+                snapshot.config.min_pos,
+                snapshot.config.max_pos,
+                snapshot.config.min_pos_sun_only,
+                snapshot.config.max_pos_sun_only,
+                True,
+            )
+        else:
+            position = PositionConverter.apply_limits(
+                int(round(snapshot.cover.default)),
+                snapshot.config.min_pos,
+                snapshot.config.max_pos,
+                snapshot.config.min_pos_sun_only,
+                snapshot.config.max_pos_sun_only,
+                False,
+            )
+
         return PipelineResult(
-            position=ctx.calculated_position,
+            position=position,
             control_method=ControlMethod.MANUAL,
-            reason=(
-                f"manual override active — holding position {ctx.calculated_position}%"
-            ),
-            decision_trace=[],
+            reason=f"manual override active — holding position {position}%",
         )
 
-    def describe_skip(self, ctx: PipelineContext) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
         """Reason when manual override is not active."""
         return "manual override not active"

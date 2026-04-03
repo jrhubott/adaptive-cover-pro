@@ -14,7 +14,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_ENABLE_GLARE_ZONES, CONF_SENSOR_TYPE, DOMAIN
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
@@ -58,6 +58,22 @@ async def async_setup_entry(
         coordinator,
     )
     entities.append(position_mismatch)
+
+    # Glare active sensor — only created when glare zones are configured
+    if (
+        config_entry.options.get(CONF_ENABLE_GLARE_ZONES)
+        and config_entry.data.get(CONF_SENSOR_TYPE) == "cover_blind"
+    ):
+        glare_active_sensor = AdaptiveCoverBinarySensor(
+            config_entry,
+            config_entry.entry_id,
+            "Glare Active",
+            False,
+            "glare_active",
+            BinarySensorDeviceClass.RUNNING,
+            coordinator,
+        )
+        entities.append(glare_active_sensor)
 
     async_add_entities(entities)
 

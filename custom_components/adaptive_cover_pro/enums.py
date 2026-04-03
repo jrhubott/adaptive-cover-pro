@@ -52,6 +52,9 @@ class ClimateStrategy(Enum):
     """Climate control strategies."""
 
     WINTER_HEATING = "winter_heating"  # Open for solar heating
+    WINTER_INSULATION = (
+        "winter_insulation"  # Close for heat retention when sun not hitting window
+    )
     SUMMER_COOLING = "summer_cooling"  # Close for heat blocking
     LOW_LIGHT = "low_light"  # Use default position
     GLARE_CONTROL = "glare_control"  # Use calculated position
@@ -73,7 +76,7 @@ class ControlMethod(StrEnum):
     """What is currently driving the cover position.
 
     Priority order (highest to lowest):
-    FORCE > WIND > MOTION > MANUAL > CLOUD > SUMMER/WINTER > SOLAR > DEFAULT
+    FORCE > WEATHER > MOTION > MANUAL > CLOUD > SUMMER/WINTER > SOLAR > DEFAULT
     """
 
     SOLAR = "solar"
@@ -97,8 +100,11 @@ class ControlMethod(StrEnum):
     FORCE = "force_override"
     """A force override binary sensor is active; cover moves to the override position."""
 
-    WIND = "wind_override"
-    """Wind speed exceeds threshold; covers retract for safety."""
+    WEATHER = "weather_override"
+    """Weather conditions (wind/rain/storm) exceed thresholds; covers retract for safety."""
 
     CLOUD = "cloud_suppression"
     """Cloud coverage suppresses solar radiation; covers use default position."""
+
+    GLARE_ZONE = "glare_zone"
+    """Glare zone protection active; cover extends to shield a floor zone."""
