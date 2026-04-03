@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateCoverData,
+    ClimateHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
     CloudSuppressionHandler,
 )
@@ -35,6 +39,44 @@ def _make_registry() -> PipelineRegistry:
             SolarHandler(),
             DefaultHandler(),
         ]
+    )
+
+
+def _make_climate_registry() -> PipelineRegistry:
+    """Registry that includes the ClimateHandler for climate-specific tests."""
+    return PipelineRegistry(
+        [
+            ForceOverrideHandler(),
+            MotionTimeoutHandler(),
+            ManualOverrideHandler(),
+            ClimateHandler(),
+            SolarHandler(),
+            DefaultHandler(),
+        ]
+    )
+
+
+def _climate_readings_summer() -> ClimateReadings:
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=30.0,
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+
+
+def _climate_options_summer() -> ClimateOptions:
+    return ClimateOptions(
+        temp_low=18.0,
+        temp_high=26.0,
+        temp_switch=False,
+        transparent_blind=False,
+        temp_summer_outside=None,
+        cloud_suppression_enabled=False,
+        winter_close_insulation=False,
     )
 
 
@@ -154,3 +196,74 @@ class TestPipelineIntegration:
         matched = [s for s in result.decision_trace if s.matched]
         assert len(matched) == 1
         assert matched[0].handler == "solar"
+
+
+class TestClimateDataPropagation:
+    """Verify climate_data flows from ClimateHandler through the registry."""
+
+    registry = _make_climate_registry()
+
+    def test_registry_copies_climate_data_when_climate_wins(self) -> None:
+        """Registry result carries climate_data when ClimateHandler is the winner."""
+        from unittest.mock import MagicMock
+
+        cover = MagicMock()
+        cover.direct_sun_valid = True
+        cover.valid = True
+        cover.calculate_percentage = MagicMock(return_value=60.0)
+        cover.default = 0.0
+        cover.logger = MagicMock()
+        config = MagicMock()
+        config.min_pos = None
+        config.max_pos = None
+        config.min_pos_sun_only = False
+        config.max_pos_sun_only = False
+        cover.config = config
+
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_summer(),
+            climate_options=_climate_options_summer(),
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method.name == "SUMMER"
+        assert result.climate_data is not None
+        assert isinstance(result.climate_data, ClimateCoverData)
+        assert result.climate_data.is_summer is True
+
+    def test_registry_climate_data_none_when_non_climate_handler_wins(self) -> None:
+        """climate_data is None on registry result when a non-climate handler wins."""
+        snap = make_snapshot(
+            manual_override_active=True,
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_summer(),
+            climate_options=_climate_options_summer(),
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method.name == "MANUAL"
+        assert result.climate_data is None
+
+    def test_registry_copies_tilt_from_winning_handler(self) -> None:
+        """Registry result copies tilt field from the winning handler's result."""
+        from unittest.mock import patch
+        from custom_components.adaptive_cover_pro.pipeline.handlers.solar import (
+            SolarHandler,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+        from custom_components.adaptive_cover_pro.enums import ControlMethod as CM
+
+        # Patch SolarHandler to return a result with tilt=45
+        with patch.object(
+            SolarHandler,
+            "evaluate",
+            return_value=PipelineResult(
+                position=50,
+                control_method=CM.SOLAR,
+                reason="test",
+                tilt=45,
+            ),
+        ):
+            snap = make_snapshot(direct_sun_valid=True)
+            result = self.registry.evaluate(snap)
+        assert result.tilt == 45

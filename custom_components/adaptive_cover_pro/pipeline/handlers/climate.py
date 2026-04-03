@@ -322,6 +322,7 @@ class ClimateHandler(OverrideHandler):
             reason=f"climate mode active ({season}) — position {position}%",
             climate_state=position,
             climate_strategy=climate_cover_state.climate_strategy,
+            climate_data=climate_data,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:

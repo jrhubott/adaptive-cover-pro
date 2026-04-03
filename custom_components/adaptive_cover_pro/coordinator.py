@@ -721,6 +721,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._pipeline_result.climate_state is not None:
             self.climate_state = self._pipeline_result.climate_state
             self.climate_strategy = self._pipeline_result.climate_strategy
+            self.climate_data = self._pipeline_result.climate_data
 
         return self.state
 
