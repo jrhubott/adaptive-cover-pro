@@ -29,7 +29,8 @@ class ForceOverrideHandler(OverrideHandler):
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.FORCE,
-            reason=f"force override active ({', '.join(active)}) — position {pos}%",
+            reason=f"force override active ({', '.join(active)}) — position {pos}% [bypasses automatic control]",
+            bypass_auto_control=True,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

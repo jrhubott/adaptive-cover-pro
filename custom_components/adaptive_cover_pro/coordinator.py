@@ -842,7 +842,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_state_change(self, state: int, options):
         """Send position commands to all covers when a tracked entity changes."""
-        if self.automatic_control:
+        if self.automatic_control or self._pipeline_bypasses_auto_control:
             for cover in self.entities:
                 await self.async_handle_call_service(cover, state, options)
         else:
@@ -886,7 +886,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
-        if self.automatic_control:
+        if self.automatic_control or self._pipeline_bypasses_auto_control:
             for cover in self.entities:
                 # Always set target position for verification, even if we don't send command
                 # This ensures position verification works after restart
@@ -915,7 +915,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Timed refresh: no sunset position configured, skipping")
             self.timed_refresh = False
             return
-        if self.automatic_control:
+        if self.automatic_control or self._pipeline_bypasses_auto_control:
             sunset_pos = (
                 inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
             )
@@ -1289,10 +1289,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     @property
     def state(self) -> int:
         """Final cover position after pipeline, interpolation, and inverse_state transforms."""
-        # Force override and motion timeout always take precedence
-        # (even outside time window, skip interpolation/inverse)
-        if self.is_force_override_active:
-            return self.config_entry.options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
+        # Safety overrides always take full precedence — even outside the time window
+        # and even when automatic_control is OFF.  Two paths:
+        #   1. Inside time window: _pipeline_bypasses_auto_control is True (pipeline ran
+        #      and the winning handler set bypass_auto_control=True).
+        #   2. Outside time window: _pipeline_result is None (pipeline skipped), so
+        #      fall back to the raw is_force/weather_override_active properties.
+        # Both paths skip interpolation and inverse_state transforms.
+        if self._pipeline_bypasses_auto_control and self._pipeline_result is not None:
+            return self._pipeline_result.position
+        if self._pipeline_result is None:
+            # Outside time window — pipeline did not run; check safety overrides directly
+            if self.is_force_override_active:
+                return self.config_entry.options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
+            if self.is_weather_override_active:
+                return self.config_entry.options.get(CONF_WEATHER_OVERRIDE_POSITION, 0)
         if self.is_motion_timeout_active:
             return self.default_state
 
@@ -1351,6 +1362,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def automatic_control(self, value):
         """Set automatic control toggle."""
         self._toggles.automatic_control = value
+
+    @property
+    def _pipeline_bypasses_auto_control(self) -> bool:
+        """True when the active pipeline result should run even if automatic_control is OFF.
+
+        Safety handlers (ForceOverrideHandler, WeatherOverrideHandler) set
+        bypass_auto_control=True so that wind/rain/force protection still
+        operates when the user has paused normal sun-tracking automation.
+        """
+        return (
+            self._pipeline_result is not None
+            and self._pipeline_result.bypass_auto_control
+        )
 
     @property
     def manual_toggle(self):
@@ -1459,8 +1483,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if not self.check_adaptive_time:
             return
 
-        # Skip if automatic control is disabled
-        if not self.automatic_control:
+        # Skip if automatic control is disabled (safety overrides may still bypass this)
+        if not self.automatic_control and not self._pipeline_bypasses_auto_control:
             return
 
         for entity_id in self.entities:

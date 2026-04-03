@@ -54,6 +54,7 @@ class PipelineRegistry:
                     decision_trace=trace,
                     climate_state=result.climate_state,
                     climate_strategy=result.climate_strategy,
+                    bypass_auto_control=result.bypass_auto_control,
                 )
 
             trace.append(

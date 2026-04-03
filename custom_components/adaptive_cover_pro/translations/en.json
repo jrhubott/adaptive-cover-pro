@@ -141,13 +141,13 @@
       },
       "force_override": {
         "title": "Force Override",
-        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position.",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. ⚡ Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
         "data": {
           "force_override_sensors": "Force override sensors",
           "force_override_position": "Force override position"
         },
         "data_description": {
-          "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings. Manual control still works. Leave empty to disable this feature.",
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings, including the Automatic Control switch. Manual control still works. Leave empty to disable this feature.",
           "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = fully closed/retracted, 100% = fully open. Default: 0%."
         }
       },
@@ -165,7 +165,7 @@
       },
       "weather_override": {
         "title": "Weather Override",
-        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored. ⚡ Weather override remains active even when the Automatic Control switch is off — covers will still be retracted when weather conditions are triggered.",
         "data": {
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
@@ -500,13 +500,13 @@
       },
       "force_override": {
         "title": "Force Override",
-        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position.",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. ⚡ Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
         "data": {
           "force_override_sensors": "Force override sensors",
           "force_override_position": "Force override position"
         },
         "data_description": {
-          "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings. Manual control still works. Leave empty to disable this feature.",
+          "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings, including the Automatic Control switch. Manual control still works. Leave empty to disable this feature.",
           "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = fully closed/retracted, 100% = fully open. Default: 0%."
         }
       },
@@ -524,7 +524,7 @@
       },
       "weather_override": {
         "title": "Weather Override",
-        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored. ⚡ Weather override remains active even when the Automatic Control switch is off — covers will still be retracted when weather conditions are triggered.",
         "data": {
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
@@ -756,6 +756,13 @@
       },
       "glare_zone_3": {
         "name": "Glare Zone 4"
+      },
+      "automatic_control": {
+        "name": "Automatic Control",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
       }
     }
   },

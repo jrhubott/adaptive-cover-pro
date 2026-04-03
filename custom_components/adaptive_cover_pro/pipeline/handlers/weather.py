@@ -34,7 +34,8 @@ class WeatherOverrideHandler(OverrideHandler):
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.WEATHER,
-            reason=f"weather override active — position {pos}%",
+            reason=f"weather override active — position {pos}% [bypasses automatic control]",
+            bypass_auto_control=True,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

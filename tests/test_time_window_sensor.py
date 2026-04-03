@@ -84,6 +84,7 @@ def make_coordinator(extra_attrs=None):
     coordinator._use_interpolation = False
     coordinator._inverse_state = False
     coordinator.is_force_override_active = False
+    coordinator.is_weather_override_active = False
     coordinator.is_motion_timeout_active = False
     coordinator.manager = MagicMock()
     coordinator.manager.binary_cover_manual = False

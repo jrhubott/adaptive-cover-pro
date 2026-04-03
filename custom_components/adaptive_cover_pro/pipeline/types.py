@@ -97,3 +97,9 @@ class PipelineResult:
     # Optional climate diagnostics set by ClimateHandler
     climate_state: int | None = None
     climate_strategy: ClimateStrategy | None = None
+
+    # When True, this result is applied even when automatic_control is OFF.
+    # Set by safety handlers (ForceOverrideHandler, WeatherOverrideHandler) so
+    # that wind/rain/force protection still works when the user has paused
+    # normal sun-tracking automation.
+    bypass_auto_control: bool = False
