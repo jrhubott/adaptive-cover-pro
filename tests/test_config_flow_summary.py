@@ -599,10 +599,10 @@ def test_position_inverse_state_hidden_when_false():
 
 
 def test_position_interp_shown():
-    """Interpolation flag appears in Position Limits."""
+    """Position calibration flag appears in Position Limits."""
     cfg = {CONF_INTERP: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Interpolation" in summary
+    assert "Position calibration" in summary
 
 
 def test_delta_position_and_time_shown():
@@ -780,4 +780,4 @@ def test_full_vertical_config_smoke():
     assert "10%" in summary
     assert "95%" in summary
     assert "Inverse state" in summary
-    assert "Interpolation" in summary
+    assert "Position calibration" in summary

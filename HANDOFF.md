@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-02
-**Current Version:** v2.11.0
+**Date:** 2026-04-03
+**Current Version:** v2.12.0
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -28,21 +28,22 @@ The integration was fully rewritten with a layered architecture. The pipeline no
 
 **Adding a new override:** Create one handler file + register in `pipeline/handlers/__init__`. Each handler is self-contained: owns its condition evaluation AND position computation. No coordinator logic changes.
 
-**Handlers (priority order):**
+**Handler architecture:** Each handler in `pipeline/handlers/` is independent:
+- Condition evaluation: Does this handler apply to the current snapshot?
+- Position computation: If matched, what position should be used?
+- `ClimateHandler` contains `ClimateCoverData` + `ClimateCoverState` (moved from `calculation.py`)
+- `GlareZoneHandler` (priority 45) — glare zone protection
+- `WeatherHandler` (priority 90) — wind/rain/severe weather handling
+
+**Handlers (priority order) — v2.12.0:**
 ```
 force_override(100) > weather(90) > motion_timeout(80) > manual_override(70) > 
 cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
 ```
 
-**Handler architecture:** Each handler in `pipeline/handlers/` is independent:
-- Condition evaluation: Does this handler apply to the current snapshot?
-- Position computation: If matched, what position should be used?
-- `ClimateHandler` contains `ClimateCoverData` + `ClimateCoverState` (moved from `calculation.py`)
-- `GlareZoneHandler` (priority 45) extracts glare zone logic from `AdaptiveVerticalCover.calculate_position()`
-
 ### Tests
 
-972 passing, 0 failing.
+981 passing, 0 failing.
 Run: `venv/bin/python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -68,8 +69,8 @@ Run: `venv/bin/python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.12.0 | Glare Zones (Issue #64): 4 named floor zones per blind with per-zone switches & binary sensors. Winter Insulation Mode (Issue #29): close non-sun covers in winter for heat retention. Climate accuracy fix (Issue #71): irradiance/lux/weather now suppress glare in summer. Override priority visualization in config summary. Split override config screens. 981 tests. |
 | v2.11.0 | Cloud coverage sensor support (Issue #94): percentage-based sensor as fourth OR signal for cloud suppression; CloudSuppressionHandler now registered in pipeline at priority 60. |
-| (pending) | fix(climate): Irradiance/lux/weather now suppress glare control in summer mode (Issue #71). Low-light check moved before season check in all four ClimateCoverState methods. 10 regression tests added. |
 | v2.10.0 | Sync category selection, duplicate cover flow, remove legacy import dead code. |
 | v2.9.4 | Hotfix: `AttributeError` on `_position_tolerance` crashing position mismatch binary sensors on startup and during updates. |
 | v2.9.3 | Translation fixes and config flow polish: missing menu labels, climate mode help text, cloud suppression clarification, reordered climate settings. |
@@ -85,18 +86,17 @@ Run: `venv/bin/python -m pytest tests/ -v`
 
 ## Open Issues (Backlog)
 
+Only **1 issue remains open:**
+
 | # | Title | Notes |
 |---|-------|-------|
-| [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt — architecture now supports dual-axis via pipeline |
-| [#29](https://github.com/jrhubott/adaptive-cover/issues/29) | Keep heat in — close non-sun-exposed covers in winter | Extend climate handler or add new pipeline handler |
-| [#28](https://github.com/jrhubott/adaptive-cover/issues/28) | Wind speed/direction handling | Create `pipeline/handlers/wind.py` with priority 90 |
-| [#27](https://github.com/jrhubott/adaptive-cover/issues/27) | Min/Max/Fixed Sunrise/Sunset overrides | Let users pin start/end sun times |
+| [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Architecture supports dual-axis via pipeline; needs config flow enhancement to expose dual-axis setup for single entity covers |
 
 ## Pending Upstream PRs
 
 | PR | Repo | Description | Status |
 |----|------|-------------|--------|
-| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add to HACS default integrations list | ❌ Closed — needs investigation |
+| [hacs/default #6130](https://github.com/hacs/default/pull/6130) | `hacs/default` | Adds new integration [jrhubott/adaptive-cover-pro] | 🟠 OPEN — in review queue |
 | [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons | ✅ Resolved — not needed (local brand/ folder) |
 
 No open pull requests on this repo.

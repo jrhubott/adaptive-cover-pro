@@ -99,6 +99,7 @@ from .const import (
     CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
@@ -167,6 +168,15 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 step=0.01,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="m",
+            )
+        ),
+        vol.Optional(CONF_WINDOW_WIDTH, default=100): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=500,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
             )
         ),
     }
@@ -456,6 +466,9 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
 
 WEATHER_OVERRIDE_SCHEMA = vol.Schema(
     {
+        vol.Optional(
+            CONF_WEATHER_BYPASS_AUTO_CONTROL, default=True
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
         ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
@@ -1028,7 +1041,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if config.get(CONF_INVERSE_STATE):
         limit_parts.append("Inverse state")
     if config.get(CONF_INTERP):
-        limit_parts.append("Interpolation on")
+        limit_parts.append("Position calibration on")
     if limit_parts:
         lines.append("")
         lines.append("**Position Limits**")
@@ -1097,6 +1110,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_DISTANCE,
             CONF_WINDOW_DEPTH,
             CONF_SILL_HEIGHT,
+            CONF_WINDOW_WIDTH,
             CONF_LENGTH_AWNING,
             CONF_AWNING_ANGLE,
             CONF_TILT_DEPTH,
@@ -1176,6 +1190,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
     "weather_override": frozenset(
         {
+            CONF_WEATHER_BYPASS_AUTO_CONTROL,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
@@ -1208,6 +1223,27 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_PRESENCE_ENTITY,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+        }
+    ),
+    "glare_zones": frozenset(
+        {
+            CONF_ENABLE_GLARE_ZONES,
+            "glare_zone_1_name",
+            "glare_zone_1_x",
+            "glare_zone_1_y",
+            "glare_zone_1_radius",
+            "glare_zone_2_name",
+            "glare_zone_2_x",
+            "glare_zone_2_y",
+            "glare_zone_2_radius",
+            "glare_zone_3_name",
+            "glare_zone_3_x",
+            "glare_zone_3_y",
+            "glare_zone_3_radius",
+            "glare_zone_4_name",
+            "glare_zone_4_x",
+            "glare_zone_4_y",
+            "glare_zone_4_radius",
         }
     ),
     "weather": frozenset(
@@ -1280,17 +1316,6 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
         vol.Optional(
             CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)
         ): (selector.BooleanSelector()),
-        vol.Optional(CONF_WINDOW_WIDTH, default=opts.get(CONF_WINDOW_WIDTH, 100)): (
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=10,
-                    max=500,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="cm",
-                )
-            )
-        ),
     }
     for i in range(1, 5):
         prefix = f"glare_zone_{i}"
@@ -1940,12 +1965,12 @@ class OptionsFlowHandler(OptionsFlow):
 
         # ── Position & Zones ─────────────────────────────────────────
         menu_options.append("position")
+        if self.options.get(CONF_INTERP):
+            menu_options.append("interp")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
         if self.sensor_type == SensorType.BLIND:
             menu_options.append("glare_zones")
-        if self.options.get(CONF_INTERP):
-            menu_options.append("interp")
 
         # ── Schedule & Automation ────────────────────────────────────
         menu_options.append("automation")
@@ -2212,7 +2237,7 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="sync",
             data_schema=vol.Schema(
                 {
-                    vol.Required("target_entries"): selector.SelectSelector(
+                    vol.Required("target_entries", default=[]): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             multiple=True,
                             options=[
@@ -2266,7 +2291,7 @@ class OptionsFlowHandler(OptionsFlow):
             "sun_tracking": "Sun Tracking",
             "blind_spot": "Blind Spot Configuration",
             "position": "Position Settings",
-            "interp": "Interpolation Values",
+            "interp": "Position Calibration",
             "automation": "Schedule & Timing",
             "manual_override": "Manual Override",
             "force_override": "Force Override",

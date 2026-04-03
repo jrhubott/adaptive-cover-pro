@@ -84,6 +84,7 @@ CONF_WEATHER_IS_WINDY_SENSOR = "weather_is_windy_sensor"
 CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
 CONF_WEATHER_TIMEOUT = "weather_timeout"
+CONF_WEATHER_BYPASS_AUTO_CONTROL = "weather_bypass_auto_control"
 
 
 CONF_DELTA_POSITION = "delta_position"

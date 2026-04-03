@@ -76,7 +76,7 @@
           "sunset_offset": "Afwijking Zonsondergang",
           "sunrise_offset": "Sunrise Offset",
           "inverse_state": "Draai de status om (nodig voor sommige covers die omgekeerde percentages hanteren)",
-          "interp": "Stel aangepaste open/sluit posities in voor jouw Cover, als deze niet volledig functioneert bij 0-100%"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Standaard bekledingspositie als percentage",
@@ -88,7 +88,7 @@
           "sunset_offset": "Verschil (±) vanaf zonsondergang in minuten",
           "sunrise_offset": "Verschil (±) vanaf zonsopkomst in minuten",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "automation": {
@@ -111,7 +111,9 @@
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Wijzig Automatiseringsinstellingen",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -179,7 +181,7 @@
           "irradiance_threshold": "Drempelwaarde voor stralingsintensiteitssensor, boven deze waarde moet schittering worden verminderd"
         },
         "description": "Voeg additionele klimaat configuratie variabelen toe. Weer and Aanwezigheid entiteiten zijn optioneel",
-        "title": "Klimaat instellingen"
+        "title": "Bewerk Klimaatconfiguratie"
       },
       "weather": {
         "data": {
@@ -201,7 +203,7 @@
           "blind_spot_right": "Rechter rand van de schaduwzone",
           "blind_spot_elevation": "Elke waarde gelijk aan of minder wordt beschouwd binnen de schaduwzone. Handig als de zon over het object in de schaduwzone kan schijnen"
         },
-        "title": "Schaduwzone",
+        "title": "Blind Spot",
         "description": "Stel de schaduwzone in voor de afdekking. Deze waarden zijn relatieve graden tot de breedte van het gezichtsveld. Waar 0 de meest linkse positie is, genomen van de linkse parameter van het gezichtsveld."
       },
       "interp": {
@@ -215,7 +217,7 @@
           "interp_list": "Lijst van interpolatiewaarden, waarbij 0 volledig gesloten is en 100 volledig open",
           "interp_list_new": "Aangepast bereik van interpolatiewaarden, waarbij het begin gesloten moet vertegenwoordigen en het einde open"
         },
-        "title": "Bereik Aanpassing",
+        "title": "Position Calibration",
         "description": "Pas de waarden aan waarbij jouw Cover effectief opent of sluit. Ideaal voor Covers die niet volledig openen bij 0% of sluiten bij 100%."
       },
       "device_association": {
@@ -264,7 +266,7 @@
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
-          "interp": "Interpolation",
+          "interp": "Position Calibration",
           "automation": "Wijzig Automatiseringsinstellingen",
           "climate": "Bewerk Klimaatconfiguratie",
           "weather": "Weather Conditions",
@@ -298,7 +300,9 @@
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
           "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Wijzig Automatiseringsinstellingen",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -367,7 +371,7 @@
           "sunset_offset": "Afwijking Zonsondergang",
           "sunrise_offset": "Sunrise Offset",
           "inverse_state": "Draai de status om (nodig voor sommige covers die omgekeerde percentages hanteren)",
-          "interp": "Stel aangepaste open/sluit posities in voor jouw Cover, als deze niet volledig functioneert bij 0-100%"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Standaard bekledingspositie als percentage",
@@ -379,7 +383,7 @@
           "sunset_offset": "Verschil (±) vanaf zonsondergang in minuten",
           "sunrise_offset": "Verschil (±) vanaf zonsopkomst in minuten",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "manual_override": {
@@ -440,7 +444,7 @@
           "temp_high": "Maximale comfortabele temperatuur"
         },
         "description": "Voeg additionele klimaat configuratie variabelen toe. Weer and Aanwezigheid entiteiten zijn optioneel",
-        "title": "Klimaat instellingen"
+        "title": "Bewerk Klimaatconfiguratie"
       },
       "weather": {
         "data": {
@@ -462,7 +466,7 @@
           "blind_spot_right": "Rechter rand van de schaduwzone",
           "blind_spot_elevation": "Elke waarde gelijk aan of minder wordt beschouwd binnen de schaduwzone. Handig als de zon over het object in de schaduwzone kan schijnen"
         },
-        "title": "Schaduwzone",
+        "title": "Blind Spot",
         "description": "Stel de schaduwzone in voor de afdekking. Deze waarden zijn relatieve graden tot de breedte van het gezichtsveld. Waar 0 de meest linkse positie is, genomen van de linkse parameter van het gezichtsveld."
       },
       "interp": {
@@ -476,7 +480,7 @@
           "interp_list": "Lijst van interpolatiewaarden, waarbij 0 volledig gesloten is en 100 volledig open",
           "interp_list_new": "Aangepast bereik van interpolatiewaarden, waarbij het begin gesloten moet vertegenwoordigen en het einde open"
         },
-        "title": "Bereik Aanpassing",
+        "title": "Position Calibration",
         "description": "Pas de waarden aan waarbij jouw Cover effectief opent of sluit. Ideaal voor Covers die niet volledig openen bij 0% of sluiten bij 100%."
       },
       "device": {
@@ -490,10 +494,11 @@
         }
       },
       "sync": {
-        "title": "Copy Settings — Select Targets",
-        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "title": "Copy Settings to Other Covers",
+        "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.\n\n⚠️ Azimuth is always excluded — each cover keeps its own window orientation.",
         "data": {
-          "target_entries": "Target covers"
+          "target_entries": "Target covers",
+          "sync_categories": "Categories to sync"
         }
       },
       "summary": {

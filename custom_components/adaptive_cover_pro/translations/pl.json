@@ -76,7 +76,7 @@
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
@@ -88,7 +88,7 @@
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "automation": {
@@ -111,7 +111,9 @@
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Schedule & Timing",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "manual_override": {
         "title": "Manual Override",
@@ -181,7 +183,7 @@
           "irradiance_threshold": "Irradiance level threshold (when to consider 'sunny'). When sensor reads above this value (W/m²): Sun is present, apply climate strategies. When below: Treat as cloudy, use default position. Typical values: 300-500 W/m² for direct sunlight, 100-200 W/m² for cloudy day. Adjust based on your climate and preference."
         },
         "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
-        "title": "Climate settings"
+        "title": "Climate Configuration"
       },
       "weather": {
         "data": {
@@ -203,7 +205,7 @@
           "blind_spot_right": "Right edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary, must be > left edge). Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 20. This marks where the obstruction ends horizontally. Creates a 'don't track sun here' zone between left and right edges.",
           "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance."
         },
-        "title": "Blind spot configuration",
+        "title": "Blind Spot",
         "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
       },
       "interp": {
@@ -219,7 +221,7 @@
           "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as Custom interpolation list. Used for advanced non-linear calibration. Leave empty for normal operation.",
           "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as List of interpolation. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
-        "title": "Range Adjustment",
+        "title": "Position Calibration",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
       "device_association": {
@@ -268,7 +270,7 @@
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
-          "interp": "Interpolation",
+          "interp": "Position Calibration",
           "automation": "Schedule & Timing",
           "climate": "Climate Configuration",
           "weather": "Weather Conditions",
@@ -302,7 +304,9 @@
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
-        }
+        },
+        "title": "Schedule & Timing",
+        "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
         "title": "Cover Entities",
@@ -371,7 +375,7 @@
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
@@ -383,7 +387,7 @@
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "manual_override": {
@@ -454,7 +458,7 @@
           "irradiance_threshold": "Irradiance level threshold (when to consider 'sunny'). When sensor reads above this value (W/m²): Sun is present, apply climate strategies. When below: Treat as cloudy, use default position. Typical values: 300-500 W/m² for direct sunlight, 100-200 W/m² for cloudy day. Adjust based on your climate and preference."
         },
         "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
-        "title": "Climate settings"
+        "title": "Climate Configuration"
       },
       "weather": {
         "data": {
@@ -476,7 +480,7 @@
           "blind_spot_right": "Right edge of the blind spot zone (horizontal angle in degrees from your FOV left boundary, must be > left edge). Example: If your FOV left is 45° and a tree blocks sun from 10-20° relative to that edge, set this to 20. This marks where the obstruction ends horizontally. Creates a 'don't track sun here' zone between left and right edges.",
           "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance."
         },
-        "title": "Blind spot configuration",
+        "title": "Blind Spot",
         "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
       },
       "interp": {
@@ -492,7 +496,7 @@
           "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as Custom interpolation list. Used for advanced non-linear calibration. Leave empty for normal operation.",
           "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as List of interpolation. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
-        "title": "Range Adjustment",
+        "title": "Position Calibration",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
       "device": {
@@ -506,10 +510,11 @@
         }
       },
       "sync": {
-        "title": "Copy Settings — Select Targets",
-        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "title": "Copy Settings to Other Covers",
+        "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.\n\n⚠️ Azimuth is always excluded — each cover keeps its own window orientation.",
         "data": {
-          "target_entries": "Target covers"
+          "target_entries": "Target covers",
+          "sync_categories": "Categories to sync"
         }
       },
       "summary": {

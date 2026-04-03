@@ -40,7 +40,7 @@ async def async_setup_entry(
 class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
     """Representation of a adaptive cover button."""
 
-    _attr_icon = "mdi:cog-refresh-outline"
+    _attr_translation_key = "reset_manual_override"
 
     def __init__(
         self,

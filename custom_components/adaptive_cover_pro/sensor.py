@@ -974,6 +974,7 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 )
             attrs["trace"] = trace
             attrs["reason"] = result.reason
+            attrs["bypass_auto_control"] = result.bypass_auto_control
 
         diagnostics = self.coordinator.data.diagnostics if self.coordinator.data else {}
         if diagnostics:
