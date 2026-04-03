@@ -2220,7 +2220,7 @@ class OptionsFlowHandler(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        "sync_categories", default=[]
+                        "sync_categories", default=available
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             multiple=True,
