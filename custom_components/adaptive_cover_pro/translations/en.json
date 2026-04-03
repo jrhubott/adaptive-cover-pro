@@ -689,7 +689,7 @@
       },
       "sync": {
         "title": "Copy Settings to Other Covers",
-        "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.",
+        "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.\n\n⚠️ **Azimuth is always excluded** — each cover keeps its own window orientation.",
         "data": {
           "target_entries": "Target covers",
           "sync_categories": "Categories to sync"
@@ -786,7 +786,7 @@
     },
     "sync_categories": {
       "options": {
-        "geometry": "Window Dimensions",
+        "geometry": "Cover Geometry (dimensions, depth, sill height)",
         "sun_tracking": "Sun Tracking (FOV, elevation limits)",
         "blind_spot": "Blind Spot Configuration",
         "position": "Position Settings (defaults, sunset, offsets)",
@@ -796,7 +796,8 @@
         "force_override": "Force Override",
         "motion_override": "Motion Override",
         "weather_override": "Weather Override",
-        "climate": "Climate (temperature, presence, lux, irradiance)",
+        "glare_zones": "Glare Zones",
+        "climate": "Climate Configuration (temperature, presence, lux)",
         "weather": "Weather Conditions"
       }
     }

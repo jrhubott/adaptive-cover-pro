@@ -1110,6 +1110,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_DISTANCE,
             CONF_WINDOW_DEPTH,
             CONF_SILL_HEIGHT,
+            CONF_WINDOW_WIDTH,
             CONF_LENGTH_AWNING,
             CONF_AWNING_ANGLE,
             CONF_TILT_DEPTH,
@@ -1222,6 +1223,27 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_PRESENCE_ENTITY,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+        }
+    ),
+    "glare_zones": frozenset(
+        {
+            CONF_ENABLE_GLARE_ZONES,
+            "glare_zone_1_name",
+            "glare_zone_1_x",
+            "glare_zone_1_y",
+            "glare_zone_1_radius",
+            "glare_zone_2_name",
+            "glare_zone_2_x",
+            "glare_zone_2_y",
+            "glare_zone_2_radius",
+            "glare_zone_3_name",
+            "glare_zone_3_x",
+            "glare_zone_3_y",
+            "glare_zone_3_radius",
+            "glare_zone_4_name",
+            "glare_zone_4_x",
+            "glare_zone_4_y",
+            "glare_zone_4_radius",
         }
     ),
     "weather": frozenset(

@@ -506,10 +506,11 @@
         }
       },
       "sync": {
-        "title": "Copy Settings — Select Targets",
-        "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
+        "title": "Copy Settings to Other Covers",
+        "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.\n\n⚠️ Azimuth is always excluded — each cover keeps its own window orientation.",
         "data": {
-          "target_entries": "Target covers"
+          "target_entries": "Target covers",
+          "sync_categories": "Categories to sync"
         }
       },
       "summary": {
