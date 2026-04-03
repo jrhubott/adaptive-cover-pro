@@ -552,6 +552,8 @@ Always update docs alongside code changes:
 
 **Optional numeric fields:** Use `NumberSelectorMode.SLIDER` (not `BOX`) with `vol.Optional` and no default. BOX mode does not preserve `None` — clearing the field saves `0`. Sliders correctly return `None` when empty. Code consuming the value must check `if value is not None` (not `if value`) to distinguish 0% from unset.
 
+**Position description standard:** When describing cover positions in translations or help text, always use cover-type aware phrasing: `0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended)`. This ensures all cover types (vertical blinds, horizontal awnings, tilt covers) are represented consistently. Do not use type-specific terms alone (e.g., "fully retracted" or "fully lowered") — always include both blind and awning context.
+
 ### Diagnostic Sensor Guidelines
 
 When creating diagnostic sensors:

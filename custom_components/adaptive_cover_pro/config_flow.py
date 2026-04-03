@@ -2247,7 +2247,7 @@ class OptionsFlowHandler(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        "sync_categories", default=available
+                        "sync_categories", default=[]
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             multiple=True,
@@ -2307,7 +2307,7 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(  # type: ignore[return-value]
             step_id="sync_confirm",
             data_schema=vol.Schema(
-                {vol.Required("confirm", default=True): selector.BooleanSelector()}
+                {vol.Required("confirm", default=False): selector.BooleanSelector()}
             ),
             description_placeholders={
                 "entries_summary": "\n".join(target_titles) or "(none selected)",
