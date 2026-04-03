@@ -8,10 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **At the start of every new session, read `HANDOFF.md` before doing anything else.** It contains:
 - Current version and branch state
-- Test suite status and coverage summary
+- What the last session did (brief summary)
+- Test suite status (count and pass/fail)
 - Open GitHub issues (backlog)
-- Key gotchas and architectural reminders
-- Release checklist
+- Pending upstream PRs
 
 ```bash
 # Quick orientation at session start
@@ -22,20 +22,26 @@ git log --oneline -5
 
 ## HANDOFF.md — Keeping It Current
 
-`HANDOFF.md` is the project's living status document. Update it whenever any of the following change:
+`HANDOFF.md` is a **lean, forward-looking handoff note** — not a changelog or architecture reference. Its only job is to tell the next session what it needs to pick up where the last one left off.
 
-| Event | What to update in HANDOFF.md |
-|-------|------------------------------|
-| New release cut | Current Version, Recent Releases table |
-| Issue opened or closed | Open Issues table |
-| PR merged | Recent Releases, remove from open PRs if listed |
-| Test count or coverage changes | Tests section |
-| New architectural pattern established | Key Patterns or Known Gotchas section |
-| Bug fixed that was a known gotcha | Remove or update that gotcha |
+**What belongs in HANDOFF.md:**
+- Current version, branch, and clean/dirty state
+- One-paragraph summary of what the last session did
+- Test count (pass/fail only — no per-module breakdown)
+- Open GitHub issues (title + one-line note)
+- Pending upstream PRs and their status
+- Any work in progress or gotchas the next session must know
+
+**What does NOT belong in HANDOFF.md:**
+- Architecture details → those live in `CLAUDE.md`
+- Release history → those live in `release_notes/`
+- Per-module coverage tables → too much noise
+- Recently closed issues → not useful to the next session
+- Key patterns and handler templates → those live in `CLAUDE.md`
 
 **When to update:** At the end of any session where code was merged, a release was cut, or an issue was opened/closed. Do not update mid-feature-branch — wait until changes land on `main`.
 
-**How to update:** Edit `HANDOFF.md` directly with the Write or Edit tool. Keep entries concise — it is a quick-reference document, not a changelog.
+**How to update:** Rewrite the whole file — it should always reflect the current moment, not accumulate history. Keep it under ~40 lines.
 
 ## Project Overview
 
