@@ -1037,7 +1037,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if config.get(CONF_INVERSE_STATE):
         limit_parts.append("Inverse state")
     if config.get(CONF_INTERP):
-        limit_parts.append("Interpolation on")
+        limit_parts.append("Position calibration on")
     if limit_parts:
         lines.append("")
         lines.append("**Position Limits**")
@@ -1938,12 +1938,12 @@ class OptionsFlowHandler(OptionsFlow):
 
         # ── Position & Zones ─────────────────────────────────────────
         menu_options.append("position")
+        if self.options.get(CONF_INTERP):
+            menu_options.append("interp")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
         if self.sensor_type == SensorType.BLIND:
             menu_options.append("glare_zones")
-        if self.options.get(CONF_INTERP):
-            menu_options.append("interp")
 
         # ── Schedule & Automation ────────────────────────────────────
         menu_options.append("automation")
@@ -2264,7 +2264,7 @@ class OptionsFlowHandler(OptionsFlow):
             "sun_tracking": "Sun Tracking",
             "blind_spot": "Blind Spot Configuration",
             "position": "Position Settings",
-            "interp": "Interpolation Values",
+            "interp": "Position Calibration",
             "automation": "Schedule & Timing",
             "manual_override": "Manual Override",
             "force_override": "Force Override",

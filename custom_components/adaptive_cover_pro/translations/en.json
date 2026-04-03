@@ -84,7 +84,7 @@
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
@@ -96,7 +96,7 @@
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "automation": {
@@ -358,7 +358,7 @@
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
-          "interp": "Interpolation",
+          "interp": "Position Calibration",
           "automation": "Schedule & Timing",
           "climate": "Climate Configuration",
           "weather": "Weather Conditions",
@@ -463,7 +463,7 @@
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
-          "interp": "Set custom open/close positions for My Cover, if it doesn't fully operate at 0-100%"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Cover position when sun is not in front of window (0-100%). 0% = Fully closed/lowered (maximum privacy/shade), 50% = Half open (balanced light and privacy), 100% = Fully open/raised (maximum light). This is the 'rest position' used when sun tracking is not active (sun is behind the window, blocked by obstacles, or outside tracking hours).",
@@ -475,7 +475,7 @@
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "manual_override": {
@@ -775,7 +775,7 @@
         "sun_tracking": "Sun Tracking (FOV, elevation limits)",
         "blind_spot": "Blind Spot Configuration",
         "position": "Position Settings (defaults, sunset, offsets)",
-        "interp": "Interpolation Values",
+        "interp": "Position Calibration",
         "automation": "Schedule & Timing (deltas, start/end times)",
         "manual_override": "Manual Override",
         "force_override": "Force Override",

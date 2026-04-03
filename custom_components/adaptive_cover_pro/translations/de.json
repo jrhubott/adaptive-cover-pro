@@ -76,7 +76,7 @@
           "sunset_offset": "Versatz zum Sonnenuntergang",
           "sunrise_offset": "Versatz zum Sonnenaufgang",
           "inverse_state": "Status umkehren (erforderlich für einige Abdeckungen, die nicht den HA-Richtlinien folgen)",
-          "interp": "Benutzerdefinierte Öffnungs-/Schließpositionen für die Abdeckung festlegen, falls diese nicht vollständig zwischen 0-100 % arbeitet"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Standardposition der Abdeckung in Prozent",
@@ -88,7 +88,7 @@
           "sunset_offset": "Versatz (±) zur Sonnenuntergangszeit in Minuten",
           "sunrise_offset": "Versatz (±) zur Sonnenaufgangszeit in Minuten",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "automation": {
@@ -266,7 +266,7 @@
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
-          "interp": "Interpolation",
+          "interp": "Position Calibration",
           "automation": "Automatisierungskonfiguration ändern",
           "climate": "Klimakonfiguration bearbeiten",
           "weather": "Weather Conditions",
@@ -381,7 +381,7 @@
           "sunset_offset": "Versatz (+/-) zur Sonnenuntergangszeit in Minuten",
           "sunrise_offset": "Versatz (+/-) zur Sonnenaufgangszeit in Minuten",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "manual_override": {

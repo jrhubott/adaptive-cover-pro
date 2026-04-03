@@ -76,7 +76,7 @@
           "sunset_offset": "Posun západu slnka",
           "sunrise_offset": "Posun východu slnka",
           "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Predvolená poloha krytu v percentách",
@@ -88,7 +88,7 @@
           "sunset_offset": "Posun (±) od času západu slnka v minútach",
           "sunrise_offset": "Posun (±) od času východu slnka v minútach",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "automation": {
@@ -266,7 +266,7 @@
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
-          "interp": "Interpolation",
+          "interp": "Position Calibration",
           "automation": "Upravte konfiguráciu automatizácie",
           "climate": "Upraviť konfiguráciu klímy",
           "weather": "Weather Conditions",
@@ -369,7 +369,7 @@
           "sunset_offset": "Posun západu slnka",
           "sunrise_offset": "Posun východu slnka",
           "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
-          "interp": "Nastavte vlastné pozície otvorenia/zatvorenia pre Môj Kryt, ak nefunguje úplne pri 0-100 %"
+          "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
           "default_percentage": "Predvolená poloha krytu v percentách",
@@ -381,7 +381,7 @@
           "sunset_offset": "Posun (±) od času západu slnka v minútach",
           "sunrise_offset": "Posun (±) od času východu slnka v minútach",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping (advanced users only). Maps calculated positions to different actual positions using a curve. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation. Lists must have equal length."
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
       "manual_override": {
