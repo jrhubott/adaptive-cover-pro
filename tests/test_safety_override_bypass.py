@@ -106,25 +106,27 @@ class TestForceOverrideBypass:
 
 
 class TestWeatherOverrideBypass:
-    """WeatherOverrideHandler must set bypass_auto_control=True."""
+    """WeatherOverrideHandler with bypass enabled (default True)."""
 
     handler = WeatherOverrideHandler()
 
-    def test_bypass_flag_set(self) -> None:
-        """Result must have bypass_auto_control=True when weather override is active."""
+    def test_bypass_flag_set_when_enabled(self) -> None:
+        """Result has bypass_auto_control=True when weather_bypass_auto_control is True."""
         snapshot = make_snapshot(
             weather_override_active=True,
             weather_override_position=0,
+            weather_bypass_auto_control=True,
         )
         result = self.handler.evaluate(snapshot)
         assert result is not None
         assert result.bypass_auto_control is True
 
-    def test_reason_includes_bypass_text(self) -> None:
-        """Reason string must include '[bypasses automatic control]'."""
+    def test_reason_includes_bypass_text_when_enabled(self) -> None:
+        """Reason string includes '[bypasses automatic control]' when bypass is enabled."""
         snapshot = make_snapshot(
             weather_override_active=True,
             weather_override_position=0,
+            weather_bypass_auto_control=True,
         )
         result = self.handler.evaluate(snapshot)
         assert result is not None
@@ -141,10 +143,117 @@ class TestWeatherOverrideBypass:
         snapshot = make_snapshot(
             weather_override_active=True,
             weather_override_position=10,
+            weather_bypass_auto_control=True,
         )
         result = self.handler.evaluate(snapshot)
         assert result is not None
         assert result.position == 10
+
+
+class TestWeatherOverrideBypassDisabled:
+    """WeatherOverrideHandler with bypass explicitly disabled."""
+
+    handler = WeatherOverrideHandler()
+
+    def test_bypass_flag_false_when_disabled(self) -> None:
+        """Result has bypass_auto_control=False when weather_bypass_auto_control is False."""
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=0,
+            weather_bypass_auto_control=False,
+        )
+        result = self.handler.evaluate(snapshot)
+        assert result is not None
+        assert result.bypass_auto_control is False
+
+    def test_reason_excludes_bypass_text_when_disabled(self) -> None:
+        """Reason string must NOT include '[bypasses automatic control]' when disabled."""
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=0,
+            weather_bypass_auto_control=False,
+        )
+        result = self.handler.evaluate(snapshot)
+        assert result is not None
+        assert "[bypasses automatic control]" not in result.reason
+
+    def test_still_overrides_position_when_disabled(self) -> None:
+        """Weather override still moves covers to the configured position when bypass is disabled.
+
+        The bypass flag only controls whether commands are sent with auto-control OFF.
+        The override itself (position + control_method) is always returned when conditions fire.
+        """
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=15,
+            weather_bypass_auto_control=False,
+        )
+        result = self.handler.evaluate(snapshot)
+        assert result is not None
+        assert result.position == 15
+        assert result.control_method.value == "weather_override"
+
+    def test_control_method_unchanged_when_disabled(self) -> None:
+        """ControlMethod is WEATHER regardless of bypass setting."""
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=0,
+            weather_bypass_auto_control=False,
+        )
+        result = self.handler.evaluate(snapshot)
+        assert result is not None
+        from custom_components.adaptive_cover_pro.enums import ControlMethod
+
+        assert result.control_method == ControlMethod.WEATHER
+
+
+class TestWeatherBypassAutoControlDefault:
+    """PipelineSnapshot.weather_bypass_auto_control defaults to True."""
+
+    def test_snapshot_default_is_true(self) -> None:
+        """weather_bypass_auto_control defaults to True — safe-by-default for new installs."""
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=0,
+            # weather_bypass_auto_control intentionally omitted — relies on default
+        )
+        assert snapshot.weather_bypass_auto_control is True
+
+    def test_registry_propagates_bypass_false(self) -> None:
+        """Registry result carries bypass_auto_control=False when bypass is disabled."""
+        from custom_components.adaptive_cover_pro.pipeline.registry import (
+            PipelineRegistry,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.handlers import (
+            DefaultHandler,
+        )
+
+        registry = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()])
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=0,
+            weather_bypass_auto_control=False,
+        )
+        result = registry.evaluate(snapshot)
+        assert result.bypass_auto_control is False
+
+    def test_registry_propagates_bypass_true(self) -> None:
+        """Registry result carries bypass_auto_control=True when bypass is enabled."""
+        from custom_components.adaptive_cover_pro.pipeline.registry import (
+            PipelineRegistry,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.handlers import (
+            DefaultHandler,
+        )
+
+        registry = PipelineRegistry([WeatherOverrideHandler(), DefaultHandler()])
+        snapshot = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=0,
+            weather_bypass_auto_control=True,
+        )
+        result = registry.evaluate(snapshot)
+        assert result.bypass_auto_control is True
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +414,7 @@ class TestDecisionTraceContent:
         snapshot = make_snapshot(
             weather_override_active=True,
             weather_override_position=0,
+            weather_bypass_auto_control=True,
         )
         result = registry.evaluate(snapshot)
         matched_steps = [s for s in result.decision_trace if s.matched]

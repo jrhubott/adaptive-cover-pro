@@ -165,8 +165,9 @@
       },
       "weather_override": {
         "title": "Weather Override",
-        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored. ⚡ Weather override remains active even when the Automatic Control switch is off — covers will still be retracted when weather conditions are triggered.",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
         "data": {
+          "weather_bypass_auto_control": "Active when Automatic Control is off",
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
           "weather_wind_speed_threshold": "Wind speed threshold",
@@ -180,6 +181,7 @@
           "weather_timeout": "Clear delay"
         },
         "data_description": {
+          "weather_bypass_auto_control": "When enabled, weather override will still move covers to the configured position even when the Automatic Control switch is turned off. This ensures wind, rain, and severe weather protection is always active regardless of the automation state. Disable this only if you want weather override to follow the Automatic Control switch.",
           "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
           "weather_wind_speed_threshold": "Wind speed threshold that activates the override. Unit must match your sensor (km/h, m/s, or mph — no conversion is applied).",
@@ -524,8 +526,9 @@
       },
       "weather_override": {
         "title": "Weather Override",
-        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored. ⚡ Weather override remains active even when the Automatic Control switch is off — covers will still be retracted when weather conditions are triggered.",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
         "data": {
+          "weather_bypass_auto_control": "Active when Automatic Control is off",
           "weather_wind_speed_sensor": "Wind speed sensor",
           "weather_wind_direction_sensor": "Wind direction sensor (optional)",
           "weather_wind_speed_threshold": "Wind speed threshold",
@@ -539,6 +542,7 @@
           "weather_timeout": "Clear delay"
         },
         "data_description": {
+          "weather_bypass_auto_control": "When enabled, weather override will still move covers to the configured position even when the Automatic Control switch is turned off. This ensures wind, rain, and severe weather protection is always active regardless of the automation state. Disable this only if you want weather override to follow the Automatic Control switch.",
           "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed.",
           "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
           "weather_wind_speed_threshold": "Wind speed threshold that activates the override. Unit must match your sensor (km/h, m/s, or mph — no conversion is applied).",

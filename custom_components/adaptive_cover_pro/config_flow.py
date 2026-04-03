@@ -99,6 +99,7 @@ from .const import (
     CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
@@ -465,6 +466,9 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
 
 WEATHER_OVERRIDE_SCHEMA = vol.Schema(
     {
+        vol.Optional(
+            CONF_WEATHER_BYPASS_AUTO_CONTROL, default=True
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
         ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
@@ -1185,6 +1189,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
     "weather_override": frozenset(
         {
+            CONF_WEATHER_BYPASS_AUTO_CONTROL,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,

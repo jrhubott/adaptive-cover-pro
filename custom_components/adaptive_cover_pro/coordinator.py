@@ -64,6 +64,7 @@ from .const import (
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_TIMEOUT,
+    CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -702,6 +703,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
+            weather_bypass_auto_control=options.get(
+                CONF_WEATHER_BYPASS_AUTO_CONTROL, True
+            ),
             glare_zones=glare_zones_cfg,
             active_zone_names=frozenset(active_zone_names),
         )
@@ -1302,7 +1306,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Outside time window — pipeline did not run; check safety overrides directly
             if self.is_force_override_active:
                 return self.config_entry.options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
-            if self.is_weather_override_active:
+            if self.is_weather_override_active and self.config_entry.options.get(
+                CONF_WEATHER_BYPASS_AUTO_CONTROL, True
+            ):
                 return self.config_entry.options.get(CONF_WEATHER_OVERRIDE_POSITION, 0)
         if self.is_motion_timeout_active:
             return self.default_state

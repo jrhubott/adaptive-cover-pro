@@ -68,6 +68,10 @@ class PipelineSnapshot:
     glare_zones: GlareZonesConfig | None
     active_zone_names: frozenset[str]
 
+    # When True (default), weather override sends commands even if automatic_control is OFF.
+    # Users can disable this if they want weather override to respect the auto-control toggle.
+    weather_bypass_auto_control: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Output types
