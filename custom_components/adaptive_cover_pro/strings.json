@@ -302,7 +302,7 @@
           "weather_override": "Weather Override",
           "device": "Device Association",
           "summary": "Configuration Summary",
-          "sync": "Sync Settings to Other Covers",
+          "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
         }
       },

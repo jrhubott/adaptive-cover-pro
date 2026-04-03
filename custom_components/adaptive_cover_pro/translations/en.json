@@ -368,7 +368,7 @@
           "weather_override": "Weather Override",
           "device": "Device Association",
           "summary": "Configuration Summary",
-          "sync": "Sync Settings to Other Covers",
+          "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
         }
       },
@@ -680,7 +680,7 @@
         }
       },
       "sync": {
-        "title": "Sync Settings",
+        "title": "Copy Settings to Other Covers",
         "description": "Choose which covers to copy settings to and which categories to sync. Only selected categories will be overwritten on target covers.",
         "data": {
           "target_entries": "Target covers",
@@ -692,7 +692,7 @@
         "description": "{summary}"
       },
       "sync_confirm": {
-        "title": "Sync Settings — Confirm",
+        "title": "Copy Settings — Confirm",
         "description": "The following categories will be overwritten:\n\n{categories_summary}\n\nOn these covers:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
         "data": {
           "confirm": "Confirm sync"

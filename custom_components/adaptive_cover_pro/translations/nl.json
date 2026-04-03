@@ -274,7 +274,7 @@
           "weather_override": "Weather Override",
           "device": "Device Association",
           "summary": "Configuration Summary",
-          "sync": "Sync settings to other covers",
+          "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
         }
       },
@@ -490,7 +490,7 @@
         }
       },
       "sync": {
-        "title": "Sync Settings — Select Targets",
+        "title": "Copy Settings — Select Targets",
         "description": "Choose which covers to sync settings to. All shared settings (dimensions, automation, climate, etc.) will be overwritten on the selected covers.",
         "data": {
           "target_entries": "Target covers"
@@ -501,7 +501,7 @@
         "description": "{summary}"
       },
       "sync_confirm": {
-        "title": "Sync Settings — Confirm",
+        "title": "Copy Settings — Confirm",
         "description": "The following covers will have their shared settings overwritten:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
         "data": {
           "confirm": "Confirm sync"
