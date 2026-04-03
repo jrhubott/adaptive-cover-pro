@@ -447,7 +447,7 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
             selector.EntitySelectorConfig(
                 domain=["binary_sensor"],
                 multiple=True,
-                device_class=["motion", "occupancy"],
+                device_class=["motion", "occupancy", "presence"],
             )
         ),
         vol.Optional(

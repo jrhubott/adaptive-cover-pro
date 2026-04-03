@@ -101,6 +101,15 @@ class MotionManager:
 
     # --- Motion event handling ---
 
+    def set_no_motion(self) -> None:
+        """Immediately activate the no-motion state without waiting for a timeout.
+
+        Used at startup when all sensors are already off so the feature does not
+        stay stuck in ``waiting_for_data`` until a sensor first turns on then off.
+        """
+        self.cancel_motion_timeout()
+        self._motion_timeout_active = True
+
     def record_motion_detected(self) -> None:
         """Record that motion was detected right now.
 
