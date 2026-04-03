@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..enums import ClimateStrategy, ControlMethod
 
@@ -101,6 +101,7 @@ class PipelineResult:
     # Optional climate diagnostics set by ClimateHandler
     climate_state: int | None = None
     climate_strategy: ClimateStrategy | None = None
+    climate_data: Any = None  # ClimateCoverData | None — avoids circular import
 
     # When True, this result is applied even when automatic_control is OFF.
     # Set by safety handlers (ForceOverrideHandler, WeatherOverrideHandler) so

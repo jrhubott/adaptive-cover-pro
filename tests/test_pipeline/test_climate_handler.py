@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
+    ClimateCoverData,
     ClimateHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
@@ -199,6 +200,47 @@ class TestClimateHandlerMetadata:
     def test_name(self) -> None:
         """ClimateHandler name is 'climate'."""
         assert ClimateHandler.name == "climate"
+
+    def test_climate_data_populated_on_result(self) -> None:
+        """PipelineResult.climate_data is a ClimateCoverData when ClimateHandler fires."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0),
+            climate_options=_make_options(temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.climate_data is not None
+        assert isinstance(result.climate_data, ClimateCoverData)
+
+    def test_climate_data_reflects_readings(self) -> None:
+        """climate_data on result carries the actual sensor readings."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=30.0,
+                is_presence=True,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        cd = result.climate_data
+        assert cd is not None
+        assert cd.is_summer is True
+        assert cd.is_presence is True
+        assert cd.is_sunny is True
+
+    def test_climate_data_none_when_handler_skipped(self) -> None:
+        """climate_data is None when ClimateHandler does not fire (mode off)."""
+        snap = make_snapshot(climate_mode_enabled=False)
+        result = self.handler.evaluate(snap)
+        assert result is None  # handler returns None — no PipelineResult at all
 
 
 class TestWinterInsulation:

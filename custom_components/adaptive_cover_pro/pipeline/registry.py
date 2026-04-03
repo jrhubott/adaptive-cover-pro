@@ -52,8 +52,10 @@ class PipelineRegistry:
                     control_method=result.control_method,
                     reason=result.reason,
                     decision_trace=trace,
+                    tilt=result.tilt,
                     climate_state=result.climate_state,
                     climate_strategy=result.climate_strategy,
+                    climate_data=result.climate_data,
                     bypass_auto_control=result.bypass_auto_control,
                 )
 
