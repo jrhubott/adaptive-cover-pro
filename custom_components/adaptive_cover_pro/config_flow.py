@@ -2210,7 +2210,7 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="sync",
             data_schema=vol.Schema(
                 {
-                    vol.Required("target_entries"): selector.SelectSelector(
+                    vol.Required("target_entries", default=[]): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             multiple=True,
                             options=[
@@ -2220,7 +2220,7 @@ class OptionsFlowHandler(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        "sync_categories", default=available
+                        "sync_categories", default=[]
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             multiple=True,
