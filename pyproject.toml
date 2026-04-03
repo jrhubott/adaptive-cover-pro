@@ -6,6 +6,7 @@ classifiers = [
   "Intended Audience :: Developers",
   "Natural Language :: English",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3",
 ]
 description = "Adaptive Cover Pro"
@@ -21,7 +22,7 @@ version = "2.0.2"
 
 [tool.poetry.dependencies]
 homeassistant = ">=2025.11.0"
-python = "^3.11"
+python = "^3.12"
 
 [tool.poetry.group.dev.dependencies]
 hass-nabucasa = "0.75.1"
