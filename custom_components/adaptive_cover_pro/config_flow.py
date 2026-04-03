@@ -169,6 +169,15 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 unit_of_measurement="m",
             )
         ),
+        vol.Optional(CONF_WINDOW_WIDTH, default=100): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=500,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
+            )
+        ),
     }
 )
 
@@ -1280,17 +1289,6 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
         vol.Optional(
             CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)
         ): (selector.BooleanSelector()),
-        vol.Optional(CONF_WINDOW_WIDTH, default=opts.get(CONF_WINDOW_WIDTH, 100)): (
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=10,
-                    max=500,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="cm",
-                )
-            )
-        ),
     }
     for i in range(1, 5):
         prefix = f"glare_zone_{i}"
