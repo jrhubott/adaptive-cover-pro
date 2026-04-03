@@ -96,7 +96,7 @@ Only **1 issue remains open:**
 
 | PR | Repo | Description | Status |
 |----|------|-------------|--------|
-| [hacs/default #6128](https://github.com/hacs/default/pull/6128) | `hacs/default` | Add to HACS default integrations list | ❌ Closed — needs investigation |
+| [hacs/default #6130](https://github.com/hacs/default/pull/6130) | `hacs/default` | Adds new integration [jrhubott/adaptive-cover-pro] | 🟠 OPEN — in review queue |
 | [home-assistant/brands #9957](https://github.com/home-assistant/brands/pull/9957) | `home-assistant/brands` | Add brand icons | ✅ Resolved — not needed (local brand/ folder) |
 
 No open pull requests on this repo.
