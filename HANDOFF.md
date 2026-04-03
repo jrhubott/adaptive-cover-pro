@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-03
-**Current Version:** v2.12.0
+**Current Version:** v2.13.0
 **Branch:** `main` (clean)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -35,7 +35,7 @@ The integration was fully rewritten with a layered architecture. The pipeline no
 - `GlareZoneHandler` (priority 45) — glare zone protection
 - `WeatherHandler` (priority 90) — wind/rain/severe weather handling
 
-**Handlers (priority order) — v2.12.0:**
+**Handlers (priority order) — v2.13.0:**
 ```
 force_override(100) > weather(90) > motion_timeout(80) > manual_override(70) > 
 cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
@@ -43,7 +43,7 @@ cloud_suppression(60) > climate(50) > glare_zone(45) > solar(40) > default(0)
 
 ### Tests
 
-981 passing, 0 failing.
+1011 passing, 0 failing.
 Run: `venv/bin/python -m pytest tests/ -v`
 
 | Module | Coverage |
@@ -69,6 +69,7 @@ Run: `venv/bin/python -m pytest tests/ -v`
 
 | Version | Highlights |
 |---------|-----------|
+| v2.13.0 | Safety overrides bypass Automatic Control (Force Override always, Weather Override configurable). Config flow polish: Position Calibration renamed/moved, menu labels aligned, copy dialog pre-selection fix, sync categories improved. Window Width moved to Cover Geometry. Self-explanatory entity icons (Issue #100). 1011 tests. |
 | v2.12.0 | Glare Zones (Issue #64): 4 named floor zones per blind with per-zone switches & binary sensors. Winter Insulation Mode (Issue #29): close non-sun covers in winter for heat retention. Climate accuracy fix (Issue #71): irradiance/lux/weather now suppress glare in summer. Override priority visualization in config summary. Split override config screens. 981 tests. |
 | v2.11.0 | Cloud coverage sensor support (Issue #94): percentage-based sensor as fourth OR signal for cloud suppression; CloudSuppressionHandler now registered in pipeline at priority 60. |
 | v2.10.0 | Sync category selection, duplicate cover flow, remove legacy import dead code. |
@@ -95,7 +96,7 @@ Only **1 issue remains open:**
 **Recently Closed:**
 | # | Title | Resolution |
 |---|-------|------------|
-| [#100](https://github.com/jrhubott/adaptive-cover/issues/100) | Self-explanatory icons for switch entities | ✅ Fixed in PR #101 — all entities now have semantic icons via `icons.json` |
+| [#100](https://github.com/jrhubott/adaptive-cover/issues/100) | Self-explanatory icons for switch entities | ✅ Fixed in v2.13.0 (PR #101) — all entities now have semantic icons via `icons.json` |
 
 ## Pending Upstream PRs
 
@@ -131,4 +132,4 @@ No open pull requests on this repo.
 3. Implement `evaluate(snapshot)` → return `PipelineResult` or `None`
 4. Register in `pipeline/handlers/__init__.py` imports and in coordinator
 
-**Testing:** 854 tests cover all 9 handlers with full condition and computation coverage (100% pipeline module).
+**Testing:** 1011 tests cover all 9 handlers with full condition and computation coverage (100% pipeline module).
