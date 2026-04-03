@@ -1,6 +1,16 @@
 HACS
 
-- Monitor hacs/default#6130 — submission in review queue, waiting for HACS team review
+- ✅ PR #6130 - HACS Default Integration Submission
+  - Status: OPEN, in review queue
+  - Created: 2026-03-10 16:14:36Z
+  - Branch: hacs/default:master ← add-adaptive-cover-pro
+  - Changes: Added jrhubott/adaptive-cover-pro to integrations file
+  - Label: New default repository
+  - hacs-bot comment posted: "submission in review queue"
+  - Processing: oldest-first queue, wait for HACS team review
+  - Current version: v2.12.0
+  - Related: Failed attempts #6128, #6129 (both instant rejected)
+  - Action: WAIT - do not comment or create new PRs
 
 Testing
 
