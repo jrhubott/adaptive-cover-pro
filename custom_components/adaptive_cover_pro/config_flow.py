@@ -997,9 +997,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         timing_str = (
             " ".join(timing_parts) if timing_parts else "Active during daylight"
         )
-        if sunset_pos is not None:
-            timing_str += f". After end time/sunset → {sunset_pos}%"
         lines.append(f"🕒 {timing_str}.")
+        if sunset_pos is not None:
+            lines.append(f"🌅 After end time/sunset → {sunset_pos}%.")
 
     # Blind spot
     if config.get(CONF_ENABLE_BLIND_SPOT):
