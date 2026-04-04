@@ -548,14 +548,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._motion_mgr.cancel_motion_timeout()
 
     def _check_initial_motion_state(self) -> None:
-        """Set no-motion state immediately if all sensors are off at startup.
+        """Initialize motion state from current sensor readings at startup/reload.
 
-        Prevents the Motion Status sensor from showing ``waiting_for_data``
-        indefinitely when sensors are already off when HA starts.
+        Reads each configured motion sensor and sets the appropriate state so
+        the Motion Status sensor reflects reality immediately instead of showing
+        ``waiting_for_data`` until the first sensor state change event arrives.
+
+        - Any sensor **on**  → record_motion_detected() sets last_motion_time
+          so the sensor shows ``motion_detected``.
+        - All sensors **off** → set_no_motion() marks the timeout active so
+          the sensor shows ``no_motion``.
         """
         if not self.config_entry.options.get(CONF_MOTION_SENSORS):
             return
-        if not self.is_motion_detected:
+        if self.is_motion_detected:
+            self._motion_mgr.record_motion_detected()
+        else:
             self._motion_mgr.set_no_motion()
 
     def _start_weather_timeout(self) -> None:
