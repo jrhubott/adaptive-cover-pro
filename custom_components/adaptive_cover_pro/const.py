@@ -115,9 +115,9 @@ STARTUP_GRACE_PERIOD_SECONDS = (
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection
 
 # Weather override constants
-DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = 50.0  # km/h (threshold unit must match sensor)
+DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = 50.0  # threshold unit must match sensor (no conversion applied)
 DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE = 45  # degrees each side of window azimuth
-DEFAULT_WEATHER_RAIN_THRESHOLD = 1.0  # mm/h
+DEFAULT_WEATHER_RAIN_THRESHOLD = 1.0  # threshold unit must match sensor (no conversion applied)
 DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after conditions clear
 
 # Cloud coverage constants

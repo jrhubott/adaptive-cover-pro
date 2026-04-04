@@ -484,7 +484,7 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 max=200,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="km/h",
+
             )
         ),
         vol.Optional(
@@ -510,7 +510,7 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 max=100,
                 step=0.5,
                 mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="mm/h",
+
             )
         ),
         vol.Optional(
@@ -839,9 +839,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
         if wind_sensor and wind_thresh is not None:
-            wx_parts.append(f"wind > {wind_thresh} km/h")
+            wx_parts.append(f"wind > {wind_thresh}")
         if rain_sensor and rain_thresh is not None:
-            wx_parts.append(f"rain > {rain_thresh} mm/h")
+            wx_parts.append(f"rain > {rain_thresh}")
         if is_rain:
             wx_parts.append("is-raining")
         if is_wind:
