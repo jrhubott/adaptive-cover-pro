@@ -9,11 +9,13 @@
 
 ---
 
-**Work in progress:** Feature branch `feature/true-sunset-sunrise-default-position` — True astronomical sunset/sunrise default position refactor. See plan steps below. Not yet merged to main.
+**Work in progress:**
+- `feature/true-sunset-sunrise-default-position` — True astronomical sunset/sunrise default position refactor. Not yet merged to main.
+- `feature/pipeline-consolidation-refactor` — Pipeline logic consolidation & deduplication (branched from above). Not yet merged.
 
 ## Tests
 
-**1061 passing, 0 failing** (feature branch — +44 new tests for sunset/default logic).
+**1083 passing, 0 failing** (+22 new tests for pipeline helpers).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open Issues
@@ -27,6 +29,10 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 - **`PipelineResult.tilt` not copied in registry (fixed v2.13.1):** `PipelineRegistry.evaluate()` now copies `tilt` alongside `climate_data`. Before v2.13.1, handler-set `tilt` values were silently dropped (only mattered for Issue #33 dual-axis).
 - **`cover.default` property removed:** `AdaptiveGeneralCover` and `SunGeometry` no longer expose `.default`. Any code accessing it will get `AttributeError` immediately. Use `snapshot.default_position` in pipeline handlers; use `compute_effective_default()` elsewhere.
 - **Pipeline always runs:** Even outside the start_time/end_time window the pipeline executes. The time-window gate is in `CoverCommandService.apply_position()` (the `in_time_window` check), not in the pipeline.
+- **`NormalCoverState` is test-only:** `NormalCoverState` in `calculation.py` is no longer used by production code (coordinator stores `_cover_data` directly). It remains for backward compat with existing tests. Do not re-introduce it into coordinator logic.
+- **`ClimateCoverState` takes a `PipelineSnapshot`:** Constructor changed from `(cover, climate_data, default_position=X)` to `(snapshot, climate_data)`. Use `make_snapshot_for_cover(cover, h_def)` from `tests/conftest.py` in tests.
+- **Pipeline helpers are the canonical position helpers:** All handlers and `ClimateCoverState` use `pipeline/helpers.py` — `compute_solar_position()`, `compute_default_position()`, `apply_snapshot_limits()`, `compute_raw_calculated_position()`. Do not inline these patterns in new handlers.
+- **`DiagnosticContext` uses `cover` + `pipeline_result`:** Old fields (`normal_cover_state`, `raw_calculated_position`, `climate_state`, `climate_data`, `climate_strategy`, `control_method`, `is_force_override_active`, etc.) are gone. Build a `PipelineResult` and pass it directly.
 
 ## Recent Releases
 
