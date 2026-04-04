@@ -110,17 +110,28 @@ class MotionManager:
         self.cancel_motion_timeout()
         self._motion_timeout_active = True
 
-    def record_motion_detected(self) -> None:
+    def record_motion_detected(self) -> bool:
         """Record that motion was detected right now.
 
         Updates last_motion_time, cancels any running timeout task, and
         clears the active flag so covers resume automatic sun positioning.
-        The caller is responsible for calling async_refresh if needed.
+
+        Returns:
+            True if a timeout was active (expired) or pending (task still
+            running), indicating the coordinator should call async_refresh
+            to resume automatic sun positioning.  False when motion was
+            already the current state (no refresh needed).
 
         """
+        had_pending = (
+            self._motion_timeout_task is not None
+            and not self._motion_timeout_task.done()
+        )
+        had_active = self._motion_timeout_active
         self.cancel_motion_timeout()
         self._last_motion_time = dt.datetime.now().timestamp()
         self._motion_timeout_active = False
+        return had_active or had_pending
 
     # --- Timeout management ---
 
