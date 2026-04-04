@@ -85,13 +85,13 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
         await self.coordinator.async_refresh()
 
         # Send the fresh pipeline position to every reset cover.
-        # Using the standard context means all normal gates apply (auto_control,
-        # delta, time threshold) except manual_override which is already cleared.
-        # force=True is not needed here because the cover was manually moved
-        # away from the calculated position, so the delta will naturally be large.
+        # force=True bypasses all gate checks (delta, time threshold, auto_control).
+        # This is required because the cover's last_updated timestamp was set when
+        # the user manually moved it, so _check_time_delta would fire and block
+        # the command even though this is an intentional user reset action.
         options = self.coordinator.config_entry.options
         for entity in reset_entities:
-            ctx = self.coordinator._build_position_context(entity, options)
+            ctx = self.coordinator._build_position_context(entity, options, force=True)
             outcome, _ = await self.coordinator._cmd_svc.apply_position(
                 entity, self.coordinator.state, "manual_reset", context=ctx
             )
