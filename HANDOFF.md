@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-04
-**Current Version:** v2.13.1
+**Current Version:** v2.13.6-beta.2
 **Branch:** `feature/true-sunset-sunrise-default-position` (in progress)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -39,6 +39,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.13.6-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6-beta.2) | 2026-04-04 | Pipeline time window gate moved to handlers; Motion Control switch. |
+| [v2.13.5](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.5) | 2026-04-04 | Pipeline consolidation refactor, true sunset/sunrise default position. |
 | [v2.13.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.1) | 2026-04-03 | Climate Status sensor fix (#103), pipeline tilt field propagation fix. |
 | [v2.13.0](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.0) | 2026-03-28 | Safety overrides bypass Automatic Control, config flow UX (#100). |
 
