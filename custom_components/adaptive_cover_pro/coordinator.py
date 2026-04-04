@@ -847,18 +847,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         options: dict,
         *,
         force: bool = False,
+        sun_just_appeared: bool = False,
     ) -> PositionContext:
         """Build a PositionContext for the given cover entity.
 
         Assembles all coordinator-level flags into the dataclass that
         CoverCommandService.apply_position() uses for gate checks.
 
+        Args:
+            entity: Cover entity ID
+            options: Config entry options dict
+            force: If True, all gate checks are bypassed
+            sun_just_appeared: Pre-computed sun transition flag. Call
+                ``_check_sun_validity_transition()`` once before a multi-entity
+                loop and pass the result here so the stateful transition check
+                fires exactly once per update cycle.
+
         """
         return PositionContext(
             auto_control=self.automatic_control or self._pipeline_bypasses_auto_control,
             in_time_window=self.check_adaptive_time,
             manual_override=self.manager.is_cover_manual(entity),
-            sun_just_appeared=self._check_sun_validity_transition(),
+            sun_just_appeared=sun_just_appeared,
             min_change=self.min_change,
             time_threshold=self.time_threshold,
             special_positions=build_special_positions(options),
@@ -868,8 +878,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_state_change(self, state: int, options):
         """Send position commands to all covers when a tracked entity changes."""
+        sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options)
+            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
             await self._cmd_svc.apply_position(cover, state, "solar", context=ctx)
         self.state_change = False
         self.logger.debug("State change handled")
@@ -910,8 +921,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
+        sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options)
+            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
         self.logger.debug("First refresh handled")

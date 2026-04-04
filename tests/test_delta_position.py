@@ -25,11 +25,11 @@ def test_check_position_delta_respects_threshold():
     svc = _make_cmd_svc(current_position=50)
 
     # Test with 5% delta (below min_change=20 — should fail)
-    result = svc.check_position_delta("cover.test", 55, min_change=20, special_positions=[0, 100])
+    result = svc._check_position_delta("cover.test", 55, min_change=20, special_positions=[0, 100])
     assert result is False
 
     # Test with 25% delta (should pass)
-    result = svc.check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
+    result = svc._check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
     assert result is True
 
 
@@ -45,15 +45,15 @@ def test_check_position_delta_allows_special_positions():
     special = build_special_positions(options)
 
     # Test 0% (special position — also sunset_pos)
-    result = svc.check_position_delta("cover.test", 0, min_change=20, special_positions=special)
+    result = svc._check_position_delta("cover.test", 0, min_change=20, special_positions=special)
     assert result is True
 
     # Test 100% (special position)
-    result = svc.check_position_delta("cover.test", 100, min_change=20, special_positions=special)
+    result = svc._check_position_delta("cover.test", 100, min_change=20, special_positions=special)
     assert result is True
 
     # Test default height (special position)
-    result = svc.check_position_delta("cover.test", 40, min_change=20, special_positions=special)
+    result = svc._check_position_delta("cover.test", 40, min_change=20, special_positions=special)
     assert result is True
 
 
@@ -62,7 +62,7 @@ def test_check_position_delta_handles_none_position():
     svc = _make_cmd_svc(current_position=None)
 
     # Should allow move when position unavailable
-    result = svc.check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
+    result = svc._check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
     assert result is True
 
 

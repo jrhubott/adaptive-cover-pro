@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
@@ -67,13 +68,17 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
             if self.coordinator.manager.is_cover_manual(entity):
                 _LOGGER.debug("Resetting manual override for: %s", entity)
 
-                # Check if delta is sufficient before moving
+                # Move to current calculated position, all gate checks applied
+                # except manual_override (we're in the process of clearing it).
                 target_position = self.coordinator.state
                 options = self.coordinator.config_entry.options
-                if self.coordinator.check_position_delta(
-                    entity, target_position, options
-                ):
-                    await self.coordinator.async_set_position(entity, target_position)
+                ctx = self.coordinator._build_position_context(entity, options)
+                # Override manual_override gate — we're intentionally resetting it
+                ctx = dataclasses.replace(ctx, manual_override=False)
+                outcome, _ = await self.coordinator._cmd_svc.apply_position(
+                    entity, target_position, "manual_reset", context=ctx
+                )
+                if outcome == "sent":
                     # Wait for cover to reach target, but no longer than 30 seconds
                     deadline = asyncio.get_event_loop().time() + 30
                     while self.coordinator.wait_for_target.get(entity):

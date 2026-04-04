@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -61,6 +62,8 @@ def test_initial_state(cmd_svc):
     """Empty tracking dicts are initialised on construction."""
     assert cmd_svc.wait_for_target == {}
     assert cmd_svc.target_call == {}
+    assert cmd_svc._retry_counts == {}
+    assert cmd_svc._gave_up == set()
     assert cmd_svc.last_cover_action["entity_id"] is None
     assert cmd_svc.last_skipped_action["entity_id"] is None
 
@@ -152,124 +155,76 @@ def test_read_position_open_close_fallback(cmd_svc, hass):
     assert result == 100
 
 
-# --- check_position ---
-
-
-def test_check_position_differs(cmd_svc):
-    """Returns True when current position differs from target."""
-    with patch.object(cmd_svc, "_get_current_position", return_value=30):
-        assert cmd_svc.check_position("cover.test", 60) is True
-
-
-def test_check_position_same(cmd_svc):
-    """Returns False when current position matches target."""
-    with patch.object(cmd_svc, "_get_current_position", return_value=60):
-        assert cmd_svc.check_position("cover.test", 60) is False
-
-
-def test_check_position_sun_just_appeared_bypass(cmd_svc):
-    """Returns True when sun_just_appeared bypasses equality check."""
-    with patch.object(cmd_svc, "_get_current_position", return_value=60):
-        assert cmd_svc.check_position("cover.test", 60, sun_just_appeared=True) is True
-
-
-def test_check_position_none_position(cmd_svc):
-    """Returns False when current position is None (unavailable)."""
-    with patch.object(cmd_svc, "_get_current_position", return_value=None):
-        assert cmd_svc.check_position("cover.test", 60) is False
-
-
-# --- check_position_delta ---
+# --- _check_position_delta ---
 
 
 def test_check_position_delta_above_threshold(cmd_svc):
     """Returns True when delta exceeds min_change."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta(
-            "cover.test", 75, min_change=20, special_positions=[0, 100]
-        )
-    assert result is True
+        assert cmd_svc._check_position_delta("cover.test", 75, 20, [0, 100]) is True
 
 
 def test_check_position_delta_below_threshold(cmd_svc):
     """Returns False when delta is below min_change."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta(
-            "cover.test", 55, min_change=20, special_positions=[0, 100]
-        )
-    assert result is False
+        assert cmd_svc._check_position_delta("cover.test", 55, 20, [0, 100]) is False
 
 
-def test_check_position_delta_special_position_bypass(cmd_svc):
-    """Returns True when target is a special position (0 or 100) regardless of delta."""
+def test_check_position_delta_special_target_bypass(cmd_svc):
+    """Returns True when target is a special position regardless of delta."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta(
-            "cover.test", 0, min_change=20, special_positions=[0, 100]
-        )
-    assert result is True
-
-    with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        result = cmd_svc.check_position_delta(
-            "cover.test", 100, min_change=20, special_positions=[0, 100]
-        )
-    assert result is True
+        assert cmd_svc._check_position_delta("cover.test", 0, 20, [0, 100]) is True
+        assert cmd_svc._check_position_delta("cover.test", 100, 20, [0, 100]) is True
 
 
-def test_check_position_delta_from_special_position_bypass(cmd_svc):
+def test_check_position_delta_from_special_bypass(cmd_svc):
     """Returns True when moving FROM a special position regardless of delta."""
     with patch.object(cmd_svc, "_get_current_position", return_value=0):
-        result = cmd_svc.check_position_delta(
-            "cover.test", 5, min_change=20, special_positions=[0, 100]
-        )
-    assert result is True
+        assert cmd_svc._check_position_delta("cover.test", 5, 20, [0, 100]) is True
 
 
 def test_check_position_delta_none_position(cmd_svc):
-    """Returns True when position is unavailable."""
+    """Returns True (send command) when position is unavailable."""
     with patch.object(cmd_svc, "_get_current_position", return_value=None):
-        result = cmd_svc.check_position_delta(
-            "cover.test", 50, min_change=20, special_positions=[0, 100]
-        )
-    assert result is True
+        assert cmd_svc._check_position_delta("cover.test", 50, 20, [0, 100]) is True
+
+
+def test_check_position_delta_sun_just_appeared_bypass(cmd_svc):
+    """Returns True when sun_just_appeared bypasses delta check."""
+    with patch.object(cmd_svc, "_get_current_position", return_value=60):
+        # Same position, delta=0, but sun_just_appeared overrides
+        assert cmd_svc._check_position_delta(
+            "cover.test", 60, 5, [0, 100], sun_just_appeared=True
+        ) is True
 
 
 def test_check_position_delta_custom_special_positions(cmd_svc):
     """Custom special positions (default_height, sunset_pos) also bypass delta."""
     with patch.object(cmd_svc, "_get_current_position", return_value=50):
-        # default_height=40 is special
-        result = cmd_svc.check_position_delta(
-            "cover.test", 40, min_change=20, special_positions=[0, 100, 40]
-        )
-    assert result is True
+        assert cmd_svc._check_position_delta("cover.test", 40, 20, [0, 100, 40]) is True
 
 
-# --- check_time_delta ---
+# --- _check_time_delta ---
 
 
 def test_check_time_delta_exceeds_threshold(cmd_svc):
     """Returns True when time since last update exceeds threshold."""
-    import datetime as dt
-
     old_time = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=10)
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
         return_value=old_time,
     ):
-        result = cmd_svc.check_time_delta("cover.test", time_threshold=5)
-    assert result is True
+        assert cmd_svc._check_time_delta("cover.test", time_threshold=5) is True
 
 
 def test_check_time_delta_below_threshold(cmd_svc):
     """Returns False when time since last update is below threshold."""
-    import datetime as dt
-
     recent_time = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
         return_value=recent_time,
     ):
-        result = cmd_svc.check_time_delta("cover.test", time_threshold=5)
-    assert result is False
+        assert cmd_svc._check_time_delta("cover.test", time_threshold=5) is False
 
 
 def test_check_time_delta_no_last_updated(cmd_svc):
@@ -278,18 +233,17 @@ def test_check_time_delta_no_last_updated(cmd_svc):
         "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
         return_value=None,
     ):
-        result = cmd_svc.check_time_delta("cover.test", time_threshold=5)
-    assert result is True
+        assert cmd_svc._check_time_delta("cover.test", time_threshold=5) is True
 
 
-# --- prepare_position_service_call ---
+# --- _prepare_service_call ---
 
 
 def test_prepare_service_call_position_cover(cmd_svc, grace_mgr):
     """Prepares set_cover_position service call for position-capable cover."""
     caps = {"has_set_position": True, "has_set_tilt_position": False}
-    service, data, supports_position = cmd_svc.prepare_position_service_call(
-        "cover.test", 75, caps
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 75, caps=caps
     )
     assert service == "set_cover_position"
     assert data["position"] == 75
@@ -303,8 +257,8 @@ def test_prepare_service_call_position_cover(cmd_svc, grace_mgr):
 def test_prepare_service_call_tilt_cover(tilt_cmd_svc, grace_mgr):
     """Prepares set_cover_tilt_position service call for tilt cover."""
     caps = {"has_set_position": False, "has_set_tilt_position": True}
-    service, data, supports_position = tilt_cmd_svc.prepare_position_service_call(
-        "cover.test", 45, caps
+    service, data, supports_position = tilt_cmd_svc._prepare_service_call(
+        "cover.test", 45, caps=caps
     )
     assert service == "set_cover_tilt_position"
     assert data["tilt_position"] == 45
@@ -319,8 +273,8 @@ def test_prepare_service_call_open_cover(cmd_svc, grace_mgr):
         "has_open": True,
         "has_close": True,
     }
-    service, data, supports_position = cmd_svc.prepare_position_service_call(
-        "cover.test", 70, caps
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 70, caps=caps
     )
     assert service == "open_cover"
     assert cmd_svc.target_call["cover.test"] == 100
@@ -335,8 +289,8 @@ def test_prepare_service_call_close_cover(cmd_svc, grace_mgr):
         "has_open": True,
         "has_close": True,
     }
-    service, data, supports_position = cmd_svc.prepare_position_service_call(
-        "cover.test", 30, caps
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 30, caps=caps
     )
     assert service == "close_cover"
     assert cmd_svc.target_call["cover.test"] == 0
@@ -351,21 +305,41 @@ def test_prepare_service_call_missing_open_close_caps(cmd_svc):
         "has_open": False,
         "has_close": False,
     }
-    service, data, supports_position = cmd_svc.prepare_position_service_call(
-        "cover.test", 50, caps
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 50, caps=caps
     )
     assert service is None
     assert data is None
     assert supports_position is False
 
 
-# --- track_cover_action ---
+def test_prepare_service_call_reset_retries_true_clears_state(cmd_svc, grace_mgr):
+    """reset_retries=True (default) clears retry count and gave_up for new target."""
+    cmd_svc._retry_counts["cover.test"] = 2
+    cmd_svc._gave_up.add("cover.test")
+    caps = {"has_set_position": True, "has_set_tilt_position": False}
+    cmd_svc._prepare_service_call("cover.test", 60, caps=caps, reset_retries=True)
+    assert "cover.test" not in cmd_svc._retry_counts
+    assert "cover.test" not in cmd_svc._gave_up
 
 
-def test_track_cover_action_position_service(cmd_svc):
+def test_prepare_service_call_reset_retries_false_preserves_state(cmd_svc, grace_mgr):
+    """reset_retries=False preserves retry count and gave_up (reconciliation retries)."""
+    cmd_svc._retry_counts["cover.test"] = 2
+    cmd_svc._gave_up.add("cover.test")
+    caps = {"has_set_position": True, "has_set_tilt_position": False}
+    cmd_svc._prepare_service_call("cover.test", 60, caps=caps, reset_retries=False)
+    assert cmd_svc._retry_counts["cover.test"] == 2
+    assert "cover.test" in cmd_svc._gave_up
+
+
+# --- _track_action ---
+
+
+def test_track_action_position_service(cmd_svc):
     """Records last_cover_action correctly for position-capable service."""
     cmd_svc.target_call["cover.test"] = 80
-    cmd_svc.track_cover_action("cover.test", "set_cover_position", 80, True)
+    cmd_svc._track_action("cover.test", "set_cover_position", 80, True)
 
     action = cmd_svc.last_cover_action
     assert action["entity_id"] == "cover.test"
@@ -378,10 +352,10 @@ def test_track_cover_action_position_service(cmd_svc):
     assert action["timestamp"] is not None
 
 
-def test_track_cover_action_open_close_service(cmd_svc):
+def test_track_action_open_close_service(cmd_svc):
     """Records last_cover_action correctly for open/close service."""
     cmd_svc.target_call["cover.test"] = 100
-    cmd_svc.track_cover_action("cover.test", "open_cover", 70, False)
+    cmd_svc._track_action("cover.test", "open_cover", 70, False)
 
     action = cmd_svc.last_cover_action
     assert action["position"] == 100  # target_call value
@@ -389,12 +363,10 @@ def test_track_cover_action_open_close_service(cmd_svc):
     assert action["covers_controlled"] == 1
 
 
-def test_track_cover_action_inverse_state(cmd_svc):
+def test_track_action_inverse_state(cmd_svc):
     """Records inverse_state_applied correctly."""
     cmd_svc.target_call["cover.test"] = 30
-    cmd_svc.track_cover_action(
-        "cover.test", "set_cover_position", 30, True, inverse_state=True
-    )
+    cmd_svc._track_action("cover.test", "set_cover_position", 30, True, inverse_state=True)
     assert cmd_svc.last_cover_action["inverse_state_applied"] is True
 
 
@@ -429,16 +401,29 @@ def test_update_threshold(cmd_svc):
     cmd_svc.update_threshold(75)
     assert cmd_svc._open_close_threshold == 75
 
-    # Verify it's used in subsequent calls
+    # Verify it's used in subsequent _prepare_service_call
     caps = {
         "has_set_position": False,
         "has_set_tilt_position": False,
         "has_open": True,
         "has_close": True,
     }
-    # 70 >= 75 is False so should close
-    cmd_svc.prepare_position_service_call("cover.test", 70, caps)
+    # 70 < 75 threshold → should close
+    cmd_svc._prepare_service_call("cover.test", 70, caps=caps)
     assert cmd_svc.target_call["cover.test"] == 0
+
+
+# --- _gave_up (max retry tracking) ---
+
+
+def test_gave_up_cleared_on_new_target(cmd_svc, grace_mgr):
+    """_gave_up entry is cleared when a new target is set via reset_retries=True."""
+    cmd_svc._gave_up.add("cover.test")
+    cmd_svc._retry_counts["cover.test"] = 3
+    caps = {"has_set_position": True, "has_set_tilt_position": False}
+    cmd_svc._prepare_service_call("cover.test", 80, caps=caps, reset_retries=True)
+    assert "cover.test" not in cmd_svc._gave_up
+    assert "cover.test" not in cmd_svc._retry_counts
 
 
 # --- build_special_positions ---
@@ -453,7 +438,6 @@ def test_build_special_positions_minimal():
 def test_build_special_positions_with_options():
     """Includes default_height and sunset_pos when configured."""
     positions = build_special_positions({"default_percentage": 40, "sunset_pos": 10})
-    # build_special_positions uses CONF_DEFAULT_HEIGHT ("default_percentage") and CONF_SUNSET_POS ("sunset_pos")
     assert 0 in positions
     assert 100 in positions
 

@@ -70,6 +70,10 @@ class CoverCommandService:
 
     """
 
+    # How long to wait before force-clearing wait_for_target (seconds).
+    # Covers that never report final position won't be stuck indefinitely.
+    _WAIT_FOR_TARGET_TIMEOUT_SECONDS = 30
+
     # Default capabilities for covers when entity not ready
     _DEFAULT_CAPABILITIES = {
         "has_set_position": True,
@@ -122,10 +126,12 @@ class CoverCommandService:
         # _sent_at: when we last executed a service call for this entity
         # wait_for_target: True while cover is expected to still be moving
         # _retry_counts: how many reconciliation retries for the current target
+        # _gave_up: entities that have hit max_retries (cleared on new target)
         self.target_call: dict[str, int] = {}
         self._sent_at: dict[str, dt.datetime] = {}
         self.wait_for_target: dict[str, bool] = {}
         self._retry_counts: dict[str, int] = {}
+        self._gave_up: set[str] = set()
 
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
@@ -470,8 +476,6 @@ class CoverCommandService:
         if self._on_tick is not None:
             await self._on_tick(now)
 
-        wait_for_target_timeout_seconds = 30
-
         for entity_id, target in list(self.target_call.items()):
             self._last_reconcile_time[entity_id] = now
 
@@ -480,11 +484,12 @@ class CoverCommandService:
                 sent_at = self._sent_at.get(entity_id)
                 if sent_at is not None:
                     elapsed = (now - sent_at).total_seconds()
-                    if elapsed > wait_for_target_timeout_seconds:
+                    if elapsed > self._WAIT_FOR_TARGET_TIMEOUT_SECONDS:
                         self._logger.debug(
-                            "wait_for_target timeout for %s (elapsed %.0fs) — clearing",
+                            "wait_for_target timeout for %s (elapsed %.0fs > %ds) — clearing",
                             entity_id,
                             elapsed,
+                            self._WAIT_FOR_TARGET_TIMEOUT_SECONDS,
                         )
                         self.wait_for_target[entity_id] = False
                     else:
@@ -515,14 +520,24 @@ class CoverCommandService:
             # 4. Mismatch — retry up to max_retries
             retry_count = self._retry_counts.get(entity_id, 0)
             if retry_count >= self._max_retries:
-                self._logger.warning(
-                    "Reconcile: max retries (%d) exceeded for %s "
-                    "(actual=%s target=%s) — giving up until next target change",
-                    self._max_retries,
-                    entity_id,
-                    actual,
-                    target,
-                )
+                if entity_id not in self._gave_up:
+                    # Log warning exactly once; subsequent ticks are silent
+                    self._logger.warning(
+                        "Reconcile: max retries (%d) exceeded for %s "
+                        "(actual=%s target=%s) — giving up until next target change",
+                        self._max_retries,
+                        entity_id,
+                        actual,
+                        target,
+                    )
+                    self._gave_up.add(entity_id)
+                else:
+                    self._logger.debug(
+                        "Reconcile: %s still off target (actual=%s target=%s), max retries reached",
+                        entity_id,
+                        actual,
+                        target,
+                    )
                 continue
 
             self._retry_counts[entity_id] = retry_count + 1
@@ -620,6 +635,10 @@ class CoverCommandService:
             state: Target position (0-100)
             inverse_state: Whether inverse state is applied (for tracking)
             caps: Pre-fetched capabilities dict; fetched internally if None
+            reset_retries: If True (default), clears retry count and gave_up flag
+                for this entity when a new target is recorded. Pass False from
+                ``_execute_command`` so reconciliation retries do not reset the
+                counter they themselves manage.
 
         Returns:
             (service_name, service_data, supports_position).
@@ -661,6 +680,7 @@ class CoverCommandService:
             self._sent_at[entity] = now
             if reset_retries:
                 self._retry_counts.pop(entity, None)  # New target resets retry count
+                self._gave_up.discard(entity)          # Allow warnings again for new target
             self._grace_mgr.start_command_grace_period(entity)
             return service, service_data, True
 
@@ -685,6 +705,7 @@ class CoverCommandService:
         self._sent_at[entity] = now
         if reset_retries:
             self._retry_counts.pop(entity, None)
+            self._gave_up.discard(entity)
         self._grace_mgr.start_command_grace_period(entity)
         self._logger.debug(
             "Open/close control: state=%s threshold=%s service=%s",
@@ -726,60 +747,6 @@ class CoverCommandService:
             "covers_controlled": 1,
         }
 
-    # ------------------------------------------------------------------ #
-    # Legacy helpers kept for backward-compat with coordinator
-    # (will be removed once coordinator callers are updated in step 4)
-    # ------------------------------------------------------------------ #
-
-    def check_position_delta(
-        self,
-        entity: str,
-        state: int,
-        min_change: int,
-        special_positions: list[int],
-    ) -> bool:
-        """Legacy wrapper — prefer apply_position()."""
-        return self._check_position_delta(entity, state, min_change, special_positions)
-
-    def check_time_delta(self, entity: str, time_threshold: int) -> bool:
-        """Legacy wrapper — prefer apply_position()."""
-        return self._check_time_delta(entity, time_threshold)
-
-    def check_position(
-        self, entity: str, state: int, sun_just_appeared: bool = False
-    ) -> bool:
-        """Legacy position equality check — prefer apply_position()."""
-        position = self._get_current_position(entity)
-        if position is not None:
-            if sun_just_appeared:
-                return True
-            return position != state
-        return False
-
-    def prepare_position_service_call(
-        self,
-        entity: str,
-        state: int,
-        caps: dict[str, bool],
-        inverse_state: bool = False,
-    ) -> tuple[str | None, dict | None, bool]:
-        """Legacy service call prep — prefer apply_position()."""
-        return self._prepare_service_call(entity, state, inverse_state, caps=caps)
-
-    def track_cover_action(
-        self,
-        entity: str,
-        service: str,
-        state: int,
-        supports_position: bool,
-        inverse_state: bool = False,
-    ) -> None:
-        """Legacy action tracker — prefer apply_position()."""
-        self._track_action(entity, service, state, supports_position, inverse_state)
-
-    async def execute_service_call(self, service: str, service_data: dict) -> None:
-        """Legacy service executor — prefer apply_position()."""
-        await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
 
 
 def build_special_positions(options: dict) -> list[int]:

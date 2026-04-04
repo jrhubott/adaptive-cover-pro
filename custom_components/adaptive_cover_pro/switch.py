@@ -191,13 +191,15 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self._attr_is_on = True
         setattr(self.coordinator, self._key, True)
         if self._key == "automatic_control" and kwargs.get("added") is not True:
+            options = self.coordinator.config_entry.options
             for entity in self.coordinator.entities:
                 if (
                     not self.coordinator.manager.is_cover_manual(entity)
                     and self.coordinator.check_adaptive_time
                 ):
-                    await self.coordinator.async_set_position(
-                        entity, self.coordinator.state
+                    ctx = self.coordinator._build_position_context(entity, options, force=True)
+                    await self.coordinator._cmd_svc.apply_position(
+                        entity, self.coordinator.state, "auto_control_on", context=ctx
                     )
         await self.coordinator.async_refresh()
         self.schedule_update_ha_state()
@@ -222,8 +224,12 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                 self.coordinator.logger.debug(
                     "Returning covers to default position: %s", default_position
                 )
+                options = self.coordinator.config_entry.options
                 for entity in self.coordinator.entities:
-                    await self.coordinator.async_set_position(entity, default_position)
+                    ctx = self.coordinator._build_position_context(entity, options, force=True)
+                    await self.coordinator._cmd_svc.apply_position(
+                        entity, default_position, "auto_control_off", context=ctx
+                    )
 
         await self.coordinator.async_refresh()
         self.schedule_update_ha_state()

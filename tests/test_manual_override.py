@@ -212,6 +212,7 @@ def test_cancel_grace_period_handles_missing_entity():
 async def test_reset_button_clears_manual_override_and_stays_cleared():
     """Reset button must clear manual override and leave it cleared after refresh."""
     from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 
     entity_id = "cover.living_room"
 
@@ -220,8 +221,13 @@ async def test_reset_button_clears_manual_override_and_stays_cleared():
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.state = 75
     coordinator.config_entry.options = {}
-    coordinator.check_position_delta.return_value = True
-    coordinator.async_set_position = AsyncMock()
+    # _build_position_context returns a PositionContext; apply_position returns ("sent", svc)
+    coordinator._build_position_context.return_value = PositionContext(
+        auto_control=True, in_time_window=True, manual_override=False,
+        sun_just_appeared=False, min_change=2, time_threshold=2,
+        special_positions=[0, 100], inverse_state=False,
+    )
+    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
     coordinator.async_refresh = AsyncMock()
     # Simulate cover reaching target immediately
     coordinator.wait_for_target = {entity_id: False}
@@ -236,6 +242,8 @@ async def test_reset_button_clears_manual_override_and_stays_cleared():
 
     await button.async_press()
 
+    # apply_position was called for the entity
+    coordinator._cmd_svc.apply_position.assert_called_once()
     # Manager reset was called
     coordinator.manager.reset.assert_called_once_with(entity_id)
     # Refresh was called
@@ -260,8 +268,13 @@ async def test_reset_button_suppresses_redetection_during_refresh():
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.state = 50
     coordinator.config_entry.options = {}
-    coordinator.check_position_delta.return_value = True
-    coordinator.async_set_position = AsyncMock()
+    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
+    coordinator._build_position_context.return_value = PositionContext(
+        auto_control=True, in_time_window=True, manual_override=False,
+        sun_just_appeared=False, min_change=2, time_threshold=2,
+        special_positions=[0, 100], inverse_state=False,
+    )
+    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
     coordinator.async_refresh = AsyncMock(side_effect=capture_refresh)
     coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
@@ -293,8 +306,13 @@ async def test_reset_button_times_out_if_cover_never_reaches_target():
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.state = 80
     coordinator.config_entry.options = {}
-    coordinator.check_position_delta.return_value = True
-    coordinator.async_set_position = AsyncMock()
+    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
+    coordinator._build_position_context.return_value = PositionContext(
+        auto_control=True, in_time_window=True, manual_override=False,
+        sun_just_appeared=False, min_change=2, time_threshold=2,
+        special_positions=[0, 100], inverse_state=False,
+    )
+    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
     coordinator.async_refresh = AsyncMock()
     # Cover never clears wait_for_target — simulates position mismatch
     coordinator.wait_for_target = {entity_id: True}
