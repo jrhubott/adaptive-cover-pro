@@ -708,8 +708,10 @@ Users can monitor geometric accuracy via the always-on diagnostic sensors:
 - Window azimuth, field of view, elevation limits
 - Cover-specific dimensions (height, length, slat properties)
 - Sunset behavior:
-  - `sunset_position` - Optional position after sunset (None = use `default_percentage`). Use SLIDER in config_flow, not BOX.
-  - `sunset_offset` / `sunrise_offset` — minutes to shift sunset/sunrise times
+  - `sunset_position` - Optional position to use during the astronomical sunset window (None = always use `default_percentage`). Use SLIDER in config_flow, not BOX.
+  - `sunset_offset` / `sunrise_offset` — minutes to shift the boundary of the astronomical sunset/sunrise window. `sunset_offset` delays when the sunset window opens; `sunrise_offset` delays when it closes.
+  - The effective default position is computed by `compute_effective_default()` in `helpers.py` every update cycle — no timer required. Restarts during the sunset window immediately use the correct position.
+  - `return_sunset` (CONF_RETURN_SUNSET) — when True, force-sends the current effective default to all covers at the moment the operational end_time is reached (via `TimeWindowManager.check_transition()`). Useful when end_time is before astronomical sunset and you want covers to move to their evening position immediately at end_time.
 - Enhanced geometric accuracy:
   - `window_depth` - Optional window reveal/frame depth (0.0-0.5m, default 0.0)
   - `sill_height` - Optional height from floor to window bottom (0.0-3.0m, default 0.0). Raises the blind for windows above floor level — accounting for the sill's geometric effect of reducing sun penetration into the room

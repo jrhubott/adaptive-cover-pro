@@ -22,17 +22,18 @@ class DefaultHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
         """Return the default position as the final fallback."""
         position = PositionConverter.apply_limits(
-            int(round(snapshot.cover.default)),
+            snapshot.default_position,
             snapshot.config.min_pos,
             snapshot.config.max_pos,
             snapshot.config.min_pos_sun_only,
             snapshot.config.max_pos_sun_only,
             snapshot.cover.direct_sun_valid,
         )
+        pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
         return PipelineResult(
             position=position,
             control_method=ControlMethod.DEFAULT,
-            reason=f"no active condition — default position {position}%",
+            reason=f"no active condition — {pos_label} {position}%",
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

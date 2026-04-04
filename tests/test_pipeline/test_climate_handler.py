@@ -64,7 +64,6 @@ def _make_blind_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=60.0)
-    cover.default = 0.0
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None

@@ -109,7 +109,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
+          "return_sunset": "Move covers to current default position when end time is reached",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -119,7 +119,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },
@@ -386,7 +386,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
+          "return_sunset": "Move covers to current default position when end time is reached",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -396,7 +396,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         }
       },

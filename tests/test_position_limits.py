@@ -112,85 +112,28 @@ def test_apply_limits_conditional_max_sun_not_valid(mock_sun_data, mock_logger):
 def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_logger):
     """Test Issue #24: sunset_position should be used after sunset, not min_position.
 
-    User configuration:
-    - min_position = 35
-    - enable_min_position = True (only apply when sun in window)
-    - sunset_position = 0
-    - After sunset, cover should go to 0, not 35
+    With the pipeline architecture, DefaultHandler applies position limits
+    to snapshot.default_position.  When enable_min_position=True (sun-only),
+    min_pos is NOT applied when direct_sun_valid=False (sun not in window).
+    After sunset, compute_effective_default() returns sunset_pos=0;
+    the DefaultHandler sees direct_sun_valid=False so does not apply min_pos.
+    Result should be 0 (sunset_pos), not 35 (min_pos).
     """
-    # Mock sunset_valid to return True (after sunset)
+    from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+        DefaultHandler,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineSnapshot
+
     with patch(
         "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
-        # Set current time to after sunset
         mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
         cover = build_vertical_cover(
             logger=mock_logger,
             sol_azi=180.0,
-            sol_elev=-10.0,  # Sun below horizon
-            sunset_pos=0,  # Should return to 0 after sunset
-            sunset_off=0,
-            sunrise_off=0,
-            sun_data=mock_sun_data,
-            fov_left=90,
-            fov_right=90,
-            win_azi=180,
-            h_def=60,
-            max_pos=100,
-            min_pos=35,
-            max_pos_bool=False,
-            min_pos_bool=True,  # enable_min_position = True
-            blind_spot_left=None,
-            blind_spot_right=None,
-            blind_spot_elevation=None,
-            blind_spot_on=False,
-            min_elevation=None,
-            max_elevation=None,
-            distance=0.5,
-            h_win=2.0,
-        )
-
-        # Mock sun_data methods after cover creation
-        cover.sun_data.sunset = lambda: datetime(2024, 1, 1, 17, 0, 0)
-        cover.sun_data.sunrise = lambda: datetime(2024, 1, 2, 7, 0, 0)
-
-        # Verify sunset_valid is True
-        assert cover.sunset_valid is True
-
-        # Verify direct_sun_valid is False (because sunset_valid is True)
-        assert cover.direct_sun_valid is False
-
-        # Create state calculator
-        state = NormalCoverState(cover=cover)
-
-        # Get the calculated state
-        result = state.get_state()
-
-        # Result should be sunset_pos (0), NOT min_pos (35)
-        assert result == 0, (
-            f"Expected 0 (sunset_pos), got {result} (min_pos applied incorrectly)"
-        )
-
-
-@pytest.mark.unit
-def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
-    """Test sunset_position with enable_min_position = False (always apply).
-
-    When enable_min_position = False, min_pos should always be applied,
-    even for sunset_position. Result should be max(sunset_pos, min_pos).
-    """
-    # Mock sunset_valid to return True (after sunset)
-    with patch(
-        "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
-    ) as mock_datetime:
-        # Set current time to after sunset
-        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
-
-        cover = build_vertical_cover(
-            logger=mock_logger,
-            sol_azi=180.0,
-            sol_elev=-10.0,  # Sun below horizon
+            sol_elev=-10.0,
             sunset_pos=0,
             sunset_off=0,
             sunrise_off=0,
@@ -202,7 +145,7 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
             max_pos=100,
             min_pos=35,
             max_pos_bool=False,
-            min_pos_bool=False,  # enable_min_position = False (always apply)
+            min_pos_bool=True,  # only apply min_pos when sun in window
             blind_spot_left=None,
             blind_spot_right=None,
             blind_spot_elevation=None,
@@ -213,21 +156,124 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
             h_win=2.0,
         )
 
-        # Mock sun_data methods after cover creation
         cover.sun_data.sunset = lambda: datetime(2024, 1, 1, 17, 0, 0)
         cover.sun_data.sunrise = lambda: datetime(2024, 1, 2, 7, 0, 0)
 
-        # Verify sunset_valid is True
         assert cover.sunset_valid is True
+        assert cover.direct_sun_valid is False
 
-        # Create state calculator
-        state = NormalCoverState(cover=cover)
+        # Build snapshot with effective default = sunset_pos = 0
+        snapshot = PipelineSnapshot(
+            cover=cover,
+            config=cover.config,
+            cover_type="cover_blind",
+            default_position=0,          # sunset_pos via compute_effective_default
+            is_sunset_active=True,
+            configured_default=60,
+            configured_sunset_pos=0,
+            climate_readings=None,
+            climate_mode_enabled=False,
+            climate_options=None,
+            force_override_sensors={},
+            force_override_position=0,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            weather_override_position=0,
+            weather_bypass_auto_control=True,
+            glare_zones=None,
+            active_zone_names=frozenset(),
+        )
 
-        # Get the calculated state
-        result = state.get_state()
+        result = PipelineRegistry([DefaultHandler()]).evaluate(snapshot)
 
-        # Result should be max(sunset_pos, min_pos) = max(0, 35) = 35
-        assert result == 35, f"Expected 35 (min_pos always applied), got {result}"
+        # min_pos_bool=True means min_pos is only applied when sun is in window.
+        # direct_sun_valid=False so min_pos is NOT applied.
+        # Result should be sunset_pos (0), NOT min_pos (35).
+        assert result.position == 0, (
+            f"Expected 0 (sunset_pos), got {result.position} (min_pos applied incorrectly)"
+        )
+
+
+@pytest.mark.unit
+def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
+    """Test sunset_position with enable_min_position = False (always apply).
+
+    When min_pos_bool=False (enable_min_position=False), min_pos is always
+    applied including during the sunset window.  After sunset, the effective
+    default = sunset_pos = 0, but min_pos = 35 is always enforced, so the
+    result should be max(0, 35) = 35.
+    """
+    from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+        DefaultHandler,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
+    from custom_components.adaptive_cover_pro.pipeline.types import PipelineSnapshot
+
+    with patch(
+        "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
+    ) as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
+
+        cover = build_vertical_cover(
+            logger=mock_logger,
+            sol_azi=180.0,
+            sol_elev=-10.0,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            sun_data=mock_sun_data,
+            fov_left=90,
+            fov_right=90,
+            win_azi=180,
+            h_def=60,
+            max_pos=100,
+            min_pos=35,
+            max_pos_bool=False,
+            min_pos_bool=False,  # always apply min_pos
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            distance=0.5,
+            h_win=2.0,
+        )
+
+        cover.sun_data.sunset = lambda: datetime(2024, 1, 1, 17, 0, 0)
+        cover.sun_data.sunrise = lambda: datetime(2024, 1, 2, 7, 0, 0)
+
+        assert cover.sunset_valid is True
+        assert cover.direct_sun_valid is False
+
+        snapshot = PipelineSnapshot(
+            cover=cover,
+            config=cover.config,
+            cover_type="cover_blind",
+            default_position=0,          # sunset_pos via compute_effective_default
+            is_sunset_active=True,
+            configured_default=60,
+            configured_sunset_pos=0,
+            climate_readings=None,
+            climate_mode_enabled=False,
+            climate_options=None,
+            force_override_sensors={},
+            force_override_position=0,
+            manual_override_active=False,
+            motion_timeout_active=False,
+            weather_override_active=False,
+            weather_override_position=0,
+            weather_bypass_auto_control=True,
+            glare_zones=None,
+            active_zone_names=frozenset(),
+        )
+
+        result = PipelineRegistry([DefaultHandler()]).evaluate(snapshot)
+
+        # min_pos_bool=False means min_pos always applied.
+        # max(sunset_pos=0, min_pos=35) = 35
+        assert result.position == 35, f"Expected 35 (min_pos always applied), got {result.position}"
 
 
 @pytest.mark.unit

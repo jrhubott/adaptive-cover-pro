@@ -114,6 +114,10 @@ class ClimateCoverState:
 
     cover: AdaptiveGeneralCover
     climate_data: ClimateCoverData
+    # The effective default position (sunset-aware) from PipelineSnapshot.
+    # Use this instead of self.cover.default — the cover object no longer
+    # carries a .default property to prevent accidental use of the wrong value.
+    default_position: int = 0
     climate_strategy: ClimateStrategy | None = field(default=None, init=False)
 
     def get_state(self) -> int:
@@ -137,7 +141,7 @@ class ClimateCoverState:
         if self.cover.direct_sun_valid:
             state = int(round(self.cover.calculate_percentage()))
             return max(state, 1)
-        return int(round(self.cover.default))
+        return self.default_position
 
     def normal_type_cover(self) -> int:
         """Route horizontal/vertical covers based on presence."""
@@ -163,7 +167,7 @@ class ClimateCoverState:
             or not self.climate_data.is_sunny
         ):
             self.climate_strategy = ClimateStrategy.LOW_LIGHT
-            return int(round(self.cover.default))
+            return self.default_position
         if is_summer and self.climate_data.transparent_blind:
             self.climate_strategy = ClimateStrategy.SUMMER_COOLING
             return 0
@@ -181,7 +185,7 @@ class ClimateCoverState:
                 or not self.climate_data.is_sunny
             ):
                 self.climate_strategy = ClimateStrategy.LOW_LIGHT
-                return int(round(self.cover.default))
+                return self.default_position
             if self.climate_data.is_summer:
                 self.climate_strategy = ClimateStrategy.SUMMER_COOLING
                 return 0
@@ -193,7 +197,7 @@ class ClimateCoverState:
             self.climate_strategy = ClimateStrategy.WINTER_INSULATION
             return 0
         self.climate_strategy = ClimateStrategy.LOW_LIGHT
-        return int(round(self.cover.default))
+        return self.default_position
 
     def tilt_with_presence(self, degrees: int) -> int:
         """Climate strategy for tilt covers with occupants present."""
@@ -312,7 +316,9 @@ class ClimateHandler(OverrideHandler):
             winter_close_insulation=opts.winter_close_insulation,
         )
 
-        climate_cover_state = ClimateCoverState(snapshot.cover, climate_data)
+        climate_cover_state = ClimateCoverState(
+            snapshot.cover, climate_data, default_position=snapshot.default_position
+        )
         position = round(climate_cover_state.get_state())
 
         if climate_data.is_summer:

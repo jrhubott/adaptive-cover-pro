@@ -24,17 +24,18 @@ class MotionTimeoutHandler(OverrideHandler):
         if not snapshot.motion_timeout_active:
             return None
         position = PositionConverter.apply_limits(
-            int(round(snapshot.cover.default)),
+            snapshot.default_position,
             snapshot.config.min_pos,
             snapshot.config.max_pos,
             snapshot.config.min_pos_sun_only,
             snapshot.config.max_pos_sun_only,
             snapshot.cover.direct_sun_valid,
         )
+        pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MOTION,
-            reason=f"motion timeout active — default position {position}%",
+            reason=f"motion timeout active — {pos_label} {position}%",
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

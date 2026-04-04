@@ -41,12 +41,11 @@ class CloudSuppressionHandler(OverrideHandler):
             return None
 
         pos = snapshot.default_position
+        pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.CLOUD,
-            reason=(
-                f"cloud/low-light suppression — no direct sun detected → default {pos}%"
-            ),
+            reason=f"cloud/low-light suppression — no direct sun detected → {pos_label} {pos}%",
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

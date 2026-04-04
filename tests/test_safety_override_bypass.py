@@ -277,7 +277,7 @@ class TestNonSafetyHandlersNoBypass:
     def test_default_handler_no_bypass(self) -> None:
         """DefaultHandler result must have bypass_auto_control=False."""
         handler = DefaultHandler()
-        snapshot = make_snapshot(direct_sun_valid=False, cover_default=50.0)
+        snapshot = make_snapshot(direct_sun_valid=False, default_position=int(50.0))
         result = handler.evaluate(snapshot)
         assert result is not None
         assert result.bypass_auto_control is False
@@ -314,7 +314,7 @@ class TestRegistryPropagatesBypass:
     def test_default_handler_no_bypass_propagated(self) -> None:
         """Registry result carries bypass_auto_control=False when default wins."""
         registry = PipelineRegistry([DefaultHandler()])
-        snapshot = make_snapshot(direct_sun_valid=False, cover_default=50.0)
+        snapshot = make_snapshot(direct_sun_valid=False, default_position=int(50.0))
         result = registry.evaluate(snapshot)
         assert result.bypass_auto_control is False
 

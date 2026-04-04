@@ -282,7 +282,6 @@ class TestCloudSuppressionPipelineIntegration:
         registry = self._make_registry()
         snapshot = make_snapshot(
             direct_sun_valid=False,
-            cover_default=60,
             default_position=60,
             climate_readings=make_weather_readings(is_sunny=True),
             climate_options=ClimateOptions(

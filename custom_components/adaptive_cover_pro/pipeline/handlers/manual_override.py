@@ -38,7 +38,7 @@ class ManualOverrideHandler(OverrideHandler):
             )
         else:
             position = PositionConverter.apply_limits(
-                int(round(snapshot.cover.default)),
+                snapshot.default_position,
                 snapshot.config.min_pos,
                 snapshot.config.max_pos,
                 snapshot.config.min_pos_sun_only,
@@ -46,10 +46,15 @@ class ManualOverrideHandler(OverrideHandler):
                 False,
             )
 
+        if snapshot.cover.direct_sun_valid:
+            reason = f"manual override active — holding solar position {position}%"
+        else:
+            pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
+            reason = f"manual override active — holding {pos_label} {position}%"
         return PipelineResult(
             position=position,
             control_method=ControlMethod.MANUAL,
-            reason=f"manual override active — holding position {position}%",
+            reason=reason,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

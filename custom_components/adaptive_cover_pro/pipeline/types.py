@@ -45,7 +45,19 @@ class PipelineSnapshot:
     # Cover configuration
     config: CoverConfig
     cover_type: str  # "cover_blind" / "cover_awning" / "cover_tilt"
-    default_position: int  # h_def or sunset_pos (no solar calculation)
+
+    # Effective default position — the single source of truth for all handlers.
+    # Computed by compute_effective_default() before the pipeline runs:
+    #   - equals sunset_pos when current time is in the astronomical sunset window
+    #   - equals h_def at all other times
+    # Handlers MUST use this field; accessing snapshot.cover.default is incorrect
+    # and will raise AttributeError (the property has been intentionally removed).
+    default_position: int
+
+    # Sunset-window metadata — for diagnostic display and handler reason strings.
+    is_sunset_active: bool          # True when default_position == sunset_pos
+    configured_default: int         # raw h_def from user config
+    configured_sunset_pos: int | None  # raw sunset_pos from user config (None = not set)
 
     # Climate readings (raw sensor values — None if not configured)
     climate_readings: ClimateReadings | None
@@ -97,6 +109,13 @@ class PipelineResult:
     reason: str
     decision_trace: list[DecisionStep] = field(default_factory=list)
     tilt: int | None = None
+
+    # Propagated from PipelineSnapshot so sensors can display sunset context
+    # without needing a reference back to the snapshot.
+    default_position: int = 0
+    is_sunset_active: bool = False
+    configured_default: int = 0
+    configured_sunset_pos: int | None = None
 
     # Optional climate diagnostics set by ClimateHandler
     climate_state: int | None = None

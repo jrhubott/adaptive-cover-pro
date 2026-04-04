@@ -1,21 +1,19 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-03
+**Date:** 2026-04-04
 **Current Version:** v2.13.1
-**Branch:** `main` (clean)
+**Branch:** `feature/true-sunset-sunrise-default-position` (in progress)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
 
 ---
 
-Released **v2.13.1** — Fixed Climate Status sensor staying unknown when climate mode enabled (Issue #103). Climate data now flows through pipeline to diagnostics. Also fixed latent bug: pipeline registry now copies `tilt` field (preparation for Issue #33). See `release_notes/v2.13.1.md` for full details.
-
-No work in progress. Main is clean.
+**Work in progress:** Feature branch `feature/true-sunset-sunrise-default-position` — True astronomical sunset/sunrise default position refactor. See plan steps below. Not yet merged to main.
 
 ## Tests
 
-**1017 passing, 0 failing.**
+**1061 passing, 0 failing** (feature branch — +44 new tests for sunset/default logic).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open Issues
@@ -27,6 +25,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 ## Known Gotchas
 
 - **`PipelineResult.tilt` not copied in registry (fixed v2.13.1):** `PipelineRegistry.evaluate()` now copies `tilt` alongside `climate_data`. Before v2.13.1, handler-set `tilt` values were silently dropped (only mattered for Issue #33 dual-axis).
+- **`cover.default` property removed:** `AdaptiveGeneralCover` and `SunGeometry` no longer expose `.default`. Any code accessing it will get `AttributeError` immediately. Use `snapshot.default_position` in pipeline handlers; use `compute_effective_default()` elsewhere.
+- **Pipeline always runs:** Even outside the start_time/end_time window the pipeline executes. The time-window gate is in `CoverCommandService.apply_position()` (the `in_time_window` check), not in the pipeline.
 
 ## Recent Releases
 

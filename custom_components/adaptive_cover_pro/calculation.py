@@ -63,7 +63,7 @@ class NormalCoverState:
                 "Yes sun in window: using calculated percentage (%s)", state
             )
         else:
-            state = self.cover.default
+            state = self.cover.config.h_def
             self.cover.logger.debug("No sun in window: using default value (%s)", state)
 
         # Apply position limits using utility

@@ -2,10 +2,15 @@
 
 import datetime as dt
 import logging
+from datetime import UTC, timedelta
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from dateutil import parser
 from homeassistant.core import HomeAssistant, split_entity_id
+
+if TYPE_CHECKING:
+    from .sun import SunData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +118,52 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
         "has_open": bool(supported_features & CoverEntityFeature.OPEN),
         "has_close": bool(supported_features & CoverEntityFeature.CLOSE),
     }
+
+
+def compute_effective_default(
+    h_def: int,
+    sunset_pos: int | None,
+    sun_data: "SunData",
+    sunset_off: int,
+    sunrise_off: int,
+) -> tuple[int, bool]:
+    """Return the effective default cover position based on astronomical sunset/sunrise.
+
+    If a ``sunset_pos`` is configured and the current wall-clock time falls
+    within the astronomical sunset/sunrise window (i.e. after
+    ``sunset + sunset_off`` minutes **or** before
+    ``sunrise + sunrise_off`` minutes) the sunset position is active.
+
+    Unlike the legacy timer-based approach this function is stateless and
+    re-evaluated every coordinator update cycle, so a Home Assistant restart
+    during the sunset window immediately returns the correct position without
+    any timer re-scheduling.
+
+    Args:
+        h_def:      Configured default position (0–100 %).
+        sunset_pos: Configured sunset/night position, or ``None`` when not set.
+        sun_data:   ``SunData`` instance providing today's sunset/sunrise times.
+        sunset_off: Minutes *added* to astronomical sunset before the window opens.
+        sunrise_off: Minutes *added* to astronomical sunrise before the window closes.
+
+    Returns:
+        A ``(effective_default, is_sunset_active)`` tuple where
+        ``is_sunset_active`` is ``True`` when the sunset position is in effect.
+
+    """
+    if sunset_pos is None:
+        return h_def, False
+
+    sunset = sun_data.sunset().replace(tzinfo=None)
+    sunrise = sun_data.sunrise().replace(tzinfo=None)
+    now_naive = dt.datetime.now(UTC).replace(tzinfo=None)
+
+    after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))
+    before_sunrise = now_naive < (sunrise + timedelta(minutes=sunrise_off))
+    is_sunset_active = after_sunset or before_sunrise
+
+    effective = int(sunset_pos) if is_sunset_active else int(h_def)
+    return effective, is_sunset_active
 
 
 def get_open_close_state(hass: HomeAssistant, entity_id: str) -> int | None:

@@ -364,38 +364,18 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is False
 
     @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_default_position_before_sunset(
-        self, mock_datetime, vertical_cover_instance
+    def test_default_property_removed_raises_attribute_error(
+        self, vertical_cover_instance
     ):
-        """Test default position returns h_def before sunset."""
-        # Mock current time before sunset
-        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        vertical_cover_instance.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        vertical_cover_instance.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
-        vertical_cover_instance.h_def = 75
-        assert vertical_cover_instance.default == 75
+        """The .default property has been intentionally removed from covers.
 
-    @pytest.mark.unit
-    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_default_position_after_sunset(
-        self, mock_datetime, vertical_cover_instance
-    ):
-        """Test default position returns sunset_pos after sunset."""
-        # Mock current time after sunset
-        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
-        vertical_cover_instance.sun_data.sunset = MagicMock(
-            return_value=datetime(2024, 1, 1, 18, 0, 0)
-        )
-        vertical_cover_instance.sun_data.sunrise = MagicMock(
-            return_value=datetime(2024, 1, 1, 6, 0, 0)
-        )
-        vertical_cover_instance.sunset_pos = 0
-        assert vertical_cover_instance.default == 0
+        Default position is now computed centrally by compute_effective_default()
+        and passed into the pipeline as snapshot.default_position.  Any code
+        that still tries to access cover.default should fail loudly so the bug
+        is caught immediately rather than silently using the wrong value.
+        """
+        with pytest.raises(AttributeError, match="default"):
+            _ = vertical_cover_instance.default
 
     @pytest.mark.unit
     def test_fov_method_returns_list(self, vertical_cover_instance):

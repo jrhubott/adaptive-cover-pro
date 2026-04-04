@@ -127,7 +127,7 @@ class TestPipelineIntegration:
             motion_timeout_active=True,
             direct_sun_valid=True,
             calculate_percentage_return=75.0,
-            cover_default=10.0,
+            default_position=int(10.0),
         )
         result = self.registry.evaluate(snap)
         assert result.control_method == ControlMethod.MOTION
@@ -169,7 +169,7 @@ class TestPipelineIntegration:
         """DEFAULT fires when no other handler matches."""
         snap = make_snapshot(
             direct_sun_valid=False,
-            cover_default=30.0,
+            default_position=int(30.0),
         )
         result = self.registry.evaluate(snap)
         assert result.control_method == ControlMethod.DEFAULT
@@ -211,7 +211,6 @@ class TestClimateDataPropagation:
         cover.direct_sun_valid = True
         cover.valid = True
         cover.calculate_percentage = MagicMock(return_value=60.0)
-        cover.default = 0.0
         cover.logger = MagicMock()
         config = MagicMock()
         config.min_pos = None

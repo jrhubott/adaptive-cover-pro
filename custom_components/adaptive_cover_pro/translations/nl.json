@@ -99,7 +99,7 @@
           "start_entity": "Entiteit die starttijd aangeeft",
           "end_time": "Eindtijd",
           "end_entity": "Entiteit die eindtijd aangeeft",
-          "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -109,7 +109,7 @@
           "start_entity": "Entiteit die de status van de starttijd vertegenwoordigt, die de hierboven ingestelde statische starttijd overschrijft. Handig voor het automatiseren van de starttijd met een entiteit",
           "end_time": "Eindtijd voor elke dag; na deze tijd blijft de bekleding stationair",
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
-          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning.",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         },
         "title": "Wijzig Automatiseringsinstellingen",
@@ -288,7 +288,7 @@
           "start_entity": "Entiteit die starttijd aangeeft",
           "end_time": "Eindtijd",
           "end_entity": "Entiteit die eindtijd aangeeft",
-          "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -298,7 +298,7 @@
           "start_entity": "Entiteit die de status van de starttijd vertegenwoordigt, die de hierboven ingestelde statische starttijd overschrijft. Handig voor het automatiseren van de starttijd met een entiteit",
           "end_time": "Eindtijd voor elke dag; na deze tijd blijft de bekleding stationair",
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
-          "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
         },
         "title": "Wijzig Automatiseringsinstellingen",

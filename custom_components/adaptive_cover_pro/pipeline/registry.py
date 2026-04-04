@@ -57,6 +57,11 @@ class PipelineRegistry:
                     climate_strategy=result.climate_strategy,
                     climate_data=result.climate_data,
                     bypass_auto_control=result.bypass_auto_control,
+                    # Propagate sunset-context metadata from the snapshot
+                    default_position=snapshot.default_position,
+                    is_sunset_active=snapshot.is_sunset_active,
+                    configured_default=snapshot.configured_default,
+                    configured_sunset_pos=snapshot.configured_sunset_pos,
                 )
 
             trace.append(

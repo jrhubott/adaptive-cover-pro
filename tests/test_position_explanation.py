@@ -142,6 +142,10 @@ def _base_ctx(**overrides):
         "motion_timeout_active": False,
         "force_override_sensors": [],
         "force_override_position": 0,
+        # Sunset-aware default fields (new in sunset refactor)
+        "effective_default_position": 50,
+        "is_sunset_active": False,
+        "configured_sunset_pos": None,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)
@@ -573,32 +577,42 @@ class TestBuildPositionExplanation:
         assert "manual" in result.lower()
 
     def test_outside_time_window_with_sunset_position(self, builder):
-        """Outside time window with sunset position set → shows Sunset Position."""
+        """Outside time window with sunset_pos active → shows 'sunset position' label."""
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(
                 check_adaptive_time=False,
-                config_options={CONF_SUNSET_POS: 30},
+                effective_default_position=30,
+                is_sunset_active=True,
+                configured_sunset_pos=30,
             )
         )
-        assert "Sunset Position" in result
+        assert "sunset position" in result.lower()
         assert "30%" in result
+        assert "commands paused" in result
 
     def test_outside_time_window_without_sunset_position(self, builder):
-        """Outside time window without sunset position → shows Default Position."""
+        """Outside time window, no sunset_pos → shows 'default position' label."""
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(
                 check_adaptive_time=False,
-                config_options={CONF_DEFAULT_HEIGHT: 100},
+                effective_default_position=100,
+                is_sunset_active=False,
+                configured_sunset_pos=None,
             )
         )
-        assert "Default Position" in result
+        assert "default position" in result.lower()
         assert "100%" in result
+        assert "commands paused" in result
 
     def test_sunset_offset_with_sunset_position(self, builder):
-        """In window but sunset_valid with sunset_pos set → shows Sunset Position."""
+        """In window, sunset_valid=True and is_sunset_active → shows Sunset Position."""
         cover = _make_cover(direct_sun_valid=False, sunset_valid=True, sunset_pos=20)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(normal_cover_state=_make_ncs(cover))
+            _base_ctx(
+                normal_cover_state=_make_ncs(cover),
+                effective_default_position=20,
+                is_sunset_active=True,
+            )
         )
         assert "Sunset Position" in result
         assert "20%" in result
@@ -613,7 +627,11 @@ class TestBuildPositionExplanation:
             default=100,
         )
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(normal_cover_state=_make_ncs(cover))
+            _base_ctx(
+                normal_cover_state=_make_ncs(cover),
+                effective_default_position=100,
+                is_sunset_active=False,
+            )
         )
         assert "FOV Exit" in result
         assert "Default Position" in result

@@ -1,316 +1,384 @@
-"""Tests for position sensor behavior outside the start_time/end_time window.
+"""Tests for position/state behavior with the start_time/end_time operational window.
 
-Verifies that when the current time is outside the configured time window,
-the position sensor reports the sunset/default position (matching what the
-cover was actually commanded to) instead of the stale sun-calculated value.
+With the new architecture the pipeline ALWAYS runs regardless of the time window.
+The time window only controls whether commands are sent to covers
+(CoverCommandService.apply_position() skips when outside the window unless forced).
 
-Fixes GitHub issue #66.
+Key behaviors verified here:
+- Outside time window: pipeline still runs; state reflects the computed pipeline result
+- Sunset-aware default: effective default is sunset_pos when in astronomical sunset window
+- Force override bypasses the time window gate (bypass_auto_control=True)
+- Motion timeout uses snapshot.default_position (sunset-aware)
 """
 
+from __future__ import annotations
+
+import datetime as dt
+from datetime import UTC
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_HEIGHT,
+    CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
 )
 from custom_components.adaptive_cover_pro.enums import ControlMethod
-from custom_components.adaptive_cover_pro.coordinator import (
-    AdaptiveDataUpdateCoordinator,
-)
-from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
-    ClimateHandler,
-)
+from custom_components.adaptive_cover_pro.helpers import compute_effective_default
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
     ForceOverrideHandler,
 )
-from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
-    ManualOverrideHandler,
-)
 from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
     MotionTimeoutHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineSnapshot
 
 
-@pytest.fixture
-def cover_in_fov(mock_sun_data, mock_logger):
-    """Create a vertical cover with sun directly in FOV (would calculate a tracking position)."""
-    from tests.cover_helpers import build_vertical_cover
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    return build_vertical_cover(
-        logger=mock_logger,
-        sol_azi=180.0,
-        sol_elev=30.0,
-        sunset_pos=0,
-        sunset_off=0,
-        sunrise_off=0,
-        sun_data=mock_sun_data,
-        fov_left=45,
-        fov_right=45,
-        win_azi=180,
-        h_def=50,
-        max_pos=100,
-        min_pos=0,
-        max_pos_bool=False,
-        min_pos_bool=False,
-        blind_spot_left=None,
-        blind_spot_right=None,
-        blind_spot_elevation=None,
-        blind_spot_on=False,
-        min_elevation=None,
-        max_elevation=None,
-        distance=0.5,
-        h_win=2.0,
+
+def _make_sun_data_with_times(
+    *,
+    sunset_hour: int = 20,
+    sunrise_hour: int = 6,
+) -> MagicMock:
+    """Return a mock SunData with real datetime sunset/sunrise returns."""
+    today = dt.date.today()
+    sunset_dt = dt.datetime(today.year, today.month, today.day, sunset_hour, 0, 0)
+    sunrise_dt = dt.datetime(today.year, today.month, today.day, sunrise_hour, 0, 0)
+    sun = MagicMock()
+    sun.sunset.return_value = sunset_dt
+    sun.sunrise.return_value = sunrise_dt
+    return sun
+
+
+def _make_cover(
+    *,
+    direct_sun_valid: bool = False,
+    sunset_valid: bool = False,
+    calculate_percentage_return: float = 50.0,
+    h_def: int = 50,
+) -> MagicMock:
+    """Build a mock cover for time-window tests."""
+    cover = MagicMock()
+    cover.direct_sun_valid = direct_sun_valid
+    cover.sunset_valid = sunset_valid
+    cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    cover.sun_data = _make_sun_data_with_times()
+    config = MagicMock()
+    config.min_pos = None
+    config.max_pos = None
+    config.min_pos_sun_only = False
+    config.max_pos_sun_only = False
+    config.h_def = h_def
+    cover.config = config
+    return cover
+
+
+def _make_snapshot(
+    cover: MagicMock,
+    *,
+    default_position: int = 0,
+    is_sunset_active: bool = False,
+    configured_default: int = 0,
+    configured_sunset_pos: int | None = None,
+    motion_timeout_active: bool = False,
+    force_override_sensors: dict | None = None,
+    force_override_position: int = 0,
+) -> PipelineSnapshot:
+    return PipelineSnapshot(
+        cover=cover,
+        config=cover.config,
+        cover_type="cover_blind",
+        default_position=default_position,
+        is_sunset_active=is_sunset_active,
+        configured_default=configured_default,
+        configured_sunset_pos=configured_sunset_pos,
+        climate_readings=None,
+        climate_mode_enabled=False,
+        climate_options=None,
+        force_override_sensors=force_override_sensors or {},
+        force_override_position=force_override_position,
+        manual_override_active=False,
+        motion_timeout_active=motion_timeout_active,
+        weather_override_active=False,
+        weather_override_position=0,
+        weather_bypass_auto_control=True,
+        glare_zones=None,
+        active_zone_names=frozenset(),
     )
 
 
-def make_coordinator(extra_attrs=None):
-    """Create a plain MagicMock coordinator with real method/property bindings.
-
-    Uses a plain MagicMock (no spec) so attributes can be freely set.
-    Binds the real _calculate_cover_state method and state property.
-    """
-    coordinator = MagicMock()
-    coordinator.logger = MagicMock()
-    coordinator._climate_mode = False
-    coordinator._toggles = MagicMock()
-    coordinator._toggles.switch_mode = False
-    coordinator._use_interpolation = False
-    coordinator._inverse_state = False
-    coordinator.is_force_override_active = False
-    coordinator.is_weather_override_active = False
-    coordinator.is_motion_timeout_active = False
-    coordinator.manager = MagicMock()
-    coordinator.manager.binary_cover_manual = False
-    coordinator.climate_state = 50
-    coordinator.climate_data = None
-    coordinator.default_state = 0
-    coordinator.raw_calculated_position = 0
-    coordinator.control_method = ControlMethod.SOLAR
-    coordinator.config_entry = MagicMock()
-    coordinator.config_entry.options = {}
-    coordinator._pipeline_result = None
-    coordinator._pipeline = PipelineRegistry(
-        [
-            ForceOverrideHandler(),
-            MotionTimeoutHandler(),
-            ManualOverrideHandler(),
-            ClimateHandler(),
-            SolarHandler(),
-            DefaultHandler(),
-        ]
-    )
-
-    if extra_attrs:
-        for k, v in extra_attrs.items():
-            setattr(coordinator, k, v)
-
-    # Bind the real _calculate_cover_state method
-    coordinator._calculate_cover_state = (
-        AdaptiveDataUpdateCoordinator._calculate_cover_state.__get__(coordinator)
-    )
-
-    # Bind the real state property to the mock's type (each instance gets its own type)
-    type(coordinator).state = AdaptiveDataUpdateCoordinator.state
-
-    return coordinator
+# ---------------------------------------------------------------------------
+# Tests: effective default position
+# ---------------------------------------------------------------------------
 
 
-class TestOutsideTimeWindowWithSunsetPos:
-    """Tests for position sensor when outside time window with sunset_pos configured."""
+class TestEffectiveDefaultInPipeline:
+    """Pipeline uses compute_effective_default() value as snapshot.default_position."""
 
-    def test_after_end_time_reports_sunset_pos(self, cover_in_fov):
-        """After end_time, sensor should show sunset_pos, not sun-calculated value."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
+    def test_daytime_snapshot_default_is_h_def(self):
+        """During daytime, default_position == h_def."""
+        today = dt.date.today()
+        midday = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        sun = _make_sun_data_with_times(sunset_hour=20, sunrise_hour=6)
 
-        options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.raw_calculated_position == 0
-        assert coordinator.default_state == 0
-        assert coordinator.control_method == ControlMethod.DEFAULT
-        assert result == 0
-
-    def test_before_start_time_reports_sunset_pos(self, cover_in_fov):
-        """Before start_time, sensor should show sunset_pos."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-
-        options = {CONF_SUNSET_POS: 10, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.raw_calculated_position == 10
-        assert coordinator.default_state == 10
-        assert result == 10
-
-    def test_sunset_pos_zero_not_treated_as_none(self, cover_in_fov):
-        """sunset_pos=0 is a valid value and should not fall back to default_height."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-
-        options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.raw_calculated_position == 0
-        assert result == 0
-
-
-class TestOutsideTimeWindowWithoutSunsetPos:
-    """Tests for position sensor when outside time window without sunset_pos."""
-
-    def test_no_sunset_pos_falls_back_to_default_height(self, cover_in_fov):
-        """When sunset_pos is None, should use default_height."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-
-        options = {CONF_SUNSET_POS: None, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.raw_calculated_position == 50
-        assert coordinator.default_state == 50
-        assert result == 50
-
-    def test_no_sunset_pos_no_default_height_falls_back_to_zero(self, cover_in_fov):
-        """When both sunset_pos and default_height are missing, should use 0."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-
-        options = {}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.raw_calculated_position == 0
-        assert result == 0
-
-
-class TestWithinTimeWindow:
-    """Tests verifying normal behavior is unchanged when within the time window."""
-
-    def test_within_window_uses_sun_calculation(self, cover_in_fov):
-        """Within time window, should use normal sun-based calculation."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = True
-
-        with patch.object(
-            type(cover_in_fov),
-            "sunset_valid",
-            new_callable=PropertyMock,
-            return_value=False,
+        with patch(
+            "custom_components.adaptive_cover_pro.helpers.dt.datetime",
+            **{"now.return_value": midday.replace(tzinfo=UTC)},
         ):
-            options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-            result = coordinator._calculate_cover_state(cover_in_fov, options)
+            effective, active = compute_effective_default(
+                h_def=50, sunset_pos=0, sun_data=sun, sunset_off=0, sunrise_off=0
+            )
 
-        # The sun-calculated position should NOT be sunset_pos (0)
-        assert result > 0
-        assert coordinator.control_method == ControlMethod.SOLAR
+        assert effective == 50
+        assert active is False
 
-    def test_no_time_window_configured_uses_sun_calculation(self, cover_in_fov):
-        """When no start/end time configured, check_adaptive_time=True, normal behavior."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = True
+    def test_after_sunset_snapshot_default_is_sunset_pos(self):
+        """After sunset+offset, default_position == sunset_pos."""
+        today = dt.date.today()
+        night = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        sun = _make_sun_data_with_times(sunset_hour=20, sunrise_hour=6)
 
-        with patch.object(
-            type(cover_in_fov),
-            "sunset_valid",
-            new_callable=PropertyMock,
-            return_value=False,
+        with patch(
+            "custom_components.adaptive_cover_pro.helpers.dt.datetime",
+            **{"now.return_value": night.replace(tzinfo=UTC)},
         ):
-            options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-            result = coordinator._calculate_cover_state(cover_in_fov, options)
+            effective, active = compute_effective_default(
+                h_def=50, sunset_pos=0, sun_data=sun, sunset_off=0, sunrise_off=0
+            )
 
-        assert result > 0
+        assert effective == 0
+        assert active is True
 
+    def test_no_sunset_pos_always_uses_h_def(self):
+        """No sunset_pos configured → always h_def, never sunset active."""
+        today = dt.date.today()
+        night = dt.datetime(today.year, today.month, today.day, 22, 0, 0)
+        sun = _make_sun_data_with_times(sunset_hour=20)
 
-class TestOutsideTimeWindowWithOverrides:
-    """Tests for priority behavior when outside time window with overrides active."""
+        with patch(
+            "custom_components.adaptive_cover_pro.helpers.dt.datetime",
+            **{"now.return_value": night.replace(tzinfo=UTC)},
+        ):
+            effective, active = compute_effective_default(
+                h_def=50, sunset_pos=None, sun_data=sun, sunset_off=0, sunrise_off=0
+            )
 
-    def test_force_override_takes_precedence_outside_window(self, cover_in_fov):
-        """Force override should take precedence even outside time window."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-        coordinator.is_force_override_active = True
-        coordinator.config_entry.options = {
-            "force_override_position": 75,
-            CONF_SUNSET_POS: 0,
-            CONF_DEFAULT_HEIGHT: 50,
-        }
-
-        options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert result == 75
-
-    def test_motion_timeout_uses_correct_default_outside_window(self, cover_in_fov):
-        """Motion timeout should use the outside-window default_state."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-        coordinator.is_force_override_active = False
-        coordinator.is_motion_timeout_active = True
-
-        options = {CONF_SUNSET_POS: 5, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
-
-        # Motion timeout returns default_state which is now set to sunset_pos (5)
-        assert coordinator.default_state == 5
-        assert result == 5
+        assert effective == 50
+        assert active is False
 
 
-class TestOutsideTimeWindowControlMethod:
-    """Tests for control_method when outside time window."""
-
-    def test_control_method_is_default_outside_window(self, cover_in_fov):
-        """control_method should be DEFAULT when outside time window."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-
-        options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-        coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.control_method == ControlMethod.DEFAULT
-
-    def test_raw_calculated_position_matches_outside_window_pos(self, cover_in_fov):
-        """raw_calculated_position should be set to the outside-window position."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-
-        options = {CONF_SUNSET_POS: 15, CONF_DEFAULT_HEIGHT: 50}
-        coordinator._calculate_cover_state(cover_in_fov, options)
-
-        assert coordinator.raw_calculated_position == 15
+# ---------------------------------------------------------------------------
+# Tests: pipeline always runs (time window doesn't bypass pipeline)
+# ---------------------------------------------------------------------------
 
 
-class TestOutsideTimeWindowInverseState:
-    """Tests for inverse_state behavior outside time window."""
+class TestPipelineAlwaysRuns:
+    """Pipeline runs regardless of check_adaptive_time."""
 
-    def test_inverse_state_applied_outside_window(self, cover_in_fov):
-        """inverse_state should be applied to the outside-window position by state property."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-        coordinator._inverse_state = True
+    def test_default_handler_fires_when_sun_not_in_fov(self):
+        """DefaultHandler fires when sun not in FOV, returning snapshot.default_position."""
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(cover, default_position=0)
 
-        options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
+        result = registry.evaluate(snapshot)
 
-        # inverse_state flips: 100 - 0 = 100
-        assert result == 100
-        # raw_calculated_position is set before inverse is applied
-        assert coordinator.raw_calculated_position == 0
+        assert result.control_method == ControlMethod.DEFAULT
+        assert result.position == 0
 
-    def test_inverse_state_non_zero_outside_window(self, cover_in_fov):
-        """inverse_state applied to non-zero outside-window position."""
-        coordinator = make_coordinator()
-        coordinator.check_adaptive_time = False
-        coordinator._inverse_state = True
+    def test_default_handler_returns_h_def_during_daytime(self):
+        """During daytime with no sun in FOV, default_position == h_def."""
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(cover, default_position=50, configured_default=50)
 
-        options = {CONF_SUNSET_POS: 30, CONF_DEFAULT_HEIGHT: 50}
-        result = coordinator._calculate_cover_state(cover_in_fov, options)
+        result = registry.evaluate(snapshot)
 
-        # inverse_state flips: 100 - 30 = 70
-        assert result == 70
-        assert coordinator.raw_calculated_position == 30
+        assert result.position == 50
+        assert result.is_sunset_active is False
+
+    def test_default_handler_returns_sunset_pos_at_night(self):
+        """At night, default_position == sunset_pos; handler reason reflects it."""
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=10,
+            is_sunset_active=True,
+            configured_sunset_pos=10,
+        )
+
+        result = registry.evaluate(snapshot)
+
+        assert result.position == 10
+        assert result.is_sunset_active is True
+        assert "sunset position" in result.reason
+
+    def test_solar_handler_fires_when_sun_in_fov(self):
+        """SolarHandler fires when direct_sun_valid=True."""
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=True, calculate_percentage_return=75.0)
+        snapshot = _make_snapshot(cover, default_position=0)
+
+        result = registry.evaluate(snapshot)
+
+        assert result.control_method == ControlMethod.SOLAR
+        assert result.position == 75
+
+
+# ---------------------------------------------------------------------------
+# Tests: CONF_RETURN_SUNSET behavior (outside time window)
+# ---------------------------------------------------------------------------
+
+
+class TestOutsideTimeWindowBehavior:
+    """Pipeline result outside time window — commands are gated, state is reported."""
+
+    def test_pipeline_result_still_set_outside_window(self):
+        """The pipeline result reflects what would be sent, even if commands are gated."""
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        # Simulate outside-window: sun not in FOV, effective default = sunset_pos
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=0,
+            is_sunset_active=True,
+            configured_sunset_pos=0,
+            configured_default=50,
+        )
+
+        result = registry.evaluate(snapshot)
+
+        # Pipeline ran and returned 0 (sunset_pos)
+        assert result.position == 0
+        assert result.is_sunset_active is True
+
+    def test_sunset_pos_zero_not_treated_as_none(self):
+        """sunset_pos=0 is a valid position, not a None."""
+        registry = PipelineRegistry([DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=0,
+            is_sunset_active=True,
+            configured_sunset_pos=0,
+        )
+
+        result = registry.evaluate(snapshot)
+        assert result.position == 0
+
+    def test_no_sunset_pos_falls_back_to_default_height(self):
+        """No sunset_pos → pipeline uses h_def."""
+        registry = PipelineRegistry([DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=50,
+            is_sunset_active=False,
+            configured_default=50,
+            configured_sunset_pos=None,
+        )
+
+        result = registry.evaluate(snapshot)
+        assert result.position == 50
+
+    def test_no_sunset_pos_no_default_falls_back_to_zero(self):
+        """No sunset_pos and h_def=0 → returns 0."""
+        registry = PipelineRegistry([DefaultHandler()])
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=0,
+            is_sunset_active=False,
+            configured_default=0,
+        )
+
+        result = registry.evaluate(snapshot)
+        assert result.position == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: Force override works outside time window (bypass_auto_control)
+# ---------------------------------------------------------------------------
+
+
+class TestForceOverrideOutsideWindow:
+    """Force override bypasses the time window gate via bypass_auto_control=True."""
+
+    def test_force_override_matches_and_sets_bypass(self):
+        """ForceOverrideHandler fires and sets bypass_auto_control=True."""
+        registry = PipelineRegistry(
+            [ForceOverrideHandler(), SolarHandler(), DefaultHandler()]
+        )
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=50,
+            force_override_sensors={"binary_sensor.test": True},
+            force_override_position=75,
+        )
+
+        result = registry.evaluate(snapshot)
+
+        assert result.bypass_auto_control is True
+        assert result.position == 75
+        assert result.control_method == ControlMethod.FORCE
+
+
+# ---------------------------------------------------------------------------
+# Tests: Motion timeout uses snapshot.default_position
+# ---------------------------------------------------------------------------
+
+
+class TestMotionTimeoutDefaultPosition:
+    """MotionTimeoutHandler uses snapshot.default_position (sunset-aware)."""
+
+    def test_motion_timeout_uses_default_position_at_night(self):
+        """At night, motion timeout returns sunset_pos via default_position."""
+        registry = PipelineRegistry(
+            [MotionTimeoutHandler(), SolarHandler(), DefaultHandler()]
+        )
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=10,
+            is_sunset_active=True,
+            configured_sunset_pos=10,
+            motion_timeout_active=True,
+        )
+
+        result = registry.evaluate(snapshot)
+
+        assert result.control_method == ControlMethod.MOTION
+        assert result.position == 10
+        assert "sunset position" in result.reason
+
+    def test_motion_timeout_uses_default_position_daytime(self):
+        """During daytime, motion timeout returns h_def via default_position."""
+        registry = PipelineRegistry(
+            [MotionTimeoutHandler(), SolarHandler(), DefaultHandler()]
+        )
+        cover = _make_cover(direct_sun_valid=False)
+        snapshot = _make_snapshot(
+            cover,
+            default_position=50,
+            is_sunset_active=False,
+            configured_default=50,
+            motion_timeout_active=True,
+        )
+
+        result = registry.evaluate(snapshot)
+
+        assert result.control_method == ControlMethod.MOTION
+        assert result.position == 50
+        assert "default position" in result.reason

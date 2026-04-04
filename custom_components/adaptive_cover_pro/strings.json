@@ -43,7 +43,7 @@
           "end_entity": "Entity indicating ending time",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
-          "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset"
+          "return_sunset": "Move covers to current default position when end time is reached"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -56,7 +56,7 @@
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
-          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         }
       },
       "vertical": {
@@ -132,7 +132,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
@@ -318,7 +320,7 @@
           "end_entity": "Entity indicating ending time",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
-          "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset"
+          "return_sunset": "Move covers to current default position when end time is reached"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -331,7 +333,7 @@
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
-          "return_sunset": "Always adjust position to sunset default at end time, even if it's before actual sunset. Enable this to ensure the cover moves to sunset position when the end time is reached, rather than waiting for astronomical sunset. Useful if your end time is before sunset and you want consistent evening positioning."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         }
       },
       "vertical": {
@@ -407,7 +409,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },

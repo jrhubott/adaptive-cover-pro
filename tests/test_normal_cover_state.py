@@ -50,9 +50,15 @@ class TestNormalCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_get_state_after_sunset(self, mock_datetime, vertical_cover_instance):
-        """Test state after sunset uses sunset_pos."""
-        # Set time after sunset
+    def test_get_state_after_sunset_returns_h_def(self, mock_datetime, vertical_cover_instance):
+        """NormalCoverState uses h_def (not sunset_pos) when sun not in FOV.
+
+        Sunset-aware default position is now handled centrally by
+        compute_effective_default() and passed through the pipeline as
+        snapshot.default_position.  NormalCoverState is only used for the raw
+        geometric calculation (diagnostics / raw_calculated_position), so it
+        always falls back to config.h_def regardless of the time of day.
+        """
         mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
@@ -60,11 +66,13 @@ class TestNormalCoverState:
         vertical_cover_instance.sun_data.sunrise = MagicMock(
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
-        vertical_cover_instance.sunset_pos = 0
+        # h_def is the raw config default
+        vertical_cover_instance.h_def = 50  # used via cover.config.h_def
 
         state_handler = NormalCoverState(vertical_cover_instance)
         state = state_handler.get_state()
-        assert state == 0
+        # Returns h_def (50), not sunset_pos — sunset logic is in the pipeline
+        assert state == 50
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")

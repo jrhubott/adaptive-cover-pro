@@ -962,7 +962,7 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return the full decision trace and sun position data."""
+        """Return the full decision trace, sun position, and sunset/default context."""
         attrs: dict[str, Any] = {}
         result = self.coordinator._pipeline_result
         if result:
@@ -980,6 +980,16 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
             attrs["reason"] = result.reason
             attrs["bypass_auto_control"] = result.bypass_auto_control
 
+            # Sunset-aware default context — lets users see at a glance what
+            # the effective default is this cycle and why.
+            attrs["default_position"] = result.default_position
+            attrs["is_sunset_active"] = result.is_sunset_active
+            attrs["configured_default"] = result.configured_default
+            attrs["configured_sunset_pos"] = result.configured_sunset_pos
+
+        # Operational time window
+        attrs["in_time_window"] = self.coordinator.check_adaptive_time
+
         diagnostics = self.coordinator.data.diagnostics if self.coordinator.data else {}
         if diagnostics:
             attrs["sun_azimuth"] = diagnostics.get("sun_azimuth")
@@ -991,6 +1001,8 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 attrs["in_field_of_view"] = sun_validity.get("valid")
                 attrs["elevation_valid"] = sun_validity.get("valid_elevation")
                 attrs["in_blind_spot"] = sun_validity.get("in_blind_spot")
+                # True when between (sunset+offset) and (sunrise+offset)
+                attrs["sunset_window_active"] = sun_validity.get("sunset_window_active")
 
             if (
                 hasattr(self.coordinator, "normal_cover_state")

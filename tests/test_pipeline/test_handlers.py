@@ -112,7 +112,7 @@ class TestMotionTimeoutHandler:
 
     def test_matches_when_active(self) -> None:
         """Return MOTION method when motion timeout is active."""
-        snap = make_snapshot(motion_timeout_active=True, cover_default=20.0)
+        snap = make_snapshot(motion_timeout_active=True, default_position=int(20.0))
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.MOTION
@@ -122,9 +122,9 @@ class TestMotionTimeoutHandler:
         snap = make_snapshot(motion_timeout_active=False)
         assert self.handler.evaluate(snap) is None
 
-    def test_uses_cover_default_position(self) -> None:
-        """Return position based on cover.default when timeout active."""
-        snap = make_snapshot(motion_timeout_active=True, cover_default=33.0)
+    def test_uses_snapshot_default_position(self) -> None:
+        """Return position from snapshot.default_position (not cover.default) when timeout active."""
+        snap = make_snapshot(motion_timeout_active=True, default_position=int(33.0))
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 33
@@ -176,7 +176,7 @@ class TestManualOverrideHandler:
         snap = make_snapshot(
             manual_override_active=True,
             direct_sun_valid=False,
-            cover_default=25.0,
+            default_position=int(25.0),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
@@ -275,7 +275,7 @@ class TestDefaultHandler:
 
     def test_returns_default_position(self) -> None:
         """Return the default_position with DEFAULT method."""
-        snap = make_snapshot(cover_default=42)
+        snap = make_snapshot(default_position=int(42))
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 42
@@ -283,7 +283,7 @@ class TestDefaultHandler:
 
     def test_zero_default_position(self) -> None:
         """Handle default_position=0 correctly (falsy value check)."""
-        snap = make_snapshot(cover_default=0)
+        snap = make_snapshot(default_position=int(0))
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 0

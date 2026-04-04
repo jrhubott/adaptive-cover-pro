@@ -12,7 +12,6 @@ from homeassistant.core import (
     Event,
     HomeAssistant,
     State,
-    callback,
 )
 
 # EventStateChangedData was added in Home Assistant 2024.4+
@@ -22,13 +21,11 @@ try:
 except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
-from homeassistant.helpers.event import (
-    async_track_point_in_time,
-)
 from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .calculation import NormalCoverState
+from .helpers import compute_effective_default
 from .engine.covers import (
     AdaptiveHorizontalCover,
     AdaptiveTiltCover,
@@ -80,6 +77,7 @@ from .const import (
     CONF_RETURN_SUNSET,
     CONF_START_ENTITY,
     CONF_START_TIME,
+    CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
     CONF_TEMP_LOW,
@@ -191,7 +189,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
-        self.timed_refresh = False
         self.climate_state = None
         self.climate_data = None  # Store climate_data for P1 diagnostics
         self._weather_readings: ClimateReadings | None = None
@@ -233,8 +230,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ]
         )
         self._pipeline_result = None
-        self._update_listener = None
-        self._scheduled_time = dt.datetime.now()
 
         self._cached_options = None
 
@@ -389,20 +384,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._start_startup_grace_period()
         # Start cover command service reconciliation timer
         self._cmd_svc.start()
-
-    async def async_timed_refresh(self, event) -> None:
-        """Control state at end time."""
-        now = dt.datetime.now()
-        end = self._time_mgr.end_time
-
-        self.logger.debug("Checking timed refresh. End time: %s, now: %s", end, now)
-
-        if end is not None and (now - end) <= dt.timedelta(seconds=5):
-            self.timed_refresh = True
-            self.logger.debug("Timed refresh triggered")
-            await self.async_refresh()
-        else:
-            self.logger.debug("Timed refresh, but: not equal to end time")
 
     async def async_check_entity_state_change(
         self, event: Event[EventStateChangedData]
@@ -610,53 +591,42 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Cancel weather clear-delay timeout task."""
         self._weather_mgr.cancel_weather_timeout()
 
-    @callback
-    def _async_cancel_update_listener(self) -> None:
-        """Cancel the scheduled update."""
-        if self._update_listener:
-            self._update_listener()
-            self._update_listener = None
-
-    async def async_timed_end_time(self) -> None:
-        """Control state at end time."""
-        self.logger.debug("Scheduling end time update at %s", self._end_time)
-        self._async_cancel_update_listener()
-        self.logger.debug(
-            "End time: %s, Track end time: %s, Scheduled time: %s, Condition: %s",
-            self._end_time,
-            self._track_end_time,
-            self._scheduled_time,
-            self._end_time > self._scheduled_time,
-        )
-        self._update_listener = async_track_point_in_time(
-            self.hass, self.async_timed_refresh, self._end_time
-        )
-        self._scheduled_time = self._end_time
-
     def _calculate_cover_state(self, cover_data, options) -> int:
-        """Calculate cover state via pipeline and return final position."""
+        """Calculate cover state via pipeline and return final position.
+
+        The pipeline always runs regardless of the operational time window.
+        The time-window gate is enforced by CoverCommandService.apply_position()
+        which skips sending commands when outside the window (unless forced).
+        This means diagnostics, Decision Trace, and sensor state are always
+        up-to-date even when no commands are being sent.
+        """
         # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
         self._read_weather_conditions(options)
         self.climate_strategy = None
 
-        # When outside the configured start_time/end_time window,
-        # report the position the cover was actually commanded to
-        if not self.check_adaptive_time:
-            sunset_pos = options.get(CONF_SUNSET_POS)
-            default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            outside_window_pos = (
-                sunset_pos if sunset_pos is not None else default_height
-            )
-
-            self.normal_cover_state = NormalCoverState(cover_data)
-            self.default_state = outside_window_pos
-            self.raw_calculated_position = outside_window_pos
-            self.control_method = ControlMethod.DEFAULT
-            self._pipeline_result = None
-            self.logger.debug(
-                "Outside time window - using position: %s", outside_window_pos
-            )
-            return self.state
+        # Compute the effective default position from astronomical sunset/sunrise.
+        # This is the single source of truth — all pipeline handlers use it via
+        # snapshot.default_position.  The sunset_pos is active when current time
+        # is after (astronomical_sunset + sunset_offset) or before
+        # (astronomical_sunrise + sunrise_offset).
+        h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+        sunset_pos_cfg = options.get(CONF_SUNSET_POS)  # None when not configured
+        sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+        sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+        effective_default, is_sunset_active = compute_effective_default(
+            h_def=h_def,
+            sunset_pos=sunset_pos_cfg,
+            sun_data=cover_data.sun_data,
+            sunset_off=sunset_off,
+            sunrise_off=sunrise_off,
+        )
+        self.logger.debug(
+            "Effective default: %s (sunset_active=%s, h_def=%s, sunset_pos=%s)",
+            effective_default,
+            is_sunset_active,
+            h_def,
+            sunset_pos_cfg,
+        )
 
         # Calculate the state of the cover
         self.normal_cover_state = NormalCoverState(cover_data)
@@ -673,8 +643,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Sun is in front - use raw calculated percentage
             self.raw_calculated_position = round(cover_data.calculate_percentage())
         else:
-            # Sun not in front - use default position (no calculation)
-            self.raw_calculated_position = cover_data.default
+            # Sun not in front - use effective default position
+            self.raw_calculated_position = effective_default
         self.logger.debug("Raw calculated position: %s", self.raw_calculated_position)
 
         # Build snapshot with raw state — handlers evaluate their own conditions
@@ -692,7 +662,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cover=cover_data,
             config=cover_data.config,
             cover_type=self._cover_type,
-            default_position=int(round(cover_data.default)),
+            default_position=effective_default,
+            is_sunset_active=is_sunset_active,
+            configured_default=h_def,
+            configured_sunset_pos=int(sunset_pos_cfg) if sunset_pos_cfg is not None else None,
             climate_readings=self._weather_readings,
             climate_mode_enabled=self._toggles.switch_mode,
             climate_options=self._build_climate_options(options),
@@ -787,14 +760,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         state = self._calculate_cover_state(cover_data, options)
         await self.manager.reset_if_needed()
 
-        # Schedule end time update if needed
-        if (
-            self._end_time
-            and self._track_end_time
-            and self._end_time > self._scheduled_time
-        ):
-            await self.async_timed_end_time()
-
         # Handle types of changes
         if self.state_change:
             await self.async_handle_state_change(state, options)
@@ -802,8 +767,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self.async_handle_cover_state_change(state)
         if self.first_refresh:
             await self.async_handle_first_refresh(state, options)
-        if self.timed_refresh:
-            await self.async_handle_timed_refresh(options)
 
         # Update solar times
         normal_cover = self.normal_cover_state.cover
@@ -930,29 +893,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
         self.logger.debug("First refresh handled")
-
-    async def async_handle_timed_refresh(self, options):
-        """Move covers to sunset position when the configured end time is reached."""
-        sunset_pos_raw = options.get(CONF_SUNSET_POS)
-        self.logger.debug(
-            "This is a timed refresh, using sunset position: %s",
-            sunset_pos_raw,
-        )
-        if sunset_pos_raw is None:
-            self.logger.debug("Timed refresh: no sunset position configured, skipping")
-            self.timed_refresh = False
-            return
-        sunset_pos = (
-            inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
-        )
-        for cover in self.entities:
-            # Sunset position always forced — bypasses delta/time/auto-control gates
-            ctx = self._build_position_context(cover, options, force=True)
-            await self._cmd_svc.apply_position(cover, sunset_pos, "sunset", context=ctx)
-        self.timed_refresh = False
-        self.logger.debug("Timed refresh handled")
-
-
 
     def _update_options(self, options):
         """Update coordinator options from config entry.
@@ -1183,6 +1123,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force_override_position=self.config_entry.options.get(
                 CONF_FORCE_OVERRIDE_POSITION, 0
             ),
+            # Sunset-aware default — from the pipeline result so diagnostics
+            # always reflect exactly what the pipeline computed this cycle.
+            effective_default_position=(
+                self._pipeline_result.default_position
+                if self._pipeline_result is not None
+                else int(self.config_entry.options.get(CONF_DEFAULT_HEIGHT, 0))
+            ),
+            is_sunset_active=(
+                self._pipeline_result.is_sunset_active
+                if self._pipeline_result is not None
+                else False
+            ),
+            configured_sunset_pos=(
+                self._pipeline_result.configured_sunset_pos
+                if self._pipeline_result is not None
+                else None
+            ),
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)
@@ -1195,29 +1152,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @property
     def state(self) -> int:
-        """Final cover position after pipeline, interpolation, and inverse_state transforms."""
-        # Safety overrides always take full precedence — even outside the time window
-        # and even when automatic_control is OFF.  Two paths:
-        #   1. Inside time window: _pipeline_bypasses_auto_control is True (pipeline ran
-        #      and the winning handler set bypass_auto_control=True).
-        #   2. Outside time window: _pipeline_result is None (pipeline skipped), so
-        #      fall back to the raw is_force/weather_override_active properties.
-        # Both paths skip interpolation and inverse_state transforms.
-        if self._pipeline_bypasses_auto_control and self._pipeline_result is not None:
+        """Final cover position after pipeline, interpolation, and inverse_state transforms.
+
+        The pipeline always runs so _pipeline_result is always set.  Safety
+        override handlers (ForceOverride, WeatherOverride) set
+        bypass_auto_control=True on their result, which causes their position
+        to be returned directly — bypassing interpolation and inverse_state —
+        even when automatic_control is OFF or outside the time window.
+        """
+        # Safety overrides take full precedence — skip post-processing transforms.
+        if self._pipeline_bypasses_auto_control:
             return self._pipeline_result.position
-        if self._pipeline_result is None:
-            # Outside time window — pipeline did not run; check safety overrides directly
-            if self.is_force_override_active:
-                return self.config_entry.options.get(CONF_FORCE_OVERRIDE_POSITION, 0)
-            if self.is_weather_override_active and self.config_entry.options.get(
-                CONF_WEATHER_BYPASS_AUTO_CONTROL, True
-            ):
-                return self.config_entry.options.get(CONF_WEATHER_OVERRIDE_POSITION, 0)
-        # Use pipeline result if available, otherwise default_state (outside time window)
-        if self._pipeline_result is not None:
-            state = self._pipeline_result.position
-        else:
-            state = self.default_state
+
+        state = self._pipeline_result.position
 
         # Post-processing: interpolation and inverse state
         if self._use_interpolation:
@@ -1277,10 +1224,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         bypass_auto_control=True so that wind/rain/force protection still
         operates when the user has paused normal sun-tracking automation.
         """
-        return (
-            self._pipeline_result is not None
-            and self._pipeline_result.bypass_auto_control
-        )
+        return self._pipeline_result.bypass_auto_control
 
     @property
     def manual_toggle(self):
@@ -1323,15 +1267,51 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._toggles.return_to_default_toggle = value
 
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
-        """Check time window transitions — delegates to TimeWindowManager."""
+        """Check time window transitions — delegates to TimeWindowManager.
 
-        async def _trigger_timed_refresh():
-            self.timed_refresh = True
+        When the operational window closes (active→inactive transition) and
+        CONF_RETURN_SUNSET is enabled, force-sends the current effective default
+        position (which may be sunset_pos if in the astronomical sunset window)
+        to all covers.  The command bypasses all gate checks so covers move
+        immediately regardless of delta/time thresholds.
+        """
+        async def _on_window_closed() -> None:
+            """Force-send effective default when end time is reached."""
+            if not self._track_end_time:
+                return
+            options = self.config_entry.options
+            # Compute the current effective default (may already be sunset_pos)
+            h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+            sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+            sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+            cover_data = self.get_blind_data(options=options)
+            effective_pos, is_sunset = compute_effective_default(
+                h_def=h_def,
+                sunset_pos=sunset_pos_cfg,
+                sun_data=cover_data.sun_data,
+                sunset_off=sunset_off,
+                sunrise_off=sunrise_off,
+            )
+            pos_to_send = inverse_state(effective_pos) if self._inverse_state else effective_pos
+            self.logger.info(
+                "End time reached — force-sending effective default %s%% "
+                "(sunset_active=%s) to %s cover(s)",
+                pos_to_send,
+                is_sunset,
+                len(self.entities),
+            )
+            for cover_entity in self.entities:
+                ctx = self._build_position_context(cover_entity, options, force=True)
+                await self._cmd_svc.apply_position(
+                    cover_entity, pos_to_send, "end_time_default", context=ctx
+                )
+            # Trigger a normal refresh so sensor state and diagnostics update
             await self.async_refresh()
 
         await self._time_mgr.check_transition(
             track_end_time=self._track_end_time,
-            refresh_callback=_trigger_timed_refresh,
+            refresh_callback=_on_window_closed,
         )
 
     def _check_sun_validity_transition(self) -> bool:

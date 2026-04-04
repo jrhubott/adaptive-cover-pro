@@ -76,6 +76,11 @@ class DiagnosticContext:
     force_override_sensors: list = field(default_factory=list)
     force_override_position: int = 0
 
+    # Effective default — sunset-aware single source of truth
+    effective_default_position: int = 0
+    is_sunset_active: bool = False          # True when in astronomical sunset window
+    configured_sunset_pos: int | None = None  # raw sunset_pos from config (None = not set)
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -162,15 +167,11 @@ class DiagnosticsBuilder:
         if ctx.is_manual_override_active:
             return "Manual override active"
 
-        # Outside time window
+        # Outside time window — pipeline still ran but commands are gated
         if not ctx.check_adaptive_time:
-            from ..const import CONF_DEFAULT_HEIGHT, CONF_SUNSET_POS
-
-            sunset_pos = options.get(CONF_SUNSET_POS)
-            default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            if sunset_pos is not None:
-                return f"Outside time window → Sunset Position ({sunset_pos}%)"
-            return f"Outside time window → Default Position ({default_height}%)"
+            pos = ctx.effective_default_position
+            pos_label = "sunset position" if ctx.is_sunset_active else "default position"
+            return f"Outside time window → {pos_label} {pos}% (commands paused)"
 
         # Build the decision chain
         parts: list[str] = []
@@ -180,11 +181,11 @@ class DiagnosticsBuilder:
             cover = ctx.normal_cover_state.cover
             if cover.direct_sun_valid:
                 parts.append(f"Sun tracking ({ctx.raw_calculated_position}%)")
-            elif cover.sunset_valid and cover.sunset_pos is not None:
-                parts.append(f"Sunset Position ({round(cover.sunset_pos)}%)")
+            elif cover.sunset_valid and ctx.is_sunset_active:
+                parts.append(f"Sunset Position ({ctx.effective_default_position}%)")
             else:
                 reason = cover.control_state_reason
-                parts.append(f"{reason} → Default Position ({round(cover.default)}%)")
+                parts.append(f"{reason} → Default Position ({ctx.effective_default_position}%)")
 
         # Step 2: Position limits on the non-climate path
         if not ctx.switch_mode:
@@ -310,7 +311,16 @@ class DiagnosticsBuilder:
                 "before_end_time": ctx.before_end_time,
                 "start_time": ctx.start_time,
                 "end_time": ctx.end_time,
-            }
+            },
+            "default_position": {
+                # The effective default used this cycle by all pipeline handlers.
+                # equals configured_sunset_pos when is_sunset_active=True,
+                # equals configured_default otherwise.
+                "effective": ctx.effective_default_position,
+                "is_sunset_active": ctx.is_sunset_active,
+                "configured_default": ctx.default_state,
+                "configured_sunset_pos": ctx.configured_sunset_pos,
+            },
         }
 
     @staticmethod
@@ -323,6 +333,11 @@ class DiagnosticsBuilder:
                 "valid": cover.valid,
                 "valid_elevation": cover.valid_elevation,
                 "in_blind_spot": getattr(cover, "is_sun_in_blind_spot", None),
+                # True when current time is within the astronomical sunset window
+                # (after sunset+offset or before sunrise+offset). When True, the
+                # solar handler is suppressed (direct_sun_valid is False) even if
+                # the sun is geometrically in front of the window.
+                "sunset_window_active": getattr(cover, "sunset_valid", None),
             }
         return diagnostics
 

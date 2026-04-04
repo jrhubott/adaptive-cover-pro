@@ -201,20 +201,6 @@ class SunGeometry:
             return "Default: Blind Spot"
         return "Default"
 
-    @property
-    def default(self) -> float:
-        """Get default position considering sunset offset.
-
-        Returns:
-            Sunset position if within sunset/sunrise offset period, otherwise
-            normal default position.
-
-        """
-        default = self.config.h_def
-        if self.sunset_valid and self.config.sunset_pos is not None:
-            default = self.config.sunset_pos
-        return default
-
     # ------------------------------------------------------------------
     # FOV helpers
     # ------------------------------------------------------------------

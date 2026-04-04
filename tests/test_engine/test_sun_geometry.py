@@ -282,40 +282,22 @@ class TestControlStateReason:
 
 
 class TestDefault:
-    """Tests for default position property."""
+    """The .default property has been removed from SunGeometry.
 
-    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_default_daytime(self, mock_dt):
-        """Daytime returns h_def."""
-        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+    Default position is now computed centrally by compute_effective_default()
+    and passed into the pipeline via snapshot.default_position.
+    These tests document the removal and verify the property is gone.
+    """
+
+    def test_sun_geometry_has_no_default_property(self):
+        """SunGeometry.default was removed — verify AttributeError is raised."""
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
         config = _make_config(h_def=50, sunset_pos=10)
         sg = SunGeometry(180.0, 45.0, sun_data, config, _make_logger())
-        assert sg.default == 50
-
-    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_default_after_sunset_uses_sunset_pos(self, mock_dt):
-        """After sunset returns sunset_pos when configured."""
-        mock_dt.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
-        sun_data = _make_sun_data()
-        sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
-        sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
-        config = _make_config(h_def=50, sunset_pos=10)
-        sg = SunGeometry(180.0, 45.0, sun_data, config, _make_logger())
-        assert sg.default == 10
-
-    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_default_after_sunset_no_sunset_pos(self, mock_dt):
-        """After sunset with no sunset_pos returns h_def."""
-        mock_dt.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
-        sun_data = _make_sun_data()
-        sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
-        sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
-        config = _make_config(h_def=50, sunset_pos=None)
-        sg = SunGeometry(180.0, 45.0, sun_data, config, _make_logger())
-        assert sg.default == 50
+        with pytest.raises(AttributeError):
+            _ = sg.default
 
 
 # ------------------------------------------------------------------

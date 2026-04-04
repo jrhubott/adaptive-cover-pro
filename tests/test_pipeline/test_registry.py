@@ -43,7 +43,6 @@ def _make_climate_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
-    cover.default = 0.0
     cover.logger = MagicMock()
     config = MagicMock()
     config.min_pos = None
@@ -121,7 +120,7 @@ def test_empty_registry_raises() -> None:
 def test_single_handler_always_matches() -> None:
     """DefaultHandler alone produces a valid result."""
     registry = PipelineRegistry([DefaultHandler()])
-    snap = make_snapshot(cover_default=25.0)
+    snap = make_snapshot(default_position=int(25.0))
     result = registry.evaluate(snap)
     assert result.position == 25
     assert result.control_method == ControlMethod.DEFAULT
@@ -219,7 +218,7 @@ def test_full_pipeline_motion_timeout_beats_manual() -> None:
     registry = PipelineRegistry(ALL_HANDLERS)
     snap = make_snapshot(
         calculate_percentage_return=50.0,
-        cover_default=20.0,
+        default_position=int(20.0),
         motion_timeout_active=True,
         manual_override_active=True,
     )
@@ -275,7 +274,7 @@ def test_full_pipeline_default_fallback() -> None:
     registry = PipelineRegistry(ALL_HANDLERS)
     snap = make_snapshot(
         calculate_percentage_return=65.0,
-        cover_default=10.0,
+        default_position=int(10.0),
         direct_sun_valid=False,
     )
     result = registry.evaluate(snap)

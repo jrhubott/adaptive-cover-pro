@@ -14,16 +14,24 @@ def _make_mock_cover(
     *,
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
-    default: float = 0.0,
     distance: float = 3.0,
     gamma: float = 0.0,
     config=None,
 ):
-    """Build a mock AdaptiveGeneralCover for pipeline tests."""
-    cover = MagicMock()
+    """Build a mock AdaptiveGeneralCover for pipeline tests.
+
+    Note: cover.default is intentionally NOT set here.  The .default property
+    was removed from AdaptiveGeneralCover to prevent handlers from bypassing
+    the centrally-computed snapshot.default_position.  All default-position
+    logic must flow through snapshot.default_position.
+    """
+    cover = MagicMock(spec=["direct_sun_valid", "calculate_percentage",
+                             "distance", "gamma", "config", "valid",
+                             "valid_elevation", "is_sun_in_blind_spot",
+                             "sunset_valid", "calculate_position",
+                             "control_state_reason", "sun_data"])
     cover.direct_sun_valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
-    cover.default = default
     cover.distance = distance
     cover.gamma = gamma
     if config is None:
@@ -41,6 +49,9 @@ def make_snapshot(
     cover=None,
     cover_type: str = "cover_blind",
     default_position: int = 0,
+    is_sunset_active: bool = False,
+    configured_default: int = 0,
+    configured_sunset_pos: int | None = None,
     climate_readings=None,
     climate_mode_enabled: bool = False,
     climate_options: ClimateOptions | None = None,
@@ -56,20 +67,21 @@ def make_snapshot(
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
-    cover_default: float = 0.0,
 ) -> PipelineSnapshot:
     """Build a PipelineSnapshot with sensible defaults for testing."""
     if cover is None:
         cover = _make_mock_cover(
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
-            default=cover_default,
         )
     return PipelineSnapshot(
         cover=cover,
         config=cover.config,
         cover_type=cover_type,
         default_position=default_position,
+        is_sunset_active=is_sunset_active,
+        configured_default=configured_default,
+        configured_sunset_pos=configured_sunset_pos,
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,

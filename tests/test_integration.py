@@ -125,7 +125,10 @@ def _build_pipeline_snapshot(
         cover=cover,
         config=cover.config,
         cover_type=cover_type,
-        default_position=int(cover.default),
+        default_position=int(cover.config.h_def),
+        is_sunset_active=False,
+        configured_default=int(cover.config.h_def),
+        configured_sunset_pos=None,
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,
@@ -178,9 +181,12 @@ def _build_diagnostic_context(
         start_time=None,
         end_time=None,
         automatic_control=True,
-        default_state=int(cover.default),
+        default_state=int(cover.config.h_def),
         final_state=final_state,
         force_override_position=force_override_position,
+        effective_default_position=int(cover.config.h_def),
+        is_sunset_active=False,
+        configured_sunset_pos=None,
     )
 
 
@@ -612,7 +618,7 @@ class TestEndToEndIntegration:
             result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.MOTION
-            assert result.position == int(cover.default)
+            assert result.position == int(cover.config.h_def)
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == MotionTimeoutHandler().name
 

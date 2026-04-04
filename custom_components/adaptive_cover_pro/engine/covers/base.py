@@ -175,14 +175,6 @@ class AdaptiveGeneralCover(ABC):
         self.logger.debug("Sun in front of window (ignoring blindspot)? %s", valid)
         return valid
 
-    @property
-    def default(self) -> float:
-        """Get default position considering sunset offset."""
-        default = self.config.h_def
-        if self.sunset_valid and self.config.sunset_pos is not None:
-            default = self.config.sunset_pos
-        return default
-
     def fov(self) -> list[int]:
         """Get absolute azimuth boundaries of field of view."""
         return [self.azi_min_abs, self.azi_max_abs]

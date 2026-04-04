@@ -97,6 +97,10 @@ def _base_ctx(**overrides) -> DiagnosticContext:
         "motion_timeout_active": False,
         "force_override_sensors": [],
         "force_override_position": 0,
+        # Sunset-aware default fields (added in sunset refactor)
+        "effective_default_position": 0,
+        "is_sunset_active": False,
+        "configured_sunset_pos": None,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)
@@ -285,30 +289,31 @@ class TestPositionExplanation:
         assert "Manual override active" in explanation
 
     def test_outside_time_window_sunset_pos(self, builder: DiagnosticsBuilder):
-        """Outside time window with sunset position configured."""
-        from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS
-
+        """Outside time window with sunset_pos active → shows 'sunset position'."""
         _, explanation = builder.build(
             _base_ctx(
                 check_adaptive_time=False,
-                config_options={CONF_SUNSET_POS: 20},
+                effective_default_position=20,
+                is_sunset_active=True,
+                configured_sunset_pos=20,
             )
         )
-        assert "Sunset Position" in explanation
+        assert "sunset position" in explanation.lower()
         assert "20%" in explanation
+        assert "commands paused" in explanation
 
     def test_outside_time_window_default(self, builder: DiagnosticsBuilder):
-        """Outside time window with default height."""
-        from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
-
+        """Outside time window with no sunset_pos → shows 'default position'."""
         _, explanation = builder.build(
             _base_ctx(
                 check_adaptive_time=False,
-                config_options={CONF_DEFAULT_HEIGHT: 10},
+                effective_default_position=10,
+                is_sunset_active=False,
             )
         )
-        assert "Default Position" in explanation
+        assert "default position" in explanation.lower()
         assert "10%" in explanation
+        assert "commands paused" in explanation
 
     def test_sun_tracking_explanation(self, builder: DiagnosticsBuilder):
         """Sun tracking shows raw calculated position."""
@@ -342,14 +347,20 @@ class TestPositionExplanation:
         assert "42%" in explanation
 
     def test_sunset_position_during_time_window(self, builder: DiagnosticsBuilder):
-        """Sunset position within time window shows sunset label."""
+        """Sunset position within time window shows sunset label when is_sunset_active=True."""
         cover = _make_cover(
             direct_sun_valid=False,
             sunset_valid=True,
             sunset_pos=15.0,
         )
         ncs = _make_normal_cover_state(cover)
-        _, explanation = builder.build(_base_ctx(normal_cover_state=ncs))
+        _, explanation = builder.build(
+            _base_ctx(
+                normal_cover_state=ncs,
+                effective_default_position=15,
+                is_sunset_active=True,
+            )
+        )
         assert "Sunset Position" in explanation
         assert "15%" in explanation
 
