@@ -65,7 +65,7 @@ The **Open PRs (Awaiting Merge to Main)** table is the key mechanism for trackin
 
 **Add a row** when a PR is opened and pushed.
 **Update status** when a beta is created, or when the issue author confirms the fix.
-**Remove the row** when the PR is merged to main (move to Recent Merges instead).
+**Remove the row** when the PR is merged OR closed for any reason — closed PRs do not belong in this table regardless of outcome.
 
 ## Project Overview
 
