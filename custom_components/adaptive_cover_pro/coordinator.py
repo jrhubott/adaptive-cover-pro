@@ -751,6 +751,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.first_refresh:
             await self.async_handle_first_refresh(state, options)
 
+        # Sync manual override state to CoverCommandService so reconciliation
+        # skips entities the user has manually moved.  Done after all change
+        # handlers so the manager's manual_controlled list is fully up-to-date.
+        self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
+
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
 

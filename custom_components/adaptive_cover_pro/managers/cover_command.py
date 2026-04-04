@@ -133,6 +133,13 @@ class CoverCommandService:
         self._retry_counts: dict[str, int] = {}
         self._gave_up: set[str] = set()
 
+        # Entities currently under manual override — reconciliation skips these
+        # so it doesn't fight the user by resending the old integration target.
+        # Updated by the coordinator after every manual override state change.
+        # Safety handlers (force override, weather) overwrite target_call via
+        # apply_position(force=True) so they always take effect regardless.
+        self._manual_override_entities: set[str] = set()
+
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
 
@@ -203,6 +210,22 @@ class CoverCommandService:
     def is_tilt_cover(self) -> bool:
         """Check if this is a tilt cover."""
         return self._cover_type == "cover_tilt"
+
+    @property
+    def manual_override_entities(self) -> set[str]:
+        """Return the set of entities currently under manual override."""
+        return self._manual_override_entities
+
+    @manual_override_entities.setter
+    def manual_override_entities(self, entities: set[str]) -> None:
+        """Update the set of entities under manual override.
+
+        Called by the coordinator after each update cycle so reconciliation
+        knows which entities to skip.  Safety handlers (force override,
+        weather) overwrite target_call via apply_position(force=True) so they
+        always take effect regardless of this set.
+        """
+        self._manual_override_entities = set(entities)
 
     # ------------------------------------------------------------------ #
     # Threshold update (called by coordinator on options change)
@@ -529,9 +552,13 @@ class CoverCommandService:
         1. If ``wait_for_target`` has been True for >30 s → force-clear it
            (timeout fallback for covers that never report final position).
         2. If ``wait_for_target`` is still True → cover is moving, skip.
-        3. Compare actual position to ``target_call`` within tolerance.
-        4. If match → reset retry count, done.
-        5. If mismatch → resend the same target (up to ``max_retries``).
+        3. If entity is in ``_manual_override_entities`` → skip resend so
+           reconciliation does not fight the user's intentional move.
+           Safety handlers (force override, weather) overwrite ``target_call``
+           via ``apply_position(force=True)`` so they are always protected.
+        4. Compare actual position to ``target_call`` within tolerance.
+        5. If match → reset retry count, done.
+        6. If mismatch → resend the same target (up to ``max_retries``).
 
         Note: reconciliation does *not* go through gate checks — the target
         was already validated when ``apply_position`` was called.
@@ -563,7 +590,18 @@ class CoverCommandService:
                 else:
                     continue  # No sent_at recorded yet
 
-            # 2. Read actual position
+            # 2. Skip entities under manual override — the user moved the cover
+            # intentionally; resending the integration's stale target would fight
+            # the user.  Safety handlers (force override, weather) bypass this by
+            # calling apply_position(force=True) which overwrites target_call with
+            # the safety position, so they are always protected by reconciliation.
+            if entity_id in self._manual_override_entities:
+                self._logger.debug(
+                    "Reconcile: %s in manual override — skipping resend", entity_id
+                )
+                continue
+
+            # 3. Read actual position
             actual = self._get_current_position(entity_id)
             if actual is None:
                 self._logger.debug(
@@ -571,7 +609,7 @@ class CoverCommandService:
                 )
                 continue
 
-            # 3. Check match
+            # 4. Check match
             if abs(actual - target) <= self._position_tolerance:
                 self._retry_counts.pop(entity_id, None)
                 self._logger.debug(
@@ -582,7 +620,7 @@ class CoverCommandService:
                 )
                 continue
 
-            # 4. Mismatch — retry up to max_retries
+            # 5. Mismatch — retry up to max_retries
             retry_count = self._retry_counts.get(entity_id, 0)
             if retry_count >= self._max_retries:
                 if entity_id not in self._gave_up:
