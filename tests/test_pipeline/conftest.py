@@ -62,6 +62,8 @@ def make_snapshot(
     weather_bypass_auto_control: bool = True,
     glare_zones=None,
     active_zone_names: set[str] | frozenset[str] | None = None,
+    in_time_window: bool = True,
+    motion_control_enabled: bool = True,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -94,4 +96,6 @@ def make_snapshot(
         active_zone_names=frozenset(active_zone_names)
         if active_zone_names is not None
         else frozenset(),
+        in_time_window=in_time_window,
+        motion_control_enabled=motion_control_enabled,
     )

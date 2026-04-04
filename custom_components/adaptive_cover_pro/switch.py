@@ -17,6 +17,7 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
+    CONF_MOTION_SENSORS,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
@@ -100,12 +101,23 @@ async def async_setup_entry(
         "return_to_default_toggle",
     )
 
+    motion_control_switch = AdaptiveCoverSwitch(
+        config_entry.entry_id,
+        hass,
+        config_entry,
+        coordinator,
+        "Motion Control",
+        True,
+        "motion_control",
+    )
+
     climate_mode = config_entry.options.get(CONF_CLIMATE_MODE)
     weather_entity = config_entry.options.get(CONF_WEATHER_ENTITY)
     sensor_entity = config_entry.options.get(CONF_OUTSIDETEMP_ENTITY)
     lux_entity = config_entry.options.get(CONF_LUX_ENTITY)
     irradiance_entity = config_entry.options.get(CONF_IRRADIANCE_ENTITY)
     sensor_type = config_entry.data.get(CONF_SENSOR_TYPE)
+    motion_sensors = config_entry.options.get(CONF_MOTION_SENSORS, [])
 
     # Always add control and manual switches for all cover types
     switches = [control_switch, manual_switch]
@@ -113,6 +125,10 @@ async def async_setup_entry(
     # Add return to default switch for vertical and horizontal covers
     if sensor_type in ["cover_awning", "cover_blind"]:
         switches.append(return_default_switch)
+
+    # Motion control switch — only when motion sensors are configured
+    if motion_sensors:
+        switches.append(motion_control_switch)
 
     if climate_mode:
         switches.append(climate_switch)

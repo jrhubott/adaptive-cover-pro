@@ -223,7 +223,7 @@ async def test_reset_button_clears_manual_override_and_stays_cleared():
     coordinator.config_entry.options = {}
     # _build_position_context returns a PositionContext; apply_position returns ("sent", svc)
     coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, in_time_window=True, manual_override=False,
+        auto_control=True, manual_override=False,
         sun_just_appeared=False, min_change=2, time_threshold=2,
         special_positions=[0, 100], inverse_state=False,
     )
@@ -270,7 +270,7 @@ async def test_reset_button_suppresses_redetection_during_refresh():
     coordinator.config_entry.options = {}
     from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
     coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, in_time_window=True, manual_override=False,
+        auto_control=True, manual_override=False,
         sun_just_appeared=False, min_change=2, time_threshold=2,
         special_positions=[0, 100], inverse_state=False,
     )
@@ -308,7 +308,7 @@ async def test_reset_button_times_out_if_cover_never_reaches_target():
     coordinator.config_entry.options = {}
     from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
     coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, in_time_window=True, manual_override=False,
+        auto_control=True, manual_override=False,
         sun_just_appeared=False, min_change=2, time_threshold=2,
         special_positions=[0, 100], inverse_state=False,
     )

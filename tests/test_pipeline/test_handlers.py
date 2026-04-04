@@ -129,11 +129,29 @@ class TestMotionTimeoutHandler:
         assert result is not None
         assert result.position == 33
 
-    def test_describe_skip_meaningful(self) -> None:
-        """describe_skip mentions 'motion' when skipped."""
-        snap = make_snapshot(motion_timeout_active=False)
+    def test_returns_none_when_motion_control_disabled(self) -> None:
+        """Return None when motion_control_enabled is False even if timeout is active."""
+        snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=False, default_position=20)
+        assert self.handler.evaluate(snap) is None
+
+    def test_matches_when_enabled_and_active(self) -> None:
+        """Return MOTION result when motion_control_enabled is True and timeout is active."""
+        snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=True, default_position=20)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.MOTION
+
+    def test_describe_skip_motion_control_disabled(self) -> None:
+        """describe_skip returns 'motion control disabled' when switch is off."""
+        snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=False)
+        assert self.handler.describe_skip(snap) == "motion control disabled"
+
+    def test_describe_skip_timeout_not_active(self) -> None:
+        """describe_skip returns timeout-not-active message when enabled but no timeout."""
+        snap = make_snapshot(motion_timeout_active=False, motion_control_enabled=True)
         reason = self.handler.describe_skip(snap)
         assert "motion" in reason.lower()
+        assert "disabled" not in reason.lower()
 
     def test_priority_is_80(self) -> None:
         """MotionTimeoutHandler has priority 80."""

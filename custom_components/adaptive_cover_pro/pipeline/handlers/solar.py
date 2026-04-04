@@ -22,6 +22,8 @@ class SolarHandler(OverrideHandler):
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return calculated position when direct sun is valid."""
+        if not snapshot.in_time_window:
+            return None
         if not snapshot.cover.direct_sun_valid:
             return None
 
@@ -33,6 +35,8 @@ class SolarHandler(OverrideHandler):
             raw_calculated_position=position,
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when solar handler does not match."""
+        if not snapshot.in_time_window:
+            return "outside time window"
         return "sun not in FOV or outside elevation limits"

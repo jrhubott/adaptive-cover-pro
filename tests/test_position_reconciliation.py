@@ -57,7 +57,6 @@ def _ctx(**overrides) -> PositionContext:
     """Return a PositionContext with all gates passing by default."""
     defaults = dict(
         auto_control=True,
-        in_time_window=True,
         manual_override=False,
         sun_just_appeared=False,
         min_change=2,
@@ -100,15 +99,6 @@ async def test_apply_skips_auto_control_off(svc):
     assert outcome == "skipped"
     assert reason == "auto_control_off"
     assert "cover.test" not in svc.target_call
-
-
-@pytest.mark.asyncio
-async def test_apply_skips_outside_time_window(svc):
-    outcome, reason = await svc.apply_position(
-        "cover.test", 50, "solar", context=_ctx(in_time_window=False)
-    )
-    assert outcome == "skipped"
-    assert reason == "outside_time_window"
 
 
 @pytest.mark.asyncio
@@ -174,7 +164,7 @@ async def test_apply_force_bypasses_all_gates(svc, hass):
             "cover.test",
             0,
             "sunset",
-            context=_ctx(auto_control=False, in_time_window=False, manual_override=True, force=True),
+            context=_ctx(auto_control=False, manual_override=True, force=True),
         )
     assert outcome == "sent"
     hass.services.async_call.assert_called_once()

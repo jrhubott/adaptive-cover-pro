@@ -767,6 +767,13 @@
           "on": "On",
           "off": "Off"
         }
+      },
+      "motion_control": {
+        "name": "Motion Control",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
       }
     }
   },

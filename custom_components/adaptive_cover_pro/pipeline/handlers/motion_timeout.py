@@ -21,6 +21,8 @@ class MotionTimeoutHandler(OverrideHandler):
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return default position when motion timeout is active."""
+        if not snapshot.motion_control_enabled:
+            return None
         if not snapshot.motion_timeout_active:
             return None
         position = compute_default_position(snapshot)
@@ -32,6 +34,8 @@ class MotionTimeoutHandler(OverrideHandler):
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when motion timeout is not active."""
+        if not snapshot.motion_control_enabled:
+            return "motion control disabled"
         return "motion timeout not active"

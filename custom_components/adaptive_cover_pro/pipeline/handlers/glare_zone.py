@@ -31,6 +31,8 @@ class GlareZoneHandler(OverrideHandler):
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return glare-zone-adjusted position when a zone requires deeper coverage."""
+        if not snapshot.in_time_window:
+            return None
         if snapshot.cover_type != "cover_blind":
             return None
         if not snapshot.glare_zones or not snapshot.active_zone_names:
@@ -81,6 +83,8 @@ class GlareZoneHandler(OverrideHandler):
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when glare zone handler does not match."""
+        if not snapshot.in_time_window:
+            return "outside time window"
         return "no active glare zones or sun not in FOV"

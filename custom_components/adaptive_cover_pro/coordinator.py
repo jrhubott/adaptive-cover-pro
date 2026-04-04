@@ -645,6 +645,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             glare_zones=glare_zones_cfg,
             active_zone_names=frozenset(active_zone_names),
+            in_time_window=self.check_adaptive_time,
+            motion_control_enabled=self._toggles.motion_control,
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -802,7 +804,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         return PositionContext(
             auto_control=self.automatic_control or self._pipeline_bypasses_auto_control,
-            in_time_window=self.check_adaptive_time,
             manual_override=self.manager.is_cover_manual(entity),
             sun_just_appeared=sun_just_appeared,
             min_change=self.min_change,
@@ -1139,6 +1140,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def switch_mode(self, value):
         """Set climate mode toggle."""
         self._toggles.switch_mode = value
+
+    @property
+    def motion_control(self):
+        """Motion control toggle — delegates to ToggleManager."""
+        return self._toggles.motion_control
+
+    @motion_control.setter
+    def motion_control(self, value):
+        """Set motion control toggle."""
+        self._toggles.motion_control = value
 
     @property
     def temp_toggle(self):

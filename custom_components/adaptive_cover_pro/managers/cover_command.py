@@ -41,7 +41,6 @@ class PositionContext:
     """
 
     auto_control: bool
-    in_time_window: bool
     manual_override: bool
     sun_just_appeared: bool
     min_change: int
@@ -368,9 +367,6 @@ class CoverCommandService:
         if not context.force:
             if not context.auto_control:
                 return self._skip(entity_id, "auto_control_off", position)
-
-            if not context.in_time_window:
-                return self._skip(entity_id, "outside_time_window", position)
 
             if not self._check_position_delta(
                 entity_id,

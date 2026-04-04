@@ -91,6 +91,20 @@ class PipelineSnapshot:
     # Users can disable this if they want weather override to respect the auto-control toggle.
     weather_bypass_auto_control: bool = True
 
+    # True when current time is within the configured start/end operational window.
+    # Handlers that should only run during the active window (e.g. SolarHandler,
+    # GlareZoneHandler) check this field and return None when it is False.
+    # Defaults to True so that handlers which don't check it are unaffected and
+    # existing tests that construct PipelineSnapshot without this field continue
+    # to pass.
+    in_time_window: bool = True
+
+    # True when the Motion Control switch is enabled.  MotionTimeoutHandler
+    # checks this field and passes through (returns None) when it is False,
+    # allowing lower-priority handlers to run as if motion timeout is inactive.
+    # Defaults to True for backward compatibility.
+    motion_control_enabled: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Output types

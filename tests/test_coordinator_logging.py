@@ -33,7 +33,6 @@ def _make_context(**overrides):
     """Build a PositionContext with all gates passing by default."""
     defaults = dict(
         auto_control=True,
-        in_time_window=True,
         manual_override=False,
         sun_just_appeared=False,
         min_change=2,
@@ -48,20 +47,6 @@ def _make_context(**overrides):
 
 class TestApplyPositionGateLogging:
     """apply_position() records and returns skip reason for each failing gate."""
-
-    @pytest.mark.asyncio
-    async def test_skips_outside_time_window(self):
-        """Returns skip when in_time_window is False."""
-        svc = _make_cmd_svc()
-        ctx = _make_context(in_time_window=False)
-
-        outcome, reason = await svc.apply_position("cover.test", 50, "solar", context=ctx)
-
-        assert outcome == "skipped"
-        assert reason == "outside_time_window"
-        assert svc.last_skipped_action["entity_id"] == "cover.test"
-        assert svc.last_skipped_action["reason"] == "outside_time_window"
-        assert svc.last_skipped_action["calculated_position"] == 50
 
     @pytest.mark.asyncio
     async def test_skips_auto_control_off(self):
@@ -159,7 +144,6 @@ class TestApplyPositionGateLogging:
             # All gates would fail — but force=True bypasses them
             ctx = _make_context(
                 auto_control=False,
-                in_time_window=False,
                 manual_override=True,
                 force=True,
             )

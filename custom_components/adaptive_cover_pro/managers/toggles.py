@@ -19,3 +19,4 @@ class ToggleManager:
         self.lux_toggle: bool | None = None
         self.irradiance_toggle: bool | None = None
         self.return_to_default_toggle: bool | None = None
+        self.motion_control: bool = True
