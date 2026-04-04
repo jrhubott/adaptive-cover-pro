@@ -99,7 +99,7 @@
           "start_entity": "Entidad para la hora de comienzo",
           "end_time": "Hora de finalización",
           "end_entity": "Entidad para la hora de finalización",
-          "return_sunset": "Siempre ajusta la posición a la por defecto al ocaso en la hora de finalización; Útil si la hora de finalización es antes del ocaso",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -290,7 +290,7 @@
           "start_entity": "Entidad que indica la hora de inicio",
           "end_time": "Hora de finalización",
           "end_entity": "Entidad que indica la hora de finalización",
-          "return_sunset": "Ajustar siempre la posición a la predeterminada del Ocaso al momento de finalización; útil si el momento de finalización es anterior al Ocaso real",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {

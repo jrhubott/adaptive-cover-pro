@@ -285,17 +285,36 @@ class TestPositionExplanation:
         assert "Manual override active" in explanation
 
     def test_outside_time_window_sunset_pos(self, builder: DiagnosticsBuilder):
-        """Outside time window with sunset position configured."""
+        """Outside time window, past actual sunset, with sunset position configured."""
         from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS
 
+        cover = _make_cover(sunset_valid=True, sunset_pos=20.0)
+        ncs = _make_normal_cover_state(cover)
         _, explanation = builder.build(
             _base_ctx(
                 check_adaptive_time=False,
+                normal_cover_state=ncs,
                 config_options={CONF_SUNSET_POS: 20},
             )
         )
         assert "Sunset Position" in explanation
         assert "20%" in explanation
+
+    def test_outside_time_window_sunset_pos_before_sunset(self, builder: DiagnosticsBuilder):
+        """Outside time window but before actual sunset → shows Default Position."""
+        from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT, CONF_SUNSET_POS
+
+        cover = _make_cover(sunset_valid=False)
+        ncs = _make_normal_cover_state(cover)
+        _, explanation = builder.build(
+            _base_ctx(
+                check_adaptive_time=False,
+                normal_cover_state=ncs,
+                config_options={CONF_SUNSET_POS: 20, CONF_DEFAULT_HEIGHT: 50},
+            )
+        )
+        assert "Default Position" in explanation
+        assert "50%" in explanation
 
     def test_outside_time_window_default(self, builder: DiagnosticsBuilder):
         """Outside time window with default height."""

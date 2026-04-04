@@ -162,14 +162,16 @@ class DiagnosticsBuilder:
         if ctx.is_manual_override_active:
             return "Manual override active"
 
-        # Outside time window
+        # Outside time window — pipeline was bypassed; report actual position reason
         if not ctx.check_adaptive_time:
             from ..const import CONF_DEFAULT_HEIGHT, CONF_SUNSET_POS
 
             sunset_pos = options.get(CONF_SUNSET_POS)
             default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            if sunset_pos is not None:
-                return f"Outside time window → Sunset Position ({sunset_pos}%)"
+            cover = ctx.normal_cover_state.cover if ctx.normal_cover_state else None
+            past_sunset = cover.sunset_valid if cover else False
+            if past_sunset and sunset_pos is not None:
+                return f"Outside time window, past sunset → Sunset Position ({sunset_pos}%)"
             return f"Outside time window → Default Position ({default_height}%)"
 
         # Build the decision chain

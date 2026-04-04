@@ -45,7 +45,7 @@ class PipelineSnapshot:
     # Cover configuration
     config: CoverConfig
     cover_type: str  # "cover_blind" / "cover_awning" / "cover_tilt"
-    default_position: int  # h_def or sunset_pos (no solar calculation)
+    default_position: int  # engine default: h_def before sunset, sunset_pos after sunset
 
     # Climate readings (raw sensor values — None if not configured)
     climate_readings: ClimateReadings | None

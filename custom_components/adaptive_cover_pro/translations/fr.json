@@ -99,7 +99,7 @@
           "start_entity": "Entité pour l'heure de début",
           "end_time": "Fin de periode",
           "end_entity": "Entité indiquant la fin de periode",
-          "return_sunset": "Toujours ajuster la position en fonction du coucher de soleil à la fin ; utile si l'heure de fin est antérieure au coucher du soleil réel",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -290,7 +290,7 @@
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
           "end_entity": "Entité indiquant l'heure de fin",
-          "return_sunset": "Toujours ajuster la position à la valeur par défaut du coucher du soleil à l'heure de fin ; utile si l'heure de fin est antérieure au coucher du soleil réel",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {

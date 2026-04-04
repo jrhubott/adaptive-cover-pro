@@ -99,7 +99,7 @@
           "start_entity": "Entita označujúca čas začiatku",
           "end_time": "Čas ukončenia",
           "end_entity": "Entita označujúca čas ukončenia",
-          "return_sunset": "Vždy upravte polohu na predvolenú hodnotu západu slnka v čase ukončenia; Užitočné, ak je čas ukončenia pred skutočným západom slnka",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -290,7 +290,7 @@
           "start_entity": "Entita označujúca čas začatia",
           "end_time": "Čas ukončenia",
           "end_entity": "Entita označujúca čas ukončenia",
-          "return_sunset": "Vždy upravte polohu na predvolenú hodnotu západu slnka v čase ukončenia; Užitočné, ak je čas ukončenia pred skutočným západom slnka",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {

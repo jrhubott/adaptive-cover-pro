@@ -234,6 +234,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         self._pipeline_result = None
         self._update_listener = None
+        self._sunset_listener = None
+        self._scheduled_sunset_time: dt.datetime | None = None
         self._scheduled_time = dt.datetime.now()
 
         self._cached_options = None
@@ -612,10 +614,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @callback
     def _async_cancel_update_listener(self) -> None:
-        """Cancel the scheduled update."""
+        """Cancel the scheduled end-time update."""
         if self._update_listener:
             self._update_listener()
             self._update_listener = None
+
+    @callback
+    def _async_cancel_sunset_listener(self) -> None:
+        """Cancel the scheduled sunset trigger."""
+        if self._sunset_listener:
+            self._sunset_listener()
+            self._sunset_listener = None
 
     async def async_timed_end_time(self) -> None:
         """Control state at end time."""
@@ -633,20 +642,84 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         self._scheduled_time = self._end_time
 
+    async def async_schedule_sunset_trigger(self, options) -> None:
+        """Schedule a one-shot trigger at actual sunset + offset to apply sunset_pos.
+
+        Only scheduled when a sunset_pos is configured and sunset hasn't already
+        passed today.  Cancels any previously scheduled sunset trigger first.
+        """
+        sunset_pos = options.get(CONF_SUNSET_POS)
+        if sunset_pos is None:
+            return  # No sunset position configured — nothing to do
+
+        sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
+        sunset_offset_min = options.get(CONF_SUNSET_OFFSET, 0) or 0
+        sunset_utc = sun_data.sunset().replace(tzinfo=None)
+        trigger_utc = sunset_utc + dt.timedelta(minutes=sunset_offset_min)
+
+        # Convert to local time for async_track_point_in_time
+        local_tz = pytz.timezone(str(self.hass.config.time_zone))
+        trigger_local = pytz.utc.localize(trigger_utc).astimezone(local_tz)
+
+        now = dt.datetime.now(local_tz)
+        if trigger_local <= now:
+            self.logger.debug(
+                "Sunset trigger skipped — sunset already passed (%s)", trigger_local
+            )
+            return
+
+        if self._scheduled_sunset_time == trigger_local:
+            self.logger.debug(
+                "Sunset trigger already scheduled for %s", trigger_local
+            )
+            return
+
+        self._async_cancel_sunset_listener()
+        self.logger.debug("Scheduling sunset trigger at %s", trigger_local)
+        self._sunset_listener = async_track_point_in_time(
+            self.hass, self.async_sunset_refresh, trigger_local
+        )
+        self._scheduled_sunset_time = trigger_local
+
+    async def async_sunset_refresh(self, event) -> None:
+        """Move covers to sunset position at actual sunset."""
+        self.logger.debug("Sunset trigger fired")
+        options = self.config_entry.options
+        sunset_pos_raw = options.get(CONF_SUNSET_POS)
+        if sunset_pos_raw is None:
+            self.logger.debug("Sunset refresh: no sunset position configured, skipping")
+            return
+        sunset_pos = (
+            inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
+        )
+        for cover in self.entities:
+            # Sunset position always forced — bypasses delta/time/auto-control gates
+            ctx = self._build_position_context(cover, options, force=True)
+            await self._cmd_svc.apply_position(cover, sunset_pos, "sunset", context=ctx)
+        self.logger.debug("Sunset refresh handled")
+        # Trigger a coordinator refresh so sensors update to reflect sunset position
+        await self.async_refresh()
+
     def _calculate_cover_state(self, cover_data, options) -> int:
         """Calculate cover state via pipeline and return final position."""
         # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
         self._read_weather_conditions(options)
         self.climate_strategy = None
 
-        # When outside the configured start_time/end_time window,
-        # report the position the cover was actually commanded to
+        # Outside the configured time window, bypass the pipeline.
+        # Position is determined by whether actual sunset has passed:
+        #   - Before sunset: use default_height (end-of-tracking position)
+        #   - After sunset: use sunset_pos if configured, else default_height
+        # Force/weather overrides are handled by the state property when
+        # _pipeline_result is None.
         if not self.check_adaptive_time:
             sunset_pos = options.get(CONF_SUNSET_POS)
             default_height = options.get(CONF_DEFAULT_HEIGHT, 0)
-            outside_window_pos = (
-                sunset_pos if sunset_pos is not None else default_height
-            )
+            # cover_data.sunset_valid is the real-time astronomical sunset check
+            if cover_data.sunset_valid and sunset_pos is not None:
+                outside_window_pos = sunset_pos
+            else:
+                outside_window_pos = default_height
 
             self.normal_cover_state = NormalCoverState(cover_data)
             self.default_state = outside_window_pos
@@ -654,11 +727,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.control_method = ControlMethod.DEFAULT
             self._pipeline_result = None
             self.logger.debug(
-                "Outside time window - using position: %s", outside_window_pos
+                "Outside time window - sunset_valid=%s, position: %s",
+                cover_data.sunset_valid,
+                outside_window_pos,
             )
             return self.state
 
-        # Calculate the state of the cover
         self.normal_cover_state = NormalCoverState(cover_data)
         self.logger.debug(
             "Determined normal cover state to be %s", self.normal_cover_state
@@ -809,6 +883,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         normal_cover = self.normal_cover_state.cover
         start, end = await self._update_solar_times_if_needed(normal_cover)
 
+        # Schedule sunset trigger (once per day, only when sunset_pos configured)
+        await self.async_schedule_sunset_trigger(options)
+
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
 
@@ -932,25 +1009,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("First refresh handled")
 
     async def async_handle_timed_refresh(self, options):
-        """Move covers to sunset position when the configured end time is reached."""
-        sunset_pos_raw = options.get(CONF_SUNSET_POS)
+        """Move covers to default position when the configured end time is reached.
+
+        If sunset has already passed and a sunset position is configured, the
+        engine's .default already returns sunset_pos (sunset_valid=True), so the
+        cover stays at that position rather than reverting to default_height.
+        """
+        default_height_raw = options.get(CONF_DEFAULT_HEIGHT, 0)
         self.logger.debug(
-            "This is a timed refresh, using sunset position: %s",
-            sunset_pos_raw,
+            "End-time timed refresh, using default height: %s", default_height_raw
         )
-        if sunset_pos_raw is None:
-            self.logger.debug("Timed refresh: no sunset position configured, skipping")
-            self.timed_refresh = False
-            return
-        sunset_pos = (
-            inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
+        default_height = (
+            inverse_state(default_height_raw) if self._inverse_state else default_height_raw
         )
         for cover in self.entities:
-            # Sunset position always forced — bypasses delta/time/auto-control gates
+            # End-time command forced — bypasses delta/time/auto-control gates
             ctx = self._build_position_context(cover, options, force=True)
-            await self._cmd_svc.apply_position(cover, sunset_pos, "sunset", context=ctx)
+            await self._cmd_svc.apply_position(cover, default_height, "end_time", context=ctx)
         self.timed_refresh = False
-        self.logger.debug("Timed refresh handled")
+        self.logger.debug("Timed refresh (end-time) handled")
 
 
 
@@ -1385,6 +1462,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Cancel weather clear-delay timeout task
         self._cancel_weather_timeout()
+
+        # Cancel sunset trigger
+        self._async_cancel_sunset_listener()
 
         # Stop cover command service reconciliation timer
         self._cmd_svc.stop()

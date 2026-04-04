@@ -99,7 +99,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -292,7 +292,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Always adjust position to sunset default at end time; Useful if end time is before actual sunset",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {

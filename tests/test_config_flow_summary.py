@@ -448,7 +448,7 @@ def test_manual_override_duration_shown():
     """Override duration appears in the manual override bullet."""
     cfg = {CONF_MANUAL_OVERRIDE_DURATION: 60}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "60 min" in summary
+    assert "pauses for 60" in summary
 
 
 def test_manual_override_reset_shown():
@@ -760,7 +760,7 @@ def test_full_vertical_config_smoke():
     assert "07:30" in summary
     assert "20:00" in summary
     # Manual override
-    assert "120 min" in summary
+    assert "pauses for 120" in summary
     # Motion
     assert "Motion-based" in summary
     assert "300s" in summary

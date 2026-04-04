@@ -99,7 +99,7 @@
           "start_entity": "Entität zur Angabe der Startzeit",
           "end_time": "Endzeit",
           "end_entity": "Entität zur Angabe der Endzeit",
-          "return_sunset": "Position zum Sonnenuntergangs-Standardwert anpassen, wenn die Endzeit vor dem tatsächlichen Sonnenuntergang liegt",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -290,7 +290,7 @@
           "start_entity": "Entität zur Bestimmung der Startzeit",
           "end_time": "Endzeit",
           "end_entity": "Entität zur Bestimmung der Endzeit",
-          "return_sunset": "Immer zur Standard-Sonnenuntergangsposition zurückkehren; nützlich, wenn die Endzeit vor Sonnenuntergang liegt",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {

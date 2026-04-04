@@ -573,15 +573,30 @@ class TestBuildPositionExplanation:
         assert "manual" in result.lower()
 
     def test_outside_time_window_with_sunset_position(self, builder):
-        """Outside time window with sunset position set → shows Sunset Position."""
+        """Outside time window, past actual sunset, with sunset position → shows Sunset Position."""
+        cover = _make_cover(sunset_valid=True)
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(
                 check_adaptive_time=False,
+                normal_cover_state=_make_ncs(cover),
                 config_options={CONF_SUNSET_POS: 30},
             )
         )
         assert "Sunset Position" in result
         assert "30%" in result
+
+    def test_outside_time_window_with_sunset_pos_before_sunset(self, builder):
+        """Outside time window but before actual sunset → shows Default Position."""
+        cover = _make_cover(sunset_valid=False)
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(
+                check_adaptive_time=False,
+                normal_cover_state=_make_ncs(cover),
+                config_options={CONF_SUNSET_POS: 30, CONF_DEFAULT_HEIGHT: 60},
+            )
+        )
+        assert "Default Position" in result
+        assert "60%" in result
 
     def test_outside_time_window_without_sunset_position(self, builder):
         """Outside time window without sunset position → shows Default Position."""

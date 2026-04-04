@@ -707,9 +707,13 @@ Users can monitor geometric accuracy via the always-on diagnostic sensors:
 **`config_entry.options`** (configurable):
 - Window azimuth, field of view, elevation limits
 - Cover-specific dimensions (height, length, slat properties)
-- Sunset behavior:
-  - `sunset_position` - Optional position after sunset (None = use `default_percentage`). Use SLIDER in config_flow, not BOX.
-  - `sunset_offset` / `sunrise_offset` — minutes to shift sunset/sunrise times
+- Sunset behavior (two distinct concepts — do not conflate):
+  - `sunset_position` - Optional position applied at **actual astronomical sunset** (+ offset). `None` = no special sunset behavior; cover stays at default after end time and through the night. Use SLIDER in config_flow, not BOX.
+  - `sunset_offset` / `sunrise_offset` — minutes to shift the actual sunset/sunrise times used for `sunset_valid` and the sunset trigger
+  - `return_sunset` (`CONF_RETURN_SUNSET`) — when True, covers are commanded to `default_height` when the configured end time is reached (not sunset position)
+  - **Position timeline:** inside tracking window → sun-calculated position; at end time → `default_height`; at actual sunset (+offset) → `sunset_position` (if configured); if end time is after sunset, sunset position holds through end time (not reverted to default)
+  - **`sunset_valid`** (engine property) — True when current time is past actual sunset + offset. When True, the engine's `.default` returns `sunset_position` instead of `default_height`. This is used by DefaultHandler and MotionTimeoutHandler inside the pipeline.
+  - **Sunset trigger** — `async_schedule_sunset_trigger()` schedules a one-shot `async_track_point_in_time` at actual sunset + offset. When it fires, `async_sunset_refresh()` commands `sunset_position` with `force=True` to all covers. Scheduled once per day in `_async_update_data`; cancelled on shutdown.
 - Enhanced geometric accuracy:
   - `window_depth` - Optional window reveal/frame depth (0.0-0.5m, default 0.0)
   - `sill_height` - Optional height from floor to window bottom (0.0-3.0m, default 0.0). Raises the blind for windows above floor level — accounting for the sill's geometric effect of reducing sun penetration into the room

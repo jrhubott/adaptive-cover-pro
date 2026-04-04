@@ -99,7 +99,7 @@
           "start_entity": "Entiteit die starttijd aangeeft",
           "end_time": "Eindtijd",
           "end_entity": "Entiteit die eindtijd aangeeft",
-          "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
@@ -288,7 +288,7 @@
           "start_entity": "Entiteit die starttijd aangeeft",
           "end_time": "Eindtijd",
           "end_entity": "Entiteit die eindtijd aangeeft",
-          "return_sunset": "Zorg ervoor dat de positie altijd wordt aangepast naar de standaard zonsonderganginstelling tegen het eindtijdstip. Dit is vooral handig wanneer het eindtijdstip voor de daadwerkelijke zonsondergang valt.",
+          "return_sunset": "Move covers to default position at end time",
           "open_close_threshold": "Open/Close threshold"
         },
         "data_description": {
