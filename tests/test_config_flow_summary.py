@@ -505,7 +505,7 @@ def test_weather_override_wind_sensor_shown():
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "Weather safety" in summary
-    assert "60 km/h" in summary
+    assert "wind > 60" in summary
     assert "120s" in summary
 
 
@@ -517,7 +517,7 @@ def test_weather_override_rain_sensor_shown():
         CONF_WEATHER_OVERRIDE_POSITION: 0,
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "5.0 mm/h" in summary
+    assert "rain > 5.0" in summary
 
 
 def test_weather_override_binary_sensors_shown():
@@ -766,7 +766,7 @@ def test_full_vertical_config_smoke():
     assert "300s" in summary
     # Weather
     assert "Weather safety" in summary
-    assert "50 km/h" in summary
+    assert "wind > 50" in summary
     # Climate
     assert "Climate mode" in summary
     assert "sensor.indoor_temp" in summary
