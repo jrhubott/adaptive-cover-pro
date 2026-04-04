@@ -729,13 +729,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         cover_data = self.get_blind_data(options=options)
         self._update_manager_and_covers()
 
-        # Calculate cover state
+        # Reset expired manual overrides BEFORE running the pipeline so the
+        # pipeline sees the cleared state and computes the correct position.
+        auto_expired = await self.manager.reset_if_needed()
+
+        # Calculate cover state (pipeline runs with up-to-date override state)
         state = self._calculate_cover_state(cover_data, options)
-        await self.manager.reset_if_needed()
 
         # Handle types of changes
         if self.state_change:
             await self.async_handle_state_change(state, options)
+        elif auto_expired:
+            # One or more manual overrides just timed out.  Proactively send
+            # the fresh pipeline position so covers don't linger at the
+            # user-moved position until the next solar/entity-state event.
+            await self._async_send_after_override_clear(state, options)
         if self.cover_state_change:
             await self.async_handle_cover_state_change(state)
         if self.first_refresh:
@@ -812,6 +820,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             inverse_state=self._inverse_state,
             force=force,
         )
+
+    async def _async_send_after_override_clear(self, state: int, options: dict) -> None:
+        """Send the current pipeline position after a manual override clears.
+
+        Called when a manual override expires (auto-expiry timer) or when the
+        reset button clears it.  Uses force=True so the command is sent
+        regardless of delta/time thresholds — the cover may be far from the
+        calculated position after sitting in manual for an extended period.
+
+        Args:
+            state: Post-reset pipeline position (already computed without override).
+            options: Config entry options dict.
+
+        """
+        self.logger.debug(
+            "Sending pipeline position %s after manual override cleared", state
+        )
+        sun_just_appeared = self._check_sun_validity_transition()
+        for cover in self.entities:
+            ctx = self._build_position_context(
+                cover, options, force=True, sun_just_appeared=sun_just_appeared
+            )
+            await self._cmd_svc.apply_position(
+                cover, state, "manual_override_cleared", context=ctx
+            )
 
     async def async_handle_state_change(self, state: int, options):
         """Send position commands to all covers when a tracked entity changes."""

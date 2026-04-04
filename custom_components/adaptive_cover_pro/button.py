@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import dataclasses
-
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -67,37 +64,9 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
         for entity in self._entities:
             if self.coordinator.manager.is_cover_manual(entity):
                 _LOGGER.debug("Resetting manual override for: %s", entity)
-
-                # Move to current calculated position, all gate checks applied
-                # except manual_override (we're in the process of clearing it).
-                target_position = self.coordinator.state
-                options = self.coordinator.config_entry.options
-                ctx = self.coordinator._build_position_context(entity, options)
-                # Override manual_override gate — we're intentionally resetting it
-                ctx = dataclasses.replace(ctx, manual_override=False)
-                outcome, _ = await self.coordinator._cmd_svc.apply_position(
-                    entity, target_position, "manual_reset", context=ctx
-                )
-                if outcome == "sent":
-                    # Wait for cover to reach target, but no longer than 30 seconds
-                    deadline = asyncio.get_event_loop().time() + 30
-                    while self.coordinator.wait_for_target.get(entity):
-                        if asyncio.get_event_loop().time() >= deadline:
-                            _LOGGER.debug(
-                                "Timed out waiting for %s to reach target position",
-                                entity,
-                            )
-                            break
-                        await asyncio.sleep(1)
-                else:
-                    _LOGGER.debug(
-                        "Manual override reset: delta too small for %s, skipping position change",
-                        entity,
-                    )
-
                 self.coordinator.manager.reset(entity)
-                # Suppress re-detection: any cover state events arriving during
-                # refresh should not be treated as a new manual override.
+                # Suppress re-detection: cover state events during refresh must
+                # not be treated as a new manual override.
                 self.coordinator.wait_for_target[entity] = True
                 self.coordinator.cover_state_change = False
                 reset_entities.append(entity)
@@ -106,7 +75,34 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
                     "Resetting manual override for %s is not needed since it is already auto-controlled",
                     entity,
                 )
+
+        if not reset_entities:
+            return
+
+        # Refresh so the pipeline re-runs without the override active,
+        # producing the correct post-override position (climate, solar,
+        # default — whichever handler wins now).
         await self.coordinator.async_refresh()
-        # Unblock state tracking now that refresh has consumed any pending events.
+
+        # Send the fresh pipeline position to every reset cover.
+        # Using the standard context means all normal gates apply (auto_control,
+        # delta, time threshold) except manual_override which is already cleared.
+        # force=True is not needed here because the cover was manually moved
+        # away from the calculated position, so the delta will naturally be large.
+        options = self.coordinator.config_entry.options
         for entity in reset_entities:
-            self.coordinator.wait_for_target[entity] = False
+            ctx = self.coordinator._build_position_context(entity, options)
+            outcome, _ = await self.coordinator._cmd_svc.apply_position(
+                entity, self.coordinator.state, "manual_reset", context=ctx
+            )
+            if outcome != "sent":
+                _LOGGER.debug(
+                    "Manual override reset: no position change sent for %s (%s)",
+                    entity,
+                    outcome,
+                )
+            # If sent, apply_position already set wait_for_target=True;
+            # let normal cover-state-change detection clear it on arrival.
+            # If not sent, unblock state tracking now.
+            if outcome != "sent":
+                self.coordinator.wait_for_target[entity] = False
