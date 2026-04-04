@@ -867,7 +867,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     # Manual override (70)
     mo_parts = []
     if manual_dur is not None:
-        mo_parts.append(f"pauses for {manual_dur} min")
+        mo_parts.append(f"pauses for {manual_dur}")
     threshold = config.get(CONF_MANUAL_THRESHOLD)
     if threshold is not None:
         mo_parts.append(f"threshold {threshold}%")
