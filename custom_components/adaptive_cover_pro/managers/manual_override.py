@@ -172,14 +172,21 @@ class AdaptiveCoverManager:
         """
         self.manual_control[cover] = True
 
-    async def reset_if_needed(self):
+    async def reset_if_needed(self) -> set[str]:
         """Reset expired manual overrides.
 
         Checks all covers with manual control timestamps and resets those where
         configured duration has elapsed. Called on every coordinator update to
         ensure timely automatic reset.
 
+        Returns:
+            Set of entity IDs whose manual override just expired this call.
+            Empty set when nothing changed. The coordinator uses this to
+            proactively send the current pipeline position to those covers
+            so they don't linger at the user-moved position.
+
         """
+        expired: set[str] = set()
         current_time = dt.datetime.now(dt.UTC)
         manual_control_time_copy = dict(self.manual_control_time)
         for entity_id, last_updated in manual_control_time_copy.items():
@@ -189,6 +196,8 @@ class AdaptiveCoverManager:
                     entity_id,
                 )
                 self.reset(entity_id)
+                expired.add(entity_id)
+        return expired
 
     def reset(self, entity_id):
         """Reset manual control.
