@@ -143,6 +143,15 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 unit_of_measurement="m",
             )
         ),
+        vol.Optional(CONF_WINDOW_WIDTH, default=100): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=500,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="cm",
+            )
+        ),
         vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
@@ -168,15 +177,6 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 step=0.01,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="m",
-            )
-        ),
-        vol.Optional(CONF_WINDOW_WIDTH, default=100): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10,
-                max=500,
-                step=1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
             )
         ),
     }
