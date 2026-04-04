@@ -25,24 +25,18 @@ from ..enums import ClimateStrategy, ControlMethod
 class DiagnosticContext:
     """Snapshot of coordinator state needed to build diagnostics."""
 
-    # Sun / cover state
+    # Sun position
     pos_sun: list  # [azimuth, elevation]
-    normal_cover_state: Any  # NormalCoverState | None
 
-    # Position
-    raw_calculated_position: int
-    climate_state: int | None
-    climate_data: Any  # ClimateCoverData | None
-    climate_strategy: Any  # ClimateStrategy | None
-    climate_mode: bool
-    control_method: Any  # ControlMethod enum
+    # Cover engine object (AdaptiveGeneralCover) — provides sun geometry, gamma, etc.
+    cover: Any  # AdaptiveGeneralCover | None
+
+    # Full pipeline result — single source of truth for position, control method,
+    # overrides, raw calculated position, and climate data.
     pipeline_result: Any  # PipelineResult | None
 
-    # Overrides
-    is_force_override_active: bool
-    is_weather_override_active: bool
-    is_motion_timeout_active: bool
-    is_manual_override_active: bool
+    # Climate mode toggle (switch state)
+    climate_mode: bool
 
     # Time window
     check_adaptive_time: bool
@@ -62,7 +56,6 @@ class DiagnosticContext:
     switch_mode: bool = False
     inverse_state: bool = False
     use_interpolation: bool = False
-    default_state: int = 0
     final_state: int = 0  # coordinator.state (after interpolation/inverse)
 
     # Configuration snapshot
@@ -76,11 +69,6 @@ class DiagnosticContext:
     force_override_sensors: list = field(default_factory=list)
     force_override_position: int = 0
 
-    # Effective default — sunset-aware single source of truth
-    effective_default_position: int = 0
-    is_sunset_active: bool = False          # True when in astronomical sunset window
-    configured_sunset_pos: int | None = None  # raw sunset_pos from config (None = not set)
-
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -91,6 +79,25 @@ _CLIMATE_STRATEGY_LABELS: dict[ClimateStrategy, str] = {
     ClimateStrategy.SUMMER_COOLING: "Summer Cooling",
     ClimateStrategy.LOW_LIGHT: "Low Light",
     ClimateStrategy.GLARE_CONTROL: "Glare Control",
+}
+
+
+# ---------------------------------------------------------------------------
+# ControlMethod → ControlStatus mapping
+# ---------------------------------------------------------------------------
+
+_METHOD_TO_STATUS: dict[ControlMethod, str] = {
+    ControlMethod.FORCE: ControlStatus.FORCE_OVERRIDE_ACTIVE,
+    ControlMethod.WEATHER: ControlStatus.WEATHER_OVERRIDE_ACTIVE,
+    ControlMethod.MOTION: ControlStatus.MOTION_TIMEOUT,
+    ControlMethod.MANUAL: ControlStatus.MANUAL_OVERRIDE,
+    # All other methods → pipeline is running normally
+    ControlMethod.CLOUD: ControlStatus.ACTIVE,
+    ControlMethod.SUMMER: ControlStatus.ACTIVE,
+    ControlMethod.WINTER: ControlStatus.ACTIVE,
+    ControlMethod.SOLAR: ControlStatus.ACTIVE,
+    ControlMethod.DEFAULT: ControlStatus.ACTIVE,
+    ControlMethod.GLARE_ZONE: ControlStatus.ACTIVE,
 }
 
 
@@ -133,120 +140,72 @@ class DiagnosticsBuilder:
         diagnostics["sun_azimuth"] = sun_azimuth
         diagnostics["sun_elevation"] = sun_elevation
 
-        if ctx.normal_cover_state and hasattr(ctx.normal_cover_state.cover, "gamma"):
-            diagnostics["gamma"] = ctx.normal_cover_state.cover.gamma
+        if ctx.cover and hasattr(ctx.cover, "gamma"):
+            diagnostics["gamma"] = ctx.cover.gamma
 
         return diagnostics
 
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:
-        """Get the current control state reason including coordinator-level overrides."""
-        if ctx.is_force_override_active:
-            return "Force Override"
-        if ctx.is_motion_timeout_active:
-            return "Motion Timeout"
-        if ctx.is_manual_override_active:
-            return "Manual Override"
-        if ctx.normal_cover_state and ctx.normal_cover_state.cover:
-            return ctx.normal_cover_state.cover.control_state_reason
+        """Get the current control state reason from pipeline result or cover geometry."""
+        if ctx.pipeline_result is not None:
+            method = ctx.pipeline_result.control_method
+            if method == ControlMethod.FORCE:
+                return "Force Override"
+            if method == ControlMethod.MOTION:
+                return "Motion Timeout"
+            if method == ControlMethod.MANUAL:
+                return "Manual Override"
+        if ctx.cover:
+            return ctx.cover.control_state_reason
         return "Unknown"
 
     @staticmethod
     def _build_position_explanation(ctx: DiagnosticContext) -> str:
-        """Build a human-readable explanation of the full position decision chain."""
-        options = ctx.config_options
+        """Build a human-readable explanation of the full position decision chain.
 
-        # Priority overrides
-        if ctx.is_force_override_active:
-            pos = ctx.force_override_position
-            return f"Force override active → {pos}%"
+        Derives the explanation from the pipeline result's ``reason`` string
+        so there is a single source of truth.  Post-processing transforms
+        (interpolation, inverse state) are appended when they changed the value.
+        """
+        result = ctx.pipeline_result
+        if result is None:
+            return "Unknown"
 
-        if ctx.is_motion_timeout_active:
-            return f"No motion detected → default {ctx.default_state}%"
-
-        if ctx.is_manual_override_active:
-            return "Manual override active"
-
-        # Outside time window — pipeline still ran but commands are gated
+        # Outside time window — pipeline ran but commands are gated
         if not ctx.check_adaptive_time:
-            pos = ctx.effective_default_position
-            pos_label = "sunset position" if ctx.is_sunset_active else "default position"
+            pos = result.default_position
+            pos_label = "sunset position" if result.is_sunset_active else "default position"
             return f"Outside time window → {pos_label} {pos}% (commands paused)"
 
-        # Build the decision chain
-        parts: list[str] = []
+        # Base explanation is the pipeline reason (already human-readable)
+        parts: list[str] = [result.reason]
 
-        # Step 1: Sun position condition and raw calculated value
-        if ctx.normal_cover_state and ctx.normal_cover_state.cover:
-            cover = ctx.normal_cover_state.cover
-            if cover.direct_sun_valid:
-                parts.append(f"Sun tracking ({ctx.raw_calculated_position}%)")
-            elif cover.sunset_valid and ctx.is_sunset_active:
-                parts.append(f"Sunset Position ({ctx.effective_default_position}%)")
-            else:
-                reason = cover.control_state_reason
-                parts.append(f"{reason} → Default Position ({ctx.effective_default_position}%)")
-
-        # Step 2: Position limits on the non-climate path
-        if not ctx.switch_mode:
-            from ..const import (
-                CONF_ENABLE_MAX_POSITION,
-                CONF_ENABLE_MIN_POSITION,
-                CONF_MAX_POSITION,
-                CONF_MIN_POSITION,
-            )
-
-            min_pos = options.get(CONF_MIN_POSITION)
-            max_pos = options.get(CONF_MAX_POSITION)
-            enable_min = options.get(CONF_ENABLE_MIN_POSITION, False)
-            enable_max = options.get(CONF_ENABLE_MAX_POSITION, False)
-            if min_pos is not None and enable_min and ctx.default_state == min_pos:
-                parts.append(f"min limit ({min_pos}%) → {ctx.default_state}%")
-            elif max_pos is not None and enable_max and ctx.default_state == max_pos:
-                parts.append(f"max limit ({max_pos}%) → {ctx.default_state}%")
-
-        # Step 3: Climate mode override
-        if ctx.switch_mode and ctx.climate_state is not None:
-            strategy_label = (
-                _CLIMATE_STRATEGY_LABELS.get(ctx.climate_strategy, "Active")
-                if ctx.climate_strategy
-                else "Active"
-            )
-            parts.append(f"Climate: {strategy_label} → {ctx.climate_state}%")
-
-        # Step 4: Interpolation / inverse state
+        # Append post-processing transforms if they changed the value
         final = ctx.final_state
         if ctx.use_interpolation:
             parts.append(f"interpolated → {final}%")
-        elif ctx.inverse_state:
+        elif ctx.inverse_state and final != result.position:
             parts.append(f"inversed → {final}%")
 
-        return " → ".join(parts) if parts else "Unknown"
+        return " → ".join(parts)
 
     @staticmethod
     def _determine_control_status(ctx: DiagnosticContext) -> str:
-        """Determine current control status."""
+        """Determine current control status from pipeline result."""
         if not ctx.automatic_control:
             return ControlStatus.AUTOMATIC_CONTROL_OFF
 
-        if ctx.is_force_override_active:
-            return ControlStatus.FORCE_OVERRIDE_ACTIVE
-
-        if ctx.is_weather_override_active:
-            return ControlStatus.WEATHER_OVERRIDE_ACTIVE
-
-        if ctx.is_motion_timeout_active:
-            return ControlStatus.MOTION_TIMEOUT
-
-        if ctx.pipeline_result is not None:
-            method = ctx.pipeline_result.control_method
-            if method == ControlMethod.MANUAL:
-                return ControlStatus.MANUAL_OVERRIDE
+        result = ctx.pipeline_result
+        if result is not None:
+            status = _METHOD_TO_STATUS.get(result.control_method, ControlStatus.ACTIVE)
+            if status != ControlStatus.ACTIVE:
+                return status
 
         if not ctx.check_adaptive_time:
             return ControlStatus.OUTSIDE_TIME_WINDOW
 
-        if ctx.normal_cover_state and not ctx.normal_cover_state.cover.valid:
+        if ctx.cover and not ctx.cover.valid:
             return ControlStatus.SUN_NOT_VISIBLE
 
         return ControlStatus.ACTIVE
@@ -256,10 +215,12 @@ class DiagnosticsBuilder:
         """Build position diagnostics."""
         diagnostics: dict = {}
 
-        diagnostics["calculated_position"] = ctx.raw_calculated_position
+        result = ctx.pipeline_result
+        raw_pos = result.raw_calculated_position if result is not None else 0
+        diagnostics["calculated_position"] = raw_pos
 
-        if ctx.climate_state is not None:
-            diagnostics["calculated_position_climate"] = ctx.climate_state
+        if result is not None and result.climate_state is not None:
+            diagnostics["calculated_position_climate"] = result.climate_state
 
         diagnostics["control_status"] = cls._determine_control_status(ctx)
         diagnostics["control_state_reason"] = cls._get_control_state_reason(ctx)
@@ -275,7 +236,7 @@ class DiagnosticsBuilder:
         last_action = ctx.last_cover_action
         if last_action.get("position") is not None:
             diagnostics["position_delta_from_last_action"] = abs(
-                ctx.raw_calculated_position - last_action["position"]
+                raw_pos - last_action["position"]
             )
 
         # Time since last action
@@ -291,9 +252,8 @@ class DiagnosticsBuilder:
                 pass
 
         # Vertical cover calculation details
-        if ctx.normal_cover_state and ctx.normal_cover_state.cover:
-            cover = ctx.normal_cover_state.cover
-            calc_details = getattr(cover, "_last_calc_details", None)
+        if ctx.cover:
+            calc_details = getattr(ctx.cover, "_last_calc_details", None)
             if calc_details is not None:
                 diagnostics["calculation_details"] = calc_details
 
@@ -304,6 +264,7 @@ class DiagnosticsBuilder:
     @staticmethod
     def _build_time_window(ctx: DiagnosticContext) -> dict:
         """Build time window diagnostics."""
+        result = ctx.pipeline_result
         return {
             "time_window": {
                 "check_adaptive_time": ctx.check_adaptive_time,
@@ -316,10 +277,10 @@ class DiagnosticsBuilder:
                 # The effective default used this cycle by all pipeline handlers.
                 # equals configured_sunset_pos when is_sunset_active=True,
                 # equals configured_default otherwise.
-                "effective": ctx.effective_default_position,
-                "is_sunset_active": ctx.is_sunset_active,
-                "configured_default": ctx.default_state,
-                "configured_sunset_pos": ctx.configured_sunset_pos,
+                "effective": result.default_position if result is not None else 0,
+                "is_sunset_active": result.is_sunset_active if result is not None else False,
+                "configured_default": result.configured_default if result is not None else 0,
+                "configured_sunset_pos": result.configured_sunset_pos if result is not None else None,
             },
         }
 
@@ -327,17 +288,16 @@ class DiagnosticsBuilder:
     def _build_sun_validity(ctx: DiagnosticContext) -> dict:
         """Build sun validity diagnostics."""
         diagnostics: dict = {}
-        if ctx.normal_cover_state and ctx.normal_cover_state.cover:
-            cover = ctx.normal_cover_state.cover
+        if ctx.cover:
             diagnostics["sun_validity"] = {
-                "valid": cover.valid,
-                "valid_elevation": cover.valid_elevation,
-                "in_blind_spot": getattr(cover, "is_sun_in_blind_spot", None),
+                "valid": ctx.cover.valid,
+                "valid_elevation": ctx.cover.valid_elevation,
+                "in_blind_spot": getattr(ctx.cover, "is_sun_in_blind_spot", None),
                 # True when current time is within the astronomical sunset window
                 # (after sunset+offset or before sunrise+offset). When True, the
                 # solar handler is suppressed (direct_sun_valid is False) even if
                 # the sun is geometrically in front of the window.
-                "sunset_window_active": getattr(cover, "sunset_valid", None),
+                "sunset_window_active": getattr(ctx.cover, "sunset_valid", None),
             }
         return diagnostics
 
@@ -345,26 +305,28 @@ class DiagnosticsBuilder:
     def _build_climate(ctx: DiagnosticContext) -> dict:
         """Build climate mode diagnostics."""
         diagnostics: dict = {}
-        if ctx.climate_mode and ctx.climate_data is not None:
-            diagnostics["climate_control_method"] = ctx.control_method
+        result = ctx.pipeline_result
+        if ctx.climate_mode and result is not None and result.climate_data is not None:
+            climate_data = result.climate_data
+            diagnostics["climate_control_method"] = result.control_method
 
-            diagnostics["active_temperature"] = ctx.climate_data.get_current_temperature
+            diagnostics["active_temperature"] = climate_data.get_current_temperature
             diagnostics["temperature_details"] = {
-                "inside_temperature": ctx.climate_data.inside_temperature,
-                "outside_temperature": ctx.climate_data.outside_temperature,
-                "temp_switch": ctx.climate_data.temp_switch,
+                "inside_temperature": climate_data.inside_temperature,
+                "outside_temperature": climate_data.outside_temperature,
+                "temp_switch": climate_data.temp_switch,
             }
 
-            if ctx.climate_strategy is not None:
-                diagnostics["climate_strategy"] = ctx.climate_strategy.value
+            if result.climate_strategy is not None:
+                diagnostics["climate_strategy"] = result.climate_strategy.value
 
             diagnostics["climate_conditions"] = {
-                "is_summer": ctx.climate_data.is_summer,
-                "is_winter": ctx.climate_data.is_winter,
-                "is_presence": ctx.climate_data.is_presence,
-                "is_sunny": ctx.climate_data.is_sunny,
-                "lux_below_threshold": ctx.climate_data.lux_below_threshold,
-                "irradiance_below_threshold": ctx.climate_data.irradiance_below_threshold,
+                "is_summer": climate_data.is_summer,
+                "is_winter": climate_data.is_winter,
+                "is_presence": climate_data.is_presence,
+                "is_sunny": climate_data.is_sunny,
+                "lux_below_threshold": climate_data.lux_below_threshold,
+                "irradiance_below_threshold": climate_data.irradiance_below_threshold,
             }
 
         return diagnostics
@@ -406,6 +368,7 @@ class DiagnosticsBuilder:
         )
 
         options = ctx.config_options
+        result = ctx.pipeline_result
         return {
             "configuration": {
                 "azimuth": options.get(CONF_AZIMUTH),
@@ -425,7 +388,10 @@ class DiagnosticsBuilder:
                 "interpolation": options.get(CONF_INTERP, False),
                 "force_override_sensors": options.get(CONF_FORCE_OVERRIDE_SENSORS, []),
                 "force_override_position": options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
-                "force_override_active": ctx.is_force_override_active,
+                "force_override_active": (
+                    result is not None
+                    and result.control_method == ControlMethod.FORCE
+                ),
                 "motion_sensors": options.get(CONF_MOTION_SENSORS, []),
                 "motion_timeout": options.get(
                     CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT

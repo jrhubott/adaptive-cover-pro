@@ -9,8 +9,8 @@ from ...engine.covers.vertical import (
     glare_zone_effective_distance,
 )
 from ...enums import ControlMethod
-from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
+from ..helpers import apply_snapshot_limits, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -68,14 +68,7 @@ class GlareZoneHandler(OverrideHandler):
             round(cover.calculate_percentage(effective_distance_override=max_distance))
         )
         state = max(state, 1)
-        position = PositionConverter.apply_limits(
-            state,
-            snapshot.config.min_pos,
-            snapshot.config.max_pos,
-            snapshot.config.min_pos_sun_only,
-            snapshot.config.max_pos_sun_only,
-            True,
-        )
+        position = apply_snapshot_limits(snapshot, state, sun_valid=True)
 
         zone_names = ", ".join(contributing_zones)
         return PipelineResult(
@@ -85,6 +78,7 @@ class GlareZoneHandler(OverrideHandler):
                 f"glare zone protection ({zone_names}) — "
                 f"effective distance {max_distance:.2f}m → position {position}%"
             ),
+            raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

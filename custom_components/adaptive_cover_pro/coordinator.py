@@ -24,7 +24,6 @@ except ImportError:
 from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .calculation import NormalCoverState
 from .helpers import compute_effective_default
 from .engine.covers import (
     AdaptiveHorizontalCover,
@@ -104,7 +103,6 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
-from .enums import ControlMethod
 from .managers.cover_command import CoverCommandService, PositionContext, build_special_positions
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
@@ -189,16 +187,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
-        self.climate_state = None
-        self.climate_data = None  # Store climate_data for P1 diagnostics
         self._weather_readings: ClimateReadings | None = None
-        self.climate_strategy = None  # Store climate strategy for diagnostics
-        self.control_method = ControlMethod.SOLAR
         self.state_change_data: StateChangedData | None = None
-        self.raw_calculated_position = 0  # Store raw position for diagnostics
-        # Initialize state attributes used before first update completes
-        self.default_state: int = 0
-        self.normal_cover_state = None
+        # Cover engine object — populated at start of each update cycle
+        self._cover_data = None
         self.manager = AdaptiveCoverManager(
             self.hass, self.manual_duration, self.logger
         )
@@ -328,21 +320,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if any configured force override sensor is in "on" state
 
         """
-        sensors = self.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
-        if not sensors:
-            return False
-
-        for sensor in sensors:
-            state = self.hass.states.get(sensor)
-            if state and state.state == "on":
-                self.logger.debug(
-                    "Force override sensor %s is active (state: %s)",
-                    sensor,
-                    state.state,
-                )
-                return True
-
-        return False
+        return any(
+            self._read_force_sensor_states(self.config_entry.options).values()
+        )
 
     @property
     def is_motion_detected(self) -> bool:
@@ -602,7 +582,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
         self._read_weather_conditions(options)
-        self.climate_strategy = None
 
         # Compute the effective default position from astronomical sunset/sunrise.
         # This is the single source of truth — all pipeline handlers use it via
@@ -628,24 +607,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunset_pos_cfg,
         )
 
-        # Calculate the state of the cover
-        self.normal_cover_state = NormalCoverState(cover_data)
-        self.logger.debug(
-            "Determined normal cover state to be %s", self.normal_cover_state
-        )
-
-        self.default_state = round(self.normal_cover_state.get_state())
-        self.logger.debug("Determined default state to be %s", self.default_state)
-
-        # Store raw calculated position for diagnostics (before min/max limits)
-        # This is the pure geometric calculation
-        if cover_data.direct_sun_valid:
-            # Sun is in front - use raw calculated percentage
-            self.raw_calculated_position = round(cover_data.calculate_percentage())
-        else:
-            # Sun not in front - use effective default position
-            self.raw_calculated_position = effective_default
-        self.logger.debug("Raw calculated position: %s", self.raw_calculated_position)
+        # Store cover engine object for use by diagnostics/sensors
+        self._cover_data = cover_data
 
         # Build snapshot with raw state — handlers evaluate their own conditions
         glare_zones_cfg = None
@@ -697,18 +660,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
         )
 
-        self.control_method = self._pipeline_result.control_method
         self.logger.debug(
             "Pipeline result: %s → %s",
-            self.control_method,
+            self._pipeline_result.control_method,
             self._pipeline_result.position,
         )
-
-        # Update climate diagnostics from pipeline result
-        if self._pipeline_result.climate_state is not None:
-            self.climate_state = self._pipeline_result.climate_state
-            self.climate_strategy = self._pipeline_result.climate_strategy
-            self.climate_data = self._pipeline_result.climate_data
 
         return self.state
 
@@ -784,16 +740,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self.async_handle_first_refresh(state, options)
 
         # Update solar times
-        normal_cover = self.normal_cover_state.cover
-        start, end = await self._update_solar_times_if_needed(normal_cover)
+        start, end = await self._update_solar_times_if_needed(self._cover_data)
 
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
 
         # Determine glare_active from last calculation details (vertical covers only)
         glare_active = False
-        if hasattr(cover_data, "_last_calc_details"):
-            details = cover_data._last_calc_details  # noqa: SLF001
+        if hasattr(self._cover_data, "_last_calc_details"):
+            details = self._cover_data._last_calc_details  # noqa: SLF001
             glare_active = len(details.get("glare_zones_active", [])) > 0
 
         return AdaptiveCoverData(
@@ -802,8 +757,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "state": state,
                 "start": start,
                 "end": end,
-                "control": self.control_method.value,
-                "sun_motion": normal_cover.direct_sun_valid,
+                "control": self._pipeline_result.control_method.value,
+                "sun_motion": self._cover_data.direct_sun_valid,
                 "manual_override": self.manager.binary_cover_manual,
                 "manual_list": self.manager.manual_controlled,
                 "glare_active": glare_active,
@@ -1100,20 +1055,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
+        result = self._pipeline_result
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
-            normal_cover_state=self.normal_cover_state,
-            raw_calculated_position=self.raw_calculated_position,
-            climate_state=self.climate_state,
-            climate_data=self.climate_data,
-            climate_strategy=self.climate_strategy,
+            cover=self._cover_data,
+            pipeline_result=result,
             climate_mode=self._climate_mode,
-            control_method=self.control_method,
-            pipeline_result=self._pipeline_result,
-            is_force_override_active=self.is_force_override_active,
-            is_weather_override_active=self.is_weather_override_active,
-            is_motion_timeout_active=self.is_motion_timeout_active,
-            is_manual_override_active=self.manager.binary_cover_manual,
             check_adaptive_time=self.check_adaptive_time,
             after_start_time=self.after_start_time,
             before_end_time=self.before_end_time,
@@ -1127,7 +1074,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             switch_mode=self._toggles.switch_mode,
             inverse_state=self._inverse_state,
             use_interpolation=self._use_interpolation,
-            default_state=self.default_state,
             final_state=self.state,
             config_options=dict(self.config_entry.options),
             motion_detected=self.is_motion_detected,
@@ -1137,23 +1083,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             force_override_position=self.config_entry.options.get(
                 CONF_FORCE_OVERRIDE_POSITION, 0
-            ),
-            # Sunset-aware default — from the pipeline result so diagnostics
-            # always reflect exactly what the pipeline computed this cycle.
-            effective_default_position=(
-                self._pipeline_result.default_position
-                if self._pipeline_result is not None
-                else int(self.config_entry.options.get(CONF_DEFAULT_HEIGHT, 0))
-            ),
-            is_sunset_active=(
-                self._pipeline_result.is_sunset_active
-                if self._pipeline_result is not None
-                else False
-            ),
-            configured_sunset_pos=(
-                self._pipeline_result.configured_sunset_pos
-                if self._pipeline_result is not None
-                else None
             ),
         )
 
@@ -1336,10 +1265,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         covers should immediately reposition regardless of delta checks.
         """
         # Need cover data to check sun validity
-        if not hasattr(self, "normal_cover_state") or self.normal_cover_state is None:
+        if self._cover_data is None:
             return False
 
-        current_sun_valid = self.normal_cover_state.cover.direct_sun_valid
+        current_sun_valid = self._cover_data.direct_sun_valid
 
         # Initialize tracking on first call
         if self._last_sun_validity_state is None:

@@ -9,6 +9,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )
+from tests.conftest import make_snapshot_for_cover
 
 
 def _make_climate(**overrides):
@@ -51,7 +52,7 @@ class TestClimateCoverState:
 
         climate_data = _make_climate(is_presence=True)
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_type_cover()
         assert isinstance(result, (int, np.integer))
 
@@ -71,7 +72,7 @@ class TestClimateCoverState:
 
         climate_data = _make_climate(is_presence=False)
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_type_cover()
         assert isinstance(result, (int, np.integer))
 
@@ -95,7 +96,7 @@ class TestClimateCoverState:
             is_presence=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_with_presence()
         # Winter + sun valid → 100 (fully open)
         assert result == 100
@@ -120,7 +121,7 @@ class TestClimateCoverState:
             is_presence=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_with_presence()
         # Not sunny → use default
         assert result == vertical_cover_instance.h_def
@@ -149,7 +150,7 @@ class TestClimateCoverState:
             is_sunny=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_with_presence()
         # Summer + transparent blind → 0 (fully closed for cooling)
         assert result == 0
@@ -174,7 +175,7 @@ class TestClimateCoverState:
             is_presence=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_with_presence()
         # Intermediate conditions → use calculated position
         assert result == 25  # Calculated position for this config
@@ -201,7 +202,7 @@ class TestClimateCoverState:
             is_presence=False,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_without_presence()
         # Summer without presence → 0 (close to keep cool)
         assert result == 0
@@ -225,7 +226,7 @@ class TestClimateCoverState:
             is_presence=False,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_without_presence()
         # Winter without presence → 100 (open to gain heat)
         assert result == 100
@@ -252,7 +253,7 @@ class TestClimateCoverState:
             is_presence=False,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.normal_without_presence()
         # Sun not valid → use default
         assert result == vertical_cover_instance.h_def
@@ -264,7 +265,7 @@ class TestClimateCoverState:
 
         climate_data = _make_climate(blind_type="cover_tilt")
 
-        state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
         result = state_handler.tilt_state()
         assert 0 <= result <= 100
 
@@ -275,7 +276,7 @@ class TestClimateCoverState:
 
         climate_data = _make_climate(blind_type="cover_tilt")
 
-        state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
         result = state_handler.tilt_state()
         assert 0 <= result <= 100
 
@@ -299,7 +300,7 @@ class TestClimateCoverState:
             is_presence=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.get_state()
         assert 0 <= result <= 100
 
@@ -317,7 +318,7 @@ class TestClimateCoverState:
 
         climate_data = _make_climate(blind_type="cover_tilt")
 
-        state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
         try:
             result = state_handler.get_state()
             assert 0 <= result <= 100
@@ -347,7 +348,7 @@ class TestClimateCoverState:
             is_presence=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.get_state()
         assert result == 20
 
@@ -373,7 +374,7 @@ class TestClimateCoverState:
             is_presence=True,
         )
 
-        state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+        state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
         result = state_handler.get_state()
         assert result == 30
 
@@ -414,7 +415,7 @@ class TestClimateCoverState:
                 winter_close_insulation=False,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
             assert result == 100
 
@@ -443,7 +444,7 @@ class TestClimateCoverState:
                 is_presence=True,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
             assert result == 100
 
@@ -473,7 +474,7 @@ class TestClimateCoverState:
                 lux_below_threshold=True,  # Low lux
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
             # Winter mode should still return 100 even with low lux
             assert result == 100
@@ -507,7 +508,7 @@ class TestClimateCoverState:
                 is_presence=True,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
 
             assert isinstance(result, (int, np.integer))
@@ -548,7 +549,7 @@ class TestClimateCoverState:
                 is_presence=True,
             )
 
-            state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
             result = state_handler.tilt_with_presence(90)
 
             # Winter mode with sun valid → uses _solar_position() → calculate_percentage()
@@ -604,7 +605,7 @@ class TestIssue71IrradianceSummerFix:
                 winter_close_insulation=False,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
 
             # Irradiance is low → should use default (open), not solar/closed
@@ -640,7 +641,7 @@ class TestIssue71IrradianceSummerFix:
                 lux_below_threshold=True,  # Lux sensor says: no direct sun
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
 
             assert result == int(round(vertical_cover_instance.config.h_def))
@@ -674,7 +675,7 @@ class TestIssue71IrradianceSummerFix:
                 is_sunny=False,  # Cloudy
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
 
             assert result == int(round(vertical_cover_instance.config.h_def))
@@ -714,7 +715,7 @@ class TestIssue71IrradianceSummerFix:
                 lux_below_threshold=False,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_with_presence()
 
             # High irradiance + summer → glare control (not default)
@@ -755,7 +756,7 @@ class TestIssue71IrradianceSummerFix:
                 winter_close_insulation=False,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_without_presence()
 
             # Irradiance low → default (open), not summer cooling (0)
@@ -798,7 +799,7 @@ class TestIssue71IrradianceSummerFix:
                 lux_below_threshold=False,
             )
 
-            state_handler = ClimateCoverState(vertical_cover_instance, climate_data, default_position=vertical_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(vertical_cover_instance, vertical_cover_instance.config.h_def), climate_data)
             result = state_handler.normal_without_presence()
 
             assert result == 0
@@ -849,7 +850,7 @@ class TestIssue71IrradianceSummerFix:
                 winter_close_insulation=False,
             )
 
-            state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
             result = state_handler.tilt_with_presence(90)
 
             # Low irradiance → LOW_LIGHT solar position (not summer cooling angle)
@@ -896,7 +897,7 @@ class TestIssue71IrradianceSummerFix:
                 lux_below_threshold=False,
             )
 
-            state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
             result = state_handler.tilt_with_presence(90)
 
             # High irradiance + summer → summer cooling angle
@@ -950,7 +951,7 @@ class TestIssue71IrradianceSummerFix:
                 winter_close_insulation=False,
             )
 
-            state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
             result = state_handler.tilt_without_presence(90)
 
             # Low irradiance → LOW_LIGHT (solar position), not POSITION_CLOSED
@@ -994,7 +995,7 @@ class TestIssue71IrradianceSummerFix:
                 lux_below_threshold=False,
             )
 
-            state_handler = ClimateCoverState(tilt_cover_instance, climate_data, default_position=tilt_cover_instance.config.h_def)
+            state_handler = ClimateCoverState(make_snapshot_for_cover(tilt_cover_instance, tilt_cover_instance.config.h_def), climate_data)
             result = state_handler.tilt_without_presence(90)
 
             from custom_components.adaptive_cover_pro.const import POSITION_CLOSED

@@ -1,5 +1,6 @@
 """Pytest fixtures for Adaptive Cover Pro tests."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -9,6 +10,32 @@ from homeassistant.core import State
 from custom_components.adaptive_cover_pro.config_context_adapter import (
     ConfigContextAdapter,
 )
+
+
+def make_snapshot_for_cover(cover, default_position: int = 0) -> SimpleNamespace:
+    """Create a minimal PipelineSnapshot-compatible namespace for ClimateCoverState tests.
+
+    ``ClimateCoverState`` now takes a full ``PipelineSnapshot`` instead of
+    separate ``cover`` + ``default_position`` arguments.  This helper wraps
+    a real cover engine object in a lightweight ``SimpleNamespace`` that
+    satisfies all attribute accesses made by ``ClimateCoverState`` and the
+    shared pipeline helpers (``compute_solar_position``, ``apply_snapshot_limits``).
+
+    Args:
+        cover:            An ``AdaptiveGeneralCover`` (or mock) instance.
+        default_position: Effective default position (sunset-aware int).
+
+    Returns:
+        SimpleNamespace with ``cover``, ``config``, ``default_position``,
+        and ``is_sunset_active`` set.
+
+    """
+    return SimpleNamespace(
+        cover=cover,
+        config=cover.config,
+        default_position=default_position,
+        is_sunset_active=False,
+    )
 
 from .cover_helpers import (  # noqa: F401 — re-exported for convenience
     build_horizontal_cover,

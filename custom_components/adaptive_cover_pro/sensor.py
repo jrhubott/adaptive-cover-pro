@@ -1005,12 +1005,10 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 attrs["sunset_window_active"] = sun_validity.get("sunset_window_active")
 
             if (
-                hasattr(self.coordinator, "normal_cover_state")
-                and self.coordinator.normal_cover_state
-                and self.coordinator.normal_cover_state.cover
+                self.coordinator._cover_data is not None
             ):
                 attrs["direct_sun_valid"] = (
-                    self.coordinator.normal_cover_state.cover.direct_sun_valid
+                    self.coordinator._cover_data.direct_sun_valid
                 )
 
         return attrs or None

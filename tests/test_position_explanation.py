@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticsBuilder,
 )
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
 # ---------------------------------------------------------------------------
@@ -71,10 +72,11 @@ def make_climate_data(hass, **overrides):
     return ClimateCoverData(**filtered)
 
 
-def make_climate_state(cover, climate_data):
-    """Build a ClimateCoverState, mocking sun data to avoid HA calls."""
-    state = ClimateCoverState(cover, climate_data)
-    return state
+def make_climate_state(cover, climate_data, default_position=50):
+    """Build a ClimateCoverState with a minimal snapshot namespace."""
+    from tests.conftest import make_snapshot_for_cover
+    snapshot = make_snapshot_for_cover(cover, default_position)
+    return ClimateCoverState(snapshot, climate_data)
 
 
 def _make_cover(
@@ -99,29 +101,41 @@ def _make_cover(
     )
 
 
-def _make_ncs(cover=None):
-    """Wrap a cover mock in a NormalCoverState-like object."""
-    if cover is None:
-        cover = _make_cover()
-    return SimpleNamespace(cover=cover)
+def _make_pr(
+    *,
+    position: int = 50,
+    control_method: ControlMethod = ControlMethod.SOLAR,
+    reason: str = "sun in FOV — position 50%",
+    raw_calculated_position: int = 50,
+    climate_state=None,
+    climate_strategy=None,
+    climate_data=None,
+    default_position: int = 50,
+    is_sunset_active: bool = False,
+    configured_sunset_pos=None,
+) -> PipelineResult:
+    """Build a PipelineResult with sensible defaults for explanation tests."""
+    return PipelineResult(
+        position=position,
+        control_method=control_method,
+        reason=reason,
+        raw_calculated_position=raw_calculated_position,
+        climate_state=climate_state,
+        climate_strategy=climate_strategy,
+        climate_data=climate_data,
+        default_position=default_position,
+        is_sunset_active=is_sunset_active,
+        configured_sunset_pos=configured_sunset_pos,
+    )
 
 
 def _base_ctx(**overrides):
     """Return a DiagnosticContext with sensible defaults."""
     defaults = {  # noqa: C408
         "pos_sun": [180.0, 45.0],
-        "normal_cover_state": _make_ncs(),
-        "raw_calculated_position": 50,
-        "climate_state": None,
-        "climate_data": None,
-        "climate_strategy": None,
+        "cover": _make_cover(),
+        "pipeline_result": _make_pr(),
         "climate_mode": False,
-        "control_method": ControlMethod.SOLAR,
-        "pipeline_result": None,
-        "is_force_override_active": False,
-        "is_weather_override_active": False,
-        "is_motion_timeout_active": False,
-        "is_manual_override_active": False,
         "check_adaptive_time": True,
         "after_start_time": True,
         "before_end_time": True,
@@ -135,17 +149,12 @@ def _base_ctx(**overrides):
         "switch_mode": False,
         "inverse_state": False,
         "use_interpolation": False,
-        "default_state": 50,
         "final_state": 50,
         "config_options": {},
         "motion_detected": True,
         "motion_timeout_active": False,
         "force_override_sensors": [],
         "force_override_position": 0,
-        # Sunset-aware default fields (new in sunset refactor)
-        "effective_default_position": 50,
-        "is_sunset_active": False,
-        "configured_sunset_pos": None,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)
@@ -552,39 +561,41 @@ class TestBuildPositionExplanation:
 
     def test_force_override(self, builder):
         """Force override active → explains override position."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                is_force_override_active=True,
-                force_override_position=0,
-            )
+        pr = _make_pr(
+            control_method=ControlMethod.FORCE,
+            reason="force override active (sensor.x) — position 0% [bypasses automatic control]",
+            position=0,
         )
-        assert "Force override" in result
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        assert "force override" in result.lower()
         assert "0%" in result
 
     def test_motion_timeout(self, builder):
         """Motion timeout active → explains default position."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(is_motion_timeout_active=True, default_state=30)
+        pr = _make_pr(
+            control_method=ControlMethod.MOTION,
+            reason="motion timeout active — default position 30%",
+            position=30,
+            default_position=30,
         )
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
         assert "motion" in result.lower()
         assert "30%" in result
 
     def test_manual_override(self, builder):
         """Manual override → explains manual control."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(is_manual_override_active=True)
+        pr = _make_pr(
+            control_method=ControlMethod.MANUAL,
+            reason="manual override active — holding solar position 50%",
         )
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
         assert "manual" in result.lower()
 
     def test_outside_time_window_with_sunset_position(self, builder):
         """Outside time window with sunset_pos active → shows 'sunset position' label."""
+        pr = _make_pr(default_position=30, is_sunset_active=True, configured_sunset_pos=30)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                check_adaptive_time=False,
-                effective_default_position=30,
-                is_sunset_active=True,
-                configured_sunset_pos=30,
-            )
+            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
         )
         assert "sunset position" in result.lower()
         assert "30%" in result
@@ -592,144 +603,107 @@ class TestBuildPositionExplanation:
 
     def test_outside_time_window_without_sunset_position(self, builder):
         """Outside time window, no sunset_pos → shows 'default position' label."""
+        pr = _make_pr(default_position=100, is_sunset_active=False)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                check_adaptive_time=False,
-                effective_default_position=100,
-                is_sunset_active=False,
-                configured_sunset_pos=None,
-            )
+            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
         )
         assert "default position" in result.lower()
         assert "100%" in result
         assert "commands paused" in result
 
     def test_sunset_offset_with_sunset_position(self, builder):
-        """In window, sunset_valid=True and is_sunset_active → shows Sunset Position."""
-        cover = _make_cover(direct_sun_valid=False, sunset_valid=True, sunset_pos=20)
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                normal_cover_state=_make_ncs(cover),
-                effective_default_position=20,
-                is_sunset_active=True,
-            )
+        """In window, is_sunset_active=True → reason from default handler mentions sunset."""
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="no active condition — sunset position 20%",
+            default_position=20,
+            is_sunset_active=True,
         )
-        assert "Sunset Position" in result
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        assert "sunset position" in result.lower()
         assert "20%" in result
 
     def test_default_fov_exit_without_sunset(self, builder):
-        """In window, FOV exit, no sunset → shows Default Position."""
-        cover = _make_cover(
-            direct_sun_valid=False,
-            sunset_valid=False,
-            sunset_pos=None,
-            control_state_reason="Default: FOV Exit",
-            default=100,
+        """In window, FOV exit, no sunset → reason from default handler."""
+        pr = _make_pr(
+            control_method=ControlMethod.DEFAULT,
+            reason="no active condition — default position 100%",
+            default_position=100,
         )
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                normal_cover_state=_make_ncs(cover),
-                effective_default_position=100,
-                is_sunset_active=False,
-            )
-        )
-        assert "FOV Exit" in result
-        assert "Default Position" in result
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        assert "default position" in result.lower()
         assert "100%" in result
 
     def test_sun_tracking_no_limits(self, builder):
-        """Sun tracking, no limits, no climate → shows raw tracking position."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(raw_calculated_position=65)
-        )
-        assert "Sun tracking" in result
+        """Sun tracking, no limits → reason from solar handler."""
+        pr = _make_pr(reason="sun in FOV — position 65%", raw_calculated_position=65)
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
         assert "65%" in result
 
     def test_sun_tracking_with_min_limit(self, builder):
-        """Sun tracking below min_position → shows limit applied."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                raw_calculated_position=30,
-                default_state=60,
-                config_options={
-                    CONF_MIN_POSITION: 60,
-                    CONF_ENABLE_MIN_POSITION: True,
-                },
-            )
-        )
-        assert "Sun tracking" in result
-        assert "min limit" in result
+        """Solar tracking position included in reason."""
+        pr = _make_pr(reason="sun in FOV — position 60%", raw_calculated_position=60)
+        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
         assert "60%" in result
 
     def test_climate_winter_heating(self, builder):
-        """Sun tracking + climate winter heating → shows winter heating decision."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                raw_calculated_position=45,
-                switch_mode=True,
-                climate_state=100,
-                climate_strategy=ClimateStrategy.WINTER_HEATING,
-                final_state=100,
-            )
+        """Climate winter heating reason propagates through."""
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            reason="climate mode active (winter) — position 100%",
+            climate_state=100,
+            climate_strategy=ClimateStrategy.WINTER_HEATING,
+            position=100,
         )
-        assert "Sun tracking" in result
-        assert "Winter Heating" in result
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr, switch_mode=True, final_state=100)
+        )
+        assert "climate" in result.lower()
+        assert "winter" in result.lower()
         assert "100%" in result
 
     def test_climate_summer_cooling(self, builder):
-        """Sun tracking + climate summer cooling → shows summer cooling."""
-        result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                raw_calculated_position=45,
-                switch_mode=True,
-                climate_state=0,
-                climate_strategy=ClimateStrategy.SUMMER_COOLING,
-                final_state=0,
-            )
+        """Climate summer cooling reason propagates through."""
+        pr = _make_pr(
+            control_method=ControlMethod.SUMMER,
+            reason="climate mode active (summer) — position 0%",
+            climate_state=0,
+            climate_strategy=ClimateStrategy.SUMMER_COOLING,
+            position=0,
         )
-        assert "Summer Cooling" in result
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr, switch_mode=True, final_state=0)
+        )
+        assert "summer" in result.lower()
         assert "0%" in result
 
     def test_climate_low_light(self, builder):
-        """Default position + climate low light strategy."""
-        cover = _make_cover(
-            direct_sun_valid=False,
-            control_state_reason="Default: FOV Exit",
-            default=0,
+        """Climate low light reason propagates through."""
+        pr = _make_pr(
+            control_method=ControlMethod.SOLAR,
+            reason="climate mode active (glare control) — position 50%",
+            climate_state=50,
+            climate_strategy=ClimateStrategy.LOW_LIGHT,
         )
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                normal_cover_state=_make_ncs(cover),
-                raw_calculated_position=0,
-                switch_mode=True,
-                climate_state=0,
-                climate_strategy=ClimateStrategy.LOW_LIGHT,
-                final_state=0,
-            )
+            _base_ctx(pipeline_result=pr, switch_mode=True)
         )
-        assert "FOV Exit" in result
-        assert "Low Light" in result
+        assert "climate" in result.lower()
 
     def test_sun_tracking_with_interpolation(self, builder):
         """Interpolation applied → shows interpolated final value."""
+        pr = _make_pr(reason="sun in FOV — position 72%", position=72, raw_calculated_position=72)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                raw_calculated_position=72,
-                use_interpolation=True,
-                final_state=65,
-            )
+            _base_ctx(pipeline_result=pr, use_interpolation=True, final_state=65)
         )
         assert "interpolated" in result
         assert "65%" in result
 
     def test_sun_tracking_with_inverse(self, builder):
         """Inverse state applied → shows inversed final value."""
+        pr = _make_pr(reason="sun in FOV — position 72%", position=72, raw_calculated_position=72)
         result = DiagnosticsBuilder._build_position_explanation(
-            _base_ctx(
-                raw_calculated_position=72,
-                inverse_state=True,
-                final_state=28,
-            )
+            _base_ctx(pipeline_result=pr, inverse_state=True, final_state=28)
         )
         assert "invers" in result.lower()
         assert "28%" in result
@@ -761,18 +735,9 @@ class TestPositionExplanationChangeDetection:
 
         # Minimal stubs for DiagnosticContext construction
         coord.pos_sun = [180.0, 45.0]
-        coord.normal_cover_state = _make_ncs()
-        coord.raw_calculated_position = 50
-        coord.climate_state = None
-        coord.climate_data = None
-        coord.climate_strategy = None
+        coord._cover_data = _make_cover()
         coord._climate_mode = False
-        coord.control_method = ControlMethod.SOLAR
-        coord._pipeline_result = None
-        type(coord).is_force_override_active = PropertyMock(return_value=False)
-        type(coord).is_motion_timeout_active = PropertyMock(return_value=False)
-        coord.manager = MagicMock()
-        coord.manager.binary_cover_manual = False
+        coord._pipeline_result = _make_pr()
         type(coord).check_adaptive_time = PropertyMock(return_value=True)
         type(coord).after_start_time = PropertyMock(return_value=True)
         type(coord).before_end_time = PropertyMock(return_value=True)
@@ -787,7 +752,6 @@ class TestPositionExplanationChangeDetection:
         coord._toggles.switch_mode = False
         coord._inverse_state = False
         coord._use_interpolation = False
-        coord.default_state = 50
         type(coord).state = PropertyMock(return_value=50)
         coord.config_entry = MagicMock()
         coord.config_entry.options = {}

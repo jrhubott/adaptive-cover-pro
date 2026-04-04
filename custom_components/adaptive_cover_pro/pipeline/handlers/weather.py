@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
+from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -40,6 +41,7 @@ class WeatherOverrideHandler(OverrideHandler):
             control_method=ControlMethod.WEATHER,
             reason=reason,
             bypass_auto_control=bypass,
+            raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

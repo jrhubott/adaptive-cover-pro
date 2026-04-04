@@ -53,6 +53,7 @@ class PipelineRegistry:
                     reason=result.reason,
                     decision_trace=trace,
                     tilt=result.tilt,
+                    raw_calculated_position=result.raw_calculated_position,
                     climate_state=result.climate_state,
                     climate_strategy=result.climate_strategy,
                     climate_data=result.climate_data,

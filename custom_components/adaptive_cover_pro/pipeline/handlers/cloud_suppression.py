@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
+from ..helpers import compute_default_position, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -40,12 +41,13 @@ class CloudSuppressionHandler(OverrideHandler):
         if not suppressed:
             return None
 
-        pos = snapshot.default_position
+        position = compute_default_position(snapshot)
         pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
         return PipelineResult(
-            position=pos,
+            position=position,
             control_method=ControlMethod.CLOUD,
-            reason=f"cloud/low-light suppression — no direct sun detected → {pos_label} {pos}%",
+            reason=f"cloud/low-light suppression — no direct sun detected → {pos_label} {position}%",
+            raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

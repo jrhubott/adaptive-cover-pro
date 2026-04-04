@@ -17,10 +17,10 @@ from ...const import (
     CLIMATE_SUMMER_TILT_ANGLE,
     POSITION_CLOSED,
 )
-from ...engine.covers import AdaptiveGeneralCover, AdaptiveTiltCover
+from ...engine.covers import AdaptiveTiltCover
 from ...enums import ClimateStrategy, ControlMethod, CoverType, TiltMode
-from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
+from ..helpers import apply_snapshot_limits, compute_raw_calculated_position, compute_solar_position
 from ..types import PipelineResult, PipelineSnapshot
 
 # ---------------------------------------------------------------------------
@@ -112,13 +112,19 @@ class ClimateCoverData:
 class ClimateCoverState:
     """Compute state for climate control operation."""
 
-    cover: AdaptiveGeneralCover
+    snapshot: PipelineSnapshot
     climate_data: ClimateCoverData
-    # The effective default position (sunset-aware) from PipelineSnapshot.
-    # Use this instead of self.cover.default — the cover object no longer
-    # carries a .default property to prevent accidental use of the wrong value.
-    default_position: int = 0
     climate_strategy: ClimateStrategy | None = field(default=None, init=False)
+
+    @property
+    def cover(self):
+        """Convenience accessor for the cover engine object."""
+        return self.snapshot.cover
+
+    @property
+    def default_position(self) -> int:
+        """Effective default position from the snapshot."""
+        return self.snapshot.default_position
 
     def get_state(self) -> int:
         """Calculate climate-aware position, applying position limits."""
@@ -127,20 +133,12 @@ class ClimateCoverState:
             or self.climate_data.blind_type == CoverType.TILT.value
         )
         result = self.tilt_state() if is_tilt else self.normal_type_cover()
-        return PositionConverter.apply_limits(
-            result,
-            self.cover.config.min_pos,
-            self.cover.config.max_pos,
-            self.cover.config.min_pos_sun_only,
-            self.cover.config.max_pos_sun_only,
-            self.cover.direct_sun_valid,
-        )
+        return apply_snapshot_limits(self.snapshot, result, sun_valid=self.cover.direct_sun_valid)
 
     def _solar_position(self) -> int:
-        """Compute solar-tracked position with limits (used as fallback)."""
+        """Compute solar-tracked position with limits applied."""
         if self.cover.direct_sun_valid:
-            state = int(round(self.cover.calculate_percentage()))
-            return max(state, 1)
+            return compute_solar_position(self.snapshot)
         return self.default_position
 
     def normal_type_cover(self) -> int:
@@ -316,9 +314,7 @@ class ClimateHandler(OverrideHandler):
             winter_close_insulation=opts.winter_close_insulation,
         )
 
-        climate_cover_state = ClimateCoverState(
-            snapshot.cover, climate_data, default_position=snapshot.default_position
-        )
+        climate_cover_state = ClimateCoverState(snapshot, climate_data)
         position = round(climate_cover_state.get_state())
 
         if climate_data.is_summer:
@@ -338,6 +334,7 @@ class ClimateHandler(OverrideHandler):
             climate_state=position,
             climate_strategy=climate_cover_state.climate_strategy,
             climate_data=climate_data,
+            raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:

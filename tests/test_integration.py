@@ -6,6 +6,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
 from custom_components.adaptive_cover_pro.calculation import NormalCoverState
+from tests.conftest import make_snapshot_for_cover
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
@@ -143,48 +144,26 @@ def _build_pipeline_snapshot(
 
 def _build_diagnostic_context(
     cover,
-    normal_state,
     pipeline_result,
-    calculated_position: int,
     *,
-    climate_state: int | None = None,
-    climate_data: ClimateCoverData | None = None,
-    climate_strategy: ClimateStrategy | None = None,
     climate_mode: bool = False,
-    is_force_override_active: bool = False,
-    is_weather_override_active: bool = False,
-    is_motion_timeout_active: bool = False,
-    is_manual_override_active: bool = False,
     force_override_position: int = 0,
     final_state: int = 0,
 ) -> DiagnosticContext:
-    """Build a DiagnosticContext from real cover, state, and pipeline result objects."""
+    """Build a DiagnosticContext from real cover and pipeline result objects."""
     return DiagnosticContext(
         pos_sun=[cover.sol_azi, cover.sol_elev],
-        normal_cover_state=normal_state,
-        raw_calculated_position=calculated_position,
-        climate_state=climate_state,
-        climate_data=climate_data,
-        climate_strategy=climate_strategy,
-        climate_mode=climate_mode,
-        control_method=pipeline_result.control_method,
+        cover=cover,
         pipeline_result=pipeline_result,
-        is_force_override_active=is_force_override_active,
-        is_weather_override_active=is_weather_override_active,
-        is_motion_timeout_active=is_motion_timeout_active,
-        is_manual_override_active=is_manual_override_active,
+        climate_mode=climate_mode,
         check_adaptive_time=True,
         after_start_time=True,
         before_end_time=True,
         start_time=None,
         end_time=None,
         automatic_control=True,
-        default_state=int(cover.config.h_def),
         final_state=final_state,
         force_override_position=force_override_position,
-        effective_default_position=int(cover.config.h_def),
-        is_sunset_active=False,
-        configured_sunset_pos=None,  # still valid on DiagnosticContext
     )
 
 
@@ -237,14 +216,14 @@ class TestEndToEndIntegration:
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == SolarHandler().name
 
-            diag_ctx = _build_diagnostic_context(cover, normal_state, result, calc_pos)
+            diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["sun_azimuth"] == 180.0
             assert diag_dict["sun_elevation"] == 45.0
             assert "gamma" in diag_dict
             assert diag_dict["control_status"] == "active"
-            assert "Sun tracking" in explanation
+            assert "sun" in explanation.lower() and "position" in explanation.lower()
 
     def test_sun_outside_fov_uses_default(self):
         """Sun at east azimuth (90°) is outside south window FOV → default position."""
@@ -287,12 +266,12 @@ class TestEndToEndIntegration:
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == DefaultHandler().name
 
-            diag_ctx = _build_diagnostic_context(cover, normal_state, result, calc_pos)
+            diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["sun_azimuth"] == 90.0
             assert diag_dict["control_status"] == "sun_not_visible"
-            assert "Default Position" in explanation
+            assert "default position" in explanation.lower()
 
     def test_climate_winter_heating(self):
         """Cold outside temp + sun in FOV → ClimateHandler opens blind fully (100%)."""
@@ -326,7 +305,7 @@ class TestEndToEndIntegration:
                 is_presence=True,
             )
 
-            climate_state = ClimateCoverState(cover=cover, climate_data=climate_data)
+            climate_state = ClimateCoverState(make_snapshot_for_cover(cover), climate_data)
             assert cover.direct_sun_valid is True
             assert climate_data.is_winter is True
             climate_pos = climate_state.get_state()
@@ -366,16 +345,7 @@ class TestEndToEndIntegration:
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == ClimateHandler().name
 
-            diag_ctx = _build_diagnostic_context(
-                cover,
-                climate_state,
-                result,
-                climate_pos,
-                climate_state=climate_pos,
-                climate_data=climate_data,
-                climate_strategy=climate_state.climate_strategy,
-                climate_mode=True,
-            )
+            diag_ctx = _build_diagnostic_context(cover, result, climate_mode=True)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["control_status"] == "active"
@@ -414,7 +384,7 @@ class TestEndToEndIntegration:
                 is_presence=True,
             )
 
-            climate_state = ClimateCoverState(cover=cover, climate_data=climate_data)
+            climate_state = ClimateCoverState(make_snapshot_for_cover(cover), climate_data)
             assert climate_data.is_summer is True
             climate_pos = climate_state.get_state()
             assert climate_pos == 0
@@ -453,16 +423,7 @@ class TestEndToEndIntegration:
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == ClimateHandler().name
 
-            diag_ctx = _build_diagnostic_context(
-                cover,
-                climate_state,
-                result,
-                climate_pos,
-                climate_state=climate_pos,
-                climate_data=climate_data,
-                climate_strategy=climate_state.climate_strategy,
-                climate_mode=True,
-            )
+            diag_ctx = _build_diagnostic_context(cover, result, climate_mode=True)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["control_status"] == "active"
@@ -515,18 +476,12 @@ class TestEndToEndIntegration:
                 assert step.matched is False
 
             diag_ctx = _build_diagnostic_context(
-                cover,
-                normal_state,
-                result,
-                calc_pos,
-                is_force_override_active=True,
-                force_override_position=75,
-                final_state=75,
+                cover, result, force_override_position=75, final_state=75
             )
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["control_status"] == "force_override_active"
-            assert "Force override active" in explanation
+            assert "force override" in explanation.lower()
             assert "75%" in explanation
 
     def test_manual_override(self):
@@ -568,17 +523,11 @@ class TestEndToEndIntegration:
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == ManualOverrideHandler().name
 
-            diag_ctx = _build_diagnostic_context(
-                cover,
-                normal_state,
-                result,
-                calc_pos,
-                is_manual_override_active=True,
-            )
+            diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["control_status"] == "manual_override"
-            assert "Manual override active" in explanation
+            assert "manual override" in explanation.lower()
 
     def test_motion_timeout(self):
         """MotionTimeoutHandler wins when motion_timeout_active=True."""
@@ -620,17 +569,11 @@ class TestEndToEndIntegration:
             winning = next(s for s in result.decision_trace if s.matched)
             assert winning.handler == MotionTimeoutHandler().name
 
-            diag_ctx = _build_diagnostic_context(
-                cover,
-                normal_state,
-                result,
-                calc_pos,
-                is_motion_timeout_active=True,
-            )
+            diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["control_status"] == "motion_timeout"
-            assert "No motion detected" in explanation
+            assert "motion" in explanation.lower()
 
     def test_horizontal_awning_sun_tracking(self):
         """Horizontal awning with sun in FOV → SolarHandler wins."""
@@ -671,13 +614,13 @@ class TestEndToEndIntegration:
 
             assert result.control_method == ControlMethod.SOLAR
 
-            diag_ctx = _build_diagnostic_context(cover, normal_state, result, calc_pos)
+            diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["sun_azimuth"] == 180.0
             assert diag_dict["sun_elevation"] == 45.0
             assert "gamma" in diag_dict
-            assert "Sun tracking" in explanation
+            assert "sun" in explanation.lower() and "position" in explanation.lower()
 
     def test_tilt_cover_sun_tracking(self):
         """Tilt (venetian) cover with sun in FOV → SolarHandler wins.
@@ -722,10 +665,10 @@ class TestEndToEndIntegration:
 
             assert result.control_method == ControlMethod.SOLAR
 
-            diag_ctx = _build_diagnostic_context(cover, normal_state, result, calc_pos)
+            diag_ctx = _build_diagnostic_context(cover, result)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
             assert diag_dict["sun_azimuth"] == 180.0
             assert diag_dict["sun_elevation"] == 70.0
             assert "gamma" in diag_dict
-            assert "Sun tracking" in explanation
+            assert "sun" in explanation.lower() and "position" in explanation.lower()

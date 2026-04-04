@@ -117,6 +117,11 @@ class PipelineResult:
     decision_trace: list[DecisionStep] = field(default_factory=list)
     tilt: int | None = None
 
+    # Raw geometric position before post-processing (interpolation/inverse_state).
+    # Set by SolarHandler when direct sun is valid, otherwise equals the effective
+    # default position.  Used by diagnostics to show the pure calculation result.
+    raw_calculated_position: int = 0
+
     # Sunset context — written by the coordinator via dataclasses.replace() after
     # pipeline evaluation, NOT sourced from the handler snapshot.  This keeps
     # the raw config values out of handler logic while still surfacing them in

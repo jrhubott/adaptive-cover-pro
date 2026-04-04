@@ -12,6 +12,7 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.const import ControlStatus
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
@@ -29,8 +30,6 @@ def _make_cover(
     is_sun_in_blind_spot: bool = False,
     direct_sun_valid: bool = True,
     sunset_valid: bool = False,
-    sunset_pos: float | None = None,
-    default: float = 0.0,
     control_state_reason: str = "Sun in FOV",
     calc_details: dict | None = None,
 ) -> SimpleNamespace:
@@ -42,8 +41,6 @@ def _make_cover(
         is_sun_in_blind_spot=is_sun_in_blind_spot,
         direct_sun_valid=direct_sun_valid,
         sunset_valid=sunset_valid,
-        sunset_pos=sunset_pos,
-        default=default,
         control_state_reason=control_state_reason,
     )
     if calc_details is not None:
@@ -51,32 +48,45 @@ def _make_cover(
     return cover
 
 
-def _make_normal_cover_state(cover=None) -> SimpleNamespace:
-    """Wrap a cover mock in a NormalCoverState-like object."""
-    if cover is None:
-        cover = _make_cover()
-    return SimpleNamespace(cover=cover)
+def _make_pr(
+    *,
+    position: int = 50,
+    control_method: ControlMethod = ControlMethod.SOLAR,
+    reason: str = "sun in FOV — position 50%",
+    raw_calculated_position: int = 50,
+    climate_state: int | None = None,
+    climate_strategy: ClimateStrategy | None = None,
+    climate_data=None,
+    default_position: int = 0,
+    is_sunset_active: bool = False,
+    configured_default: int = 0,
+    configured_sunset_pos: int | None = None,
+    bypass_auto_control: bool = False,
+) -> PipelineResult:
+    """Build a PipelineResult with sensible defaults."""
+    return PipelineResult(
+        position=position,
+        control_method=control_method,
+        reason=reason,
+        raw_calculated_position=raw_calculated_position,
+        climate_state=climate_state,
+        climate_strategy=climate_strategy,
+        climate_data=climate_data,
+        default_position=default_position,
+        is_sunset_active=is_sunset_active,
+        configured_default=configured_default,
+        configured_sunset_pos=configured_sunset_pos,
+        bypass_auto_control=bypass_auto_control,
+    )
 
 
 def _base_ctx(**overrides) -> DiagnosticContext:
-    """Return a DiagnosticContext with sensible defaults.
-
-    All overrides are passed as keyword arguments.
-    """
+    """Return a DiagnosticContext with sensible defaults."""
     defaults = {
         "pos_sun": [180.0, 45.0],
-        "normal_cover_state": _make_normal_cover_state(),
-        "raw_calculated_position": 50,
-        "climate_state": None,
-        "climate_data": None,
-        "climate_strategy": None,
+        "cover": _make_cover(),
+        "pipeline_result": _make_pr(),
         "climate_mode": False,
-        "control_method": ControlMethod.SOLAR,
-        "pipeline_result": None,
-        "is_force_override_active": False,
-        "is_weather_override_active": False,
-        "is_motion_timeout_active": False,
-        "is_manual_override_active": False,
         "check_adaptive_time": True,
         "after_start_time": True,
         "before_end_time": True,
@@ -90,17 +100,12 @@ def _base_ctx(**overrides) -> DiagnosticContext:
         "switch_mode": False,
         "inverse_state": False,
         "use_interpolation": False,
-        "default_state": 0,
         "final_state": 50,
         "config_options": {},
         "motion_detected": True,
         "motion_timeout_active": False,
         "force_override_sensors": [],
         "force_override_position": 0,
-        # Sunset-aware default fields (added in sunset refactor)
-        "effective_default_position": 0,
-        "is_sunset_active": False,
-        "configured_sunset_pos": None,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)
@@ -153,13 +158,13 @@ class TestSolarDiagnostics:
         assert diag["sun_elevation"] == 30.2
 
     def test_gamma_present_when_cover_has_it(self, builder: DiagnosticsBuilder):
-        """Gamma is included when cover state has the attribute."""
+        """Gamma is included when cover has the attribute."""
         diag, _ = builder.build(_base_ctx())
         assert "gamma" in diag
 
-    def test_gamma_absent_when_no_cover_state(self, builder: DiagnosticsBuilder):
-        """Gamma is absent when no cover state."""
-        diag, _ = builder.build(_base_ctx(normal_cover_state=None))
+    def test_gamma_absent_when_no_cover(self, builder: DiagnosticsBuilder):
+        """Gamma is absent when cover is None."""
+        diag, _ = builder.build(_base_ctx(cover=None))
         assert "gamma" not in diag
 
 
@@ -177,18 +182,20 @@ class TestControlStatus:
         assert diag["control_status"] == ControlStatus.AUTOMATIC_CONTROL_OFF
 
     def test_force_override_active(self, builder: DiagnosticsBuilder):
-        """Returns FORCE_OVERRIDE_ACTIVE when force override is on."""
-        diag, _ = builder.build(_base_ctx(is_force_override_active=True))
+        """Returns FORCE_OVERRIDE_ACTIVE when force override is the winning method."""
+        pr = _make_pr(control_method=ControlMethod.FORCE)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_status"] == ControlStatus.FORCE_OVERRIDE_ACTIVE
 
     def test_motion_timeout(self, builder: DiagnosticsBuilder):
-        """Returns MOTION_TIMEOUT when motion timeout is active."""
-        diag, _ = builder.build(_base_ctx(is_motion_timeout_active=True))
+        """Returns MOTION_TIMEOUT when motion timeout is the winning method."""
+        pr = _make_pr(control_method=ControlMethod.MOTION)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_status"] == ControlStatus.MOTION_TIMEOUT
 
     def test_manual_override_via_pipeline(self, builder: DiagnosticsBuilder):
         """Returns MANUAL_OVERRIDE when pipeline says manual."""
-        pr = SimpleNamespace(control_method=ControlMethod.MANUAL)
+        pr = _make_pr(control_method=ControlMethod.MANUAL)
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_status"] == ControlStatus.MANUAL_OVERRIDE
 
@@ -200,8 +207,8 @@ class TestControlStatus:
     def test_sun_not_visible(self, builder: DiagnosticsBuilder):
         """Returns SUN_NOT_VISIBLE when cover is not valid."""
         cover = _make_cover(valid=False)
-        ncs = _make_normal_cover_state(cover)
-        diag, _ = builder.build(_base_ctx(normal_cover_state=ncs))
+        pr = _make_pr(control_method=ControlMethod.DEFAULT)
+        diag, _ = builder.build(_base_ctx(cover=cover, pipeline_result=pr))
         assert diag["control_status"] == ControlStatus.SUN_NOT_VISIBLE
 
     def test_active(self, builder: DiagnosticsBuilder):
@@ -210,13 +217,9 @@ class TestControlStatus:
         assert diag["control_status"] == ControlStatus.ACTIVE
 
     def test_priority_force_over_motion(self, builder: DiagnosticsBuilder):
-        """Force override takes priority over motion timeout."""
-        diag, _ = builder.build(
-            _base_ctx(
-                is_force_override_active=True,
-                is_motion_timeout_active=True,
-            )
-        )
+        """Force override takes priority over motion timeout (higher priority handler wins)."""
+        pr = _make_pr(control_method=ControlMethod.FORCE)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_status"] == ControlStatus.FORCE_OVERRIDE_ACTIVE
 
 
@@ -230,29 +233,31 @@ class TestControlStateReason:
 
     def test_force_override(self, builder: DiagnosticsBuilder):
         """Force override reason string."""
-        diag, _ = builder.build(_base_ctx(is_force_override_active=True))
+        pr = _make_pr(control_method=ControlMethod.FORCE)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_state_reason"] == "Force Override"
 
     def test_motion_timeout(self, builder: DiagnosticsBuilder):
         """Motion timeout reason string."""
-        diag, _ = builder.build(_base_ctx(is_motion_timeout_active=True))
+        pr = _make_pr(control_method=ControlMethod.MOTION)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_state_reason"] == "Motion Timeout"
 
     def test_manual_override(self, builder: DiagnosticsBuilder):
         """Manual override reason string."""
-        diag, _ = builder.build(_base_ctx(is_manual_override_active=True))
+        pr = _make_pr(control_method=ControlMethod.MANUAL)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["control_state_reason"] == "Manual Override"
 
     def test_cover_reason_passthrough(self, builder: DiagnosticsBuilder):
         """Cover-level reason passes through when no overrides active."""
         cover = _make_cover(control_state_reason="Sun below min elevation")
-        ncs = _make_normal_cover_state(cover)
-        diag, _ = builder.build(_base_ctx(normal_cover_state=ncs))
+        diag, _ = builder.build(_base_ctx(cover=cover))
         assert diag["control_state_reason"] == "Sun below min elevation"
 
     def test_unknown_when_no_cover(self, builder: DiagnosticsBuilder):
-        """Returns Unknown when no cover state available."""
-        diag, _ = builder.build(_base_ctx(normal_cover_state=None))
+        """Returns Unknown when no cover available."""
+        diag, _ = builder.build(_base_ctx(cover=None))
         assert diag["control_state_reason"] == "Unknown"
 
 
@@ -266,37 +271,40 @@ class TestPositionExplanation:
 
     def test_force_override_explanation(self, builder: DiagnosticsBuilder):
         """Force override produces correct explanation."""
-        _, explanation = builder.build(
-            _base_ctx(
-                is_force_override_active=True,
-                force_override_position=75,
-            )
+        pr = _make_pr(
+            control_method=ControlMethod.FORCE,
+            reason="force override active (sensor.x) — position 75% [bypasses automatic control]",
+            position=75,
         )
-        assert "Force override active" in explanation
+        _, explanation = builder.build(_base_ctx(pipeline_result=pr))
+        assert "force override" in explanation.lower()
         assert "75%" in explanation
 
     def test_motion_timeout_explanation(self, builder: DiagnosticsBuilder):
         """Motion timeout produces correct explanation."""
-        _, explanation = builder.build(
-            _base_ctx(is_motion_timeout_active=True, default_state=30)
+        pr = _make_pr(
+            control_method=ControlMethod.MOTION,
+            reason="motion timeout active — default position 30%",
+            position=30,
         )
-        assert "No motion detected" in explanation
+        _, explanation = builder.build(_base_ctx(pipeline_result=pr))
+        assert "motion" in explanation.lower()
         assert "30%" in explanation
 
     def test_manual_override_explanation(self, builder: DiagnosticsBuilder):
         """Manual override produces correct explanation."""
-        _, explanation = builder.build(_base_ctx(is_manual_override_active=True))
-        assert "Manual override active" in explanation
+        pr = _make_pr(
+            control_method=ControlMethod.MANUAL,
+            reason="manual override active — holding solar position 50%",
+        )
+        _, explanation = builder.build(_base_ctx(pipeline_result=pr))
+        assert "manual" in explanation.lower()
 
     def test_outside_time_window_sunset_pos(self, builder: DiagnosticsBuilder):
         """Outside time window with sunset_pos active → shows 'sunset position'."""
+        pr = _make_pr(default_position=20, is_sunset_active=True, configured_sunset_pos=20)
         _, explanation = builder.build(
-            _base_ctx(
-                check_adaptive_time=False,
-                effective_default_position=20,
-                is_sunset_active=True,
-                configured_sunset_pos=20,
-            )
+            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
         )
         assert "sunset position" in explanation.lower()
         assert "20%" in explanation
@@ -304,65 +312,56 @@ class TestPositionExplanation:
 
     def test_outside_time_window_default(self, builder: DiagnosticsBuilder):
         """Outside time window with no sunset_pos → shows 'default position'."""
+        pr = _make_pr(default_position=10, is_sunset_active=False)
         _, explanation = builder.build(
-            _base_ctx(
-                check_adaptive_time=False,
-                effective_default_position=10,
-                is_sunset_active=False,
-            )
+            _base_ctx(pipeline_result=pr, check_adaptive_time=False)
         )
         assert "default position" in explanation.lower()
         assert "10%" in explanation
         assert "commands paused" in explanation
 
     def test_sun_tracking_explanation(self, builder: DiagnosticsBuilder):
-        """Sun tracking shows raw calculated position."""
-        _, explanation = builder.build(_base_ctx(raw_calculated_position=65))
-        assert "Sun tracking" in explanation
+        """Sun tracking reason propagates through."""
+        pr = _make_pr(reason="sun in FOV — position 65%", raw_calculated_position=65)
+        _, explanation = builder.build(_base_ctx(pipeline_result=pr))
         assert "65%" in explanation
 
     def test_climate_mode_explanation(self, builder: DiagnosticsBuilder):
-        """Climate mode shows strategy label and position."""
-        _, explanation = builder.build(
-            _base_ctx(
-                switch_mode=True,
-                climate_state=100,
-                climate_strategy=ClimateStrategy.WINTER_HEATING,
-            )
+        """Climate mode reason propagates through."""
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            reason="climate mode active (winter) — position 100%",
+            climate_state=100,
+            climate_strategy=ClimateStrategy.WINTER_HEATING,
         )
-        assert "Climate: Winter Heating" in explanation
+        _, explanation = builder.build(
+            _base_ctx(pipeline_result=pr, switch_mode=True)
+        )
+        assert "climate" in explanation.lower()
         assert "100%" in explanation
 
     def test_inverse_state_explanation(self, builder: DiagnosticsBuilder):
-        """Inverse state shows inversed label."""
-        _, explanation = builder.build(_base_ctx(inverse_state=True, final_state=50))
-        assert "inversed" in explanation
+        """Inverse state appends inversed label when value changed."""
+        pr = _make_pr(position=72)
+        _, explanation = builder.build(
+            _base_ctx(pipeline_result=pr, inverse_state=True, final_state=28)
+        )
+        assert "invers" in explanation.lower()
+        assert "28%" in explanation
 
     def test_interpolation_explanation(self, builder: DiagnosticsBuilder):
-        """Interpolation shows interpolated label."""
+        """Interpolation appends interpolated label."""
+        pr = _make_pr(position=72)
         _, explanation = builder.build(
-            _base_ctx(use_interpolation=True, final_state=42)
+            _base_ctx(pipeline_result=pr, use_interpolation=True, final_state=42)
         )
         assert "interpolated" in explanation
         assert "42%" in explanation
 
-    def test_sunset_position_during_time_window(self, builder: DiagnosticsBuilder):
-        """Sunset position within time window shows sunset label when is_sunset_active=True."""
-        cover = _make_cover(
-            direct_sun_valid=False,
-            sunset_valid=True,
-            sunset_pos=15.0,
-        )
-        ncs = _make_normal_cover_state(cover)
-        _, explanation = builder.build(
-            _base_ctx(
-                normal_cover_state=ncs,
-                effective_default_position=15,
-                is_sunset_active=True,
-            )
-        )
-        assert "Sunset Position" in explanation
-        assert "15%" in explanation
+    def test_no_result_returns_unknown(self, builder: DiagnosticsBuilder):
+        """Returns 'Unknown' when pipeline_result is None."""
+        _, explanation = builder.build(_base_ctx(pipeline_result=None))
+        assert explanation == "Unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -374,18 +373,21 @@ class TestPositionDiagnostics:
     """Position diagnostics section tests."""
 
     def test_calculated_position(self, builder: DiagnosticsBuilder):
-        """Calculated position appears in output."""
-        diag, _ = builder.build(_base_ctx(raw_calculated_position=42))
+        """Calculated position appears in output from pipeline result."""
+        pr = _make_pr(raw_calculated_position=42)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["calculated_position"] == 42
 
     def test_climate_position_present(self, builder: DiagnosticsBuilder):
-        """Climate position appears when climate state is set."""
-        diag, _ = builder.build(_base_ctx(climate_state=80))
+        """Climate position appears when pipeline result has climate state."""
+        pr = _make_pr(climate_state=80)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert diag["calculated_position_climate"] == 80
 
     def test_climate_position_absent(self, builder: DiagnosticsBuilder):
         """Climate position absent when climate state is None."""
-        diag, _ = builder.build(_base_ctx(climate_state=None))
+        pr = _make_pr(climate_state=None)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         assert "calculated_position_climate" not in diag
 
     def test_delta_thresholds(self, builder: DiagnosticsBuilder):
@@ -396,9 +398,10 @@ class TestPositionDiagnostics:
 
     def test_position_delta_from_last_action(self, builder: DiagnosticsBuilder):
         """Position delta from last action is computed."""
+        pr = _make_pr(raw_calculated_position=60)
         diag, _ = builder.build(
             _base_ctx(
-                raw_calculated_position=60,
+                pipeline_result=pr,
                 last_cover_action={"position": 50},
             )
         )
@@ -413,8 +416,7 @@ class TestPositionDiagnostics:
         """Calculation details from cover are included."""
         details = {"edge_case": True, "safety_margin": 1.1}
         cover = _make_cover(calc_details=details)
-        ncs = _make_normal_cover_state(cover)
-        diag, _ = builder.build(_base_ctx(normal_cover_state=ncs))
+        diag, _ = builder.build(_base_ctx(cover=cover))
         assert diag["calculation_details"] == details
 
 
@@ -446,7 +448,7 @@ class TestSunValidityDiagnostics:
     """Sun validity diagnostics section tests."""
 
     def test_sun_validity_present(self, builder: DiagnosticsBuilder):
-        """Sun validity fields are present when cover state exists."""
+        """Sun validity fields are present when cover exists."""
         diag, _ = builder.build(_base_ctx())
         sv = diag["sun_validity"]
         assert sv["valid"] is True
@@ -454,8 +456,8 @@ class TestSunValidityDiagnostics:
         assert sv["in_blind_spot"] is False
 
     def test_sun_validity_absent_when_no_cover(self, builder: DiagnosticsBuilder):
-        """Sun validity absent when no cover state."""
-        diag, _ = builder.build(_base_ctx(normal_cover_state=None))
+        """Sun validity absent when no cover."""
+        diag, _ = builder.build(_base_ctx(cover=None))
         assert "sun_validity" not in diag
 
 
@@ -485,16 +487,15 @@ class TestClimateDiagnostics:
         )
 
     def test_climate_data_present(self, builder: DiagnosticsBuilder):
-        """Climate data fields appear when climate mode is enabled."""
+        """Climate data fields appear when climate mode is enabled and result has climate_data."""
         cd = self._make_climate_data()
-        diag, _ = builder.build(
-            _base_ctx(
-                climate_mode=True,
-                climate_data=cd,
-                climate_strategy=ClimateStrategy.WINTER_HEATING,
-                control_method=ControlMethod.WINTER,
-            )
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            climate_state=100,
+            climate_strategy=ClimateStrategy.WINTER_HEATING,
+            climate_data=cd,
         )
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
         assert diag["active_temperature"] == 22.5
         assert diag["climate_strategy"] == "winter_heating"
         assert "temperature_details" in diag
@@ -574,10 +575,11 @@ class TestConfigurationDiagnostics:
         assert expected_keys == set(config.keys())
 
     def test_configuration_reflects_context(self, builder: DiagnosticsBuilder):
-        """Configuration reflects context state values."""
+        """Configuration reflects pipeline result and context state values."""
+        pr = _make_pr(control_method=ControlMethod.FORCE)
         diag, _ = builder.build(
             _base_ctx(
-                is_force_override_active=True,
+                pipeline_result=pr,
                 motion_detected=False,
                 motion_timeout_active=True,
             )

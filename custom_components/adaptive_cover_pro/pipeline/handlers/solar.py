@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ...enums import ControlMethod
-from ...position_utils import PositionConverter
 from ..handler import OverrideHandler
+from ..helpers import compute_solar_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -25,21 +25,12 @@ class SolarHandler(OverrideHandler):
         if not snapshot.cover.direct_sun_valid:
             return None
 
-        state = int(round(snapshot.cover.calculate_percentage()))
-        # Prevent open/close-only covers from closing while sun is in FOV
-        state = max(state, 1)
-        position = PositionConverter.apply_limits(
-            state,
-            snapshot.config.min_pos,
-            snapshot.config.max_pos,
-            snapshot.config.min_pos_sun_only,
-            snapshot.config.max_pos_sun_only,
-            True,  # sun is valid when this handler fires
-        )
+        position = compute_solar_position(snapshot)
         return PipelineResult(
             position=position,
             control_method=ControlMethod.SOLAR,
             reason=f"sun in FOV — position {position}%",
+            raw_calculated_position=position,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
