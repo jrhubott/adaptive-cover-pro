@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-04
-**Current Version:** v2.13.6-beta.4
+**Current Version:** v2.13.7
 **Branch:** `main` (stable)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -10,11 +10,12 @@
 ---
 
 **Recent Merges:**
+- `fix/motion-timeout-pending-ignores-new-motion` — Motion timeout pending state fix (PR #119, merged to main).
 - `fix/manual-override-position-not-restored` — Manual override reset fixes (PR #117, merged to main).
 
 ## Tests
 
-**1093 passing, 0 failing** (+3 new tests for manual override reset fix).
+**1099 passing, 0 failing** (+6 new tests for motion timeout pending fix).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open Issues
@@ -39,6 +40,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.13.7](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.7) | 2026-04-04 | Fix: motion timeout pending state now properly detects new motion events (#119). |
+| [v2.13.6](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6) | 2026-04-04 | Reset button time_delta_too_small gate, manual override reset position (climate-aware). |
 | [v2.13.6-beta.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6-beta.4) | 2026-04-04 | Fix: reset button time_delta_too_small gate now bypassed with force=True. |
 | [v2.13.6-beta.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6-beta.3) | 2026-04-04 | Fix: manual override reset now sends correct pipeline position (climate-aware). |
 | [v2.13.6-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6-beta.2) | 2026-04-04 | Pipeline time window gate moved to handlers; Motion Control switch. |
