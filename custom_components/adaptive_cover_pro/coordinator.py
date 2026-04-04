@@ -24,7 +24,6 @@ except ImportError:
     EventStateChangedData = dict  # type: ignore[misc,assignment]
 from homeassistant.helpers.event import (
     async_track_point_in_time,
-    async_track_time_interval,
 )
 from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -99,9 +98,6 @@ from .const import (
     CONF_IRRADIANCE_THRESHOLD,
     DOMAIN,
     LOGGER,
-    MAX_POSITION_RETRIES,
-    POSITION_CHECK_INTERVAL_MINUTES,
-    POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
@@ -269,7 +265,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._last_position_explanation: str = ""
 
         # Cover command service — self-contained: owns positioning, target tracking,
-        # and the reconciliation timer (started in async_config_entry_first_refresh)
+        # and the reconciliation timer (started in async_config_entry_first_refresh).
+        # on_tick keeps time window transition checks running on the same 1-min interval
+        # without needing a separate HA timer.
         self._cmd_svc = CoverCommandService(
             hass=self.hass,
             logger=self.logger,
@@ -278,6 +276,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
+            on_tick=self._check_time_window_transition,
         )
 
         # Time window manager (start/end time checks)
@@ -842,13 +841,36 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             diagnostics=diagnostics,
         )
 
+    def _build_position_context(
+        self,
+        entity: str,
+        options: dict,
+        *,
+        force: bool = False,
+    ) -> PositionContext:
+        """Build a PositionContext for the given cover entity.
+
+        Assembles all coordinator-level flags into the dataclass that
+        CoverCommandService.apply_position() uses for gate checks.
+
+        """
+        return PositionContext(
+            auto_control=self.automatic_control or self._pipeline_bypasses_auto_control,
+            in_time_window=self.check_adaptive_time,
+            manual_override=self.manager.is_cover_manual(entity),
+            sun_just_appeared=self._check_sun_validity_transition(),
+            min_change=self.min_change,
+            time_threshold=self.time_threshold,
+            special_positions=build_special_positions(options),
+            inverse_state=self._inverse_state,
+            force=force,
+        )
+
     async def async_handle_state_change(self, state: int, options):
         """Send position commands to all covers when a tracked entity changes."""
-        if self.automatic_control or self._pipeline_bypasses_auto_control:
-            for cover in self.entities:
-                await self.async_handle_call_service(cover, state, options)
-        else:
-            self.logger.debug("State change but control toggle is off")
+        for cover in self.entities:
+            ctx = self._build_position_context(cover, options)
+            await self._cmd_svc.apply_position(cover, state, "solar", context=ctx)
         self.state_change = False
         self.logger.debug("State change handled")
 
@@ -888,21 +910,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
-        if self.automatic_control or self._pipeline_bypasses_auto_control:
-            for cover in self.entities:
-                # Always set target position for verification, even if we don't send command
-                # This ensures position verification works after restart
-                if self.check_adaptive_time and not self.manager.is_cover_manual(cover):
-                    self.target_call[cover] = state
-                    self.logger.debug(
-                        "First refresh: Set target position %s for %s", state, cover
-                    )
-
-                    # Now check if we should actually send the command
-                    if self.check_position_delta(cover, state, options):
-                        await self.async_set_position(cover, state)
-        else:
-            self.logger.debug("First refresh but control toggle is off")
+        for cover in self.entities:
+            ctx = self._build_position_context(cover, options)
+            await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
         self.logger.debug("First refresh handled")
 
@@ -917,103 +927,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Timed refresh: no sunset position configured, skipping")
             self.timed_refresh = False
             return
-        if self.automatic_control or self._pipeline_bypasses_auto_control:
-            sunset_pos = (
-                inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
-            )
-            for cover in self.entities:
-                # Only move if delta is sufficient or it's a special position
-                if self.check_position_delta(cover, sunset_pos, options):
-                    await self.async_set_manual_position(cover, sunset_pos)
-                else:
-                    self.logger.debug(
-                        "Timed refresh: delta too small for %s, skipping", cover
-                    )
-        else:
-            self.logger.debug("Timed refresh but control toggle is off")
+        sunset_pos = (
+            inverse_state(sunset_pos_raw) if self._inverse_state else sunset_pos_raw
+        )
+        for cover in self.entities:
+            # Sunset position always forced — bypasses delta/time/auto-control gates
+            ctx = self._build_position_context(cover, options, force=True)
+            await self._cmd_svc.apply_position(cover, sunset_pos, "sunset", context=ctx)
         self.timed_refresh = False
         self.logger.debug("Timed refresh handled")
 
-    async def async_handle_call_service(self, entity, state: int, options):
-        """Check conditions and call cover service.
 
-        Validates all conditions before sending position command: within time
-        window, sufficient position delta, sufficient time delta, and not under
-        manual override. Only sends command if all checks pass.
-
-        Args:
-            entity: Cover entity ID to control
-            state: Target position to set
-            options: Configuration options dictionary
-
-        """
-        if not self.check_adaptive_time:
-            self.logger.debug("Skipping %s: outside time window", entity)
-            self._cmd_svc.record_skipped_action(entity, "Outside time window", state)
-            return
-        if not self.check_position_delta(entity, state, options):
-            self.logger.debug("Skipping %s: position delta too small", entity)
-            self._cmd_svc.record_skipped_action(
-                entity, "Position delta too small", state
-            )
-            return
-        if not self._cmd_svc.check_time_delta(entity, self.time_threshold):
-            self.logger.debug("Skipping %s: time delta too small", entity)
-            self._cmd_svc.record_skipped_action(entity, "Time delta too small", state)
-            return
-        if self.manager.is_cover_manual(entity):
-            self.logger.debug("Skipping %s: manual override active", entity)
-            self._cmd_svc.record_skipped_action(entity, "Manual override active", state)
-            return
-        await self.async_set_position(entity, state)
-
-    async def async_set_position(self, entity, state: int):
-        """Set cover position.
-
-        Wrapper method that delegates to async_set_manual_position. Provided
-        for backwards compatibility and clearer calling semantics.
-
-        Args:
-            entity: Cover entity ID to control
-            state: Target position (0-100)
-
-        """
-        await self.async_set_manual_position(entity, state)
-
-    async def async_set_manual_position(self, entity, state):
-        """Call service to set cover position or open/close.
-
-        Sends position command to cover entity, automatically handling both
-        position-capable covers (set_cover_position) and open/close-only covers
-        (open_cover/close_cover with threshold). Checks capabilities, prepares
-        appropriate service call, tracks action for diagnostics, and starts
-        grace period to prevent false manual override detection.
-
-        Args:
-            entity: Cover entity ID to control
-            state: Target position (0-100)
-
-        """
-        if not self.check_position(entity, state):
-            return
-
-        caps = self._cmd_svc.get_cover_capabilities(entity)
-        service, service_data, supports_position = (
-            self._cmd_svc.prepare_position_service_call(
-                entity, state, caps, inverse_state=self._inverse_state
-            )
-        )
-
-        if service is None:
-            return
-
-        self._cmd_svc.track_cover_action(
-            entity, service, state, supports_position, inverse_state=self._inverse_state
-        )
-
-        self.logger.debug("Run %s with data %s", service, service_data)
-        await self._cmd_svc.execute_service_call(service, service_data)
-        self.logger.debug("Successfully called service %s for %s", service, entity)
 
     def _update_options(self, options):
         """Update coordinator options from config entry.
@@ -1144,45 +1068,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _get_current_position(self, entity) -> int | None:
         """Get current position of cover — delegates to CoverCommandService."""
         return self._cmd_svc._get_current_position(entity)
-
-    def check_position(self, entity, state):
-        """Check if position differs from state.
-
-        Bypasses check if sun just came into field of view to ensure
-        covers reposition even if calculated position equals current position
-        (can happen when min/max limits clamp low-angle calculations).
-
-        Args:
-            entity: Cover entity ID to check
-            state: Target position to compare against
-
-        Returns:
-            True if position differs from state or sun just appeared,
-            False if position matches state
-
-        """
-        sun_just_appeared = self._check_sun_validity_transition()
-        return self._cmd_svc.check_position(
-            entity, state, sun_just_appeared=sun_just_appeared
-        )
-
-    def check_position_delta(self, entity, state: int, options):
-        """Check if position delta exceeds threshold — delegates to CoverCommandService.
-
-        Args:
-            entity: Cover entity ID to check
-            state: Target position to move to
-            options: Configuration options containing special positions
-
-        Returns:
-            True if delta exceeds min_change threshold or moving to/from special
-            position, False otherwise
-
-        """
-        special_positions = build_special_positions(options)
-        return self._cmd_svc.check_position_delta(
-            entity, state, self.min_change, special_positions
-        )
 
     @property
     def pos_sun(self):
@@ -1463,150 +1348,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
 
         return sun_just_appeared
-
-    async def async_periodic_position_check(self, now: dt.datetime) -> None:
-        """Periodically verify cover positions match calculated positions.
-
-        Called at regular intervals (POSITION_CHECK_INTERVAL_MINUTES) to verify
-        covers reached their target positions. Also checks for time window state
-        transitions to provide <1 minute response time for end time changes.
-        Skips verification for covers under manual override or waiting for target.
-
-        Args:
-            now: Current datetime
-
-        """
-        # Check if time window state changed (e.g., passed end time)
-        # This provides <1 minute response time for time window changes
-        await self._check_time_window_transition(now)
-
-        # Skip if not within operational time window
-        if not self.check_adaptive_time:
-            return
-
-        # Skip if automatic control is disabled (safety overrides may still bypass this)
-        if not self.automatic_control and not self._pipeline_bypasses_auto_control:
-            return
-
-        for entity_id in self.entities:
-            await self._verify_entity_position(entity_id, now)
-
-    async def _verify_entity_position(self, entity_id: str, now: dt.datetime) -> None:
-        """Check if entity reached target position; retry up to MAX_POSITION_RETRIES times."""
-        # Update last verification time FIRST for diagnostic tracking
-        self._pos_verify_mgr.record_verification(entity_id, now)
-
-        # Skip if manual override active
-        if self.manager.is_cover_manual(entity_id):
-            self._pos_verify_mgr.reset_retry_count(entity_id)
-            return
-
-        # Skip if currently waiting for target (move in progress)
-        if self.wait_for_target.get(entity_id, False):
-            return
-
-        # Get target position (the position we last sent to this cover)
-        target_position = self.target_call.get(entity_id)
-        if target_position is None:
-            # Only log once when first encountered to avoid log spam
-            if self._pos_verify_mgr.mark_never_commanded(entity_id):
-                self.logger.debug(
-                    "No command sent to %s yet, position verification will begin after first command",
-                    entity_id,
-                )
-            return
-
-        # Get actual position
-        actual_position = self._get_current_position(entity_id)
-
-        if actual_position is None:
-            self.logger.debug(
-                "Cannot verify position for %s: position unavailable", entity_id
-            )
-            return
-
-        # Check if positions match within tolerance
-        # Compare to target_call (what we sent), not self.state (current calculation)
-        # This prevents false mismatches when sun moves between command and verification
-        position_delta = abs(target_position - actual_position)
-
-        if self._pos_verify_mgr.is_position_matched(actual_position, target_position):
-            # Position is correct, reset retry count
-            self._pos_verify_mgr.reset_retry_count(entity_id)
-            return
-
-        # Check if delta is sufficient before retrying
-        options = self.config_entry.options
-        if not self.check_position_delta(entity_id, target_position, options):
-            self.logger.debug(
-                "Position verification: delta too small for %s (current: %s, target: %s, min: %s%%)",
-                entity_id,
-                actual_position,
-                target_position,
-                self.min_change,
-            )
-            self._pos_verify_mgr.reset_retry_count(entity_id)
-            return
-
-        # Position mismatch detected - cover failed to reach target we sent
-        retry_count = self._pos_verify_mgr.get_retry_count(entity_id)
-
-        if not self._pos_verify_mgr.should_retry(entity_id):
-            self.logger.warning(
-                "Max retries exceeded for %s. Position mismatch: target=%s, actual=%s, delta=%s",
-                entity_id,
-                target_position,
-                actual_position,
-                position_delta,
-            )
-            return
-
-        self.logger.info(
-            "Position mismatch detected for %s (attempt %d/%d): target=%s, actual=%s, delta=%s. Repositioning...",
-            entity_id,
-            retry_count + 1,
-            self._pos_verify_mgr.max_retries,
-            target_position,
-            actual_position,
-            position_delta,
-        )
-
-        # Resend the same target position
-        # Note: If sun has moved and changed the calculated position, the normal
-        # update cycle will handle that separately. We only retry the last command.
-        await self.async_set_position(entity_id, target_position)
-
-    def _start_position_verification(self) -> None:
-        """Start periodic position verification.
-
-        Registers time interval listener to call async_periodic_position_check
-        at configured intervals. Called once during first refresh. Skips if
-        already started.
-
-        """
-        if self._pos_verify_mgr._position_check_interval is not None:
-            return  # Already started
-
-        interval = dt.timedelta(minutes=self._pos_verify_mgr.check_interval_minutes)
-        self._pos_verify_mgr._position_check_interval = async_track_time_interval(
-            self.hass,
-            self.async_periodic_position_check,
-            interval,
-        )
-        self.logger.debug(
-            "Started periodic position verification (interval: %s)", interval
-        )
-
-    def _stop_position_verification(self) -> None:
-        """Stop periodic position verification.
-
-        Cancels time interval listener. Called during coordinator shutdown.
-
-        """
-        if self._pos_verify_mgr._position_check_interval:
-            self._pos_verify_mgr._position_check_interval()
-            self._pos_verify_mgr._position_check_interval = None
-            self.logger.debug("Stopped periodic position verification")
 
     async def async_shutdown(self) -> None:
         """Clean up resources on shutdown.

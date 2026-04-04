@@ -2,83 +2,67 @@
 
 from unittest.mock import MagicMock
 
+from custom_components.adaptive_cover_pro.managers.cover_command import (
+    CoverCommandService,
+    build_special_positions,
+)
 
-def _make_coordinator_with_cmd_svc(current_position, min_change=20):
-    """Build a mock coordinator with a wired CoverCommandService for delta tests."""
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
-    )
-    from custom_components.adaptive_cover_pro.managers.cover_command import (
-        CoverCommandService,
-    )
 
-    coordinator = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-    coordinator.min_change = min_change
-    coordinator.logger = MagicMock()
-
-    # Use a real CoverCommandService with mocked _get_current_position
-    cmd_svc = CoverCommandService(
+def _make_cmd_svc(current_position):
+    """Build a CoverCommandService with mocked position reading."""
+    svc = CoverCommandService(
         hass=MagicMock(),
         logger=MagicMock(),
         cover_type="cover_blind",
         grace_mgr=MagicMock(),
     )
-    cmd_svc._get_current_position = MagicMock(return_value=current_position)
-    coordinator._cmd_svc = cmd_svc
-
-    # Wire the real check_position_delta method
-    coordinator.check_position_delta = (
-        AdaptiveDataUpdateCoordinator.check_position_delta.__get__(coordinator)
-    )
-    return coordinator
+    svc._get_current_position = MagicMock(return_value=current_position)
+    return svc
 
 
 def test_check_position_delta_respects_threshold():
     """Test that check_position_delta enforces minimum threshold."""
-    coordinator = _make_coordinator_with_cmd_svc(current_position=50, min_change=20)
+    svc = _make_cmd_svc(current_position=50)
 
-    # Test with 5% delta (should fail)
-    options = {}
-    result = coordinator.check_position_delta("cover.test", 55, options)
+    # Test with 5% delta (below min_change=20 — should fail)
+    result = svc.check_position_delta("cover.test", 55, min_change=20, special_positions=[0, 100])
     assert result is False
 
     # Test with 25% delta (should pass)
-    result = coordinator.check_position_delta("cover.test", 75, options)
+    result = svc.check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
     assert result is True
 
 
 def test_check_position_delta_allows_special_positions():
     """Test that special positions (0, 100) are always allowed."""
-    coordinator = _make_coordinator_with_cmd_svc(current_position=50, min_change=20)
-
     from custom_components.adaptive_cover_pro.const import (
         CONF_DEFAULT_HEIGHT,
         CONF_SUNSET_POS,
     )
 
+    svc = _make_cmd_svc(current_position=50)
     options = {CONF_SUNSET_POS: 0, CONF_DEFAULT_HEIGHT: 40}
+    special = build_special_positions(options)
 
     # Test 0% (special position — also sunset_pos)
-    result = coordinator.check_position_delta("cover.test", 0, options)
+    result = svc.check_position_delta("cover.test", 0, min_change=20, special_positions=special)
     assert result is True
 
     # Test 100% (special position)
-    result = coordinator.check_position_delta("cover.test", 100, options)
+    result = svc.check_position_delta("cover.test", 100, min_change=20, special_positions=special)
     assert result is True
 
     # Test default height (special position)
-    result = coordinator.check_position_delta("cover.test", 40, options)
+    result = svc.check_position_delta("cover.test", 40, min_change=20, special_positions=special)
     assert result is True
 
 
 def test_check_position_delta_handles_none_position():
     """Test that check_position_delta handles unavailable position."""
-    coordinator = _make_coordinator_with_cmd_svc(current_position=None, min_change=20)
-
-    options = {}
+    svc = _make_cmd_svc(current_position=None)
 
     # Should allow move when position unavailable
-    result = coordinator.check_position_delta("cover.test", 75, options)
+    result = svc.check_position_delta("cover.test", 75, min_change=20, special_positions=[0, 100])
     assert result is True
 
 

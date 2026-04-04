@@ -1,139 +1,173 @@
 """Tests for coordinator debug logging (cover skip logging, motion cancel logging).
 
 Tests cover:
-- async_handle_call_service logs and records reason when conditions prevent a move
+- apply_position() on CoverCommandService logs and records reason when gate checks fail
 - _record_skipped_action stores correct data
 - _cancel_motion_timeout logs when canceling an active task
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.managers.cover_command import (
+    CoverCommandService,
+    PositionContext,
+)
 
-class TestHandleCallServiceLogging:
-    """async_handle_call_service logs skip reason for each failing condition."""
 
-    def _make_coordinator(self):
-        """Build a minimal mock coordinator with real method bound."""
-        from custom_components.adaptive_cover_pro.coordinator import (
-            AdaptiveDataUpdateCoordinator,
-        )
-        from custom_components.adaptive_cover_pro.managers.cover_command import (
-            CoverCommandService,
-        )
+def _make_cmd_svc():
+    """Build a real CoverCommandService with mocked HA calls for gate-check tests."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    return CoverCommandService(
+        hass=hass,
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=MagicMock(),
+        open_close_threshold=50,
+    )
 
-        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
-        coord.logger = MagicMock()
-        coord.logger.debug = MagicMock()
 
-        # Wire a real CoverCommandService so _record_skipped_action / last_skipped_action work
-        cmd_svc = MagicMock(spec=CoverCommandService)
-        cmd_svc.last_skipped_action = {
-            "entity_id": None,
-            "reason": None,
-            "calculated_position": None,
-            "timestamp": None,
-        }
+def _make_context(**overrides):
+    """Build a PositionContext with all gates passing by default."""
+    defaults = dict(
+        auto_control=True,
+        in_time_window=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=2,
+        time_threshold=2,
+        special_positions=[0, 100],
+        inverse_state=False,
+        force=False,
+    )
+    defaults.update(overrides)
+    return PositionContext(**defaults)
 
-        def _record_side_effect(entity, reason, state):
-            import datetime as dt
 
-            cmd_svc.last_skipped_action = {
-                "entity_id": entity,
-                "reason": reason,
-                "calculated_position": state,
-                "timestamp": dt.datetime.now(dt.UTC).isoformat(),
-            }
-
-        cmd_svc.record_skipped_action.side_effect = _record_side_effect
-        cmd_svc.check_time_delta = MagicMock(return_value=True)
-        coord._cmd_svc = cmd_svc
-
-        # last_skipped_action property returns _cmd_svc dict
-        type(coord).last_skipped_action = property(
-            lambda self: self._cmd_svc.last_skipped_action
-        )
-
-        # Bind real methods
-        coord.async_handle_call_service = (
-            AdaptiveDataUpdateCoordinator.async_handle_call_service.__get__(coord)
-        )
-        coord.async_set_position = AsyncMock()
-
-        # Default: all conditions pass
-        coord.check_adaptive_time = True
-        coord.check_position_delta = MagicMock(return_value=True)
-        coord.time_threshold = 2
-        coord.manager = MagicMock()
-        coord.manager.is_cover_manual = MagicMock(return_value=False)
-
-        return coord
+class TestApplyPositionGateLogging:
+    """apply_position() records and returns skip reason for each failing gate."""
 
     @pytest.mark.asyncio
     async def test_skips_outside_time_window(self):
-        """Logs and records skip when outside time window."""
-        coord = self._make_coordinator()
-        coord.check_adaptive_time = False
+        """Returns skip when in_time_window is False."""
+        svc = _make_cmd_svc()
+        ctx = _make_context(in_time_window=False)
 
-        await coord.async_handle_call_service("cover.test", 50, {})
+        outcome, reason = await svc.apply_position("cover.test", 50, "solar", context=ctx)
 
-        coord.async_set_position.assert_not_called()
-        assert coord.last_skipped_action["reason"] == "Outside time window"
-        assert coord.last_skipped_action["entity_id"] == "cover.test"
-        assert coord.last_skipped_action["calculated_position"] == 50
-        calls = [str(c) for c in coord.logger.debug.call_args_list]
-        assert any("outside time window" in c.lower() for c in calls)
+        assert outcome == "skipped"
+        assert reason == "outside_time_window"
+        assert svc.last_skipped_action["entity_id"] == "cover.test"
+        assert svc.last_skipped_action["reason"] == "outside_time_window"
+        assert svc.last_skipped_action["calculated_position"] == 50
+
+    @pytest.mark.asyncio
+    async def test_skips_auto_control_off(self):
+        """Returns skip when auto_control is False."""
+        svc = _make_cmd_svc()
+        ctx = _make_context(auto_control=False)
+
+        outcome, reason = await svc.apply_position("cover.test", 50, "solar", context=ctx)
+
+        assert outcome == "skipped"
+        assert reason == "auto_control_off"
 
     @pytest.mark.asyncio
     async def test_skips_position_delta_too_small(self):
-        """Logs and records skip when position delta too small."""
-        coord = self._make_coordinator()
-        coord.check_position_delta.return_value = False
+        """Returns skip when position delta is below min_change."""
+        svc = _make_cmd_svc()
+        # Current position = 50, target = 51, min_change = 5 → delta too small
+        svc._get_current_position = MagicMock(return_value=50)
+        ctx = _make_context(min_change=5)
 
-        await coord.async_handle_call_service("cover.test", 50, {})
+        outcome, reason = await svc.apply_position("cover.test", 51, "solar", context=ctx)
 
-        coord.async_set_position.assert_not_called()
-        assert coord.last_skipped_action["reason"] == "Position delta too small"
-        calls = [str(c) for c in coord.logger.debug.call_args_list]
-        assert any("position delta too small" in c.lower() for c in calls)
+        assert outcome == "skipped"
+        assert reason == "delta_too_small"
 
     @pytest.mark.asyncio
     async def test_skips_time_delta_too_small(self):
-        """Logs and records skip when time delta too small."""
-        coord = self._make_coordinator()
-        coord._cmd_svc.check_time_delta.return_value = False
+        """Returns skip when time since last command is below threshold."""
+        import datetime as dt
 
-        await coord.async_handle_call_service("cover.test", 50, {})
+        svc = _make_cmd_svc()
+        svc._get_current_position = MagicMock(return_value=30)  # big delta
+        # Recent last_updated → time delta too small
+        recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10)
+        ctx = _make_context(time_threshold=5)
 
-        coord.async_set_position.assert_not_called()
-        assert coord.last_skipped_action["reason"] == "Time delta too small"
-        calls = [str(c) for c in coord.logger.debug.call_args_list]
-        assert any("time delta too small" in c.lower() for c in calls)
+        with patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ):
+            outcome, reason = await svc.apply_position(
+                "cover.test", 60, "solar", context=ctx
+            )
+
+        assert outcome == "skipped"
+        assert reason == "time_delta_too_small"
 
     @pytest.mark.asyncio
     async def test_skips_manual_override(self):
-        """Logs and records skip when cover is under manual override."""
-        coord = self._make_coordinator()
-        coord.manager.is_cover_manual.return_value = True
+        """Returns skip when manual_override is True."""
+        svc = _make_cmd_svc()
+        svc._get_current_position = MagicMock(return_value=30)
+        ctx = _make_context(manual_override=True)
 
-        await coord.async_handle_call_service("cover.test", 50, {})
+        with patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ):
+            outcome, reason = await svc.apply_position(
+                "cover.test", 60, "solar", context=ctx
+            )
 
-        coord.async_set_position.assert_not_called()
-        assert coord.last_skipped_action["reason"] == "Manual override active"
-        calls = [str(c) for c in coord.logger.debug.call_args_list]
-        assert any("manual override" in c.lower() for c in calls)
+        assert outcome == "skipped"
+        assert reason == "manual_override"
 
     @pytest.mark.asyncio
     async def test_proceeds_when_all_conditions_pass(self):
-        """Calls async_set_position when all conditions pass (no skip)."""
-        coord = self._make_coordinator()
+        """Returns 'sent' when all gate checks pass."""
+        svc = _make_cmd_svc()
+        svc._get_current_position = MagicMock(return_value=30)
 
-        await coord.async_handle_call_service("cover.test", 50, {})
+        with patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ), patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value={"has_set_position": True, "has_set_tilt_position": False},
+        ):
+            ctx = _make_context()
+            outcome, _ = await svc.apply_position("cover.test", 60, "solar", context=ctx)
 
-        coord.async_set_position.assert_called_once_with("cover.test", 50)
-        # No skip recorded
-        assert coord.last_skipped_action["entity_id"] is None
+        assert outcome == "sent"
+        assert "cover.test" in svc.target_call
+        assert svc.target_call["cover.test"] == 60
+
+    @pytest.mark.asyncio
+    async def test_force_bypasses_all_gates(self):
+        """force=True skips all gate checks and sends command."""
+        svc = _make_cmd_svc()
+
+        with patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value={"has_set_position": True, "has_set_tilt_position": False},
+        ):
+            # All gates would fail — but force=True bypasses them
+            ctx = _make_context(
+                auto_control=False,
+                in_time_window=False,
+                manual_override=True,
+                force=True,
+            )
+            outcome, _ = await svc.apply_position(
+                "cover.test", 0, "sunset", context=ctx
+            )
+
+        assert outcome == "sent"
 
 
 class TestRecordSkippedAction:
@@ -141,23 +175,13 @@ class TestRecordSkippedAction:
 
     def test_stores_entity_reason_position(self):
         """Stores entity_id, reason, calculated_position, and timestamp."""
-        from custom_components.adaptive_cover_pro.managers.cover_command import (
-            CoverCommandService,
-        )
+        svc = _make_cmd_svc()
+        svc.record_skipped_action("cover.living_room", "Outside time window", 75)
 
-        cmd_svc = CoverCommandService.__new__(CoverCommandService)
-        cmd_svc.last_skipped_action = {
-            "entity_id": None,
-            "reason": None,
-            "calculated_position": None,
-            "timestamp": None,
-        }
-        cmd_svc.record_skipped_action("cover.living_room", "Outside time window", 75)
-
-        assert cmd_svc.last_skipped_action["entity_id"] == "cover.living_room"
-        assert cmd_svc.last_skipped_action["reason"] == "Outside time window"
-        assert cmd_svc.last_skipped_action["calculated_position"] == 75
-        assert cmd_svc.last_skipped_action["timestamp"] is not None
+        assert svc.last_skipped_action["entity_id"] == "cover.living_room"
+        assert svc.last_skipped_action["reason"] == "Outside time window"
+        assert svc.last_skipped_action["calculated_position"] == 75
+        assert svc.last_skipped_action["timestamp"] is not None
 
 
 class TestCancelMotionTimeoutLogging:

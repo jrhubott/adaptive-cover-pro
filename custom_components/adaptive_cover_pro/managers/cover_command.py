@@ -88,6 +88,7 @@ class CoverCommandService:
         check_interval_minutes: int = POSITION_CHECK_INTERVAL_MINUTES,
         position_tolerance: int = POSITION_TOLERANCE_PERCENT,
         max_retries: int = MAX_POSITION_RETRIES,
+        on_tick=None,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -100,6 +101,10 @@ class CoverCommandService:
             check_interval_minutes: How often reconciliation runs (minutes)
             position_tolerance: Allowed deviation between target and actual (%)
             max_retries: Max reconciliation attempts per target before giving up
+            on_tick: Optional async callable(now) invoked at the start of each
+                reconciliation tick. Use for coordinator-level periodic work
+                (e.g. time window transition checks) that must run on the same
+                interval without an extra timer.
 
         """
         self._hass = hass
@@ -110,6 +115,7 @@ class CoverCommandService:
         self._check_interval_minutes = check_interval_minutes
         self._position_tolerance = position_tolerance
         self._max_retries = max_retries
+        self._on_tick = on_tick
 
         # Per-entity positioning state
         # target_call: last position we decided to send (the "desired" position)
@@ -444,7 +450,10 @@ class CoverCommandService:
     async def _reconcile(self, now: dt.datetime) -> None:
         """Periodic reconciliation: re-send target if cover missed it.
 
-        Runs every ``check_interval_minutes``.  For each tracked entity:
+        Runs every ``check_interval_minutes``. Calls the optional ``on_tick``
+        callback first (used by coordinator for time window transition checks).
+
+        For each tracked entity:
 
         1. If ``wait_for_target`` has been True for >30 s → force-clear it
            (timeout fallback for covers that never report final position).
@@ -457,6 +466,10 @@ class CoverCommandService:
         was already validated when ``apply_position`` was called.
 
         """
+        # Coordinator hook: time window transition checks, etc.
+        if self._on_tick is not None:
+            await self._on_tick(now)
+
         wait_for_target_timeout_seconds = 30
 
         for entity_id, target in list(self.target_call.items()):
