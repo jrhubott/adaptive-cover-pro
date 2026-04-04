@@ -381,7 +381,31 @@ def test_record_skipped_action(cmd_svc):
     assert action["entity_id"] == "cover.bedroom"
     assert action["reason"] == "Outside time window"
     assert action["calculated_position"] == 45
+    assert action["current_position"] is None
+    assert action["trigger"] is None
+    assert action["inverse_state_applied"] is False
     assert action["timestamp"] is not None
+
+
+def test_record_skipped_action_with_extras(cmd_svc):
+    """Records reason-specific extras alongside base fields."""
+    cmd_svc.record_skipped_action(
+        "cover.bedroom",
+        "delta_too_small",
+        45,
+        trigger="solar",
+        current_position=42,
+        inverse_state=True,
+        extras={"position_delta": 3, "min_delta_required": 5},
+    )
+
+    action = cmd_svc.last_skipped_action
+    assert action["entity_id"] == "cover.bedroom"
+    assert action["trigger"] == "solar"
+    assert action["current_position"] == 42
+    assert action["inverse_state_applied"] is True
+    assert action["position_delta"] == 3
+    assert action["min_delta_required"] == 5
 
 
 def test_record_skipped_action_overwrites_previous(cmd_svc):

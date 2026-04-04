@@ -165,6 +165,9 @@ class TestRecordSkippedAction:
         assert svc.last_skipped_action["entity_id"] == "cover.living_room"
         assert svc.last_skipped_action["reason"] == "Outside time window"
         assert svc.last_skipped_action["calculated_position"] == 75
+        assert svc.last_skipped_action["current_position"] is None
+        assert svc.last_skipped_action["trigger"] is None
+        assert svc.last_skipped_action["inverse_state_applied"] is False
         assert svc.last_skipped_action["timestamp"] is not None
 
 

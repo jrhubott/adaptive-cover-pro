@@ -106,7 +106,7 @@ This integration follows Home Assistant's **Data Coordinator Pattern** with a la
 
 ### Platform Files
 
-- `sensor.py` - Cover Position sensor (consolidated — replaces separate Control Method, Calculated Position, and Position Explanation sensors), start/end sun times, diagnostic sensors
+- `sensor.py` - Target Position sensor (friendly name; entity ID remains `cover_position` for backward compatibility — consolidated from Control Method, Calculated Position, and Position Explanation sensors), start/end sun times, diagnostic sensors
 - `switch.py` - Automatic control, climate mode, manual override detection
 - `binary_sensor.py` - Sun visibility, manual override status
 - `button.py` - Manual override reset
@@ -550,6 +550,34 @@ Always update docs alongside code changes:
 **Optional numeric fields:** Use `NumberSelectorMode.SLIDER` (not `BOX`) with `vol.Optional` and no default. BOX mode does not preserve `None` — clearing the field saves `0`. Sliders correctly return `None` when empty. Code consuming the value must check `if value is not None` (not `if value`) to distinguish 0% from unset.
 
 **Position description standard:** When describing cover positions in translations or help text, always use cover-type aware phrasing: `0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended)`. This ensures all cover types (vertical blinds, horizontal awnings, tilt covers) are represented consistently. Do not use type-specific terms alone (e.g., "fully retracted" or "fully lowered") — always include both blind and awning context.
+
+### last_skipped_action Dict Structure
+
+`CoverCommandService.last_skipped_action` is a dict populated every time a cover command is suppressed. Always-present keys:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `entity_id` | `str \| None` | Cover entity that was skipped |
+| `reason` | `str \| None` | Machine-readable skip code (see below) |
+| `calculated_position` | `int \| None` | Target position that would have been sent |
+| `current_position` | `int \| None` | Actual cover position at skip time (None if unknown) |
+| `trigger` | `str \| None` | Positioning source: `"solar"`, `"startup"`, `"sunset"`, `"reconciliation"`, `"force_override"`, `"end_time_default"`, etc. |
+| `inverse_state_applied` | `bool` | Whether inverse-state mapping was in effect |
+| `timestamp` | `str \| None` | ISO-8601 UTC timestamp |
+
+Reason-specific keys (merged in only for the relevant reason):
+
+| Key | Reason | Description |
+|-----|--------|-------------|
+| `position_delta` | `delta_too_small` | `abs(current - target)` |
+| `min_delta_required` | `delta_too_small` | Configured `min_change` threshold |
+| `elapsed_minutes` | `time_delta_too_small` | Minutes since last command |
+| `time_threshold_minutes` | `time_delta_too_small` | Configured time threshold |
+
+**Skip reason codes:** `auto_control_off`, `delta_too_small`, `time_delta_too_small`, `manual_override`, `no_capable_service`, `service_call_failed`.
+
+**`_skip()` signature:** `_skip(entity_id, reason, position, *, trigger="", inverse_state=False, current_position=None, extras=None)`  
+**`record_skipped_action()` signature:** `record_skipped_action(entity, reason, state, *, trigger="", current_position=None, inverse_state=False, extras=None)` — public method for coordinator-level skips.
 
 ### Diagnostic Sensor Guidelines
 

@@ -500,7 +500,7 @@ These entities are always available:
 
 ---
 
-**`sensor.{device_name}_cover_position`**
+**`sensor.{device_name}_cover_position`** *(displayed as "Target Position")*
 
 State: current target position (%) determined by the integration.
 
@@ -513,6 +513,8 @@ State: current target position (%) determined by the integration.
 | `edge_case_detected` | `true` when geometric edge-case handling was triggered (e.g. very low elevation or near-parallel sun angle). |
 | `safety_margin` | The safety margin multiplier applied to the geometric calculation (≥1.0; activates at steep gamma or low/high elevation). |
 | `effective_distance` | The effective distance used in the geometric calculation after sill height offset is applied. |
+| `actual_positions` | Dict of every managed cover entity ID → its current reported position. Lets you compare where covers actually are vs. the target at a glance. |
+| `all_at_target` | `true` when every cover with a known position is within the position tolerance of the target. `false` indicates one or more covers haven't reached the desired position yet. |
 
 ---
 
@@ -542,7 +544,7 @@ These sensors are always created for every device (no configuration required). T
 
 #### Understanding Reason vs. Position Explanation
 
-The `cover_position` sensor exposes two attributes that answer different questions about why a cover is at a given position:
+The Target Position sensor (`cover_position`) exposes two attributes that answer different questions about why a cover is at a given position:
 
 | Attribute | Layer | Answers | Example |
 | --------- | ----- | ------- | ------- |
@@ -640,15 +642,29 @@ State: timestamp of the most recent cover command sent.
 
 **`sensor.{device_name}_last_skipped_action`**
 
-State: the reason the most recent automatic move was suppressed (e.g. `"Position delta too small"`, `"Manual override active"`, `"Outside time window"`). State is `"No action skipped"` when the last update sent a command successfully.
+State: the reason the most recent automatic move was suppressed (e.g. `"delta_too_small"`, `"manual_override"`, `"auto_control_off"`). State is `"No action skipped"` when the last update sent a command successfully.
 
-Use this when a cover doesn't move and you expect it to — it tells you exactly why the command was suppressed.
+Use this when a cover doesn't move and you expect it to — it tells you exactly why the command was suppressed, what the cover was actually at, and what thresholds were in play.
+
+**Always-present attributes:**
 
 | Attribute | Description |
 | --------- | ----------- |
 | `entity_id` | The cover that would have been commanded. |
 | `calculated_position` | The position the integration wanted to send. |
+| `current_position` | The cover's actual reported position at the moment the skip occurred. Compare to `calculated_position` to understand the gap. |
+| `trigger` | What initiated the positioning attempt: `solar`, `startup`, `sunset`, `reconciliation`, `force_override`, `end_time_default`, etc. |
+| `inverse_state_applied` | `true` if inverse-state mapping was active when the skip happened. |
 | `timestamp` | When the skip occurred. |
+
+**Reason-specific attributes** (present only for the relevant skip reason):
+
+| Attribute | Skip reason | Description |
+| --------- | ----------- | ----------- |
+| `position_delta` | `delta_too_small` | Absolute difference between current and target position (e.g. `2`). |
+| `min_delta_required` | `delta_too_small` | Configured minimum change threshold (e.g. `5`). Move suppressed because `position_delta < min_delta_required`. |
+| `elapsed_minutes` | `time_delta_too_small` | Minutes elapsed since the last command was sent (e.g. `1.4`). |
+| `time_threshold_minutes` | `time_delta_too_small` | Configured minimum time between commands in minutes. Move suppressed because `elapsed_minutes < time_threshold_minutes`. |
 
 ---
 
@@ -917,24 +933,31 @@ The `sensor.{device_name}_decision_trace` sensor is the starting point. Its **st
 
 The **`trace` attribute** lists every handler evaluated — including why each one passed or was skipped — so you can see the full priority chain.
 
-### Step 2 — Check the Cover Position Attributes
+### Step 2 — Check the Target Position Attributes
 
-The `sensor.{device_name}_cover_position` sensor exposes two attributes that tell you more:
+The `sensor.{device_name}_cover_position` sensor (displayed as **Target Position**) exposes two attributes that tell you more:
 
 - **`reason`** — which pipeline rule claimed control and why (e.g. `"no active condition — default position 100%"`)
 - **`position_explanation`** — where the final number came from after the pipeline decided (e.g. `"Sun Tracking (67%) → Max Position Limit → 80%"`)
 
 Together these answer "who won?" and "where did this specific number come from?"
 
+You can also check `actual_positions` and `all_at_target` on this same sensor to see whether each cover has actually reached the target position yet.
+
 ### Step 3 — Cover Isn't Moving When You Expect It To
 
-Check `sensor.{device_name}_last_skipped_action`. Its **state** is the exact reason the most recent automatic move was suppressed:
+Check `sensor.{device_name}_last_skipped_action`. Its **state** is the machine-readable reason the most recent automatic move was suppressed:
 
-- `"Position delta too small"` — change was less than the configured minimum delta
-- `"Time delta too small"` — not enough time has passed since the last move
-- `"Manual override active"` — automatic control is paused
-- `"Outside time window"` — current time is outside the configured start/end window
-- `"Automatic control disabled"` — the automatic control switch is off
+| State | Meaning |
+| ----- | ------- |
+| `delta_too_small` | Change less than the configured minimum delta. Check `position_delta` vs. `min_delta_required` attributes. |
+| `time_delta_too_small` | Not enough time since the last move. Check `elapsed_minutes` vs. `time_threshold_minutes` attributes. |
+| `manual_override` | Automatic control is paused because a manual move was detected. |
+| `auto_control_off` | The Automatic Control switch is off. |
+| `no_capable_service` | No usable HA service found for this cover entity. |
+| `service_call_failed` | HA service call was sent but threw an error. Check the HA logs. |
+
+The `current_position` attribute shows where the cover actually was when the skip occurred, and `trigger` shows what initiated the attempt (`solar`, `startup`, `sunset`, etc.).
 
 ### Step 4 — Climate Mode Behavior
 

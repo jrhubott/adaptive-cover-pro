@@ -178,6 +178,8 @@ async def test_apply_records_skip_action(svc):
     assert svc.last_skipped_action["entity_id"] == "cover.test"
     assert svc.last_skipped_action["reason"] == "auto_control_off"
     assert svc.last_skipped_action["calculated_position"] == 50
+    assert svc.last_skipped_action["trigger"] == "solar"
+    assert svc.last_skipped_action["inverse_state_applied"] is False
 
 
 @pytest.mark.asyncio
