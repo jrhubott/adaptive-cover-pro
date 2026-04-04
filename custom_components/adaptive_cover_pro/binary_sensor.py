@@ -163,7 +163,7 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
                 continue
 
             delta = abs(target - actual)
-            if delta > self.coordinator._pos_verify_mgr.position_tolerance:
+            if delta > self.coordinator._cmd_svc._position_tolerance:
                 return True
 
         return False
@@ -171,27 +171,23 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return additional attributes."""
+        tolerance = self.coordinator._cmd_svc._position_tolerance
         attrs: dict[str, Any] = {
-            "tolerance": self.coordinator._pos_verify_mgr.position_tolerance,
+            "tolerance": tolerance,
         }
 
         # Add per-entity details
         entity_details: dict[str, dict[str, Any]] = {}
         for entity_id in self.coordinator.entities:
-            target = self.coordinator.target_call.get(entity_id)
-            actual = self.coordinator._get_current_position(entity_id)
-
-            if target is not None and actual is not None:
-                delta = abs(target - actual)
+            diag = self.coordinator._cmd_svc.get_diagnostics(entity_id)
+            if diag["target"] is not None and diag["actual"] is not None:
+                delta = abs(diag["target"] - diag["actual"])
                 entity_details[entity_id] = {
-                    "target_position": target,
-                    "actual_position": actual,
+                    "target_position": diag["target"],
+                    "actual_position": diag["actual"],
                     "position_delta": delta,
-                    "mismatch": delta
-                    > self.coordinator._pos_verify_mgr.position_tolerance,
-                    "retry_count": self.coordinator._pos_verify_mgr.get_retry_count(
-                        entity_id
-                    ),
+                    "mismatch": delta > tolerance,
+                    "retry_count": diag["retry_count"],
                 }
 
         if entity_details:

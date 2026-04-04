@@ -658,36 +658,40 @@ class AdaptiveCoverPositionVerificationSensor(
         return self._sensor_name
 
     @property
-    def native_value(self):
-        """Return maximum retry count across all entities."""
-        retry_counts = self.coordinator._pos_verify_mgr._retry_counts
-        if not retry_counts:
+    def native_value(self) -> int:
+        """Return the maximum active retry count across all tracked entities."""
+        entities = self.coordinator.entities
+        if not entities:
             return 0
-        return max(retry_counts.values())
+        return max(
+            self.coordinator._cmd_svc.get_diagnostics(e)["retry_count"]
+            for e in entities
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return verification details and retry counts."""
-        mgr = self.coordinator._pos_verify_mgr
-        retry_counts = mgr._retry_counts
-        last_verification = mgr._last_verification
+        """Return per-entity reconciliation diagnostics."""
+        entities = self.coordinator.entities
+        if not entities:
+            return {}
 
-        attrs: dict[str, Any] = {
-            "max_retries": mgr.max_retries,
-            "retries_remaining": max(
-                0,
-                mgr.max_retries - max(retry_counts.values(), default=0),
-            ),
+        per_entity = {
+            e: self.coordinator._cmd_svc.get_diagnostics(e) for e in entities
         }
 
-        if retry_counts:
-            attrs["per_entity_retries"] = dict(retry_counts)
+        # Aggregate last reconciliation time
+        recon_times = [
+            d["last_reconcile_time"]
+            for d in per_entity.values()
+            if d["last_reconcile_time"] is not None
+        ]
 
-        if last_verification:
-            attrs["last_verification"] = max(last_verification.values()).isoformat()
-            attrs["per_entity_verification"] = {
-                entity_id: t.isoformat() for entity_id, t in last_verification.items()
-            }
+        attrs: dict[str, Any] = {
+            "max_retries": self.coordinator._cmd_svc._max_retries,
+            "per_entity": per_entity,
+        }
+        if recon_times:
+            attrs["last_reconcile_time"] = max(recon_times)
 
         return attrs
 

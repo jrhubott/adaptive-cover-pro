@@ -588,8 +588,9 @@ async def test_async_shutdown_cancels_motion_timeout():
     # Mock _cancel_motion_timeout to verify it's called
     coordinator._cancel_motion_timeout = Mock()
 
-    # Mock _stop_position_verification
-    coordinator._stop_position_verification = Mock()
+    # Mock _cmd_svc.stop (replaces _stop_position_verification)
+    coordinator._cmd_svc = MagicMock()
+    coordinator._cmd_svc.stop = Mock()
 
     # Call shutdown
     await AdaptiveDataUpdateCoordinator.async_shutdown(coordinator)
