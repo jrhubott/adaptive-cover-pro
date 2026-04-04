@@ -202,7 +202,7 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
             "Cover_Position",
             "mdi:sun-compass",
         )
-        self._sensor_name = "Cover Position"
+        self._sensor_name = "Target Position"
 
     @property
     def name(self):
@@ -235,6 +235,29 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
                 attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
                 attrs["safety_margin"] = calc_details.get("safety_margin")
                 attrs["effective_distance"] = calc_details.get("effective_distance")
+
+        # Actual positions — show what every managed cover currently reports
+        snapshot = self.coordinator._snapshot
+        if snapshot and snapshot.cover_positions:
+            actual_positions = dict(snapshot.cover_positions)
+            attrs["actual_positions"] = actual_positions
+
+            # all_at_target: True when every cover with a known position is
+            # within tolerance of the coordinator's current target position.
+            target = self.data.states.get("state")
+            tolerance = self.coordinator._cmd_svc._position_tolerance
+            if target is not None:
+                try:
+                    target_int = int(target)
+                    attrs["all_at_target"] = all(
+                        pos is not None and abs(pos - target_int) <= tolerance
+                        for pos in actual_positions.values()
+                    )
+                except (TypeError, ValueError):
+                    attrs["all_at_target"] = None
+            else:
+                attrs["all_at_target"] = None
+
         return attrs
 
 
@@ -1059,14 +1082,39 @@ class AdaptiveCoverLastSkippedActionSensor(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return entity, position, and timestamp of the skipped action."""
+        """Return diagnostic context for the last skipped action.
+
+        Always-present attributes (when a skip has been recorded):
+            entity_id, calculated_position, current_position,
+            trigger, inverse_state_applied, timestamp.
+
+        Reason-specific attributes (present only when relevant):
+            delta_too_small   → position_delta, min_delta_required
+            time_delta_too_small → elapsed_minutes, time_threshold_minutes
+        """
         if not self.data or not self.data.diagnostics:
             return None
         action = self.data.diagnostics.get("last_skipped_action")
         if not action or not action.get("entity_id"):
             return None
-        return {
+
+        attrs: dict[str, Any] = {
             "entity_id": action.get("entity_id"),
             "calculated_position": action.get("calculated_position"),
+            "current_position": action.get("current_position"),
+            "trigger": action.get("trigger"),
+            "inverse_state_applied": action.get("inverse_state_applied", False),
             "timestamp": action.get("timestamp"),
         }
+
+        # Reason-specific extras — only add when present in the record
+        for key in (
+            "position_delta",
+            "min_delta_required",
+            "elapsed_minutes",
+            "time_threshold_minutes",
+        ):
+            if key in action:
+                attrs[key] = action[key]
+
+        return attrs

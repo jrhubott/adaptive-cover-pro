@@ -151,6 +151,9 @@ class CoverCommandService:
             "entity_id": None,
             "reason": None,
             "calculated_position": None,
+            "current_position": None,
+            "trigger": None,
+            "inverse_state_applied": False,
             "timestamp": None,
         }
 
@@ -364,9 +367,19 @@ class CoverCommandService:
 
         """
         # ----- gate checks (bypassed when context.force is True) -----
+        _trigger = reason
+        _inverse = context.inverse_state
+        _current = self._get_current_position(entity_id)
         if not context.force:
             if not context.auto_control:
-                return self._skip(entity_id, "auto_control_off", position)
+                return self._skip(
+                    entity_id,
+                    "auto_control_off",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                )
 
             if not self._check_position_delta(
                 entity_id,
@@ -375,20 +388,58 @@ class CoverCommandService:
                 context.special_positions,
                 sun_just_appeared=context.sun_just_appeared,
             ):
-                return self._skip(entity_id, "delta_too_small", position)
+                _delta = abs(_current - position) if _current is not None else None
+                return self._skip(
+                    entity_id,
+                    "delta_too_small",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                    extras={
+                        "position_delta": _delta,
+                        "min_delta_required": context.min_change,
+                    },
+                )
 
             if not self._check_time_delta(entity_id, context.time_threshold):
-                return self._skip(entity_id, "time_delta_too_small", position)
+                _elapsed = self._elapsed_minutes(entity_id)
+                return self._skip(
+                    entity_id,
+                    "time_delta_too_small",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                    extras={
+                        "elapsed_minutes": _elapsed,
+                        "time_threshold_minutes": context.time_threshold,
+                    },
+                )
 
             if context.manual_override:
-                return self._skip(entity_id, "manual_override", position)
+                return self._skip(
+                    entity_id,
+                    "manual_override",
+                    position,
+                    trigger=_trigger,
+                    inverse_state=_inverse,
+                    current_position=_current,
+                )
 
         # ----- send command -----
         service, service_data, supports_position = self._prepare_service_call(
             entity_id, position, context.inverse_state
         )
         if service is None:
-            return self._skip(entity_id, "no_capable_service", position)
+            return self._skip(
+                entity_id,
+                "no_capable_service",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
 
         self._logger.info(
             "[%s] Positioning %s → %s%%",
@@ -407,7 +458,14 @@ class CoverCommandService:
                 entity_id,
                 err,
             )
-            return self._skip(entity_id, "service_call_failed", position)
+            return self._skip(
+                entity_id,
+                "service_call_failed",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
 
         self._track_action(
             entity_id, service, position, supports_position, context.inverse_state
@@ -590,38 +648,95 @@ class CoverCommandService:
             "wait_for_target": self.wait_for_target.get(entity_id, False),
         }
 
-    def record_skipped_action(self, entity: str, reason: str, state: int) -> None:
+    def record_skipped_action(
+        self,
+        entity: str,
+        reason: str,
+        state: int,
+        *,
+        trigger: str = "",
+        current_position: int | None = None,
+        inverse_state: bool = False,
+        extras: dict | None = None,
+    ) -> None:
         """Record a skipped cover action for diagnostic tracking.
 
         Kept as a public method so the coordinator can still record skips that
         happen before apply_position is reached (e.g. outside time window checks
         done at a higher level).
 
+        Args:
+            entity: Cover entity ID.
+            reason: Machine-readable skip reason code.
+            state: Calculated target position that was skipped.
+            trigger: Source that triggered the positioning attempt
+                (e.g. "solar", "startup", "sunset").  Empty string when unknown.
+            current_position: Actual cover position at skip time, or None if unknown.
+            inverse_state: Whether inverse-state mapping was in effect.
+            extras: Optional dict of reason-specific context fields (e.g.
+                position_delta, elapsed_minutes) merged into the record.
+
         """
-        self.last_skipped_action = {
+        record: dict[str, Any] = {
             "entity_id": entity,
             "reason": reason,
             "calculated_position": state,
+            "current_position": current_position,
+            "trigger": trigger or None,
+            "inverse_state_applied": inverse_state,
             "timestamp": dt.datetime.now(dt.UTC).isoformat(),
         }
+        if extras:
+            record.update(extras)
+        self.last_skipped_action = record
 
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
 
+    def _elapsed_minutes(self, entity_id: str) -> float | None:
+        """Return minutes elapsed since last command to entity_id, or None."""
+        last_updated = get_last_updated(entity_id, self._hass)
+        if last_updated is None:
+            return None
+        elapsed = dt.datetime.now(dt.UTC) - last_updated
+        return round(elapsed.total_seconds() / 60, 2)
+
     def _skip(
-        self, entity_id: str, reason: str, position: int
+        self,
+        entity_id: str,
+        reason: str,
+        position: int,
+        *,
+        trigger: str = "",
+        inverse_state: bool = False,
+        current_position: int | None = None,
+        extras: dict | None = None,
     ) -> tuple[str, str]:
-        """Record and return a skip result."""
+        """Record and return a skip result.
+
+        Args:
+            entity_id: Cover entity that was skipped.
+            reason: Machine-readable skip reason code.
+            position: Calculated target position that would have been sent.
+            trigger: Source that triggered the positioning attempt.
+            inverse_state: Whether inverse-state mapping was in effect.
+            current_position: Actual cover position at skip time.
+            extras: Reason-specific diagnostic fields merged into the record.
+
+        """
         self._logger.debug(
-            "Skipped %s → %s%% (%s)", entity_id, position, reason
+            "Skipped %s → %s%% (%s) [trigger=%s]", entity_id, position, reason, trigger
         )
-        self.last_skipped_action = {
-            "entity_id": entity_id,
-            "reason": reason,
-            "calculated_position": position,
-            "timestamp": dt.datetime.now(dt.UTC).isoformat(),
-        }
+        self.record_skipped_action(
+            entity_id,
+            reason,
+            position,
+            trigger=trigger,
+            current_position=current_position,
+            inverse_state=inverse_state,
+            extras=extras,
+        )
         return "skipped", reason
 
     def _prepare_service_call(
