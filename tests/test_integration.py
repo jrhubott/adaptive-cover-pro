@@ -127,8 +127,6 @@ def _build_pipeline_snapshot(
         cover_type=cover_type,
         default_position=int(cover.config.h_def),
         is_sunset_active=False,
-        configured_default=int(cover.config.h_def),
-        configured_sunset_pos=None,
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,
@@ -186,7 +184,7 @@ def _build_diagnostic_context(
         force_override_position=force_override_position,
         effective_default_position=int(cover.config.h_def),
         is_sunset_active=False,
-        configured_sunset_pos=None,
+        configured_sunset_pos=None,  # still valid on DiagnosticContext
     )
 
 

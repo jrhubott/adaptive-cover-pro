@@ -169,8 +169,6 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
             cover_type="cover_blind",
             default_position=0,          # sunset_pos via compute_effective_default
             is_sunset_active=True,
-            configured_default=60,
-            configured_sunset_pos=0,
             climate_readings=None,
             climate_mode_enabled=False,
             climate_options=None,
@@ -253,8 +251,6 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
             cover_type="cover_blind",
             default_position=0,          # sunset_pos via compute_effective_default
             is_sunset_active=True,
-            configured_default=60,
-            configured_sunset_pos=0,
             climate_readings=None,
             climate_mode_enabled=False,
             climate_options=None,

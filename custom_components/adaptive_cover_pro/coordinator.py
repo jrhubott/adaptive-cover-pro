@@ -664,8 +664,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             cover_type=self._cover_type,
             default_position=effective_default,
             is_sunset_active=is_sunset_active,
-            configured_default=h_def,
-            configured_sunset_pos=int(sunset_pos_cfg) if sunset_pos_cfg is not None else None,
+            # NOTE: configured_default and configured_sunset_pos are deliberately
+            # absent from PipelineSnapshot.  They are annotated onto PipelineResult
+            # by the coordinator after evaluation (see below) so the raw config
+            # values are never accessible to pipeline handler logic.
             climate_readings=self._weather_readings,
             climate_mode_enabled=self._toggles.switch_mode,
             climate_options=self._build_climate_options(options),
@@ -682,6 +684,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             active_zone_names=frozenset(active_zone_names),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
+
+        # Annotate the result with the raw config values *after* evaluation.
+        # These are for diagnostics and the Decision Trace sensor only; they
+        # were deliberately excluded from PipelineSnapshot so handlers cannot
+        # use them to derive an alternative default position.
+        self._pipeline_result = replace(
+            self._pipeline_result,
+            configured_default=h_def,
+            configured_sunset_pos=(
+                int(sunset_pos_cfg) if sunset_pos_cfg is not None else None
+            ),
+        )
+
         self.control_method = self._pipeline_result.control_method
         self.logger.debug(
             "Pipeline result: %s → %s",

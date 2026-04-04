@@ -52,12 +52,19 @@ class PipelineSnapshot:
     #   - equals h_def at all other times
     # Handlers MUST use this field; accessing snapshot.cover.default is incorrect
     # and will raise AttributeError (the property has been intentionally removed).
+    #
+    # NOTE: The raw config values (h_def, sunset_pos) are intentionally NOT
+    # exposed on this snapshot.  There is no way for a handler to reconstruct
+    # a different default without going through compute_effective_default().
+    # The raw values are only available on PipelineResult (written by the
+    # coordinator *after* evaluation) so they appear in diagnostics without
+    # being visible to handler logic.
     default_position: int
 
-    # Sunset-window metadata — for diagnostic display and handler reason strings.
-    is_sunset_active: bool          # True when default_position == sunset_pos
-    configured_default: int         # raw h_def from user config
-    configured_sunset_pos: int | None  # raw sunset_pos from user config (None = not set)
+    # True when default_position == sunset_pos (astronomical sunset window active).
+    # Handlers may read this to label reason strings; they must not use it to
+    # derive a different position.
+    is_sunset_active: bool
 
     # Climate readings (raw sensor values — None if not configured)
     climate_readings: ClimateReadings | None
@@ -110,12 +117,14 @@ class PipelineResult:
     decision_trace: list[DecisionStep] = field(default_factory=list)
     tilt: int | None = None
 
-    # Propagated from PipelineSnapshot so sensors can display sunset context
-    # without needing a reference back to the snapshot.
+    # Sunset context — written by the coordinator via dataclasses.replace() after
+    # pipeline evaluation, NOT sourced from the handler snapshot.  This keeps
+    # the raw config values out of handler logic while still surfacing them in
+    # diagnostics and the Decision Trace sensor.
     default_position: int = 0
     is_sunset_active: bool = False
-    configured_default: int = 0
-    configured_sunset_pos: int | None = None
+    configured_default: int = 0           # raw h_def from user config
+    configured_sunset_pos: int | None = None  # raw sunset_pos (None = not configured)
 
     # Optional climate diagnostics set by ClimateHandler
     climate_state: int | None = None

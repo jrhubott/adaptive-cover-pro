@@ -88,8 +88,6 @@ def _make_snapshot(
     *,
     default_position: int = 0,
     is_sunset_active: bool = False,
-    configured_default: int = 0,
-    configured_sunset_pos: int | None = None,
     motion_timeout_active: bool = False,
     force_override_sensors: dict | None = None,
     force_override_position: int = 0,
@@ -100,8 +98,6 @@ def _make_snapshot(
         cover_type="cover_blind",
         default_position=default_position,
         is_sunset_active=is_sunset_active,
-        configured_default=configured_default,
-        configured_sunset_pos=configured_sunset_pos,
         climate_readings=None,
         climate_mode_enabled=False,
         climate_options=None,
@@ -200,7 +196,7 @@ class TestPipelineAlwaysRuns:
         """During daytime with no sun in FOV, default_position == h_def."""
         registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
         cover = _make_cover(direct_sun_valid=False)
-        snapshot = _make_snapshot(cover, default_position=50, configured_default=50)
+        snapshot = _make_snapshot(cover, default_position=50)
 
         result = registry.evaluate(snapshot)
 
@@ -215,7 +211,6 @@ class TestPipelineAlwaysRuns:
             cover,
             default_position=10,
             is_sunset_active=True,
-            configured_sunset_pos=10,
         )
 
         result = registry.evaluate(snapshot)
@@ -253,8 +248,6 @@ class TestOutsideTimeWindowBehavior:
             cover,
             default_position=0,
             is_sunset_active=True,
-            configured_sunset_pos=0,
-            configured_default=50,
         )
 
         result = registry.evaluate(snapshot)
@@ -271,7 +264,6 @@ class TestOutsideTimeWindowBehavior:
             cover,
             default_position=0,
             is_sunset_active=True,
-            configured_sunset_pos=0,
         )
 
         result = registry.evaluate(snapshot)
@@ -285,8 +277,6 @@ class TestOutsideTimeWindowBehavior:
             cover,
             default_position=50,
             is_sunset_active=False,
-            configured_default=50,
-            configured_sunset_pos=None,
         )
 
         result = registry.evaluate(snapshot)
@@ -300,7 +290,6 @@ class TestOutsideTimeWindowBehavior:
             cover,
             default_position=0,
             is_sunset_active=False,
-            configured_default=0,
         )
 
         result = registry.evaluate(snapshot)
@@ -353,7 +342,6 @@ class TestMotionTimeoutDefaultPosition:
             cover,
             default_position=10,
             is_sunset_active=True,
-            configured_sunset_pos=10,
             motion_timeout_active=True,
         )
 
@@ -373,7 +361,6 @@ class TestMotionTimeoutDefaultPosition:
             cover,
             default_position=50,
             is_sunset_active=False,
-            configured_default=50,
             motion_timeout_active=True,
         )
 

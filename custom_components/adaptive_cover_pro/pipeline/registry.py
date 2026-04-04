@@ -57,11 +57,14 @@ class PipelineRegistry:
                     climate_strategy=result.climate_strategy,
                     climate_data=result.climate_data,
                     bypass_auto_control=result.bypass_auto_control,
-                    # Propagate sunset-context metadata from the snapshot
+                    # Propagate sunset-window flags from the snapshot.
+                    # NOTE: configured_default and configured_sunset_pos are
+                    # intentionally left at their defaults (0 / None) here.
+                    # The coordinator annotates them via dataclasses.replace()
+                    # after evaluation so they never appear in the snapshot
+                    # that handlers can read.
                     default_position=snapshot.default_position,
                     is_sunset_active=snapshot.is_sunset_active,
-                    configured_default=snapshot.configured_default,
-                    configured_sunset_pos=snapshot.configured_sunset_pos,
                 )
 
             trace.append(
