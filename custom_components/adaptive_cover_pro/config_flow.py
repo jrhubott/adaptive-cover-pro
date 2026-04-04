@@ -817,9 +817,145 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     # Section 2: How It Decides
     # =========================================================================
     lines.append("")
-    lines.append("**How It Decides**")
+    lines.append("**How It Decides** (first matching rule wins)")
 
-    # Solar tracking (always present, establishes the baseline)
+    # Force override — highest priority safety (100)
+    if has_force:
+        n = len(config.get(CONF_FORCE_OVERRIDE_SENSORS) or [])
+        sensor_word = "sensor" if n == 1 else "sensors"
+        lines.append(
+            f"🔒 Force override: if any of {n} {sensor_word} is on → covers go to {force_pos}% "
+            f"(overrides everything else)."
+        )
+
+    # Weather safety override (90)
+    if has_weather:
+        wx_parts = []
+        wind_sensor = config.get(CONF_WEATHER_WIND_SPEED_SENSOR)
+        wind_thresh = config.get(CONF_WEATHER_WIND_SPEED_THRESHOLD)
+        rain_sensor = config.get(CONF_WEATHER_RAIN_SENSOR)
+        rain_thresh = config.get(CONF_WEATHER_RAIN_THRESHOLD)
+        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR)
+        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
+        severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
+        if wind_sensor and wind_thresh is not None:
+            wx_parts.append(f"wind > {wind_thresh} km/h")
+        if rain_sensor and rain_thresh is not None:
+            wx_parts.append(f"rain > {rain_thresh} mm/h")
+        if is_rain:
+            wx_parts.append("is-raining")
+        if is_wind:
+            wx_parts.append("is-windy")
+        if severe:
+            wx_parts.append(f"{len(severe)} severe weather sensor(s)")
+        wx_condition = " or ".join(wx_parts) if wx_parts else "weather condition"
+        wx_delay = config.get(CONF_WEATHER_TIMEOUT)
+        delay_str = f" (waits {wx_delay}s after clearing)" if wx_delay else ""
+        lines.append(
+            f"🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{delay_str}."
+        )
+
+    # Motion timeout (80)
+    if has_motion:
+        n = len(config.get(CONF_MOTION_SENSORS) or [])
+        sensor_word = "sensor" if n == 1 else "sensors"
+        lines.append(
+            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
+            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
+        )
+
+    # Manual override (70)
+    mo_parts = []
+    if manual_dur is not None:
+        mo_parts.append(f"pauses for {manual_dur} min")
+    threshold = config.get(CONF_MANUAL_THRESHOLD)
+    if threshold is not None:
+        mo_parts.append(f"threshold {threshold}%")
+    if config.get(CONF_MANUAL_OVERRIDE_RESET):
+        mo_parts.append("resets on next move")
+    mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
+    lines.append(
+        f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
+    )
+
+    # Cloud suppression (60)
+    if has_cloud:
+        cloud_parts = []
+        if v := config.get(CONF_LUX_ENTITY):
+            t = config.get(CONF_LUX_THRESHOLD)
+            cloud_parts.append(f"lux < {t} lx" if t is not None else f"lux ({v})")
+        if v := config.get(CONF_IRRADIANCE_ENTITY):
+            t = config.get(CONF_IRRADIANCE_THRESHOLD)
+            cloud_parts.append(
+                f"irradiance < {t} W/m²" if t is not None else f"irradiance ({v})"
+            )
+        if v := config.get(CONF_CLOUD_COVERAGE_ENTITY):
+            t = config.get(CONF_CLOUD_COVERAGE_THRESHOLD)
+            cloud_parts.append(f"cloud > {t}%" if t is not None else f"cloud ({v})")
+        cloud_str = f" when {', '.join(cloud_parts)}" if cloud_parts else ""
+        lines.append(
+            f"☁️ Cloud suppression: skips sun tracking{cloud_str} → default ({default_pos}%)."
+        )
+    elif any(
+        [
+            config.get(CONF_LUX_ENTITY),
+            config.get(CONF_IRRADIANCE_ENTITY),
+            config.get(CONF_CLOUD_COVERAGE_ENTITY),
+        ]
+    ):
+        # Sensors configured but suppression toggle off — mention them as informational
+        sensor_names = []
+        if config.get(CONF_LUX_ENTITY):
+            sensor_names.append("lux")
+        if config.get(CONF_IRRADIANCE_ENTITY):
+            sensor_names.append("irradiance")
+        if config.get(CONF_CLOUD_COVERAGE_ENTITY):
+            sensor_names.append("cloud coverage")
+        lines.append(
+            f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off."
+        )
+
+    # Climate mode (50)
+    if has_climate:
+        cl_parts = []
+        lo = config.get(CONF_TEMP_LOW)
+        hi = config.get(CONF_TEMP_HIGH)
+        temp_entity = config.get(CONF_TEMP_ENTITY)
+        if lo is not None and hi is not None:
+            cl_parts.append(f"comfort range {lo}–{hi}°C")
+        if temp_entity:
+            cl_parts.append(f"using {temp_entity}")
+        outside = config.get(CONF_OUTSIDETEMP_ENTITY)
+        if outside:
+            cl_parts.append(f"outside: {outside}")
+        weather_ent = config.get(CONF_WEATHER_ENTITY)
+        if weather_ent:
+            cl_parts.append(f"weather: {weather_ent}")
+        presence = config.get(CONF_PRESENCE_ENTITY)
+        if presence:
+            cl_parts.append(f"presence: {presence}")
+        cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
+        lines.append(f"🌡️ Climate mode: adjusts strategy for heating/cooling{cl_str}.")
+
+    # Glare zones — vertical only (45)
+    if has_glare:
+        zone_names = [
+            config.get(f"glare_zone_{i}_name")
+            for i in range(1, 5)
+            if config.get(f"glare_zone_{i}_name")
+        ]
+        width = config.get(CONF_WINDOW_WIDTH)
+        gz_parts = []
+        if zone_names:
+            gz_parts.append(f"zones: {', '.join(zone_names)}")
+        if width:
+            gz_parts.append(f"{width}cm window")
+        gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
+        lines.append(
+            f"🔆 Glare zones: lowers blind to protect floor areas from direct sun{gz_str}."
+        )
+
+    # Solar tracking — baseline calculation (40)
     azimuth = config.get(CONF_AZIMUTH)
     fov_l = config.get(CONF_FOV_LEFT)
     fov_r = config.get(CONF_FOV_RIGHT)
@@ -878,141 +1014,6 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         bs_str = " ".join(bs_parts)
         lines.append(
             f"🟥 Blind spot: ignores sun at {bs_str} (e.g. tree or roof overhang)."
-        )
-
-    # Glare zones (vertical only)
-    if has_glare:
-        zone_names = [
-            config.get(f"glare_zone_{i}_name")
-            for i in range(1, 5)
-            if config.get(f"glare_zone_{i}_name")
-        ]
-        width = config.get(CONF_WINDOW_WIDTH)
-        gz_parts = []
-        if zone_names:
-            gz_parts.append(f"zones: {', '.join(zone_names)}")
-        if width:
-            gz_parts.append(f"{width}cm window")
-        gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
-        lines.append(
-            f"🔆 Glare zones: lowers blind to protect floor areas from direct sun{gz_str}."
-        )
-
-    # Climate / cloud suppression (before force/weather so users understand layering)
-    if has_climate:
-        cl_parts = []
-        lo = config.get(CONF_TEMP_LOW)
-        hi = config.get(CONF_TEMP_HIGH)
-        temp_entity = config.get(CONF_TEMP_ENTITY)
-        if lo is not None and hi is not None:
-            cl_parts.append(f"comfort range {lo}–{hi}°C")
-        if temp_entity:
-            cl_parts.append(f"using {temp_entity}")
-        outside = config.get(CONF_OUTSIDETEMP_ENTITY)
-        if outside:
-            cl_parts.append(f"outside: {outside}")
-        weather_ent = config.get(CONF_WEATHER_ENTITY)
-        if weather_ent:
-            cl_parts.append(f"weather: {weather_ent}")
-        presence = config.get(CONF_PRESENCE_ENTITY)
-        if presence:
-            cl_parts.append(f"presence: {presence}")
-        cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
-        lines.append(f"🌡️ Climate mode: adjusts strategy for heating/cooling{cl_str}.")
-
-    if has_cloud:
-        cloud_parts = []
-        if v := config.get(CONF_LUX_ENTITY):
-            t = config.get(CONF_LUX_THRESHOLD)
-            cloud_parts.append(f"lux < {t} lx" if t is not None else f"lux ({v})")
-        if v := config.get(CONF_IRRADIANCE_ENTITY):
-            t = config.get(CONF_IRRADIANCE_THRESHOLD)
-            cloud_parts.append(
-                f"irradiance < {t} W/m²" if t is not None else f"irradiance ({v})"
-            )
-        if v := config.get(CONF_CLOUD_COVERAGE_ENTITY):
-            t = config.get(CONF_CLOUD_COVERAGE_THRESHOLD)
-            cloud_parts.append(f"cloud > {t}%" if t is not None else f"cloud ({v})")
-        cloud_str = f" when {', '.join(cloud_parts)}" if cloud_parts else ""
-        lines.append(
-            f"☁️ Cloud suppression: skips sun tracking{cloud_str} → default ({default_pos}%)."
-        )
-    elif any(
-        [
-            config.get(CONF_LUX_ENTITY),
-            config.get(CONF_IRRADIANCE_ENTITY),
-            config.get(CONF_CLOUD_COVERAGE_ENTITY),
-        ]
-    ):
-        # Sensors configured but suppression toggle off — mention them as informational
-        sensor_names = []
-        if config.get(CONF_LUX_ENTITY):
-            sensor_names.append("lux")
-        if config.get(CONF_IRRADIANCE_ENTITY):
-            sensor_names.append("irradiance")
-        if config.get(CONF_CLOUD_COVERAGE_ENTITY):
-            sensor_names.append("cloud coverage")
-        lines.append(
-            f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off."
-        )
-
-    # Manual override
-    mo_parts = []
-    if manual_dur is not None:
-        mo_parts.append(f"pauses for {manual_dur} min")
-    threshold = config.get(CONF_MANUAL_THRESHOLD)
-    if threshold is not None:
-        mo_parts.append(f"threshold {threshold}%")
-    if config.get(CONF_MANUAL_OVERRIDE_RESET):
-        mo_parts.append("resets on next move")
-    mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
-    lines.append(
-        f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
-    )
-
-    # Motion timeout
-    if has_motion:
-        n = len(config.get(CONF_MOTION_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
-        lines.append(
-            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
-            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
-        )
-
-    # Weather safety override
-    if has_weather:
-        wx_parts = []
-        wind_sensor = config.get(CONF_WEATHER_WIND_SPEED_SENSOR)
-        wind_thresh = config.get(CONF_WEATHER_WIND_SPEED_THRESHOLD)
-        rain_sensor = config.get(CONF_WEATHER_RAIN_SENSOR)
-        rain_thresh = config.get(CONF_WEATHER_RAIN_THRESHOLD)
-        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR)
-        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
-        severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
-        if wind_sensor and wind_thresh is not None:
-            wx_parts.append(f"wind > {wind_thresh} km/h")
-        if rain_sensor and rain_thresh is not None:
-            wx_parts.append(f"rain > {rain_thresh} mm/h")
-        if is_rain:
-            wx_parts.append("is-raining")
-        if is_wind:
-            wx_parts.append("is-windy")
-        if severe:
-            wx_parts.append(f"{len(severe)} severe weather sensor(s)")
-        wx_condition = " or ".join(wx_parts) if wx_parts else "weather condition"
-        wx_delay = config.get(CONF_WEATHER_TIMEOUT)
-        delay_str = f" (waits {wx_delay}s after clearing)" if wx_delay else ""
-        lines.append(
-            f"🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{delay_str}."
-        )
-
-    # Force override (hardest safety — listed last in narrative since it's a "trump card")
-    if has_force:
-        n = len(config.get(CONF_FORCE_OVERRIDE_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
-        lines.append(
-            f"🔒 Force override: if any of {n} {sensor_word} is on → covers go to {force_pos}% "
-            f"(overrides everything else)."
         )
 
     # =========================================================================
