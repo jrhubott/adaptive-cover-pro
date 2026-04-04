@@ -160,10 +160,9 @@ Pre-commit hooks run automatically on commit:
 
 ### Branch Strategy
 
-**BEFORE MAKING ANY CODE CHANGES:**
+**Default behavior: commit directly to the current branch.** Only create a feature branch when the user explicitly instructs it (e.g., "create a branch", "open a PR", or "work on a feature branch").
 
-1. **Check current branch:** `git branch --show-current`
-2. **Create feature branch from the current branch** (REQUIRED)
+If a feature branch is requested:
 
 ```bash
 # Pull latest on the current branch, then create feature branch from it
@@ -182,13 +181,11 @@ git checkout -b <prefix>/<description>
 | GitHub issue (feature) | `feature/issue-NNN-` | `feature/issue-67-entity-picture` |
 
 **Rules:**
-- ✅ ALWAYS create a feature branch FIRST (before any edits)
-- ✅ ALWAYS branch from the current branch (pull latest first)
+- ✅ Commit directly to the current branch by default
+- ✅ Create a feature branch ONLY when instructed by the user
+- ✅ ALWAYS branch from the current branch (pull latest first) when creating a branch
 - ✅ ALWAYS ask the user before creating a pull request
 - ✅ Keep commits atomic and focused
-- ✅ Test changes on the feature branch
-- ❌ NEVER commit directly to `dev` or `main` branch
-- ❌ NEVER skip feature branches "because it's a small change"
 - ❌ NEVER merge to main without a pull request
 
 ### Working with GitHub Issues
