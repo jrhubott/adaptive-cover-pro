@@ -608,6 +608,7 @@ class CoverCommandService:
         state: int,
         inverse_state: bool = False,  # noqa: FBT001 — kept for signature clarity
         caps: dict[str, bool] | None = None,
+        reset_retries: bool = True,
     ) -> tuple[str | None, dict | None, bool]:
         """Build the HA service call for this cover/state.
 
@@ -658,7 +659,8 @@ class CoverCommandService:
             self.target_call[entity] = state
             self.wait_for_target[entity] = True
             self._sent_at[entity] = now
-            self._retry_counts.pop(entity, None)  # New target resets retry count
+            if reset_retries:
+                self._retry_counts.pop(entity, None)  # New target resets retry count
             self._grace_mgr.start_command_grace_period(entity)
             return service, service_data, True
 
@@ -681,7 +683,8 @@ class CoverCommandService:
         service_data = {ATTR_ENTITY_ID: entity}
         self.wait_for_target[entity] = True
         self._sent_at[entity] = now
-        self._retry_counts.pop(entity, None)
+        if reset_retries:
+            self._retry_counts.pop(entity, None)
         self._grace_mgr.start_command_grace_period(entity)
         self._logger.debug(
             "Open/close control: state=%s threshold=%s service=%s",
@@ -692,8 +695,13 @@ class CoverCommandService:
         return service, service_data, False
 
     async def _execute_command(self, entity_id: str, target: int) -> None:
-        """Send command directly, bypassing gate checks (reconciliation use only)."""
-        service, service_data, _ = self._prepare_service_call(entity_id, target)
+        """Send command directly, bypassing gate checks (reconciliation use only).
+
+        Does NOT reset the retry count — the caller (_reconcile) owns that.
+        """
+        service, service_data, _ = self._prepare_service_call(
+            entity_id, target, reset_retries=False
+        )
         if service is None:
             return
         await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
