@@ -23,7 +23,6 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
 | [#121](https://github.com/jrhubott/adaptive-cover-pro/pull/121) | `fix/issue-116-reconciliation-ignores-manual-override` | [#116](https://github.com/jrhubott/adaptive-cover-pro/issues/116) | [v2.13.8-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.1) | 🟡 Awaiting user confirmation | Reconciliation ignored manual override; user asked to test beta |
-| [#114](https://github.com/jrhubott/adaptive-cover-pro/pull/114) | `feature/separate-end-time-from-sunset-position` | — | — | 🟠 Open — not yet beta-tested | Separates end-time default position from astronomical sunset position |
 
 ## Open Issues
 
