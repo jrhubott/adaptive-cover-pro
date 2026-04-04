@@ -15,16 +15,25 @@
 
 ## Tests
 
-**1099 passing, 0 failing** (+6 new tests for motion timeout pending fix).
+**1106 passing, 0 failing** (+6 new tests for reconciliation manual override fix).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
+
+## Open PRs (Awaiting Merge to Main)
+
+| PR | Branch | Issue | Beta | Status | Notes |
+|----|--------|-------|------|--------|-------|
+| [#121](https://github.com/jrhubott/adaptive-cover-pro/pull/121) | `fix/issue-116-reconciliation-ignores-manual-override` | [#116](https://github.com/jrhubott/adaptive-cover-pro/issues/116) | [v2.13.8-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.1) | 🟡 Awaiting user confirmation | Reconciliation ignored manual override; user asked to test beta |
 
 ## Open Issues
 
 | # | Title | Notes |
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
+| [#116](https://github.com/jrhubott/adaptive-cover-pro/issues/116) | Manual override not working when force override sensor configured | Fix in progress on `fix/issue-116-reconciliation-ignores-manual-override`. |
 
 ## Known Gotchas
+
+- **Reconciliation ignored manual override (fixed on branch, not yet released):** `_reconcile()` in `CoverCommandService` was resending the integration's stale `target_call` position once per minute, fighting the user's manual move. Root cause: reconciliation bypassed all gate checks including `manual_override`. Fix: coordinator syncs `manager.manual_controlled` → `_cmd_svc.manual_override_entities` each update cycle; `_reconcile()` skips entities in that set. Safety handlers (force override, weather) still take effect immediately via `apply_position(force=True)` which overwrites `target_call` before reconciliation runs.
 
 - **`PipelineResult.tilt` not copied in registry (fixed v2.13.1):** `PipelineRegistry.evaluate()` now copies `tilt` alongside `climate_data`. Before v2.13.1, handler-set `tilt` values were silently dropped (only mattered for Issue #33 dual-axis).
 - **`cover.default` property removed:** `AdaptiveGeneralCover` and `SunGeometry` no longer expose `.default`. Any code accessing it will get `AttributeError` immediately. Use `snapshot.default_position` in pipeline handlers; use `compute_effective_default()` elsewhere.
