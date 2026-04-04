@@ -22,7 +22,6 @@ def _make_coordinator_with_cmd_svc(current_position, min_change=20):
         logger=MagicMock(),
         cover_type="cover_blind",
         grace_mgr=MagicMock(),
-        pos_verify_mgr=MagicMock(),
     )
     cmd_svc._get_current_position = MagicMock(return_value=current_position)
     coordinator._cmd_svc = cmd_svc

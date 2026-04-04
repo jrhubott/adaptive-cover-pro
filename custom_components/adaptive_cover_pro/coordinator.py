@@ -111,12 +111,11 @@ from .const import (
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
 from .enums import ControlMethod
-from .managers.cover_command import CoverCommandService, build_special_positions
+from .managers.cover_command import CoverCommandService, PositionContext, build_special_positions
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
 from .managers.weather import WeatherManager
-from .managers.position_verification import PositionVerificationManager
 from .managers.time_window import TimeWindowManager
 from .managers.toggles import ToggleManager
 from .position_utils import interpolate_position
@@ -269,21 +268,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
 
-        # Position verification tracking
-        self._pos_verify_mgr = PositionVerificationManager(
-            logger=self.logger,
-            check_interval_minutes=POSITION_CHECK_INTERVAL_MINUTES,
-            position_tolerance=POSITION_TOLERANCE_PERCENT,
-            max_retries=MAX_POSITION_RETRIES,
-        )
-
-        # Cover command service — encapsulates service calls, delta checks, and tracking
+        # Cover command service — self-contained: owns positioning, target tracking,
+        # and the reconciliation timer (started in async_config_entry_first_refresh)
         self._cmd_svc = CoverCommandService(
             hass=self.hass,
             logger=self.logger,
             cover_type=self._cover_type,
             grace_mgr=self._grace_mgr,
-            pos_verify_mgr=self._pos_verify_mgr,
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
@@ -394,8 +385,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("Config entry first refresh")
         # Start startup grace period to prevent false manual override detection
         self._start_startup_grace_period()
-        # Start position verification after first refresh
-        self._start_position_verification()
+        # Start cover command service reconciliation timer
+        self._cmd_svc.start()
 
     async def async_timed_refresh(self, event) -> None:
         """Control state at end time."""
@@ -546,17 +537,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 return  # Ignore ALL position changes during grace period
 
-            # Grace period expired, check if we reached target
+            # Grace period expired — check if cover reached target (tolerance-based)
             caps = self._cmd_svc.get_cover_capabilities(entity_id)
-
-            # Get position based on capability
             position = self._cmd_svc.read_position_with_capabilities(
                 entity_id, caps, event.new_state
             )
-
-            if position == self.target_call.get(entity_id):
-                self.wait_for_target[entity_id] = False
-                self.logger.debug("Position %s reached for %s", position, entity_id)
+            self._cmd_svc.check_target_reached(entity_id, position)
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
@@ -1639,8 +1625,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cancel weather clear-delay timeout task
         self._cancel_weather_timeout()
 
-        # Stop position verification
-        self._stop_position_verification()
+        # Stop cover command service reconciliation timer
+        self._cmd_svc.stop()
 
         self.logger.debug("Coordinator shutdown complete")
 

@@ -31,33 +31,25 @@ def grace_mgr():
 
 
 @pytest.fixture
-def pos_verify_mgr():
-    """Return a mock PositionVerificationManager."""
-    return MagicMock()
-
-
-@pytest.fixture
-def cmd_svc(hass, logger, grace_mgr, pos_verify_mgr):
+def cmd_svc(hass, logger, grace_mgr):
     """Return a CoverCommandService for vertical blind (default)."""
     return CoverCommandService(
         hass=hass,
         logger=logger,
         cover_type="cover_blind",
         grace_mgr=grace_mgr,
-        pos_verify_mgr=pos_verify_mgr,
         open_close_threshold=50,
     )
 
 
 @pytest.fixture
-def tilt_cmd_svc(hass, logger, grace_mgr, pos_verify_mgr):
+def tilt_cmd_svc(hass, logger, grace_mgr):
     """Return a CoverCommandService for tilt cover."""
     return CoverCommandService(
         hass=hass,
         logger=logger,
         cover_type="cover_tilt",
         grace_mgr=grace_mgr,
-        pos_verify_mgr=pos_verify_mgr,
         open_close_threshold=50,
     )
 
@@ -319,7 +311,7 @@ def test_prepare_service_call_tilt_cover(tilt_cmd_svc, grace_mgr):
     assert supports_position is True
 
 
-def test_prepare_service_call_open_cover(cmd_svc, grace_mgr, pos_verify_mgr):
+def test_prepare_service_call_open_cover(cmd_svc, grace_mgr):
     """Uses open_cover for position >= threshold when has_set_position is False."""
     caps = {
         "has_set_position": False,
@@ -333,10 +325,9 @@ def test_prepare_service_call_open_cover(cmd_svc, grace_mgr, pos_verify_mgr):
     assert service == "open_cover"
     assert cmd_svc.target_call["cover.test"] == 100
     assert supports_position is False
-    pos_verify_mgr.mark_commanded.assert_called_once_with("cover.test")
 
 
-def test_prepare_service_call_close_cover(cmd_svc, grace_mgr, pos_verify_mgr):
+def test_prepare_service_call_close_cover(cmd_svc, grace_mgr):
     """Uses close_cover for position < threshold when has_set_position is False."""
     caps = {
         "has_set_position": False,

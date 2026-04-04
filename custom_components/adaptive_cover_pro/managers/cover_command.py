@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from typing import Any
 
@@ -12,6 +13,7 @@ from homeassistant.const import (
     SERVICE_SET_COVER_TILT_POSITION,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.template import state_attr
 
 from ..const import (
@@ -19,15 +21,52 @@ from ..const import (
     ATTR_TILT_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_SUNSET_POS,
+    MAX_POSITION_RETRIES,
+    POSITION_CHECK_INTERVAL_MINUTES,
+    POSITION_TOLERANCE_PERCENT,
 )
 from ..helpers import check_cover_features, get_last_updated, get_open_close_state
 
 
-class CoverCommandService:
-    """Service for sending commands to cover entities.
+@dataclasses.dataclass
+class PositionContext:
+    """Context passed to apply_position() describing current coordinator state.
 
-    Encapsulates cover capability detection, position reading, delta checking,
-    service call preparation, action tracking, and diagnostic recording.
+    The coordinator builds this each time it wants to move a cover, passing in
+    all the contextual flags that govern whether the command should actually be
+    sent. CoverCommandService uses these instead of reaching back into the
+    coordinator.
+
+    """
+
+    auto_control: bool
+    in_time_window: bool
+    manual_override: bool
+    sun_just_appeared: bool
+    min_change: int
+    time_threshold: int
+    special_positions: list[int]
+    inverse_state: bool = False
+    force: bool = False  # Skip all gate checks when True
+
+
+class CoverCommandService:
+    """Self-contained service for positioning cover entities.
+
+    Owns the full cover positioning lifecycle:
+    - Gate checks (auto control, time window, delta, time, manual override)
+    - Service call preparation and execution
+    - Target tracking (wait_for_target, target_call)
+    - Reconciliation timer: every minute, re-sends target if cover missed it
+    - Diagnostic tracking (last action, last skipped action)
+
+    Usage:
+        1. Call ``start()`` after HA is ready (first refresh).
+        2. Call ``apply_position(entity_id, position, reason, context=ctx)``
+           whenever the desired position changes.
+        3. Call ``stop()`` on shutdown/unload.
+        4. Call ``check_target_reached(entity_id, reported_position)`` from
+           the coordinator's cover-state-change handler.
 
     """
 
@@ -45,8 +84,10 @@ class CoverCommandService:
         logger,
         cover_type: str,
         grace_mgr,
-        pos_verify_mgr,
         open_close_threshold: int = 50,
+        check_interval_minutes: int = POSITION_CHECK_INTERVAL_MINUTES,
+        position_tolerance: int = POSITION_TOLERANCE_PERCENT,
+        max_retries: int = MAX_POSITION_RETRIES,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -55,19 +96,35 @@ class CoverCommandService:
             logger: Logger instance
             cover_type: Cover type string (cover_blind, cover_awning, cover_tilt)
             grace_mgr: GracePeriodManager instance
-            pos_verify_mgr: PositionVerificationManager instance
             open_close_threshold: Threshold (0-100) for open/close-only covers
+            check_interval_minutes: How often reconciliation runs (minutes)
+            position_tolerance: Allowed deviation between target and actual (%)
+            max_retries: Max reconciliation attempts per target before giving up
 
         """
         self._hass = hass
         self._logger = logger
         self._cover_type = cover_type
         self._grace_mgr = grace_mgr
-        self._pos_verify_mgr = pos_verify_mgr
         self._open_close_threshold = open_close_threshold
+        self._check_interval_minutes = check_interval_minutes
+        self._position_tolerance = position_tolerance
+        self._max_retries = max_retries
 
+        # Per-entity positioning state
+        # target_call: last position we decided to send (the "desired" position)
+        # _sent_at: when we last executed a service call for this entity
+        # wait_for_target: True while cover is expected to still be moving
+        # _retry_counts: how many reconciliation retries for the current target
+        self.target_call: dict[str, int] = {}
+        self._sent_at: dict[str, dt.datetime] = {}
         self.wait_for_target: dict[str, bool] = {}
-        self.target_call: dict[str, Any] = {}
+        self._retry_counts: dict[str, int] = {}
+
+        # Last reconciliation timestamps per entity (for diagnostics sensor)
+        self._last_reconcile_time: dict[str, dt.datetime] = {}
+
+        # Diagnostic tracking
         self.last_cover_action: dict[str, Any] = {
             "entity_id": None,
             "service": None,
@@ -85,14 +142,56 @@ class CoverCommandService:
             "timestamp": None,
         }
 
-    # --- Properties ---
+        # Reconciliation timer handle (async_track_time_interval unsubscribe fn)
+        self._reconcile_unsub = None
+
+    # ------------------------------------------------------------------ #
+    # Lifecycle
+    # ------------------------------------------------------------------ #
+
+    def start(self) -> None:
+        """Start the internal reconciliation timer.
+
+        Call once after first refresh. Safe to call multiple times (no-op if
+        already running).
+
+        """
+        if self._reconcile_unsub is not None:
+            return  # Already started
+
+        interval = dt.timedelta(minutes=self._check_interval_minutes)
+        self._reconcile_unsub = async_track_time_interval(
+            self._hass,
+            self._reconcile,
+            interval,
+        )
+        self._logger.debug(
+            "CoverCommandService: reconciliation timer started (interval: %s)", interval
+        )
+
+    def stop(self) -> None:
+        """Stop the internal reconciliation timer.
+
+        Call on integration unload / coordinator shutdown.
+
+        """
+        if self._reconcile_unsub is not None:
+            self._reconcile_unsub()
+            self._reconcile_unsub = None
+            self._logger.debug("CoverCommandService: reconciliation timer stopped")
+
+    # ------------------------------------------------------------------ #
+    # Properties
+    # ------------------------------------------------------------------ #
 
     @property
     def is_tilt_cover(self) -> bool:
         """Check if this is a tilt cover."""
         return self._cover_type == "cover_tilt"
 
-    # --- Threshold update ---
+    # ------------------------------------------------------------------ #
+    # Threshold update (called by coordinator on options change)
+    # ------------------------------------------------------------------ #
 
     def update_threshold(self, threshold: int) -> None:
         """Update the open/close threshold.
@@ -103,41 +202,26 @@ class CoverCommandService:
         """
         self._open_close_threshold = threshold
 
-    # --- Capability detection ---
+    # ------------------------------------------------------------------ #
+    # Capability detection
+    # ------------------------------------------------------------------ #
 
     def get_cover_capabilities(self, entity: str) -> dict[str, bool]:
-        """Get cover capabilities with fallback to safe defaults.
-
-        Args:
-            entity: The cover entity ID
-
-        Returns:
-            Dict of capabilities (has_set_position, has_set_tilt_position,
-            has_open, has_close)
-
-        """
+        """Get cover capabilities with fallback to safe defaults."""
         caps = check_cover_features(self._hass, entity)
         if caps is None:
             self._logger.debug("Cover %s not ready, using safe defaults", entity)
             return self._DEFAULT_CAPABILITIES.copy()
         return caps
 
-    # --- Position reading ---
+    # ------------------------------------------------------------------ #
+    # Position reading
+    # ------------------------------------------------------------------ #
 
     def _read_position_with_capabilities(
         self, entity: str, caps: dict[str, bool], state_obj=None
     ) -> int | None:
-        """Read position based on cover type and capabilities.
-
-        Args:
-            entity: Entity ID
-            caps: Capabilities dict
-            state_obj: Optional state object (for event handling)
-
-        Returns:
-            Current position or None
-
-        """
+        """Read position based on cover type and capabilities."""
         if self.is_tilt_cover:
             if caps.get("has_set_tilt_position", True):
                 if state_obj:
@@ -154,288 +238,329 @@ class CoverCommandService:
     def read_position_with_capabilities(
         self, entity: str, caps: dict[str, bool], state_obj=None
     ) -> int | None:
-        """Public wrapper for reading position based on cover capabilities.
-
-        Args:
-            entity: Entity ID
-            caps: Capabilities dict
-            state_obj: Optional state object (for event handling)
-
-        Returns:
-            Current position or None
-
-        """
+        """Public wrapper for reading position based on cover capabilities."""
         return self._read_position_with_capabilities(entity, caps, state_obj)
 
     def _get_current_position(self, entity: str) -> int | None:
-        """Get current position of cover.
-
-        For position-capable covers, returns current_position or
-        current_tilt_position. For open/close-only covers, maps state to
-        0 (closed) or 100 (open).
-
-        Args:
-            entity: Cover entity ID
-
-        Returns:
-            Current position or None
-
-        """
+        """Get current position of cover (position-capable or open/close-only)."""
         caps = self.get_cover_capabilities(entity)
         return self._read_position_with_capabilities(entity, caps)
 
-    # --- Delta checks ---
+    # ------------------------------------------------------------------ #
+    # Gate checks (used internally by apply_position)
+    # ------------------------------------------------------------------ #
 
-    def check_position(
-        self, entity: str, state: int, sun_just_appeared: bool = False
-    ) -> bool:
-        """Check if position differs from state.
-
-        Bypasses check if sun just came into field of view to ensure
-        covers reposition even if calculated position equals current position.
-
-        Args:
-            entity: Cover entity ID to check
-            state: Target position to compare against
-            sun_just_appeared: If True, bypass equality check
-
-        Returns:
-            True if position differs from state or sun just appeared,
-            False if position matches state
-
-        """
-        position = self._get_current_position(entity)
-        if position is not None:
-            if sun_just_appeared:
-                self._logger.debug(
-                    "Bypassing position equality check: sun just came into field of view "
-                    "(entity: %s, position: %s, state: %s)",
-                    entity,
-                    position,
-                    state,
-                )
-                return True
-
-            return position != state
-
-        self._logger.debug("Cover is already at position %s", state)
-        return False
-
-    def check_position_delta(
+    def _check_position_delta(
         self,
         entity: str,
-        state: int,
+        target: int,
         min_change: int,
         special_positions: list[int],
+        sun_just_appeared: bool = False,
     ) -> bool:
-        """Check if position delta exceeds threshold.
+        """Return True if a command should be sent based on position delta.
 
-        Determines if position change is large enough to warrant sending a
-        command. Always allows moves to/from special positions (0, 100, default,
-        sunset) to ensure responsive behavior at key positions.
-
-        Args:
-            entity: Cover entity ID to check
-            state: Target position to move to
-            min_change: Minimum position delta to trigger a move
-            special_positions: List of positions that always bypass delta check
-
-        Returns:
-            True if delta exceeds min_change threshold or moving to/from special
-            position, False otherwise
+        Bypasses delta check for:
+        - sun_just_appeared (cover may need to re-confirm same position)
+        - moves to/from special positions (0, 100, default, sunset)
 
         """
         position = self._get_current_position(entity)
-        if position is not None:
-            condition = abs(position - state) >= min_change
+        if position is None:
+            return True  # Unknown position — send command to be safe
 
+        if sun_just_appeared:
             self._logger.debug(
-                "Entity: %s, position: %s, state: %s, delta position: %s, min_change: %s, condition: %s",
+                "Delta check bypassed (sun appeared): %s current=%s target=%s",
                 entity,
                 position,
-                state,
-                abs(position - state),
-                min_change,
-                condition,
+                target,
             )
+            return True
 
-            # Bypass delta check when moving TO special positions
-            if state in special_positions:
-                self._logger.debug(
-                    "Bypassing delta check: moving TO special position %s", state
-                )
-                condition = True
+        if target in special_positions:
+            self._logger.debug(
+                "Delta check bypassed (special target %s): %s", target, entity
+            )
+            return True
 
-            # Bypass delta check when moving FROM special positions
-            elif position in special_positions:
-                self._logger.debug(
-                    "Bypassing delta check: moving FROM special position %s to calculated position %s",
-                    position,
-                    state,
-                )
-                condition = True
+        if position in special_positions:
+            self._logger.debug(
+                "Delta check bypassed (special current %s): %s", position, entity
+            )
+            return True
 
-            return condition
-        return True
+        delta = abs(position - target)
+        passes = delta >= min_change
+        self._logger.debug(
+            "Delta check: %s current=%s target=%s delta=%s min=%s pass=%s",
+            entity,
+            position,
+            target,
+            delta,
+            min_change,
+            passes,
+        )
+        return passes
 
-    def check_time_delta(self, entity: str, time_threshold: int) -> bool:
-        """Check if time delta exceeds threshold.
-
-        Determines if enough time has passed since last position command to
-        warrant sending a new command.
-
-        Args:
-            entity: Cover entity ID to check
-            time_threshold: Minimum minutes between commands
-
-        Returns:
-            True if time since last update exceeds time_threshold (minutes),
-            False otherwise. Returns True if entity has no last_updated time.
-
-        """
+    def _check_time_delta(self, entity: str, time_threshold: int) -> bool:
+        """Return True if enough time has passed since last command."""
         now = dt.datetime.now(dt.UTC)
         last_updated = get_last_updated(entity, self._hass)
-        if last_updated is not None:
-            condition = now - last_updated >= dt.timedelta(minutes=time_threshold)
-            self._logger.debug(
-                "Entity: %s, time delta: %s, threshold: %s, condition: %s",
-                entity,
-                now - last_updated,
-                time_threshold,
-                condition,
-            )
-            return condition
-        return True
+        if last_updated is None:
+            return True
+        elapsed = now - last_updated
+        passes = elapsed >= dt.timedelta(minutes=time_threshold)
+        self._logger.debug(
+            "Time delta check: %s elapsed=%s threshold=%smin pass=%s",
+            entity,
+            elapsed,
+            time_threshold,
+            passes,
+        )
+        return passes
 
-    # --- Service call preparation and tracking ---
+    # ------------------------------------------------------------------ #
+    # Primary entry point
+    # ------------------------------------------------------------------ #
 
-    def prepare_position_service_call(
+    async def apply_position(
         self,
-        entity: str,
-        state: int,
-        caps: dict[str, bool],
-        inverse_state: bool = False,
-    ) -> tuple[str | None, dict | None, bool]:
-        """Determine service and data based on capabilities.
+        entity_id: str,
+        position: int,
+        reason: str,
+        context: PositionContext,
+    ) -> tuple[str, str]:
+        """Evaluate gates and send a cover position command if appropriate.
 
-        Prepares the service call, sets wait_for_target, target_call, starts
-        grace period, and calls pos_verify_mgr.mark_commanded when needed.
+        This is the single entry point for all cover positioning.  The
+        coordinator calls this method from every code path that wants to
+        move a cover (solar update, startup, sunset, reconciliation retry,
+        motion/weather timeout callbacks, etc.).
 
         Args:
-            entity: Entity ID
-            state: Target position (0-100)
-            caps: Cover capabilities dict
-            inverse_state: Whether inverse state is enabled (unused here but
-                available for tracking)
+            entity_id: Cover entity ID to control
+            position: Desired target position (0-100, post-interpolation,
+                post-inverse already applied by the time it arrives here)
+            reason: Human-readable source ("solar", "startup", "sunset",
+                "reconciliation", "force_override", ...)
+            context: Current coordinator state used for gate checks
 
         Returns:
-            Tuple of (service_name, service_data, supports_position).
-            Returns (None, None, False) if capabilities are insufficient.
+            Tuple of (outcome, detail) where outcome is "sent" or "skipped"
+            and detail is the service name or skip reason.
 
         """
-        # Determine if cover supports position control
-        supports_position = False
-        if self.is_tilt_cover:
-            supports_position = caps.get("has_set_tilt_position", True)
-        else:
-            supports_position = caps.get("has_set_position", True)
+        # ----- gate checks (bypassed when context.force is True) -----
+        if not context.force:
+            if not context.auto_control:
+                return self._skip(entity_id, "auto_control_off", position)
 
-        self._logger.debug(
-            "Cover %s: supports_position=%s, caps=%s",
-            entity,
-            supports_position,
-            caps,
+            if not context.in_time_window:
+                return self._skip(entity_id, "outside_time_window", position)
+
+            if not self._check_position_delta(
+                entity_id,
+                position,
+                context.min_change,
+                context.special_positions,
+                sun_just_appeared=context.sun_just_appeared,
+            ):
+                return self._skip(entity_id, "delta_too_small", position)
+
+            if not self._check_time_delta(entity_id, context.time_threshold):
+                return self._skip(entity_id, "time_delta_too_small", position)
+
+            if context.manual_override:
+                return self._skip(entity_id, "manual_override", position)
+
+        # ----- send command -----
+        service, service_data, supports_position = self._prepare_service_call(
+            entity_id, position, context.inverse_state
+        )
+        if service is None:
+            return self._skip(entity_id, "no_capable_service", position)
+
+        self._logger.info(
+            "[%s] Positioning %s → %s%%",
+            reason,
+            entity_id,
+            position,
         )
 
-        if supports_position:
-            service = SERVICE_SET_COVER_POSITION
-            service_data = {ATTR_ENTITY_ID: entity}
+        await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
 
-            if self.is_tilt_cover:
-                service = SERVICE_SET_COVER_TILT_POSITION
-                service_data[ATTR_TILT_POSITION] = state
-            else:
-                service_data[ATTR_POSITION] = state
+        self._track_action(
+            entity_id, service, position, supports_position, context.inverse_state
+        )
+        return "sent", service
 
-            self.wait_for_target[entity] = True
-            self.target_call[entity] = state
-            self._grace_mgr.start_command_grace_period(entity)
-            self._logger.debug(
-                "Set wait for target %s and target call %s",
-                self.wait_for_target,
-                self.target_call,
-            )
-        else:
-            has_open = caps.get("has_open", False)
-            has_close = caps.get("has_close", False)
+    # ------------------------------------------------------------------ #
+    # Target-reached notification (called by coordinator state-change handler)
+    # ------------------------------------------------------------------ #
 
-            if not has_open or not has_close:
-                self._logger.warning(
-                    "Cover %s does not support both open and close. Skipping.",
-                    entity,
-                )
-                return None, None, False
+    def check_target_reached(
+        self, entity_id: str, reported_position: int | None
+    ) -> bool:
+        """Check whether cover has reached its target within tolerance.
 
-            if state >= self._open_close_threshold:
-                service = "open_cover"
-                self.target_call[entity] = 100
-                self._pos_verify_mgr.mark_commanded(entity)
-            else:
-                service = "close_cover"
-                self.target_call[entity] = 0
-                self._pos_verify_mgr.mark_commanded(entity)
-
-            service_data = {ATTR_ENTITY_ID: entity}
-            self.wait_for_target[entity] = True
-            self._grace_mgr.start_command_grace_period(entity)
-
-            self._logger.debug(
-                "Using open/close control: state=%s, threshold=%s, service=%s",
-                state,
-                self._open_close_threshold,
-                service,
-            )
-
-        return service, service_data, supports_position
-
-    def track_cover_action(
-        self,
-        entity: str,
-        service: str,
-        state: int,
-        supports_position: bool,
-        inverse_state: bool = False,
-    ) -> None:
-        """Track cover action for diagnostic sensor.
+        Called from the coordinator's cover-state-change handler whenever
+        the cover entity reports a new position.  Uses tolerance instead of
+        exact equality so covers that round to 5% increments don't get
+        stuck with ``wait_for_target=True`` forever.
 
         Args:
-            entity: Entity ID
-            service: Service name called
-            state: Requested position
-            supports_position: Whether position control is used
-            inverse_state: Whether inverse state is applied
+            entity_id: Cover entity ID
+            reported_position: Position reported by the cover entity
+
+        Returns:
+            True if target reached (wait_for_target cleared), False otherwise.
 
         """
-        self.last_cover_action = {
-            "entity_id": entity,
-            "service": service,
-            "position": state if supports_position else self.target_call[entity],
-            "calculated_position": state,
-            "threshold_used": self._open_close_threshold
-            if not supports_position
-            else None,
-            "inverse_state_applied": inverse_state,
-            "timestamp": dt.datetime.now().isoformat(),
-            "covers_controlled": 1,
+        if entity_id not in self.target_call:
+            return False
+
+        if reported_position is None:
+            return False
+
+        target = self.target_call[entity_id]
+        if abs(reported_position - target) <= self._position_tolerance:
+            self.wait_for_target[entity_id] = False
+            self._retry_counts.pop(entity_id, None)
+            self._logger.debug(
+                "Target reached for %s (reported=%s target=%s)",
+                entity_id,
+                reported_position,
+                target,
+            )
+            return True
+
+        return False
+
+    # ------------------------------------------------------------------ #
+    # Reconciliation timer
+    # ------------------------------------------------------------------ #
+
+    async def _reconcile(self, now: dt.datetime) -> None:
+        """Periodic reconciliation: re-send target if cover missed it.
+
+        Runs every ``check_interval_minutes``.  For each tracked entity:
+
+        1. If ``wait_for_target`` has been True for >30 s → force-clear it
+           (timeout fallback for covers that never report final position).
+        2. If ``wait_for_target`` is still True → cover is moving, skip.
+        3. Compare actual position to ``target_call`` within tolerance.
+        4. If match → reset retry count, done.
+        5. If mismatch → resend the same target (up to ``max_retries``).
+
+        Note: reconciliation does *not* go through gate checks — the target
+        was already validated when ``apply_position`` was called.
+
+        """
+        wait_for_target_timeout_seconds = 30
+
+        for entity_id, target in list(self.target_call.items()):
+            self._last_reconcile_time[entity_id] = now
+
+            # 1. Timeout: clear stuck wait_for_target
+            if self.wait_for_target.get(entity_id, False):
+                sent_at = self._sent_at.get(entity_id)
+                if sent_at is not None:
+                    elapsed = (now - sent_at).total_seconds()
+                    if elapsed > wait_for_target_timeout_seconds:
+                        self._logger.debug(
+                            "wait_for_target timeout for %s (elapsed %.0fs) — clearing",
+                            entity_id,
+                            elapsed,
+                        )
+                        self.wait_for_target[entity_id] = False
+                    else:
+                        # Cover still expected to be moving
+                        continue
+                else:
+                    continue  # No sent_at recorded yet
+
+            # 2. Read actual position
+            actual = self._get_current_position(entity_id)
+            if actual is None:
+                self._logger.debug(
+                    "Reconcile: cannot read position for %s, skipping", entity_id
+                )
+                continue
+
+            # 3. Check match
+            if abs(actual - target) <= self._position_tolerance:
+                self._retry_counts.pop(entity_id, None)
+                self._logger.debug(
+                    "Reconcile: %s at target (actual=%s target=%s)",
+                    entity_id,
+                    actual,
+                    target,
+                )
+                continue
+
+            # 4. Mismatch — retry up to max_retries
+            retry_count = self._retry_counts.get(entity_id, 0)
+            if retry_count >= self._max_retries:
+                self._logger.warning(
+                    "Reconcile: max retries (%d) exceeded for %s "
+                    "(actual=%s target=%s) — giving up until next target change",
+                    self._max_retries,
+                    entity_id,
+                    actual,
+                    target,
+                )
+                continue
+
+            self._retry_counts[entity_id] = retry_count + 1
+            self._logger.debug(
+                "Reconcile: %s missed target (actual=%s target=%s) — retry %d/%d",
+                entity_id,
+                actual,
+                target,
+                retry_count + 1,
+                self._max_retries,
+            )
+            await self._execute_command(entity_id, target)
+
+    # ------------------------------------------------------------------ #
+    # Diagnostic helpers
+    # ------------------------------------------------------------------ #
+
+    def get_diagnostics(self, entity_id: str) -> dict[str, Any]:
+        """Return per-entity positioning diagnostics for sensor display.
+
+        Args:
+            entity_id: Cover entity ID
+
+        Returns:
+            Dict with target, actual, at_target, retry_count,
+            last_reconcile_time, wait_for_target.
+
+        """
+        actual = self._get_current_position(entity_id)
+        target = self.target_call.get(entity_id)
+        at_target = (
+            target is not None
+            and actual is not None
+            and abs(actual - target) <= self._position_tolerance
+        )
+        last_recon = self._last_reconcile_time.get(entity_id)
+        return {
+            "target": target,
+            "actual": actual,
+            "at_target": at_target,
+            "retry_count": self._retry_counts.get(entity_id, 0),
+            "last_reconcile_time": last_recon.isoformat() if last_recon else None,
+            "wait_for_target": self.wait_for_target.get(entity_id, False),
         }
 
     def record_skipped_action(self, entity: str, reason: str, state: int) -> None:
         """Record a skipped cover action for diagnostic tracking.
 
-        Args:
-            entity: Cover entity ID that was skipped
-            reason: Human-readable reason for skipping
-            state: Target position that would have been set
+        Kept as a public method so the coordinator can still record skips that
+        happen before apply_position is reached (e.g. outside time window checks
+        done at a higher level).
 
         """
         self.last_skipped_action = {
@@ -445,16 +570,194 @@ class CoverCommandService:
             "timestamp": dt.datetime.now(dt.UTC).isoformat(),
         }
 
-    # --- Async execution ---
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
 
-    async def execute_service_call(self, service: str, service_data: dict) -> None:
-        """Execute a cover service call.
+    def _skip(
+        self, entity_id: str, reason: str, position: int
+    ) -> tuple[str, str]:
+        """Record and return a skip result."""
+        self._logger.debug(
+            "Skipped %s → %s%% (%s)", entity_id, position, reason
+        )
+        self.last_skipped_action = {
+            "entity_id": entity_id,
+            "reason": reason,
+            "calculated_position": position,
+            "timestamp": dt.datetime.now(dt.UTC).isoformat(),
+        }
+        return "skipped", reason
+
+    def _prepare_service_call(
+        self,
+        entity: str,
+        state: int,
+        inverse_state: bool = False,  # noqa: FBT001 — kept for signature clarity
+        caps: dict[str, bool] | None = None,
+    ) -> tuple[str | None, dict | None, bool]:
+        """Build the HA service call for this cover/state.
+
+        Updates ``wait_for_target``, ``target_call``, ``_sent_at``, and
+        starts the command grace period.
 
         Args:
-            service: Service name (e.g. set_cover_position, open_cover)
-            service_data: Service data dict (must include ATTR_ENTITY_ID)
+            entity: Cover entity ID
+            state: Target position (0-100)
+            inverse_state: Whether inverse state is applied (for tracking)
+            caps: Pre-fetched capabilities dict; fetched internally if None
+
+        Returns:
+            (service_name, service_data, supports_position).
+            (None, None, False) if cover is not capable.
 
         """
+        if caps is None:
+            caps = self.get_cover_capabilities(entity)
+
+        supports_position = (
+            caps.get("has_set_tilt_position", True)
+            if self.is_tilt_cover
+            else caps.get("has_set_position", True)
+        )
+
+        self._logger.debug(
+            "Prepare service call: %s supports_position=%s caps=%s",
+            entity,
+            supports_position,
+            caps,
+        )
+
+        now = dt.datetime.now(dt.UTC)
+
+        if supports_position:
+            service = (
+                SERVICE_SET_COVER_TILT_POSITION
+                if self.is_tilt_cover
+                else SERVICE_SET_COVER_POSITION
+            )
+            service_data = {ATTR_ENTITY_ID: entity}
+            if self.is_tilt_cover:
+                service_data[ATTR_TILT_POSITION] = state
+            else:
+                service_data[ATTR_POSITION] = state
+
+            self.target_call[entity] = state
+            self.wait_for_target[entity] = True
+            self._sent_at[entity] = now
+            self._retry_counts.pop(entity, None)  # New target resets retry count
+            self._grace_mgr.start_command_grace_period(entity)
+            return service, service_data, True
+
+        # Open/close-only cover
+        has_open = caps.get("has_open", False)
+        has_close = caps.get("has_close", False)
+        if not has_open or not has_close:
+            self._logger.warning(
+                "Cover %s does not support both open and close. Skipping.", entity
+            )
+            return None, None, False
+
+        if state >= self._open_close_threshold:
+            service = "open_cover"
+            self.target_call[entity] = 100
+        else:
+            service = "close_cover"
+            self.target_call[entity] = 0
+
+        service_data = {ATTR_ENTITY_ID: entity}
+        self.wait_for_target[entity] = True
+        self._sent_at[entity] = now
+        self._retry_counts.pop(entity, None)
+        self._grace_mgr.start_command_grace_period(entity)
+        self._logger.debug(
+            "Open/close control: state=%s threshold=%s service=%s",
+            state,
+            self._open_close_threshold,
+            service,
+        )
+        return service, service_data, False
+
+    async def _execute_command(self, entity_id: str, target: int) -> None:
+        """Send command directly, bypassing gate checks (reconciliation use only)."""
+        service, service_data, _ = self._prepare_service_call(entity_id, target)
+        if service is None:
+            return
+        await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
+
+    def _track_action(
+        self,
+        entity: str,
+        service: str,
+        state: int,
+        supports_position: bool,
+        inverse_state: bool = False,
+    ) -> None:
+        """Update last_cover_action diagnostic dict."""
+        self.last_cover_action = {
+            "entity_id": entity,
+            "service": service,
+            "position": state if supports_position else self.target_call.get(entity),
+            "calculated_position": state,
+            "threshold_used": self._open_close_threshold if not supports_position else None,
+            "inverse_state_applied": inverse_state,
+            "timestamp": dt.datetime.now().isoformat(),
+            "covers_controlled": 1,
+        }
+
+    # ------------------------------------------------------------------ #
+    # Legacy helpers kept for backward-compat with coordinator
+    # (will be removed once coordinator callers are updated in step 4)
+    # ------------------------------------------------------------------ #
+
+    def check_position_delta(
+        self,
+        entity: str,
+        state: int,
+        min_change: int,
+        special_positions: list[int],
+    ) -> bool:
+        """Legacy wrapper — prefer apply_position()."""
+        return self._check_position_delta(entity, state, min_change, special_positions)
+
+    def check_time_delta(self, entity: str, time_threshold: int) -> bool:
+        """Legacy wrapper — prefer apply_position()."""
+        return self._check_time_delta(entity, time_threshold)
+
+    def check_position(
+        self, entity: str, state: int, sun_just_appeared: bool = False
+    ) -> bool:
+        """Legacy position equality check — prefer apply_position()."""
+        position = self._get_current_position(entity)
+        if position is not None:
+            if sun_just_appeared:
+                return True
+            return position != state
+        return False
+
+    def prepare_position_service_call(
+        self,
+        entity: str,
+        state: int,
+        caps: dict[str, bool],
+        inverse_state: bool = False,
+    ) -> tuple[str | None, dict | None, bool]:
+        """Legacy service call prep — prefer apply_position()."""
+        return self._prepare_service_call(entity, state, inverse_state, caps=caps)
+
+    def track_cover_action(
+        self,
+        entity: str,
+        service: str,
+        state: int,
+        supports_position: bool,
+        inverse_state: bool = False,
+    ) -> None:
+        """Legacy action tracker — prefer apply_position()."""
+        self._track_action(entity, service, state, supports_position, inverse_state)
+
+    async def execute_service_call(self, service: str, service_data: dict) -> None:
+        """Legacy service executor — prefer apply_position()."""
         await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
 
 
@@ -463,12 +766,6 @@ def build_special_positions(options: dict) -> list[int]:
 
     Special positions (0, 100, default_height, sunset_pos) bypass the delta
     check so covers always reposition at key values.
-
-    Args:
-        options: Configuration options dictionary
-
-    Returns:
-        List of integer position values that are always allowed
 
     """
     special_positions = [0, 100]
