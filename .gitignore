@@ -24,7 +24,6 @@ docs/superpowers/
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
-!config/*.md
 API.ipynb
 .github/.DS_Store
 .DS_Store
