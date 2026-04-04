@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 from numpy import sin
 from numpy import radians as rad
 
@@ -50,9 +51,19 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
         c_angle = 180 - awn_angle - a_angle
 
         vertical_position = super().calculate_position()
-        length = ((self.h_win - vertical_position) * sin(rad(a_angle))) / sin(
-            rad(c_angle)
-        )
+
+        # Guard: c_angle near zero → sin(c_angle) ≈ 0 → division by zero.
+        # This occurs when sun elevation + awning angle ≈ 90°.  Return full
+        # awning extension as a safe fallback.
+        sin_c = float(sin(rad(c_angle)))
+        if abs(sin_c) < 1e-6:
+            self.logger.debug(
+                "Horizontal calc: c_angle=%.2f° near zero — returning full extension",
+                c_angle,
+            )
+            return self.awn_length
+
+        length = ((self.h_win - vertical_position) * sin(rad(a_angle))) / sin_c
         self.logger.debug(
             "Horizontal calc: elev=%.1f°, gamma=%.1f°, awn_angle=%s°, "
             "vertical_pos=%.3f, length=%.3f",
@@ -62,8 +73,7 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
             vertical_position,
             length,
         )
-        # return np.clip(length, 0, self.awn_length)
-        return length
+        return float(np.clip(length, 0, self.awn_length * 2))  # Clip to 2× max as sanity bound
 
     def calculate_percentage(self) -> float:
         """Convert awning extension to percentage for Home Assistant.

@@ -203,7 +203,7 @@ class TestClimateStrategyNormalWithPresence:
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
         """Winter + sun valid → WINTER_HEATING."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -254,7 +254,7 @@ class TestClimateStrategyNormalWithPresence:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_low_light_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
         """Not summer + low lux → LOW_LIGHT."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -296,7 +296,7 @@ class TestClimateStrategyNormalWithPresence:
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
         """Summer + transparent blind → SUMMER_COOLING."""
-        mock_datetime.utcnow.return_value = datetime(2024, 6, 21, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 6, 21, 21, 0, 0)
         )
@@ -345,7 +345,7 @@ class TestClimateStrategyNormalWithPresence:
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
         """Normal sunny conditions with presence → GLARE_CONTROL."""
-        mock_datetime.utcnow.return_value = datetime(2024, 6, 21, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 6, 21, 21, 0, 0)
         )
@@ -402,7 +402,7 @@ class TestClimateStrategyNormalWithoutPresence:
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
         """Summer + sun valid + no presence → SUMMER_COOLING."""
-        mock_datetime.utcnow.return_value = datetime(2024, 6, 21, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 6, 21, 21, 0, 0)
         )
@@ -449,7 +449,7 @@ class TestClimateStrategyNormalWithoutPresence:
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
         """Winter + sun valid + no presence → WINTER_HEATING."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -496,7 +496,7 @@ class TestClimateStrategyNormalWithoutPresence:
         self, mock_datetime, hass, mock_logger, vertical_cover
     ):
         """Sun not valid + no presence → LOW_LIGHT (default position)."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )

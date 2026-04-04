@@ -3,7 +3,7 @@
 Extracted from AdaptiveGeneralCover to enable standalone testing and reuse.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -124,10 +124,11 @@ class SunGeometry:
         """
         sunset = self.sun_data.sunset().replace(tzinfo=None)
         sunrise = self.sun_data.sunrise().replace(tzinfo=None)
-        after_sunset = datetime.utcnow() > (  # noqa: DTZ003
+        now_naive = datetime.now(UTC).replace(tzinfo=None)
+        after_sunset = now_naive > (
             sunset + timedelta(minutes=self.config.sunset_off)
         )
-        before_sunrise = datetime.utcnow() < (  # noqa: DTZ003
+        before_sunrise = now_naive < (
             sunrise + timedelta(minutes=self.config.sunrise_off)
         )
         self.logger.debug(

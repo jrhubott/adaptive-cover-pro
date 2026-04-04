@@ -41,7 +41,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test normal_type_cover delegates to normal_with_presence."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -61,7 +61,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test normal_type_cover delegates to normal_without_presence."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -81,7 +81,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test winter strategy with presence: open fully when cold and not sunny."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -106,7 +106,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test not sunny weather returns default."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -131,7 +131,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test summer with transparent blind returns 0."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -160,7 +160,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test intermediate conditions use calculated position."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -185,7 +185,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test summer without presence closes blind."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -212,7 +212,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test winter without presence opens blind."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -236,7 +236,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test default path without presence."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -285,7 +285,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test get_state routes to normal_type_cover for blind."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -307,7 +307,7 @@ class TestClimateCoverState:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_get_state_tilt_type(self, mock_datetime, tilt_cover_instance, mock_logger):
         """Test get_state routes to tilt_state for tilt cover."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -331,7 +331,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test max position clamping in climate state."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -357,7 +357,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test min position clamping in climate state."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -392,7 +392,7 @@ class TestClimateCoverState:
 
         Expected: Should return 100 for solar heating
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -424,7 +424,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test winter mode on cloudy day."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -453,7 +453,7 @@ class TestClimateCoverState:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Test winter mode with lux sensor showing low light."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -488,7 +488,7 @@ class TestClimateCoverState:
         Not winter, not summer, sunny weather.
         Should use calculated position for glare control.
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -520,7 +520,7 @@ class TestClimateCoverState:
         self, mock_datetime, tilt_cover_instance, mock_logger
     ):
         """Test tilt winter mode on sunny day."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -580,7 +580,7 @@ class TestIssue71IrradianceSummerFix:
         This is the core regression for Issue #71: irradiance was previously
         ignored when is_summer=True, causing covers to close regardless.
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -617,7 +617,7 @@ class TestIssue71IrradianceSummerFix:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Summer + lux below threshold + presence → LOW_LIGHT (default/open)."""
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -652,7 +652,7 @@ class TestIssue71IrradianceSummerFix:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Summer + cloudy weather + presence → LOW_LIGHT (default/open)."""
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -689,7 +689,7 @@ class TestIssue71IrradianceSummerFix:
 
         When irradiance IS above threshold, summer glare control should still apply.
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -731,7 +731,7 @@ class TestIssue71IrradianceSummerFix:
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
         """Summer + irradiance below threshold + no presence → LOW_LIGHT (default)."""
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -773,7 +773,7 @@ class TestIssue71IrradianceSummerFix:
         Regression check: existing summer cooling behavior should be preserved
         when irradiance is NOT low.
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -817,7 +817,7 @@ class TestIssue71IrradianceSummerFix:
 
         For tilt covers, LOW_LIGHT uses _solar_position() not default.
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -863,7 +863,7 @@ class TestIssue71IrradianceSummerFix:
         self, mock_datetime, tilt_cover_instance, mock_logger
     ):
         """Tilt cover: summer + high irradiance + presence → SUMMER_COOLING angle."""
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -918,7 +918,7 @@ class TestIssue71IrradianceSummerFix:
         self, mock_datetime, tilt_cover_instance, mock_logger
     ):
         """Tilt cover: summer + irradiance below threshold + no presence → solar position."""
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )
@@ -966,7 +966,7 @@ class TestIssue71IrradianceSummerFix:
 
         Regression check: existing tilt summer cooling behavior preserved.
         """
-        mock_datetime.utcnow.return_value = datetime(2024, 7, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 7, 1, 12, 0, 0)
         tilt_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 7, 1, 18, 0, 0)
         )

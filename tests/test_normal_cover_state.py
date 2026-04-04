@@ -16,7 +16,7 @@ class TestNormalCoverState:
     def test_get_state_sun_valid(self, mock_datetime, vertical_cover_instance):
         """Test state when sun is valid - uses calculated position."""
         # Setup mocks for sunset_valid check
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -35,7 +35,7 @@ class TestNormalCoverState:
         """Test state when sun is invalid - uses default position."""
         # Make sun invalid by putting it outside FOV
         vertical_cover_instance.sol_azi = 90.0  # Far outside FOV
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -53,7 +53,7 @@ class TestNormalCoverState:
     def test_get_state_after_sunset(self, mock_datetime, vertical_cover_instance):
         """Test state after sunset uses sunset_pos."""
         # Set time after sunset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -71,7 +71,7 @@ class TestNormalCoverState:
     def test_max_position_clamping(self, mock_datetime, vertical_cover_instance):
         """Test max position clamping."""
         # Setup for valid sun
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -93,7 +93,7 @@ class TestNormalCoverState:
     def test_min_position_clamping(self, mock_datetime, vertical_cover_instance):
         """Test min position clamping."""
         # Setup for valid sun
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -117,7 +117,7 @@ class TestNormalCoverState:
     ):
         """Test min position with bool flag when sun is valid."""
         # Setup for valid sun
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -140,7 +140,7 @@ class TestNormalCoverState:
     ):
         """Test max position with bool flag when sun is valid."""
         # Setup for valid sun, high elevation to get higher percentage
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -171,7 +171,7 @@ class TestNormalCoverState:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_combined_min_max_clamping(self, mock_datetime, vertical_cover_instance):
         """Test both min and max clamping together."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -237,7 +237,7 @@ class TestNormalCoverStateHorizontalMinPosition:
         assert cover.calculate_percentage() == 0
 
         # Setup time so sun is valid
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
         cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
@@ -298,7 +298,7 @@ class TestNormalCoverStateHorizontalMinPosition:
             awn_angle=0,
         )
 
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
         cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 
@@ -344,7 +344,7 @@ class TestNormalCoverStateHorizontalMinPosition:
             awn_angle=0,
         )
 
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
         cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
 

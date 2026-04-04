@@ -180,8 +180,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             )  # ~2.9° minimum
             effective_distance -= sill_offset
 
-        # Base calculation: project to vertical blind height
-        path_length = effective_distance / float(cos(rad(self.gamma)))
+        # Base calculation: project to vertical blind height.
+        # Clamp cos(gamma) to a minimum of 0.01 (≈89.4°) to prevent division
+        # by near-zero between the edge-case threshold (85°) and 90°.
+        cos_gamma = float(cos(rad(self.gamma)))
+        cos_gamma_clamped = max(abs(cos_gamma), 0.01) * (1 if cos_gamma >= 0 else -1)
+        path_length = effective_distance / cos_gamma_clamped
         base_height = path_length * float(tan(rad(self.sol_elev)))
 
         # Apply safety margin for extreme angles

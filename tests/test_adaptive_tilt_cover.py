@@ -20,40 +20,44 @@ class TestAdaptiveTiltCover:
         """Test tilt angle calculation in mode1 (90°)."""
         tilt_cover_instance.mode = "mode1"
         angle = tilt_cover_instance.calculate_position()
-        # Should be between 0 and 90 degrees, or NaN if math invalid
-        assert (0 <= angle <= 90) or np.isnan(angle)
+        # With negative-discriminant protection: returns 0.0 (closed) safely
+        assert not np.isnan(angle), "calculate_position() must never return NaN"
+        assert 0 <= angle <= 90
 
     @pytest.mark.unit
     def test_calculate_position_mode2(self, tilt_cover_instance):
         """Test tilt angle calculation in mode2 (180°)."""
         tilt_cover_instance.mode = "mode2"
         angle = tilt_cover_instance.calculate_position()
-        # Should be between 0 and 180 degrees, or NaN if math invalid
-        assert (0 <= angle <= 180) or np.isnan(angle)
+        # With negative-discriminant protection: returns 0.0 (closed) safely
+        assert not np.isnan(angle), "calculate_position() must never return NaN"
+        assert 0 <= angle <= 180
 
     @pytest.mark.unit
     def test_calculate_percentage_mode1(self, tilt_cover_instance):
-        """Test percentage conversion in mode1 raises ValueError when math is invalid.
+        """Test percentage conversion in mode1 returns 0% when math would be invalid.
 
-        The default tilt cover instance produces NaN in calculate_position() due to
-        a negative sqrt (slat geometry at 45° elevation with depth=0.02, distance=0.03).
-        round(NaN) raises ValueError in Python 3.11+.
+        The default tilt cover instance has a negative discriminant (slat geometry
+        at 45° elevation with depth=0.02, distance=0.03). Previously this raised
+        ValueError via round(NaN); now it safely returns 0.0 (blind closed).
         """
         tilt_cover_instance.mode = "mode1"
-        with pytest.raises(ValueError):
-            tilt_cover_instance.calculate_percentage()
+        pct = tilt_cover_instance.calculate_percentage()
+        assert not np.isnan(pct), "calculate_percentage() must never return NaN"
+        assert 0 <= pct <= 100
 
     @pytest.mark.unit
     def test_calculate_percentage_mode2(self, tilt_cover_instance):
-        """Test percentage conversion in mode2 raises ValueError when math is invalid.
+        """Test percentage conversion in mode2 returns 0% when math would be invalid.
 
-        The default tilt cover instance produces NaN in calculate_position() due to
-        a negative sqrt (slat geometry at 45° elevation with depth=0.02, distance=0.03).
-        round(NaN) raises ValueError in Python 3.11+.
+        The default tilt cover instance has a negative discriminant (slat geometry
+        at 45° elevation with depth=0.02, distance=0.03). Previously this raised
+        ValueError via round(NaN); now it safely returns 0.0 (blind closed).
         """
         tilt_cover_instance.mode = "mode2"
-        with pytest.raises(ValueError):
-            tilt_cover_instance.calculate_percentage()
+        pct = tilt_cover_instance.calculate_percentage()
+        assert not np.isnan(pct), "calculate_percentage() must never return NaN"
+        assert 0 <= pct <= 100
 
     @pytest.mark.unit
     @pytest.mark.parametrize("depth", [0.01, 0.02, 0.03, 0.04])
@@ -61,8 +65,9 @@ class TestAdaptiveTiltCover:
         """Test with different slat depths."""
         tilt_cover_instance.depth = depth
         angle = tilt_cover_instance.calculate_position()
-        # Can produce NaN for invalid math (negative sqrt)
-        assert (0 <= angle <= 180) or np.isnan(angle)
+        # Negative-discriminant guard ensures NaN is never returned
+        assert not np.isnan(angle), "calculate_position() must never return NaN"
+        assert 0 <= angle <= 180
 
     @pytest.mark.unit
     @pytest.mark.parametrize("distance", [0.02, 0.03, 0.04, 0.05])
@@ -70,8 +75,9 @@ class TestAdaptiveTiltCover:
         """Test with different slat distances."""
         tilt_cover_instance.slat_distance = distance
         angle = tilt_cover_instance.calculate_position()
-        # Can produce NaN for invalid math (negative sqrt)
-        assert (0 <= angle <= 180) or np.isnan(angle)
+        # Negative-discriminant guard ensures NaN is never returned
+        assert not np.isnan(angle), "calculate_position() must never return NaN"
+        assert 0 <= angle <= 180
 
     @pytest.mark.unit
     @pytest.mark.parametrize("elev", [10, 30, 45, 60, 80])

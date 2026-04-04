@@ -94,6 +94,12 @@ class TimeWindowManager:
             time = get_datetime_from_str(
                 get_safe_state(self._hass, self._start_time_entity)
             )
+            if time is None:
+                self.logger.debug(
+                    "Start time entity %s returned None, treating as start passed",
+                    self._start_time_entity,
+                )
+                return True
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s ", time, now, now >= time
             )
@@ -101,6 +107,11 @@ class TimeWindowManager:
             return now >= time
         if self._start_time is not None:
             time = get_datetime_from_str(self._start_time)
+            if time is None:
+                self.logger.debug(
+                    "Start time config value could not be parsed, treating as start passed"
+                )
+                return True
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s", time, now, now >= time
             )
@@ -125,7 +136,7 @@ class TimeWindowManager:
             )
         elif self._end_time_config is not None:
             time = get_datetime_from_str(self._end_time_config)
-            if time.time() == dt.time(0, 0):
+            if time is not None and time.time() == dt.time(0, 0):
                 time = time + dt.timedelta(days=1)
         return time
 

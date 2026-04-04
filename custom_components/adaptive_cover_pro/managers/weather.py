@@ -247,7 +247,10 @@ class WeatherManager:
             refresh_callback: Called after timeout expires if conditions still clear
 
         """
-        await asyncio.sleep(timeout_seconds)
+        try:
+            await asyncio.sleep(timeout_seconds)
+        except asyncio.CancelledError:
+            return
 
         # Double-check: conditions may have returned during the sleep
         if self.is_any_condition_active:

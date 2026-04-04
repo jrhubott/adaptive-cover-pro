@@ -123,7 +123,7 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
         "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to after sunset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
         cover = build_vertical_cover(
             logger=mock_logger,
@@ -185,7 +185,7 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
         "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to after sunset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
 
         cover = build_vertical_cover(
             logger=mock_logger,
@@ -238,7 +238,7 @@ def test_sun_in_window_with_conditional_min_pos(mock_sun_data, mock_logger):
         "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to daytime
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         # Sun directly in front, low elevation → calculated position would be low
         cover = build_vertical_cover(
@@ -298,7 +298,7 @@ def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
         "custom_components.adaptive_cover_pro.engine.sun_geometry.datetime"
     ) as mock_datetime:
         # Set current time to daytime (not sunset)
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         cover = build_vertical_cover(
             logger=mock_logger,

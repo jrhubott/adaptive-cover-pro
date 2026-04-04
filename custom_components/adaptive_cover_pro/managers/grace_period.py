@@ -87,7 +87,10 @@ class GracePeriodManager:
             entity_id: Entity whose grace period expired
 
         """
-        await asyncio.sleep(self._command_grace_seconds)
+        try:
+            await asyncio.sleep(self._command_grace_seconds)
+        except asyncio.CancelledError:
+            return
 
         self._command_timestamps.pop(entity_id, None)
         self._grace_period_tasks.pop(entity_id, None)
@@ -150,7 +153,10 @@ class GracePeriodManager:
 
     async def _startup_grace_period_timeout(self) -> None:
         """Clear startup grace period after timeout."""
-        await asyncio.sleep(self._startup_grace_seconds)
+        try:
+            await asyncio.sleep(self._startup_grace_seconds)
+        except asyncio.CancelledError:
+            return
 
         self._startup_timestamp = None
         self._startup_grace_period_task = None

@@ -13,6 +13,7 @@ from homeassistant.const import (
     SERVICE_SET_COVER_TILT_POSITION,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.template import state_attr
 
@@ -400,7 +401,17 @@ class CoverCommandService:
             position,
         )
 
-        await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
+        try:
+            await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
+        except HomeAssistantError as err:
+            self._logger.warning(
+                "Service call %s.%s failed for %s: %s",
+                COVER_DOMAIN,
+                service,
+                entity_id,
+                err,
+            )
+            return self._skip(entity_id, "service_call_failed", position)
 
         self._track_action(
             entity_id, service, position, supports_position, context.inverse_state
@@ -725,7 +736,16 @@ class CoverCommandService:
         )
         if service is None:
             return
-        await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
+        try:
+            await self._hass.services.async_call(COVER_DOMAIN, service, service_data)
+        except HomeAssistantError as err:
+            self._logger.warning(
+                "Reconciliation service call %s.%s failed for %s: %s",
+                COVER_DOMAIN,
+                service,
+                entity_id,
+                err,
+            )
 
     def _track_action(
         self,

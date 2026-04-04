@@ -82,17 +82,17 @@ class ConfigurationService:
 
         """
         return CoverConfig(
-            win_azi=options.get(CONF_AZIMUTH),
-            fov_left=options.get(CONF_FOV_LEFT),
-            fov_right=options.get(CONF_FOV_RIGHT),
-            h_def=options.get(CONF_DEFAULT_HEIGHT),
+            win_azi=options.get(CONF_AZIMUTH) or 180,
+            fov_left=options.get(CONF_FOV_LEFT) or 90,
+            fov_right=options.get(CONF_FOV_RIGHT) or 90,
+            h_def=options.get(CONF_DEFAULT_HEIGHT) or 0,
             sunset_pos=options.get(CONF_SUNSET_POS),
-            sunset_off=options.get(CONF_SUNSET_OFFSET),
+            sunset_off=options.get(CONF_SUNSET_OFFSET) or 0,
             sunrise_off=options.get(
                 CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)
-            ),
-            max_pos=options.get(CONF_MAX_POSITION),
-            min_pos=options.get(CONF_MIN_POSITION),
+            ) or 0,
+            max_pos=options.get(CONF_MAX_POSITION) or 100,
+            min_pos=options.get(CONF_MIN_POSITION) or 0,
             max_pos_sun_only=options.get(CONF_ENABLE_MAX_POSITION, False),
             min_pos_sun_only=options.get(CONF_ENABLE_MIN_POSITION, False),
             blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
@@ -111,8 +111,8 @@ class ConfigurationService:
 
         """
         return VerticalConfig(
-            distance=options.get(CONF_DISTANCE),
-            h_win=options.get(CONF_HEIGHT_WIN),
+            distance=options.get(CONF_DISTANCE) or 1.0,
+            h_win=options.get(CONF_HEIGHT_WIN) or 2.1,
             window_depth=options.get(
                 CONF_WINDOW_DEPTH, 0.0
             ),  # Default 0.0 for backward compatibility
@@ -128,8 +128,8 @@ class ConfigurationService:
 
         """
         return HorizontalConfig(
-            awn_length=options.get(CONF_LENGTH_AWNING),
-            awn_angle=options.get(CONF_AWNING_ANGLE),
+            awn_length=options.get(CONF_LENGTH_AWNING) or 2.0,
+            awn_angle=options.get(CONF_AWNING_ANGLE) or 0,
         )
 
     def get_tilt_data(self, options: dict) -> TiltConfig:
@@ -144,6 +144,17 @@ class ConfigurationService:
         """
         depth = options.get(CONF_TILT_DEPTH)
         distance = options.get(CONF_TILT_DISTANCE)
+
+        if depth is None or distance is None:
+            _LOGGER.warning(
+                "Tilt cover '%s': slat depth or distance is missing from config "
+                "(depth=%s, distance=%s). Using safe defaults.",
+                self.config_entry.data.get("name"),
+                depth,
+                distance,
+            )
+            depth = depth if depth is not None else 2.5
+            distance = distance if distance is not None else 2.5
 
         # Warn if values are suspiciously small (likely already in meters)
         if depth < 0.1 or distance < 0.1:

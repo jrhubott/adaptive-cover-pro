@@ -165,7 +165,7 @@ class TestSunsetValid:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_daytime_not_sunset(self, mock_dt):
         """Midday is not within sunset offset period."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -175,7 +175,7 @@ class TestSunsetValid:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_after_sunset(self, mock_dt):
         """After sunset is within sunset offset period."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 19, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -194,7 +194,7 @@ class TestDirectSunValid:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun_valid_all_clear(self, mock_dt):
         """All conditions met returns True."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -204,7 +204,7 @@ class TestDirectSunValid:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun_invalid_outside_fov(self, mock_dt):
         """Sun outside FOV returns False."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -223,7 +223,7 @@ class TestControlStateReason:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_direct_sun(self, mock_dt):
         """Direct sun in FOV returns Direct Sun."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -233,7 +233,7 @@ class TestControlStateReason:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_fov_exit(self, mock_dt):
         """Sun outside FOV returns Default: FOV Exit."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -243,7 +243,7 @@ class TestControlStateReason:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_sunset_offset(self, mock_dt):
         """After sunset returns Default: Sunset Offset."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 19, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -253,7 +253,7 @@ class TestControlStateReason:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_elevation_limit(self, mock_dt):
         """Elevation below min returns Default: Elevation Limit."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -264,7 +264,7 @@ class TestControlStateReason:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_blind_spot(self, mock_dt):
         """Sun in blind spot returns Default: Blind Spot."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -287,7 +287,7 @@ class TestDefault:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_default_daytime(self, mock_dt):
         """Daytime returns h_def."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -298,7 +298,7 @@ class TestDefault:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_default_after_sunset_uses_sunset_pos(self, mock_dt):
         """After sunset returns sunset_pos when configured."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 19, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
@@ -309,7 +309,7 @@ class TestDefault:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_default_after_sunset_no_sunset_pos(self, mock_dt):
         """After sunset with no sunset_pos returns h_def."""
-        mock_dt.utcnow.return_value = datetime(2024, 1, 1, 19, 0, 0)
+        mock_dt.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
         sun_data = _make_sun_data()
         sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
         sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)

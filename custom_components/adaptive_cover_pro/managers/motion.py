@@ -158,7 +158,10 @@ class MotionManager:
             refresh_callback: Called after timeout expires if motion is still absent
 
         """
-        await asyncio.sleep(timeout_seconds)
+        try:
+            await asyncio.sleep(timeout_seconds)
+        except asyncio.CancelledError:
+            return
 
         # Double-check: motion may have re-appeared during the sleep
         if self.is_motion_detected:

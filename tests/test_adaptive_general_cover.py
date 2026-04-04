@@ -227,7 +227,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid when all conditions are met."""
         # Setup: sun in FOV, above horizon, before sunset, no blind spot
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -246,7 +246,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid returns False after sunset (reproduces bug scenario)."""
         # Setup: sun still in FOV geometrically, but after sunset time
-        mock_datetime.utcnow.return_value = datetime(
+        mock_datetime.now.return_value = datetime(
             2024, 1, 1, 20, 0, 0
         )  # After sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -269,7 +269,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid returns False when sun in blind spot."""
         # Setup: sun in FOV and before sunset, but in blind spot
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -297,7 +297,7 @@ class TestAdaptiveGeneralCoverProperties:
     def test_direct_sun_valid_outside_fov(self, mock_datetime, vertical_cover_instance):
         """Test direct_sun_valid returns False when sun outside FOV."""
         # Setup: sun outside FOV
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -318,7 +318,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid returns False before sunrise."""
         # Setup: sun geometrically in FOV, but before sunrise
-        mock_datetime.utcnow.return_value = datetime(
+        mock_datetime.now.return_value = datetime(
             2024, 1, 1, 5, 0, 0
         )  # Before sunrise
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -340,7 +340,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid respects sunset offset."""
         # Setup: time is after sunset but within offset
-        mock_datetime.utcnow.return_value = datetime(
+        mock_datetime.now.return_value = datetime(
             2024, 1, 1, 18, 15, 0
         )  # 15 min after sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -357,7 +357,7 @@ class TestAdaptiveGeneralCoverProperties:
         assert vertical_cover_instance.direct_sun_valid is True
 
         # Now test beyond offset
-        mock_datetime.utcnow.return_value = datetime(
+        mock_datetime.now.return_value = datetime(
             2024, 1, 1, 18, 45, 0
         )  # 45 min after sunset
         # Now sunset_valid should be True (after offset)
@@ -370,7 +370,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test default position returns h_def before sunset."""
         # Mock current time before sunset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -387,7 +387,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test default position returns sunset_pos after sunset."""
         # Mock current time after sunset
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 20, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )

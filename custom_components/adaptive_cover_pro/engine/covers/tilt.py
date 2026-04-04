@@ -70,16 +70,35 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         """
         beta = self.beta
 
+        # Guard: discriminant can be negative when slat_distance/depth ratio is
+        # large relative to tan(beta), making sqrt of a negative.  NumPy returns
+        # nan silently; we return 0.0 (closed) as a safe fallback instead.
+        discriminant = (tan(beta) ** 2) - ((self.slat_distance / self.depth) ** 2) + 1
+        if discriminant < 0:
+            self.logger.debug(
+                "Tilt calc: negative discriminant (%.4f) — returning 0° (closed)",
+                float(discriminant),
+            )
+            return 0.0
+
         slat = 2 * np.arctan(
             (
                 tan(beta)
-                + np.sqrt(
-                    (tan(beta) ** 2) - ((self.slat_distance / self.depth) ** 2) + 1
-                )
+                + np.sqrt(discriminant)
             )
             / (1 + self.slat_distance / self.depth)
         )
         result = np.rad2deg(slat)
+
+        # Additional nan guard in case of unexpected floating-point edge cases
+        if np.isnan(result):
+            self.logger.debug(
+                "Tilt calc: NaN result (elev=%.1f°, gamma=%.1f°, beta=%.4f) — returning 0°",
+                self.sol_elev,
+                self.gamma,
+                float(beta),
+            )
+            return 0.0
 
         self.logger.debug(
             "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",

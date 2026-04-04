@@ -54,9 +54,15 @@ class ClimateCoverData:
     def get_current_temperature(self) -> float | None:
         """Get temperature based on configured source (outside/inside)."""
         if self.temp_switch and self.outside_temperature is not None:
-            return float(self.outside_temperature)
+            try:
+                return float(self.outside_temperature)
+            except (ValueError, TypeError):
+                return None
         if self.inside_temperature is not None:
-            return float(self.inside_temperature)
+            try:
+                return float(self.inside_temperature)
+            except (ValueError, TypeError):
+                return None
         return None
 
     @property
@@ -73,7 +79,10 @@ class ClimateCoverData:
             self.temp_summer_outside is not None
             and self.outside_temperature is not None
         ):
-            return float(self.outside_temperature) > self.temp_summer_outside
+            try:
+                return float(self.outside_temperature) > self.temp_summer_outside
+            except (ValueError, TypeError):
+                return True
         return True
 
     @property

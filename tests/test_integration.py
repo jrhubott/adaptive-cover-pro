@@ -198,7 +198,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -248,7 +248,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -296,7 +296,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -383,7 +383,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -470,7 +470,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -531,7 +531,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -582,7 +582,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_vertical_cover(
                 logger=logger,
@@ -634,7 +634,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_horizontal_cover(
                 logger=logger,
@@ -686,7 +686,7 @@ class TestEndToEndIntegration:
         sun_data = _make_sun_data()
 
         with patch(_DATETIME_PATCH) as mock_dt:
-            mock_dt.utcnow.return_value = _NOON
+            mock_dt.now.return_value = _NOON
 
             cover = build_tilt_cover(
                 logger=logger,

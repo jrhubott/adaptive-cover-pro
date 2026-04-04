@@ -199,6 +199,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.control_method = ControlMethod.SOLAR
         self.state_change_data: StateChangedData | None = None
         self.raw_calculated_position = 0  # Store raw position for diagnostics
+        # Initialize state attributes used before first update completes
+        self.default_state: int = 0
+        self.normal_cover_state = None
         self.manager = AdaptiveCoverManager(
             self.hass, self.manual_duration, self.logger
         )
@@ -1021,7 +1024,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Instantiate the appropriate cover calculation class for the current type."""
         sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
         config = self._config_service.get_common_data(options)
-        sol_azi, sol_elev = self.pos_sun
+        _raw_azi, _raw_elev = self.pos_sun
+        sol_azi = _raw_azi if _raw_azi is not None else 0.0
+        sol_elev = _raw_elev if _raw_elev is not None else 0.0
 
         if self.is_blind_cover:
             vert_config = self._config_service.get_vertical_data(options)
@@ -1036,7 +1041,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 config=config,
                 vert_config=vert_config,
             )
-        if self.is_awning_cover:
+        elif self.is_awning_cover:
             cover_data = AdaptiveHorizontalCover(
                 logger=self.logger,
                 sol_azi=sol_azi,
@@ -1046,7 +1051,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 vert_config=self._config_service.get_vertical_data(options),
                 horiz_config=self._config_service.get_horizontal_data(options),
             )
-        if self.is_tilt_cover:
+        elif self.is_tilt_cover:
             cover_data = AdaptiveTiltCover(
                 logger=self.logger,
                 sol_azi=sol_azi,
@@ -1055,6 +1060,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 config=config,
                 tilt_config=self._config_service.get_tilt_data(options),
             )
+        else:
+            msg = f"Unsupported cover type: {self._cover_type!r}"
+            raise ValueError(msg)
         return cover_data
 
     @property

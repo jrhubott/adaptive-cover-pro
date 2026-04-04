@@ -75,7 +75,7 @@ class TestVenetianCoverCalculation:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_standard(self, mock_datetime):
         """Sun at 45° elevation directly in front returns sensible position + tilt."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         calc = _make_venetian(sol_azi=180.0, sol_elev=45.0, win_azi=180)
         result = calc.calculate_dual()
 
@@ -86,7 +86,7 @@ class TestVenetianCoverCalculation:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_returns_integers(self, mock_datetime):
         """calculate_dual always returns integer position and tilt values."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         calc = _make_venetian(sol_azi=180.0, sol_elev=30.0, win_azi=180)
         result = calc.calculate_dual()
 
@@ -100,7 +100,7 @@ class TestVenetianCoverCalculation:
             AdaptiveVerticalCover,
         )
 
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         logger = _make_logger()
         sun_data = _make_sun_data()
@@ -140,7 +140,7 @@ class TestVenetianCoverCalculation:
         """Tilt matches what AdaptiveTiltCover.calculate_percentage() returns (when valid)."""
         from custom_components.adaptive_cover_pro.calculation import AdaptiveTiltCover
 
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         logger = _make_logger()
         sun_data = _make_sun_data()
@@ -192,7 +192,7 @@ class TestVenetianCoverCalculation:
             AdaptiveVerticalCover,
         )
 
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
 
         logger = _make_logger()
         sun_data = _make_sun_data()
@@ -227,7 +227,7 @@ class TestVenetianCoverCalculation:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_sun_outside_fov(self, mock_datetime):
         """When sun is outside FOV, result is a valid DualAxisResult with integers."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         # Sun azimuth 90° away from window facing 180°, well outside ±45° FOV
         calc = _make_venetian(sol_azi=90.0, sol_elev=45.0, win_azi=180)
         result = calc.calculate_dual()
@@ -242,7 +242,7 @@ class TestVenetianCoverCalculation:
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_calculate_dual_tilt_nan_fallback(self, mock_datetime):
         """When tilt geometry produces NaN, result.tilt falls back to 0."""
-        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         # The tilt calculation can produce NaN for certain sun/slat geometries.
         # VenetianCoverCalculation must never propagate NaN to callers.
         calc = _make_venetian(sol_azi=180.0, sol_elev=45.0)

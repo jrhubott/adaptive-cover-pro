@@ -144,7 +144,13 @@ class ClimateProvider:
             value = get_safe_state(self._hass, lux_entity)
             if value is None:
                 return False
-            return float(value) <= lux_threshold
+            try:
+                return float(value) <= lux_threshold
+            except (ValueError, TypeError):
+                self._logger.debug(
+                    "Lux entity %s returned non-numeric value: %r", lux_entity, value
+                )
+                return False
         return False
 
     def _read_irradiance(
@@ -160,7 +166,15 @@ class ClimateProvider:
             value = get_safe_state(self._hass, irradiance_entity)
             if value is None:
                 return False
-            return float(value) <= irradiance_threshold
+            try:
+                return float(value) <= irradiance_threshold
+            except (ValueError, TypeError):
+                self._logger.debug(
+                    "Irradiance entity %s returned non-numeric value: %r",
+                    irradiance_entity,
+                    value,
+                )
+                return False
         return False
 
     def _read_cloud_coverage(
@@ -176,5 +190,13 @@ class ClimateProvider:
             value = get_safe_state(self._hass, cloud_coverage_entity)
             if value is None:
                 return False
-            return float(value) >= cloud_coverage_threshold
+            try:
+                return float(value) >= cloud_coverage_threshold
+            except (ValueError, TypeError):
+                self._logger.debug(
+                    "Cloud coverage entity %s returned non-numeric value: %r",
+                    cloud_coverage_entity,
+                    value,
+                )
+                return False
         return False

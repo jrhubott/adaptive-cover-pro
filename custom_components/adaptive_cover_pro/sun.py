@@ -49,12 +49,30 @@ class SunData:
         return ele_list
 
     def sunset(self) -> datetime:
-        """Fetch sunset time."""
-        return self.location.sunset(date.today(), local=False)
+        """Fetch sunset time.
+
+        Returns a far-future sentinel (midnight tonight) at polar latitudes
+        during midnight sun when astral raises ValueError.
+        """
+        try:
+            return self.location.sunset(date.today(), local=False)
+        except (ValueError, AttributeError):
+            # Polar midnight sun: sun never sets — treat as end of day
+            today = date.today()
+            return datetime(today.year, today.month, today.day, 23, 59, 59)  # noqa: DTZ001
 
     def sunrise(self) -> datetime:
-        """Fetch sunrise time."""
-        return self.location.sunrise(date.today(), local=False)
+        """Fetch sunrise time.
+
+        Returns an early-morning sentinel (00:01 today) at polar latitudes
+        during polar night when astral raises ValueError.
+        """
+        try:
+            return self.location.sunrise(date.today(), local=False)
+        except (ValueError, AttributeError):
+            # Polar night: sun never rises — treat as very early morning
+            today = date.today()
+            return datetime(today.year, today.month, today.day, 0, 1, 0)  # noqa: DTZ001
 
     # def df_today(self)-> pd.DataFrame:
     #     """Create dataframe with azimuth and elevation data"""

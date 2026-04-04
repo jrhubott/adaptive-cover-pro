@@ -95,6 +95,15 @@ class AdaptiveCoverManager:
         if new_position is None:
             new_position = get_open_close_state(self.hass, entity_id)
 
+        # Position still unavailable (entity in transient state like "opening")
+        # — nothing to compare against, skip override detection.
+        if new_position is None:
+            self.logger.debug(
+                "Position unavailable for %s (entity in transient state), skipping override check",
+                entity_id,
+            )
+            return
+
         if new_position != our_state:
             if (
                 manual_threshold is not None
