@@ -701,7 +701,7 @@
       },
       "sync_confirm": {
         "title": "Copy Settings — Confirm",
-        "description": "Your current settings will be saved before copying.\n\nThe following categories will be overwritten:\n\n{categories_summary}\n\nOn these covers:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
+        "description": "Copying settings from **{source_name}**.\n\nThe following categories will be overwritten:\n\n{categories_summary}\n\nOn these covers:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
         "data": {
           "confirm": "Confirm sync"
         }
