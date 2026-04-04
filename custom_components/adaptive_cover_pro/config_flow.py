@@ -2315,6 +2315,7 @@ class OptionsFlowHandler(OptionsFlow):
                 {vol.Required("confirm", default=False): selector.BooleanSelector()}
             ),
             description_placeholders={
+                "source_name": self._config_entry.title,
                 "entries_summary": "\n".join(target_titles) or "(none selected)",
                 "categories_summary": "\n".join(category_lines) or "(none selected)",
             },
