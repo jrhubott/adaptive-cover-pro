@@ -463,10 +463,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         if new_state.state == "on":
             # Motion detected - immediate response
-            was_timeout_active = self._motion_mgr._motion_timeout_active
-            self._motion_mgr.record_motion_detected()
+            # Returns True if timeout was active (expired) or pending (task
+            # still running), so we refresh in both cases, not just when the
+            # timeout had already fully expired.
+            needs_refresh = self._motion_mgr.record_motion_detected()
 
-            if was_timeout_active:
+            if needs_refresh:
                 self.logger.info("Motion detected - resuming automatic sun positioning")
                 self.state_change = True
                 await self.async_refresh()

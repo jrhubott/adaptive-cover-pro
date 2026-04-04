@@ -302,6 +302,158 @@ async def test_async_check_motion_state_change_on():
 
 
 @pytest.mark.asyncio
+async def test_async_check_motion_state_change_on_during_timeout_pending():
+    """Motion detected while timeout is pending (task running, not yet expired).
+
+    This is the core regression test: when motion status is 'timeout_pending',
+    a new motion event must cancel the timeout AND trigger an async_refresh so
+    the cover resumes automatic positioning and the sensor updates immediately.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, _ = _make_coordinator_with_motion_mgr(
+        sensors=["binary_sensor.motion_living_room"]
+    )
+    # Timeout is PENDING: task is running but has NOT expired yet
+    coordinator._motion_mgr._motion_timeout_active = False
+    pending_task = MagicMock()
+    pending_task.done.return_value = False
+    coordinator._motion_mgr._motion_timeout_task = pending_task
+
+    coordinator.state_change = False
+    coordinator.async_refresh = AsyncMock()
+
+    event = MagicMock()
+    event.data = {
+        "entity_id": "binary_sensor.motion_living_room",
+        "new_state": MagicMock(state="on"),
+    }
+
+    await AdaptiveDataUpdateCoordinator.async_check_motion_state_change(
+        coordinator, event
+    )
+
+    # Timeout task must be cancelled
+    pending_task.cancel.assert_called_once()
+    assert coordinator._motion_mgr._motion_timeout_task is None
+
+    # Refresh must be triggered even though _motion_timeout_active was False
+    assert coordinator.state_change is True
+    coordinator.async_refresh.assert_called_once()
+
+    # Active flag must remain False (timeout never expired)
+    assert coordinator._motion_mgr._motion_timeout_active is False
+
+
+@pytest.mark.asyncio
+async def test_async_check_motion_state_change_on_no_timeout_no_refresh():
+    """Motion detected when no timeout is pending or active — no refresh needed.
+
+    Motion-to-motion transitions (sensor stays on, flickers, etc.) should not
+    cause an unnecessary coordinator refresh.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, _ = _make_coordinator_with_motion_mgr(
+        sensors=["binary_sensor.motion_living_room"]
+    )
+    # Neither timeout active nor pending — already in motion_detected state
+    coordinator._motion_mgr._motion_timeout_active = False
+    coordinator._motion_mgr._motion_timeout_task = None
+    coordinator._motion_mgr._last_motion_time = 1700000000.0  # prior motion recorded
+
+    coordinator.state_change = False
+    coordinator.async_refresh = AsyncMock()
+
+    event = MagicMock()
+    event.data = {
+        "entity_id": "binary_sensor.motion_living_room",
+        "new_state": MagicMock(state="on"),
+    }
+
+    await AdaptiveDataUpdateCoordinator.async_check_motion_state_change(
+        coordinator, event
+    )
+
+    # No refresh — was already in motion_detected state
+    assert coordinator.state_change is False
+    coordinator.async_refresh.assert_not_called()
+
+
+# --- MotionManager.record_motion_detected return value tests ---
+
+
+def test_record_motion_detected_returns_true_when_timeout_active():
+    """record_motion_detected returns True when timeout had fully expired."""
+    hass = MagicMock()
+    logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+    mgr._motion_timeout_active = True
+    mgr._motion_timeout_task = None
+
+    result = mgr.record_motion_detected()
+
+    assert result is True
+    assert mgr._motion_timeout_active is False
+
+
+def test_record_motion_detected_returns_true_when_task_pending():
+    """record_motion_detected returns True when timeout task was still running."""
+    hass = MagicMock()
+    logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+    mgr._motion_timeout_active = False
+    task = MagicMock()
+    task.done.return_value = False
+    mgr._motion_timeout_task = task
+
+    result = mgr.record_motion_detected()
+
+    assert result is True
+    assert mgr._motion_timeout_active is False
+    assert mgr._motion_timeout_task is None
+    task.cancel.assert_called_once()
+
+
+def test_record_motion_detected_returns_false_when_no_timeout():
+    """record_motion_detected returns False when no timeout was pending or active."""
+    hass = MagicMock()
+    logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+    mgr._motion_timeout_active = False
+    mgr._motion_timeout_task = None
+
+    result = mgr.record_motion_detected()
+
+    assert result is False
+    assert mgr.last_motion_time is not None
+
+
+def test_record_motion_detected_returns_false_when_task_done():
+    """record_motion_detected returns False when timeout task had already completed."""
+    hass = MagicMock()
+    logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=logger)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+    mgr._motion_timeout_active = False
+    task = MagicMock()
+    task.done.return_value = True  # task completed but flag somehow not set
+    mgr._motion_timeout_task = task
+
+    result = mgr.record_motion_detected()
+
+    # done() task is treated the same as no task — not pending
+    assert result is False
+
+
+@pytest.mark.asyncio
 async def test_async_check_motion_state_change_off():
     """Test motion state change handler for motion stopped."""
     from custom_components.adaptive_cover_pro.coordinator import (
