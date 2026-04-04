@@ -23,6 +23,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
 | [#121](https://github.com/jrhubott/adaptive-cover-pro/pull/121) | `fix/issue-116-reconciliation-ignores-manual-override` | [#116](https://github.com/jrhubott/adaptive-cover-pro/issues/116) | [v2.13.8-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.1) | 🟡 Awaiting user confirmation | Reconciliation ignored manual override; user asked to test beta |
+| — | `fix/motion-status-waiting-for-data-on-reload` | — | [v2.13.8-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.2) | 🟡 Awaiting user confirmation | Motion Status shows waiting_for_data after reload when sensor is on |
 
 ## Open Issues
 
@@ -49,6 +50,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.13.8-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.2) | 2026-04-04 | Fix: Motion Status no longer shows waiting_for_data after reload when sensor is on. |
 | [v2.13.7](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.7) | 2026-04-04 | Fix: motion timeout pending state now properly detects new motion events (#119). |
 | [v2.13.6](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6) | 2026-04-04 | Reset button time_delta_too_small gate, manual override reset position (climate-aware). |
 | [v2.13.6-beta.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6-beta.4) | 2026-04-04 | Fix: reset button time_delta_too_small gate now bypassed with force=True. |
