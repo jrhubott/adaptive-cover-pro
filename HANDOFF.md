@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-05
-**Current Version:** v2.13.8-beta.4
+**Current Version:** v2.13.8
 **Branch:** `main` (stable)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -47,6 +47,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.13.8](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8) | 2026-04-05 | Config summary sunrise display, position settings reorganization, false manual override fix. |
 | [v2.13.8-beta.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.4) | 2026-04-05 | Config summary sunrise display + position settings reorganization (PR #124). |
 | [v2.13.8-beta.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.3) | 2026-04-04 | Fix: false manual override on automation positioning (race condition). |
 | [v2.13.8-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.2) | 2026-04-04 | Fix: Motion Status no longer shows waiting_for_data after reload when sensor is on. |
