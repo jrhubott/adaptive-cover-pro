@@ -189,6 +189,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.first_refresh = False
         self._weather_readings: ClimateReadings | None = None
         self.state_change_data: StateChangedData | None = None
+        # Entities whose target was just reached in the current state-change event.
+        # When process_entity_state_change() clears wait_for_target because the cover
+        # reached its commanded position (within tolerance), the same event also
+        # triggers async_handle_cover_state_change() with wait_for_target already
+        # False.  Without this guard the cover's final resting position (which may
+        # differ from the commanded value by up to POSITION_TOLERANCE_PERCENT) is
+        # immediately flagged as a manual override.  Cleared at the end of each
+        # async_handle_cover_state_change() call.
+        self._target_just_reached: set[str] = set()
         # Cover engine object — populated at start of each update cycle
         self._cover_data = None
         self.manager = AdaptiveCoverManager(
@@ -507,7 +516,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             position = self._cmd_svc.read_position_with_capabilities(
                 entity_id, caps, event.new_state
             )
-            self._cmd_svc.check_target_reached(entity_id, position)
+            reached = self._cmd_svc.check_target_reached(entity_id, position)
+            if reached:
+                # Mark this entity so async_handle_cover_state_change() skips the
+                # manual override comparison for this event.  The cover has just
+                # settled at its commanded position (within position tolerance) —
+                # any small positional difference is motor rounding, not a user
+                # action.  The set is cleared at the end of that handler.
+                self._target_just_reached.add(entity_id)
+                self.logger.debug(
+                    "Target just reached for %s — skipping manual override check for this event",
+                    entity_id,
+                )
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
@@ -886,6 +906,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
             # Get the entity_id from state_change_data
             entity_id = self.state_change_data.entity_id
+
+            # Skip manual override detection when the cover just reached its
+            # commanded target in this same event.  process_entity_state_change()
+            # adds the entity to _target_just_reached when check_target_reached()
+            # clears wait_for_target; without this guard the small positional
+            # difference allowed by POSITION_TOLERANCE_PERCENT would be
+            # misidentified as a user-initiated manual override.
+            if entity_id in self._target_just_reached:
+                self._target_just_reached.discard(entity_id)
+                self.logger.debug(
+                    "Skipping manual override check for %s — cover just reached commanded target",
+                    entity_id,
+                )
+                self.cover_state_change = False
+                return
 
             # Use target_call if available (contains actual sent position),
             # otherwise fall back to calculated state.
