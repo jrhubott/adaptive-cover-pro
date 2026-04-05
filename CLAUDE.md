@@ -408,7 +408,7 @@ The release script automates version management, git tagging, and GitHub release
 | `--force-branch` | | Skip branch validation (use with caution) |
 | `--help` | `-h` | Show help text and exit |
 
-**Note:** `--editor` option exists in script but should **NOT** be used per CLAUDE.md guidelines. Always use `--notes` parameter instead.
+**Note:** `--editor` option exists in script but should **NOT** be used. Always use `--notes` parameter instead.
 
 ### Common Usage Patterns
 
@@ -568,7 +568,6 @@ Always update docs alongside code changes:
 3. Read in `coordinator.py` from `self.config_entry.options`
 4. Expose via sensor/switch if needed
 5. Add translations to `translations/en.json` (and other languages if feasible)
-6. Update `CLAUDE.md` Configuration Structure section
 
 **Optional numeric fields:** Use `NumberSelectorMode.SLIDER` (not `BOX`) with `vol.Optional` and no default. BOX mode does not preserve `None` — clearing the field saves `0`. Sliders correctly return `None` when empty. Code consuming the value must check `if value is not None` (not `if value`) to distinguish 0% from unset.
 
