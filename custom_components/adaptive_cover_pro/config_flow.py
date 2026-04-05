@@ -344,14 +344,20 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Required(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
+        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes"
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
             )
         ),
-        vol.Required(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
+        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes"
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
             )
         ),
         vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
@@ -370,7 +376,7 @@ POSITION_SCHEMA = vol.Schema(
 
 AUTOMATION_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_DELTA_POSITION, default=1): selector.NumberSelector(
+        vol.Required(CONF_DELTA_POSITION, default=2): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
                 max=90,
@@ -382,6 +388,7 @@ AUTOMATION_SCHEMA = vol.Schema(
         vol.Optional(CONF_DELTA_TIME, default=2): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=2,
+                max=60,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="minutes",
             )
@@ -628,16 +635,16 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
         vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
         ),
-        vol.Required(CONF_TEMP_LOW, default=21): selector.NumberSelector(
+        vol.Optional(CONF_TEMP_LOW, default=21): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
-                max=86,
+                max=90,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="°",
             )
         ),
-        vol.Required(CONF_TEMP_HIGH, default=25): selector.NumberSelector(
+        vol.Optional(CONF_TEMP_HIGH, default=25): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=90,
@@ -651,7 +658,7 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["sensor"])
         ),
-        vol.Optional(CONF_OUTSIDE_THRESHOLD, default=0): selector.NumberSelector(
+        vol.Optional(CONF_OUTSIDE_THRESHOLD, default=25): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=100,
@@ -2196,10 +2203,10 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Override Controls (priority order: highest → lowest) ─────
         menu_options.extend(
             [
-                "force_override",       # Priority 100
-                "weather_override",     # Priority 90
-                "motion_override",      # Priority 80
-                "manual_override",      # Priority 70
+                "force_override",  # Priority 100
+                "weather_override",  # Priority 90
+                "motion_override",  # Priority 80
+                "manual_override",  # Priority 70
             ]
         )
 
