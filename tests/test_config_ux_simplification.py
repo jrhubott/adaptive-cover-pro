@@ -23,6 +23,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     TEMPERATURE_CLIMATE_SCHEMA,
     _build_config_summary,
     _extract_shared_options,
+    _SYNC_UI_CATEGORIES,
 )
 from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
@@ -229,6 +230,37 @@ class TestSyncCategoriesSplit:
         assert CONF_CLIMATE_MODE in result
         assert CONF_TEMP_LOW in result
         assert CONF_LUX_ENTITY not in result
+
+    def test_sync_ui_excludes_legacy_climate(self):
+        """Sync UI categories list does NOT contain legacy 'climate'."""
+        assert "climate" not in _SYNC_UI_CATEGORIES
+
+    def test_sync_ui_excludes_legacy_weather(self):
+        """Sync UI categories list does NOT contain legacy 'weather'."""
+        assert "weather" not in _SYNC_UI_CATEGORIES
+
+    def test_sync_ui_includes_light_cloud(self):
+        """Sync UI categories list contains light_cloud."""
+        assert "light_cloud" in _SYNC_UI_CATEGORIES
+
+    def test_sync_ui_includes_temperature_climate(self):
+        """Sync UI categories list contains temperature_climate."""
+        assert "temperature_climate" in _SYNC_UI_CATEGORIES
+
+    def test_sync_ui_categories_all_exist_in_sync_categories(self):
+        """Every UI category must have a matching key in SYNC_CATEGORIES."""
+        for cat in _SYNC_UI_CATEGORIES:
+            assert cat in SYNC_CATEGORIES, f"{cat} missing from SYNC_CATEGORIES"
+
+    def test_sync_ui_covers_all_non_legacy_keys(self):
+        """Sync UI categories cover every config key that the legacy categories covered."""
+        legacy_keys = SYNC_CATEGORIES["climate"] | SYNC_CATEGORIES["weather"]
+        ui_keys = (
+            SYNC_CATEGORIES["light_cloud"] | SYNC_CATEGORIES["temperature_climate"]
+        )
+        assert legacy_keys <= ui_keys, (
+            f"Keys in legacy but not in UI categories: {legacy_keys - ui_keys}"
+        )
 
 
 # ---------------------------------------------------------------------------

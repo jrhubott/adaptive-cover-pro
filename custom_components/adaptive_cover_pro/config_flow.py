@@ -1367,6 +1367,26 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
 }
 
+# Categories shown in the sync selector UI.  Excludes legacy aliases
+# ("climate", "weather") whose keys are now covered by "light_cloud" and
+# "temperature_climate".  The legacy keys remain in SYNC_CATEGORIES so
+# _extract_shared_options still works for programmatic callers.
+_SYNC_UI_CATEGORIES: list[str] = [
+    "geometry",
+    "sun_tracking",
+    "blind_spot",
+    "position",
+    "interp",
+    "automation",
+    "manual_override",
+    "force_override",
+    "motion_override",
+    "weather_override",
+    "light_cloud",
+    "temperature_climate",
+    "glare_zones",
+]
+
 
 def _extract_shared_options(
     entry: ConfigEntry,
@@ -2397,8 +2417,9 @@ class OptionsFlowHandler(OptionsFlow):
 
         available = [
             cat
-            for cat, keys in SYNC_CATEGORIES.items()
-            if any(k in self._config_entry.options for k in keys)
+            for cat in _SYNC_UI_CATEGORIES
+            if cat in SYNC_CATEGORIES
+            and any(k in self._config_entry.options for k in SYNC_CATEGORIES[cat])
         ]
 
         if user_input is not None:
@@ -2480,8 +2501,9 @@ class OptionsFlowHandler(OptionsFlow):
             "force_override": "Force Override",
             "motion_override": "Motion Override",
             "weather_override": "Weather Override",
-            "climate": "Climate",
-            "weather": "Weather Conditions",
+            "light_cloud": "Light Sensors & Cloud Suppression",
+            "temperature_climate": "Temperature & Climate Mode",
+            "glare_zones": "Glare Zones",
         }
         category_lines = [
             f"• {_category_labels.get(c, c)}" for c in self.selected_sync_categories
