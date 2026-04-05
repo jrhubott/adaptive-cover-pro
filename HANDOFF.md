@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-04
-**Current Version:** v2.13.7
+**Date:** 2026-04-05
+**Current Version:** v2.13.8-beta.4
 **Branch:** `main` (stable)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -10,27 +10,24 @@
 ---
 
 **Recent Merges:**
+- `feature/summary-sunrise-position` — Config summary sunrise display + position settings reorganization (PR #124, merged to main).
+- `fix/false-manual-override-on-automation-position` — False manual override race condition fix (PR #121, merged to main).
 - `fix/motion-timeout-pending-ignores-new-motion` — Motion timeout pending state fix (PR #119, merged to main).
-- `fix/manual-override-position-not-restored` — Manual override reset fixes (PR #117, merged to main).
 
 ## Tests
 
-**1106 passing, 0 failing** (+6 new tests for reconciliation manual override fix).
+**1136 passing, 0 failing** (+13 new tests for sunrise/sunset display, +519 for false manual override, +53 for motion control, +136 for position reconciliation).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
 
-| PR | Branch | Issue | Beta | Status | Notes |
-|----|--------|-------|------|--------|-------|
-| [#121](https://github.com/jrhubott/adaptive-cover-pro/pull/121) | `fix/issue-116-reconciliation-ignores-manual-override` | [#116](https://github.com/jrhubott/adaptive-cover-pro/issues/116) | [v2.13.8-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.1) | 🟡 Awaiting user confirmation | Reconciliation ignored manual override; user asked to test beta |
-| — | `fix/motion-status-waiting-for-data-on-reload` | — | [v2.13.8-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.2) | 🟡 Awaiting user confirmation | Motion Status shows waiting_for_data after reload when sensor is on |
+*(None at this time.)*
 
 ## Open Issues
 
 | # | Title | Notes |
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
-| [#116](https://github.com/jrhubott/adaptive-cover-pro/issues/116) | Manual override not working when force override sensor configured | Fix in progress on `fix/issue-116-reconciliation-ignores-manual-override`. |
 
 ## Known Gotchas
 
@@ -50,6 +47,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.13.8-beta.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.4) | 2026-04-05 | Config summary sunrise display + position settings reorganization (PR #124). |
+| [v2.13.8-beta.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.3) | 2026-04-04 | Fix: false manual override on automation positioning (race condition). |
 | [v2.13.8-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.2) | 2026-04-04 | Fix: Motion Status no longer shows waiting_for_data after reload when sensor is on. |
 | [v2.13.7](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.7) | 2026-04-04 | Fix: motion timeout pending state now properly detects new motion events (#119). |
 | [v2.13.6](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.6) | 2026-04-04 | Reset button time_delta_too_small gate, manual override reset position (climate-aware). |
