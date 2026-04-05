@@ -103,7 +103,11 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
-from .managers.cover_command import CoverCommandService, PositionContext, build_special_positions
+from .managers.cover_command import (
+    CoverCommandService,
+    PositionContext,
+    build_special_positions,
+)
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
@@ -329,9 +333,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if any configured force override sensor is in "on" state
 
         """
-        return any(
-            self._read_force_sensor_states(self.config_entry.options).values()
-        )
+        return any(self._read_force_sensor_states(self.config_entry.options).values())
 
     @property
     def is_motion_detected(self) -> bool:
@@ -621,7 +623,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)  # None when not configured
         sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-        sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+        sunrise_off = int(
+            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+        )
         effective_default, is_sunset_active = compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -885,7 +889,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Send position commands to all covers when a tracked entity changes."""
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
+            ctx = self._build_position_context(
+                cover, options, sun_just_appeared=sun_just_appeared
+            )
             await self._cmd_svc.apply_position(cover, state, "solar", context=ctx)
         self.state_change = False
         self.logger.debug("State change handled")
@@ -943,7 +949,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Set target positions and send initial positioning commands after startup."""
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
+            ctx = self._build_position_context(
+                cover, options, sun_just_appeared=sun_just_appeared
+            )
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
         self.logger.debug("First refresh handled")
@@ -1313,6 +1321,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         to all covers.  The command bypasses all gate checks so covers move
         immediately regardless of delta/time thresholds.
         """
+
         async def _on_window_closed() -> None:
             """Force-send effective default when end time is reached."""
             if not self._track_end_time:
@@ -1322,7 +1331,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
             sunset_pos_cfg = options.get(CONF_SUNSET_POS)
             sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-            sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+            sunrise_off = int(
+                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+            )
             cover_data = self.get_blind_data(options=options)
             effective_pos, is_sunset = compute_effective_default(
                 h_def=h_def,
@@ -1331,7 +1342,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 sunset_off=sunset_off,
                 sunrise_off=sunrise_off,
             )
-            pos_to_send = inverse_state(effective_pos) if self._inverse_state else effective_pos
+            pos_to_send = (
+                inverse_state(effective_pos) if self._inverse_state else effective_pos
+            )
             self.logger.info(
                 "End time reached — force-sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",

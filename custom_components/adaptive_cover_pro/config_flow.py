@@ -484,7 +484,6 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 max=200,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
-
             )
         ),
         vol.Optional(
@@ -510,7 +509,6 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 max=100,
                 step=0.5,
                 mode=selector.NumberSelectorMode.SLIDER,
-
             )
         ),
         vol.Optional(
@@ -551,13 +549,39 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-CLIMATE_SCHEMA = vol.Schema(
+# --- Light & Cloud (works without climate mode) ---
+LIGHT_CLOUD_SCHEMA = vol.Schema(
     {
-        # --- Light & Weather (works without climate mode) ---
         vol.Optional(
             CONF_WEATHER_ENTITY, default=vol.UNDEFINED
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain="weather")
+        ),
+        vol.Optional(
+            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                multiple=True,
+                sort=False,
+                options=[
+                    "clear-night",
+                    "clear",
+                    "cloudy",
+                    "fog",
+                    "hail",
+                    "lightning",
+                    "lightning-rainy",
+                    "partlycloudy",
+                    "pouring",
+                    "rainy",
+                    "snowy",
+                    "snowy-rainy",
+                    "sunny",
+                    "windy",
+                    "windy-variant",
+                    "exceptional",
+                ],
+            )
         ),
         vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(
@@ -594,7 +618,12 @@ CLIMATE_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
-        # --- Climate Mode (temperature-based control) ---
+    }
+)
+
+# --- Temperature Climate Mode ---
+TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
+    {
         vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
@@ -641,6 +670,14 @@ CLIMATE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_WINTER_CLOSE_INSULATION, default=False
         ): selector.BooleanSelector(),
+    }
+)
+
+# Combined schema for backward compatibility (used by SYNC_CATEGORIES)
+CLIMATE_SCHEMA = vol.Schema(
+    {
+        **dict(LIGHT_CLOUD_SCHEMA.schema.items()),
+        **dict(TEMPERATURE_CLIMATE_SCHEMA.schema.items()),
     }
 )
 
@@ -1075,6 +1112,29 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         lines.append(" · ".join(limit_parts))
 
     # =========================================================================
+    # Section 3b: Position Map (what position in each scenario)
+    # =========================================================================
+    lines.append("")
+    lines.append("**Position Map** (what your covers do in each situation)")
+
+    pos_map: list[str] = []
+    if has_force:
+        pos_map.append(f"🔒 Safety override active → {force_pos}%")
+    if has_weather:
+        pos_map.append(f"🌧️ Weather danger → {weather_pos}%")
+    pos_map.append("☀️ Tracking sun → calculated position")
+    min_p = config.get(CONF_MIN_POSITION, 0)
+    max_p = config.get(CONF_MAX_POSITION, 100)
+    if min_p != 0 or max_p != 100:
+        pos_map.append(f"   (clamped to {min_p}%–{max_p}%)")
+    sunset_pos = config.get(CONF_SUNSET_POS)
+    if sunset_pos is not None:
+        pos_map.append(f"🌅 After sunset → {sunset_pos}%")
+    pos_map.append(f"🌙 No sun / default → {default_pos}%")
+    for line in pos_map:
+        lines.append(line)
+
+    # =========================================================================
     # Section 4: Decision Priority (compact reference)
     # =========================================================================
     def _ch(active: bool, short: str, pri: int) -> str:
@@ -1231,6 +1291,33 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_TIMEOUT,
         }
     ),
+    "light_cloud": frozenset(
+        {
+            CONF_WEATHER_ENTITY,
+            CONF_WEATHER_STATE,
+            CONF_LUX_ENTITY,
+            CONF_LUX_THRESHOLD,
+            CONF_IRRADIANCE_ENTITY,
+            CONF_IRRADIANCE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_ENTITY,
+            CONF_CLOUD_COVERAGE_THRESHOLD,
+            CONF_CLOUD_SUPPRESSION,
+        }
+    ),
+    "temperature_climate": frozenset(
+        {
+            CONF_CLIMATE_MODE,
+            CONF_TEMP_ENTITY,
+            CONF_TEMP_LOW,
+            CONF_TEMP_HIGH,
+            CONF_OUTSIDETEMP_ENTITY,
+            CONF_OUTSIDE_THRESHOLD,
+            CONF_PRESENCE_ENTITY,
+            CONF_TRANSPARENT_BLIND,
+            CONF_WINTER_CLOSE_INSULATION,
+        }
+    ),
+    # Legacy alias for backward compat
     "climate": frozenset(
         {
             CONF_WEATHER_ENTITY,
@@ -1394,6 +1481,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self.config: dict[str, Any] = {}
         self.mode: str = "basic"
         self.selected_source_entry_id: str | None = None
+        self.setup_mode: str = "quick"  # "quick" or "full"
 
     def optional_entities(self, keys: list, user_input: dict[str, Any]) -> None:
         """Set value to None if key does not exist in user_input."""
@@ -1422,11 +1510,28 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input:
             self.config = user_input
             self.type_blind = self.config[CONF_MODE]
-            return await self.async_step_cover_entities()
+            return await self.async_step_setup_mode()
         return self.async_show_form(
             step_id="create_new",
             data_schema=CONFIG_SCHEMA,
         )
+
+    async def async_step_setup_mode(self, user_input: dict[str, Any] | None = None):
+        """Choose between quick and full setup."""
+        return self.async_show_menu(
+            step_id="setup_mode",
+            menu_options=["quick_setup", "full_setup"],
+        )
+
+    async def async_step_quick_setup(self, user_input: dict[str, Any] | None = None):
+        """Start quick setup — minimal steps."""
+        self.setup_mode = "quick"
+        return await self.async_step_cover_entities()
+
+    async def async_step_full_setup(self, user_input: dict[str, Any] | None = None):
+        """Start full setup — all configuration steps."""
+        self.setup_mode = "full"
+        return await self.async_step_cover_entities()
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Select cover entities."""
@@ -1542,6 +1647,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure position settings."""
         if user_input is not None:
             self.config.update(user_input)
+            # Quick setup: skip optional screens, go straight to summary
+            if self.setup_mode == "quick":
+                return await self.async_step_summary()
             if self.config.get(CONF_ENABLE_BLIND_SPOT):
                 return await self.async_step_blind_spot()
             if self.type_blind == SensorType.BLIND:
@@ -1674,13 +1782,56 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 user_input,
             )
             self.config.update(user_input)
-            return await self.async_step_climate()
+            return await self.async_step_light_cloud()
         return self.async_show_form(
             step_id="weather_override", data_schema=WEATHER_OVERRIDE_SCHEMA
         )
 
+    async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
+        """Configure light sensors, weather conditions, and cloud suppression."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_ENTITY,
+                    CONF_LUX_ENTITY,
+                    CONF_IRRADIANCE_ENTITY,
+                    CONF_CLOUD_COVERAGE_ENTITY,
+                ],
+                user_input,
+            )
+            self.config.update(user_input)
+            return await self.async_step_temperature_climate()
+        return self.async_show_form(
+            step_id="light_cloud", data_schema=LIGHT_CLOUD_SCHEMA
+        )
+
+    async def async_step_temperature_climate(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure temperature-based climate mode."""
+        if user_input is not None:
+            entities = [
+                CONF_TEMP_ENTITY,
+                CONF_OUTSIDETEMP_ENTITY,
+                CONF_PRESENCE_ENTITY,
+            ]
+            self.optional_entities(entities, user_input)
+            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
+                CONF_TEMP_ENTITY
+            ):
+                return self.async_show_form(
+                    step_id="temperature_climate",
+                    data_schema=TEMPERATURE_CLIMATE_SCHEMA,
+                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                )
+            self.config.update(user_input)
+            return await self.async_step_summary()
+        return self.async_show_form(
+            step_id="temperature_climate", data_schema=TEMPERATURE_CLIMATE_SCHEMA
+        )
+
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
-        """Manage climate options."""
+        """Manage climate options (combined, for backward compat with options flow)."""
         if user_input is not None:
             entities = [
                 CONF_TEMP_ENTITY,
@@ -2002,10 +2153,9 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Schedule & Automation ────────────────────────────────────
         menu_options.append("automation")
 
-        # ── Climate & Weather ────────────────────────────────────────
-        menu_options.append("climate")
-        if self.options.get(CONF_WEATHER_ENTITY):
-            menu_options.append("weather")
+        # ── Light, Climate & Weather ────────────────────────────────
+        menu_options.append("light_cloud")
+        menu_options.append("temperature_climate")
 
         # ── Override Controls ────────────────────────────────────────
         menu_options.extend(
@@ -2017,12 +2167,14 @@ class OptionsFlowHandler(OptionsFlow):
             ]
         )
 
+        # ── Multi-Cover Management ──────────────────────────────────
+        menu_options.append("sync")
+
         # ── Admin ────────────────────────────────────────────────────
         menu_options.extend(
             [
                 "device",
                 "summary",
-                "sync",
                 "done",
             ]
         )
@@ -2421,8 +2573,59 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         )
 
+    async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
+        """Manage light sensors, weather conditions, and cloud suppression."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_ENTITY,
+                    CONF_LUX_ENTITY,
+                    CONF_IRRADIANCE_ENTITY,
+                    CONF_CLOUD_COVERAGE_ENTITY,
+                ],
+                user_input,
+            )
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="light_cloud",
+            data_schema=self.add_suggested_values_to_schema(
+                LIGHT_CLOUD_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_temperature_climate(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage temperature-based climate mode."""
+        if user_input is not None:
+            entities = [
+                CONF_TEMP_ENTITY,
+                CONF_OUTSIDETEMP_ENTITY,
+                CONF_PRESENCE_ENTITY,
+            ]
+            self.optional_entities(entities, user_input)
+            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
+                CONF_TEMP_ENTITY
+            ):
+                return self.async_show_form(
+                    step_id="temperature_climate",
+                    data_schema=self.add_suggested_values_to_schema(
+                        TEMPERATURE_CLIMATE_SCHEMA, user_input or self.options
+                    ),
+                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                )
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="temperature_climate",
+            data_schema=self.add_suggested_values_to_schema(
+                TEMPERATURE_CLIMATE_SCHEMA, user_input or self.options
+            ),
+        )
+
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
-        """Manage climate options."""
+        """Manage climate options (legacy combined step, kept for backward compat)."""
         if user_input is not None:
             entities = [
                 CONF_TEMP_ENTITY,
