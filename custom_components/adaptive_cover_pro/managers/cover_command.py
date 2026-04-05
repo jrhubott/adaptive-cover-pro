@@ -344,6 +344,14 @@ class CoverCommandService:
             )
             return True
 
+        if position == target:
+            self._logger.debug(
+                "Delta check: %s already at target %s%% — no command needed",
+                entity,
+                target,
+            )
+            return False  # Cover is already at the desired position; skip regardless of special status
+
         if target in special_positions:
             self._logger.debug(
                 "Delta check bypassed (special target %s): %s", target, entity
@@ -980,8 +988,12 @@ class CoverCommandService:
 def build_special_positions(options: dict) -> list[int]:
     """Build list of special positions from options.
 
-    Special positions (0, 100, default_height, sunset_pos) bypass the delta
-    check so covers always reposition at key values.
+    Special positions (0, 100, default_height, sunset_pos) bypass the
+    *delta-threshold* check so covers are always allowed to transition
+    TO or FROM these key values even when the position change is smaller
+    than ``min_change``.  They do NOT bypass the same-position short-circuit
+    added in ``_check_position_delta`` — if the cover is already at the
+    target, no command is sent regardless of whether the target is special.
 
     """
     special_positions = [0, 100]

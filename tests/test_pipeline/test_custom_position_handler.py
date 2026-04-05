@@ -1,4 +1,4 @@
-"""Tests for CustomPositionHandler."""
+"""Tests for CustomPositionHandler (per-instance model)."""
 
 from __future__ import annotations
 
@@ -11,182 +11,228 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 
 from .conftest import make_snapshot
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-@pytest.fixture()
-def handler() -> CustomPositionHandler:
-    """Return a CustomPositionHandler instance."""
-    return CustomPositionHandler()
+_ENTITY = "binary_sensor.scene_a"
+_DEFAULT_PRIORITY = 77
+
+
+def _handler(
+    slot: int = 1,
+    entity_id: str = _ENTITY,
+    position: int = 50,
+    priority: int = _DEFAULT_PRIORITY,
+) -> CustomPositionHandler:
+    """Create a CustomPositionHandler with sensible defaults."""
+    return CustomPositionHandler(
+        slot=slot,
+        entity_id=entity_id,
+        position=position,
+        priority=priority,
+    )
+
+
+def _snapshot_with(entity_id: str, is_on: bool, position: int = 50, priority: int = _DEFAULT_PRIORITY):
+    """Build a snapshot with a single custom position sensor entry."""
+    return make_snapshot(
+        custom_position_sensors=[(entity_id, is_on, position, priority)]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Handler metadata
+# ---------------------------------------------------------------------------
 
 
 class TestHandlerMetadata:
     """Verify static handler properties."""
 
-    def test_priority(self, handler: CustomPositionHandler) -> None:
-        """Handler priority must be 77 (between manual override 80 and motion timeout 75)."""
-        assert handler.priority == 77
+    def test_name_includes_slot(self) -> None:
+        """name must be 'custom_position_<slot>'."""
+        assert _handler(slot=1).name == "custom_position_1"
+        assert _handler(slot=2).name == "custom_position_2"
+        assert _handler(slot=4).name == "custom_position_4"
 
-    def test_name(self, handler: CustomPositionHandler) -> None:
-        """Handler name must be 'custom_position'."""
-        assert handler.name == "custom_position"
+    def test_default_priority(self) -> None:
+        """Default priority must be 77."""
+        assert _handler().priority == _DEFAULT_PRIORITY
+
+    def test_custom_priority_stored(self) -> None:
+        """Priority passed to constructor is stored correctly."""
+        assert _handler(priority=95).priority == 95
+        assert _handler(priority=35).priority == 35
+        assert _handler(priority=1).priority == 1
+
+    def test_priority_range_high(self) -> None:
+        """Priority 99 is accepted (above all built-in handlers)."""
+        h = _handler(priority=99)
+        assert h.priority == 99
+
+    def test_priority_range_low(self) -> None:
+        """Priority 1 is accepted (just above default handler 0)."""
+        h = _handler(priority=1)
+        assert h.priority == 1
 
 
-class TestEvaluateNoSensors:
-    """Handler passes through when no sensors are configured."""
+# ---------------------------------------------------------------------------
+# Evaluate — sensor not in snapshot
+# ---------------------------------------------------------------------------
 
-    def test_returns_none_when_list_empty(self, handler: CustomPositionHandler) -> None:
-        """Returns None when custom_position_sensors is empty."""
+
+class TestEvaluateNoMatchingEntity:
+    """Handler passes through when its entity_id is not in the snapshot."""
+
+    def test_returns_none_when_empty_list(self) -> None:
         snapshot = make_snapshot(custom_position_sensors=[])
-        assert handler.evaluate(snapshot) is None
+        assert _handler().evaluate(snapshot) is None
 
-    def test_describe_skip_not_configured(self, handler: CustomPositionHandler) -> None:
-        """describe_skip reports 'not configured' when list is empty."""
+    def test_returns_none_when_entity_absent(self) -> None:
+        """Different entity_id in snapshot — handler's sensor not present."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[("binary_sensor.other", True, 50, 77)]
+        )
+        assert _handler(entity_id=_ENTITY).evaluate(snapshot) is None
+
+    def test_describe_skip_mentions_slot_and_entity(self) -> None:
         snapshot = make_snapshot(custom_position_sensors=[])
-        assert handler.describe_skip(snapshot) == "custom positions not configured"
+        skip = _handler(slot=2, entity_id="binary_sensor.blackout").describe_skip(snapshot)
+        assert "#2" in skip
+        assert "binary_sensor.blackout" in skip
 
 
-class TestEvaluateAllOff:
-    """Handler passes through when all sensors are off."""
-
-    def test_returns_none_when_all_off(self, handler: CustomPositionHandler) -> None:
-        """Returns None when all sensors report is_on=False."""
-        sensors = [
-            ("binary_sensor.slot1", False, 30),
-            ("binary_sensor.slot2", False, 60),
-        ]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        assert handler.evaluate(snapshot) is None
-
-    def test_describe_skip_none_active(self, handler: CustomPositionHandler) -> None:
-        """describe_skip reports 'no active sensor' when sensors are configured but all off."""
-        sensors = [("binary_sensor.slot1", False, 50)]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        assert handler.describe_skip(snapshot) == "no custom position sensor active"
+# ---------------------------------------------------------------------------
+# Evaluate — sensor present but off
+# ---------------------------------------------------------------------------
 
 
-class TestEvaluateSingleSensor:
-    """Handler returns correct position for a single active sensor."""
+class TestEvaluateSensorOff:
+    """Handler passes through when its sensor is present but off."""
 
-    def test_sensor_on_returns_position(self, handler: CustomPositionHandler) -> None:
-        """Returns configured position when the sensor is on."""
-        sensors = [("binary_sensor.scene_a", True, 45)]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
+    def test_returns_none_when_off(self) -> None:
+        snapshot = _snapshot_with(_ENTITY, is_on=False)
+        assert _handler(entity_id=_ENTITY).evaluate(snapshot) is None
+
+
+# ---------------------------------------------------------------------------
+# Evaluate — sensor present and on
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluateSensorOn:
+    """Handler returns the configured position when its sensor is on."""
+
+    def test_returns_configured_position(self) -> None:
+        snapshot = _snapshot_with(_ENTITY, is_on=True, position=45)
+        result = _handler(entity_id=_ENTITY, position=45).evaluate(snapshot)
         assert result is not None
         assert result.position == 45
 
-    def test_control_method(self, handler: CustomPositionHandler) -> None:
-        """Result uses CUSTOM_POSITION control method."""
-        sensors = [("binary_sensor.scene_a", True, 45)]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
+    def test_control_method_is_custom_position(self) -> None:
+        snapshot = _snapshot_with(_ENTITY, is_on=True, position=30)
+        result = _handler(entity_id=_ENTITY, position=30).evaluate(snapshot)
         assert result is not None
         assert result.control_method == ControlMethod.CUSTOM_POSITION
 
-    def test_reason_contains_entity_and_position(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """Reason string includes the entity_id and position."""
-        sensors = [("binary_sensor.morning_scene", True, 70)]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
+    def test_reason_contains_slot_entity_and_position(self) -> None:
+        snapshot = _snapshot_with("binary_sensor.morning", is_on=True, position=70)
+        result = _handler(slot=2, entity_id="binary_sensor.morning", position=70).evaluate(snapshot)
         assert result is not None
-        assert "binary_sensor.morning_scene" in result.reason
+        assert "#2" in result.reason
+        assert "binary_sensor.morning" in result.reason
         assert "70%" in result.reason
 
-    def test_position_zero_is_valid(self, handler: CustomPositionHandler) -> None:
-        """Position 0% must not be skipped — it is a valid target (closed)."""
-        sensors = [("binary_sensor.blackout", True, 0)]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
+    def test_position_zero_valid(self) -> None:
+        snapshot = _snapshot_with(_ENTITY, is_on=True, position=0)
+        result = _handler(entity_id=_ENTITY, position=0).evaluate(snapshot)
         assert result is not None
         assert result.position == 0
 
-    def test_position_one_hundred_is_valid(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """Position 100% must not be skipped — it is a valid target (open)."""
-        sensors = [("binary_sensor.open_all", True, 100)]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
+    def test_position_one_hundred_valid(self) -> None:
+        snapshot = _snapshot_with(_ENTITY, is_on=True, position=100)
+        result = _handler(entity_id=_ENTITY, position=100).evaluate(snapshot)
         assert result is not None
         assert result.position == 100
 
 
-class TestEvaluatePriority:
-    """First active sensor in the list wins."""
+# ---------------------------------------------------------------------------
+# Per-instance isolation — each handler only checks its own sensor
+# ---------------------------------------------------------------------------
 
-    def test_first_active_wins_over_second(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """When sensor 1 and sensor 2 are both on, sensor 1 position is used."""
+
+class TestPerInstanceIsolation:
+    """Each handler instance only evaluates its own entity_id."""
+
+    def test_handler_ignores_other_sensors(self) -> None:
+        """Handler for entity A is not triggered by entity B being on."""
         sensors = [
-            ("binary_sensor.slot1", True, 30),
-            ("binary_sensor.slot2", True, 70),
+            ("binary_sensor.slot1", False, 30, 77),
+            ("binary_sensor.slot2", True, 70, 77),
         ]
         snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
-        assert result is not None
-        assert result.position == 30
 
-    def test_skips_inactive_sensor_to_reach_active(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """When sensor 1 is off and sensor 2 is on, sensor 2 position is used."""
-        sensors = [
-            ("binary_sensor.slot1", False, 30),
-            ("binary_sensor.slot2", True, 70),
-        ]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
+        h1 = _handler(slot=1, entity_id="binary_sensor.slot1", position=30)
+        h2 = _handler(slot=2, entity_id="binary_sensor.slot2", position=70)
+
+        # h1 should NOT fire even though slot2 is on
+        assert h1.evaluate(snapshot) is None
+        # h2 SHOULD fire
+        result = h2.evaluate(snapshot)
         assert result is not None
         assert result.position == 70
 
-    def test_fourth_sensor_active_when_first_three_off(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """Sensor 4 wins when sensors 1–3 are all off."""
+    def test_both_on_both_handlers_fire(self) -> None:
+        """When both sensors are on, both handlers independently return results."""
         sensors = [
-            ("binary_sensor.slot1", False, 10),
-            ("binary_sensor.slot2", False, 20),
-            ("binary_sensor.slot3", False, 30),
-            ("binary_sensor.slot4", True, 80),
+            ("binary_sensor.slot1", True, 30, 95),
+            ("binary_sensor.slot2", True, 70, 60),
         ]
         snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
-        assert result is not None
-        assert result.position == 80
-        assert "binary_sensor.slot4" in result.reason
 
-    def test_all_four_sensors_on_first_wins(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """When all four sensors are active, the first (slot 1) wins."""
-        sensors = [
-            ("binary_sensor.slot1", True, 10),
-            ("binary_sensor.slot2", True, 20),
-            ("binary_sensor.slot3", True, 30),
-            ("binary_sensor.slot4", True, 40),
-        ]
-        snapshot = make_snapshot(custom_position_sensors=sensors)
-        result = handler.evaluate(snapshot)
-        assert result is not None
-        assert result.position == 10
+        h1 = _handler(slot=1, entity_id="binary_sensor.slot1", position=30, priority=95)
+        h2 = _handler(slot=2, entity_id="binary_sensor.slot2", position=70, priority=60)
+
+        r1 = h1.evaluate(snapshot)
+        r2 = h2.evaluate(snapshot)
+        assert r1 is not None and r1.position == 30
+        assert r2 is not None and r2.position == 70
+
+
+# ---------------------------------------------------------------------------
+# Priority affects pipeline ordering (not evaluate() itself)
+# ---------------------------------------------------------------------------
+
+
+class TestPriorityAttribute:
+    """Priority is a plain attribute read by PipelineRegistry for sorting."""
+
+    def test_high_priority_handler_registered(self) -> None:
+        """High-priority custom handler has priority above manual override (80)."""
+        h = _handler(priority=95)
+        assert h.priority > 80  # beats manual override
+
+    def test_low_priority_handler_registered(self) -> None:
+        """Low-priority custom handler has priority below solar (40)."""
+        h = _handler(priority=35)
+        assert h.priority < 40
+
+    def test_default_priority_between_manual_and_motion(self) -> None:
+        """Default priority 77 sits between manual override (80) and motion timeout (75)."""
+        h = _handler()
+        assert 75 < h.priority < 80
+
+
+# ---------------------------------------------------------------------------
+# raw_calculated_position
+# ---------------------------------------------------------------------------
 
 
 class TestRawCalculatedPosition:
     """raw_calculated_position is populated on a match."""
 
-    def test_raw_calculated_position_set(
-        self, handler: CustomPositionHandler
-    ) -> None:
-        """raw_calculated_position is provided from compute_raw_calculated_position."""
-        sensors = [("binary_sensor.scene_a", True, 55)]
-        snapshot = make_snapshot(
-            custom_position_sensors=sensors,
-            direct_sun_valid=True,
-            calculate_percentage_return=42.0,
-        )
-        result = handler.evaluate(snapshot)
+    def test_raw_calculated_position_set(self) -> None:
+        snapshot = _snapshot_with(_ENTITY, is_on=True, position=55)
+        result = _handler(entity_id=_ENTITY, position=55).evaluate(snapshot)
         assert result is not None
-        # raw_calculated_position should be set (exact value depends on helpers)
         assert result.raw_calculated_position is not None

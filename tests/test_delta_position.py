@@ -33,6 +33,59 @@ def test_check_position_delta_respects_threshold():
     assert result is True
 
 
+def test_check_position_delta_already_at_target_zero():
+    """Cover already at 0% with target 0% — no command needed (Issue #127)."""
+    svc = _make_cmd_svc(current_position=0)
+    result = svc._check_position_delta("cover.test", 0, min_change=1, special_positions=[0, 100])
+    assert result is False
+
+
+def test_check_position_delta_already_at_target_hundred():
+    """Cover already at 100% with target 100% — no command needed (Issue #127)."""
+    svc = _make_cmd_svc(current_position=100)
+    result = svc._check_position_delta("cover.test", 100, min_change=1, special_positions=[0, 100])
+    assert result is False
+
+
+def test_check_position_delta_already_at_target_default():
+    """Cover already at default_height% with matching target — no command needed (Issue #127)."""
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    svc = _make_cmd_svc(current_position=40)
+    special = build_special_positions({CONF_DEFAULT_HEIGHT: 40})
+    result = svc._check_position_delta("cover.test", 40, min_change=1, special_positions=special)
+    assert result is False
+
+
+def test_check_position_delta_transition_to_zero_from_five():
+    """Cover at 5%, target 0% — special target bypasses delta check (transition allowed)."""
+    svc = _make_cmd_svc(current_position=5)
+    result = svc._check_position_delta("cover.test", 0, min_change=20, special_positions=[0, 100])
+    assert result is True
+
+
+def test_check_position_delta_transition_from_zero_to_fifty():
+    """Cover at 0%, target 50% — special current bypasses delta check (transition allowed)."""
+    svc = _make_cmd_svc(current_position=0)
+    result = svc._check_position_delta("cover.test", 50, min_change=20, special_positions=[0, 100])
+    assert result is True
+
+
+def test_check_position_delta_already_at_target_sun_just_appeared():
+    """Cover at 0%, target 0%, sun_just_appeared=True — sun-appearance bypasses same-position check.
+
+    The sun_just_appeared flag fires once when the sun emerges; the cover needs to
+    re-confirm its position even if it appears to already be at the target, because
+    the last known position may be stale.  This takes priority over the same-position
+    short-circuit.
+    """
+    svc = _make_cmd_svc(current_position=0)
+    result = svc._check_position_delta(
+        "cover.test", 0, min_change=1, special_positions=[0, 100], sun_just_appeared=True
+    )
+    assert result is True
+
+
 def test_check_position_delta_allows_special_positions():
     """Test that special positions (0, 100) are always allowed."""
     from custom_components.adaptive_cover_pro.const import (
