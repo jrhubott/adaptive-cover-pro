@@ -96,8 +96,7 @@ This integration follows Home Assistant's **Data Coordinator Pattern** with a la
 
 **`pipeline/`** - Override Priority Chain (pluggable handlers)
 - `registry.py` - `PipelineRegistry` evaluates handlers in priority order, builds decision trace
-- 9 handlers: `force_override`(100) > `weather`(90) > `motion_timeout`(80) > `manual_override`(70) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
-- `wind.py` is a registered stub — it passes through until wind sensors are configured
+- 10 handlers: `force_override`(100) > `weather`(90) > `manual_override`(80) > `custom_position`(77) > `motion_timeout`(75) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
 - Adding a new override = create one handler file + register in coordinator
 
 **`managers/`** - Extracted Coordinator Responsibilities
@@ -575,6 +574,12 @@ Always update docs alongside code changes:
 
 **Position description standard:** When describing cover positions in translations or help text, always use cover-type aware phrasing: `0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended)`. This ensures all cover types (vertical blinds, horizontal awnings, tilt covers) are represented consistently. Do not use type-specific terms alone (e.g., "fully retracted" or "fully lowered") — always include both blind and awning context.
 
+For position slider `data_description` fields in translations, use this canonical template:
+```
+Position (0-100%) to move covers to when [context] is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.
+```
+Replace `[context]` with the feature name (e.g., "force override sensors are", "Sensor 1 is", "weather override is"). See `force_override_position` and `weather_override_position` in `translations/en.json` for reference.
+
 ### last_skipped_action Dict Structure
 
 `CoverCommandService.last_skipped_action` is a dict populated every time a cover command is suppressed. Always-present keys:
@@ -636,7 +641,7 @@ Motion control enables/disables automatic sun positioning based on room occupanc
 **Key Design:**
 - **OR Logic** - ANY sensor detecting motion enables automatic positioning
 - **Debounce "no motion" only** - Immediate response when motion detected, timeout when motion stops
-- **Priority**: Force override (safety) > Motion timeout > Manual override
+- **Priority**: Force override (safety) > Weather > Manual override > Motion timeout
 - **Asyncio task-based** - `_start_motion_timeout()` / `_cancel_motion_timeout()` / `_motion_timeout_handler()` in `coordinator.py`
 
 **Use Cases:**
@@ -777,6 +782,9 @@ Users can monitor geometric accuracy via the always-on diagnostic sensors:
 - Force override settings (separate config screen from Motion Override):
   - `force_override_sensors` - Optional list of binary sensor entity IDs that globally disable automatic control when any sensor is "on"
   - `force_override_position` - Position (0-100%) to move covers to when force override is active (default: 0%)
+- Custom position settings (priority 77, between manual override and motion timeout):
+  - `custom_position_sensor_1`…`custom_position_sensor_4` - Optional binary sensor entity IDs (evaluated in order; first "on" wins)
+  - `custom_position_1`…`custom_position_4` - Position (0-100%) paired with each sensor. Intended for automation-driven scene/schedule positioning.
 - Motion control settings:
   - `motion_sensors` - Optional list of binary sensor entity IDs for occupancy-based control. When ANY sensor detects motion, covers use automatic positioning. When ALL sensors show no motion for timeout duration, covers return to default position. Empty list = feature disabled (default: [])
   - `motion_timeout` - Duration in seconds to wait after last motion before using default position. Debounces rapid sensor toggling (range: 30-3600, default: 300)
@@ -852,11 +860,12 @@ adaptive-cover/
 │   │   ├── registry.py          # Evaluates handlers in priority order
 │   │   ├── types.py             # PipelineContext, PipelineResult, DecisionStep
 │   │   ├── handler.py           # OverrideHandler base class
-│   │   └── handlers/            # 8 priority handlers
+│   │   └── handlers/            # 10 priority handlers
 │   │       ├── force_override.py    # Priority 100
-│   │       ├── wind.py              # Priority 90 (stub)
-│   │       ├── motion_timeout.py    # Priority 80
-│   │       ├── manual_override.py   # Priority 70
+│   │       ├── weather.py           # Priority 90
+│   │       ├── manual_override.py   # Priority 80
+│   │       ├── custom_position.py   # Priority 77
+│   │       ├── motion_timeout.py    # Priority 75
 │   │       ├── cloud_suppression.py # Priority 60
 │   │       ├── climate.py           # Priority 50
 │   │       ├── solar.py             # Priority 40

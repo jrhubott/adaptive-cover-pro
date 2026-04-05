@@ -44,6 +44,14 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_CUSTOM_POSITION_1,
+    CONF_CUSTOM_POSITION_2,
+    CONF_CUSTOM_POSITION_3,
+    CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
@@ -103,7 +111,11 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
-from .managers.cover_command import CoverCommandService, PositionContext, build_special_positions
+from .managers.cover_command import (
+    CoverCommandService,
+    PositionContext,
+    build_special_positions,
+)
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
@@ -114,6 +126,7 @@ from .position_utils import interpolate_position
 from .pipeline.handlers import (
     ClimateHandler,
     CloudSuppressionHandler,
+    CustomPositionHandler,
     DefaultHandler,
     ForceOverrideHandler,
     GlareZoneHandler,
@@ -221,8 +234,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             [
                 ForceOverrideHandler(),
                 WeatherOverrideHandler(),
-                MotionTimeoutHandler(),
                 ManualOverrideHandler(),
+                CustomPositionHandler(),
+                MotionTimeoutHandler(),
                 CloudSuppressionHandler(),
                 ClimateHandler(),
                 GlareZoneHandler(),
@@ -329,9 +343,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if any configured force override sensor is in "on" state
 
         """
-        return any(
-            self._read_force_sensor_states(self.config_entry.options).values()
-        )
+        return any(self._read_force_sensor_states(self.config_entry.options).values())
 
     @property
     def is_motion_detected(self) -> bool:
@@ -621,7 +633,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)  # None when not configured
         sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-        sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+        sunrise_off = int(
+            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+        )
         effective_default, is_sunset_active = compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -677,6 +691,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             active_zone_names=frozenset(active_zone_names),
             in_time_window=self.check_adaptive_time,
             motion_control_enabled=self._toggles.motion_control,
+            custom_position_sensors=self._read_custom_position_sensor_states(options),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -779,10 +794,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.first_refresh:
             await self.async_handle_first_refresh(state, options)
 
-        # Sync manual override state to CoverCommandService so reconciliation
-        # skips entities the user has manually moved.  Done after all change
+        # Sync gate state to CoverCommandService so reconciliation respects
+        # both manual override and automatic control.  Done after all change
         # handlers so the manager's manual_controlled list is fully up-to-date.
         self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
+        self._cmd_svc.auto_control_enabled = self.automatic_control
 
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
@@ -882,11 +898,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
 
     async def async_handle_state_change(self, state: int, options):
-        """Send position commands to all covers when a tracked entity changes."""
+        """Send position commands to all covers when a tracked entity changes.
+
+        When the active pipeline result has bypass_auto_control=True (force
+        override or weather safety handler), we pass force=True to the position
+        context so that time_delta and position_delta gates cannot block
+        safety-critical commands.  The reason string also reflects the handler
+        that won rather than always saying "solar".
+        """
         sun_just_appeared = self._check_sun_validity_transition()
+        is_safety = self._pipeline_bypasses_auto_control
+        reason = self._pipeline_result.control_method.value if is_safety else "solar"
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
-            await self._cmd_svc.apply_position(cover, state, "solar", context=ctx)
+            ctx = self._build_position_context(
+                cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
+            )
+            await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
         self.state_change = False
         self.logger.debug("State change handled")
 
@@ -943,7 +970,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Set target positions and send initial positioning commands after startup."""
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
+            ctx = self._build_position_context(
+                cover, options, sun_just_appeared=sun_just_appeared
+            )
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
         self.logger.debug("First refresh handled")
@@ -1137,6 +1166,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             for sensor in sensors
         }
 
+    def _read_custom_position_sensor_states(
+        self, options
+    ) -> list[tuple[str, bool, int]]:
+        """Read custom position sensor states from HA into an ordered list."""
+        _sensor_keys = [
+            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1),
+            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2),
+            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3),
+            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4),
+        ]
+        result = []
+        for sensor_key, pos_key in _sensor_keys:
+            sensor = options.get(sensor_key)
+            position = options.get(pos_key)
+            if sensor and position is not None:
+                is_on = bool(
+                    (state := self.hass.states.get(sensor))
+                    and state.state == "on"
+                )
+                result.append((sensor, is_on, int(position)))
+        return result
+
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result
@@ -1313,6 +1364,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         to all covers.  The command bypasses all gate checks so covers move
         immediately regardless of delta/time thresholds.
         """
+
         async def _on_window_closed() -> None:
             """Force-send effective default when end time is reached."""
             if not self._track_end_time:
@@ -1322,7 +1374,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
             sunset_pos_cfg = options.get(CONF_SUNSET_POS)
             sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-            sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+            sunrise_off = int(
+                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+            )
             cover_data = self.get_blind_data(options=options)
             effective_pos, is_sunset = compute_effective_default(
                 h_def=h_def,
@@ -1331,7 +1385,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 sunset_off=sunset_off,
                 sunrise_off=sunrise_off,
             )
-            pos_to_send = inverse_state(effective_pos) if self._inverse_state else effective_pos
+            pos_to_send = (
+                inverse_state(effective_pos) if self._inverse_state else effective_pos
+            )
             self.logger.info(
                 "End time reached — force-sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",

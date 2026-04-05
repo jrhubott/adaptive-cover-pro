@@ -153,9 +153,9 @@ class TestMotionTimeoutHandler:
         assert "motion" in reason.lower()
         assert "disabled" not in reason.lower()
 
-    def test_priority_is_80(self) -> None:
-        """MotionTimeoutHandler has priority 80."""
-        assert MotionTimeoutHandler.priority == 80
+    def test_priority_is_75(self) -> None:
+        """MotionTimeoutHandler has priority 75."""
+        assert MotionTimeoutHandler.priority == 75
 
     def test_name(self) -> None:
         """MotionTimeoutHandler name is 'motion_timeout'."""
@@ -206,9 +206,9 @@ class TestManualOverrideHandler:
         reason = self.handler.describe_skip(snap)
         assert "manual" in reason.lower()
 
-    def test_priority_is_70(self) -> None:
-        """ManualOverrideHandler has priority 70."""
-        assert ManualOverrideHandler.priority == 70
+    def test_priority_is_80(self) -> None:
+        """ManualOverrideHandler has priority 80."""
+        assert ManualOverrideHandler.priority == 80
 
     def test_name(self) -> None:
         """ManualOverrideHandler name is 'manual_override'."""

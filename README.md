@@ -183,7 +183,7 @@ Range: 10%–95% (during sun tracking only) · Default: 60% · Min change: 2% ·
 Min interval: 2 min · Inverse state · Interpolation on
 
 Decision Priority (highest wins, ✅ active ❌ not configured)
-✅Force(100) → ✅Weather(90) → ❌Motion(80) → ✅Manual(70) → ✅Cloud(60)
+✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Motion(75) → ✅Cloud(60)
 → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
 ```
 
@@ -207,8 +207,8 @@ Regardless of which calculation mode is active, every position decision passes t
 | Priority | Override | Behavior |
 |----------|----------|----------|
 | 100 | **Force override** | Binary sensor(s) force cover to a fixed position — no other logic runs |
-| 80 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
-| 70 | **Manual override** | If the user physically moved the cover, automatic control is paused |
+| 80 | **Manual override** | If the user physically moved the cover, automatic control is paused |
+| 75 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
 | 50 | **Climate** | Active when Climate mode is enabled — applies temperature/presence/light strategy (see below) |
 | 40 | **Solar** | Active when sun is within the window's field of view and elevation limits — uses calculated sun-tracking position |
 | 0 | **Default** | Final fallback — returns the configured default position (or sunset position if applicable) |
@@ -551,7 +551,7 @@ The Target Position sensor (`cover_position`) exposes two attributes that answer
 | **`reason`** | Pipeline (override priority chain) | *Which rule won?* | `"no active condition — default position 100%"` |
 | **`position_explanation`** | Calculation engine (post-pipeline) | *Where did this number come from?* | `"Sunset Position (100%)"` |
 
-**`reason`** reflects the pipeline decision. The integration evaluates eight handlers in priority order — force override (100) → wind (95) → motion timeout (80) → manual override (70) → climate (50) → solar (40) → cloud suppression (35) → default (0). The `reason` tells you which handler claimed control and why it won.
+**`reason`** reflects the pipeline decision. The integration evaluates eight handlers in priority order — force override (100) → wind (95) → manual override (80) → motion timeout (75) → climate (50) → solar (40) → cloud suppression (35) → default (0). The `reason` tells you which handler claimed control and why it won.
 
 **`position_explanation`** reflects what happened *after* the pipeline chose a position. Even when the same handler wins, the final number can differ due to sunset/sunrise position settings, min/max position limits, inverse state, interpolation, or safety margins. The `position_explanation` traces those post-pipeline adjustments.
 
@@ -901,7 +901,7 @@ Only rules that are configured and active are shown. Unconfigured features are o
 
 **Decision Priority** — a single line showing all 9 pipeline handlers in priority order with ✅ (active in your config) or ❌ (not configured) for each:
 ```
-✅Force(100) → ✅Weather(90) → ❌Motion(80) → ✅Manual(70) → ✅Cloud(60)
+✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Motion(75) → ✅Cloud(60)
  → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
 ```
 This answers the common question: *"what overrides what?"* — the leftmost ✅ handler that fires wins.

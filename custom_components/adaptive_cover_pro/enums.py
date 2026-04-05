@@ -76,7 +76,7 @@ class ControlMethod(StrEnum):
     """What is currently driving the cover position.
 
     Priority order (highest to lowest):
-    FORCE > WEATHER > MOTION > MANUAL > CLOUD > SUMMER/WINTER > SOLAR > DEFAULT
+    FORCE > WEATHER > MANUAL > CUSTOM_POSITION > MOTION > CLOUD > SUMMER/WINTER > SOLAR > DEFAULT
     """
 
     SOLAR = "solar"
@@ -93,6 +93,9 @@ class ControlMethod(StrEnum):
 
     MANUAL = "manual_override"
     """User manually moved the cover; automatic control is paused."""
+
+    CUSTOM_POSITION = "custom_position"
+    """A custom position binary sensor is active; cover moves to the configured position."""
 
     MOTION = "motion_timeout"
     """No occupancy detected after timeout; cover returns to default position."""

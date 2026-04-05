@@ -14,9 +14,12 @@
 - `fix/false-manual-override-on-automation-position` — False manual override race condition fix (PR #121, merged to main).
 - `fix/motion-timeout-pending-ignores-new-motion` — Motion timeout pending state fix (PR #119, merged to main).
 
+**Open Feature Branch:**
+- `fix/force-override-time-delta-and-reconcile-auto-control` — Two bug fixes (not yet merged to main).
+
 ## Tests
 
-**1136 passing, 0 failing** (+13 new tests for sunrise/sunset display, +519 for false manual override, +53 for motion control, +136 for position reconciliation).
+**1185 passing, 0 failing** (+49 new tests for force override time_delta bypass and reconciliation auto_control).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
@@ -31,6 +34,10 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Known Gotchas
 
+- **Force commands were blocked by time_delta (fixed on branch):** `async_handle_state_change` was calling `_build_position_context` without `force=True` even when the pipeline result had `bypass_auto_control=True`. Safety handlers (ForceOverride, Weather) produced the correct position but it could be blocked by the time_delta or position_delta gate. Fix: `async_handle_state_change` now checks `_pipeline_bypasses_auto_control` and passes `force=True` when True. Reason string also uses the pipeline's `control_method.value` (e.g. "force", "weather") instead of always saying "solar".
+
+- **Reconciliation ignored auto_control=False (fixed on branch):** After disabling Automatic Control, the reconciliation timer kept resending the old solar target once per minute. `CoverCommandService` gains `auto_control_enabled` (bool, synced by coordinator each cycle) and `_safety_targets` (entities whose target was set via `force=True`). Reconciliation now skips non-safety targets when `auto_control_enabled` is False, but still resends safety targets (force override, weather) regardless of the toggle.
+
 - **Reconciliation ignored manual override (fixed on branch, not yet released):** `_reconcile()` in `CoverCommandService` was resending the integration's stale `target_call` position once per minute, fighting the user's manual move. Root cause: reconciliation bypassed all gate checks including `manual_override`. Fix: coordinator syncs `manager.manual_controlled` → `_cmd_svc.manual_override_entities` each update cycle; `_reconcile()` skips entities in that set. Safety handlers (force override, weather) still take effect immediately via `apply_position(force=True)` which overwrites `target_call` before reconciliation runs.
 
 - **`PipelineResult.tilt` not copied in registry (fixed v2.13.1):** `PipelineRegistry.evaluate()` now copies `tilt` alongside `climate_data`. Before v2.13.1, handler-set `tilt` values were silently dropped (only mattered for Issue #33 dual-axis).
@@ -38,6 +45,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 - **Time window gate moved into pipeline:** `SolarHandler` and `GlareZoneHandler` now self-gate on `snapshot.in_time_window` (returning `None` when outside the window). The `in_time_window` gate has been **removed** from `CoverCommandService.apply_position()` — `PositionContext` no longer has an `in_time_window` field. The pipeline still always runs; it is each handler's responsibility to check `snapshot.in_time_window` if needed. The `auto_control` gate remains in `CoverCommandService`.
 - **Motion Control switch:** A new "Motion Control" switch entity is conditionally shown when `CONF_MOTION_SENSORS` are configured.
 - **Manual override reset now sends correct position (fixed):** `reset_if_needed()` now runs BEFORE `_calculate_cover_state()` so the pipeline sees the cleared state. It returns the set of expired entity IDs; the coordinator calls `_async_send_after_override_clear()` with `force=True` for those covers. The reset button now resets the override first, calls `async_refresh()` so the pipeline runs without the override, then sends `coordinator.state` (the true post-override position — climate, solar, or default — whichever handler wins). The old pre-refresh send used `ManualOverrideHandler`'s simplified solar/default position which was wrong when climate mode was active. Its state is stored in `ToggleManager.motion_control` (default `True`) and passed to `PipelineSnapshot.motion_control_enabled`. `MotionTimeoutHandler` checks this field and passes through (returns `None`) when the switch is off, allowing lower-priority handlers to run as if motion timeout were inactive.
+- **Manual override is higher priority than motion timeout (80 > 75):** A user manually moving the cover takes precedence over the "no occupancy" motion timeout. Previous ordering (motion 80, manual 70) caused motion timeout to fight user moves in occupied-but-still rooms. Config flow menu, Decision Priority chain, and README table all updated to reflect the new order.
+- **Sync flow no longer aborts on empty selection:** Previously, submitting the "Copy to Other Covers" form with no targets or no categories selected would abort the entire options flow (losing all unsaved changes). Now it returns to the main options menu.
 - **`NormalCoverState` is test-only:** `NormalCoverState` in `calculation.py` is no longer used by production code (coordinator stores `_cover_data` directly). It remains for backward compat with existing tests. Do not re-introduce it into coordinator logic.
 - **`ClimateCoverState` takes a `PipelineSnapshot`:** Constructor changed from `(cover, climate_data, default_position=X)` to `(snapshot, climate_data)`. Use `make_snapshot_for_cover(cover, h_def)` from `tests/conftest.py` in tests.
 - **Pipeline helpers are the canonical position helpers:** All handlers and `ClimateCoverState` use `pipeline/helpers.py` — `compute_solar_position()`, `compute_default_position()`, `apply_snapshot_limits()`, `compute_raw_calculated_position()`. Do not inline these patterns in new handlers.

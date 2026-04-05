@@ -637,3 +637,203 @@ async def test_reconcile_with_force_override_sensor_scenario(svc, hass):
     # Cover must NOT have been moved back — user's 50% position preserved
     hass.services.async_call.assert_not_called()
     assert svc._retry_counts.get("cover.balcony", 0) == 0
+
+
+# ------------------------------------------------------------------ #
+# Bug fix: force=True commands mark safety targets;
+#          _reconcile skips non-safety targets when auto_control is off
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_force_apply_marks_safety_target(svc, hass):
+    """apply_position(force=True) adds entity to _safety_targets."""
+    _patch_position(svc, 30)
+    with _patch_caps():
+        await svc.apply_position(
+            "cover.test", 0, "force_override", context=_ctx(force=True)
+        )
+    assert "cover.test" in svc._safety_targets
+
+
+@pytest.mark.asyncio
+async def test_non_force_apply_removes_from_safety_targets(svc, hass):
+    """apply_position(force=False) removes entity from _safety_targets.
+
+    When a safety override clears and normal solar tracking resumes, the
+    entity should no longer be treated as a safety target.
+    """
+    # First set it as safety
+    svc._safety_targets.add("cover.test")
+
+    _patch_position(svc, 30)
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        await svc.apply_position(
+            "cover.test", 60, "solar", context=_ctx(force=False)
+        )
+    assert "cover.test" not in svc._safety_targets
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_non_safety_when_auto_control_off(svc, hass):
+    """Reconciliation skips normal targets when automatic control is disabled.
+
+    Regression: after the user turned off Automatic Control a later
+    reconciliation tick was still resending the old solar position.
+    """
+    svc.target_call["cover.test"] = 60
+    svc.wait_for_target["cover.test"] = False
+    _patch_position(svc, 40)  # Off target — would normally trigger retry
+
+    # Mark as non-safety (normal solar target)
+    svc._safety_targets.discard("cover.test")
+    # Automatic control turned off
+    svc.auto_control_enabled = False
+
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # Must NOT resend — automatic control is off
+    hass.services.async_call.assert_not_called()
+    assert svc._retry_counts.get("cover.test", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_still_resends_safety_target_when_auto_control_off(svc, hass):
+    """Safety targets (force override, weather) are resent even when auto control is off.
+
+    The whole point of safety overrides is that they work regardless of whether
+    automatic control is enabled.
+    """
+    svc.target_call["cover.test"] = 0  # Force override retracted to 0%
+    svc.wait_for_target["cover.test"] = False
+    _patch_position(svc, 50)  # Cover hasn't reached safety position yet
+
+    # Mark as safety target (sent via force=True)
+    svc._safety_targets.add("cover.test")
+    # Automatic control is off
+    svc.auto_control_enabled = False
+
+    with _patch_caps():
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # MUST resend — safety target even though auto control is off
+    hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resumes_when_auto_control_re_enabled(svc, hass):
+    """Turning automatic control back on resumes reconciliation for normal targets."""
+    svc.target_call["cover.test"] = 60
+    svc.wait_for_target["cover.test"] = False
+    _patch_position(svc, 40)  # Off target
+    svc._safety_targets.discard("cover.test")
+
+    # Control off: should skip
+    svc.auto_control_enabled = False
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+    hass.services.async_call.assert_not_called()
+
+    # Control back on: should retry
+    svc.auto_control_enabled = True
+    with _patch_caps():
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+    hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_force_apply_bypasses_time_delta_gate(svc, hass):
+    """force=True must bypass time_delta_too_small so safety commands always get sent.
+
+    Regression: force_override and weather_override commands were being blocked
+    by the time_delta gate even though force=True should skip all gates.
+    """
+    import datetime as _dt
+
+    recent = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=30)  # 0.5 min ago
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=recent,
+    ):
+        # time_threshold=5 min but force=True — must NOT be blocked
+        outcome, detail = await svc.apply_position(
+            "cover.test",
+            0,
+            "force_override",
+            context=_ctx(time_threshold=5, force=True),
+        )
+    assert outcome == "sent", f"Expected sent, got skipped: {detail}"
+    hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_force_apply_bypasses_position_delta_gate(svc, hass):
+    """force=True must bypass delta_too_small so safety commands always get sent."""
+    _patch_position(svc, 61)  # Would be delta=1 which is < min_change=5
+    with _patch_caps():
+        outcome, detail = await svc.apply_position(
+            "cover.test",
+            60,
+            "force_override",
+            context=_ctx(min_change=5, force=True),
+        )
+    assert outcome == "sent", f"Expected sent, got skipped: {detail}"
+    hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_auto_control_enabled_property_defaults_true(svc):
+    """auto_control_enabled defaults to True (backward compatible)."""
+    assert svc.auto_control_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_auto_control_enabled_setter(svc):
+    """auto_control_enabled setter round-trips correctly."""
+    svc.auto_control_enabled = False
+    assert svc.auto_control_enabled is False
+    svc.auto_control_enabled = True
+    assert svc.auto_control_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_safety_target_cleared_on_open_close_non_force(svc, hass):
+    """Non-force apply on open/close-only covers also clears safety target."""
+    svc._safety_targets.add("cover.test")
+
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+        },
+    ), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        await svc.apply_position(
+            "cover.test", 80, "solar", context=_ctx(force=False)
+        )
+    assert "cover.test" not in svc._safety_targets
+
+
+@pytest.mark.asyncio
+async def test_safety_target_set_on_open_close_force(svc, hass):
+    """Force apply on open/close-only covers marks entity as safety target."""
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={
+            "has_set_position": False,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+        },
+    ):
+        await svc.apply_position(
+            "cover.test", 0, "force_override", context=_ctx(force=True)
+        )
+    assert "cover.test" in svc._safety_targets

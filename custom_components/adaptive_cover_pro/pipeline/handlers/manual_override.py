@@ -11,14 +11,14 @@ from ..types import PipelineResult, PipelineSnapshot
 class ManualOverrideHandler(OverrideHandler):
     """Preserve the sun-tracking position while manual override is active.
 
-    Priority 70 — lower than force/motion, higher than climate/solar.
+    Priority 80 — lower than force/weather, higher than motion/climate/solar.
     When the user manually moves the cover, automatic control is paused.
     The handler computes what the solar position would be (or default if
     sun not in FOV) to avoid fighting the user.
     """
 
     name = "manual_override"
-    priority = 70
+    priority = 80
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return computed position when manual override is active."""
