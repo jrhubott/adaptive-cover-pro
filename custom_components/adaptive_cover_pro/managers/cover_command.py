@@ -140,6 +140,18 @@ class CoverCommandService:
         # apply_position(force=True) so they always take effect regardless.
         self._manual_override_entities: set[str] = set()
 
+        # Whether automatic control is currently enabled.  Synced by the
+        # coordinator each update cycle (alongside manual_override_entities).
+        # Reconciliation skips non-safety targets when this is False so it
+        # doesn't fight the user's intention to pause automation.
+        self._auto_control_enabled: bool = True
+
+        # Entities whose current target_call was set via apply_position(force=True).
+        # These are safety targets (force override, weather) and reconciliation
+        # must still resend them even when _auto_control_enabled is False.
+        # Cleared when a subsequent non-force target overwrites the entry.
+        self._safety_targets: set[str] = set()
+
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
 
@@ -226,6 +238,22 @@ class CoverCommandService:
         always take effect regardless of this set.
         """
         self._manual_override_entities = set(entities)
+
+    @property
+    def auto_control_enabled(self) -> bool:
+        """Whether automatic control is currently enabled."""
+        return self._auto_control_enabled
+
+    @auto_control_enabled.setter
+    def auto_control_enabled(self, value: bool) -> None:
+        """Update the automatic control flag.
+
+        Called by the coordinator each update cycle so reconciliation knows
+        whether to resend non-safety targets.  When False, only targets that
+        were sent via apply_position(force=True) — i.e. safety overrides —
+        are eligible for reconciliation resends.
+        """
+        self._auto_control_enabled = value
 
     # ------------------------------------------------------------------ #
     # Threshold update (called by coordinator on options change)
@@ -452,7 +480,7 @@ class CoverCommandService:
 
         # ----- send command -----
         service, service_data, supports_position = self._prepare_service_call(
-            entity_id, position, context.inverse_state
+            entity_id, position, context.inverse_state, is_safety=context.force
         )
         if service is None:
             return self._skip(
@@ -556,9 +584,13 @@ class CoverCommandService:
            reconciliation does not fight the user's intentional move.
            Safety handlers (force override, weather) overwrite ``target_call``
            via ``apply_position(force=True)`` so they are always protected.
-        4. Compare actual position to ``target_call`` within tolerance.
-        5. If match → reset retry count, done.
-        6. If mismatch → resend the same target (up to ``max_retries``).
+        4. If ``_auto_control_enabled`` is False and the entity is not in
+           ``_safety_targets`` → skip.  Safety targets (set via
+           ``apply_position(force=True)``) are still resent so covers reach
+           a safe position regardless of the automatic control toggle.
+        5. Compare actual position to ``target_call`` within tolerance.
+        6. If match → reset retry count, done.
+        7. If mismatch → resend the same target (up to ``max_retries``).
 
         Note: reconciliation does *not* go through gate checks — the target
         was already validated when ``apply_position`` was called.
@@ -601,7 +633,18 @@ class CoverCommandService:
                 )
                 continue
 
-            # 3. Read actual position
+            # 3. Skip non-safety targets when automatic control is off.  Safety
+            # targets (force override, weather) are still resent because they
+            # were placed via apply_position(force=True) and are tracked in
+            # _safety_targets — covers must reach a safe position regardless of
+            # the automatic control toggle.
+            if not self._auto_control_enabled and entity_id not in self._safety_targets:
+                self._logger.debug(
+                    "Reconcile: %s skipped — automatic control off", entity_id
+                )
+                continue
+
+            # 5. Read actual position
             actual = self._get_current_position(entity_id)
             if actual is None:
                 self._logger.debug(
@@ -609,7 +652,7 @@ class CoverCommandService:
                 )
                 continue
 
-            # 4. Check match
+            # 6. Check match
             if abs(actual - target) <= self._position_tolerance:
                 self._retry_counts.pop(entity_id, None)
                 self._logger.debug(
@@ -620,7 +663,7 @@ class CoverCommandService:
                 )
                 continue
 
-            # 5. Mismatch — retry up to max_retries
+            # 7. Mismatch — retry up to max_retries
             retry_count = self._retry_counts.get(entity_id, 0)
             if retry_count >= self._max_retries:
                 if entity_id not in self._gave_up:
@@ -784,6 +827,7 @@ class CoverCommandService:
         inverse_state: bool = False,  # noqa: FBT001 — kept for signature clarity
         caps: dict[str, bool] | None = None,
         reset_retries: bool = True,
+        is_safety: bool = False,
     ) -> tuple[str | None, dict | None, bool]:
         """Build the HA service call for this cover/state.
 
@@ -799,6 +843,10 @@ class CoverCommandService:
                 for this entity when a new target is recorded. Pass False from
                 ``_execute_command`` so reconciliation retries do not reset the
                 counter they themselves manage.
+            is_safety: If True, this target was set via a safety override
+                (force=True path).  Adds the entity to ``_safety_targets`` so
+                reconciliation will resend it even when automatic control is off.
+                Non-safety targets remove the entity from ``_safety_targets``.
 
         Returns:
             (service_name, service_data, supports_position).
@@ -841,6 +889,12 @@ class CoverCommandService:
             if reset_retries:
                 self._retry_counts.pop(entity, None)  # New target resets retry count
                 self._gave_up.discard(entity)          # Allow warnings again for new target
+            # Track whether this target was set by a safety override so
+            # reconciliation knows whether to resend it when auto_control is off.
+            if is_safety:
+                self._safety_targets.add(entity)
+            else:
+                self._safety_targets.discard(entity)
             self._grace_mgr.start_command_grace_period(entity)
             return service, service_data, True
 
@@ -866,6 +920,11 @@ class CoverCommandService:
         if reset_retries:
             self._retry_counts.pop(entity, None)
             self._gave_up.discard(entity)
+        # Track safety target status for open/close-only covers too.
+        if is_safety:
+            self._safety_targets.add(entity)
+        else:
+            self._safety_targets.discard(entity)
         self._grace_mgr.start_command_grace_period(entity)
         self._logger.debug(
             "Open/close control: state=%s threshold=%s service=%s",

@@ -783,10 +783,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.first_refresh:
             await self.async_handle_first_refresh(state, options)
 
-        # Sync manual override state to CoverCommandService so reconciliation
-        # skips entities the user has manually moved.  Done after all change
+        # Sync gate state to CoverCommandService so reconciliation respects
+        # both manual override and automatic control.  Done after all change
         # handlers so the manager's manual_controlled list is fully up-to-date.
         self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
+        self._cmd_svc.auto_control_enabled = self.automatic_control
 
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
@@ -886,13 +887,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
 
     async def async_handle_state_change(self, state: int, options):
-        """Send position commands to all covers when a tracked entity changes."""
+        """Send position commands to all covers when a tracked entity changes.
+
+        When the active pipeline result has bypass_auto_control=True (force
+        override or weather safety handler), we pass force=True to the position
+        context so that time_delta and position_delta gates cannot block
+        safety-critical commands.  The reason string also reflects the handler
+        that won rather than always saying "solar".
+        """
         sun_just_appeared = self._check_sun_validity_transition()
+        is_safety = self._pipeline_bypasses_auto_control
+        reason = self._pipeline_result.control_method.value if is_safety else "solar"
         for cover in self.entities:
             ctx = self._build_position_context(
-                cover, options, sun_just_appeared=sun_just_appeared
+                cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
             )
-            await self._cmd_svc.apply_position(cover, state, "solar", context=ctx)
+            await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
         self.state_change = False
         self.logger.debug("State change handled")
 
