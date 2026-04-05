@@ -44,6 +44,14 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_CUSTOM_POSITION_1,
+    CONF_CUSTOM_POSITION_2,
+    CONF_CUSTOM_POSITION_3,
+    CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
@@ -118,6 +126,7 @@ from .position_utils import interpolate_position
 from .pipeline.handlers import (
     ClimateHandler,
     CloudSuppressionHandler,
+    CustomPositionHandler,
     DefaultHandler,
     ForceOverrideHandler,
     GlareZoneHandler,
@@ -225,8 +234,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             [
                 ForceOverrideHandler(),
                 WeatherOverrideHandler(),
-                MotionTimeoutHandler(),
                 ManualOverrideHandler(),
+                CustomPositionHandler(),
+                MotionTimeoutHandler(),
                 CloudSuppressionHandler(),
                 ClimateHandler(),
                 GlareZoneHandler(),
@@ -681,6 +691,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             active_zone_names=frozenset(active_zone_names),
             in_time_window=self.check_adaptive_time,
             motion_control_enabled=self._toggles.motion_control,
+            custom_position_sensors=self._read_custom_position_sensor_states(options),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -1154,6 +1165,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             for sensor in sensors
         }
+
+    def _read_custom_position_sensor_states(
+        self, options
+    ) -> list[tuple[str, bool, int]]:
+        """Read custom position sensor states from HA into an ordered list."""
+        _sensor_keys = [
+            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1),
+            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2),
+            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3),
+            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4),
+        ]
+        result = []
+        for sensor_key, pos_key in _sensor_keys:
+            sensor = options.get(sensor_key)
+            position = options.get(pos_key)
+            if sensor and position is not None:
+                is_on = bool(
+                    (state := self.hass.states.get(sensor))
+                    and state.state == "on"
+                )
+                result.append((sensor, is_on, int(position)))
+        return result
 
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""

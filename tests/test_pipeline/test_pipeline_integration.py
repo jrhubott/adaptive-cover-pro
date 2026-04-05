@@ -16,6 +16,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
     ForceOverrideHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+    CustomPositionHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
     ManualOverrideHandler,
 )
@@ -33,8 +36,9 @@ def _make_registry() -> PipelineRegistry:
     return PipelineRegistry(
         [
             ForceOverrideHandler(),
-            MotionTimeoutHandler(),
             ManualOverrideHandler(),
+            CustomPositionHandler(),
+            MotionTimeoutHandler(),
             CloudSuppressionHandler(),
             SolarHandler(),
             DefaultHandler(),
@@ -181,8 +185,9 @@ class TestPipelineIntegration:
         handler_names = {step.handler for step in result.decision_trace}
         expected = {
             "force_override",
-            "motion_timeout",
             "manual_override",
+            "custom_position",
+            "motion_timeout",
             "cloud_suppression",
             "solar",
             "default",
@@ -266,3 +271,62 @@ class TestClimateDataPropagation:
             snap = make_snapshot(direct_sun_valid=True)
             result = self.registry.evaluate(snap)
         assert result.tilt == 45
+
+
+class TestCustomPositionPriority:
+    """Verify custom_position sits at priority 77: below manual (80), above motion (75)."""
+
+    def setup_method(self) -> None:
+        """Create a fresh registry for each test."""
+        self.registry = _make_registry()
+
+    def test_custom_position_beats_motion_timeout(self) -> None:
+        """CUSTOM_POSITION fires instead of motion timeout when a sensor is active."""
+        snap = make_snapshot(
+            custom_position_sensors=[("binary_sensor.scene", True, 55)],
+            motion_timeout_active=True,
+            default_position=10,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
+        assert result.position == 55
+
+    def test_manual_override_beats_custom_position(self) -> None:
+        """MANUAL fires before custom_position when manual override is active."""
+        snap = make_snapshot(
+            manual_override_active=True,
+            custom_position_sensors=[("binary_sensor.scene", True, 55)],
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.MANUAL
+
+    def test_custom_position_beats_solar(self) -> None:
+        """CUSTOM_POSITION fires before solar tracking when a sensor is active."""
+        snap = make_snapshot(
+            custom_position_sensors=[("binary_sensor.scene", True, 33)],
+            direct_sun_valid=True,
+            calculate_percentage_return=80.0,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
+        assert result.position == 33
+
+    def test_solar_fires_when_custom_sensors_all_off(self) -> None:
+        """Solar handler wins when custom sensors are configured but all off."""
+        snap = make_snapshot(
+            custom_position_sensors=[("binary_sensor.scene", False, 33)],
+            direct_sun_valid=True,
+            calculate_percentage_return=72.0,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.SOLAR
+
+    def test_default_fires_when_no_custom_sensors_and_no_sun(self) -> None:
+        """Default handler wins when custom sensors are off and sun not in FOV."""
+        snap = make_snapshot(
+            custom_position_sensors=[("binary_sensor.scene", False, 50)],
+            direct_sun_valid=False,
+            default_position=20,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.DEFAULT

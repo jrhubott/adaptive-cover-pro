@@ -105,6 +105,11 @@ class PipelineSnapshot:
     # Defaults to True for backward compatibility.
     motion_control_enabled: bool = True
 
+    # Custom position sensor states: ordered list of (entity_id, is_on, position).
+    # Evaluated in order; the first sensor that is "on" determines the cover position.
+    # Defaults to empty list (feature disabled / not configured).
+    custom_position_sensors: list[tuple[str, bool, int]] = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # Output types

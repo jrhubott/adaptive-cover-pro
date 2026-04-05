@@ -37,6 +37,14 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_CUSTOM_POSITION_1,
+    CONF_CUSTOM_POSITION_2,
+    CONF_CUSTOM_POSITION_3,
+    CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_FOV_LEFT,
@@ -439,6 +447,40 @@ FORCE_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
+
+def _position_slider() -> selector.NumberSelector:
+    """Return a reusable 0-100% position slider selector."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0,
+            max=100,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+            unit_of_measurement="%",
+        )
+    )
+
+
+def _binary_sensor_selector() -> selector.EntitySelector:
+    """Return a single binary_sensor entity selector."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=["binary_sensor"], multiple=False)
+    )
+
+
+CUSTOM_POSITION_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
+    }
+)
+
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MOTION_SENSORS, default=[]): selector.EntitySelector(
@@ -784,6 +826,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         ]
     )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
+    has_custom_position = any(
+        config.get(f"custom_position_sensor_{i}") for i in range(1, 5)
+    )
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
     has_glare = (
@@ -903,6 +948,19 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     lines.append(
         f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
     )
+
+    # Custom positions (77)
+    if has_custom_position:
+        cp_parts = []
+        for i in range(1, 5):
+            sensor = config.get(f"custom_position_sensor_{i}")
+            pos = config.get(f"custom_position_{i}")
+            if sensor and pos is not None:
+                cp_parts.append(f"#{i} on → {int(pos)}%")
+        cp_str = ", ".join(cp_parts)
+        lines.append(
+            f"🎯 Custom positions: first active sensor wins ({cp_str})."
+        )
 
     # Motion timeout (75)
     if has_motion:
@@ -1120,6 +1178,12 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         pos_map.append(f"🔒 Safety override active → {force_pos}%")
     if has_weather:
         pos_map.append(f"🌧️ Weather danger → {weather_pos}%")
+    if has_custom_position:
+        for i in range(1, 5):
+            sensor = config.get(f"custom_position_sensor_{i}")
+            pos = config.get(f"custom_position_{i}")
+            if sensor and pos is not None:
+                pos_map.append(f"🎯 Custom sensor #{i} on → {int(pos)}%")
     pos_map.append("☀️ Tracking sun → calculated position")
     min_p = config.get(CONF_MIN_POSITION, 0)
     max_p = config.get(CONF_MAX_POSITION, 100)
@@ -1143,6 +1207,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         _ch(has_force, "Force", 100),
         _ch(has_weather, "Weather", 90),
         _ch(True, "Manual", 80),
+        _ch(has_custom_position, "Custom", 77),
         _ch(has_motion, "Motion", 75),
         _ch(has_cloud, "Cloud", 60),
         _ch(has_climate, "Climate", 50),
@@ -1267,6 +1332,18 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_FORCE_OVERRIDE_POSITION,
         }
     ),
+    "custom_position": frozenset(
+        {
+            CONF_CUSTOM_POSITION_SENSOR_1,
+            CONF_CUSTOM_POSITION_1,
+            CONF_CUSTOM_POSITION_SENSOR_2,
+            CONF_CUSTOM_POSITION_2,
+            CONF_CUSTOM_POSITION_SENSOR_3,
+            CONF_CUSTOM_POSITION_3,
+            CONF_CUSTOM_POSITION_SENSOR_4,
+            CONF_CUSTOM_POSITION_4,
+        }
+    ),
     "motion_override": frozenset(
         {
             CONF_MOTION_SENSORS,
@@ -1378,6 +1455,7 @@ _SYNC_UI_CATEGORIES: list[str] = [
     "automation",
     "manual_override",
     "force_override",
+    "custom_position",
     "motion_override",
     "weather_override",
     "light_cloud",
@@ -1782,9 +1860,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure force override sensors."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_motion_override()
+            return await self.async_step_custom_position()
         return self.async_show_form(
             step_id="force_override", data_schema=FORCE_OVERRIDE_SCHEMA
+        )
+
+    async def async_step_custom_position(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure custom position sensors."""
+        if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_motion_override()
+        return self.async_show_form(
+            step_id="custom_position", data_schema=CUSTOM_POSITION_SCHEMA
         )
 
     async def async_step_motion_override(
@@ -2197,6 +2286,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "force_override",  # Priority 100
                 "weather_override",  # Priority 90
                 "manual_override",  # Priority 80
+                "custom_position",  # Priority 77
                 "motion_override",  # Priority 75
             ]
         )
@@ -2332,6 +2422,20 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="force_override",
             data_schema=self.add_suggested_values_to_schema(
                 FORCE_OVERRIDE_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_custom_position(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage custom position sensors."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="custom_position",
+            data_schema=self.add_suggested_values_to_schema(
+                CUSTOM_POSITION_SCHEMA, user_input or self.options
             ),
         )
 
