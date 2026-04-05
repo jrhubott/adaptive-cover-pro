@@ -213,18 +213,18 @@ def test_full_pipeline_force_wins() -> None:
     assert result.control_method == ControlMethod.FORCE
 
 
-def test_full_pipeline_motion_timeout_beats_manual() -> None:
-    """Motion timeout (priority 80) beats manual override (priority 70)."""
+def test_full_pipeline_manual_override_beats_motion_timeout() -> None:
+    """Manual override (priority 80) beats motion timeout (priority 75)."""
     registry = PipelineRegistry(ALL_HANDLERS)
     snap = make_snapshot(
         calculate_percentage_return=50.0,
         default_position=int(20.0),
         motion_timeout_active=True,
         manual_override_active=True,
+        motion_control_enabled=True,
     )
     result = registry.evaluate(snap)
-    assert result.position == 20
-    assert result.control_method == ControlMethod.MOTION
+    assert result.control_method == ControlMethod.MANUAL
 
 
 def test_full_pipeline_climate_summer() -> None:

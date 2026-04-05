@@ -96,7 +96,7 @@ This integration follows Home Assistant's **Data Coordinator Pattern** with a la
 
 **`pipeline/`** - Override Priority Chain (pluggable handlers)
 - `registry.py` - `PipelineRegistry` evaluates handlers in priority order, builds decision trace
-- 9 handlers: `force_override`(100) > `weather`(90) > `motion_timeout`(80) > `manual_override`(70) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
+- 9 handlers: `force_override`(100) > `weather`(90) > `manual_override`(80) > `motion_timeout`(75) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
 - `wind.py` is a registered stub — it passes through until wind sensors are configured
 - Adding a new override = create one handler file + register in coordinator
 
@@ -636,7 +636,7 @@ Motion control enables/disables automatic sun positioning based on room occupanc
 **Key Design:**
 - **OR Logic** - ANY sensor detecting motion enables automatic positioning
 - **Debounce "no motion" only** - Immediate response when motion detected, timeout when motion stops
-- **Priority**: Force override (safety) > Motion timeout > Manual override
+- **Priority**: Force override (safety) > Weather > Manual override > Motion timeout
 - **Asyncio task-based** - `_start_motion_timeout()` / `_cancel_motion_timeout()` / `_motion_timeout_handler()` in `coordinator.py`
 
 **Use Cases:**
@@ -855,8 +855,8 @@ adaptive-cover/
 │   │   └── handlers/            # 8 priority handlers
 │   │       ├── force_override.py    # Priority 100
 │   │       ├── wind.py              # Priority 90 (stub)
-│   │       ├── motion_timeout.py    # Priority 80
-│   │       ├── manual_override.py   # Priority 70
+│   │       ├── manual_override.py   # Priority 80
+│   │       ├── motion_timeout.py    # Priority 75
 │   │       ├── cloud_suppression.py # Priority 60
 │   │       ├── climate.py           # Priority 50
 │   │       ├── solar.py             # Priority 40

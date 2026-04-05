@@ -890,16 +890,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
             f"🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{delay_str}."
         )
 
-    # Motion timeout (80)
-    if has_motion:
-        n = len(config.get(CONF_MOTION_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
-        lines.append(
-            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
-            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
-        )
-
-    # Manual override (70)
+    # Manual override (80)
     mo_parts = []
     if manual_dur is not None:
         mo_parts.append(f"pauses for {manual_dur} min")
@@ -912,6 +903,15 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     lines.append(
         f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
     )
+
+    # Motion timeout (75)
+    if has_motion:
+        n = len(config.get(CONF_MOTION_SENSORS) or [])
+        sensor_word = "sensor" if n == 1 else "sensors"
+        lines.append(
+            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
+            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
+        )
 
     # Cloud suppression (60)
     if has_cloud:
@@ -1142,8 +1142,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     chain = [
         _ch(has_force, "Force", 100),
         _ch(has_weather, "Weather", 90),
-        _ch(has_motion, "Motion", 80),
-        _ch(True, "Manual", 70),
+        _ch(True, "Manual", 80),
+        _ch(has_motion, "Motion", 75),
         _ch(has_cloud, "Cloud", 60),
         _ch(has_climate, "Climate", 50),
     ]
@@ -2196,8 +2196,8 @@ class OptionsFlowHandler(OptionsFlow):
             [
                 "force_override",  # Priority 100
                 "weather_override",  # Priority 90
-                "motion_override",  # Priority 80
-                "manual_override",  # Priority 70
+                "manual_override",  # Priority 80
+                "motion_override",  # Priority 75
             ]
         )
 
@@ -2441,10 +2441,10 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             targets = user_input.get("target_entries", [])
             if not targets:
-                return self.async_abort(reason="no_targets_selected")  # type: ignore[return-value]
+                return await self.async_step_init()
             selected = user_input.get("sync_categories", [])
             if not selected:
-                return self.async_abort(reason="no_categories_selected")  # type: ignore[return-value]
+                return await self.async_step_init()
             self.selected_sync_targets = targets
             self.selected_sync_categories = selected
             return await self.async_step_sync_confirm()

@@ -11,13 +11,13 @@ from ..types import PipelineResult, PipelineSnapshot
 class MotionTimeoutHandler(OverrideHandler):
     """Return the default position when the motion timeout is active.
 
-    Priority 80 — lower than force override but higher than manual override.
+    Priority 75 — lower than manual override, higher than climate/solar.
     When all occupancy sensors have reported no motion for the configured
     timeout duration, automatic sun-tracking is suspended.
     """
 
     name = "motion_timeout"
-    priority = 80
+    priority = 75
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return default position when motion timeout is active."""
