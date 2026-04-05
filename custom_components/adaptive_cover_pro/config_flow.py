@@ -152,15 +152,6 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 unit_of_measurement="cm",
             )
         ),
-        vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=5,
-                step=0.1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="m",
-            )
-        ),
         vol.Optional(CONF_WINDOW_DEPTH, default=0.0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
@@ -206,15 +197,6 @@ GEOMETRY_HORIZONTAL_SCHEMA = vol.Schema(
                 min=0.1,
                 max=6,
                 step=0.01,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="m",
-            )
-        ),
-        vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=5,
-                step=0.1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="m",
             )
@@ -294,6 +276,15 @@ SUN_TRACKING_SCHEMA = vol.Schema(
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="°",
+            )
+        ),
+        vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.1,
+                max=5,
+                step=0.1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="m",
             )
         ),
         vol.Optional(CONF_ENABLE_BLIND_SPOT, default=False): selector.BooleanSelector(),
@@ -1201,7 +1192,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "geometry": frozenset(
         {
             CONF_HEIGHT_WIN,
-            CONF_DISTANCE,
             CONF_WINDOW_DEPTH,
             CONF_SILL_HEIGHT,
             CONF_WINDOW_WIDTH,
@@ -1218,6 +1208,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_FOV_RIGHT,
             CONF_MIN_ELEVATION,
             CONF_MAX_ELEVATION,
+            CONF_DISTANCE,
             CONF_ENABLE_BLIND_SPOT,
         }
     ),

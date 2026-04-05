@@ -61,7 +61,8 @@
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
           "blind_spot": "Setup Blindspot",
-          "enable_glare_zones": "Enable Glare Zones"
+          "enable_glare_zones": "Enable Glare Zones",
+          "distance_shaded_area": "Shaded area"
         },
         "data_description": {
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
@@ -70,7 +71,8 @@
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)"
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
         }
       },
       "position": {
@@ -485,7 +487,8 @@
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
           "blind_spot": "Setup Blindspot",
-          "enable_glare_zones": "Enable Glare Zones"
+          "enable_glare_zones": "Enable Glare Zones",
+          "distance_shaded_area": "Shaded area"
         },
         "data_description": {
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
@@ -494,7 +497,8 @@
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
-          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)"
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
         }
       },
       "position": {
