@@ -96,7 +96,8 @@ This integration follows Home Assistant's **Data Coordinator Pattern** with a la
 
 **`pipeline/`** - Override Priority Chain (pluggable handlers)
 - `registry.py` - `PipelineRegistry` evaluates handlers in priority order, builds decision trace
-- 10 handlers: `force_override`(100) > `weather`(90) > `manual_override`(80) > `custom_position`(77) > `motion_timeout`(75) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
+- Up to 13 handlers: `force_override`(100) > `weather`(90) > `manual_override`(80) > `custom_position_N`(configurable, default 77) > `motion_timeout`(75) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
+- Custom position handlers are per-instance (one per configured slot, 1–4). Each carries its own priority set by the user (1–99). The coordinator creates them via `_build_pipeline()` at startup; `PipelineRegistry` sorts all handlers by priority automatically.
 - Adding a new override = create one handler file + register in coordinator
 
 **`managers/`** - Extracted Coordinator Responsibilities
@@ -659,6 +660,10 @@ Motion control enables/disables automatic sun positioning based on room occupanc
 - Double-check prevents false timeout if motion detected during sleep
 - Cleanup cancels task on shutdown or config change
 
+### Special Position Delta Bypass (Issue #127 fix)
+
+`build_special_positions()` in `managers/cover_command.py` returns a list of positions (0, 100, default_height, sunset_pos) that bypass the *delta-threshold* check in `_check_position_delta()`. The bypass allows transitions **to or from** these key positions even when the change is smaller than `min_change`. However, it does **not** bypass the same-position short-circuit: if the cover is already at the target, `_check_position_delta()` returns `False` regardless of whether the target is special. The short-circuit runs after `sun_just_appeared` (which can re-confirm the position after the sun emerges) but before the special-positions check. This prevents covers at 0%/100% from receiving redundant commands every `time_threshold` minutes.
+
 ### Inverse State Behavior
 
 **CRITICAL: Do Not Change This Behavior**
@@ -782,8 +787,9 @@ Users can monitor geometric accuracy via the always-on diagnostic sensors:
   - `force_override_sensors` - Optional list of binary sensor entity IDs that globally disable automatic control when any sensor is "on"
   - `force_override_position` - Position (0-100%) to move covers to when force override is active (default: 0%)
 - Custom position settings (priority 77, between manual override and motion timeout):
-  - `custom_position_sensor_1`…`custom_position_sensor_4` - Optional binary sensor entity IDs (evaluated in order; first "on" wins)
-  - `custom_position_1`…`custom_position_4` - Position (0-100%) paired with each sensor. Intended for automation-driven scene/schedule positioning.
+  - `custom_position_sensor_1`…`custom_position_sensor_4` - Optional binary sensor entity IDs for up to 4 independent custom position slots
+  - `custom_position_1`…`custom_position_4` - Position (0-100%) for each slot
+  - `custom_position_priority_1`…`custom_position_priority_4` - Pipeline priority per slot (1-99, default 77). Slots are independent handlers sorted by priority; the highest-priority active slot wins.
 - Motion control settings:
   - `motion_sensors` - Optional list of binary sensor entity IDs for occupancy-based control. When ANY sensor detects motion, covers use automatic positioning. When ALL sensors show no motion for timeout duration, covers return to default position. Empty list = feature disabled (default: [])
   - `motion_timeout` - Duration in seconds to wait after last motion before using default position. Debounces rapid sensor toggling (range: 30-3600, default: 300)
@@ -863,7 +869,7 @@ adaptive-cover/
 │   │       ├── force_override.py    # Priority 100
 │   │       ├── weather.py           # Priority 90
 │   │       ├── manual_override.py   # Priority 80
-│   │       ├── custom_position.py   # Priority 77
+│   │       ├── custom_position.py   # Configurable priority per instance (default 77)
 │   │       ├── motion_timeout.py    # Priority 75
 │   │       ├── cloud_suppression.py # Priority 60
 │   │       ├── climate.py           # Priority 50

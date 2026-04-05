@@ -157,26 +157,34 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure binary sensors that set the cover to specific positions when active. Each sensor has its own target position — the first active sensor (in order 1→4) determines the position. If all sensors are off, this step is skipped and lower-priority rules apply. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position for Sensor 1",
+          "custom_position_priority_1": "Priority for Slot 1",
           "custom_position_sensor_2": "Sensor 2",
           "custom_position_2": "Position for Sensor 2",
+          "custom_position_priority_2": "Priority for Slot 2",
           "custom_position_sensor_3": "Sensor 3",
           "custom_position_3": "Position for Sensor 3",
+          "custom_position_priority_3": "Priority for Slot 3",
           "custom_position_sensor_4": "Sensor 4",
-          "custom_position_4": "Position for Sensor 4"
+          "custom_position_4": "Position for Sensor 4",
+          "custom_position_priority_4": "Priority for Slot 4"
         },
         "data_description": {
-          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Sensors are evaluated in order (1→4) — the first active sensor wins. Leave empty to skip this slot.",
-          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
+          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed, 100% = open.",
+          "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
           "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
-          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
+          "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
           "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
-          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
+          "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
           "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
-          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
+          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
+          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77)."
         }
       },
       "motion_override": {
@@ -586,26 +594,34 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure binary sensors that set the cover to specific positions when active. Each sensor has its own target position — the first active sensor (in order 1→4) determines the position. If all sensors are off, this step is skipped and lower-priority rules apply. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position for Sensor 1",
+          "custom_position_priority_1": "Priority for Slot 1",
           "custom_position_sensor_2": "Sensor 2",
           "custom_position_2": "Position for Sensor 2",
+          "custom_position_priority_2": "Priority for Slot 2",
           "custom_position_sensor_3": "Sensor 3",
           "custom_position_3": "Position for Sensor 3",
+          "custom_position_priority_3": "Priority for Slot 3",
           "custom_position_sensor_4": "Sensor 4",
-          "custom_position_4": "Position for Sensor 4"
+          "custom_position_4": "Position for Sensor 4",
+          "custom_position_priority_4": "Priority for Slot 4"
         },
         "data_description": {
-          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Sensors are evaluated in order (1→4) — the first active sensor wins. Leave empty to skip this slot.",
-          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
+          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed, 100% = open.",
+          "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
           "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
-          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
+          "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
           "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
-          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
+          "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
           "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
-          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
+          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
+          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77)."
         }
       },
       "motion_override": {

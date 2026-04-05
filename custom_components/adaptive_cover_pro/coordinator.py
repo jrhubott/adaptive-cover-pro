@@ -48,10 +48,15 @@ from .const import (
     CONF_CUSTOM_POSITION_2,
     CONF_CUSTOM_POSITION_3,
     CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_PRIORITY_1,
+    CONF_CUSTOM_POSITION_PRIORITY_2,
+    CONF_CUSTOM_POSITION_PRIORITY_3,
+    CONF_CUSTOM_POSITION_PRIORITY_4,
     CONF_CUSTOM_POSITION_SENSOR_1,
     CONF_CUSTOM_POSITION_SENSOR_2,
     CONF_CUSTOM_POSITION_SENSOR_3,
     CONF_CUSTOM_POSITION_SENSOR_4,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
@@ -229,21 +234,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
         # Weather override tracking
         self._weather_mgr = WeatherManager(hass=self.hass, logger=self.logger)
-        # Override pipeline
-        self._pipeline = PipelineRegistry(
-            [
-                ForceOverrideHandler(),
-                WeatherOverrideHandler(),
-                ManualOverrideHandler(),
-                CustomPositionHandler(),
-                MotionTimeoutHandler(),
-                CloudSuppressionHandler(),
-                ClimateHandler(),
-                GlareZoneHandler(),
-                SolarHandler(),
-                DefaultHandler(),
-            ]
-        )
+        # Override pipeline — custom position handlers are created per-slot so
+        # each can carry an independent priority configured by the user.
+        self._pipeline = self._build_pipeline()
         self._pipeline_result = None
 
         self._cached_options = None
@@ -977,6 +970,60 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.first_refresh = False
         self.logger.debug("First refresh handled")
 
+    def _build_pipeline(self) -> PipelineRegistry:
+        """Build the override pipeline, creating one CustomPositionHandler per slot.
+
+        Called once at coordinator initialisation.  Because the integration
+        reloads fully on every options change (see ``_async_update_listener``
+        in ``__init__.py``), this method always sees the current configuration
+        and there is no need to rebuild the pipeline at runtime.
+
+        Custom position slots are created only for entries that have both a
+        sensor and a position configured.  Each carries an independent priority
+        so the PipelineRegistry can sort them into the correct evaluation order
+        alongside all other handlers.
+        """
+        options = self.config_entry.options
+        _slot_keys = [
+            (1, CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1),
+            (2, CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2),
+            (3, CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3),
+            (4, CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4),
+        ]
+        custom_handlers: list[CustomPositionHandler] = []
+        for slot, sensor_key, pos_key, pri_key in _slot_keys:
+            sensor = options.get(sensor_key)
+            position = options.get(pos_key)
+            if sensor and position is not None:
+                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
+                custom_handlers.append(
+                    CustomPositionHandler(
+                        slot=slot,
+                        entity_id=sensor,
+                        position=int(position),
+                        priority=priority,
+                    )
+                )
+
+        handlers = [
+            ForceOverrideHandler(),
+            WeatherOverrideHandler(),
+            ManualOverrideHandler(),
+            *custom_handlers,
+            MotionTimeoutHandler(),
+            CloudSuppressionHandler(),
+            ClimateHandler(),
+            GlareZoneHandler(),
+            SolarHandler(),
+            DefaultHandler(),
+        ]
+        self.logger.debug(
+            "Pipeline built with %d custom position handler(s): %s",
+            len(custom_handlers),
+            [(h.name, h.priority) for h in custom_handlers],
+        )
+        return PipelineRegistry(handlers)
+
     def _update_options(self, options):
         """Update coordinator options from config entry.
 
@@ -1168,16 +1215,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _read_custom_position_sensor_states(
         self, options
-    ) -> list[tuple[str, bool, int]]:
-        """Read custom position sensor states from HA into an ordered list."""
+    ) -> list[tuple[str, bool, int, int]]:
+        """Read custom position sensor states from HA into an ordered list.
+
+        Returns a list of (entity_id, is_on, position, priority) tuples for
+        every slot that has both a sensor and a position configured.  Priority
+        defaults to DEFAULT_CUSTOM_POSITION_PRIORITY (77) when not set so that
+        existing installations behave identically to the previous release.
+        """
         _sensor_keys = [
-            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1),
-            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2),
-            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3),
-            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4),
+            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1),
+            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2),
+            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3),
+            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4),
         ]
         result = []
-        for sensor_key, pos_key in _sensor_keys:
+        for sensor_key, pos_key, pri_key in _sensor_keys:
             sensor = options.get(sensor_key)
             position = options.get(pos_key)
             if sensor and position is not None:
@@ -1185,7 +1238,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     (state := self.hass.states.get(sensor))
                     and state.state == "on"
                 )
-                result.append((sensor, is_on, int(position)))
+                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
+                result.append((sensor, is_on, int(position), priority))
         return result
 
     def build_diagnostic_data(self) -> dict:

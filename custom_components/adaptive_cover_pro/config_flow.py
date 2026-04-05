@@ -41,10 +41,15 @@ from .const import (
     CONF_CUSTOM_POSITION_2,
     CONF_CUSTOM_POSITION_3,
     CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_PRIORITY_1,
+    CONF_CUSTOM_POSITION_PRIORITY_2,
+    CONF_CUSTOM_POSITION_PRIORITY_3,
+    CONF_CUSTOM_POSITION_PRIORITY_4,
     CONF_CUSTOM_POSITION_SENSOR_1,
     CONF_CUSTOM_POSITION_SENSOR_2,
     CONF_CUSTOM_POSITION_SENSOR_3,
     CONF_CUSTOM_POSITION_SENSOR_4,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_FOV_LEFT,
@@ -468,16 +473,32 @@ def _binary_sensor_selector() -> selector.EntitySelector:
     )
 
 
+def _priority_slider() -> selector.NumberSelector:
+    """Return a number selector for pipeline priority (1-99)."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=1,
+            max=99,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+        )
+    )
+
+
 CUSTOM_POSITION_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
     }
 )
 
@@ -826,9 +847,15 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         ]
     )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
-    has_custom_position = any(
-        config.get(f"custom_position_sensor_{i}") for i in range(1, 5)
-    )
+    # Build per-slot custom position data: list of (slot, entity_id, position, priority)
+    _custom_slots: list[tuple[int, str, int, int]] = []
+    for _i in range(1, 5):
+        _sensor = config.get(f"custom_position_sensor_{_i}")
+        _pos = config.get(f"custom_position_{_i}")
+        if _sensor and _pos is not None:
+            _pri = int(config.get(f"custom_position_priority_{_i}") or DEFAULT_CUSTOM_POSITION_PRIORITY)
+            _custom_slots.append((_i, _sensor, int(_pos), _pri))
+    has_custom_position = bool(_custom_slots)
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
     has_glare = (
@@ -949,18 +976,12 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
     )
 
-    # Custom positions (77)
+    # Custom positions — each slot at its own configured priority
     if has_custom_position:
-        cp_parts = []
-        for i in range(1, 5):
-            sensor = config.get(f"custom_position_sensor_{i}")
-            pos = config.get(f"custom_position_{i}")
-            if sensor and pos is not None:
-                cp_parts.append(f"#{i} on → {int(pos)}%")
-        cp_str = ", ".join(cp_parts)
-        lines.append(
-            f"🎯 Custom positions: first active sensor wins ({cp_str})."
-        )
+        for _slot, _eid, _pos, _pri in _custom_slots:
+            lines.append(
+                f"🎯 Custom #{_slot}: if {_eid} is on → {_pos}% (priority {_pri})."
+            )
 
     # Motion timeout (75)
     if has_motion:
@@ -1179,11 +1200,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if has_weather:
         pos_map.append(f"🌧️ Weather danger → {weather_pos}%")
     if has_custom_position:
-        for i in range(1, 5):
-            sensor = config.get(f"custom_position_sensor_{i}")
-            pos = config.get(f"custom_position_{i}")
-            if sensor and pos is not None:
-                pos_map.append(f"🎯 Custom sensor #{i} on → {int(pos)}%")
+        for _slot, _eid, _pos, _pri in _custom_slots:
+            pos_map.append(f"🎯 Custom #{_slot} on → {_pos}% (priority {_pri})")
     pos_map.append("☀️ Tracking sun → calculated position")
     min_p = config.get(CONF_MIN_POSITION, 0)
     max_p = config.get(CONF_MAX_POSITION, 100)
@@ -1203,23 +1221,26 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         mark = "✅" if active else "❌"
         return f"{mark}{short}"
 
-    chain = [
-        _ch(has_force, "Force", 100),
-        _ch(has_weather, "Weather", 90),
-        _ch(True, "Manual", 80),
-        _ch(has_custom_position, "Custom", 77),
-        _ch(has_motion, "Motion", 75),
-        _ch(has_cloud, "Cloud", 60),
-        _ch(has_climate, "Climate", 50),
+    # Build the full priority chain including per-slot custom positions.
+    # Each entry is (priority, label, active) so we can sort and render.
+    _chain_entries: list[tuple[int, str, bool]] = [
+        (100, "Force", has_force),
+        (90, "Weather", has_weather),
+        (80, "Manual", True),
+        (75, "Motion", has_motion),
+        (60, "Cloud", has_cloud),
+        (50, "Climate", has_climate),
+        (40, "Solar", True),
+        (0, "Default", True),
     ]
     if sensor_type == SensorType.BLIND or sensor_type is None:
-        chain.append(_ch(has_glare, "Glare", 45))
-    chain.extend(
-        [
-            _ch(True, "Solar", 40),
-            _ch(True, "Default", 0),
-        ]
-    )
+        _chain_entries.append((45, "Glare", has_glare))
+    # Insert one entry per custom slot at its configured priority
+    for _slot, _eid, _pos, _pri in _custom_slots:
+        _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
+    # Sort highest priority first
+    _chain_entries.sort(key=lambda e: e[0], reverse=True)
+    chain = [_ch(active, short, pri) for pri, short, active in _chain_entries]
 
     lines.append("")
     lines.append("**Decision Priority** (highest wins, ✅ active ❌ not configured)")
@@ -1336,12 +1357,16 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         {
             CONF_CUSTOM_POSITION_SENSOR_1,
             CONF_CUSTOM_POSITION_1,
+            CONF_CUSTOM_POSITION_PRIORITY_1,
             CONF_CUSTOM_POSITION_SENSOR_2,
             CONF_CUSTOM_POSITION_2,
+            CONF_CUSTOM_POSITION_PRIORITY_2,
             CONF_CUSTOM_POSITION_SENSOR_3,
             CONF_CUSTOM_POSITION_3,
+            CONF_CUSTOM_POSITION_PRIORITY_3,
             CONF_CUSTOM_POSITION_SENSOR_4,
             CONF_CUSTOM_POSITION_4,
+            CONF_CUSTOM_POSITION_PRIORITY_4,
         }
     ),
     "motion_override": frozenset(

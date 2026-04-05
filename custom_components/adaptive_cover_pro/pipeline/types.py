@@ -105,10 +105,14 @@ class PipelineSnapshot:
     # Defaults to True for backward compatibility.
     motion_control_enabled: bool = True
 
-    # Custom position sensor states: ordered list of (entity_id, is_on, position).
-    # Evaluated in order; the first sensor that is "on" determines the cover position.
+    # Custom position sensor states: list of (entity_id, is_on, position, priority).
+    # Each entry corresponds to one configured custom position slot.  The pipeline
+    # creates a separate CustomPositionHandler instance per slot, each with its own
+    # priority, so the PipelineRegistry sorts them correctly relative to all other
+    # handlers.  The handler reads its own sensor's is_on state from this list by
+    # matching entity_id.
     # Defaults to empty list (feature disabled / not configured).
-    custom_position_sensors: list[tuple[str, bool, int]] = field(default_factory=list)
+    custom_position_sensors: list[tuple[str, bool, int, int]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
