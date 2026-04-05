@@ -2193,13 +2193,13 @@ class OptionsFlowHandler(OptionsFlow):
         menu_options.append("light_cloud")
         menu_options.append("temperature_climate")
 
-        # ── Override Controls ────────────────────────────────────────
+        # ── Override Controls (priority order: highest → lowest) ─────
         menu_options.extend(
             [
-                "manual_override",
-                "force_override",
-                "motion_override",
-                "weather_override",
+                "force_override",       # Priority 100
+                "weather_override",     # Priority 90
+                "motion_override",      # Priority 80
+                "manual_override",      # Priority 70
             ]
         )
 
