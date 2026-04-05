@@ -963,8 +963,14 @@ def test_check_initial_motion_state_all_off_sets_no_motion():
     coordinator._motion_mgr.set_no_motion.assert_called_once()
 
 
-def test_check_initial_motion_state_sensor_on_no_action():
-    """_check_initial_motion_state does nothing when motion is detected at startup."""
+def test_check_initial_motion_state_sensor_on_records_motion():
+    """_check_initial_motion_state calls record_motion_detected when motion is active at startup.
+
+    Before this fix the method did nothing, leaving last_motion_time=None so the
+    Motion Status sensor showed ``waiting_for_data`` after a reload.  The fix calls
+    record_motion_detected() which populates last_motion_time and keeps the sensor
+    showing ``motion_detected`` immediately.
+    """
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -975,6 +981,7 @@ def test_check_initial_motion_state_sensor_on_no_action():
 
     AdaptiveDataUpdateCoordinator._check_initial_motion_state(coordinator)
 
+    coordinator._motion_mgr.record_motion_detected.assert_called_once()
     coordinator._motion_mgr.set_no_motion.assert_not_called()
 
 
@@ -990,6 +997,48 @@ def test_check_initial_motion_state_no_sensors_noop():
     AdaptiveDataUpdateCoordinator._check_initial_motion_state(coordinator)
 
     coordinator._motion_mgr.set_no_motion.assert_not_called()
+
+
+def test_check_initial_motion_state_sensor_on_sets_last_motion_time():
+    """record_motion_detected populates last_motion_time so the sensor shows motion_detected.
+
+    Integration test using the real MotionManager to confirm the state is fully
+    initialized (not just that the mock method was invoked).
+    """
+    from custom_components.adaptive_cover_pro.managers.motion import MotionManager
+
+    hass = MagicMock()
+    mgr = MotionManager(hass=hass, logger=MagicMock())
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
+
+    # Simulate: sensor is currently on
+    hass.states.get.return_value = MagicMock(state="on")
+
+    # This is what _check_initial_motion_state now calls
+    mgr.record_motion_detected()
+
+    assert mgr.last_motion_time is not None
+    assert mgr._motion_timeout_active is False
+    assert mgr.is_motion_detected is True  # still reads live sensor
+
+
+def test_motion_status_sensor_shows_motion_detected_after_reload():
+    """Sensor shows motion_detected immediately after reload when a sensor is on.
+
+    After the fix, _check_initial_motion_state calls record_motion_detected(),
+    which sets last_motion_time.  The sensor logic uses last_motion_time to
+    determine the state so it must show motion_detected, not waiting_for_data.
+    """
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(
+        last_motion_time=1000.0,
+        timeout_active=False,
+        timeout_task=None,
+    )
+    type(coordinator).is_motion_detected = property(lambda self: True)
+
+    sensor = _make_motion_status_sensor(coordinator)
+    assert sensor.native_value == "motion_detected"
 
 
 def test_motion_status_sensor_startup_no_motion():

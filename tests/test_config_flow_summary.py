@@ -50,6 +50,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_PRESENCE_ENTITY,
     CONF_SILL_HEIGHT,
     CONF_START_TIME,
+    CONF_SUNRISE_OFFSET,
+    CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -105,6 +107,8 @@ def _full_vertical() -> dict:
             CONF_MAX_POSITION: 95,
             CONF_ENABLE_MAX_POSITION: True,
             CONF_SUNSET_POS: 0,
+            CONF_SUNSET_OFFSET: 30,
+            CONF_SUNRISE_OFFSET: 60,
             CONF_INVERSE_STATE: True,
             CONF_INTERP: True,
             CONF_MIN_ELEVATION: 5,
@@ -310,6 +314,110 @@ def test_sunset_position_shown():
     cfg = {CONF_SUNSET_POS: 0}
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "sunset" in summary.lower() or "end time" in summary.lower()
+
+
+def test_sunrise_position_shown_when_sunset_pos_configured():
+    """After sunrise line appears when sunset_pos is configured."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunrise" in summary
+    assert "tracking resumes" in summary
+
+
+def test_sunrise_position_not_shown_without_sunset_pos():
+    """After sunrise line absent when no sunset_pos is configured."""
+    cfg = {CONF_DEFAULT_HEIGHT: 60}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "tracking resumes" not in summary
+    assert "After sunrise" not in summary
+
+
+def test_sunrise_offset_positive_shown():
+    """Positive sunrise offset shown as (+N min)."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_SUNRISE_OFFSET: 60, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunrise (+60 min)" in summary
+
+
+def test_sunrise_offset_negative_shown():
+    """Negative sunrise offset shown as (-N min)."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_SUNRISE_OFFSET: -30, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunrise (-30 min)" in summary
+
+
+def test_sunrise_offset_zero_omitted():
+    """Zero sunrise offset shows no parenthetical annotation."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_SUNRISE_OFFSET: 0, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunrise →" in summary
+    assert "(+" not in summary.split("After sunrise")[1].split("\n")[0]
+
+
+def test_sunset_offset_positive_shown():
+    """Positive sunset offset shown as (+N min) on the sunset line."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_SUNSET_OFFSET: 30, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunset (+30 min)" in summary
+
+
+def test_sunset_offset_negative_shown():
+    """Negative sunset offset shown as (-N min) on the sunset line."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_SUNSET_OFFSET: -30, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunset (-30 min)" in summary
+
+
+def test_sunset_offset_zero_omitted():
+    """Zero sunset offset shows no parenthetical annotation."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_SUNSET_OFFSET: 0, CONF_DEFAULT_HEIGHT: 0}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunset →" in summary
+    assert "(+" not in summary.split("After sunset")[1].split("\n")[0]
+
+
+def test_sunrise_shows_default_position():
+    """After sunrise line shows the default position percentage."""
+    cfg = {CONF_SUNSET_POS: 80, CONF_DEFAULT_HEIGHT: 45}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    # The sunrise line should reference the default position (45%)
+    sunrise_line = [
+        ln for ln in summary.splitlines() if "After sunrise" in ln
+    ]
+    assert sunrise_line, "No 'After sunrise' line found"
+    assert "45%" in sunrise_line[0]
+
+
+def test_both_offsets_shown_together():
+    """Both sunset and sunrise offsets appear correctly when both are non-zero."""
+    cfg = {
+        CONF_SUNSET_POS: 80,
+        CONF_SUNSET_OFFSET: 30,
+        CONF_SUNRISE_OFFSET: 60,
+        CONF_DEFAULT_HEIGHT: 0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "After sunset (+30 min) →" in summary
+    assert "After sunrise (+60 min) →" in summary
+
+
+def test_end_time_and_sunset_pos_with_offsets():
+    """Scenario A: end time + sunset_pos + both offsets all render correctly."""
+    cfg = {
+        CONF_END_TIME: "20:00",
+        CONF_SUNSET_POS: 80,
+        CONF_SUNSET_OFFSET: 30,
+        CONF_SUNRISE_OFFSET: 60,
+        CONF_DEFAULT_HEIGHT: 0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    # End-time transition line
+    assert "After end time" in summary
+    # Sunset line with offset
+    assert "After sunset (+30 min) → 80%" in summary
+    # Sunrise line with offset
+    assert "After sunrise (+60 min)" in summary
+    assert "tracking resumes" in summary
 
 
 # ---------------------------------------------------------------------------
@@ -759,6 +867,8 @@ def test_full_vertical_config_smoke():
     # Timing
     assert "07:30" in summary
     assert "20:00" in summary
+    assert "After sunrise" in summary
+    assert "tracking resumes" in summary
     # Manual override
     assert "120 min" in summary
     # Motion

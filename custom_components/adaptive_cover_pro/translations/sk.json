@@ -75,6 +75,7 @@
           "sunset_position": "Poloha pri západe slnka",
           "sunset_offset": "Posun západu slnka",
           "sunrise_offset": "Posun východu slnka",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -87,6 +88,7 @@
           "sunset_position": "Pozícia na prepnutie po západe slnka",
           "sunset_offset": "Posun (±) od času západu slnka v minútach",
           "sunrise_offset": "Posun (±) od času východu slnka v minútach",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
@@ -99,8 +101,7 @@
           "start_entity": "Entita označujúca čas začiatku",
           "end_time": "Čas ukončenia",
           "end_entity": "Entita označujúca čas ukončenia",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "data_description": {
           "delta_position": "Pred nastavením polohy krytu je potrebná minimálna zmena polohy",
@@ -109,8 +110,7 @@
           "start_entity": "Entita predstavujúca stav počiatočného času, ktorý má prednosť pred pevným časom začiatku nastaveným vyššie. Užitočné na automatizáciu času začiatku s entitou",
           "end_time": "Čas ukončenia každého dňa; po tomto čase zostane kryt nehybný",
           "end_entity": "Entita predstavujúca stav času ukončenia, ktorý má prednosť pred pevným časom ukončenia nastaveným vyššie. Užitočné na automatizáciu času ukončenia s entitou",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "title": "Upravte konfiguráciu automatizácie",
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
@@ -290,8 +290,7 @@
           "start_entity": "Entita označujúca čas začatia",
           "end_time": "Čas ukončenia",
           "end_entity": "Entita označujúca čas ukončenia",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "data_description": {
           "delta_position": "Pred nastavením polohy krytu je potrebná minimálna zmena polohy",
@@ -300,8 +299,7 @@
           "start_entity": "Entita predstavujúca stav počiatočného času, ktorý má prednosť pred pevným časom začiatku nastaveným vyššie. Užitočné na automatizáciu času začiatku s entitou",
           "end_time": "Čas ukončenia každého dňa; po tomto čase zostane kryt nehybný",
           "end_entity": "Uistite sa, že pozícia je v čase ukončenia konzistentne nastavená na predvolené nastavenie západu slnka. To je obzvlášť výhodné, keď čas ukončenia predchádza skutočnému západu slnka.",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "title": "Upravte konfiguráciu automatizácie",
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
@@ -372,6 +370,7 @@
           "sunset_position": "Poloha pri západe slnka",
           "sunset_offset": "Posun západu slnka",
           "sunrise_offset": "Posun východu slnka",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Inverzia stavu (potrebné pre niektoré kryty, ktoré nespĺňajú pokyny HA)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -384,6 +383,7 @@
           "sunset_position": "Pozícia na prepnutie po západe slnka",
           "sunset_offset": "Posun (±) od času západu slnka v minútach",
           "sunrise_offset": "Posun (±) od času východu slnka v minútach",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }

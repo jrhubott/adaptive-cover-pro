@@ -75,6 +75,7 @@
           "sunset_position": "Zonsondergang Posistie",
           "sunset_offset": "Afwijking Zonsondergang",
           "sunrise_offset": "Sunrise Offset",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Draai de status om (nodig voor sommige covers die omgekeerde percentages hanteren)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -87,6 +88,7 @@
           "sunset_position": "Positie om naar over te schakelen na zonsondergang",
           "sunset_offset": "Verschil (±) vanaf zonsondergang in minuten",
           "sunrise_offset": "Verschil (±) vanaf zonsopkomst in minuten",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
@@ -99,8 +101,7 @@
           "start_entity": "Entiteit die starttijd aangeeft",
           "end_time": "Eindtijd",
           "end_entity": "Entiteit die eindtijd aangeeft",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "data_description": {
           "delta_position": "Minimale verandering in positie vereist voordat de positie van de bekleding wordt aangepast",
@@ -109,8 +110,7 @@
           "start_entity": "Entiteit die de status van de starttijd vertegenwoordigt, die de hierboven ingestelde statische starttijd overschrijft. Handig voor het automatiseren van de starttijd met een entiteit",
           "end_time": "Eindtijd voor elke dag; na deze tijd blijft de bekleding stationair",
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "title": "Wijzig Automatiseringsinstellingen",
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
@@ -288,8 +288,7 @@
           "start_entity": "Entiteit die starttijd aangeeft",
           "end_time": "Eindtijd",
           "end_entity": "Entiteit die eindtijd aangeeft",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "data_description": {
           "delta_position": "Minimale verandering in positie vereist voordat de positie van de bekleding wordt aangepast",
@@ -298,8 +297,7 @@
           "start_entity": "Entiteit die de status van de starttijd vertegenwoordigt, die de hierboven ingestelde statische starttijd overschrijft. Handig voor het automatiseren van de starttijd met een entiteit",
           "end_time": "Eindtijd voor elke dag; na deze tijd blijft de bekleding stationair",
           "end_entity": "Entiteit die de status van de eindtijd vertegenwoordigt, die de hierboven ingestelde statische eindtijd overschrijft. Handig voor het automatiseren van de eindtijd met een entiteit",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "title": "Wijzig Automatiseringsinstellingen",
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
@@ -370,6 +368,7 @@
           "sunset_position": "Zonsondergang Posistie",
           "sunset_offset": "Afwijking Zonsondergang",
           "sunrise_offset": "Sunrise Offset",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Draai de status om (nodig voor sommige covers die omgekeerde percentages hanteren)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -382,6 +381,7 @@
           "sunset_position": "Positie om naar over te schakelen na zonsondergang",
           "sunset_offset": "Verschil (±) vanaf zonsondergang in minuten",
           "sunrise_offset": "Verschil (±) vanaf zonsopkomst in minuten",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }

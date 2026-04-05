@@ -501,3 +501,139 @@ def test_get_diagnostics_includes_reconcile_time(svc):
 
     diag = svc.get_diagnostics("cover.test")
     assert diag["last_reconcile_time"] == now.isoformat()
+
+
+# ------------------------------------------------------------------ #
+# _reconcile — manual override skip (issue #116)
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_entity_in_manual_override(svc, hass):
+    """Reconciliation must NOT resend the old target when cover is in manual override.
+
+    Regression test for issue #116: user manually moves cover but it snaps
+    back because reconciliation fights the manual position.
+    """
+    svc.target_call["cover.blind"] = 85       # integration last sent 85%
+    svc.wait_for_target["cover.blind"] = False
+    _patch_position(svc, 50)                  # user moved it to 50%
+
+    # Coordinator marks this entity as manually overridden
+    svc.manual_override_entities = {"cover.blind"}
+
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # Must NOT resend — cover should stay where the user put it
+    hass.services.async_call.assert_not_called()
+    # retry count must not be incremented
+    assert svc._retry_counts.get("cover.blind", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resumes_after_manual_override_cleared(svc, hass):
+    """Once manual override clears, reconciliation should resume protecting target."""
+    svc.target_call["cover.blind"] = 85
+    svc.wait_for_target["cover.blind"] = False
+    _patch_position(svc, 50)
+
+    # Override active — should skip
+    svc.manual_override_entities = {"cover.blind"}
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+    hass.services.async_call.assert_not_called()
+
+    # Override cleared — should now retry
+    svc.manual_override_entities = set()
+    with _patch_caps():
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+    hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_only_skips_manual_entity_not_others(svc, hass):
+    """Reconciliation skips the manually-overridden entity but still retries others."""
+    svc.target_call["cover.blind"] = 85       # manually moved — should skip
+    svc.target_call["cover.awning"] = 70      # auto-controlled — should retry
+    svc.wait_for_target["cover.blind"] = False
+    svc.wait_for_target["cover.awning"] = False
+
+    def fake_position(entity):
+        return 50  # both off target
+
+    svc._get_current_position = MagicMock(side_effect=fake_position)
+    svc.manual_override_entities = {"cover.blind"}
+
+    with _patch_caps():
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # Exactly one call — only for cover.awning
+    assert hass.services.async_call.call_count == 1
+    called_data = hass.services.async_call.call_args[0][2]
+    assert called_data.get("entity_id") == "cover.awning"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_safety_override_still_protected(svc, hass):
+    """Safety handlers (force override) use apply_position(force=True) which
+    overwrites target_call — reconciliation then protects that new safety target
+    even if the entity is still in the manual override set (edge case: safety
+    fires while manual override is active).
+    """
+    # Safety handler fired: target_call updated to safety position (100%)
+    svc.target_call["cover.blind"] = 100
+    svc.wait_for_target["cover.blind"] = False
+    _patch_position(svc, 50)  # Cover still moving toward safety position
+
+    # Manual override set still contains the entity (coordinator syncs next cycle)
+    svc.manual_override_entities = {"cover.blind"}
+
+    # Because the entity is in manual_override_entities, reconciliation will
+    # skip it this tick — the safety position will have been sent already by
+    # apply_position(force=True), so this is acceptable; the test documents
+    # that we rely on apply_position(force=True) for immediate safety, not
+    # the reconciliation retry for the safety-override case.
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_manual_override_entities_property_getter_and_setter(svc):
+    """manual_override_entities property read/write round-trips correctly."""
+    assert svc.manual_override_entities == set()
+
+    svc.manual_override_entities = {"cover.blind", "cover.awning"}
+    assert svc.manual_override_entities == {"cover.blind", "cover.awning"}
+
+    # Setting to empty clears it
+    svc.manual_override_entities = set()
+    assert svc.manual_override_entities == set()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_with_force_override_sensor_scenario(svc, hass):
+    """Regression: issue #116 — cover with force override sensor configured
+    (but inactive) snaps back after manual move.
+
+    The force override sensor generates extra state-change events for its
+    coordinator, causing more frequent update cycles.  Reconciliation was
+    fighting the user's manual position on every cycle.
+    """
+    # Integration last sent default position (85%) — target_call is set
+    svc.target_call["cover.balcony"] = 85
+    svc.wait_for_target["cover.balcony"] = False
+    # wait_for_target is False — cover reached 85% and stopped
+
+    # User manually closes cover to 50%
+    _patch_position(svc, 50)
+
+    # Coordinator detects manual override and syncs to CoverCommandService
+    svc.manual_override_entities = {"cover.balcony"}
+
+    # Force override sensor fires a state-change (door attribute update, etc.)
+    # → coordinator runs update cycle → reconciliation tick fires
+    for _ in range(3):  # max_retries = 3; should never fire even once
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # Cover must NOT have been moved back — user's 50% position preserved
+    hass.services.async_call.assert_not_called()
+    assert svc._retry_counts.get("cover.balcony", 0) == 0

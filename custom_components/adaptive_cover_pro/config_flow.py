@@ -354,6 +354,15 @@ POSITION_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes"
             )
         ),
+        vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=99,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
         vol.Optional(CONF_INVERSE_STATE, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_INTERP, default=False): selector.BooleanSelector(),
     }
@@ -384,15 +393,6 @@ AUTOMATION_SCHEMA = vol.Schema(
         vol.Optional(CONF_END_TIME, default="00:00:00"): selector.TimeSelector(),
         vol.Optional(CONF_END_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
-        vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=99,
-                step=1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="%",
-            )
         ),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
     }
@@ -984,6 +984,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     end_time = config.get(CONF_END_TIME)
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
+    sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
+    sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     timing_parts = []
     if start_time:
         timing_parts.append(f"from {start_time}")
@@ -1000,13 +1002,30 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         indent = "\u00a0" * 4
         lines.append(f"{indent}🕒 {timing_str}.")
         if sunset_pos is not None:
+            # Build offset annotation strings (omitted when offset is 0)
+            def _offset_str(minutes: int) -> str:
+                if minutes > 0:
+                    return f" (+{minutes} min)"
+                if minutes < 0:
+                    return f" ({minutes} min)"
+                return ""
+
+            sunset_off_str = _offset_str(int(sunset_off))
+            sunrise_off_str = _offset_str(int(sunrise_off))
             has_end_time = bool(end_time or end_entity)
             if has_end_time and int(sunset_pos) != int(default_pos):
                 lines.append(f"{indent}🔚 After end time → {default_pos}%.")
-                lines.append(f"{indent}🌅 After sunset → {sunset_pos}%.")
+                lines.append(
+                    f"{indent}🌅 After sunset{sunset_off_str} → {sunset_pos}%."
+                )
             else:
                 label = "end time/sunset" if has_end_time else "sunset"
-                lines.append(f"{indent}🌅 After {label} → {sunset_pos}%.")
+                lines.append(
+                    f"{indent}🌅 After {label}{sunset_off_str} → {sunset_pos}%."
+                )
+            lines.append(
+                f"{indent}🌄 After sunrise{sunrise_off_str} → {default_pos}% (tracking resumes)."
+            )
 
     # Blind spot
     if config.get(CONF_ENABLE_BLIND_SPOT):
@@ -1152,6 +1171,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNSET_POS,
             CONF_SUNSET_OFFSET,
             CONF_SUNRISE_OFFSET,
+            CONF_OPEN_CLOSE_THRESHOLD,
             CONF_INVERSE_STATE,
             CONF_INTERP,
         }
@@ -1172,7 +1192,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_START_ENTITY,
             CONF_END_TIME,
             CONF_END_ENTITY,
-            CONF_OPEN_CLOSE_THRESHOLD,
             CONF_RETURN_SUNSET,
         }
     ),
