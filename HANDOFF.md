@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-05
-**Current Version:** v2.13.8
+**Current Version:** v2.14.0
 **Branch:** `main` (stable)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -10,16 +10,13 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-127-constant-repositioning-and-custom-position-priorities` — Stop constant repositioning at 0%/100% + configurable custom position priorities (PR #130, merged to main).
 - `feature/summary-sunrise-position` — Config summary sunrise display + position settings reorganization (PR #124, merged to main).
 - `fix/false-manual-override-on-automation-position` — False manual override race condition fix (PR #121, merged to main).
-- `fix/motion-timeout-pending-ignores-new-motion` — Motion timeout pending state fix (PR #119, merged to main).
-
-**Open Feature Branch:**
-- `fix/force-override-time-delta-and-reconcile-auto-control` — Two bug fixes (not yet merged to main).
 
 ## Tests
 
-**1185 passing, 0 failing** (+49 new tests for force override time_delta bypass and reconciliation auto_control).
+**1221 passing, 0 failing** (+36 new tests for same-position delta bypass and per-priority custom position handlers).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
@@ -31,8 +28,13 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | # | Title | Notes |
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
+| [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached/maintained | Awaiting user response to clarifying questions. May be related to #127 (fixed in v2.14.0). |
 
 ## Known Gotchas
+
+- **Covers at 0%/100% received redundant commands every time_threshold minutes (fixed v2.14.0):** `_check_position_delta()` bypassed the delta check for special positions (0, 100, default, sunset) but didn't check if the cover was *already* at the target. Fixed by a same-position short-circuit placed after `sun_just_appeared` but before the special-positions bypass. See `managers/cover_command.py`.
+
+- **Custom position handlers are now per-instance (v2.14.0):** `CustomPositionHandler` takes `(slot, entity_id, position, priority)`. One handler per configured slot, created in `coordinator._build_pipeline()`. `PipelineSnapshot.custom_position_sensors` is now a 4-tuple `(entity_id, is_on, position, priority)`. Update any test code building these tuples.
 
 - **Force commands were blocked by time_delta (fixed on branch):** `async_handle_state_change` was calling `_build_position_context` without `force=True` even when the pipeline result had `bypass_auto_control=True`. Safety handlers (ForceOverride, Weather) produced the correct position but it could be blocked by the time_delta or position_delta gate. Fix: `async_handle_state_change` now checks `_pipeline_bypasses_auto_control` and passes `force=True` when True. Reason string also uses the pipeline's `control_method.value` (e.g. "force", "weather") instead of always saying "solar".
 
@@ -56,6 +58,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.14.0](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.0) | 2026-04-05 | Fix constant repositioning at 0%/100% (#127); configurable priority per custom position slot. |
+| [v2.13.9](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.9) | 2026-04-05 | Custom position pipeline handler (priority 77). |
 | [v2.13.8](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8) | 2026-04-05 | Config summary sunrise display, position settings reorganization, false manual override fix. |
 | [v2.13.8-beta.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.4) | 2026-04-05 | Config summary sunrise display + position settings reorganization (PR #124). |
 | [v2.13.8-beta.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8-beta.3) | 2026-04-04 | Fix: false manual override on automation positioning (race condition). |
