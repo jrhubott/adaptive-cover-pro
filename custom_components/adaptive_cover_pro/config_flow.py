@@ -1443,14 +1443,23 @@ def _get_geometry_schema(sensor_type: str) -> vol.Schema:
     return GEOMETRY_VERTICAL_SCHEMA
 
 
+def _get_sun_tracking_schema(sensor_type: str | None) -> vol.Schema:
+    """Return sun tracking schema, adding glare zones toggle for vertical covers."""
+    if sensor_type == SensorType.BLIND:
+        return SUN_TRACKING_SCHEMA.extend(
+            {
+                vol.Optional(
+                    CONF_ENABLE_GLARE_ZONES, default=False
+                ): selector.BooleanSelector(),
+            }
+        )
+    return SUN_TRACKING_SCHEMA
+
+
 def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
     """Build the glare zones schema: enable toggle, window width, and 4 zone slots."""
     opts = options or {}
-    schema_dict: dict = {
-        vol.Optional(
-            CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)
-        ): (selector.BooleanSelector()),
-    }
+    schema_dict: dict = {}
     for i in range(1, 5):
         prefix = f"glare_zone_{i}"
         schema_dict[
@@ -1652,7 +1661,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             ):
                 return self.async_show_form(
                     step_id="sun_tracking",
-                    data_schema=SUN_TRACKING_SCHEMA,
+                    data_schema=_get_sun_tracking_schema(self.type_blind),
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
                     },
@@ -1660,7 +1669,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_position()
         return self.async_show_form(
-            step_id="sun_tracking", data_schema=SUN_TRACKING_SCHEMA
+            step_id="sun_tracking",
+            data_schema=_get_sun_tracking_schema(self.type_blind),
         )
 
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
@@ -1672,7 +1682,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_summary()
             if self.config.get(CONF_ENABLE_BLIND_SPOT):
                 return await self.async_step_blind_spot()
-            if self.type_blind == SensorType.BLIND:
+            if self.type_blind == SensorType.BLIND and self.config.get(
+                CONF_ENABLE_GLARE_ZONES
+            ):
                 return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
@@ -1721,7 +1733,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            if self.type_blind == SensorType.BLIND:
+            if self.type_blind == SensorType.BLIND and self.config.get(
+                CONF_ENABLE_GLARE_ZONES
+            ):
                 return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
@@ -2167,7 +2181,9 @@ class OptionsFlowHandler(OptionsFlow):
             menu_options.append("interp")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             menu_options.append("blind_spot")
-        if self.sensor_type == SensorType.BLIND:
+        if self.sensor_type == SensorType.BLIND and self.options.get(
+            CONF_ENABLE_GLARE_ZONES
+        ):
             menu_options.append("glare_zones")
 
         # ── Schedule & Automation ────────────────────────────────────
@@ -2249,10 +2265,11 @@ class OptionsFlowHandler(OptionsFlow):
                 and user_input.get(CONF_MIN_ELEVATION) is not None
                 and user_input[CONF_MAX_ELEVATION] <= user_input[CONF_MIN_ELEVATION]
             ):
+                schema = _get_sun_tracking_schema(self.sensor_type)
                 return self.async_show_form(
                     step_id="sun_tracking",
                     data_schema=self.add_suggested_values_to_schema(
-                        SUN_TRACKING_SCHEMA, user_input or self.options
+                        schema, user_input or self.options
                     ),
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
@@ -2260,10 +2277,11 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             self.options.update(user_input)
             return await self.async_step_init()
+        schema = _get_sun_tracking_schema(self.sensor_type)
         return self.async_show_form(
             step_id="sun_tracking",
             data_schema=self.add_suggested_values_to_schema(
-                SUN_TRACKING_SCHEMA, user_input or self.options
+                schema, user_input or self.options
             ),
         )
 
