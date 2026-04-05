@@ -6,6 +6,7 @@ import datetime as dt
 
 from homeassistant.core import HomeAssistant
 
+from ..const import POSITION_TOLERANCE_PERCENT
 from ..helpers import get_open_close_state
 
 
@@ -105,14 +106,23 @@ class AdaptiveCoverManager:
             return
 
         if new_position != our_state:
-            if (
-                manual_threshold is not None
-                and abs(our_state - new_position) < manual_threshold
-            ):
+            # Use the larger of the user-configured threshold and the position
+            # tolerance constant as the minimum detectable change.  This prevents
+            # motor rounding and position-reporting imprecision (up to
+            # POSITION_TOLERANCE_PERCENT) from triggering false manual overrides
+            # even when the user has not configured an explicit threshold.
+            effective_threshold = max(
+                manual_threshold if manual_threshold is not None else 0,
+                POSITION_TOLERANCE_PERCENT,
+            )
+            if abs(our_state - new_position) < effective_threshold:
                 self.logger.debug(
-                    "Position change is less than threshold %s for %s",
-                    manual_threshold,
+                    "Position change %s%% is less than effective threshold %s%% for %s (user threshold=%s, tolerance floor=%s)",
+                    abs(our_state - new_position),
+                    effective_threshold,
                     entity_id,
+                    manual_threshold,
+                    POSITION_TOLERANCE_PERCENT,
                 )
                 return
             self.logger.debug(

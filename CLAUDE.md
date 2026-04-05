@@ -10,8 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Current version and branch state
 - What the last session did (brief summary)
 - Test suite status (count and pass/fail)
+- Open PRs awaiting merge to main (with linked issue and beta release if any)
 - Open GitHub issues (backlog)
-- Pending upstream PRs
+- Pending upstream PRs (HACS, etc.)
 
 ```bash
 # Quick orientation at session start
@@ -39,9 +40,32 @@ git log --oneline -5
 - Recently closed issues → not useful to the next session
 - Key patterns and handler templates → those live in `CLAUDE.md`
 
-**When to update:** At the end of any session where code was merged, a release was cut, or an issue was opened/closed. Do not update mid-feature-branch — wait until changes land on `main`.
+**When to update:** At the end of any session where:
+- Code was merged or a release was cut
+- A PR was opened, merged, or closed
+- An issue was opened or closed
+- A beta was published (add to Open PRs table)
 
-**How to update:** Rewrite the whole file — it should always reflect the current moment, not accumulate history. Keep it under ~40 lines.
+Do not update mid-feature-branch — wait until something meaningful changes.
+
+**How to update:** Edit only the relevant sections — the file accumulates a running state. Keep the Open PRs table current (add rows when PRs open, remove when merged).
+
+### Open PRs Table
+
+The **Open PRs (Awaiting Merge to Main)** table is the key mechanism for tracking work that has been reviewed and beta-tested but not yet merged. Keep it accurate:
+
+| Column | What to put |
+|--------|-------------|
+| PR | Link to the GitHub PR |
+| Branch | The feature/fix branch name |
+| Issue | Link to the GitHub issue it fixes, or `—` if none |
+| Beta | Link to the beta release created for testing, or `—` if none |
+| Status | 🟡 Awaiting user confirmation / 🟠 Open — not yet beta-tested / 🟢 Ready to merge |
+| Notes | One line: what the PR does and current blocking condition |
+
+**Add a row** when a PR is opened and pushed.
+**Update status** when a beta is created, or when the issue author confirms the fix.
+**Remove the row** when the PR is merged OR closed for any reason — closed PRs do not belong in this table regardless of outcome.
 
 ## Project Overview
 
