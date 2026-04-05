@@ -984,6 +984,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     end_time = config.get(CONF_END_TIME)
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
+    sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
+    sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     timing_parts = []
     if start_time:
         timing_parts.append(f"from {start_time}")
@@ -1000,13 +1002,30 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         indent = "\u00a0" * 4
         lines.append(f"{indent}🕒 {timing_str}.")
         if sunset_pos is not None:
+            # Build offset annotation strings (omitted when offset is 0)
+            def _offset_str(minutes: int) -> str:
+                if minutes > 0:
+                    return f" (+{minutes} min)"
+                if minutes < 0:
+                    return f" ({minutes} min)"
+                return ""
+
+            sunset_off_str = _offset_str(int(sunset_off))
+            sunrise_off_str = _offset_str(int(sunrise_off))
             has_end_time = bool(end_time or end_entity)
             if has_end_time and int(sunset_pos) != int(default_pos):
                 lines.append(f"{indent}🔚 After end time → {default_pos}%.")
-                lines.append(f"{indent}🌅 After sunset → {sunset_pos}%.")
+                lines.append(
+                    f"{indent}🌅 After sunset{sunset_off_str} → {sunset_pos}%."
+                )
             else:
                 label = "end time/sunset" if has_end_time else "sunset"
-                lines.append(f"{indent}🌅 After {label} → {sunset_pos}%.")
+                lines.append(
+                    f"{indent}🌅 After {label}{sunset_off_str} → {sunset_pos}%."
+                )
+            lines.append(
+                f"{indent}🌄 After sunrise{sunrise_off_str} → {default_pos}% (tracking resumes)."
+            )
 
     # Blind spot
     if config.get(CONF_ENABLE_BLIND_SPOT):
