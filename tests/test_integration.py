@@ -26,6 +26,13 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ManualOverrideHandler,
     MotionTimeoutHandler,
     SolarHandler,
+    WeatherOverrideHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
+    CloudSuppressionHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+    CustomPositionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
@@ -672,3 +679,560 @@ class TestEndToEndIntegration:
             assert diag_dict["sun_elevation"] == 70.0
             assert "gamma" in diag_dict
             assert "sun" in explanation.lower() and "position" in explanation.lower()
+
+
+# ---------------------------------------------------------------------------
+# Step 24: Weather override → pipeline → diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestWeatherOverrideEndToEnd:
+    """WeatherOverrideHandler wins with bypass_auto_control=True; diagnostics confirm."""
+
+    def test_weather_override_trumps_solar(self):
+        """WeatherOverrideHandler wins even when sun is in FOV."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_vertical_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=50,
+                distance=0.5,
+                h_win=2.0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = PipelineRegistry(
+                [
+                    WeatherOverrideHandler(),
+                    SolarHandler(),
+                    DefaultHandler(),
+                ]
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_blind",
+                weather_override_active=True,
+                weather_override_position=0,
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.WEATHER
+            assert result.position == 0
+            assert result.bypass_auto_control is True
+
+            diag_ctx = _build_diagnostic_context(cover, result)
+            diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
+
+            assert diag_dict["control_status"] == "weather_override_active"
+            assert "weather" in explanation.lower()
+
+
+# ---------------------------------------------------------------------------
+# Step 25: Cloud suppression → pipeline → diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestCloudSuppressionEndToEnd:
+    """CloudSuppressionHandler fires when not sunny and suppression is enabled."""
+
+    def test_cloud_suppression_beats_solar(self):
+        """CLOUD control method: sun in FOV but cloudy → cloud suppression fires."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_vertical_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=50,
+                distance=0.5,
+                h_win=2.0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = PipelineRegistry(
+                [CloudSuppressionHandler(), SolarHandler(), DefaultHandler()]
+            )
+            climate_readings = ClimateReadings(
+                outside_temperature=None,
+                inside_temperature=None,
+                is_presence=True,
+                is_sunny=False,  # not sunny → cloud suppression fires
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
+            )
+            from custom_components.adaptive_cover_pro.pipeline.types import (
+                ClimateOptions,
+            )
+            climate_options = ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=False,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+                winter_close_insulation=False,
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_blind",
+                climate_readings=climate_readings,
+                climate_options=climate_options,
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.CLOUD
+            assert result.position == 50  # default position (h_def)
+
+            diag_ctx = _build_diagnostic_context(cover, result)
+            diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
+
+            # Cloud suppression maps to "active" status (same as solar)
+            assert diag_dict["control_status"] == "active"
+            assert "cloud" in explanation.lower()
+
+
+# ---------------------------------------------------------------------------
+# Step 27: Custom position → pipeline → diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPositionEndToEnd:
+    """CustomPositionHandler wins when its sensor is ON."""
+
+    def test_custom_position_wins_over_solar(self):
+        """Custom position at priority 77 beats solar (40) when sensor is active."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_vertical_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=50,
+                distance=0.5,
+                h_win=2.0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = PipelineRegistry(
+                [
+                    CustomPositionHandler(
+                        slot=1,
+                        entity_id="binary_sensor.scene",
+                        position=33,
+                        priority=77,
+                    ),
+                    SolarHandler(),
+                    DefaultHandler(),
+                ]
+            )
+            snapshot = PipelineSnapshot(
+                cover=cover,
+                config=cover.config,
+                cover_type="cover_blind",
+                default_position=50,
+                is_sunset_active=False,
+                climate_readings=None,
+                climate_mode_enabled=False,
+                climate_options=None,
+                force_override_sensors={},
+                force_override_position=0,
+                manual_override_active=False,
+                motion_timeout_active=False,
+                weather_override_active=False,
+                weather_override_position=0,
+                glare_zones=None,
+                active_zone_names=frozenset(),
+                custom_position_sensors=[("binary_sensor.scene", True, 33, 77)],
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.CUSTOM_POSITION
+            assert result.position == 33
+
+            diag_ctx = _build_diagnostic_context(cover, result)
+            diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
+
+            # Custom position maps to "active" status
+            assert diag_dict["control_status"] == "active"
+
+
+# ---------------------------------------------------------------------------
+# Step 28: Climate intermediate (glare control) → pipeline → diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestClimateGlareControlEndToEnd:
+    """When temp between thresholds with presence, climate mode uses solar tracking."""
+
+    def test_climate_glare_control_uses_solar_position(self):
+        """Inside temp between thresholds + opaque blind → SUMMER strategy but solar pos."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_vertical_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=50,
+                distance=0.5,
+                h_win=2.0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = PipelineRegistry(
+                [ClimateHandler(), SolarHandler(), DefaultHandler()]
+            )
+            climate_readings = ClimateReadings(
+                outside_temperature=None,
+                inside_temperature=22.0,  # between temp_low=18 and temp_high=26
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
+            )
+            from custom_components.adaptive_cover_pro.pipeline.types import (
+                ClimateOptions,
+            )
+            climate_options = ClimateOptions(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_switch=False,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=False,
+                winter_close_insulation=False,
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_blind",
+                climate_mode_enabled=True,
+                climate_readings=climate_readings,
+                climate_options=climate_options,
+            )
+            result = pipeline.evaluate(snapshot)
+
+            # ClimateHandler fires in GLARE_CONTROL mode → uses solar position
+            assert result.control_method == ControlMethod.SOLAR
+            assert 0 <= result.position <= 100
+
+            diag_ctx = _build_diagnostic_context(cover, result, climate_mode=True)
+            diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
+
+            assert diag_dict["control_status"] == "active"
+
+
+# ---------------------------------------------------------------------------
+# Step 29: Multiple overrides active, highest priority wins
+# ---------------------------------------------------------------------------
+
+
+class TestMultipleOverridesHighestPriorityWins:
+    """When multiple overrides are active simultaneously, the highest-priority wins."""
+
+    def test_force_beats_manual_and_motion(self):
+        """Force (100) > Manual (80) > Motion (75): force wins with full trace."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_vertical_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=50,
+                distance=0.5,
+                h_win=2.0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = PipelineRegistry(
+                [
+                    ForceOverrideHandler(),
+                    ManualOverrideHandler(),
+                    MotionTimeoutHandler(),
+                    SolarHandler(),
+                    DefaultHandler(),
+                ]
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_blind",
+                force_override_sensors={"binary_sensor.wind": True},
+                force_override_position=0,
+                manual_override_active=True,
+                motion_timeout_active=True,
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.FORCE
+            assert result.position == 0
+            assert result.bypass_auto_control is True
+
+            # Only first step (force) matched; all others did not
+            matched = [s for s in result.decision_trace if s.matched]
+            assert len(matched) == 1
+            assert matched[0].handler == "force_override"
+
+            # Full trace has all handlers
+            handler_names = {s.handler for s in result.decision_trace}
+            assert "force_override" in handler_names
+            assert "manual_override" in handler_names
+            assert "motion_timeout" in handler_names
+
+            diag_ctx = _build_diagnostic_context(
+                cover, result, force_override_position=0, final_state=0
+            )
+            diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
+            assert diag_dict["control_status"] == "force_override_active"
+
+
+# ---------------------------------------------------------------------------
+# Step 30: Horizontal awning with climate mode
+# ---------------------------------------------------------------------------
+
+
+class TestHorizontalAwningWithClimateMode:
+    """Horizontal awning with climate mode: covers awning-specific calculation."""
+
+    def test_horizontal_awning_winter_heating(self):
+        """Cold temp + sun in FOV → ClimateHandler opens awning fully (100%)."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_horizontal_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=100,
+                distance=0.5,
+                h_win=2.0,
+                awn_length=2.0,
+                awn_angle=0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = _make_pipeline()
+            climate_readings = ClimateReadings(
+                outside_temperature=None,
+                inside_temperature=15.0,  # below temp_low=20 → winter
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
+            )
+            from custom_components.adaptive_cover_pro.pipeline.types import (
+                ClimateOptions,
+            )
+            climate_options = ClimateOptions(
+                temp_low=20.0,
+                temp_high=25.0,
+                temp_switch=False,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=False,
+                winter_close_insulation=False,
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_awning",
+                climate_mode_enabled=True,
+                climate_readings=climate_readings,
+                climate_options=climate_options,
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.WINTER
+            assert result.position == 100
+
+            diag_ctx = _build_diagnostic_context(cover, result, climate_mode=True)
+            diag_dict, _ = DiagnosticsBuilder().build(diag_ctx)
+
+            assert diag_dict["sun_azimuth"] == 180.0
+            assert diag_dict["control_status"] == "active"
+
+    def test_horizontal_awning_solar_tracking(self):
+        """Awning with sun in FOV but comfortable temp → solar tracking."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_horizontal_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=45.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=100,
+                distance=0.5,
+                h_win=2.0,
+                awn_length=2.0,
+                awn_angle=0,
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            assert cover.direct_sun_valid is True
+            pipeline = _make_pipeline()
+            snapshot = _build_pipeline_snapshot(
+                cover, cover_type="cover_awning"
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.SOLAR
+            assert 0 <= result.position <= 100
+
+
+# ---------------------------------------------------------------------------
+# Step 31: Tilt cover with climate mode
+# ---------------------------------------------------------------------------
+
+
+class TestTiltCoverWithClimateMode:
+    """Tilt (venetian) cover with climate mode active."""
+
+    def test_tilt_cover_winter_heating(self):
+        """Cold temp + tilt cover → ClimateHandler opens slats fully."""
+        logger = _make_logger()
+        sun_data = _make_sun_data()
+
+        with patch(_DATETIME_PATCH) as mock_dt:
+            mock_dt.now.return_value = _NOON
+
+            cover = build_tilt_cover(
+                logger=logger,
+                sol_azi=180.0,
+                sol_elev=70.0,
+                sun_data=sun_data,
+                win_azi=180,
+                fov_left=45,
+                fov_right=45,
+                h_def=50,
+                slat_distance=0.03,
+                depth=0.02,
+                mode="mode1",
+                sunset_pos=0,
+                sunset_off=0,
+                sunrise_off=0,
+                max_pos=100,
+                min_pos=0,
+            )
+
+            pipeline = _make_pipeline()
+            climate_readings = ClimateReadings(
+                outside_temperature=None,
+                inside_temperature=10.0,  # very cold → winter
+                is_presence=True,
+                is_sunny=True,
+                lux_below_threshold=False,
+                irradiance_below_threshold=False,
+                cloud_coverage_above_threshold=False,
+            )
+            from custom_components.adaptive_cover_pro.pipeline.types import (
+                ClimateOptions,
+            )
+            climate_options = ClimateOptions(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_switch=False,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=False,
+                winter_close_insulation=False,
+            )
+            snapshot = _build_pipeline_snapshot(
+                cover,
+                cover_type="cover_tilt",
+                climate_mode_enabled=True,
+                climate_readings=climate_readings,
+                climate_options=climate_options,
+            )
+            result = pipeline.evaluate(snapshot)
+
+            assert result.control_method == ControlMethod.WINTER
+            assert result.position == 100
+
+            diag_ctx = _build_diagnostic_context(cover, result, climate_mode=True)
+            diag_dict, _ = DiagnosticsBuilder().build(diag_ctx)
+
+            assert diag_dict["sun_azimuth"] == 180.0
+            assert diag_dict["control_status"] == "active"

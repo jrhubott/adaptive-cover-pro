@@ -837,3 +837,178 @@ async def test_safety_target_set_on_open_close_force(svc, hass):
             "cover.test", 0, "force_override", context=_ctx(force=True)
         )
     assert "cover.test" in svc._safety_targets
+
+
+# ------------------------------------------------------------------ #
+# Step 39: Special position bypasses delta check
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_special_position_target_bypasses_delta(svc, hass):
+    """Moving TO a special position (0, 100, default, sunset) bypasses delta check.
+
+    Scenario: cover is at 55%, min_change=10, target is 0% (special).
+    Normally delta=55 >= 10 would pass, but even if delta were small,
+    special positions bypass it.  This test uses a scenario where delta
+    would be blocked if not for the special bypass: cover at 99%, target=100%.
+    """
+    _patch_position(svc, 99)  # delta=1, below min_change=5
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            100,  # ← special position, bypasses delta
+            "solar",
+            context=_ctx(min_change=5, special_positions=[0, 100, 50]),
+        )
+    assert outcome == "sent"
+    assert svc.target_call["cover.test"] == 100
+
+
+@pytest.mark.asyncio
+async def test_special_position_current_bypasses_delta(svc, hass):
+    """Moving FROM a special position also bypasses the delta check.
+
+    Cover is at 0% (special), target is 2% — delta=2 < min_change=5.
+    Because current position (0%) is special, the check is bypassed.
+    """
+    _patch_position(svc, 0)  # current is special
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            2,  # small delta=2, but moving FROM special position
+            "solar",
+            context=_ctx(min_change=5, special_positions=[0, 100, 50]),
+        )
+    assert outcome == "sent"
+
+
+@pytest.mark.asyncio
+async def test_non_special_small_delta_is_blocked(svc, hass):
+    """Without a special position, a small delta IS blocked by min_change.
+
+    Control: verify that without the special bypass, a small delta fails.
+    """
+    _patch_position(svc, 55)  # delta=2 < min_change=5, no special positions
+    outcome, reason = await svc.apply_position(
+        "cover.test",
+        57,  # delta=2 < min_change=5
+        "solar",
+        context=_ctx(min_change=5, special_positions=[]),  # no specials
+    )
+    assert outcome == "skipped"
+    assert reason == "delta_too_small"
+
+
+# ------------------------------------------------------------------ #
+# Step 40: Same position short-circuits before special bypass
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_same_position_skips_even_for_special_target(svc, hass):
+    """Cover already at target → NO command even if target is a special position.
+
+    The same-position short-circuit runs BEFORE the special-positions bypass.
+    Regression: without this guard, covers at 0%/100% would receive a command
+    every time_threshold minutes because the special-bypass would always fire.
+    """
+    _patch_position(svc, 100)  # cover is already at 100%
+    outcome, reason = await svc.apply_position(
+        "cover.test",
+        100,  # same as current → short-circuit fires
+        "solar",
+        context=_ctx(min_change=1, special_positions=[0, 100, 50]),
+    )
+    assert outcome == "skipped"
+    assert reason == "delta_too_small"
+
+
+@pytest.mark.asyncio
+async def test_same_position_skips_for_zero_special(svc, hass):
+    """Cover at 0% targeting 0% is short-circuited (no command sent)."""
+    _patch_position(svc, 0)
+    outcome, reason = await svc.apply_position(
+        "cover.test",
+        0,
+        "solar",
+        context=_ctx(min_change=1, special_positions=[0, 100]),
+    )
+    assert outcome == "skipped"
+    assert reason == "delta_too_small"
+
+
+@pytest.mark.asyncio
+async def test_sun_just_appeared_sends_despite_same_position(svc, hass):
+    """sun_just_appeared=True sends command even when cover is already at target.
+
+    When the sun enters the FOV for the first time, we re-confirm the cover
+    position even if it hasn't changed, to ensure the cover is tracking.
+    This overrides the same-position short-circuit.
+    """
+    _patch_position(svc, 65)  # same as target
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            65,  # same as current position
+            "solar",
+            context=_ctx(
+                min_change=1,
+                special_positions=[0, 100, 50],
+                sun_just_appeared=True,  # ← bypasses same-position check
+            ),
+        )
+    assert outcome == "sent"
+
+
+# ------------------------------------------------------------------ #
+# Step 43: sun_just_appeared re-confirms position
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_sun_just_appeared_bypasses_delta(svc, hass):
+    """sun_just_appeared=True bypasses the delta check (small change allowed)."""
+    _patch_position(svc, 50)  # delta=1 < min_change=5
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            51,  # delta=1 < min_change=5 — normally blocked
+            "solar",
+            context=_ctx(
+                min_change=5,
+                special_positions=[0, 100],
+                sun_just_appeared=True,  # ← bypasses delta
+            ),
+        )
+    assert outcome == "sent"
+
+
+@pytest.mark.asyncio
+async def test_sun_just_appeared_false_enforces_delta(svc, hass):
+    """With sun_just_appeared=False, small delta is still blocked."""
+    _patch_position(svc, 50)  # delta=1 < min_change=5
+    outcome, reason = await svc.apply_position(
+        "cover.test",
+        51,
+        "solar",
+        context=_ctx(
+            min_change=5,
+            special_positions=[0, 100],
+            sun_just_appeared=False,  # ← delta enforced
+        ),
+    )
+    assert outcome == "skipped"
+    assert reason == "delta_too_small"
