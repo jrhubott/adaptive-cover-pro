@@ -1,6 +1,6 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-05
+**Date:** 2026-04-06
 **Current Version:** v2.14.0
 **Branch:** `main` (stable)
 
@@ -29,6 +29,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached/maintained | Awaiting user response to clarifying questions. May be related to #127 (fixed in v2.14.0). |
+| [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple cover entities (one unavailable) | Investigated. Commented asking user to upgrade to v2.14.0 and remove unavailable cover. Four root causes identified — three already fixed in v2.13.9–v2.14.0; remaining race condition (override detected after command sent) + shared `state_change_data` + commands to unavailable entities tracked on branch `fix/issue-131-multi-cover-unavailable-entity`. Awaiting user response. |
 | [#134](https://github.com/jrhubott/adaptive-cover-pro/issues/134) | Climate mode does not work | Fixed in PR #135 (merged main). Root cause: temp/presence entities never passed to ClimateProvider. Awaiting release. |
 
 ## Known Gotchas
