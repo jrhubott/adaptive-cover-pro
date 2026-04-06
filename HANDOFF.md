@@ -16,12 +16,14 @@
 
 ## Tests
 
-**1280 passing, 0 failing** (+5 new tests: auto_control guard in `_async_send_after_override_clear`, issue #139).
+**1396 passing, 0 failing** (+116 new integration tests on branch `feature/integration-test-coverage-expansion`).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
 
-*(None at this time.)*
+| PR | Branch | Issue | Beta | Status | Notes |
+|----|--------|-------|------|--------|-------|
+| — | `feature/integration-test-coverage-expansion` | — | — | 🟠 Open — not yet beta-tested | 116 new integration tests (1280→1396); covers coordinator update cycle, inverse state, effective default, position limits, multi-cover, weather/motion interactions |
 
 ## Open Issues
 
