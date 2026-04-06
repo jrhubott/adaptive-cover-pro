@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-06
 **Current Version:** v2.14.1
-**Branch:** `fix/issue-139-auto-control-off-covers-still-move`
+**Branch:** `main` (stable)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -10,9 +10,9 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-139-auto-control-off-covers-still-move` — Skip cover reposition on override expiry when automatic control is OFF (PR #141, merged to main).
 - `fix/issue-134-climate-temp-not-read` — Climate mode never read temp/presence entities; summer/winter strategies never activated (PR #135, merged to main).
 - `fix/issue-127-constant-repositioning-and-custom-position-priorities` — Stop constant repositioning at 0%/100% + configurable custom position priorities (PR #130, merged to main).
-- `feature/summary-sunrise-position` — Config summary sunrise display + position settings reorganization (PR #124, merged to main).
 
 ## Tests
 
@@ -21,9 +21,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
 
-| PR | Branch | Issue | Beta | Status | Notes |
-|----|--------|-------|------|--------|-------|
-| — | `fix/issue-139-auto-control-off-covers-still-move` | [#139](https://github.com/jrhubott/adaptive-cover-pro/issues/139) | — | 🟠 Open — not yet beta-tested | Skip cover reposition on override expiry when auto control is OFF |
+*(None at this time.)*
 
 ## Open Issues
 
@@ -31,7 +29,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached/maintained | Awaiting user response to clarifying questions. May be related to #127 (fixed in v2.14.0). |
-| [#139](https://github.com/jrhubott/adaptive-cover-pro/issues/139) | Covers move despite Automatic Control OFF | Root cause (v2.13.8 reconciliation bug) fixed in v2.13.9. Edge case in `_async_send_after_override_clear` fixed on this branch. |
+
 
 ## Known Gotchas
 
