@@ -202,8 +202,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_reset = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_RESET, False
         )
-        self.manual_duration = self.config_entry.options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2}
+        self.manual_duration = (
+            self.config_entry.options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
         )
         self.state_change = False
         self.cover_state_change = False
@@ -1041,10 +1041,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         self.entities = options.get(CONF_ENTITIES, [])
-        self.min_change = options.get(CONF_DELTA_POSITION, 1)
-        self.time_threshold = options.get(CONF_DELTA_TIME, 2)
+        self.min_change = options.get(CONF_DELTA_POSITION) or 1
+        self.time_threshold = options.get(CONF_DELTA_TIME) or 2
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
-        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2})
+        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
         self.start_value = options.get(CONF_INTERP_START)
         self.end_value = options.get(CONF_INTERP_END)
