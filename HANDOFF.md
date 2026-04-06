@@ -10,13 +10,13 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-134-climate-temp-not-read` — Climate mode never read temp/presence entities; summer/winter strategies never activated (PR #135, merged to main).
 - `fix/issue-127-constant-repositioning-and-custom-position-priorities` — Stop constant repositioning at 0%/100% + configurable custom position priorities (PR #130, merged to main).
 - `feature/summary-sunrise-position` — Config summary sunrise display + position settings reorganization (PR #124, merged to main).
-- `fix/false-manual-override-on-automation-position` — False manual override race condition fix (PR #121, merged to main).
 
 ## Tests
 
-**1221 passing, 0 failing** (+36 new tests for same-position delta bypass and per-priority custom position handlers).
+**1246 passing, 0 failing** (+25 new tests for climate provider wiring and end-to-end climate strategy coverage).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
@@ -29,8 +29,11 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached/maintained | Awaiting user response to clarifying questions. May be related to #127 (fixed in v2.14.0). |
+| [#134](https://github.com/jrhubott/adaptive-cover-pro/issues/134) | Climate mode does not work | Fixed in PR #135 (merged main). Root cause: temp/presence entities never passed to ClimateProvider. Awaiting release. |
 
 ## Known Gotchas
+
+- **Climate mode temp/presence never read (fixed PR #135, unreleased):** `_read_weather_conditions()` (now `_read_climate_state()`) was missing `temp_entity`, `outside_entity`, and `presence_entity` kwargs in the `ClimateProvider.read()` call since v2.12.0. `inside_temperature`/`outside_temperature` were always `None`; `is_presence` was always `True`. Summer/winter strategies never activated — climate mode silently degraded to solar tracking. Fixed in PR #135 with structural regression guard test.
 
 - **Covers at 0%/100% received redundant commands every time_threshold minutes (fixed v2.14.0):** `_check_position_delta()` bypassed the delta check for special positions (0, 100, default, sunset) but didn't check if the cover was *already* at the target. Fixed by a same-position short-circuit placed after `sun_just_appeared` but before the special-positions bypass. See `managers/cover_command.py`.
 
