@@ -888,6 +888,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ``TimeWindowManager.check_transition``) will send the correct position
         at the appropriate time.
 
+        **Automatic-control guard:** If the user has turned off Automatic
+        Control the integration must not force covers back to the calculated
+        position when an override expires.  The user deliberately paused
+        automation; the cover should stay wherever the user left it.
+
         Args:
             state: Post-reset pipeline position (already computed without override).
             options: Config entry options dict.
@@ -898,6 +903,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "Manual override cleared but outside active-hours window — "
                 "skipping reposition (pipeline position was %s; will apply when "
                 "window opens)",
+                state,
+            )
+            return
+
+        if not self.automatic_control:
+            self.logger.debug(
+                "Manual override cleared but automatic control is OFF — "
+                "skipping reposition (pipeline position was %s)",
                 state,
             )
             return

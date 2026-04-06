@@ -26,10 +26,11 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _make_coordinator(*, check_adaptive_time: bool):
+def _make_coordinator(*, check_adaptive_time: bool, automatic_control: bool = True):
     """Build a minimal mock coordinator for testing _async_send_after_override_clear."""
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
+    coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
@@ -179,3 +180,115 @@ async def test_override_clear_inside_window_multiple_covers():
     calls = [call.args[0] for call in coordinator._cmd_svc.apply_position.call_args_list]
     assert "cover.blind_1" in calls
     assert "cover.blind_2" in calls
+
+
+# ---------------------------------------------------------------------------
+# _async_send_after_override_clear — automatic-control guard (issue #139)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_override_clear_skips_send_when_auto_control_off():
+    """Override expiry with Automatic Control OFF must NOT send a cover command.
+
+    Reproduces issue #139:
+    - User turns off Automatic Control to manage covers manually
+    - A previously set manual override expires naturally
+    - Integration must NOT force-reposition the cover despite the expiry
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
+
+    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, state=0, options={}
+    )
+
+    # apply_position must NOT be called when auto control is off
+    coordinator._cmd_svc.apply_position.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_override_clear_logs_debug_when_auto_control_off():
+    """A debug message must be logged when send is skipped because auto control is OFF."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
+
+    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, state=0, options={}
+    )
+
+    coordinator.logger.debug.assert_called()
+    logged_args = [call[0][0] for call in coordinator.logger.debug.call_args_list]
+    assert any("automatic control is OFF" in msg for msg in logged_args)
+
+
+@pytest.mark.asyncio
+async def test_override_clear_sends_when_auto_control_on_inside_window():
+    """Override expiry with Automatic Control ON and inside the window sends normally.
+
+    Regression guard: the auto-control check must not suppress the existing
+    inside-window behaviour.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=True)
+
+    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, state=40, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once_with(
+        "cover.test_blind", 40, "manual_override_cleared",
+        context=coordinator._build_position_context.return_value,
+    )
+
+
+@pytest.mark.asyncio
+async def test_override_clear_auto_control_off_multiple_covers():
+    """Auto-control guard applies to all covers — no commands sent for any of them."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=False)
+    coordinator.entities = ["cover.blind_a", "cover.blind_b", "cover.blind_c"]
+
+    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, state=0, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_not_called()
+    coordinator._build_position_context.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_override_clear_outside_window_takes_precedence_over_auto_control():
+    """Time-window check runs before auto-control check — both logged for correct reason.
+
+    When both conditions are False (outside window AND auto-control off), the
+    time-window guard fires first (early return) and auto-control is never checked.
+    Either way, no command is sent.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(check_adaptive_time=False, automatic_control=False)
+
+    await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, state=0, options={}
+    )
+
+    # No command regardless of which guard fires
+    coordinator._cmd_svc.apply_position.assert_not_called()
+    # The time-window message is emitted (first guard)
+    logged_args = [call[0][0] for call in coordinator.logger.debug.call_args_list]
+    assert any("outside active-hours window" in msg or "outside" in msg.lower() for msg in logged_args)

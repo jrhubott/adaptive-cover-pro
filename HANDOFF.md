@@ -1,8 +1,8 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-05
-**Current Version:** v2.14.0
-**Branch:** `main` (stable)
+**Date:** 2026-04-06
+**Current Version:** v2.14.1
+**Branch:** `fix/issue-139-auto-control-off-covers-still-move`
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -16,12 +16,14 @@
 
 ## Tests
 
-**1246 passing, 0 failing** (+25 new tests for climate provider wiring and end-to-end climate strategy coverage).
+**1280 passing, 0 failing** (+5 new tests: auto_control guard in `_async_send_after_override_clear`, issue #139).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
 
-*(None at this time.)*
+| PR | Branch | Issue | Beta | Status | Notes |
+|----|--------|-------|------|--------|-------|
+| — | `fix/issue-139-auto-control-off-covers-still-move` | [#139](https://github.com/jrhubott/adaptive-cover-pro/issues/139) | — | 🟠 Open — not yet beta-tested | Skip cover reposition on override expiry when auto control is OFF |
 
 ## Open Issues
 
@@ -29,9 +31,11 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached/maintained | Awaiting user response to clarifying questions. May be related to #127 (fixed in v2.14.0). |
-| [#134](https://github.com/jrhubott/adaptive-cover-pro/issues/134) | Climate mode does not work | Fixed in PR #135 (merged main). Root cause: temp/presence entities never passed to ClimateProvider. Awaiting release. |
+| [#139](https://github.com/jrhubott/adaptive-cover-pro/issues/139) | Covers move despite Automatic Control OFF | Root cause (v2.13.8 reconciliation bug) fixed in v2.13.9. Edge case in `_async_send_after_override_clear` fixed on this branch. |
 
 ## Known Gotchas
+
+- **Override expiry forced reposition despite auto_control=False (fixed issue #139, branch):** `_async_send_after_override_clear()` used `force=True`, bypassing the `auto_control` gate. If the user turned Automatic Control OFF while a manual override was active, the cover would be force-repositioned to the pipeline position when the override timer expired. Fixed by adding an `automatic_control` guard before the entity loop (same pattern as the existing time-window guard). Regression: this path (force=True, inside window, auto_control=ON) continues to work as before.
 
 - **Climate mode temp/presence never read (fixed PR #135, unreleased):** `_read_weather_conditions()` (now `_read_climate_state()`) was missing `temp_entity`, `outside_entity`, and `presence_entity` kwargs in the `ClimateProvider.read()` call since v2.12.0. `inside_temperature`/`outside_temperature` were always `None`; `is_presence` was always `True`. Summer/winter strategies never activated — climate mode silently degraded to solar tracking. Fixed in PR #135 with structural regression guard test.
 
