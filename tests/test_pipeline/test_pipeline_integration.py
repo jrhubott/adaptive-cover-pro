@@ -460,3 +460,457 @@ class TestCustomPositionConfigurablePriority:
         result = registry.evaluate(snap_motion)
         assert result.control_method == ControlMethod.CUSTOM_POSITION
         assert result.position == 45
+
+
+class TestClimateStrategyEndToEnd:
+    """End-to-end pipeline tests verifying climate strategies fire correctly.
+
+    These tests exist to catch the regression from Issue #134 where temperature
+    and presence were silently not read, causing climate mode to always fall
+    through to GLARE_CONTROL regardless of temperature configuration.
+
+    Each test builds a full PipelineSnapshot with ClimateReadings that have
+    real temperature values and verifies the correct strategy/position is produced.
+    """
+
+    registry = _make_climate_registry()
+
+    # ------------------------------------------------------------------
+    # Summer strategy
+    # ------------------------------------------------------------------
+
+    def test_summer_strategy_closes_blind_when_no_presence(self) -> None:
+        """No-presence summer: temperature above temp_high + no one home → position 0 (closed).
+
+        Without occupants and in summer, the blind closes fully for energy savings.
+        REGRESSION guard (Issue #134): if inside_temperature is None (not wired in
+        coordinator), is_summer is always False and summer cooling never fires.
+        """
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=30.0,  # above temp_high=26
+            is_presence=False,        # no one home → no-presence path → close
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,  # no outside threshold → outside_high=True
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.SUMMER, (
+            "REGRESSION (Issue #134): summer strategy did not fire — "
+            "check that temp_entity is forwarded to ClimateProvider.read()"
+        )
+        assert result.position == 0
+
+    def test_summer_strategy_with_presence_tracks_solar(self) -> None:
+        """Presence + summer + opaque blind → SUMMER method but solar-tracked position.
+
+        When occupants are present and the blind is opaque, summer strategy keeps
+        the blind in solar-tracking mode (GLARE_CONTROL) rather than closing fully.
+        Closing fully with occupants present would block all natural light.
+        """
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=30.0,  # above temp_high=26
+            is_presence=True,         # someone home
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,  # opaque blind
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+            calculate_percentage_return=60.0,
+        )
+        result = self.registry.evaluate(snap)
+        # SUMMER control method (temperature is above threshold) but position is solar
+        assert result.control_method == ControlMethod.SUMMER
+        assert result.position == 60  # solar-tracked, not closed
+
+    def test_summer_strategy_with_presence_and_transparent_blind_closes(self) -> None:
+        """Presence + summer + transparent blind → closes fully (SUMMER_COOLING).
+
+        Transparent blinds block heat without blocking light, so closing fully
+        is appropriate even with occupants present.
+        """
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=30.0,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=True,   # transparent → close fully with presence
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.SUMMER
+        assert result.position == 0
+
+    def test_summer_strategy_requires_temperature_above_threshold(self) -> None:
+        """Temperature at threshold (not above) should NOT trigger summer."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=26.0,  # exactly at temp_high — not above
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+            calculate_percentage_return=55.0,
+        )
+        result = self.registry.evaluate(snap)
+        # 26.0 is not > 26.0, so is_summer is False → falls to glare control (SOLAR)
+        assert result.control_method != ControlMethod.SUMMER
+
+    # ------------------------------------------------------------------
+    # Winter strategy
+    # ------------------------------------------------------------------
+
+    def test_winter_strategy_opens_blind(self) -> None:
+        """Temperature below temp_low triggers WINTER strategy → position 100 (open)."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=15.0,  # below temp_low=18
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.WINTER, (
+            "REGRESSION (Issue #134): winter strategy did not fire — "
+            "check that temp_entity is forwarded to ClimateProvider.read()"
+        )
+        assert result.position == 100
+
+    def test_winter_strategy_with_sun_not_in_fov_opens_blind(self) -> None:
+        """Winter strategy opens blind even when sun is not directly in FOV."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=10.0,  # very cold
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=False,  # sun not in FOV
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.WINTER
+        assert result.position == 100
+
+    # ------------------------------------------------------------------
+    # Null temperature degrades gracefully (documents Issue #134 pre-fix behavior)
+    # ------------------------------------------------------------------
+
+    def test_null_temperature_falls_through_to_glare_control(self) -> None:
+        """When temperature is None, is_winter and is_summer are both False.
+
+        Climate mode stays active but the strategy degrades to GLARE_CONTROL
+        (solar tracking) — this is the documented pre-fix symptom of Issue #134
+        and the expected graceful fallback when sensors are unavailable.
+        """
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=None,  # sensor unavailable / not wired
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+            calculate_percentage_return=55.0,
+        )
+        result = self.registry.evaluate(snap)
+        # Not summer, not winter → control_method is SOLAR (glare control path)
+        assert result.control_method == ControlMethod.SOLAR, (
+            "With null temperature, climate mode should degrade to glare control (SOLAR). "
+            "If this changes, update this test and the Issue #134 regression notes."
+        )
+
+    # ------------------------------------------------------------------
+    # Outside temperature path (temp_switch=True)
+    # ------------------------------------------------------------------
+
+    def test_outside_temp_used_when_temp_switch_enabled(self) -> None:
+        """When temp_switch=True, outside_temperature drives summer/winter."""
+        readings = ClimateReadings(
+            outside_temperature=32.0,   # hot outside → summer
+            inside_temperature=22.0,    # inside is comfortable — ignored when temp_switch=True
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=True,           # use outside temp
+            transparent_blind=False,
+            temp_summer_outside=None,   # no secondary outside gate
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.SUMMER, (
+            "REGRESSION (Issue #134): outside temp path broken — check "
+            "CONF_OUTSIDETEMP_ENTITY is forwarded as outside_entity."
+        )
+        assert result.position == 0
+
+    # ------------------------------------------------------------------
+    # Presence
+    # ------------------------------------------------------------------
+
+    def test_absence_triggers_summer_cooling_when_hot(self) -> None:
+        """No presence + hot → summer cooling closes blind."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=30.0,
+            is_presence=False,          # no one home
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.SUMMER
+        assert result.position == 0
+
+    def test_absence_triggers_winter_heating_when_cold(self) -> None:
+        """No presence + cold → winter heating opens blind."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=12.0,
+            is_presence=False,          # no one home
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.WINTER
+        assert result.position == 100
+
+    def test_assumed_presence_when_is_presence_true(self) -> None:
+        """is_presence=True uses the with-presence path (solar tracking in glare zone)."""
+        readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=22.0,    # between temp_low and temp_high
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+            direct_sun_valid=True,
+            calculate_percentage_return=60.0,
+        )
+        result = self.registry.evaluate(snap)
+        # Between thresholds with presence → GLARE_CONTROL (solar tracking)
+        assert result.control_method == ControlMethod.SOLAR
+
+    # ------------------------------------------------------------------
+    # climate_data propagated on result
+    # ------------------------------------------------------------------
+
+    def test_climate_data_on_result_has_correct_temperatures(self) -> None:
+        """Pipeline result carries climate_data with the values from ClimateReadings."""
+        from unittest.mock import MagicMock
+
+        cover = MagicMock()
+        cover.direct_sun_valid = True
+        cover.valid = True
+        cover.calculate_percentage = MagicMock(return_value=50.0)
+        cover.logger = MagicMock()
+        config = MagicMock()
+        config.min_pos = None
+        config.max_pos = None
+        config.min_pos_sun_only = False
+        config.max_pos_sun_only = False
+        cover.config = config
+
+        readings = ClimateReadings(
+            outside_temperature=25.0,
+            inside_temperature=30.0,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        options = ClimateOptions(
+            temp_low=18.0,
+            temp_high=26.0,
+            temp_switch=False,
+            transparent_blind=False,
+            temp_summer_outside=None,
+            cloud_suppression_enabled=False,
+            winter_close_insulation=False,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=readings,
+            climate_options=options,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.climate_data is not None
+        assert result.climate_data.inside_temperature == 30.0, (
+            "REGRESSION (Issue #134): climate_data.inside_temperature is None — "
+            "temp_entity is not being forwarded to ClimateProvider.read()"
+        )
+        assert result.climate_data.outside_temperature == 25.0, (
+            "REGRESSION (Issue #134): climate_data.outside_temperature is None — "
+            "outside_entity is not being forwarded to ClimateProvider.read()"
+        )

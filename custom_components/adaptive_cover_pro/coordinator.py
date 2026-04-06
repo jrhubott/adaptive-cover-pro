@@ -92,8 +92,11 @@ from .const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_TEMP_ENTITY,
     CONF_TEMP_LOW,
     CONF_TEMP_HIGH,
+    CONF_OUTSIDETEMP_ENTITY,
+    CONF_PRESENCE_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_OUTSIDE_THRESHOLD,
@@ -615,8 +618,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         This means diagnostics, Decision Trace, and sensor state are always
         up-to-date even when no commands are being sent.
         """
-        # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
-        self._read_weather_conditions(options)
+        # Read all climate-related entities (temp, presence, weather, lux, irradiance, cloud).
+        # The result is stored in self._weather_readings and passed to PipelineSnapshot
+        # so ClimateHandler and CloudSuppressionHandler can self-evaluate.
+        self._read_climate_state(options)
 
         # Compute the effective default position from astronomical sunset/sunrise.
         # This is the single source of truth — all pipeline handlers use it via
@@ -1172,10 +1177,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state_attr(self.hass, "sun.sun", "elevation"),
         ]
 
-    def _read_weather_conditions(self, options) -> None:
-        """Read weather/lux/irradiance/cloud-coverage into self._weather_readings (always runs)."""
+    def _read_climate_state(self, options) -> None:
+        """Read all climate-related entities into self._weather_readings.
+
+        This is the single call to ClimateProvider.read() for each update cycle.
+        It reads temperature sensors, presence, weather, lux, irradiance, and
+        cloud coverage.  All pipeline handlers (ClimateHandler, CloudSuppressionHandler)
+        consume the result via snapshot.climate_readings.
+
+        NOTE: If ClimateProvider.read() gains new keyword parameters, they MUST
+        also be wired here from the corresponding options key.  The coordinator
+        wiring test (test_coordinator_climate_wiring.py) will catch any mismatch.
+        """
         cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
         self._weather_readings = self._climate_provider.read(
+            temp_entity=options.get(CONF_TEMP_ENTITY),
+            outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
+            presence_entity=options.get(CONF_PRESENCE_ENTITY),
             weather_entity=options.get(CONF_WEATHER_ENTITY),
             weather_condition=options.get(CONF_WEATHER_STATE),
             use_lux=bool(self._toggles.lux_toggle),
