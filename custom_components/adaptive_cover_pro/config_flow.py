@@ -2069,8 +2069,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_OUTSIDETEMP_ENTITY: self.config.get(CONF_OUTSIDETEMP_ENTITY),
                 CONF_CLIMATE_MODE: self.config.get(CONF_CLIMATE_MODE),
                 CONF_WEATHER_STATE: self.config.get(CONF_WEATHER_STATE),
-                CONF_DELTA_POSITION: self.config.get(CONF_DELTA_POSITION),
-                CONF_DELTA_TIME: self.config.get(CONF_DELTA_TIME),
+                CONF_DELTA_POSITION: self.config.get(CONF_DELTA_POSITION) or 2,
+                CONF_DELTA_TIME: self.config.get(CONF_DELTA_TIME) or 2,
                 CONF_START_TIME: self.config.get(CONF_START_TIME),
                 CONF_START_ENTITY: self.config.get(CONF_START_ENTITY),
                 CONF_END_TIME: self.config.get(CONF_END_TIME),
@@ -2087,7 +2087,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 ),
                 CONF_MANUAL_OVERRIDE_DURATION: self.config.get(
                     CONF_MANUAL_OVERRIDE_DURATION
-                ),
+                )
+                or {"hours": 2},
                 CONF_MANUAL_OVERRIDE_RESET: self.config.get(CONF_MANUAL_OVERRIDE_RESET),
                 CONF_MANUAL_THRESHOLD: self.config.get(CONF_MANUAL_THRESHOLD),
                 CONF_MANUAL_IGNORE_INTERMEDIATE: self.config.get(
