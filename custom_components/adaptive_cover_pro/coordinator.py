@@ -871,18 +871,37 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
     async def _async_send_after_override_clear(self, state: int, options: dict) -> None:
-        """Send the current pipeline position after a manual override clears.
+        """Send the current pipeline position after a manual override auto-expires.
 
-        Called when a manual override expires (auto-expiry timer) or when the
-        reset button clears it.  Uses force=True so the command is sent
-        regardless of delta/time thresholds — the cover may be far from the
-        calculated position after sitting in manual for an extended period.
+        Called only when a manual override expires via the automatic timer
+        (i.e. ``auto_expired`` path in ``_async_update_data``).  The reset
+        button bypasses this method and calls ``apply_position`` directly.
+
+        Uses force=True so the command is sent regardless of delta/time
+        thresholds — the cover may be far from the calculated position after
+        sitting in manual for an extended period.
+
+        **Time-window guard:** If the current time is outside the configured
+        active-hours window the integration has no business repositioning
+        covers.  In that case we skip the send and log a debug message.  The
+        normal update cycle (triggered when the time window opens via
+        ``TimeWindowManager.check_transition``) will send the correct position
+        at the appropriate time.
 
         Args:
             state: Post-reset pipeline position (already computed without override).
             options: Config entry options dict.
 
         """
+        if not self.check_adaptive_time:
+            self.logger.debug(
+                "Manual override cleared but outside active-hours window — "
+                "skipping reposition (pipeline position was %s; will apply when "
+                "window opens)",
+                state,
+            )
+            return
+
         self.logger.debug(
             "Sending pipeline position %s after manual override cleared", state
         )
