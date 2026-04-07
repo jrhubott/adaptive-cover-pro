@@ -45,7 +45,7 @@ class SafetyMarginCalculator:
             t = (gamma_abs - SAFETY_MARGIN_GAMMA_THRESHOLD) / (
                 90 - SAFETY_MARGIN_GAMMA_THRESHOLD
             )
-            t = np.clip(t, 0, 1)
+            t = float(np.clip(t, 0, 1))
             smooth_t = t * t * (3 - 2 * t)  # Smoothstep interpolation
             margin += SAFETY_MARGIN_GAMMA_MAX * smooth_t
 
@@ -54,14 +54,14 @@ class SafetyMarginCalculator:
             t = (
                 SAFETY_MARGIN_LOW_ELEV_THRESHOLD - sol_elev
             ) / SAFETY_MARGIN_LOW_ELEV_THRESHOLD
-            margin += SAFETY_MARGIN_LOW_ELEV_MAX * np.clip(t, 0, 1)
+            margin += SAFETY_MARGIN_LOW_ELEV_MAX * float(np.clip(t, 0, 1))
         elif sol_elev > SAFETY_MARGIN_HIGH_ELEV_THRESHOLD:
             t = (sol_elev - SAFETY_MARGIN_HIGH_ELEV_THRESHOLD) / (
                 90 - SAFETY_MARGIN_HIGH_ELEV_THRESHOLD
             )
-            margin += SAFETY_MARGIN_HIGH_ELEV_MAX * np.clip(t, 0, 1)
+            margin += SAFETY_MARGIN_HIGH_ELEV_MAX * float(np.clip(t, 0, 1))
 
-        return margin
+        return float(margin)
 
 
 class EdgeCaseHandler:
@@ -102,6 +102,6 @@ class EdgeCaseHandler:
             from numpy import tan
 
             simple_height = distance * tan(rad(sol_elev))
-            return (True, np.clip(simple_height, 0, h_win))
+            return (True, float(np.clip(simple_height, 0, h_win)))
 
         return (False, 0.0)
