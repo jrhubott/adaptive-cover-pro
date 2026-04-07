@@ -48,16 +48,16 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 |----------|------|--------|
 | German | `de.json` | ✅ Merged to main (PR #157) |
 | French | `fr.json` | ✅ Merged to main (PR #158) |
-| Spanish | `es.json` | ❌ Pending |
-| Italian | `it.json` | ❌ Pending |
-| Dutch | `nl.json` | ❌ Pending |
-| Brazilian Portuguese | `pt-BR.json` | ❌ Pending |
-| Polish | `pl.json` | ❌ Pending |
-| Czech | `cs.json` | ❌ Pending |
-| Slovak | `sk.json` | ❌ Pending |
-| Slovenian | `sl.json` | ❌ Pending |
-| Hungarian | `hu.json` | ❌ Pending |
-| Ukrainian | `uk.json` | ❌ Pending |
+| Spanish | `es.json` | ❌ Pending ([#159](https://github.com/jrhubott/adaptive-cover-pro/issues/159)) |
+| Italian | `it.json` | ❌ Pending ([#160](https://github.com/jrhubott/adaptive-cover-pro/issues/160)) |
+| Dutch | `nl.json` | ❌ Pending ([#161](https://github.com/jrhubott/adaptive-cover-pro/issues/161)) |
+| Brazilian Portuguese | `pt-BR.json` | ❌ Pending ([#162](https://github.com/jrhubott/adaptive-cover-pro/issues/162)) |
+| Polish | `pl.json` | ❌ Pending ([#163](https://github.com/jrhubott/adaptive-cover-pro/issues/163)) |
+| Czech | `cs.json` | ❌ Pending ([#164](https://github.com/jrhubott/adaptive-cover-pro/issues/164)) |
+| Slovak | `sk.json` | ❌ Pending ([#165](https://github.com/jrhubott/adaptive-cover-pro/issues/165)) |
+| Slovenian | `sl.json` | ❌ Pending ([#166](https://github.com/jrhubott/adaptive-cover-pro/issues/166)) |
+| Hungarian | `hu.json` | ❌ Pending ([#167](https://github.com/jrhubott/adaptive-cover-pro/issues/167)) |
+| Ukrainian | `uk.json` | ❌ Pending ([#168](https://github.com/jrhubott/adaptive-cover-pro/issues/168)) |
 
 **Each language gets its own PR and merges directly to main.**
 
