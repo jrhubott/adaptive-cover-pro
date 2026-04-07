@@ -10,6 +10,8 @@
 ---
 
 **Recent Merges:**
+- `chore/translate-fr` — Retranslate fr.json (French) from English (PR #158, merged to main).
+- `chore/translate-de` — Retranslate de.json (German) from English + add `scripts/validate_translations.py` status dashboard (PR #157, merged to main).
 - `feature/comprehensive-ha-interface-testing` — Add 172 new tests covering real HA interface: config flows, entity registration, coordinator lifecycle, services, diagnostics, translations, property-based fuzzing, error resilience, performance. Found and filed bugs #153, #154, #155. PR #156, merged to main.
 - `fix/issues-145-147-149-time-window-manual-override-numpy` — numpy serialization fix (#149), time window gate for climate/cloud handlers (#145), manual override detection during wait_for_target (#147). PR #150, merged to main.
 - `fix/issues-146-148-config-summary-duration-icons` — Format DurationSelector dict in config summary (#148: raw dict rendered as `{'hours': 5...}`); remove emojis from all 13 translation files (#146). PR #151, merged to main.
@@ -33,6 +35,33 @@ extended `test_multi_cover_integration.py`; renamed `hass` fixture → `mock_has
 
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
+
+## Translation Retranslation Progress
+
+Branch: `feature/retranslate-all-languages-from-english`
+
+All 12 non-English translation files are being replaced from scratch using `en.json` as the sole source of truth.
+
+**Tooling:** `scripts/validate_translations.py` — run with no args for status dashboard, or `./scripts/validate_translations.py <lang>` for per-language detail.
+
+| Language | File | Status |
+|----------|------|--------|
+| German | `de.json` | ✅ Merged to main (PR #157) |
+| French | `fr.json` | ✅ Merged to main (PR #158) |
+| Spanish | `es.json` | ❌ Pending |
+| Italian | `it.json` | ❌ Pending |
+| Dutch | `nl.json` | ❌ Pending |
+| Brazilian Portuguese | `pt-BR.json` | ❌ Pending |
+| Polish | `pl.json` | ❌ Pending |
+| Czech | `cs.json` | ❌ Pending |
+| Slovak | `sk.json` | ❌ Pending |
+| Slovenian | `sl.json` | ❌ Pending |
+| Hungarian | `hu.json` | ❌ Pending |
+| Ukrainian | `uk.json` | ❌ Pending |
+
+**Each language gets its own PR and merges directly to main.**
+
+**After all 12 are done:** add pre-commit hook + document maintenance in CLAUDE.md.
 
 ## Open Issues
 
