@@ -1,8 +1,8 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-07
-**Current Version:** v2.14.2-beta.1
-**Branch:** `fix/issues-145-147-149-time-window-manual-override-numpy` (feature branch, PR #150 open)
+**Current Version:** v2.14.2
+**Branch:** `main` (stable, PR #150 just merged)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -10,7 +10,7 @@
 ---
 
 **Recent Merges:**
-- `fix/issues-145-147-149-time-window-manual-override-numpy` — PR #150 open, beta v2.14.2-beta.1 released for testing (issues #149 numpy serialization, #145 time window, #147 manual override)
+- `fix/issues-145-147-149-time-window-manual-override-numpy` — numpy serialization fix (#149), time window gate for climate/cloud handlers (#145), manual override detection during wait_for_target (#147). PR #150, merged to main.
 - `fix/issues-146-148-config-summary-duration-icons` — Format DurationSelector dict in config summary (#148: raw dict rendered as `{'hours': 5...}`); remove emojis from all 13 translation files (#146). PR #151, merged to main.
 - `fix/issue-140-display-rounding` — Round display values at presentation boundary; Target Position shows `42%` not `42.0%`, Sun Position shows `180.5°` not `180.456°` (PR #143, merged to main).
 - `fix/issue-139-auto-control-off-covers-still-move` — Skip cover reposition on override expiry when automatic control is OFF (PR #141, merged to main).
@@ -19,14 +19,13 @@
 
 ## Tests
 
-**1450 passing, 0 failing** (+40 new tests for issues #145, #147, #149).
+**1461 passing, 0 failing** (+40 new tests for issues #145, #147, #149).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
 
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
-| [#150](https://github.com/jrhubott/adaptive-cover-pro/pull/150) | `fix/issues-145-147-149-time-window-manual-override-numpy` | [#145](https://github.com/jrhubott/adaptive-cover-pro/issues/145) [#147](https://github.com/jrhubott/adaptive-cover-pro/issues/147) [#149](https://github.com/jrhubott/adaptive-cover-pro/issues/149) | [v2.14.2-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2-beta.1) | 🟡 Awaiting user confirmation | numpy serialization fix, time window gate for climate/cloud handlers, manual override detection during wait_for_target |
 
 ## Open Issues
 
@@ -34,10 +33,10 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#132](https://github.com/jrhubott/adaptive-cover-pro/issues/132) | Cover oscillates from 100% to 98% despite 10% delta threshold | Possible interaction with position limits or delta checking logic. |
-| [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.1+; awaiting user confirmation on v2.14.2-beta.1. |
-| [#145](https://github.com/jrhubott/adaptive-cover-pro/issues/145) | Start and end time not respected | Fixed in PR #150 / beta v2.14.2-beta.1 — awaiting user confirmation. |
-| [#147](https://github.com/jrhubott/adaptive-cover-pro/issues/147) | Manual override ignored during morning operations | Fixed in PR #150 / beta v2.14.2-beta.1 — awaiting user confirmation. |
-| [#149](https://github.com/jrhubott/adaptive-cover-pro/issues/149) | Download diagnostics HTTP error | Fixed in PR #150 / beta v2.14.2-beta.1 — awaiting user confirmation. |
+| [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.2 — awaiting user confirmation. |
+| [#145](https://github.com/jrhubott/adaptive-cover-pro/issues/145) | Start and end time not respected | Fixed in v2.14.2 / PR #150 — awaiting issue close by author. |
+| [#147](https://github.com/jrhubott/adaptive-cover-pro/issues/147) | Manual override ignored during morning operations | Fixed in v2.14.2 / PR #150 — awaiting issue close by author. |
+| [#149](https://github.com/jrhubott/adaptive-cover-pro/issues/149) | Download diagnostics HTTP error | Fixed in v2.14.2 / PR #150 — awaiting issue close by author. |
 | [#146](https://github.com/jrhubott/adaptive-cover-pro/issues/146) | Remove icons from translations | Fixed in PR #151 / main — awaiting issue close by author. |
 | [#148](https://github.com/jrhubott/adaptive-cover-pro/issues/148) | Configuration Summary unformatted time | Fixed in PR #151 / main — awaiting issue close by author. |
 
@@ -74,6 +73,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
+| [v2.14.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.1) | 2026-04-07 | Format duration in config summary (#148), remove icons from translations (#146). |
 | [v2.14.0](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.0) | 2026-04-05 | Fix constant repositioning at 0%/100% (#127); configurable priority per custom position slot. |
 | [v2.13.9](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.9) | 2026-04-05 | Custom position pipeline handler (priority 77). |
 | [v2.13.8](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.13.8) | 2026-04-05 | Config summary sunrise display, position settings reorganization, false manual override fix. |
