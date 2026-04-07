@@ -157,10 +157,31 @@ class TestSolarDiagnostics:
         assert diag["sun_azimuth"] == 200.5
         assert diag["sun_elevation"] == 30.2
 
+    def test_sun_values_rounded_to_one_decimal(self, builder: DiagnosticsBuilder):
+        """Raw float sun values are rounded to 1 decimal place."""
+        diag, _ = builder.build(_base_ctx(pos_sun=[200.5678, 30.2341]))
+        assert diag["sun_azimuth"] == 200.6
+        assert diag["sun_elevation"] == 30.2
+
+    def test_sun_azimuth_none_handling(self, builder: DiagnosticsBuilder):
+        """None azimuth is preserved as None (not raised as error)."""
+        diag, _ = builder.build(_base_ctx(pos_sun=[None, 30.2]))
+        assert diag["sun_azimuth"] is None
+
+    def test_sun_elevation_none_handling(self, builder: DiagnosticsBuilder):
+        """None elevation is preserved as None."""
+        diag, _ = builder.build(_base_ctx(pos_sun=[180.0, None]))
+        assert diag["sun_elevation"] is None
+
     def test_gamma_present_when_cover_has_it(self, builder: DiagnosticsBuilder):
         """Gamma is included when cover has the attribute."""
         diag, _ = builder.build(_base_ctx())
         assert "gamma" in diag
+
+    def test_gamma_rounded_to_one_decimal(self, builder: DiagnosticsBuilder):
+        """Gamma is rounded to 1 decimal place."""
+        diag, _ = builder.build(_base_ctx(cover=_make_cover(gamma=12.3456)))
+        assert diag["gamma"] == 12.3
 
     def test_gamma_absent_when_no_cover(self, builder: DiagnosticsBuilder):
         """Gamma is absent when cover is None."""
@@ -500,6 +521,82 @@ class TestClimateDiagnostics:
         assert diag["climate_strategy"] == "winter_heating"
         assert "temperature_details" in diag
         assert "climate_conditions" in diag
+
+    def test_active_temperature_rounded_to_one_decimal(self, builder: DiagnosticsBuilder):
+        """active_temperature is rounded to 1 decimal place."""
+        cd = ClimateCoverData(
+            temp_low=20.0,
+            temp_high=25.0,
+            temp_switch=True,
+            blind_type="cover_blind",
+            transparent_blind=False,
+            temp_summer_outside=22.5,
+            outside_temperature="22.567",  # string from HA entity
+            inside_temperature="23.0",
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            winter_close_insulation=False,
+        )
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            climate_data=cd,
+        )
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        assert diag["active_temperature"] == 22.6  # 22.567 rounded to 1 dp
+
+    def test_temperature_details_rounded_to_one_decimal(self, builder: DiagnosticsBuilder):
+        """inside/outside temperatures in temperature_details are rounded to 1 decimal."""
+        cd = ClimateCoverData(
+            temp_low=20.0,
+            temp_high=25.0,
+            temp_switch=False,
+            blind_type="cover_blind",
+            transparent_blind=False,
+            temp_summer_outside=22.5,
+            outside_temperature="19.8765",
+            inside_temperature="21.2341",
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            winter_close_insulation=False,
+        )
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            climate_data=cd,
+        )
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        details = diag["temperature_details"]
+        assert details["inside_temperature"] == 21.2
+        assert details["outside_temperature"] == 19.9
+
+    def test_temperature_details_none_preserved(self, builder: DiagnosticsBuilder):
+        """None temperatures pass through without error."""
+        cd = ClimateCoverData(
+            temp_low=20.0,
+            temp_high=25.0,
+            temp_switch=False,
+            blind_type="cover_blind",
+            transparent_blind=False,
+            temp_summer_outside=22.5,
+            outside_temperature=None,
+            inside_temperature=None,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            winter_close_insulation=False,
+        )
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            climate_data=cd,
+        )
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        details = diag["temperature_details"]
+        assert details["inside_temperature"] is None
+        assert details["outside_temperature"] is None
 
     def test_climate_data_absent_when_not_climate_mode(
         self, builder: DiagnosticsBuilder

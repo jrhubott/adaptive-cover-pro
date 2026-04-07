@@ -184,6 +184,7 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0  # Positions are integers (0–100%)
 
     def __init__(
         self,
@@ -303,6 +304,7 @@ class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEn
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "°"
+    _attr_suggested_display_precision = 1  # 0.1° is sufficient for azimuth display
 
     def __init__(
         self,
@@ -348,7 +350,7 @@ class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEn
         # Elevation
         elevation = diagnostics.get("sun_elevation")
         if elevation is not None:
-            attrs["elevation"] = elevation
+            attrs["elevation"] = round(elevation, 1)
 
         # Elevation limits from config
         min_elev = config.get("min_elevation")
@@ -361,8 +363,9 @@ class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEn
         # Gamma
         gamma = diagnostics.get("gamma")
         if gamma is not None:
+            gamma = round(gamma, 1)
             attrs["gamma"] = gamma
-            abs_gamma = abs(gamma)
+            abs_gamma = round(abs(gamma), 1)
             if abs_gamma < 10:
                 interpretation = "nearly perpendicular"
             elif abs_gamma < 45:
@@ -923,13 +926,13 @@ class AdaptiveCoverClimateStatusSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
 
         active_temp = diagnostics.get("active_temperature")
         if active_temp is not None:
-            attrs["active_temperature"] = active_temp
+            attrs["active_temperature"] = active_temp  # already rounded in builder
             attrs["temperature_unit"] = self._temp_unit
 
         temp_details = diagnostics.get("temperature_details", {})
         if temp_details:
-            attrs["indoor_temperature"] = temp_details.get("inside_temperature")
-            attrs["outdoor_temperature"] = temp_details.get("outside_temperature")
+            attrs["indoor_temperature"] = temp_details.get("inside_temperature")  # rounded in builder
+            attrs["outdoor_temperature"] = temp_details.get("outside_temperature")  # rounded in builder
             attrs["temp_switch"] = temp_details.get("temp_switch")
 
         climate_conditions = diagnostics.get("climate_conditions", {})
