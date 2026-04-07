@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-07
 **Current Version:** v2.14.2
-**Branch:** `feature/comprehensive-ha-interface-testing` (off `main`)
+**Branch:** `main` (stable, PR #156 just merged)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- `feature/comprehensive-ha-interface-testing` — Add 172 new tests covering real HA interface: config flows, entity registration, coordinator lifecycle, services, diagnostics, translations, property-based fuzzing, error resilience, performance. Found and filed bugs #153, #154, #155. PR #156, merged to main.
 - `fix/issues-145-147-149-time-window-manual-override-numpy` — numpy serialization fix (#149), time window gate for climate/cloud handlers (#145), manual override detection during wait_for_target (#147). PR #150, merged to main.
 - `fix/issues-146-148-config-summary-duration-icons` — Format DurationSelector dict in config summary (#148: raw dict rendered as `{'hours': 5...}`); remove emojis from all 13 translation files (#146). PR #151, merged to main.
 - `fix/issue-140-display-rounding` — Round display values at presentation boundary; Target Position shows `42%` not `42.0%`, Sun Position shows `180.5°` not `180.456°` (PR #143, merged to main).
