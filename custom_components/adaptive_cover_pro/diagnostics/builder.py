@@ -134,14 +134,19 @@ class DiagnosticsBuilder:
 
     @staticmethod
     def _build_solar(ctx: DiagnosticContext) -> dict:
-        """Build solar position diagnostics."""
+        """Build solar position diagnostics.
+
+        Sun angles are rounded to 1 decimal place here — the single rounding
+        point for all consumers (sensors, Decision Trace, REST API).  Full
+        float precision is kept inside the calculation engine and pipeline.
+        """
         diagnostics: dict = {}
         sun_azimuth, sun_elevation = ctx.pos_sun
-        diagnostics["sun_azimuth"] = sun_azimuth
-        diagnostics["sun_elevation"] = sun_elevation
+        diagnostics["sun_azimuth"] = round(sun_azimuth, 1) if sun_azimuth is not None else None
+        diagnostics["sun_elevation"] = round(sun_elevation, 1) if sun_elevation is not None else None
 
         if ctx.cover and hasattr(ctx.cover, "gamma"):
-            diagnostics["gamma"] = ctx.cover.gamma
+            diagnostics["gamma"] = round(ctx.cover.gamma, 1)
 
         return diagnostics
 
@@ -310,10 +315,22 @@ class DiagnosticsBuilder:
             climate_data = result.climate_data
             diagnostics["climate_control_method"] = result.control_method
 
-            diagnostics["active_temperature"] = climate_data.get_current_temperature
+            # Round temperatures to 1 decimal — presentation boundary.
+            raw_temp = climate_data.get_current_temperature
+            diagnostics["active_temperature"] = (
+                round(raw_temp, 1) if isinstance(raw_temp, (int, float)) else raw_temp
+            )
+
+            def _round_temp(val: object) -> object:
+                """Round a temperature value to 1 decimal if numeric."""
+                try:
+                    return round(float(val), 1)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    return val
+
             diagnostics["temperature_details"] = {
-                "inside_temperature": climate_data.inside_temperature,
-                "outside_temperature": climate_data.outside_temperature,
+                "inside_temperature": _round_temp(climate_data.inside_temperature),
+                "outside_temperature": _round_temp(climate_data.outside_temperature),
                 "temp_switch": climate_data.temp_switch,
             }
 

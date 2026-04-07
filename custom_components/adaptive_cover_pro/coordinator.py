@@ -1365,7 +1365,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._inverse_state and not self._use_interpolation:
             state = inverse_state(state)
 
-        return state
+        # interpolate_position() returns numpy float64; inverse_state() returns int.
+        # Always coerce to plain Python int so sensors/diagnostics never see a float.
+        return int(round(state))
 
     # --- Toggle property delegates (switch entities use setattr) ---
 

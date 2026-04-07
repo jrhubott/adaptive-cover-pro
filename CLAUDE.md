@@ -632,6 +632,47 @@ class MyDiagnosticSensor(AdaptiveCoverDiagnosticSensor):
 - ✅ History is still recorded for debugging
 - ❌ Don't use empty unit for numeric sensors (breaks statistics)
 
+### Display Rounding & Precision (Issue #140)
+
+Values displayed to users (sensor states, entity attributes, diagnostic data) must be cleanly formatted. Rounding happens **only at the presentation boundary** — never inside the calculation engine, pipeline, or managers.
+
+**Principle: Two-Layer Rounding**
+
+| Layer | Where | What it does |
+|-------|-------|--------------|
+| `suggested_display_precision` | Sensor class attribute | Controls HA frontend decimal places for the primary `native_value`. User-overridable. Does not alter stored history/statistics precision. |
+| Explicit `round()` in attributes | `extra_state_attributes` properties and `DiagnosticsBuilder` | Rounds values surfaced in Developer Tools, REST API, and templates. Required because `suggested_display_precision` only affects `native_value`. |
+
+**Sensor display precision:**
+
+| Sensor | `suggested_display_precision` | Rationale |
+|--------|-------------------------------|-----------|
+| Target Position (`AdaptiveCoverSensorEntity`) | `0` | Positions are integers (0–100%) |
+| Sun Position (`AdaptiveCoverSunPositionSensor`) | `1` | 0.1° is sufficient for azimuth display |
+
+**Attribute rounding rules:**
+
+| Value type | Round to | Examples |
+|------------|----------|----------|
+| Sun angles (azimuth, elevation, gamma) | 1 decimal | `180.5°`, `34.2°`, `-12.7°` |
+| Temperatures | 1 decimal | `22.3°C` |
+| Positions (%) | integer | `42%` |
+| Safety margins, distances | 4 decimals | Already handled in `_last_calc_details` |
+| Timestamps, durations | no rounding | ISO-8601 strings, integer seconds |
+
+**Where to round:**
+
+- **`diagnostics/builder.py` → `_build_solar()`** — round `sun_azimuth`, `sun_elevation`, `gamma` to 1 decimal before storing in diagnostics dict.
+- **`sensor.py` → `extra_state_attributes`** — round float attributes (`elevation`, `gamma`, `gamma_absolute_angle`, temperatures) to 1 decimal in Sun Position, Decision Trace, and Climate Status sensors.
+- **`coordinator.py` → `_calculate_cover_state()`** — wrap final return in `int(round(state))` to catch numpy float64 from `interpolate_position()`.
+
+**NEVER round inside:**
+- ❌ `engine/covers/*.py` — calculation engine uses full float precision
+- ❌ `pipeline/helpers.py` — `compute_solar_position()` already does `int(round())` at the boundary
+- ❌ `pipeline/handlers/*.py` — handlers pass through int positions
+- ❌ `managers/*.py` — internal state tracking needs full precision
+- ❌ `state/*.py` — providers pass through raw HA entity values
+
 ### Motion Control Pattern
 
 **Added in v2.7.5** - Occupancy-based automatic control with debouncing.
