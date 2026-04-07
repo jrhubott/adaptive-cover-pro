@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-07
 **Current Version:** v2.14.1
-**Branch:** `main` (stable)
+**Branch:** `main` (stable, PR #151 just merged)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- `fix/issues-146-148-config-summary-duration-icons` — Format DurationSelector dict in config summary (#148: raw dict rendered as `{'hours': 5...}`); remove emojis from all 13 translation files (#146). PR #151, merged to main.
 - `fix/issue-140-display-rounding` — Round display values at presentation boundary; Target Position shows `42%` not `42.0%`, Sun Position shows `180.5°` not `180.456°` (PR #143, merged to main).
 - `fix/issue-139-auto-control-off-covers-still-move` — Skip cover reposition on override expiry when automatic control is OFF (PR #141, merged to main).
 - `fix/issue-134-climate-temp-not-read` — Climate mode never read temp/presence entities; summer/winter strategies never activated (PR #135, merged to main).
@@ -17,7 +18,7 @@
 
 ## Tests
 
-**1410 passing, 0 failing** (+14 new rounding tests for issue #140).
+**1421 passing, 0 failing** (+11 new `_format_duration` tests for issue #148).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
@@ -32,6 +33,8 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#132](https://github.com/jrhubott/adaptive-cover-pro/issues/132) | Cover oscillates from 100% to 98% despite 10% delta threshold | Possible interaction with position limits or delta checking logic. |
+| [#146](https://github.com/jrhubott/adaptive-cover-pro/issues/146) | Remove icons from translations | Fixed in PR #151 / main — awaiting issue close by author. |
+| [#148](https://github.com/jrhubott/adaptive-cover-pro/issues/148) | Configuration Summary unformatted time | Fixed in PR #151 / main — awaiting issue close by author. |
 
 
 ## Known Gotchas
