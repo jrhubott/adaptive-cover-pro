@@ -812,6 +812,36 @@ def _get_azimuth_edges(data) -> int:
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
+def _format_duration(dur: dict | int | float | None) -> str:
+    """Format a DurationSelector value (dict or legacy int minutes) as human-readable text.
+
+    A DurationSelector stores ``{"hours": H, "minutes": M, "seconds": S}``.
+    Legacy configs may store a plain number (treated as minutes).
+    Zero-valued components are omitted unless all are zero (returns "0 min").
+    Examples:
+        {"hours": 5, "minutes": 0, "seconds": 0} -> "5 h"
+        {"hours": 2, "minutes": 15, "seconds": 0} -> "2 h 15 min"
+        {"hours": 0, "minutes": 30, "seconds": 0} -> "30 min"
+        {"hours": 0, "minutes": 0, "seconds": 45} -> "45 s"
+        120 (legacy int)                           -> "120 min"
+    """
+    if dur is None:
+        return ""
+    if isinstance(dur, (int, float)):
+        return f"{int(dur)} min"
+    h = int(dur.get("hours", 0) or 0)
+    m = int(dur.get("minutes", 0) or 0)
+    s = int(dur.get("seconds", 0) or 0)
+    parts = []
+    if h:
+        parts.append(f"{h} h")
+    if m:
+        parts.append(f"{m} min")
+    if s:
+        parts.append(f"{s} s")
+    return " ".join(parts) if parts else "0 min"
+
+
 def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa: C901, PLR0912, PLR0915
     """Build a narrative summary of the current configuration.
 
@@ -965,7 +995,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     # Manual override (80)
     mo_parts = []
     if manual_dur is not None:
-        mo_parts.append(f"pauses for {manual_dur} min")
+        mo_parts.append(f"pauses for {_format_duration(manual_dur)}")
     threshold = config.get(CONF_MANUAL_THRESHOLD)
     if threshold is not None:
         mo_parts.append(f"threshold {threshold}%")

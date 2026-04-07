@@ -1,6 +1,6 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-06
+**Date:** 2026-04-07
 **Current Version:** v2.14.1
 **Branch:** `main` (stable)
 
@@ -10,13 +10,14 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-140-display-rounding` — Round display values at presentation boundary; Target Position shows `42%` not `42.0%`, Sun Position shows `180.5°` not `180.456°` (PR #143, merged to main).
 - `fix/issue-139-auto-control-off-covers-still-move` — Skip cover reposition on override expiry when automatic control is OFF (PR #141, merged to main).
 - `fix/issue-134-climate-temp-not-read` — Climate mode never read temp/presence entities; summer/winter strategies never activated (PR #135, merged to main).
 - `fix/issue-127-constant-repositioning-and-custom-position-priorities` — Stop constant repositioning at 0%/100% + configurable custom position priorities (PR #130, merged to main).
 
 ## Tests
 
-**1396 passing, 0 failing** (+116 new integration tests on branch `feature/integration-test-coverage-expansion`).
+**1410 passing, 0 failing** (+14 new rounding tests for issue #140).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 ## Open PRs (Awaiting Merge to Main)
@@ -30,7 +31,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | # | Title | Notes |
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
-| [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached/maintained | Awaiting user response to clarifying questions. May be related to #127 (fixed in v2.14.0). |
+| [#132](https://github.com/jrhubott/adaptive-cover-pro/issues/132) | Cover oscillates from 100% to 98% despite 10% delta threshold | Possible interaction with position limits or delta checking logic. |
 
 
 ## Known Gotchas
