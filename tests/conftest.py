@@ -1,5 +1,10 @@
 """Pytest fixtures for Adaptive Cover Pro tests."""
 
+# This fixture is provided by pytest-homeassistant-custom-component.
+# We auto-use it globally so the real ``hass`` fixture can discover and
+# load our custom integration from the local ``custom_components/`` directory.
+pytest_plugins = ["pytest_homeassistant_custom_component"]
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
@@ -48,9 +53,26 @@ from .cover_helpers import (  # noqa: F401 — re-exported for convenience
 )
 
 
+@pytest.fixture(autouse=True)
+def _auto_enable_custom_integrations(request):
+    """Auto-enable custom integration discovery for real HA integration tests.
+
+    Only activates when the test is marked @pytest.mark.integration,
+    avoiding overhead for the fast mock-hass unit tests.
+    """
+    if request.node.get_closest_marker("integration"):
+        # Request the plugin's fixture by name via indirect call
+        request.getfixturevalue("enable_custom_integrations")
+
+
+
 @pytest.fixture
-def hass():
-    """Return a mock HomeAssistant instance."""
+def mock_hass():
+    """Return a mock HomeAssistant instance (MagicMock, not real HA).
+
+    Named mock_hass to avoid collision with the real ``hass`` fixture
+    provided by pytest-homeassistant-custom-component.
+    """
     hass_mock = MagicMock()
     hass_mock.states.get.return_value = None
     hass_mock.config.units.temperature_unit = "°C"

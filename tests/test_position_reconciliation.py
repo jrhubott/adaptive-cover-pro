@@ -28,7 +28,7 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
 
 
 @pytest.fixture
-def hass():
+def mock_hass():
     h = MagicMock()
     h.services.async_call = AsyncMock()
     return h
@@ -40,9 +40,9 @@ def grace_mgr():
 
 
 @pytest.fixture
-def svc(hass, grace_mgr):
+def svc(mock_hass, grace_mgr):
     return CoverCommandService(
-        hass=hass,
+        hass=mock_hass,
         logger=MagicMock(),
         cover_type="cover_blind",
         grace_mgr=grace_mgr,
@@ -141,7 +141,7 @@ async def test_apply_skips_manual_override(svc):
 
 
 @pytest.mark.asyncio
-async def test_apply_sends_when_all_gates_pass(svc, hass):
+async def test_apply_sends_when_all_gates_pass(svc, mock_hass):
     _patch_position(svc, 30)
     with _patch_caps(), patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
@@ -153,11 +153,11 @@ async def test_apply_sends_when_all_gates_pass(svc, hass):
     assert outcome == "sent"
     assert svc.target_call["cover.test"] == 60
     assert svc.wait_for_target["cover.test"] is True
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_apply_force_bypasses_all_gates(svc, hass):
+async def test_apply_force_bypasses_all_gates(svc, mock_hass):
     """force=True sends command even when all gates would fail."""
     with _patch_caps():
         outcome, _ = await svc.apply_position(
@@ -167,7 +167,7 @@ async def test_apply_force_bypasses_all_gates(svc, hass):
             context=_ctx(auto_control=False, manual_override=True, force=True),
         )
     assert outcome == "sent"
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -183,7 +183,7 @@ async def test_apply_records_skip_action(svc):
 
 
 @pytest.mark.asyncio
-async def test_apply_new_target_resets_retry_count(svc, hass):
+async def test_apply_new_target_resets_retry_count(svc, mock_hass):
     """Sending a new target resets the reconciliation retry counter."""
     svc._retry_counts["cover.test"] = 2
     _patch_position(svc, 30)
@@ -257,7 +257,7 @@ def test_check_target_reached_tolerance_boundary(svc):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_no_action_when_at_target(svc, hass):
+async def test_reconcile_no_action_when_at_target(svc, mock_hass):
     """Reconciliation does nothing when cover is within tolerance."""
     svc.target_call["cover.test"] = 50
     svc.wait_for_target["cover.test"] = False
@@ -265,12 +265,12 @@ async def test_reconcile_no_action_when_at_target(svc, hass):
 
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
     assert svc._retry_counts.get("cover.test", 0) == 0
 
 
 @pytest.mark.asyncio
-async def test_reconcile_retries_when_cover_missed_target(svc, hass):
+async def test_reconcile_retries_when_cover_missed_target(svc, mock_hass):
     """Reconciliation resends command when cover is outside tolerance."""
     svc.target_call["cover.test"] = 50
     svc.wait_for_target["cover.test"] = False
@@ -279,12 +279,12 @@ async def test_reconcile_retries_when_cover_missed_target(svc, hass):
     with _patch_caps():
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
     assert svc._retry_counts["cover.test"] == 1
 
 
 @pytest.mark.asyncio
-async def test_reconcile_stops_at_max_retries(svc, hass):
+async def test_reconcile_stops_at_max_retries(svc, mock_hass):
     """Reconciliation gives up after max_retries and logs warning."""
     svc.target_call["cover.test"] = 50
     svc.wait_for_target["cover.test"] = False
@@ -295,12 +295,12 @@ async def test_reconcile_stops_at_max_retries(svc, hass):
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # No additional service call — already at max
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
     assert svc._retry_counts["cover.test"] == 3  # Not incremented
 
 
 @pytest.mark.asyncio
-async def test_reconcile_skips_while_wait_for_target_active(svc, hass):
+async def test_reconcile_skips_while_wait_for_target_active(svc, mock_hass):
     """Reconciliation skips entity while cover is still expected to be moving."""
     now = dt.datetime.now(dt.UTC)
     svc.target_call["cover.test"] = 50
@@ -309,11 +309,11 @@ async def test_reconcile_skips_while_wait_for_target_active(svc, hass):
 
     await svc._reconcile(now)
 
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_reconcile_clears_wait_for_target_after_timeout(svc, hass):
+async def test_reconcile_clears_wait_for_target_after_timeout(svc, mock_hass):
     """Reconciliation force-clears wait_for_target after 30s timeout."""
     now = dt.datetime.now(dt.UTC)
     svc.target_call["cover.test"] = 50
@@ -325,11 +325,11 @@ async def test_reconcile_clears_wait_for_target_after_timeout(svc, hass):
 
     # wait_for_target should be cleared, no retry needed (at target)
     assert svc.wait_for_target["cover.test"] is False
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_reconcile_retries_after_wait_for_target_timeout(svc, hass):
+async def test_reconcile_retries_after_wait_for_target_timeout(svc, mock_hass):
     """After wait_for_target timeout, reconcile retries if still off target."""
     now = dt.datetime.now(dt.UTC)
     svc.target_call["cover.test"] = 50
@@ -341,12 +341,12 @@ async def test_reconcile_retries_after_wait_for_target_timeout(svc, hass):
         await svc._reconcile(now)
 
     # Command was sent, so wait_for_target is True again (set by _prepare_service_call)
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
     assert svc._retry_counts["cover.test"] == 1
 
 
 @pytest.mark.asyncio
-async def test_reconcile_skips_when_position_unavailable(svc, hass):
+async def test_reconcile_skips_when_position_unavailable(svc, mock_hass):
     """Reconciliation skips entity when position cannot be read."""
     svc.target_call["cover.test"] = 50
     svc.wait_for_target["cover.test"] = False
@@ -354,7 +354,7 @@ async def test_reconcile_skips_when_position_unavailable(svc, hass):
 
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -383,7 +383,7 @@ async def test_reconcile_calls_on_tick_callback(svc):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_multiple_entities(svc, hass):
+async def test_reconcile_multiple_entities(svc, mock_hass):
     """Reconciliation handles multiple entities independently."""
     svc.target_call["cover.blind"] = 50
     svc.target_call["cover.awning"] = 70
@@ -400,8 +400,8 @@ async def test_reconcile_multiple_entities(svc, hass):
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # Only awning should have been retried
-    assert hass.services.async_call.call_count == 1
-    called_data = hass.services.async_call.call_args[0][2]
+    assert mock_hass.services.async_call.call_count == 1
+    called_data = mock_hass.services.async_call.call_args[0][2]
     assert called_data[list(called_data.keys())[0]] == "cover.awning" or \
         called_data.get("entity_id") == "cover.awning"
 
@@ -411,7 +411,7 @@ async def test_reconcile_multiple_entities(svc, hass):
 # ------------------------------------------------------------------ #
 
 
-def test_start_registers_timer(svc, hass):
+def test_start_registers_timer(svc, mock_hass):
     """start() registers the async_track_time_interval listener."""
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.async_track_time_interval",
@@ -422,7 +422,7 @@ def test_start_registers_timer(svc, hass):
         assert svc._reconcile_unsub is not None
 
 
-def test_start_is_idempotent(svc, hass):
+def test_start_is_idempotent(svc, mock_hass):
     """start() called twice does not register a second timer."""
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.async_track_time_interval",
@@ -433,7 +433,7 @@ def test_start_is_idempotent(svc, hass):
         mock_track.assert_called_once()
 
 
-def test_stop_cancels_timer(svc, hass):
+def test_stop_cancels_timer(svc, mock_hass):
     """stop() calls the unsubscribe function and clears the handle."""
     unsub = MagicMock()
     with patch(
@@ -509,7 +509,7 @@ def test_get_diagnostics_includes_reconcile_time(svc):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_skips_entity_in_manual_override(svc, hass):
+async def test_reconcile_skips_entity_in_manual_override(svc, mock_hass):
     """Reconciliation must NOT resend the old target when cover is in manual override.
 
     Regression test for issue #116: user manually moves cover but it snaps
@@ -525,13 +525,13 @@ async def test_reconcile_skips_entity_in_manual_override(svc, hass):
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # Must NOT resend — cover should stay where the user put it
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
     # retry count must not be incremented
     assert svc._retry_counts.get("cover.blind", 0) == 0
 
 
 @pytest.mark.asyncio
-async def test_reconcile_resumes_after_manual_override_cleared(svc, hass):
+async def test_reconcile_resumes_after_manual_override_cleared(svc, mock_hass):
     """Once manual override clears, reconciliation should resume protecting target."""
     svc.target_call["cover.blind"] = 85
     svc.wait_for_target["cover.blind"] = False
@@ -540,17 +540,17 @@ async def test_reconcile_resumes_after_manual_override_cleared(svc, hass):
     # Override active — should skip
     svc.manual_override_entities = {"cover.blind"}
     await svc._reconcile(dt.datetime.now(dt.UTC))
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
 
     # Override cleared — should now retry
     svc.manual_override_entities = set()
     with _patch_caps():
         await svc._reconcile(dt.datetime.now(dt.UTC))
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_reconcile_only_skips_manual_entity_not_others(svc, hass):
+async def test_reconcile_only_skips_manual_entity_not_others(svc, mock_hass):
     """Reconciliation skips the manually-overridden entity but still retries others."""
     svc.target_call["cover.blind"] = 85       # manually moved — should skip
     svc.target_call["cover.awning"] = 70      # auto-controlled — should retry
@@ -567,13 +567,13 @@ async def test_reconcile_only_skips_manual_entity_not_others(svc, hass):
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # Exactly one call — only for cover.awning
-    assert hass.services.async_call.call_count == 1
-    called_data = hass.services.async_call.call_args[0][2]
+    assert mock_hass.services.async_call.call_count == 1
+    called_data = mock_hass.services.async_call.call_args[0][2]
     assert called_data.get("entity_id") == "cover.awning"
 
 
 @pytest.mark.asyncio
-async def test_reconcile_safety_override_still_protected(svc, hass):
+async def test_reconcile_safety_override_still_protected(svc, mock_hass):
     """Safety handlers (force override) use apply_position(force=True) which
     overwrites target_call — reconciliation then protects that new safety target
     even if the entity is still in the manual override set (edge case: safety
@@ -593,7 +593,7 @@ async def test_reconcile_safety_override_still_protected(svc, hass):
     # that we rely on apply_position(force=True) for immediate safety, not
     # the reconciliation retry for the safety-override case.
     await svc._reconcile(dt.datetime.now(dt.UTC))
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -610,7 +610,7 @@ async def test_manual_override_entities_property_getter_and_setter(svc):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_with_force_override_sensor_scenario(svc, hass):
+async def test_reconcile_with_force_override_sensor_scenario(svc, mock_hass):
     """Regression: issue #116 — cover with force override sensor configured
     (but inactive) snaps back after manual move.
 
@@ -635,7 +635,7 @@ async def test_reconcile_with_force_override_sensor_scenario(svc, hass):
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # Cover must NOT have been moved back — user's 50% position preserved
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
     assert svc._retry_counts.get("cover.balcony", 0) == 0
 
 
@@ -646,7 +646,7 @@ async def test_reconcile_with_force_override_sensor_scenario(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_force_apply_marks_safety_target(svc, hass):
+async def test_force_apply_marks_safety_target(svc, mock_hass):
     """apply_position(force=True) adds entity to _safety_targets."""
     _patch_position(svc, 30)
     with _patch_caps():
@@ -657,7 +657,7 @@ async def test_force_apply_marks_safety_target(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_non_force_apply_removes_from_safety_targets(svc, hass):
+async def test_non_force_apply_removes_from_safety_targets(svc, mock_hass):
     """apply_position(force=False) removes entity from _safety_targets.
 
     When a safety override clears and normal solar tracking resumes, the
@@ -678,7 +678,7 @@ async def test_non_force_apply_removes_from_safety_targets(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_skips_non_safety_when_auto_control_off(svc, hass):
+async def test_reconcile_skips_non_safety_when_auto_control_off(svc, mock_hass):
     """Reconciliation skips normal targets when automatic control is disabled.
 
     Regression: after the user turned off Automatic Control a later
@@ -696,12 +696,12 @@ async def test_reconcile_skips_non_safety_when_auto_control_off(svc, hass):
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # Must NOT resend — automatic control is off
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
     assert svc._retry_counts.get("cover.test", 0) == 0
 
 
 @pytest.mark.asyncio
-async def test_reconcile_still_resends_safety_target_when_auto_control_off(svc, hass):
+async def test_reconcile_still_resends_safety_target_when_auto_control_off(svc, mock_hass):
     """Safety targets (force override, weather) are resent even when auto control is off.
 
     The whole point of safety overrides is that they work regardless of whether
@@ -720,11 +720,11 @@ async def test_reconcile_still_resends_safety_target_when_auto_control_off(svc, 
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # MUST resend — safety target even though auto control is off
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_reconcile_resumes_when_auto_control_re_enabled(svc, hass):
+async def test_reconcile_resumes_when_auto_control_re_enabled(svc, mock_hass):
     """Turning automatic control back on resumes reconciliation for normal targets."""
     svc.target_call["cover.test"] = 60
     svc.wait_for_target["cover.test"] = False
@@ -734,17 +734,17 @@ async def test_reconcile_resumes_when_auto_control_re_enabled(svc, hass):
     # Control off: should skip
     svc.auto_control_enabled = False
     await svc._reconcile(dt.datetime.now(dt.UTC))
-    hass.services.async_call.assert_not_called()
+    mock_hass.services.async_call.assert_not_called()
 
     # Control back on: should retry
     svc.auto_control_enabled = True
     with _patch_caps():
         await svc._reconcile(dt.datetime.now(dt.UTC))
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_force_apply_bypasses_time_delta_gate(svc, hass):
+async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
     """force=True must bypass time_delta_too_small so safety commands always get sent.
 
     Regression: force_override and weather_override commands were being blocked
@@ -765,11 +765,11 @@ async def test_force_apply_bypasses_time_delta_gate(svc, hass):
             context=_ctx(time_threshold=5, force=True),
         )
     assert outcome == "sent", f"Expected sent, got skipped: {detail}"
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_force_apply_bypasses_position_delta_gate(svc, hass):
+async def test_force_apply_bypasses_position_delta_gate(svc, mock_hass):
     """force=True must bypass delta_too_small so safety commands always get sent."""
     _patch_position(svc, 61)  # Would be delta=1 which is < min_change=5
     with _patch_caps():
@@ -780,7 +780,7 @@ async def test_force_apply_bypasses_position_delta_gate(svc, hass):
             context=_ctx(min_change=5, force=True),
         )
     assert outcome == "sent", f"Expected sent, got skipped: {detail}"
-    hass.services.async_call.assert_called_once()
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -799,7 +799,7 @@ async def test_auto_control_enabled_setter(svc):
 
 
 @pytest.mark.asyncio
-async def test_safety_target_cleared_on_open_close_non_force(svc, hass):
+async def test_safety_target_cleared_on_open_close_non_force(svc, mock_hass):
     """Non-force apply on open/close-only covers also clears safety target."""
     svc._safety_targets.add("cover.test")
 
@@ -822,7 +822,7 @@ async def test_safety_target_cleared_on_open_close_non_force(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_safety_target_set_on_open_close_force(svc, hass):
+async def test_safety_target_set_on_open_close_force(svc, mock_hass):
     """Force apply on open/close-only covers marks entity as safety target."""
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
@@ -845,7 +845,7 @@ async def test_safety_target_set_on_open_close_force(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_special_position_target_bypasses_delta(svc, hass):
+async def test_special_position_target_bypasses_delta(svc, mock_hass):
     """Moving TO a special position (0, 100, default, sunset) bypasses delta check.
 
     Scenario: cover is at 55%, min_change=10, target is 0% (special).
@@ -869,7 +869,7 @@ async def test_special_position_target_bypasses_delta(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_special_position_current_bypasses_delta(svc, hass):
+async def test_special_position_current_bypasses_delta(svc, mock_hass):
     """Moving FROM a special position also bypasses the delta check.
 
     Cover is at 0% (special), target is 2% — delta=2 < min_change=5.
@@ -890,7 +890,7 @@ async def test_special_position_current_bypasses_delta(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_non_special_small_delta_is_blocked(svc, hass):
+async def test_non_special_small_delta_is_blocked(svc, mock_hass):
     """Without a special position, a small delta IS blocked by min_change.
 
     Control: verify that without the special bypass, a small delta fails.
@@ -912,7 +912,7 @@ async def test_non_special_small_delta_is_blocked(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_same_position_skips_even_for_special_target(svc, hass):
+async def test_same_position_skips_even_for_special_target(svc, mock_hass):
     """Cover already at target → NO command even if target is a special position.
 
     The same-position short-circuit runs BEFORE the special-positions bypass.
@@ -931,7 +931,7 @@ async def test_same_position_skips_even_for_special_target(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_same_position_skips_for_zero_special(svc, hass):
+async def test_same_position_skips_for_zero_special(svc, mock_hass):
     """Cover at 0% targeting 0% is short-circuited (no command sent)."""
     _patch_position(svc, 0)
     outcome, reason = await svc.apply_position(
@@ -945,7 +945,7 @@ async def test_same_position_skips_for_zero_special(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_sun_just_appeared_sends_despite_same_position(svc, hass):
+async def test_sun_just_appeared_sends_despite_same_position(svc, mock_hass):
     """sun_just_appeared=True sends command even when cover is already at target.
 
     When the sun enters the FOV for the first time, we re-confirm the cover
@@ -976,7 +976,7 @@ async def test_sun_just_appeared_sends_despite_same_position(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_sun_just_appeared_bypasses_delta(svc, hass):
+async def test_sun_just_appeared_bypasses_delta(svc, mock_hass):
     """sun_just_appeared=True bypasses the delta check (small change allowed)."""
     _patch_position(svc, 50)  # delta=1 < min_change=5
     with _patch_caps(), patch(
@@ -997,7 +997,7 @@ async def test_sun_just_appeared_bypasses_delta(svc, hass):
 
 
 @pytest.mark.asyncio
-async def test_sun_just_appeared_false_enforces_delta(svc, hass):
+async def test_sun_just_appeared_false_enforces_delta(svc, mock_hass):
     """With sun_just_appeared=False, small delta is still blocked."""
     _patch_position(svc, 50)  # delta=1 < min_change=5
     outcome, reason = await svc.apply_position(

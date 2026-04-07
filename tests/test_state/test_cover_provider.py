@@ -12,7 +12,7 @@ from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilitie
 
 
 @pytest.fixture
-def hass():
+def mock_hass():
     """Return a mock HomeAssistant instance."""
     h = MagicMock()
     h.states.get.return_value = None
@@ -20,9 +20,9 @@ def hass():
 
 
 @pytest.fixture
-def provider(hass, mock_logger):
+def provider(mock_hass, mock_logger):
     """Return a CoverProvider instance."""
-    return CoverProvider(hass=hass, logger=mock_logger)
+    return CoverProvider(hass=mock_hass, logger=mock_logger)
 
 
 def _mock_state(entity_id, state, attributes=None):
@@ -55,7 +55,7 @@ class TestReadSingleCapabilities:
     """Tests for CoverProvider.read_single_capabilities."""
 
     @pytest.mark.unit
-    def test_returns_default_when_entity_not_ready(self, provider, hass):
+    def test_returns_default_when_entity_not_ready(self, provider, mock_hass):
         """Returns _DEFAULT_CAPABILITIES when check_cover_features returns None."""
         with patch(
             "custom_components.adaptive_cover_pro.state.cover_provider.check_cover_features",
@@ -65,7 +65,7 @@ class TestReadSingleCapabilities:
         assert result == _DEFAULT_CAPABILITIES
 
     @pytest.mark.unit
-    def test_full_capabilities_from_features(self, provider, hass):
+    def test_full_capabilities_from_features(self, provider, mock_hass):
         """Returns CoverCapabilities built from check_cover_features dict."""
         feature_dict = {
             "has_set_position": True,
@@ -85,7 +85,7 @@ class TestReadSingleCapabilities:
         assert result.has_close is True
 
     @pytest.mark.unit
-    def test_open_close_only_cover(self, provider, hass):
+    def test_open_close_only_cover(self, provider, mock_hass):
         """Covers without SET_POSITION return False for has_set_position."""
         feature_dict = {
             "has_set_position": False,
@@ -102,7 +102,7 @@ class TestReadSingleCapabilities:
         assert result.has_set_tilt_position is False
 
     @pytest.mark.unit
-    def test_returns_frozen_dataclass(self, provider, hass):
+    def test_returns_frozen_dataclass(self, provider, mock_hass):
         """Result is a frozen CoverCapabilities dataclass."""
         with patch(
             "custom_components.adaptive_cover_pro.state.cover_provider.check_cover_features",
@@ -283,7 +283,7 @@ class TestReadPositions:
             "has_close": True,
         }
 
-        def fake_attr(hass, entity, attr):
+        def fake_attr(mock_hass, entity, attr):
             return 30 if entity == "cover.blind_1" else 70
 
         with (

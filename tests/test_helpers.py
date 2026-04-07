@@ -19,48 +19,48 @@ from custom_components.adaptive_cover_pro.helpers import (
 
 
 @pytest.mark.unit
-def test_get_safe_state_returns_state(hass):
+def test_get_safe_state_returns_state(mock_hass):
     """Test get_safe_state returns state when available."""
     state_obj = MagicMock()
     state_obj.state = "25.5"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_safe_state(hass, "sensor.temperature")
+    result = get_safe_state(mock_hass, "sensor.temperature")
 
     assert result == "25.5"
-    hass.states.get.assert_called_once_with("sensor.temperature")
+    mock_hass.states.get.assert_called_once_with("sensor.temperature")
 
 
 @pytest.mark.unit
-def test_get_safe_state_returns_none_when_unknown(hass):
+def test_get_safe_state_returns_none_when_unknown(mock_hass):
     """Test get_safe_state returns None when state is unknown."""
     state_obj = MagicMock()
     state_obj.state = "unknown"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_safe_state(hass, "sensor.temperature")
+    result = get_safe_state(mock_hass, "sensor.temperature")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_safe_state_returns_none_when_unavailable(hass):
+def test_get_safe_state_returns_none_when_unavailable(mock_hass):
     """Test get_safe_state returns None when state is unavailable."""
     state_obj = MagicMock()
     state_obj.state = "unavailable"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_safe_state(hass, "sensor.temperature")
+    result = get_safe_state(mock_hass, "sensor.temperature")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_safe_state_returns_none_when_entity_missing(hass):
+def test_get_safe_state_returns_none_when_entity_missing(mock_hass):
     """Test get_safe_state returns None when entity doesn't exist."""
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
 
-    result = get_safe_state(hass, "sensor.nonexistent")
+    result = get_safe_state(mock_hass, "sensor.nonexistent")
 
     assert result is None
 
@@ -120,32 +120,32 @@ def test_get_datetime_from_str_returns_none_for_none():
 
 
 @pytest.mark.unit
-def test_get_last_updated_returns_timestamp(hass):
+def test_get_last_updated_returns_timestamp(mock_hass):
     """Test get_last_updated returns last_updated timestamp."""
     last_updated = dt.datetime(2024, 1, 15, 10, 30, 0, tzinfo=dt.UTC)
     state_obj = MagicMock()
     state_obj.last_updated = last_updated
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_last_updated("sensor.temperature", hass)
+    result = get_last_updated("sensor.temperature", mock_hass)
 
     assert result == last_updated
 
 
 @pytest.mark.unit
-def test_get_last_updated_returns_none_when_entity_missing(hass):
+def test_get_last_updated_returns_none_when_entity_missing(mock_hass):
     """Test get_last_updated returns None when entity doesn't exist."""
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
 
-    result = get_last_updated("sensor.nonexistent", hass)
+    result = get_last_updated("sensor.nonexistent", mock_hass)
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_last_updated_returns_none_when_entity_id_none(hass):
+def test_get_last_updated_returns_none_when_entity_id_none(mock_hass):
     """Test get_last_updated returns None when entity_id is None."""
-    result = get_last_updated(None, hass)
+    result = get_last_updated(None, mock_hass)
 
     assert result is None
 
@@ -206,15 +206,15 @@ def test_dt_check_time_passed_returns_true_for_past_date():
 
 
 @pytest.mark.unit
-def test_check_cover_features_detects_set_position(hass):
+def test_check_cover_features_detects_set_position(mock_hass):
     """Test check_cover_features detects SET_POSITION feature."""
     from homeassistant.components.cover import CoverEntityFeature
 
     state_obj = MagicMock()
     state_obj.attributes = {"supported_features": CoverEntityFeature.SET_POSITION}
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     assert result["has_set_position"] is True
     assert result["has_set_tilt_position"] is False
@@ -223,15 +223,15 @@ def test_check_cover_features_detects_set_position(hass):
 
 
 @pytest.mark.unit
-def test_check_cover_features_detects_set_tilt_position(hass):
+def test_check_cover_features_detects_set_tilt_position(mock_hass):
     """Test check_cover_features detects SET_TILT_POSITION feature."""
     from homeassistant.components.cover import CoverEntityFeature
 
     state_obj = MagicMock()
     state_obj.attributes = {"supported_features": CoverEntityFeature.SET_TILT_POSITION}
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     assert result["has_set_position"] is False
     assert result["has_set_tilt_position"] is True
@@ -240,7 +240,7 @@ def test_check_cover_features_detects_set_tilt_position(hass):
 
 
 @pytest.mark.unit
-def test_check_cover_features_detects_open_close(hass):
+def test_check_cover_features_detects_open_close(mock_hass):
     """Test check_cover_features detects OPEN and CLOSE features."""
     from homeassistant.components.cover import CoverEntityFeature
 
@@ -248,9 +248,9 @@ def test_check_cover_features_detects_open_close(hass):
     state_obj.attributes = {
         "supported_features": CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
     }
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     assert result["has_set_position"] is False
     assert result["has_set_tilt_position"] is False
@@ -259,7 +259,7 @@ def test_check_cover_features_detects_open_close(hass):
 
 
 @pytest.mark.unit
-def test_check_cover_features_detects_all_features(hass):
+def test_check_cover_features_detects_all_features(mock_hass):
     """Test check_cover_features detects all features combined."""
     from homeassistant.components.cover import CoverEntityFeature
 
@@ -272,9 +272,9 @@ def test_check_cover_features_detects_all_features(hass):
             | CoverEntityFeature.CLOSE
         )
     }
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     assert result["has_set_position"] is True
     assert result["has_set_tilt_position"] is True
@@ -283,24 +283,24 @@ def test_check_cover_features_detects_all_features(hass):
 
 
 @pytest.mark.unit
-def test_check_cover_features_returns_none_when_entity_missing(hass):
+def test_check_cover_features_returns_none_when_entity_missing(mock_hass):
     """Test check_cover_features returns None when entity missing."""
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
 
-    result = check_cover_features(hass, "cover.nonexistent")
+    result = check_cover_features(mock_hass, "cover.nonexistent")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_check_cover_features_returns_optimistic_defaults_when_no_features(hass):
+def test_check_cover_features_returns_optimistic_defaults_when_no_features(mock_hass):
     """Test check_cover_features returns optimistic defaults when no features attribute."""
     state_obj = MagicMock()
     state_obj.state = "closed"  # Entity is ready
     state_obj.attributes = {}  # No supported_features attribute
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     # Should return optimistic defaults when entity is ready but has no supported_features
     assert result["has_set_position"] is True
@@ -310,96 +310,96 @@ def test_check_cover_features_returns_optimistic_defaults_when_no_features(hass)
 
 
 @pytest.mark.unit
-def test_check_cover_features_returns_none_when_unavailable(hass):
+def test_check_cover_features_returns_none_when_unavailable(mock_hass):
     """Test check_cover_features returns None when entity unavailable."""
     state_obj = MagicMock()
     state_obj.state = "unavailable"
     state_obj.attributes = {"supported_features": 15}
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_check_cover_features_returns_none_when_unknown(hass):
+def test_check_cover_features_returns_none_when_unknown(mock_hass):
     """Test check_cover_features returns None when entity unknown."""
     state_obj = MagicMock()
     state_obj.state = "unknown"
     state_obj.attributes = {"supported_features": 15}
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = check_cover_features(hass, "cover.test")
+    result = check_cover_features(mock_hass, "cover.test")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_open_close_state_returns_0_when_closed(hass):
+def test_get_open_close_state_returns_0_when_closed(mock_hass):
     """Test get_open_close_state returns 0 for closed state."""
     state_obj = MagicMock()
     state_obj.state = "closed"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_open_close_state(hass, "cover.test")
+    result = get_open_close_state(mock_hass, "cover.test")
 
     assert result == 0
 
 
 @pytest.mark.unit
-def test_get_open_close_state_returns_100_when_open(hass):
+def test_get_open_close_state_returns_100_when_open(mock_hass):
     """Test get_open_close_state returns 100 for open state."""
     state_obj = MagicMock()
     state_obj.state = "open"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_open_close_state(hass, "cover.test")
+    result = get_open_close_state(mock_hass, "cover.test")
 
     assert result == 100
 
 
 @pytest.mark.unit
-def test_get_open_close_state_returns_none_when_unknown(hass):
+def test_get_open_close_state_returns_none_when_unknown(mock_hass):
     """Test get_open_close_state returns None for unknown state."""
     state_obj = MagicMock()
     state_obj.state = "unknown"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_open_close_state(hass, "cover.test")
+    result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_open_close_state_returns_none_when_unavailable(hass):
+def test_get_open_close_state_returns_none_when_unavailable(mock_hass):
     """Test get_open_close_state returns None for unavailable state."""
     state_obj = MagicMock()
     state_obj.state = "unavailable"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_open_close_state(hass, "cover.test")
+    result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_open_close_state_returns_none_when_entity_missing(hass):
+def test_get_open_close_state_returns_none_when_entity_missing(mock_hass):
     """Test get_open_close_state returns None when entity doesn't exist."""
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
 
-    result = get_open_close_state(hass, "cover.nonexistent")
+    result = get_open_close_state(mock_hass, "cover.nonexistent")
 
     assert result is None
 
 
 @pytest.mark.unit
-def test_get_open_close_state_returns_none_for_other_states(hass):
+def test_get_open_close_state_returns_none_for_other_states(mock_hass):
     """Test get_open_close_state returns None for other states."""
     state_obj = MagicMock()
     state_obj.state = "opening"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
-    result = get_open_close_state(hass, "cover.test")
+    result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
