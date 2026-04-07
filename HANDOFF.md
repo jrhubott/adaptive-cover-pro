@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-07
 **Current Version:** v2.14.2
-**Branch:** `main` (stable, PR #150 just merged)
+**Branch:** `feature/comprehensive-ha-interface-testing` (off `main`)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -19,8 +19,14 @@
 
 ## Tests
 
-**1461 passing, 0 failing** (+40 new tests for issues #145, #147, #149).
+**1633 passing, 3 xfailed, 0 failing** (+172 new tests from comprehensive HA interface testing branch).
 Run: `source venv/bin/activate && python -m pytest tests/ -v`
+
+New test files added (all on `feature/comprehensive-ha-interface-testing`):
+`test_config_flow_integration.py`, `test_entity_registration.py`, `test_coordinator_lifecycle.py`,
+`test_services_integration.py`, `test_diagnostics_integration.py`, `test_event_driven_integration.py`,
+`test_translations.py`, `test_property_based.py`, `test_error_resilience.py`, `test_performance.py`;
+extended `test_multi_cover_integration.py`; renamed `hass` fixture → `mock_hass` throughout.
 
 ## Open PRs (Awaiting Merge to Main)
 
@@ -31,6 +37,9 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 | # | Title | Notes |
 |---|-------|-------|
+| [#153](https://github.com/jrhubott/adaptive-cover-pro/issues/153) | **Tilt cover returns >100% for narrow FOV** | `AdaptiveTiltCover.calculate_position()` returns values >100 (e.g. 101.4) for FOV angles ≤5° combined with high sun elevation (~60°). Found by hypothesis property-based test `test_tilt_position_always_0_to_100` (xfail). Fix: add `max(0, min(100, position))` clamp at end of `calculate_position()`. See `tests/test_property_based.py`. |
+| [#154](https://github.com/jrhubott/adaptive-cover-pro/issues/154) | **Duplicate unique_id: Manual Override binary sensor and switch** | Both `binary_sensor.py` and `switch.py` produce unique_id `{entry_id}_Manual Override`. HA entity registry de-duplication may silently drop one entity. Found by `test_unique_ids_are_unique` (xfail). Fix: change binary sensor unique_id to use the `key` field. See `tests/test_entity_registration.py`. |
+| [#155](https://github.com/jrhubott/adaptive-cover-pro/issues/155) | **diagnostics.py returns mappingproxy — not directly JSON-serializable** | `async_get_config_entry_diagnostics` returns `config_entry.options` as a raw `mappingproxy`, which fails `json.dumps()` without a custom encoder. Fix: wrap in `dict()`. See `tests/test_diagnostics_integration.py`. |
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#132](https://github.com/jrhubott/adaptive-cover-pro/issues/132) | Cover oscillates from 100% to 98% despite 10% delta threshold | Possible interaction with position limits or delta checking logic. |
 | [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.2 — awaiting user confirmation. |
@@ -42,6 +51,12 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 
 
 ## Known Gotchas
+
+- **[BUG #153] Tilt cover position can exceed 100% for narrow FOV:** `AdaptiveTiltCover.calculate_position()` returns values >100 (e.g. 101.4) for very narrow FOV angles (≤5°) combined with high sun elevation (~60°). Found by hypothesis property-based test `test_tilt_narrow_fov_edge_case_known_bug` (xfail). Fix: add `max(0, min(100, position))` clamp at end of `calculate_position()` in `calculation.py`. See `tests/test_property_based.py`.
+
+- **[BUG #154] Duplicate unique_id: Manual Override binary sensor and switch:** Both `binary_sensor.py` (Manual Override binary sensor) and `switch.py` (Manual Override switch) produce `unique_id = f"{entry_id}_Manual Override"`. This collision causes HA entity registry de-duplication to silently merge the two entities. Found by `test_unique_ids_are_unique` (xfail). Fix: change binary sensor unique_id to use the `key` field instead of display name. See `custom_components/adaptive_cover_pro/binary_sensor.py` line 104.
+
+- **[BUG #155] diagnostics.py returns mappingproxy instead of dict:** `async_get_config_entry_diagnostics()` in `diagnostics.py` returns `config_entry.options` as a raw `mappingproxy`. HA's UI download handler handles this fine, but `json.dumps()` without a custom encoder raises `TypeError`. Fix: wrap `config_entry.options` in `dict()` before returning. See `tests/test_diagnostics_integration.py`.
 
 - **Override expiry forced reposition despite auto_control=False (fixed issue #139, branch):** `_async_send_after_override_clear()` used `force=True`, bypassing the `auto_control` gate. If the user turned Automatic Control OFF while a manual override was active, the cover would be force-repositioned to the pipeline position when the override timer expired. Fixed by adding an `automatic_control` guard before the entity loop (same pattern as the existing time-window guard). Regression: this path (force=True, inside window, auto_control=ON) continues to work as before.
 

@@ -32,3 +32,4 @@ notebooks/test_python.ipynb
 notebooks/.ipynb_checkpoints
 notebooks/outputs/
 .superpowers/
+.hypothesis/
