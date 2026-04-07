@@ -27,7 +27,6 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
 | [#150](https://github.com/jrhubott/adaptive-cover-pro/pull/150) | `fix/issues-145-147-149-time-window-manual-override-numpy` | [#145](https://github.com/jrhubott/adaptive-cover-pro/issues/145) [#147](https://github.com/jrhubott/adaptive-cover-pro/issues/147) [#149](https://github.com/jrhubott/adaptive-cover-pro/issues/149) | [v2.14.2-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2-beta.1) | 🟡 Awaiting user confirmation | numpy serialization fix, time window gate for climate/cloud handlers, manual override detection during wait_for_target |
-| — | `feature/integration-test-coverage-expansion` | — | — | 🟠 Open — not yet beta-tested | 116 new integration tests (1280→1396); covers coordinator update cycle, inverse state, effective default, position limits, multi-cover, weather/motion interactions |
 
 ## Open Issues
 
@@ -35,6 +34,7 @@ Run: `source venv/bin/activate && python -m pytest tests/ -v`
 |---|-------|-------|
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#132](https://github.com/jrhubott/adaptive-cover-pro/issues/132) | Cover oscillates from 100% to 98% despite 10% delta threshold | Possible interaction with position limits or delta checking logic. |
+| [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.1+; awaiting user confirmation on v2.14.2-beta.1. |
 | [#145](https://github.com/jrhubott/adaptive-cover-pro/issues/145) | Start and end time not respected | Fixed in PR #150 / beta v2.14.2-beta.1 — awaiting user confirmation. |
 | [#147](https://github.com/jrhubott/adaptive-cover-pro/issues/147) | Manual override ignored during morning operations | Fixed in PR #150 / beta v2.14.2-beta.1 — awaiting user confirmation. |
 | [#149](https://github.com/jrhubott/adaptive-cover-pro/issues/149) | Download diagnostics HTTP error | Fixed in PR #150 / beta v2.14.2-beta.1 — awaiting user confirmation. |
