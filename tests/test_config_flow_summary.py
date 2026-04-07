@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from custom_components.adaptive_cover_pro.config_flow import _build_config_summary
+from custom_components.adaptive_cover_pro.config_flow import _build_config_summary, _format_duration
 from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
@@ -553,10 +553,69 @@ def test_manual_override_always_present():
 
 
 def test_manual_override_duration_shown():
-    """Override duration appears in the manual override bullet."""
-    cfg = {CONF_MANUAL_OVERRIDE_DURATION: 60}
+    """Override duration dict appears formatted in the manual override bullet (issue #148)."""
+    cfg = {CONF_MANUAL_OVERRIDE_DURATION: {"hours": 5, "minutes": 0, "seconds": 0}}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "60 min" in summary
+    assert "5 h" in summary
+    # Raw dict must NOT appear
+    assert "{'hours'" not in summary
+    assert "hours" not in summary or "5 h" in summary
+
+
+# ---------------------------------------------------------------------------
+# _format_duration unit tests (issue #148)
+# ---------------------------------------------------------------------------
+
+
+class TestFormatDuration:
+    """Unit tests for _format_duration helper."""
+
+    def test_hours_only(self):
+        """Full hours, zeroed minutes and seconds."""
+        assert _format_duration({"hours": 5, "minutes": 0, "seconds": 0}) == "5 h"
+
+    def test_hours_and_minutes(self):
+        """Hours and non-zero minutes combined."""
+        assert _format_duration({"hours": 2, "minutes": 15, "seconds": 0}) == "2 h 15 min"
+
+    def test_minutes_only(self):
+        """Zero hours, non-zero minutes."""
+        assert _format_duration({"hours": 0, "minutes": 30, "seconds": 0}) == "30 min"
+
+    def test_seconds_only(self):
+        """All zero except seconds."""
+        assert _format_duration({"hours": 0, "minutes": 0, "seconds": 45}) == "45 s"
+
+    def test_all_three_components(self):
+        """Hours, minutes, and seconds all non-zero."""
+        assert _format_duration({"hours": 1, "minutes": 5, "seconds": 30}) == "1 h 5 min 30 s"
+
+    def test_all_zero(self):
+        """All components zero returns '0 min'."""
+        assert _format_duration({"hours": 0, "minutes": 0, "seconds": 0}) == "0 min"
+
+    def test_legacy_int(self):
+        """Plain integer (legacy config) treated as minutes."""
+        assert _format_duration(120) == "120 min"
+
+    def test_legacy_float(self):
+        """Plain float (legacy config) treated as minutes."""
+        assert _format_duration(90.0) == "90 min"
+
+    def test_none_returns_empty(self):
+        """None input returns empty string."""
+        assert _format_duration(None) == ""
+
+    def test_default_ha_two_hours(self):
+        """Default HA duration selector value {"hours": 2} (no minutes/seconds key)."""
+        assert _format_duration({"hours": 2}) == "2 h"
+
+    def test_no_raw_dict_in_summary(self):
+        """Regression: raw dict must not appear anywhere in the config summary."""
+        cfg = {CONF_MANUAL_OVERRIDE_DURATION: {"hours": 3, "minutes": 30, "seconds": 0}}
+        summary = _build_config_summary(cfg, SensorType.BLIND)
+        assert "{'hours'" not in summary
+        assert "{" not in summary or "pauses for 3 h 30 min" in summary
 
 
 def test_manual_override_reset_shown():

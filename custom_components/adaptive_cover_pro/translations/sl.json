@@ -300,7 +300,7 @@
           "weather": "Weather Conditions",
           "manual_override": "Manual Override",
           "force_override": "Force Override",
-          "custom_position": "🎯 Custom Positions",
+          "custom_position": "Custom Positions",
           "motion_override": "Motion Override",
           "weather_override": "Weather Override",
           "device": "Device Association",
