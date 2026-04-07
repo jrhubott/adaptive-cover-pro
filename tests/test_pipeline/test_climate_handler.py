@@ -401,3 +401,78 @@ class TestWinterInsulation:
         )
         result = self.handler.evaluate(snap)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #145 — ClimateHandler must respect in_time_window
+# ---------------------------------------------------------------------------
+
+
+class TestClimateHandlerTimeWindow:
+    """ClimateHandler must return None when outside the configured time window.
+
+    Before the fix, ClimateHandler ignored ``snapshot.in_time_window``, which
+    caused covers to move based on temperature strategy (e.g. full-open for
+    winter heating) even when the user had configured start/end time limits.
+    """
+
+    handler = ClimateHandler()
+
+    def _active_snap(self, *, in_time_window: bool) -> object:
+        """Build a snapshot that would normally trigger climate action."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        cover.valid = True
+        return make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=15.0,  # winter — would normally open to 100%
+                is_presence=True,
+            ),
+            climate_options=_make_options(temp_low=18.0),
+            in_time_window=in_time_window,
+        )
+
+    def test_returns_none_outside_time_window(self) -> None:
+        """Climate handler must return None when in_time_window=False."""
+        snap = self._active_snap(in_time_window=False)
+        result = self.handler.evaluate(snap)
+        assert result is None, (
+            "ClimateHandler should return None outside the time window "
+            f"but returned {result}"
+        )
+
+    def test_returns_result_inside_time_window(self) -> None:
+        """Climate handler must return a result when in_time_window=True."""
+        snap = self._active_snap(in_time_window=True)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+
+    def test_describe_skip_outside_window(self) -> None:
+        """describe_skip() should mention 'time window' when outside window."""
+        snap = self._active_snap(in_time_window=False)
+        reason = self.handler.describe_skip(snap)
+        assert "time window" in reason.lower(), (
+            f"Expected 'time window' in describe_skip reason but got: {reason!r}"
+        )
+
+    def test_summer_returns_none_outside_window(self) -> None:
+        """Summer cooling must also be gated by time window."""
+        cover = _make_blind_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=30.0,
+                is_presence=True,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(
+                temp_high=26.0,
+                temp_summer_outside=20.0,
+            ),
+            in_time_window=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is None

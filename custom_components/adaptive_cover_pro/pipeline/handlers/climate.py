@@ -290,6 +290,8 @@ class ClimateHandler(OverrideHandler):
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Run climate strategy and return position when climate mode is active."""
+        if not snapshot.in_time_window:
+            return None
         if not snapshot.climate_mode_enabled:
             return None
         if snapshot.climate_readings is None or snapshot.climate_options is None:
@@ -339,6 +341,8 @@ class ClimateHandler(OverrideHandler):
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when climate handler does not match."""
+        if not snapshot.in_time_window:
+            return "outside time window"
         if not snapshot.climate_mode_enabled:
             return "climate mode not enabled"
         return "climate readings or options unavailable"

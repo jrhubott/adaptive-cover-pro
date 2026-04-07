@@ -536,6 +536,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "Target just reached for %s — skipping manual override check for this event",
                     entity_id,
                 )
+            else:
+                # Grace period expired but the cover is not at the commanded target.
+                # This indicates the user may have moved the cover manually after
+                # the command was sent (Issue #147).  Clear wait_for_target so that
+                # async_handle_cover_state_change() / handle_state_change() can
+                # evaluate the position delta and detect the manual override.
+                # The grace period is the safety gate; once it expires we must not
+                # continue blocking override detection indefinitely.
+                self._cmd_svc.wait_for_target[entity_id] = False
+                self.logger.debug(
+                    "Grace period expired, cover %s not at target — clearing wait_for_target "
+                    "to allow manual override detection (position=%s)",
+                    entity_id,
+                    position,
+                )
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
             self.logger.debug("No wait for target call for %s", entity_id)

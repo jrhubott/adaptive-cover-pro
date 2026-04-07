@@ -107,7 +107,7 @@ class SunGeometry:
         """
         azi_min = self.config.fov_left
         azi_max = self.config.fov_right
-        valid = (
+        valid = bool(
             (self.gamma < azi_min) & (self.gamma > -azi_max) & (self.valid_elevation)
         )
         self.logger.debug("Sun in front of window (ignoring blindspot)? %s", valid)
@@ -158,7 +158,7 @@ class SunGeometry:
                     self.sol_elev <= self.config.blind_spot_elevation
                 )
             self.logger.debug("Is sun in blind spot? %s", blindspot)
-            return blindspot
+            return bool(blindspot)
         return False
 
     @property

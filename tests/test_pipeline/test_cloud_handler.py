@@ -141,3 +141,64 @@ class TestCloudSuppressionHandler:
     def test_name(self) -> None:
         """CloudSuppressionHandler name is 'cloud_suppression'."""
         assert CloudSuppressionHandler.name == "cloud_suppression"
+
+
+# ---------------------------------------------------------------------------
+# Issue #145 — CloudSuppressionHandler must respect in_time_window
+# ---------------------------------------------------------------------------
+
+
+class TestCloudHandlerTimeWindow:
+    """CloudSuppressionHandler must return None outside the time window.
+
+    Before the fix, CloudSuppressionHandler ignored ``snapshot.in_time_window``.
+    """
+
+    handler = CloudSuppressionHandler()
+
+    def test_returns_none_outside_time_window(self) -> None:
+        """Cloud suppression must be inactive outside the time window."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            default_position=30,
+            in_time_window=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is None, (
+            "CloudSuppressionHandler should return None outside the time window "
+            f"but returned {result}"
+        )
+
+    def test_returns_result_inside_time_window(self) -> None:
+        """Cloud suppression should activate when inside the time window."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            default_position=30,
+            in_time_window=True,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+
+    def test_describe_skip_outside_window(self) -> None:
+        """describe_skip() should mention 'time window' when outside window."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            in_time_window=False,
+        )
+        reason = self.handler.describe_skip(snap)
+        assert "time window" in reason.lower(), (
+            f"Expected 'time window' in describe_skip reason but got: {reason!r}"
+        )
+
+    def test_lux_threshold_outside_window_returns_none(self) -> None:
+        """Lux-based suppression must also be gated by time window."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=True, lux_below_threshold=True),
+            climate_options=_make_options(enabled=True),
+            in_time_window=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is None
