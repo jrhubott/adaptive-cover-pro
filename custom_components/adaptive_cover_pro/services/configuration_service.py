@@ -113,9 +113,8 @@ class ConfigurationService:
         return VerticalConfig(
             distance=options.get(CONF_DISTANCE) or 1.0,
             h_win=options.get(CONF_HEIGHT_WIN) or 2.1,
-            window_depth=options.get(
-                CONF_WINDOW_DEPTH, 0.0
-            ),  # Default 0.0 for backward compatibility
+            window_depth=options.get(CONF_WINDOW_DEPTH)
+            or 0.0,  # Default 0.0; handle None for non-vertical covers
             sill_height=options.get(CONF_SILL_HEIGHT)
             or 0.0,  # Default 0.0; handle None for non-vertical covers
         )

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from custom_components.adaptive_cover_pro.config_types import GlareZonesConfig
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
+    CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
 )
 from custom_components.adaptive_cover_pro.services.configuration_service import (
@@ -113,3 +114,37 @@ class TestGetGlareZonesConfig:
         result = svc.get_glare_zones_config(options)
         assert result is not None
         assert result.window_width == 100.0
+
+
+class TestGetVerticalData:
+    """Test ConfigurationService.get_vertical_data — issue #174 regression."""
+
+    def test_window_depth_none_defaults_to_zero(self):
+        """window_depth=None (horizontal cover config) must not crash.
+
+        config_flow stores CONF_WINDOW_DEPTH: None for horizontal covers because
+        the horizontal schema never collects it. options.get(key, default) ignores
+        the default when the key is present with value None, so we must use `or 0.0`.
+        """
+        svc = _make_service()
+        options = {CONF_WINDOW_DEPTH: None}
+        result = svc.get_vertical_data(options)
+        assert result.window_depth == 0.0
+
+    def test_window_depth_absent_defaults_to_zero(self):
+        """window_depth absent from options defaults to 0.0."""
+        svc = _make_service()
+        result = svc.get_vertical_data({})
+        assert result.window_depth == 0.0
+
+    def test_window_depth_zero_is_preserved(self):
+        """window_depth=0.0 is preserved (not treated as falsy to 0.0)."""
+        svc = _make_service()
+        result = svc.get_vertical_data({CONF_WINDOW_DEPTH: 0.0})
+        assert result.window_depth == 0.0
+
+    def test_window_depth_nonzero_is_preserved(self):
+        """window_depth=0.3 is passed through correctly."""
+        svc = _make_service()
+        result = svc.get_vertical_data({CONF_WINDOW_DEPTH: 0.3})
+        assert result.window_depth == 0.3
