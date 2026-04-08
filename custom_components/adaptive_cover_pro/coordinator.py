@@ -1033,6 +1033,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         sun_just_appeared = self._check_sun_validity_transition()
         is_safety = self._pipeline_bypasses_auto_control
+
+        # Outside the configured time window, only safety handlers (force
+        # override, weather) are allowed to move covers.  All other handlers
+        # (solar, climate, cloud, default) must not reposition covers before
+        # the user's start time or after the end time.  The pipeline still
+        # evaluates so diagnostics/sensor state remain correct.
+        if not self.check_adaptive_time and not is_safety:
+            self.state_change = False
+            self.logger.debug("Outside time window — skipping position update")
+            return
+
         reason = self._pipeline_result.control_method.value if is_safety else "solar"
         for cover in self.entities:
             ctx = self._build_position_context(
