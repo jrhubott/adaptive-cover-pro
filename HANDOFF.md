@@ -1,8 +1,8 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-07
-**Current Version:** v2.14.2
-**Branch:** `main` (stable, PR #156 just merged)
+**Date:** 2026-04-08
+**Current Version:** v2.14.3-beta.1
+**Branch:** `main`
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- Direct commits to `main` — Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash on window_depth (#174). Beta v2.14.3-beta.1 released.
 - `chore/translate-fr` — Retranslate fr.json (French) from English (PR #158, merged to main).
 - `chore/translate-de` — Retranslate de.json (German) from English + add `scripts/validate_translations.py` status dashboard (PR #157, merged to main).
 - `feature/comprehensive-ha-interface-testing` — Add 172 new tests covering real HA interface: config flows, entity registration, coordinator lifecycle, services, diagnostics, translations, property-based fuzzing, error resilience, performance. Found and filed bugs #153, #154, #155. PR #156, merged to main.
@@ -22,8 +23,8 @@
 
 ## Tests
 
-**1633 passing, 3 xfailed, 0 failing** (+172 new tests from comprehensive HA interface testing branch).
-Run: `source venv/bin/activate && python -m pytest tests/ -v`
+**1658 passing, 3 xfailed, 0 failing** (+25 new tests for #173 and #174 fixes).
+Run: `venv/bin/python -m pytest tests/ -v`
 
 New test files added (all on `feature/comprehensive-ha-interface-testing`):
 `test_config_flow_integration.py`, `test_entity_registration.py`, `test_coordinator_lifecycle.py`,
@@ -67,6 +68,8 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | # | Title | Notes |
 |---|-------|-------|
+| [#173](https://github.com/jrhubott/adaptive-cover-pro/issues/173) | **Covers move outside time window at sunrise** | Fixed in v2.14.3-beta.1 — awaiting user confirmation. `DefaultHandler` was missing `in_time_window` gate; added guard in `async_handle_state_change`. |
+| [#174](https://github.com/jrhubott/adaptive-cover-pro/issues/174) | **Horizontal cover NoneType crash on window_depth** | Fixed in v2.14.3-beta.1 — awaiting user confirmation. `options.get(CONF_WINDOW_DEPTH, 0.0)` doesn't handle `None`; changed to `or 0.0`. |
 | [#153](https://github.com/jrhubott/adaptive-cover-pro/issues/153) | **Tilt cover returns >100% for narrow FOV** | `AdaptiveTiltCover.calculate_position()` returns values >100 (e.g. 101.4) for FOV angles ≤5° combined with high sun elevation (~60°). Found by hypothesis property-based test `test_tilt_position_always_0_to_100` (xfail). Fix: add `max(0, min(100, position))` clamp at end of `calculate_position()`. See `tests/test_property_based.py`. |
 | [#154](https://github.com/jrhubott/adaptive-cover-pro/issues/154) | **Duplicate unique_id: Manual Override binary sensor and switch** | Both `binary_sensor.py` and `switch.py` produce unique_id `{entry_id}_Manual Override`. HA entity registry de-duplication may silently drop one entity. Found by `test_unique_ids_are_unique` (xfail). Fix: change binary sensor unique_id to use the `key` field. See `tests/test_entity_registration.py`. |
 | [#155](https://github.com/jrhubott/adaptive-cover-pro/issues/155) | **diagnostics.py returns mappingproxy — not directly JSON-serializable** | `async_get_config_entry_diagnostics` returns `config_entry.options` as a raw `mappingproxy`, which fails `json.dumps()` without a custom encoder. Fix: wrap in `dict()`. See `tests/test_diagnostics_integration.py`. |
@@ -118,6 +121,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.14.3-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3-beta.1) | 2026-04-08 | Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash (#174). |
 | [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
 | [v2.14.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.1) | 2026-04-07 | Format duration in config summary (#148), remove icons from translations (#146). |
 | [v2.14.0](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.0) | 2026-04-05 | Fix constant repositioning at 0%/100% (#127); configurable priority per custom position slot. |
