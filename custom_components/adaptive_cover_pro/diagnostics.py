@@ -12,6 +12,6 @@ async def async_get_config_entry_diagnostics(
         "title": "Adaptive Cover Pro Configuration",
         "type": "config_entry",
         "identifier": config_entry.entry_id,
-        "config_data": config_entry.data,
-        "config_options": config_entry.options,
+        "config_data": dict(config_entry.data),
+        "config_options": dict(config_entry.options),
     }

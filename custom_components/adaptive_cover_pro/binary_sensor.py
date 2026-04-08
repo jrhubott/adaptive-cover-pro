@@ -101,7 +101,7 @@ class AdaptiveCoverBinarySensor(AdaptiveCoverBaseEntity, BinarySensorEntity):
         self._key = key
         self._attr_translation_key = key
         self._binary_name = binary_name
-        self._attr_unique_id = f"{unique_id}_{binary_name}"
+        self._attr_unique_id = f"{unique_id}_{key}"
         self._state = state
         self._attr_device_class = device_class
 
