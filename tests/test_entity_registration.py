@@ -245,18 +245,8 @@ async def test_button_created_when_cover_entities_set(hass: HomeAssistant) -> No
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: binary_sensor 'Manual Override' and switch 'Manual Override' share "
-           "the same unique_id pattern (entry_id + name). The binary sensor should use "
-           "a different suffix, e.g. entry_id + '_binary_manual_override'.",
-)
 async def test_unique_ids_are_unique(hass: HomeAssistant) -> None:
-    """All entities in a single entry have distinct unique_ids.
-
-    Currently xfail: the 'Manual Override' binary sensor and switch share
-    the same unique_id. This test documents the bug and will pass when fixed.
-    """
+    """All entities in a single entry have distinct unique_ids."""
     entry = await _setup_entry(hass, entry_id="uid_01")
     reg = er.async_get(hass)
     unique_ids = [
