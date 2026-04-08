@@ -172,20 +172,6 @@ def test_horizontal_position_always_0_to_100(
 # 9c: Tilt cover — position always 0–100
 # ---------------------------------------------------------------------------
 
-# NOTE: The tilt calculation can return values slightly above 100 for certain
-# sun elevation + FOV combinations. This is a known defect in the calculation
-# engine — the output is not clamped to [0, 100]. The xfail test below documents
-# the specific reproducible case; the broad property test is xfail(strict=False)
-# so it serves as a documentation probe rather than a hard gate.
-
-
-@pytest.mark.xfail(
-    strict=False,
-    reason="AdaptiveTiltCover.calculate_position() can return > 100 for certain "
-           "sun elevation + FOV combinations (e.g. sol_elev=60°, fov=5°). "
-           "The output is not clamped in the engine. Fix: add final "
-           "max(0, min(100, position)) clamp in calculate_position().",
-)
 @settings(max_examples=200, deadline=1000)
 @given(
     sol_azi=_azimuth,
@@ -231,17 +217,8 @@ def test_tilt_position_always_0_to_100(
     )
 
 
-# ---------------------------------------------------------------------------
-# Known issue: tilt cover with extremely narrow FOV (< 5°) can return > 100
-# ---------------------------------------------------------------------------
-
-@pytest.mark.xfail(
-    strict=False,
-    reason="Tilt calculation engine returns > 100 for very narrow FOV (< 5°). "
-           "See test_property_based.py discussion — needs fix in calculation engine.",
-)
-def test_tilt_narrow_fov_edge_case_known_bug() -> None:
-    """Tilt cover with 1° FOV and 60° elevation returns > 100 (known defect)."""
+def test_tilt_narrow_fov_edge_case() -> None:
+    """Tilt cover with 1° FOV and 60° elevation stays within [0, 100]."""
     cover = build_tilt_cover(
         logger=_make_logger(),
         sol_azi=0.0,
@@ -269,11 +246,7 @@ def test_tilt_narrow_fov_edge_case_known_bug() -> None:
         sunrise_off=0,
     )
     position = cover.calculate_position()
-    # This will fail — documents the known defect
-    assert 0 <= position <= 100, (
-        f"Known bug: tilt position {position} > 100 for narrow FOV. "
-        "Fix: clamp output to [0, 100] in AdaptiveTiltCover.calculate_position()"
-    )
+    assert 0 <= position <= 100, f"Tilt position {position} out of range"
 
 
 # ---------------------------------------------------------------------------
