@@ -25,6 +25,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_DISTANCE,
+    CONF_ENABLE_BLIND_SPOT,
+    CONF_ENABLE_GLARE_ZONES,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -542,3 +544,348 @@ async def test_options_flow_sync_empty_selection_no_abort(hass: HomeAssistant) -
         # Must return to a form or menu, not "abort"
         assert result["type"] in ("form", "menu", "create_entry")
         assert result["type"] != "abort"
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers: _get_azimuth_edges, _get_geometry_schema,
+#                       _build_glare_zones_schema
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_get_azimuth_edges_sums_fov():
+    """_get_azimuth_edges returns fov_left + fov_right."""
+    from custom_components.adaptive_cover_pro.config_flow import _get_azimuth_edges
+    from custom_components.adaptive_cover_pro.const import CONF_FOV_LEFT, CONF_FOV_RIGHT
+
+    result = _get_azimuth_edges({CONF_FOV_LEFT: 30, CONF_FOV_RIGHT: 45})
+    assert result == 75
+
+
+@pytest.mark.unit
+def test_get_geometry_schema_unknown_type_returns_vertical():
+    """_get_geometry_schema falls back to GEOMETRY_VERTICAL_SCHEMA for unknown types."""
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _get_geometry_schema,
+        GEOMETRY_VERTICAL_SCHEMA,
+    )
+
+    result = _get_geometry_schema("unknown_type")
+    assert result is GEOMETRY_VERTICAL_SCHEMA
+
+
+@pytest.mark.unit
+def test_build_glare_zones_schema_with_no_options():
+    """_build_glare_zones_schema with options=None uses default values."""
+    from custom_components.adaptive_cover_pro.config_flow import _build_glare_zones_schema
+    import voluptuous as vol
+
+    schema = _build_glare_zones_schema(options=None)
+    assert isinstance(schema, vol.Schema)
+    # Should have 4 zones * 4 fields = 16 keys
+    assert len(schema.schema) == 16
+
+
+@pytest.mark.unit
+def test_build_glare_zones_schema_with_existing_options():
+    """_build_glare_zones_schema uses existing option values as defaults."""
+    from custom_components.adaptive_cover_pro.config_flow import _build_glare_zones_schema
+    import voluptuous as vol
+
+    options = {"glare_zone_1_name": "My Zone", "glare_zone_1_x": 100}
+    schema = _build_glare_zones_schema(options=options)
+    assert isinstance(schema, vol.Schema)
+    assert len(schema.schema) == 16
+
+
+@pytest.mark.unit
+def test_optional_entities_sets_missing_keys_to_none():
+    """optional_entities sets keys not in user_input to None."""
+    from custom_components.adaptive_cover_pro.config_flow import OptionsFlowHandler
+
+    flow = object.__new__(OptionsFlowHandler)
+    user_input = {"present_key": "value"}
+    flow.optional_entities(["present_key", "missing_key"], user_input)
+
+    assert user_input["present_key"] == "value"
+    assert user_input["missing_key"] is None
+
+
+# ---------------------------------------------------------------------------
+# OptionsFlow: init menu conditionals (blind_spot, glare_zones)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+async def test_options_flow_menu_includes_blind_spot_when_enabled(hass: HomeAssistant) -> None:
+    """OptionsFlow init menu includes blind_spot when CONF_ENABLE_BLIND_SPOT is True."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+    from custom_components.adaptive_cover_pro.const import CONF_ENABLE_BLIND_SPOT
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_BLIND_SPOT] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "BS Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=options,
+        entry_id="bs_menu_01",
+        title="BS Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    assert "blind_spot" in result.get("menu_options", [])
+
+
+@pytest.mark.integration
+async def test_options_flow_menu_includes_glare_zones_for_blind_cover(hass: HomeAssistant) -> None:
+    """OptionsFlow init menu includes glare_zones for cover_blind with CONF_ENABLE_GLARE_ZONES."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_GLARE_ZONES] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "GZ Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=options,
+        entry_id="gz_menu_01",
+        title="GZ Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    assert "glare_zones" in result.get("menu_options", [])
+
+
+# ---------------------------------------------------------------------------
+# OptionsFlow: parameterized form steps
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.parametrize("step_id,user_input", [
+    ("cover_entities", {CONF_ENTITIES: ["cover.test_blind"]}),
+    ("geometry", {CONF_HEIGHT_WIN: 2.5, CONF_WINDOW_DEPTH: 0.0, CONF_SILL_HEIGHT: 0.0}),
+    ("position", {
+        CONF_DEFAULT_HEIGHT: 60,
+        CONF_MIN_POSITION: 0,
+        CONF_ENABLE_MIN_POSITION: False,
+        CONF_MAX_POSITION: 100,
+        CONF_ENABLE_MAX_POSITION: False,
+        CONF_SUNSET_OFFSET: 0,
+        CONF_SUNRISE_OFFSET: 0,
+        CONF_INVERSE_STATE: False,
+        "interp": False,
+        "open_close_threshold": 50,
+    }),
+    ("automation", {
+        CONF_DELTA_POSITION: 5,
+        CONF_DELTA_TIME: 2,
+        CONF_START_TIME: "08:00:00",
+        CONF_END_TIME: "20:00:00",
+        CONF_RETURN_SUNSET: False,
+    }),
+    ("manual_override", {
+        CONF_MANUAL_OVERRIDE_DURATION: {"hours": 1},
+        CONF_MANUAL_OVERRIDE_RESET: False,
+        CONF_MANUAL_IGNORE_INTERMEDIATE: False,
+    }),
+    ("force_override", {"force_override_sensors": [], "force_override_position": 0}),
+    ("custom_position", {}),
+    ("motion_override", {"motion_sensors": [], "motion_timeout": 300}),
+    ("weather_override", {
+        "weather_bypass_auto_control": False,
+        "weather_wind_speed_threshold": 50.0,
+        "weather_wind_direction_tolerance": 45,
+        "weather_rain_threshold": 1.0,
+        "weather_severe_sensors": [],
+        "weather_override_position": 0,
+    }),
+])
+async def test_options_flow_form_step_saves_and_returns_to_init(
+    hass: HomeAssistant, step_id: str, user_input: dict
+) -> None:
+    """Each OptionsFlow form step saves input and returns to the init menu."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Form Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id=f"form_{step_id}_01",
+        title="Form Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] in ("form", "menu")
+
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": step_id}
+        )
+
+    assert result["step_id"] == step_id
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input
+    )
+    # Should return to init menu after saving
+    assert result["type"] in ("form", "menu", "create_entry")
+
+
+@pytest.mark.integration
+async def test_options_flow_sun_tracking_step(hass: HomeAssistant) -> None:
+    """OptionsFlow sun_tracking step saves and returns to init."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Sun Track Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="sun_track_01",
+        title="Sun Track Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "sun_tracking"}
+        )
+
+    assert result["step_id"] == "sun_tracking"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**_SUN_TRACKING, "enable_glare_zones": False}
+    )
+    assert result["type"] in ("form", "menu", "create_entry")
+
+
+@pytest.mark.integration
+async def test_options_flow_sun_tracking_validation_error(hass: HomeAssistant) -> None:
+    """OptionsFlow sun_tracking validation rejects max_elevation <= min_elevation."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Val Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="sun_val_01",
+        title="Val Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "sun_tracking"}
+        )
+
+    bad_input = {
+        **_SUN_TRACKING,
+        "enable_glare_zones": False,
+        CONF_MIN_ELEVATION: 40.0,
+        CONF_MAX_ELEVATION: 30.0,  # max < min → error
+    }
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], bad_input
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "sun_tracking"
+    assert CONF_MAX_ELEVATION in result.get("errors", {})
+
+
+@pytest.mark.integration
+async def test_options_flow_done_step_saves_entry(hass: HomeAssistant) -> None:
+    """OptionsFlow done step creates a config entry with updated options."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Done Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="done_test_01",
+        title="Done Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "done"}
+        )
+
+    assert result["type"] == "create_entry"
+
+
+@pytest.mark.integration
+async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
+    """OptionsFlow glare_zones step accepts input and returns to init."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_GLARE_ZONES] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "GZ Step Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=options,
+        entry_id="gz_step_01",
+        title="GZ Step Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    assert "glare_zones" in result.get("menu_options", [])
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "glare_zones"}
+    )
+    assert result["step_id"] == "glare_zones"
+
+    # Submit zone data
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {
+            "glare_zone_1_name": "East Window",
+            "glare_zone_1_x": 0,
+            "glare_zone_1_y": 100,
+            "glare_zone_1_radius": 30,
+            "glare_zone_2_name": "",
+            "glare_zone_2_x": 0,
+            "glare_zone_2_y": 100,
+            "glare_zone_2_radius": 30,
+            "glare_zone_3_name": "",
+            "glare_zone_3_x": 0,
+            "glare_zone_3_y": 100,
+            "glare_zone_3_radius": 30,
+            "glare_zone_4_name": "",
+            "glare_zone_4_x": 0,
+            "glare_zone_4_y": 100,
+            "glare_zone_4_radius": 30,
+        }
+    )
+    assert result["type"] in ("form", "menu", "create_entry")
