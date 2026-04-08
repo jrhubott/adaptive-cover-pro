@@ -125,6 +125,18 @@ STARTUP_GRACE_PERIOD_SECONDS = (
     30.0  # Time to disable manual override detection on startup
 )
 
+# Maximum time (seconds) to suppress manual override detection after sending a
+# position command.  Once this threshold is crossed, wait_for_target is cleared
+# even if the cover still reports a transitional state ("opening"/"closing").
+#
+# Purpose: covers that do not report a final state ("stopped"/"open"/"closed")
+# when the user stops them mid-transit — only emitting position updates — would
+# otherwise keep wait_for_target=True indefinitely, preventing manual override
+# detection until the reconciliation timer fired.  This constant caps that
+# window at a value that accommodates most motorized blinds and awnings, which
+# typically complete a full traverse in 20–40 seconds.
+TRANSIT_TIMEOUT_SECONDS = 45
+
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection
 

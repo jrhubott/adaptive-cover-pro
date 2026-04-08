@@ -112,6 +112,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     STARTUP_GRACE_PERIOD_SECONDS,
+    TRANSIT_TIMEOUT_SECONDS,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -210,6 +211,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.first_refresh = False
         self._weather_readings: ClimateReadings | None = None
         self.state_change_data: StateChangedData | None = None
+        # Queue of cover state-change events pending manual override evaluation.
+        # Each call to async_check_cover_state_change() appends to this list so
+        # that rapid events from multiple covers are all processed rather than
+        # the last event silently overwriting earlier ones (single-variable race).
+        # async_handle_cover_state_change() drains the list on every refresh.
+        self._pending_cover_events: list[StateChangedData] = []
         # Entities whose target was just reached in the current state-change event.
         # When process_entity_state_change() clears wait_for_target because the cover
         # reached its commanded position (within tolerance), the same event also
@@ -412,6 +419,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.state_change_data.old_state.state != "unknown":
             self.cover_state_change = True
             self.process_entity_state_change()
+            # Keep a per-event copy so async_handle_cover_state_change() can
+            # process all covers that fired in a single refresh window, not
+            # just the last one to overwrite state_change_data.
+            self._pending_cover_events.append(self.state_change_data)
             await self.async_refresh()
         else:
             self.logger.debug("Old state is unknown, not processing")
@@ -538,18 +549,87 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
             else:
                 # Grace period expired but the cover is not at the commanded target.
-                # This indicates the user may have moved the cover manually after
-                # the command was sent (Issue #147).  Clear wait_for_target so that
-                # async_handle_cover_state_change() / handle_state_change() can
-                # evaluate the position delta and detect the manual override.
-                # The grace period is the safety gate; once it expires we must not
-                # continue blocking override detection indefinitely.
+                # Determine whether the cover is still actively moving toward the
+                # target (integration-initiated transit) or has stopped / moved away
+                # (user action — Issue #147).
+                #
+                # HA covers report transitional states ("opening"/"closing") while
+                # moving, then a final state ("stopped"/"open"/"closed") when done.
+                # If ignore_intermediate_states is True, those transitional events
+                # are already filtered out above (lines 508-513), so we only reach
+                # here with final states and always clear wait_for_target.
+                cover_is_transitioning = event.new_state.state in (
+                    "opening",
+                    "closing",
+                )
+
+                if cover_is_transitioning:
+                    # Hard backstop: if the command is older than
+                    # TRANSIT_TIMEOUT_SECONDS the cover should have arrived.
+                    # Clear wait_for_target so that covers without a final
+                    # "stopped" state (position-only reporters) cannot block
+                    # manual override detection indefinitely when the user
+                    # stops them mid-transit.
+                    sent_at = self._cmd_svc._sent_at.get(entity_id)  # noqa: SLF001
+                    if sent_at is not None:
+                        elapsed = (dt.datetime.now(dt.UTC) - sent_at).total_seconds()
+                        if elapsed > TRANSIT_TIMEOUT_SECONDS:
+                            self._cmd_svc.wait_for_target[entity_id] = False
+                            self.logger.debug(
+                                "Transit timeout for %s (%.0fs > %ds) "
+                                "— clearing wait_for_target",
+                                entity_id,
+                                elapsed,
+                                TRANSIT_TIMEOUT_SECONDS,
+                            )
+                            self.logger.debug(
+                                "Wait for target: %s", self.wait_for_target
+                            )
+                            return
+
+                    # Cover is within the transit window — check direction.
+                    # If the cover is moving closer to the target it is still
+                    # responding to our command; keep wait_for_target=True.
+                    # If it moved away or stalled, clear it so manual override
+                    # detection can run (Issue #147 fix preserved).
+                    old_position = self._cmd_svc.read_position_with_capabilities(
+                        entity_id, caps, event.old_state
+                    )
+                    target = self._cmd_svc.target_call.get(entity_id)
+
+                    if (
+                        old_position is not None
+                        and position is not None
+                        and target is not None
+                    ):
+                        old_distance = abs(old_position - target)
+                        new_distance = abs(position - target)
+                        if new_distance < old_distance:
+                            # Moving closer to target — still in transit.
+                            self.logger.debug(
+                                "Grace expired but %s still moving toward target "
+                                "%s (was %s, now %s) — keeping wait_for_target",
+                                entity_id,
+                                target,
+                                old_position,
+                                position,
+                            )
+                            self.logger.debug(
+                                "Wait for target: %s", self.wait_for_target
+                            )
+                            return
+
+                # Cover has stopped (non-transitional state), moved away from
+                # target, stalled (equal distances), or position data unavailable.
+                # Clear wait_for_target to allow manual override detection.
                 self._cmd_svc.wait_for_target[entity_id] = False
                 self.logger.debug(
-                    "Grace period expired, cover %s not at target — clearing wait_for_target "
-                    "to allow manual override detection (position=%s)",
+                    "Grace period expired, cover %s not at target and not in "
+                    "active transit — clearing wait_for_target to allow manual "
+                    "override detection (position=%s, state=%s)",
                     entity_id,
                     position,
+                    event.new_state.state,
                 )
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
@@ -963,51 +1043,60 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("State change handled")
 
     async def async_handle_cover_state_change(self, state: int):
-        """Compare actual cover position to expected; set manual override if they differ."""
+        """Compare actual cover position to expected; set manual override if they differ.
+
+        Drains self._pending_cover_events so that rapid state changes from
+        multiple covers are all evaluated, not just the most recent one.
+        """
+        # Drain and clear the queue atomically so a concurrent refresh that
+        # fires while we iterate does not re-process the same events.
+        events = self._pending_cover_events[:]
+        self._pending_cover_events.clear()
+
         if self.manual_toggle and self.automatic_control:
-            # Check startup grace period FIRST to prevent false manual override
-            # detection during HA restart when covers respond slowly
+            # Check startup grace period FIRST; suppress all events during
+            # HA restart when covers respond slowly.
             if self._is_in_startup_grace_period():
-                entity_id = self.state_change_data.entity_id
+                entity_ids = [e.entity_id for e in events]
                 self.logger.debug(
-                    "Position change for %s ignored (in startup grace period)",
-                    entity_id,
+                    "Position changes for %s ignored (in startup grace period)",
+                    entity_ids,
                 )
                 self.cover_state_change = False
                 return
 
-            # Get the entity_id from state_change_data
-            entity_id = self.state_change_data.entity_id
+            for event_data in events:
+                entity_id = event_data.entity_id
 
-            # Skip manual override detection when the cover just reached its
-            # commanded target in this same event.  process_entity_state_change()
-            # adds the entity to _target_just_reached when check_target_reached()
-            # clears wait_for_target; without this guard the small positional
-            # difference allowed by POSITION_TOLERANCE_PERCENT would be
-            # misidentified as a user-initiated manual override.
-            if entity_id in self._target_just_reached:
-                self._target_just_reached.discard(entity_id)
-                self.logger.debug(
-                    "Skipping manual override check for %s — cover just reached commanded target",
-                    entity_id,
+                # Skip manual override detection when the cover just reached its
+                # commanded target in this same event.  process_entity_state_change()
+                # adds the entity to _target_just_reached when check_target_reached()
+                # clears wait_for_target; without this guard the small positional
+                # difference allowed by POSITION_TOLERANCE_PERCENT would be
+                # misidentified as a user-initiated manual override.
+                if entity_id in self._target_just_reached:
+                    self._target_just_reached.discard(entity_id)
+                    self.logger.debug(
+                        "Skipping manual override check for %s — cover just reached commanded target",
+                        entity_id,
+                    )
+                    continue
+
+                # Use target_call if available (contains actual sent position),
+                # otherwise fall back to calculated state.
+                # This is critical for open/close-only covers where the calculated
+                # state gets transformed (via threshold) to 0 or 100 before sending.
+                expected_position = self.target_call.get(entity_id, state)
+
+                self.manager.handle_state_change(
+                    event_data,
+                    expected_position,
+                    self._cover_type,
+                    self.manual_reset,
+                    self.wait_for_target,
+                    self.manual_threshold,
                 )
-                self.cover_state_change = False
-                return
 
-            # Use target_call if available (contains actual sent position),
-            # otherwise fall back to calculated state.
-            # This is critical for open/close-only covers where the calculated
-            # state gets transformed (via threshold) to 0 or 100 before sending.
-            expected_position = self.target_call.get(entity_id, state)
-
-            self.manager.handle_state_change(
-                self.state_change_data,
-                expected_position,
-                self._cover_type,
-                self.manual_reset,
-                self.wait_for_target,
-                self.manual_threshold,
-            )
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
 

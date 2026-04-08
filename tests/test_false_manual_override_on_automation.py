@@ -69,6 +69,8 @@ def _make_coordinator(
     coordinator.cover_state_change = True
     coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
     coordinator._target_just_reached = target_just_reached if target_just_reached is not None else set()
+    # Real list so async_handle_cover_state_change can iterate it
+    coordinator._pending_cover_events = []
     return coordinator
 
 
@@ -93,7 +95,8 @@ async def test_target_just_reached_skips_override_detection():
     entity_id = "cover.test"
     coordinator = _make_coordinator(entity_id=entity_id, target=72)
     # The cover settled at 70 — 2% off but within POSITION_TOLERANCE_PERCENT (3%)
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=70)
+    event_data = _make_state_change_data(entity_id, position=70)
+    coordinator._pending_cover_events = [event_data]
     # Simulate that process_entity_state_change() already populated the set
     coordinator._target_just_reached = {entity_id}
 
@@ -117,7 +120,8 @@ async def test_target_just_reached_clears_entry_from_set():
     entity_id = "cover.test"
     other_entity = "cover.other"
     coordinator = _make_coordinator(entity_id=entity_id, target=50)
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=51)
+    event_data = _make_state_change_data(entity_id, position=51)
+    coordinator._pending_cover_events = [event_data]
     # Two entities in the set; only the one being processed should be removed
     coordinator._target_just_reached = {entity_id, other_entity}
 
@@ -144,7 +148,8 @@ async def test_genuine_manual_override_still_detected():
         entity_id=entity_id, target=72, manual_threshold=5
     )
     # User moved cover to 30% — a 42% difference, clearly manual
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=30)
+    event_data = _make_state_change_data(entity_id, position=30)
+    coordinator._pending_cover_events = [event_data]
     # _target_just_reached is empty (no automation command was just sent)
     coordinator._target_just_reached = set()
 
@@ -165,7 +170,8 @@ async def test_target_just_reached_guard_not_triggered_when_set_empty():
     coordinator = _make_coordinator(
         entity_id=entity_id, target=50, manual_threshold=10
     )
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=50)
+    event_data = _make_state_change_data(entity_id, position=50)
+    coordinator._pending_cover_events = [event_data]
     coordinator._target_just_reached = set()  # Nothing just reached
 
     await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)
@@ -185,7 +191,8 @@ async def test_different_entity_in_target_just_reached_does_not_skip_current():
     coordinator = _make_coordinator(entity_id=entity_id, target=72, manual_threshold=10)
     # A different entity reached its target, but not cover.test
     coordinator._target_just_reached = {"cover.other_cover"}
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=30)
+    event_data = _make_state_change_data(entity_id, position=30)
+    coordinator._pending_cover_events = [event_data]
 
     await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 72)
 
@@ -489,7 +496,8 @@ async def test_coarse_granularity_cover_no_false_override():
     entity_id = "cover.coarse"
     # Integration sent 73%, cover rounds to 75% (2% difference within tolerance)
     coordinator = _make_coordinator(entity_id=entity_id, target=73)
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=75)
+    event_data = _make_state_change_data(entity_id, position=75)
+    coordinator._pending_cover_events = [event_data]
     # _target_just_reached set by process_entity_state_change()
     coordinator._target_just_reached = {entity_id}
 
@@ -510,7 +518,8 @@ async def test_automation_position_change_no_false_override_exact_match():
     entity_id = "cover.exact"
     # Exact match: integration sent 50%, cover reports 50%
     coordinator = _make_coordinator(entity_id=entity_id, target=50)
-    coordinator.state_change_data = _make_state_change_data(entity_id, position=50)
+    event_data = _make_state_change_data(entity_id, position=50)
+    coordinator._pending_cover_events = [event_data]
     coordinator._target_just_reached = {entity_id}
 
     await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)

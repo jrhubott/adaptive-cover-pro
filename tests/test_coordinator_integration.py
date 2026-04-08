@@ -78,6 +78,7 @@ def _make_coordinator(
     state_data = MagicMock()
     state_data.entity_id = state_change_data_entity
     coordinator.state_change_data = state_data
+    coordinator._pending_cover_events = [state_data]
     coordinator._target_just_reached = set()
     coordinator.target_call = {}
     coordinator._cover_type = "cover_blind"

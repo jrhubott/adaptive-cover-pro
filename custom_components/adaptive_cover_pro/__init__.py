@@ -11,6 +11,10 @@ from homeassistant.helpers.event import (
 )
 
 from .const import (
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_DEVICE_ID,
     CONF_END_ENTITY,
     CONF_ENTITIES,
@@ -66,6 +70,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Add force override sensors to tracked entities
     if _force_override_sensors:
         _entities.extend(_force_override_sensors)
+
+    # Add custom position sensors to tracked entities so the pipeline
+    # re-evaluates immediately when a sensor turns on or off, rather
+    # than waiting for the next periodic refresh or another entity change.
+    for _sensor_key in [
+        CONF_CUSTOM_POSITION_SENSOR_1,
+        CONF_CUSTOM_POSITION_SENSOR_2,
+        CONF_CUSTOM_POSITION_SENSOR_3,
+        CONF_CUSTOM_POSITION_SENSOR_4,
+    ]:
+        _sensor = entry.options.get(_sensor_key)
+        if _sensor:
+            _entities.append(_sensor)
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 
