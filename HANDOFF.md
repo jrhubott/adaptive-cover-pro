@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-09
-**Current Version:** v2.14.3
+**Current Version:** v2.14.4
 **Branch:** `main`
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -115,6 +115,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.14.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.4) | 2026-04-09 | Reset time delta timer when force override releases (#177). |
 | [v2.14.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3) | 2026-04-09 | Fix covers open at midnight (#179), custom positions triggering manual override (#172), horizontal cover NoneType (#174), time window gate at sunrise (#173), tilt >100% (#153), duplicate unique_id (#154), diagnostics mappingproxy (#155). |
 | [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
 | [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
