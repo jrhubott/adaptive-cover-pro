@@ -892,6 +892,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # handlers so the manager's manual_controlled list is fully up-to-date.
         self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
         self._cmd_svc.auto_control_enabled = self.automatic_control
+        self._cmd_svc.in_time_window = self.check_adaptive_time
 
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
@@ -1113,10 +1114,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
+        is_safety = self._pipeline_bypasses_auto_control
+
+        # Outside the time window, only safety handlers (force override, weather)
+        # are allowed to move covers on startup.  This prevents covers from
+        # repositioning when HA restarts at midnight or another time outside the
+        # configured operational window.
+        if not self.check_adaptive_time and not is_safety:
+            self.first_refresh = False
+            self.logger.debug("First refresh outside time window — skipping position update")
+            return
+
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
             ctx = self._build_position_context(
-                cover, options, sun_just_appeared=sun_just_appeared
+                cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
             )
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
@@ -1588,6 +1600,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         async def _on_window_closed() -> None:
             """Force-send effective default when end time is reached."""
+            # Always clear stale daytime targets when the window closes so
+            # reconciliation cannot resend them overnight.  Safety targets
+            # (placed via force=True) are preserved.
+            self._cmd_svc.clear_non_safety_targets()
             if not self._track_end_time:
                 return
             options = self.config_entry.options

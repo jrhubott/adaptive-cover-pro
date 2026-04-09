@@ -1,8 +1,8 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-08
-**Current Version:** v2.14.3-beta.1
-**Branch:** `main`
+**Date:** 2026-04-09
+**Current Version:** v2.14.3-beta.2
+**Branch:** `fix/issue-179-covers-open-at-midnight` (PR #180, awaiting merge to main)
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-179-covers-open-at-midnight` — Gate first-refresh and reconciliation on time window (#179). PR #180, beta v2.14.3-beta.2 released. Awaiting user confirmation.
 - Direct commits to `main` — Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash on window_depth (#174). Beta v2.14.3-beta.1 released.
 - `chore/translate-fr` — Retranslate fr.json (French) from English (PR #158, merged to main).
 - `chore/translate-de` — Retranslate de.json (German) from English + add `scripts/validate_translations.py` status dashboard (PR #157, merged to main).
@@ -23,7 +24,7 @@
 
 ## Tests
 
-**1658 passing, 3 xfailed, 0 failing** (+25 new tests for #173 and #174 fixes).
+**1757 passing, 2 warnings, 0 failing** (+4 new tests for #179 fix).
 Run: `venv/bin/python -m pytest tests/ -v`
 
 New test files added (all on `feature/comprehensive-ha-interface-testing`):
@@ -36,6 +37,7 @@ extended `test_multi_cover_integration.py`; renamed `hass` fixture → `mock_has
 
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
+| [#180](https://github.com/jrhubott/adaptive-cover-pro/pull/180) | `fix/issue-179-covers-open-at-midnight` | #179 | v2.14.3-beta.2 | 🟡 Awaiting confirmation | Gate first-refresh + reconciliation on time window |
 
 ## Translation Retranslation Progress
 
@@ -68,6 +70,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | # | Title | Notes |
 |---|-------|-------|
+| [#179](https://github.com/jrhubott/adaptive-cover-pro/issues/179) | **Covers open at midnight** | Fixed in v2.14.3-beta.2 (PR #180) — awaiting user confirmation. Root cause: `async_handle_first_refresh` + reconciliation had no time-window gate. Asked user if HA restarts at midnight. |
 | [#173](https://github.com/jrhubott/adaptive-cover-pro/issues/173) | **Covers move outside time window at sunrise** | Fixed in v2.14.3-beta.1 — awaiting user confirmation. `DefaultHandler` was missing `in_time_window` gate; added guard in `async_handle_state_change`. |
 | [#174](https://github.com/jrhubott/adaptive-cover-pro/issues/174) | **Horizontal cover NoneType crash on window_depth** | Fixed in v2.14.3-beta.1 — awaiting user confirmation. `options.get(CONF_WINDOW_DEPTH, 0.0)` doesn't handle `None`; changed to `or 0.0`. |
 | [#153](https://github.com/jrhubott/adaptive-cover-pro/issues/153) | **Tilt cover returns >100% for narrow FOV** | `AdaptiveTiltCover.calculate_position()` returns values >100 (e.g. 101.4) for FOV angles ≤5° combined with high sun elevation (~60°). Found by hypothesis property-based test `test_tilt_position_always_0_to_100` (xfail). Fix: add `max(0, min(100, position))` clamp at end of `calculate_position()`. See `tests/test_property_based.py`. |
@@ -121,6 +124,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.14.3-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3-beta.2) | 2026-04-09 | Gate first-refresh and reconciliation on time window — covers no longer open at midnight (#179). |
 | [v2.14.3-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3-beta.1) | 2026-04-08 | Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash (#174). |
 | [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
 | [v2.14.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.1) | 2026-04-07 | Format duration in config summary (#148), remove icons from translations (#146). |
