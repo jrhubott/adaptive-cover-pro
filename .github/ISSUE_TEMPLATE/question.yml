@@ -1,0 +1,40 @@
+---
+name: "Question"
+description: "Ask a question about setup, configuration, or behavior"
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Use this template to ask a question about how the integration works, how to configure it, or why it behaves a certain way.
+        For bugs, use the **Bug report** template instead.
+
+  - type: checkboxes
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and the README for an answer.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: What version of Adaptive Cover Pro are you using?
+    validations:
+      required: true
+
+  - type: input
+    id: cover_type
+    attributes:
+      label: What cover type are you using?
+      description: "Vertical blind, horizontal awning, or venetian/tilt."
+      placeholder: "e.g. Vertical blind"
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Your question
+      description: "Be as specific as possible. Include your configuration details if relevant."
+    validations:
+      required: true

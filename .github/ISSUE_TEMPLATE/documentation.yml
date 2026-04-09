@@ -1,0 +1,38 @@
+---
+name: "Documentation issue"
+description: "Report missing, incorrect, or unclear documentation"
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: Use this template to report problems with documentation — missing steps, outdated info, unclear descriptions, or broken links.
+
+  - type: checkboxes
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to check this hasn't already been reported.
+          required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Where is the documentation issue?
+      description: "Link to the page, section, or file (e.g. README, CLAUDE.md, a config flow label)."
+      placeholder: "e.g. README.md — Climate Mode section"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: What is wrong or missing?
+      description: "Describe the problem clearly."
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Suggested improvement
+      description: "What should it say, or what information is missing?"
+    validations:
+      required: false
