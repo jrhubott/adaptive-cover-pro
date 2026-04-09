@@ -1,8 +1,8 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-09
-**Current Version:** v2.14.3-beta.2
-**Branch:** `fix/issue-179-covers-open-at-midnight` (PR #180, awaiting merge to main)
+**Current Version:** v2.14.3
+**Branch:** `main`
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
 > Architecture, patterns, and workflow rules: see `CLAUDE.md`.
@@ -37,7 +37,6 @@ extended `test_multi_cover_integration.py`; renamed `hass` fixture → `mock_has
 
 | PR | Branch | Issue | Beta | Status | Notes |
 |----|--------|-------|------|--------|-------|
-| [#180](https://github.com/jrhubott/adaptive-cover-pro/pull/180) | `fix/issue-179-covers-open-at-midnight` | #179 | v2.14.3-beta.2 | 🟡 Awaiting confirmation | Gate first-refresh + reconciliation on time window |
 
 ## Translation Retranslation Progress
 
@@ -70,20 +69,11 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | # | Title | Notes |
 |---|-------|-------|
-| [#179](https://github.com/jrhubott/adaptive-cover-pro/issues/179) | **Covers open at midnight** | Fixed in v2.14.3-beta.2 (PR #180) — awaiting user confirmation. Root cause: `async_handle_first_refresh` + reconciliation had no time-window gate. Asked user if HA restarts at midnight. |
-| [#173](https://github.com/jrhubott/adaptive-cover-pro/issues/173) | **Covers move outside time window at sunrise** | Fixed in v2.14.3-beta.1 — awaiting user confirmation. `DefaultHandler` was missing `in_time_window` gate; added guard in `async_handle_state_change`. |
-| [#174](https://github.com/jrhubott/adaptive-cover-pro/issues/174) | **Horizontal cover NoneType crash on window_depth** | Fixed in v2.14.3-beta.1 — awaiting user confirmation. `options.get(CONF_WINDOW_DEPTH, 0.0)` doesn't handle `None`; changed to `or 0.0`. |
-| [#153](https://github.com/jrhubott/adaptive-cover-pro/issues/153) | **Tilt cover returns >100% for narrow FOV** | `AdaptiveTiltCover.calculate_position()` returns values >100 (e.g. 101.4) for FOV angles ≤5° combined with high sun elevation (~60°). Found by hypothesis property-based test `test_tilt_position_always_0_to_100` (xfail). Fix: add `max(0, min(100, position))` clamp at end of `calculate_position()`. See `tests/test_property_based.py`. |
-| [#154](https://github.com/jrhubott/adaptive-cover-pro/issues/154) | **Duplicate unique_id: Manual Override binary sensor and switch** | Both `binary_sensor.py` and `switch.py` produce unique_id `{entry_id}_Manual Override`. HA entity registry de-duplication may silently drop one entity. Found by `test_unique_ids_are_unique` (xfail). Fix: change binary sensor unique_id to use the `key` field. See `tests/test_entity_registration.py`. |
-| [#155](https://github.com/jrhubott/adaptive-cover-pro/issues/155) | **diagnostics.py returns mappingproxy — not directly JSON-serializable** | `async_get_config_entry_diagnostics` returns `config_entry.options` as a raw `mappingproxy`, which fails `json.dumps()` without a custom encoder. Fix: wrap in `dict()`. See `tests/test_diagnostics_integration.py`. |
 | [#33](https://github.com/jrhubott/adaptive-cover/issues/33) | Better support for venetian blinds | KNX: single entity exposes both position + tilt. Needs config flow enhancement for dual-axis single-entity covers. |
 | [#132](https://github.com/jrhubott/adaptive-cover-pro/issues/132) | Cover oscillates from 100% to 98% despite 10% delta threshold | Possible interaction with position limits or delta checking logic. |
 | [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.2 — awaiting user confirmation. |
-| [#145](https://github.com/jrhubott/adaptive-cover-pro/issues/145) | Start and end time not respected | Fixed in v2.14.2 / PR #150 — awaiting issue close by author. |
-| [#147](https://github.com/jrhubott/adaptive-cover-pro/issues/147) | Manual override ignored during morning operations | Fixed in v2.14.2 / PR #150 — awaiting issue close by author. |
-| [#149](https://github.com/jrhubott/adaptive-cover-pro/issues/149) | Download diagnostics HTTP error | Fixed in v2.14.2 / PR #150 — awaiting issue close by author. |
-| [#146](https://github.com/jrhubott/adaptive-cover-pro/issues/146) | Remove icons from translations | Fixed in PR #151 / main — awaiting issue close by author. |
-| [#148](https://github.com/jrhubott/adaptive-cover-pro/issues/148) | Configuration Summary unformatted time | Fixed in PR #151 / main — awaiting issue close by author. |
+| [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached and/or maintained | Under investigation. Hypothesis: min_position setting clamps sunset pos. |
+| [#105](https://github.com/jrhubott/adaptive-cover-pro/issues/105) | Force Motion / Manual Override precedence over Night Mode | Under investigation. |
 
 
 ## Known Gotchas
@@ -124,8 +114,8 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | Version | Date | Summary |
 |---------|------|----------|
-| [v2.14.3-beta.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3-beta.2) | 2026-04-09 | Gate first-refresh and reconciliation on time window — covers no longer open at midnight (#179). |
-| [v2.14.3-beta.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3-beta.1) | 2026-04-08 | Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash (#174). |
+| [v2.14.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3) | 2026-04-09 | Fix covers open at midnight (#179), custom positions triggering manual override (#172), horizontal cover NoneType (#174), time window gate at sunrise (#173), tilt >100% (#153), duplicate unique_id (#154), diagnostics mappingproxy (#155). |
+| [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
 | [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
 | [v2.14.1](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.1) | 2026-04-07 | Format duration in config summary (#148), remove icons from translations (#146). |
 | [v2.14.0](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.0) | 2026-04-05 | Fix constant repositioning at 0%/100% (#127); configurable priority per custom position slot. |
