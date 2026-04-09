@@ -79,3 +79,87 @@ class TestWeatherOverrideHandler:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == position
+
+
+class TestWeatherOverrideHandlerMinMode:
+    """Tests for WeatherOverrideHandler minimum position mode."""
+
+    handler = WeatherOverrideHandler()
+
+    def test_min_mode_off_uses_exact_position(self) -> None:
+        """With min_mode off, position is always the configured value (default behavior)."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=30,
+            weather_override_min_mode=False,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 30
+
+    def test_min_mode_on_calculated_higher_uses_calculated(self) -> None:
+        """With min_mode on, if calculated position > floor, use calculated."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=30,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 50
+
+    def test_min_mode_on_calculated_lower_uses_floor(self) -> None:
+        """With min_mode on, if calculated position < floor, use the floor."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=30,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=10.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 30
+
+    def test_min_mode_on_calculated_equal_uses_floor(self) -> None:
+        """With min_mode on, if calculated equals floor, position equals floor."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=30,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=30.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 30
+
+    def test_min_mode_on_reason_mentions_minimum_mode(self) -> None:
+        """With min_mode on, reason string mentions minimum mode."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=30,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "minimum mode" in result.reason
+
+    def test_min_mode_control_method_still_weather(self) -> None:
+        """ControlMethod remains WEATHER regardless of min_mode."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=30,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=70.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.WEATHER

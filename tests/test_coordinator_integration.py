@@ -405,7 +405,8 @@ class TestStateChangeWithSafetyHandlerBypass:
 class TestForceOverrideRelease:
     """When force override releases, covers must return to calculated position
     immediately — the force override's own move must not count against the
-    time delta threshold.  Regression tests for issue #177."""
+    time delta threshold.  Regression tests for issue #177.
+    """
 
     def _make_release_coordinator(
         self,

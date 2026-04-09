@@ -31,9 +31,16 @@ class WeatherOverrideHandler(OverrideHandler):
         """Return override position when weather conditions are active."""
         if not snapshot.weather_override_active:
             return None
-        pos = snapshot.weather_override_position
+        configured = snapshot.weather_override_position
         bypass = snapshot.weather_bypass_auto_control
-        reason = f"weather override active — position {pos}%"
+        raw = compute_raw_calculated_position(snapshot)
+        if snapshot.weather_override_min_mode:
+            pos = max(configured, raw)
+            mode_note = f" [minimum mode — floor {configured}%, calculated {raw}%]"
+        else:
+            pos = configured
+            mode_note = ""
+        reason = f"weather override active — position {pos}%{mode_note}"
         if bypass:
             reason += " [bypasses automatic control]"
         return PipelineResult(
@@ -41,7 +48,7 @@ class WeatherOverrideHandler(OverrideHandler):
             control_method=ControlMethod.WEATHER,
             reason=reason,
             bypass_auto_control=bypass,
-            raw_calculated_position=compute_raw_calculated_position(snapshot),
+            raw_calculated_position=raw,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

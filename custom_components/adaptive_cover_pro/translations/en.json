@@ -148,11 +148,13 @@
         "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
         "data": {
           "force_override_sensors": "Force override sensors",
-          "force_override_position": "Force override position"
+          "force_override_position": "Force override position",
+          "force_override_min_mode": "Minimum position mode"
         },
         "data_description": {
           "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings, including the Automatic Control switch. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "force_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position."
         }
       },
       "custom_position": {
@@ -162,29 +164,37 @@
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position for Sensor 1",
           "custom_position_priority_1": "Priority for Slot 1",
+          "custom_position_min_mode_1": "Minimum mode for Slot 1",
           "custom_position_sensor_2": "Sensor 2",
           "custom_position_2": "Position for Sensor 2",
           "custom_position_priority_2": "Priority for Slot 2",
+          "custom_position_min_mode_2": "Minimum mode for Slot 2",
           "custom_position_sensor_3": "Sensor 3",
           "custom_position_3": "Position for Sensor 3",
           "custom_position_priority_3": "Priority for Slot 3",
+          "custom_position_min_mode_3": "Minimum mode for Slot 3",
           "custom_position_sensor_4": "Sensor 4",
           "custom_position_4": "Position for Sensor 4",
-          "custom_position_priority_4": "Priority for Slot 4"
+          "custom_position_priority_4": "Priority for Slot 4",
+          "custom_position_min_mode_4": "Minimum mode for Slot 4"
         },
         "data_description": {
           "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
           "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed, 100% = open.",
           "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
+          "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
           "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
           "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
+          "custom_position_min_mode_2": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
           "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
           "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
+          "custom_position_min_mode_3": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
           "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
-          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77)."
+          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77).",
+          "custom_position_min_mode_4": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position."
         }
       },
       "motion_override": {
@@ -214,6 +224,7 @@
           "weather_is_windy_sensor": "Is Windy binary sensor",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
+          "weather_override_min_mode": "Minimum position mode",
           "weather_timeout": "Clear delay"
         },
         "data_description": {
@@ -228,6 +239,7 @@
           "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
           "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
       },
@@ -585,11 +597,13 @@
         "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
         "data": {
           "force_override_sensors": "Force override sensors",
-          "force_override_position": "Force override position"
+          "force_override_position": "Force override position",
+          "force_override_min_mode": "Minimum position mode"
         },
         "data_description": {
           "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings, including the Automatic Control switch. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "force_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position."
         }
       },
       "custom_position": {
@@ -599,29 +613,37 @@
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position for Sensor 1",
           "custom_position_priority_1": "Priority for Slot 1",
+          "custom_position_min_mode_1": "Minimum mode for Slot 1",
           "custom_position_sensor_2": "Sensor 2",
           "custom_position_2": "Position for Sensor 2",
           "custom_position_priority_2": "Priority for Slot 2",
+          "custom_position_min_mode_2": "Minimum mode for Slot 2",
           "custom_position_sensor_3": "Sensor 3",
           "custom_position_3": "Position for Sensor 3",
           "custom_position_priority_3": "Priority for Slot 3",
+          "custom_position_min_mode_3": "Minimum mode for Slot 3",
           "custom_position_sensor_4": "Sensor 4",
           "custom_position_4": "Position for Sensor 4",
-          "custom_position_priority_4": "Priority for Slot 4"
+          "custom_position_priority_4": "Priority for Slot 4",
+          "custom_position_min_mode_4": "Minimum mode for Slot 4"
         },
         "data_description": {
           "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
           "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed, 100% = open.",
           "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
+          "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
           "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
           "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
+          "custom_position_min_mode_2": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
           "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
           "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
+          "custom_position_min_mode_3": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
           "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
-          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77)."
+          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77).",
+          "custom_position_min_mode_4": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position."
         }
       },
       "motion_override": {
@@ -651,6 +673,7 @@
           "weather_is_windy_sensor": "Is Windy binary sensor",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
+          "weather_override_min_mode": "Minimum position mode",
           "weather_timeout": "Clear delay"
         },
         "data_description": {
@@ -665,6 +688,7 @@
           "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
           "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
       },

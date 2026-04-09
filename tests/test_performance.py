@@ -221,8 +221,8 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
     snapshot.weather_bypass_auto_control = False
     snapshot.manual_override_active = False
     snapshot.custom_position_sensors = (
-        (None, False, 0, 77), (None, False, 0, 77),
-        (None, False, 0, 77), (None, False, 0, 77),
+        (None, False, 0, 77, False), (None, False, 0, 77, False),
+        (None, False, 0, 77, False), (None, False, 0, 77, False),
     )
     snapshot.motion_timeout_active = False
     snapshot.cloud_suppression_enabled = False
