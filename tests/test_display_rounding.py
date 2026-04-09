@@ -9,9 +9,8 @@ Verifies that:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import patch
 
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverSensorEntity,

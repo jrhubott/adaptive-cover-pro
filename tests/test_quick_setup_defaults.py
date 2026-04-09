@@ -59,7 +59,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_TIMEOUT,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_INVERSE_STATE,
-    CONF_SENSOR_TYPE,
 )
 
 # ---------------------------------------------------------------------------
@@ -274,7 +273,8 @@ def _make_coordinator_with_options(options: dict):
 
 class TestOptionsBuilderDefaults:
     """Verify _build_options_from_config() (mirroring async_step_update) stores
-    safe defaults for keys that quick setup never populates."""
+    safe defaults for keys that quick setup never populates.
+    """
 
     @pytest.mark.unit
     def test_delta_position_defaults_to_2_when_absent(self):

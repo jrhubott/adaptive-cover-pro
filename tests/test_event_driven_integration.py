@@ -6,14 +6,10 @@ the coordinator update logic to position decisions.
 
 from __future__ import annotations
 
-import asyncio
-from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_DELTA_POSITION,

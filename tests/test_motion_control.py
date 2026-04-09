@@ -666,7 +666,6 @@ def test_build_configuration_diagnostics_includes_motion_data():
         DiagnosticContext,
         DiagnosticsBuilder,
     )
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
 
     ctx = DiagnosticContext(
         pos_sun=[180.0, 45.0],
@@ -952,7 +951,6 @@ def test_check_initial_motion_state_all_off_sets_no_motion():
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
-    from custom_components.adaptive_cover_pro.const import CONF_MOTION_SENSORS
 
     coordinator = MagicMock()
     coordinator.config_entry.options.get.return_value = ["binary_sensor.motion"]

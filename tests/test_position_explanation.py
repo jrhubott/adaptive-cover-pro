@@ -15,12 +15,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )
-from custom_components.adaptive_cover_pro.const import (
-    CONF_DEFAULT_HEIGHT,
-    CONF_ENABLE_MIN_POSITION,
-    CONF_MIN_POSITION,
-    CONF_SUNSET_POS,
-)
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,

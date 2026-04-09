@@ -115,7 +115,7 @@ def test_sun_validity_transition_initializes_on_first_call():
 
 @pytest.mark.unit
 def test_sun_validity_transition_detects_sun_appeared():
-    """sun just appeared (False→True) returns True and logs info."""
+    """Sun just appeared (False→True) returns True and logs info."""
     coord = _make_coordinator()
     cover_data = MagicMock()
     cover_data.direct_sun_valid = True
@@ -130,7 +130,7 @@ def test_sun_validity_transition_detects_sun_appeared():
 
 @pytest.mark.unit
 def test_sun_validity_transition_detects_sun_left():
-    """sun just left (True→False) returns False and logs debug."""
+    """Sun just left (True→False) returns False and logs debug."""
     coord = _make_coordinator()
     cover_data = MagicMock()
     cover_data.direct_sun_valid = False
@@ -221,7 +221,6 @@ def test_read_custom_position_sensor_states_reads_entity_state():
     """_read_custom_position_sensor_states correctly reads entity state from hass."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
-        DEFAULT_CUSTOM_POSITION_PRIORITY,
     )
     from custom_components.adaptive_cover_pro.const import (
         CONF_CUSTOM_POSITION_SENSOR_1,

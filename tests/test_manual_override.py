@@ -1,7 +1,7 @@
 """Tests for manual override detection with grace period."""
 
 import datetime as dt
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

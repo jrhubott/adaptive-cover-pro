@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -228,7 +227,6 @@ def test_sun_position_attributes_blind_spot_range_calculated():
 @pytest.mark.unit
 def test_last_action_sensor_native_value_with_timestamp():
     """native_value formats timestamp correctly when action has a valid timestamp."""
-    from datetime import datetime, timezone
     ts = "2024-06-21T14:30:00+00:00"
     coord = _make_coordinator(diagnostics={
         "last_cover_action": {

@@ -71,7 +71,8 @@ def _registry(*handlers):
 
 class TestDaytimeUsesHDef:
     """During the day, compute_effective_default returns h_def and the pipeline
-    passes it correctly to DefaultHandler / MotionTimeoutHandler."""
+    passes it correctly to DefaultHandler / MotionTimeoutHandler.
+    """
 
     def test_daytime_effective_default_is_h_def(self):
         """At noon (between 6 AM sunrise and 8 PM sunset), h_def is returned."""

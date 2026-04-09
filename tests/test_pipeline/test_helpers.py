@@ -7,9 +7,7 @@ and compute_raw_calculated_position.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
 
-import pytest
 
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     apply_snapshot_limits,

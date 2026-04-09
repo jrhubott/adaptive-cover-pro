@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
@@ -50,7 +49,7 @@ class TestHandlerMetadata:
     """Verify static handler properties."""
 
     def test_name_includes_slot(self) -> None:
-        """name must be 'custom_position_<slot>'."""
+        """Name must be 'custom_position_<slot>'."""
         assert _handler(slot=1).name == "custom_position_1"
         assert _handler(slot=2).name == "custom_position_2"
         assert _handler(slot=4).name == "custom_position_4"

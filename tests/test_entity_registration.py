@@ -24,7 +24,6 @@ from custom_components.adaptive_cover_pro.const import (
 from tests.ha_helpers import (
     VERTICAL_OPTIONS,
     _patch_coordinator_refresh,
-    assert_entities_registered,
     get_entity_ids_for_entry,
 )
 
@@ -146,7 +145,7 @@ async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -
         hass, options=opts_force, entry_id="force_yes_01", name="With Force"
     )
     assert _has_force_trigger_sensor(entry_yes, reg), (
-        f"Force override sensor should exist when configured"
+        "Force override sensor should exist when configured"
     )
 
 
@@ -328,7 +327,6 @@ async def test_device_info_standalone_virtual_device(hass: HomeAssistant) -> Non
 @pytest.mark.integration
 async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> None:
     """Target Position sensor uses PERCENTAGE as unit of measurement."""
-    from homeassistant.const import PERCENTAGE
 
     entry = await _setup_entry(hass, entry_id="unit_pct_01")
 

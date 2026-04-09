@@ -242,7 +242,7 @@ class TestSunGeometryTypes:
         assert not isinstance(result, np.bool_), "Got numpy.bool_, expected Python bool"
 
     def test_valid_false_for_sun_outside_fov(self) -> None:
-        """valid should be False (Python bool) when sun is outside FOV."""
+        """Valid should be False (Python bool) when sun is outside FOV."""
         geom = self._make_geometry(gamma=80.0)  # beyond fov_right=75
         result = geom.valid
         assert result is False

@@ -202,7 +202,6 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
 
     # Build a snapshot with real integer values for position limits
     # to avoid numpy ambiguity in apply_snapshot_limits.
-    from custom_components.adaptive_cover_pro.config_types import CoverConfig
     from tests.cover_helpers import make_cover_config
 
     cover_config = make_cover_config(h_def=50, max_pos=100, min_pos=0)

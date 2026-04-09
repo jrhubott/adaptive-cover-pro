@@ -22,7 +22,6 @@ Two complementary fixes are tested:
 
 from __future__ import annotations
 
-import datetime as dt
 from unittest.mock import MagicMock
 
 import pytest
