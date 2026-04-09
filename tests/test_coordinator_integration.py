@@ -398,6 +398,162 @@ class TestStateChangeWithSafetyHandlerBypass:
 
 
 # ---------------------------------------------------------------------------
+# Step 7b: Force override release bypasses time/position delta gates (#177)
+# ---------------------------------------------------------------------------
+
+
+class TestForceOverrideRelease:
+    """When force override releases, covers must return to calculated position
+    immediately — the force override's own move must not count against the
+    time delta threshold.  Regression tests for issue #177."""
+
+    def _make_release_coordinator(
+        self,
+        *,
+        is_force_override_active: bool = False,
+        check_adaptive_time: bool = True,
+    ):
+        """Coordinator where force override just transitioned from on → off."""
+        result = _make_pipeline_result(
+            position=55,
+            control_method=ControlMethod.SOLAR,
+            bypass_auto_control=False,
+        )
+        coordinator = _make_coordinator(entities=["cover.test"], pipeline_result=result)
+        coordinator.check_adaptive_time = check_adaptive_time
+        coordinator.is_force_override_active = is_force_override_active
+        return coordinator
+
+    @pytest.mark.asyncio
+    async def test_force_override_release_passes_force_true(self):
+        """When force override just released, _build_position_context gets force=True.
+
+        Previously the pipeline result had bypass_auto_control=False (solar won),
+        so force=False was passed and the time delta gate could block the move.
+        This test verifies the fix: prev_force_override=True causes force=True.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = self._make_release_coordinator(is_force_override_active=False)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=55,
+            options={},
+            prev_force_override=True,  # was active last cycle
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.test",
+            {},
+            force=True,  # ← must bypass time/position delta gates
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_override_release_uses_cleared_reason(self):
+        """Reason string must be 'force_override_cleared' on release."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = self._make_release_coordinator(is_force_override_active=False)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=55,
+            options={},
+            prev_force_override=True,
+        )
+
+        call = coordinator._cmd_svc.apply_position.call_args
+        reason = call.args[2]
+        assert reason == "force_override_cleared"
+
+    @pytest.mark.asyncio
+    async def test_no_release_without_prior_force_override(self):
+        """When prev_force_override=False, normal solar tracking uses force=False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = self._make_release_coordinator(is_force_override_active=False)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=55,
+            options={},
+            prev_force_override=False,  # no prior force override
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.test",
+            {},
+            force=False,  # ← normal solar tracking respects gates
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_override_still_active_uses_bypass_auto_control(self):
+        """While force override is still active, bypass_auto_control drives force=True."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=0,
+            control_method=ControlMethod.FORCE,
+            bypass_auto_control=True,
+        )
+        coordinator = _make_coordinator(entities=["cover.test"], pipeline_result=result)
+        coordinator.check_adaptive_time = True
+        coordinator.is_force_override_active = True
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=0,
+            options={},
+            prev_force_override=True,  # was also active last cycle — still on
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.test",
+            {},
+            force=True,  # ← safety bypass from bypass_auto_control
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_override_release_outside_time_window_still_sends(self):
+        """Force override release must move covers even outside the active time window.
+
+        The time-window guard skips non-safety state changes, but a force override
+        release is a special transition: the cover must return to its calculated
+        position regardless of the time window.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = self._make_release_coordinator(
+            is_force_override_active=False,
+            check_adaptive_time=False,  # outside time window
+        )
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=55,
+            options={},
+            prev_force_override=True,
+        )
+
+        # Must send even though we're outside the time window
+        coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Step 8: Cover state change triggers manual override detection
 # ---------------------------------------------------------------------------
 

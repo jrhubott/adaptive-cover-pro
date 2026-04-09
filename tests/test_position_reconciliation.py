@@ -1108,3 +1108,121 @@ async def test_sun_just_appeared_false_enforces_delta(svc, mock_hass):
     )
     assert outcome == "skipped"
     assert reason == "delta_too_small"
+
+
+# ------------------------------------------------------------------ #
+# Force override release — end-to-end gate behavior (#177)
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_force_override_release_force_true_bypasses_time_delta(svc, mock_hass):
+    """force=True (set on force override release) bypasses the time delta gate.
+
+    Scenario: force override moved the cover 5 minutes ago (within the 10-min
+    threshold).  Without fix, solar tracking would be blocked.  With fix the
+    coordinator passes force=True, allowing the return to calculated position.
+    """
+    _patch_position(svc, 30)  # large enough position delta
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=recent,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            60,
+            "force_override_cleared",
+            context=_ctx(time_threshold=10, force=True),  # force=True set by coordinator
+        )
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_solar_tracking_blocked_by_recent_force_override_move(svc):
+    """Without force=True, time delta gate blocks return after force override move.
+
+    This documents the bug that issue #177 fixed: a recent cover move (caused
+    by force override) would block the subsequent solar-tracking command.
+    """
+    _patch_position(svc, 30)
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=recent,
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test",
+            60,
+            "solar",
+            context=_ctx(time_threshold=10, force=False),  # force=False — pre-fix behavior
+        )
+    assert outcome == "skipped"
+    assert reason == "time_delta_too_small"
+
+
+@pytest.mark.asyncio
+async def test_solar_tracking_passes_when_time_elapsed(svc, mock_hass):
+    """Solar tracking is allowed once the time threshold has elapsed."""
+    _patch_position(svc, 30)
+    old = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=15)
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=old,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            60,
+            "solar",
+            context=_ctx(time_threshold=10, force=False),
+        )
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_force_true_bypasses_time_delta_and_position_delta(svc, mock_hass):
+    """force=True bypasses both time delta and position delta simultaneously.
+
+    Verifies that no single gate can block a force=True command, which is
+    required for force override release, manual override expiry, and safety
+    handlers to work reliably.
+    """
+    _patch_position(svc, 59)  # delta=1, below min_change=5
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=recent,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            60,
+            "force_override_cleared",
+            context=_ctx(min_change=5, time_threshold=10, force=True),
+        )
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_manual_override_expiry_force_true_bypasses_time_delta(svc, mock_hass):
+    """Manual override expiry (force=True) also bypasses time delta.
+
+    Manual override expiry already uses force=True (_async_send_after_override_clear).
+    This test confirms the gate behavior is identical to force override release.
+    """
+    _patch_position(svc, 30)
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=3)
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=recent,
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            70,
+            "manual_override_cleared",
+            context=_ctx(time_threshold=10, force=True),
+        )
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
