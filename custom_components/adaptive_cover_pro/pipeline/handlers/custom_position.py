@@ -42,6 +42,8 @@ class CustomPositionHandler(OverrideHandler):
         self._entity_id = entity_id
         self._position = position
         self.priority = priority  # instance attribute overrides any class-level default
+        # min_mode is read from the snapshot tuple at evaluate() time, not stored here,
+        # since snapshot is the single source of truth for per-cycle config.
 
     @property
     def name(self) -> str:  # type: ignore[override]
@@ -51,17 +53,24 @@ class CustomPositionHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's sensor is active."""
         # Find our sensor in the snapshot's sensor list by entity_id.
-        for entity_id, is_on, _position, _priority in snapshot.custom_position_sensors:
+        for entity_id, is_on, _position, _priority, min_mode in snapshot.custom_position_sensors:
             if entity_id == self._entity_id:
                 if is_on:
+                    raw = compute_raw_calculated_position(snapshot)
+                    if min_mode:
+                        pos = max(self._position, raw)
+                        mode_note = f" [minimum mode — floor {self._position}%, calculated {raw}%]"
+                    else:
+                        pos = self._position
+                        mode_note = ""
                     return PipelineResult(
-                        position=self._position,
+                        position=pos,
                         control_method=ControlMethod.CUSTOM_POSITION,
                         reason=(
                             f"custom position #{self._slot} active ({self._entity_id})"
-                            f" — position {self._position}%"
+                            f" — position {pos}%{mode_note}"
                         ),
-                        raw_calculated_position=compute_raw_calculated_position(snapshot),
+                        raw_calculated_position=raw,
                     )
                 # Sensor found but not active — pass through
                 return None

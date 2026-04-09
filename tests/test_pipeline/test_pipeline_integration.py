@@ -297,7 +297,7 @@ class TestCustomPositionPriority:
     def test_custom_position_beats_motion_timeout(self) -> None:
         """CUSTOM_POSITION fires instead of motion timeout when a sensor is active."""
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77)],
+            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False)],
             motion_timeout_active=True,
             default_position=10,
         )
@@ -309,7 +309,7 @@ class TestCustomPositionPriority:
         """MANUAL fires before custom_position when manual override is active."""
         snap = make_snapshot(
             manual_override_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77)],
+            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False)],
         )
         result = self.registry.evaluate(snap)
         assert result.control_method == ControlMethod.MANUAL
@@ -319,7 +319,7 @@ class TestCustomPositionPriority:
         # Build registry with the matching position for this test
         registry_33 = _make_registry(custom_position=33)
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 33, 77)],
+            custom_position_sensors=[("binary_sensor.scene", True, 33, 77, False)],
             direct_sun_valid=True,
             calculate_percentage_return=80.0,
         )
@@ -330,7 +330,7 @@ class TestCustomPositionPriority:
     def test_solar_fires_when_custom_sensors_all_off(self) -> None:
         """Solar handler wins when custom sensors are configured but all off."""
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", False, 33, 77)],
+            custom_position_sensors=[("binary_sensor.scene", False, 33, 77, False)],
             direct_sun_valid=True,
             calculate_percentage_return=72.0,
         )
@@ -340,7 +340,7 @@ class TestCustomPositionPriority:
     def test_default_fires_when_no_custom_sensors_and_no_sun(self) -> None:
         """Default handler wins when custom sensors are off and sun not in FOV."""
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", False, 50, 77)],
+            custom_position_sensors=[("binary_sensor.scene", False, 50, 77, False)],
             direct_sun_valid=False,
             default_position=20,
         )
@@ -366,7 +366,7 @@ class TestCustomPositionConfigurablePriority:
             ]
         )
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 30, 95)],
+            custom_position_sensors=[("binary_sensor.scene", True, 30, 95, False)],
             weather_override_active=True,
             weather_override_position=0,
         )
@@ -384,7 +384,7 @@ class TestCustomPositionConfigurablePriority:
             ]
         )
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 80, 35)],
+            custom_position_sensors=[("binary_sensor.scene", True, 80, 35, False)],
             direct_sun_valid=True,
             calculate_percentage_return=60.0,
         )
@@ -403,8 +403,8 @@ class TestCustomPositionConfigurablePriority:
         )
         snap = make_snapshot(
             custom_position_sensors=[
-                ("binary_sensor.slot1", True, 20, 85),
-                ("binary_sensor.slot2", True, 60, 70),
+                ("binary_sensor.slot1", True, 20, 85, False),
+                ("binary_sensor.slot2", True, 60, 70, False),
             ],
         )
         result = registry.evaluate(snap)
@@ -423,8 +423,8 @@ class TestCustomPositionConfigurablePriority:
         )
         snap = make_snapshot(
             custom_position_sensors=[
-                ("binary_sensor.slot1", False, 20, 85),
-                ("binary_sensor.slot2", True, 60, 70),
+                ("binary_sensor.slot1", False, 20, 85, False),
+                ("binary_sensor.slot2", True, 60, 70, False),
             ],
         )
         result = registry.evaluate(snap)
@@ -445,7 +445,7 @@ class TestCustomPositionConfigurablePriority:
         # Manual active → custom should NOT fire
         snap_manual = make_snapshot(
             manual_override_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 45, 77)],
+            custom_position_sensors=[("binary_sensor.scene", True, 45, 77, False)],
         )
         result = registry.evaluate(snap_manual)
         assert result.control_method == ControlMethod.MANUAL
@@ -454,7 +454,7 @@ class TestCustomPositionConfigurablePriority:
         snap_motion = make_snapshot(
             manual_override_active=False,
             motion_timeout_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 45, 77)],
+            custom_position_sensors=[("binary_sensor.scene", True, 45, 77, False)],
             default_position=10,
         )
         result = registry.evaluate(snap_motion)

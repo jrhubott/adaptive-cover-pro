@@ -42,6 +42,10 @@ from .const import (
     CONF_CUSTOM_POSITION_2,
     CONF_CUSTOM_POSITION_3,
     CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_MIN_MODE_1,
+    CONF_CUSTOM_POSITION_MIN_MODE_2,
+    CONF_CUSTOM_POSITION_MIN_MODE_3,
+    CONF_CUSTOM_POSITION_MIN_MODE_4,
     CONF_CUSTOM_POSITION_PRIORITY_1,
     CONF_CUSTOM_POSITION_PRIORITY_2,
     CONF_CUSTOM_POSITION_PRIORITY_3,
@@ -51,6 +55,7 @@ from .const import (
     CONF_CUSTOM_POSITION_SENSOR_3,
     CONF_CUSTOM_POSITION_SENSOR_4,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_FOV_LEFT,
@@ -103,6 +108,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
@@ -474,6 +480,7 @@ FORCE_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_FORCE_OVERRIDE_MIN_MODE, default=False): selector.BooleanSelector(),
     }
 )
 
@@ -515,15 +522,19 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_1, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_2, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_3, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_4, default=False): selector.BooleanSelector(),
     }
 )
 
@@ -621,6 +632,7 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_WEATHER_OVERRIDE_MIN_MODE, default=False): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_TIMEOUT, default=DEFAULT_WEATHER_TIMEOUT
         ): selector.NumberSelector(
@@ -1407,6 +1419,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         {
             CONF_FORCE_OVERRIDE_SENSORS,
             CONF_FORCE_OVERRIDE_POSITION,
+            CONF_FORCE_OVERRIDE_MIN_MODE,
         }
     ),
     "custom_position": frozenset(
@@ -1414,15 +1427,19 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CUSTOM_POSITION_SENSOR_1,
             CONF_CUSTOM_POSITION_1,
             CONF_CUSTOM_POSITION_PRIORITY_1,
+            CONF_CUSTOM_POSITION_MIN_MODE_1,
             CONF_CUSTOM_POSITION_SENSOR_2,
             CONF_CUSTOM_POSITION_2,
             CONF_CUSTOM_POSITION_PRIORITY_2,
+            CONF_CUSTOM_POSITION_MIN_MODE_2,
             CONF_CUSTOM_POSITION_SENSOR_3,
             CONF_CUSTOM_POSITION_3,
             CONF_CUSTOM_POSITION_PRIORITY_3,
+            CONF_CUSTOM_POSITION_MIN_MODE_3,
             CONF_CUSTOM_POSITION_SENSOR_4,
             CONF_CUSTOM_POSITION_4,
             CONF_CUSTOM_POSITION_PRIORITY_4,
+            CONF_CUSTOM_POSITION_MIN_MODE_4,
         }
     ),
     "motion_override": frozenset(
@@ -1444,6 +1461,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_IS_WINDY_SENSOR,
             CONF_WEATHER_SEVERE_SENSORS,
             CONF_WEATHER_OVERRIDE_POSITION,
+            CONF_WEATHER_OVERRIDE_MIN_MODE,
             CONF_WEATHER_TIMEOUT,
         }
     ),

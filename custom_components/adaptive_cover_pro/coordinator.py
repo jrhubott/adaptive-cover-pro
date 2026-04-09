@@ -48,6 +48,10 @@ from .const import (
     CONF_CUSTOM_POSITION_2,
     CONF_CUSTOM_POSITION_3,
     CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_MIN_MODE_1,
+    CONF_CUSTOM_POSITION_MIN_MODE_2,
+    CONF_CUSTOM_POSITION_MIN_MODE_3,
+    CONF_CUSTOM_POSITION_MIN_MODE_4,
     CONF_CUSTOM_POSITION_PRIORITY_1,
     CONF_CUSTOM_POSITION_PRIORITY_2,
     CONF_CUSTOM_POSITION_PRIORITY_3,
@@ -57,6 +61,7 @@ from .const import (
     CONF_CUSTOM_POSITION_SENSOR_3,
     CONF_CUSTOM_POSITION_SENSOR_4,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
@@ -70,6 +75,7 @@ from .const import (
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
@@ -777,10 +783,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             climate_options=self._build_climate_options(options),
             force_override_sensors=self._read_force_sensor_states(options),
             force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
+            force_override_min_mode=bool(options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False)),
             manual_override_active=self.manager.binary_cover_manual,
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
+            weather_override_min_mode=bool(options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)),
             weather_bypass_auto_control=options.get(
                 CONF_WEATHER_BYPASS_AUTO_CONTROL, True
             ),
@@ -1421,22 +1429,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _read_custom_position_sensor_states(
         self, options
-    ) -> list[tuple[str, bool, int, int]]:
+    ) -> list[tuple[str, bool, int, int, bool]]:
         """Read custom position sensor states from HA into an ordered list.
 
-        Returns a list of (entity_id, is_on, position, priority) tuples for
+        Returns a list of (entity_id, is_on, position, priority, min_mode) tuples for
         every slot that has both a sensor and a position configured.  Priority
         defaults to DEFAULT_CUSTOM_POSITION_PRIORITY (77) when not set so that
         existing installations behave identically to the previous release.
+        min_mode defaults to False so existing installations behave identically.
         """
         _sensor_keys = [
-            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1),
-            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2),
-            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3),
-            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4),
+            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1, CONF_CUSTOM_POSITION_MIN_MODE_1),
+            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2, CONF_CUSTOM_POSITION_MIN_MODE_2),
+            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3, CONF_CUSTOM_POSITION_MIN_MODE_3),
+            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4, CONF_CUSTOM_POSITION_MIN_MODE_4),
         ]
         result = []
-        for sensor_key, pos_key, pri_key in _sensor_keys:
+        for sensor_key, pos_key, pri_key, min_mode_key in _sensor_keys:
             sensor = options.get(sensor_key)
             position = options.get(pos_key)
             if sensor and position is not None:
@@ -1445,7 +1454,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     and state.state == "on"
                 )
                 priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
-                result.append((sensor, is_on, int(position), priority))
+                min_mode = bool(options.get(min_mode_key, False))
+                result.append((sensor, is_on, int(position), priority, min_mode))
         return result
 
     def build_diagnostic_data(self) -> dict:
