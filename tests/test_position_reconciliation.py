@@ -744,6 +744,102 @@ async def test_reconcile_resumes_when_auto_control_re_enabled(svc, mock_hass):
 
 
 @pytest.mark.asyncio
+async def test_reconcile_skips_non_safety_outside_time_window(svc, mock_hass):
+    """Reconciliation skips normal targets when outside the operational time window.
+
+    Regression for #179: covers were being commanded at midnight by reconciliation
+    resending stale daytime targets after the time window had closed.
+    """
+    svc.target_call["cover.test"] = 60
+    svc.wait_for_target["cover.test"] = False
+    _patch_position(svc, 40)  # Off target — would normally trigger retry
+
+    # Normal solar target (not safety)
+    svc._safety_targets.discard("cover.test")
+    # Time window closed
+    svc.in_time_window = False
+
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # Must NOT resend — outside time window
+    mock_hass.services.async_call.assert_not_called()
+    assert svc._retry_counts.get("cover.test", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resends_safety_target_outside_time_window(svc, mock_hass):
+    """Safety targets are resent even outside the operational time window.
+
+    Force override and weather safety commands must work at any hour.
+    """
+    svc.target_call["cover.test"] = 0
+    svc.wait_for_target["cover.test"] = False
+    _patch_position(svc, 50)  # Cover hasn't reached safety position yet
+
+    # Mark as safety target (sent via force=True)
+    svc._safety_targets.add("cover.test")
+    # Time window is closed
+    svc.in_time_window = False
+
+    with _patch_caps():
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+
+    # MUST resend — safety target regardless of time window
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resumes_when_time_window_reopens(svc, mock_hass):
+    """Reconciliation resumes normal targets when the time window reopens."""
+    svc.target_call["cover.test"] = 60
+    svc.wait_for_target["cover.test"] = False
+    _patch_position(svc, 40)
+    svc._safety_targets.discard("cover.test")
+
+    # Window closed: should skip
+    svc.in_time_window = False
+    await svc._reconcile(dt.datetime.now(dt.UTC))
+    mock_hass.services.async_call.assert_not_called()
+
+    # Window re-opened: should retry
+    svc.in_time_window = True
+    with _patch_caps():
+        await svc._reconcile(dt.datetime.now(dt.UTC))
+    mock_hass.services.async_call.assert_called_once()
+
+
+def test_clear_non_safety_targets(svc):
+    """clear_non_safety_targets removes only non-safety entries.
+
+    Safety targets (force override, weather, end_time_default) must survive
+    so reconciliation can still drive covers to their safe position after window close.
+    """
+    svc.target_call["cover.solar"] = 60
+    svc.wait_for_target["cover.solar"] = True
+    svc._retry_counts["cover.solar"] = 2
+    svc._gave_up.add("cover.solar")
+
+    svc.target_call["cover.safety"] = 0
+    svc.wait_for_target["cover.safety"] = False
+    svc._retry_counts["cover.safety"] = 1
+    svc._safety_targets.add("cover.safety")
+
+    svc.clear_non_safety_targets()
+
+    # Non-safety entry fully removed
+    assert "cover.solar" not in svc.target_call
+    assert "cover.solar" not in svc.wait_for_target
+    assert "cover.solar" not in svc._retry_counts
+    assert "cover.solar" not in svc._gave_up
+
+    # Safety entry preserved
+    assert svc.target_call["cover.safety"] == 0
+    assert svc.wait_for_target["cover.safety"] is False
+    assert svc._retry_counts["cover.safety"] == 1
+    assert "cover.safety" in svc._safety_targets
+
+
+@pytest.mark.asyncio
 async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
     """force=True must bypass time_delta_too_small so safety commands always get sent.
 

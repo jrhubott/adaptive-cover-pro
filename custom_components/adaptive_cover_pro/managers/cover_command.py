@@ -152,6 +152,12 @@ class CoverCommandService:
         # Cleared when a subsequent non-force target overwrites the entry.
         self._safety_targets: set[str] = set()
 
+        # Whether the coordinator's operational time window is currently active.
+        # Synced by the coordinator each update cycle (alongside auto_control_enabled).
+        # Reconciliation skips non-safety targets when this is False so stale
+        # daytime targets are not resent overnight.
+        self._in_time_window: bool = True
+
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
 
@@ -254,6 +260,42 @@ class CoverCommandService:
         are eligible for reconciliation resends.
         """
         self._auto_control_enabled = value
+
+    @property
+    def in_time_window(self) -> bool:
+        """Whether the coordinator's operational time window is currently active."""
+        return self._in_time_window
+
+    @in_time_window.setter
+    def in_time_window(self, value: bool) -> None:
+        """Update the time window flag.
+
+        Called by the coordinator each update cycle so reconciliation knows
+        whether to resend non-safety targets.  When False, only safety targets
+        (sent via apply_position(force=True)) are eligible for reconciliation.
+        """
+        self._in_time_window = value
+
+    def clear_non_safety_targets(self) -> None:
+        """Remove non-safety target_call entries so stale targets cannot be resent.
+
+        Called by the coordinator when the time window transitions from
+        active to inactive.  Safety targets (force override, weather,
+        end_time_default) are preserved so reconciliation can still drive
+        covers to their safe position.
+        """
+        stale = [eid for eid in self.target_call if eid not in self._safety_targets]
+        for eid in stale:
+            del self.target_call[eid]
+            self.wait_for_target.pop(eid, None)
+            self._retry_counts.pop(eid, None)
+            self._gave_up.discard(eid)
+        if stale:
+            self._logger.debug(
+                "Cleared %d stale non-safety target(s) on window close: %s",
+                len(stale),
+                stale,
+            )
 
     # ------------------------------------------------------------------ #
     # Threshold update (called by coordinator on options change)
@@ -596,9 +638,11 @@ class CoverCommandService:
            ``_safety_targets`` → skip.  Safety targets (set via
            ``apply_position(force=True)``) are still resent so covers reach
            a safe position regardless of the automatic control toggle.
-        5. Compare actual position to ``target_call`` within tolerance.
-        6. If match → reset retry count, done.
-        7. If mismatch → resend the same target (up to ``max_retries``).
+        5. If ``_in_time_window`` is False and entity is not in ``_safety_targets``
+           → skip.  Prevents stale daytime targets from being resent overnight.
+        6. Compare actual position to ``target_call`` within tolerance.
+        7. If match → reset retry count, done.
+        8. If mismatch → resend the same target (up to ``max_retries``).
 
         Note: reconciliation does *not* go through gate checks — the target
         was already validated when ``apply_position`` was called.
@@ -649,6 +693,16 @@ class CoverCommandService:
             if not self._auto_control_enabled and entity_id not in self._safety_targets:
                 self._logger.debug(
                     "Reconcile: %s skipped — automatic control off", entity_id
+                )
+                continue
+
+            # 4. Skip non-safety targets outside the operational time window.
+            # Prevents stale daytime targets from being resent overnight.
+            # Safety targets (force override, weather, end_time_default) are
+            # always resent regardless of the time window.
+            if not self._in_time_window and entity_id not in self._safety_targets:
+                self._logger.debug(
+                    "Reconcile: %s skipped — outside time window", entity_id
                 )
                 continue
 
