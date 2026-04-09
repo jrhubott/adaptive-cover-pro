@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-177-force-override-time-delta` — Reset time delta timer when force override releases (#177). Track prev force override state; pass force=True on on→off transition so cover returns to calculated position immediately. PR #181, merged to main.
 - `fix/issue-179-covers-open-at-midnight` — Gate first-refresh and reconciliation on time window (#179). PR #180, beta v2.14.3-beta.2 released. Awaiting user confirmation.
 - Direct commits to `main` — Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash on window_depth (#174). Beta v2.14.3-beta.1 released.
 - `chore/translate-fr` — Retranslate fr.json (French) from English (PR #158, merged to main).
@@ -24,7 +25,7 @@
 
 ## Tests
 
-**1757 passing, 2 warnings, 0 failing** (+4 new tests for #179 fix).
+**1767 passing, 2 warnings, 0 failing** (+10 new tests for #177 fix).
 Run: `venv/bin/python -m pytest tests/ -v`
 
 New test files added (all on `feature/comprehensive-ha-interface-testing`):
