@@ -197,10 +197,14 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
 def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
     """Test sunset_position with enable_min_position = False (always apply).
 
-    When min_pos_bool=False (enable_min_position=False), min_pos is always
-    applied including during the sunset window.  After sunset, the effective
-    default = sunset_pos = 0, but min_pos = 35 is always enforced, so the
-    result should be max(0, 35) = 35.
+    Even when min_pos_bool=False (enable_min_position=False, meaning "always
+    apply min_pos"), the sunset position is exempt from min/max clamping (#128).
+    The sunset position is an explicit user configuration for nighttime and
+    must not be overridden by daytime safety limits.
+
+    After sunset: effective default = sunset_pos = 0.
+    min_pos = 35 with always-apply setting.
+    Expected: 0 (sunset position wins, limits bypassed).
     """
     from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
         DefaultHandler,
@@ -267,9 +271,9 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
 
         result = PipelineRegistry([DefaultHandler()]).evaluate(snapshot)
 
-        # min_pos_bool=False means min_pos always applied.
-        # max(sunset_pos=0, min_pos=35) = 35
-        assert result.position == 35, f"Expected 35 (min_pos always applied), got {result.position}"
+        # Sunset position is exempt from min/max limits (#128).
+        # sunset_pos=0 must not be clamped to min_pos=35.
+        assert result.position == 0, f"Expected 0 (sunset position exempt from min_pos), got {result.position}"
 
 
 @pytest.mark.unit

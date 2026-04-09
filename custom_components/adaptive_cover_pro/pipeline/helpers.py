@@ -85,6 +85,8 @@ def compute_raw_calculated_position(snapshot: PipelineSnapshot) -> int:
     """
     if snapshot.cover.direct_sun_valid:
         return compute_solar_position(snapshot)
+    if snapshot.is_sunset_active:
+        return snapshot.default_position
     return apply_snapshot_limits(
         snapshot,
         snapshot.default_position,
@@ -99,6 +101,10 @@ def compute_default_position(snapshot: PipelineSnapshot) -> int:
     and applies configured min/max position limits with ``sun_valid=False`` so
     sun-only limits are not enforced when the sun is outside the FOV.
 
+    When ``snapshot.is_sunset_active`` is True, limits are bypassed entirely —
+    the sunset position is an explicit user configuration for nighttime and
+    should not be clamped by min/max safety limits (#128).
+
     Args:
         snapshot: Current pipeline snapshot.
 
@@ -106,6 +112,8 @@ def compute_default_position(snapshot: PipelineSnapshot) -> int:
         Effective default position (0–100, limited).
 
     """
+    if snapshot.is_sunset_active:
+        return snapshot.default_position
     return apply_snapshot_limits(
         snapshot,
         snapshot.default_position,
