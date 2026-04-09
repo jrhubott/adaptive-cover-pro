@@ -6,7 +6,7 @@ Verifies the integration survives adverse conditions without crashing.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant

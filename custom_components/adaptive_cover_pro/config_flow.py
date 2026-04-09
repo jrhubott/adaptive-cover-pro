@@ -16,6 +16,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
+from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_AWNING_ANGLE,
@@ -128,6 +129,30 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
+
+# Icons for options menu — defined once here so all languages use the same icons.
+# Text labels come from translations at runtime.
+MENU_ICONS: dict[str, str] = {
+    "cover_entities": "🪟",
+    "geometry": "📐",
+    "sun_tracking": "☀️",
+    "position": "📊",
+    "interp": "📊",
+    "blind_spot": "🌳",
+    "glare_zones": "🔆",
+    "automation": "⏱️",
+    "light_cloud": "☁️",
+    "temperature_climate": "🌡️",
+    "force_override": "🚨",
+    "weather_override": "🌧️",
+    "manual_override": "✋",
+    "custom_position": "🎯",
+    "motion_override": "🚶",
+    "sync": "🔄",
+    "device": "🔗",
+    "summary": "📋",
+    "done": "✅",
+}
 
 
 CONFIG_SCHEMA = vol.Schema(
@@ -824,6 +849,7 @@ def _format_duration(dur: dict | int | float | None) -> str:
         {"hours": 0, "minutes": 30, "seconds": 0} -> "30 min"
         {"hours": 0, "minutes": 0, "seconds": 45} -> "45 s"
         120 (legacy int)                           -> "120 min"
+
     """
     if dur is None:
         return ""
@@ -2312,32 +2338,31 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         # ── Core Setup ───────────────────────────────────────────────
-        menu_options = [
+        keys = [
             "cover_entities",
             "geometry",
             "sun_tracking",
         ]
 
         # ── Position & Zones ─────────────────────────────────────────
-        menu_options.append("position")
+        keys.append("position")
         if self.options.get(CONF_INTERP):
-            menu_options.append("interp")
+            keys.append("interp")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
-            menu_options.append("blind_spot")
+            keys.append("blind_spot")
         if self.sensor_type == SensorType.BLIND and self.options.get(
             CONF_ENABLE_GLARE_ZONES
         ):
-            menu_options.append("glare_zones")
+            keys.append("glare_zones")
 
         # ── Schedule & Automation ────────────────────────────────────
-        menu_options.append("automation")
+        keys.append("automation")
 
         # ── Light, Climate & Weather ────────────────────────────────
-        menu_options.append("light_cloud")
-        menu_options.append("temperature_climate")
+        keys.extend(["light_cloud", "temperature_climate"])
 
         # ── Override Controls (priority order: highest → lowest) ─────
-        menu_options.extend(
+        keys.extend(
             [
                 "force_override",  # Priority 100
                 "weather_override",  # Priority 90
@@ -2348,16 +2373,24 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         # ── Multi-Cover Management ──────────────────────────────────
-        menu_options.append("sync")
+        keys.append("sync")
 
         # ── Admin ────────────────────────────────────────────────────
-        menu_options.extend(
-            [
-                "device",
-                "summary",
-                "done",
-            ]
+        keys.extend(["device", "summary", "done"])
+
+        # Fetch localized labels and prepend icons defined in MENU_ICONS
+        trans_prefix = "component.adaptive_cover_pro.options.step.init.menu_options."
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "options",
+            integrations=["adaptive_cover_pro"],
         )
+        menu_options: dict[str, str] = {
+            key: f"{MENU_ICONS.get(key, '')} {translations.get(f'{trans_prefix}{key}', key)}".strip()
+            for key in keys
+        }
+
         return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):

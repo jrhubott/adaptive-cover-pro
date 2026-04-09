@@ -17,9 +17,8 @@ position change normally.
 from __future__ import annotations
 
 import datetime as dt
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -54,10 +53,10 @@ def _make_coordinator(
         current_position: The position the cover is now reporting.
         grace_expired: Whether the command grace period has expired.
         ignore_intermediate: Whether to ignore opening/closing states.
+
     """
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         CoverCommandService,
-        PositionContext,
     )
     from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
 
@@ -110,7 +109,8 @@ def _make_coordinator(
 
 class TestProcessEntityStateChange:
     """process_entity_state_change must clear wait_for_target when the grace
-    period expires but the cover is NOT at the commanded target."""
+    period expires but the cover is NOT at the commanded target.
+    """
 
     def _call(self, coordinator):
         from custom_components.adaptive_cover_pro.coordinator import (
@@ -198,7 +198,8 @@ class TestProcessEntityStateChange:
 
 class TestManualOverrideAfterGracePeriod:
     """With the fix, handle_state_change can detect manual overrides after
-    the grace period expires — even when wait_for_target was originally True."""
+    the grace period expires — even when wait_for_target was originally True.
+    """
 
     def test_manual_move_detected_after_grace_period(self) -> None:
         """User moving cover significantly away from target must set manual control.

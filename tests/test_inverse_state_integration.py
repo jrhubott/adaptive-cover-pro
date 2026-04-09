@@ -244,7 +244,8 @@ class TestOpenCloseOnlyCoverWithInverseState:
 
 class TestInterpolationAndInverseStateConflict:
     """When both interpolation and inverse_state are configured, inverse_state is
-    skipped and a warning is logged.  Interpolation takes precedence."""
+    skipped and a warning is logged.  Interpolation takes precedence.
+    """
 
     def test_interpolation_takes_precedence_over_inverse_state(self):
         """With both enabled, interpolation runs but inverse state does NOT apply."""

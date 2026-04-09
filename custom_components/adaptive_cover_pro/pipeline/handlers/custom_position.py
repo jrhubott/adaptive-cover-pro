@@ -36,6 +36,7 @@ class CustomPositionHandler(OverrideHandler):
             entity_id: Binary sensor entity ID that activates this position.
             position:  Cover position (0–100 %) to apply when the sensor is on.
             priority:  Pipeline evaluation priority (1–99).  Higher = evaluated first.
+
         """
         self._slot = slot
         self._entity_id = entity_id

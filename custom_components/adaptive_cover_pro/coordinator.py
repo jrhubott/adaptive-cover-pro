@@ -274,6 +274,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Current state snapshot (built at start of each update cycle)
         self._snapshot: CoverStateSnapshot | None = None
 
+        # Track force override state across update cycles so we can detect
+        # the release transition and bypass time/position delta gates.
+        self._prev_force_override_active: bool = False
+
         # Diagnostics builder (extracted from coordinator)
         self._diagnostics_builder = DiagnosticsBuilder()
 
@@ -844,6 +848,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         options = self.config_entry.options
         self._update_options(options)
 
+        # Capture force override state before this cycle so we can detect
+        # the release transition in async_handle_state_change().
+        prev_force_override = self._prev_force_override_active
+
         # Build unified state snapshot for this update cycle
         _sun_azimuth = state_attr(self.hass, "sun.sun", "azimuth")
         _sun_elevation = state_attr(self.hass, "sun.sun", "elevation")
@@ -874,9 +882,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Calculate cover state (pipeline runs with up-to-date override state)
         state = self._calculate_cover_state(cover_data, options)
 
+        # Update prev state for next cycle (current force override state is now
+        # captured in the snapshot we just built).
+        self._prev_force_override_active = self.is_force_override_active
+
         # Handle types of changes
         if self.state_change:
-            await self.async_handle_state_change(state, options)
+            await self.async_handle_state_change(state, options, prev_force_override)
         elif auto_expired:
             # One or more manual overrides just timed out.  Proactively send
             # the fresh pipeline position so covers don't linger at the
@@ -1023,7 +1035,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 cover, state, "manual_override_cleared", context=ctx
             )
 
-    async def async_handle_state_change(self, state: int, options):
+    async def async_handle_state_change(
+        self, state: int, options, prev_force_override: bool = False
+    ):
         """Send position commands to all covers when a tracked entity changes.
 
         When the active pipeline result has bypass_auto_control=True (force
@@ -1031,24 +1045,39 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         context so that time_delta and position_delta gates cannot block
         safety-critical commands.  The reason string also reflects the handler
         that won rather than always saying "solar".
+
+        When a force override just released (prev_force_override=True and it is
+        now inactive), force=True is also passed so the time delta check cannot
+        block the return to the calculated position.  The force override's own
+        position change should not count against the time threshold.
         """
         sun_just_appeared = self._check_sun_validity_transition()
         is_safety = self._pipeline_bypasses_auto_control
+        force_override_released = prev_force_override and not self.is_force_override_active
 
         # Outside the configured time window, only safety handlers (force
         # override, weather) are allowed to move covers.  All other handlers
         # (solar, climate, cloud, default) must not reposition covers before
         # the user's start time or after the end time.  The pipeline still
         # evaluates so diagnostics/sensor state remain correct.
-        if not self.check_adaptive_time and not is_safety:
+        if not self.check_adaptive_time and not is_safety and not force_override_released:
             self.state_change = False
             self.logger.debug("Outside time window — skipping position update")
             return
 
-        reason = self._pipeline_result.control_method.value if is_safety else "solar"
+        use_force = is_safety or force_override_released
+        if force_override_released:
+            reason = "force_override_cleared"
+            self.logger.debug(
+                "Force override released — bypassing time/position delta gates "
+                "to return to calculated position %s",
+                state,
+            )
+        else:
+            reason = self._pipeline_result.control_method.value if is_safety else "solar"
         for cover in self.entities:
             ctx = self._build_position_context(
-                cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
+                cover, options, force=use_force, sun_just_appeared=sun_just_appeared
             )
             await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
         self.state_change = False

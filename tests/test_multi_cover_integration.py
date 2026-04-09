@@ -131,7 +131,7 @@ class TestAllCoversReceiveSamePipelinePosition:
         """Three covers all tracked with independent target_call entries."""
         svc = _make_svc(mock_hass, grace_mgr)
         entities = ["cover.a", "cover.b", "cover.c"]
-        _patch_position(svc, {e: 30 for e in entities})
+        _patch_position(svc, dict.fromkeys(entities, 30))
 
         with _patch_caps(), _patch_time_no_throttle():
             for entity in entities:
@@ -146,7 +146,7 @@ class TestAllCoversReceiveSamePipelinePosition:
         """After a successful command, all entities have wait_for_target=True."""
         svc = _make_svc(mock_hass, grace_mgr)
         entities = ["cover.left", "cover.right"]
-        _patch_position(svc, {e: 10 for e in entities})
+        _patch_position(svc, dict.fromkeys(entities, 10))
 
         with _patch_caps(), _patch_time_no_throttle():
             for entity in entities:

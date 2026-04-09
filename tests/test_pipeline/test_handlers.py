@@ -293,7 +293,7 @@ class TestDefaultHandler:
 
     def test_returns_default_position(self) -> None:
         """Return the default_position with DEFAULT method."""
-        snap = make_snapshot(default_position=int(42))
+        snap = make_snapshot(default_position=42)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 42
@@ -301,7 +301,7 @@ class TestDefaultHandler:
 
     def test_zero_default_position(self) -> None:
         """Handle default_position=0 correctly (falsy value check)."""
-        snap = make_snapshot(default_position=int(0))
+        snap = make_snapshot(default_position=0)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 0

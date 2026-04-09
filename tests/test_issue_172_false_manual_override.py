@@ -67,6 +67,7 @@ def _make_coordinator(
         ignore_intermediate: Whether to ignore opening/closing states.
         new_state_str: The HA state string for the cover ("opening", "closing", "stopped", etc.)
         sent_seconds_ago: How many seconds ago the command was sent (for transit timeout).
+
     """
     from custom_components.adaptive_cover_pro.managers.cover_command import CoverCommandService
     from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
@@ -137,7 +138,8 @@ def _call(coordinator):
 
 class TestTransitDetection:
     """process_entity_state_change must keep wait_for_target=True when the cover
-    is actively moving toward its commanded target after grace expiry."""
+    is actively moving toward its commanded target after grace expiry.
+    """
 
     def test_cover_opening_toward_target_keeps_wait_for_target(self) -> None:
         """Cover moving toward target (opening) must not clear wait_for_target.
@@ -196,7 +198,8 @@ class TestTransitDetection:
 
 class TestStopDetection:
     """When a cover transitions to a final state (stopped/open/closed), the
-    wait_for_target flag must be cleared so manual override detection can run."""
+    wait_for_target flag must be cleared so manual override detection can run.
+    """
 
     def test_cover_stopped_mid_transit_clears_wait_for_target(self) -> None:
         """Cover stopping before reaching target must clear wait_for_target immediately.
@@ -240,7 +243,8 @@ class TestStopDetection:
 
 class TestManualMoveDetection:
     """User-initiated moves away from the commanded target must still be
-    detected after grace period expiry (Issue #147 regression guard)."""
+    detected after grace period expiry (Issue #147 regression guard).
+    """
 
     def test_cover_moving_away_from_target_clears_wait_for_target(self) -> None:
         """Cover moving AWAY from target (user moved it) must clear wait_for_target.
@@ -291,7 +295,8 @@ class TestManualMoveDetection:
 
 class TestTransitTimeout:
     """When a cover has been "opening"/"closing" for longer than
-    TRANSIT_TIMEOUT_SECONDS, wait_for_target is cleared regardless of direction."""
+    TRANSIT_TIMEOUT_SECONDS, wait_for_target is cleared regardless of direction.
+    """
 
     def test_transit_timeout_clears_wait_for_target(self) -> None:
         """Command older than 45s clears wait_for_target even if cover moves toward target."""
@@ -338,7 +343,8 @@ class TestIgnoreIntermediateStates:
     """When ignore_intermediate_states=True, 'opening'/'closing' events are
     filtered before process_entity_state_change() runs.  The function therefore
     only sees final states and the transit logic is never reached — preserving
-    existing behavior."""
+    existing behavior.
+    """
 
     def test_opening_state_ignored_when_flag_set(self) -> None:
         """'opening' events are skipped entirely when ignore_intermediate_states=True."""

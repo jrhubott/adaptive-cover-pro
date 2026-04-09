@@ -12,7 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -34,7 +33,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
-    CONF_MANUAL_THRESHOLD,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
     CONF_ENABLE_MAX_POSITION,
@@ -49,7 +47,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_END_TIME,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
-    CONF_SUNSET_POS,
     CONF_INVERSE_STATE,
     CONF_WINDOW_DEPTH,
     DOMAIN,
@@ -618,7 +615,6 @@ def test_optional_entities_sets_missing_keys_to_none():
 async def test_options_flow_menu_includes_blind_spot_when_enabled(hass: HomeAssistant) -> None:
     """OptionsFlow init menu includes blind_spot when CONF_ENABLE_BLIND_SPOT is True."""
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
-    from custom_components.adaptive_cover_pro.const import CONF_ENABLE_BLIND_SPOT
 
     options = dict(VERTICAL_OPTIONS)
     options[CONF_ENABLE_BLIND_SPOT] = True

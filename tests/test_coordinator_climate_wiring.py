@@ -13,7 +13,7 @@ and will fail immediately if a future refactor drops a parameter.
 from __future__ import annotations
 
 import inspect
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -280,7 +280,8 @@ class TestClimateProviderApiCoverage:
         """Every non-self, non-default-only parameter of ClimateProvider.read()
         must be present in the coordinator's call (either toggle-derived or
         options-mapped).  If this test fails, update _read_climate_state() and
-        the _OPTIONS_TO_READ_KWARG mapping above."""
+        the _OPTIONS_TO_READ_KWARG mapping above.
+        """
         sig = inspect.signature(ClimateProvider.read)
         provider_params = {
             name
