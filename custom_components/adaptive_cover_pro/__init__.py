@@ -55,6 +55,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_setup_services(hass)
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
+    # Detect reload vs. cold HA boot so first-refresh can suppress non-safety
+    # positioning commands when the user just saved options mid-day.
+    coordinator._is_reload = hass.is_running
     _temp_entity = entry.options.get(CONF_TEMP_ENTITY)
     _presence_entity = entry.options.get(CONF_PRESENCE_ENTITY)
     _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)

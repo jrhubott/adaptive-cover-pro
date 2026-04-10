@@ -215,6 +215,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
+        # Set to True when the coordinator is created during a config-entry reload
+        # (HA already running) vs. a cold HA boot.  On reload, first-refresh dispatch
+        # is suppressed for non-safety handlers to avoid disturbing covers that the
+        # user has manually positioned.  Cleared after first refresh.
+        self._is_reload: bool = False
         self._weather_readings: ClimateReadings | None = None
         self.state_change_data: StateChangedData | None = None
         # Queue of cover state-change events pending manual override evaluation.
@@ -1162,6 +1167,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("First refresh outside time window — skipping position update")
             return
 
+        if self._is_reload and not is_safety:
+            self.first_refresh = False
+            self._is_reload = False
+            self.logger.debug(
+                "First refresh during config-entry reload — "
+                "skipping position update to avoid disturbing user-controlled covers"
+            )
+            return
+
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
             ctx = self._build_position_context(
@@ -1169,6 +1183,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
+        self._is_reload = False
         self.logger.debug("First refresh handled")
 
     def _build_pipeline(self) -> PipelineRegistry:

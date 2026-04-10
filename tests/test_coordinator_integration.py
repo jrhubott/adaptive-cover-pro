@@ -70,6 +70,9 @@ def _make_coordinator(
     coordinator._cmd_svc.apply_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
+    # Default: cold-start (not a reload).  Tests that want reload behaviour
+    # must set coordinator._is_reload = True explicitly.
+    coordinator._is_reload = False
 
     coordinator._is_in_startup_grace_period = MagicMock(
         return_value=in_startup_grace_period
@@ -307,6 +310,101 @@ class TestFirstRefreshSendsStartupCommands:
         )
 
         coordinator._cmd_svc.apply_position.assert_not_called()
+        assert coordinator.first_refresh is False
+
+    @pytest.mark.asyncio
+    async def test_reload_during_time_window_does_not_move_covers(self):
+        """On config-entry reload, first-refresh must NOT move non-safety covers.
+
+        Issue #187: reloading the integration during the day (inside the time
+        window) triggered a move to default position (100%) because the
+        first-refresh dispatch path was not distinguished from a cold HA boot.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=100,
+            control_method=ControlMethod.DEFAULT,
+            bypass_auto_control=False,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind_1", "cover.blind_2"],
+            pipeline_result=result,
+        )
+        coordinator.first_refresh = True
+        coordinator._is_reload = True  # simulate daytime options-flow reload
+        coordinator.check_adaptive_time = True  # inside time window
+
+        await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+            coordinator, state=100, options={}
+        )
+
+        coordinator._cmd_svc.apply_position.assert_not_called()
+        assert coordinator.first_refresh is False
+        assert coordinator._is_reload is False
+
+    @pytest.mark.asyncio
+    async def test_reload_still_dispatches_on_active_safety_override(self):
+        """Safety overrides (force/weather) must still fire on config-entry reload.
+
+        Even when _is_reload=True, a force-override or weather handler that sets
+        bypass_auto_control=True must move the cover immediately.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=0,
+            control_method=ControlMethod.FORCE,
+            bypass_auto_control=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind_1"],
+            pipeline_result=result,
+        )
+        coordinator.first_refresh = True
+        coordinator._is_reload = True  # simulate reload
+        coordinator.check_adaptive_time = True
+
+        await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+            coordinator, state=0, options={}
+        )
+
+        coordinator._cmd_svc.apply_position.assert_called_once()
+        assert coordinator.first_refresh is False
+
+    @pytest.mark.asyncio
+    async def test_cold_start_during_time_window_still_dispatches(self):
+        """Cold HA boot inside the time window must still send startup commands.
+
+        Regression guard: _is_reload=False (cold start) must preserve the
+        existing first-refresh dispatch so covers track the sun from boot.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=65,
+            control_method=ControlMethod.SOLAR,
+            bypass_auto_control=False,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind_1", "cover.blind_2"],
+            pipeline_result=result,
+        )
+        coordinator.first_refresh = True
+        coordinator._is_reload = False  # cold start
+        coordinator.check_adaptive_time = True
+
+        await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+            coordinator, state=65, options={}
+        )
+
+        assert coordinator._cmd_svc.apply_position.call_count == 2
         assert coordinator.first_refresh is False
 
 

@@ -78,6 +78,7 @@ This integration builds upon the template sensor from this forum post [Automatic
     - When ANY sensor is active, ALL covers move to a configured safe position
     - Default position: 0% (fully retracted/closed) for rain/wind protection
     - Customizable position: Set to 100% for security sensors (emergency access)
+    - **Minimum position mode**: optionally treat the override position as a floor — covers won't go below it but solar tracking can still open them higher
     - Manual control still works during force override
   - **Motion-Based Automatic Control** - Occupancy-based automation
     - Configure motion sensors to enable/disable sun positioning based on room occupancy
@@ -201,7 +202,7 @@ Decision Priority (highest wins, ✅ active ❌ not configured)
 
 ## Modes
 
-This component supports two calculation modes — **Basic** and **Climate** — both wrapped by a shared override pipeline. The pipeline evaluates handlers in priority order; the first handler that produces a result wins.
+This component supports two calculation modes — **Basic** and **Climate** — both wrapped by a shared override pipeline. Every handler is evaluated each cycle; the highest-priority handler that produces a result wins the cover position.
 
 ### Override pipeline
 
@@ -209,10 +210,10 @@ Regardless of which calculation mode is active, every position decision passes t
 
 | Priority | Override | Behavior |
 |----------|----------|----------|
-| 100 | **Force override** | Binary sensor(s) force cover to a fixed position — no other logic runs |
-| 90 | **Weather override** | Wind speed, rain rate, or severe-weather binary sensors exceed configured thresholds; covers retract to a safe position, bypassing automatic control |
+| 100 | **Force override** | Binary sensor(s) force cover to a fixed position (or a minimum floor if minimum position mode is enabled) |
+| 90 | **Weather override** | Wind speed, rain rate, or severe-weather binary sensors exceed configured thresholds; covers retract to a safe position (or minimum floor), bypassing automatic control |
 | 80 | **Manual override** | If the user physically moved the cover, automatic control is paused |
-| 1–99 | **Custom position** | Up to 4 configurable binary-sensor/position pairs; when a sensor is on, the cover moves to the configured position. Each slot has an individual priority (default 77) |
+| 1–99 | **Custom position** | Up to 4 configurable binary-sensor/position pairs; when a sensor is on, the cover moves to the configured position (or uses it as a minimum floor). Each slot has an individual priority (default 77) |
 | 75 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
 | 60 | **Cloud suppression** | Lux, irradiance, cloud coverage, or weather state indicates no direct sun; solar tracking is skipped and cover returns to default |
 | 50 | **Climate** | Active when Climate mode is enabled — applies temperature/presence/light strategy (see below) |
@@ -361,6 +362,8 @@ The Minimal Position and Maximum Position settings create boundaries for automat
 
 **Most users should leave these toggles UNCHECKED** for consistent protection and predictable behavior. The "checked" option is for advanced users who want limits to apply only during active sun tracking, allowing more flexibility during other times.
 
+> **Note:** The configured **sunset position** is always exempt from min/max position limits — it is sent as-is regardless of these toggles, so your covers can fully close (or open) at night even if a minimum position is set.
+
 **Common use cases:**
 - **Minimum Position** (e.g., 20%): Prevents cover from fully closing, maintains some natural light, protects from jamming at bottom
 - **Maximum Position** (e.g., 80%): Prevents cover from fully opening, maintains some privacy/shade, protects from jamming at top
@@ -473,6 +476,7 @@ Up to 4 custom position slots, each pairing a binary sensor with a fixed cover p
 | Custom Position Sensor 1–4 | None | | Binary sensor entity. When `on`, triggers the custom position for that slot. |
 | Custom Position 1–4 | 0 | 0–100 | Cover position (%) to move to when the sensor is active. |
 | Custom Position Priority 1–4 | 77 | 1–99 | Pipeline evaluation priority for this slot. Higher = evaluated before lower-numbered handlers. Multiple slots are evaluated in descending priority order. |
+| Minimum Mode 1–4 | Off | | When enabled, the position acts as a minimum floor — the cover won't go below it, but higher positions from solar tracking or other handlers are still allowed through. When disabled (default), the cover is always set to exactly the configured position. |
 
 **Example use cases:**
 - A bedroom schedule sensor forces blinds closed (0%) for an afternoon nap
@@ -495,6 +499,7 @@ The Weather Override handler (priority 90) moves covers to a safe retract positi
 | Is Windy Sensor | None | | Binary sensor that activates the override when `on`. |
 | Severe Weather Sensors | None | | List of additional binary sensors (storm, hail, etc.) — any `on` triggers the override. |
 | Weather Override Position | 0 | 0–100 | Cover position (%) to move to when any condition is active. Default 0% = fully retracted/closed. |
+| Minimum Position Mode | Off | | When enabled, the override position acts as a minimum floor — the cover won't close below it, but higher positions from solar tracking are still allowed. When disabled (default), the cover is always sent to the exact override position. |
 | Recovery Timeout | 0 s | 0–3600 | Seconds to wait after all conditions clear before resuming automatic control. Prevents covers from rapidly cycling when conditions are borderline. |
 | Bypass Automatic Control | True | | When `on`, weather override fires even if Automatic Control is disabled. Ensures safety-critical retraction always happens. |
 
@@ -652,7 +657,7 @@ State: current automation status — `active`, `automatic_control_off`, `manual_
 
 State: the winning pipeline handler — `solar`, `default`, `manual_override`, `force_override`, `motion_timeout`, `summer`, `winter`, or `unknown`.
 
-Shows the full reasoning of the override priority chain. Ten handlers are evaluated in priority order; the first handler to claim control wins. This is the most detailed view of *why* the cover is at its current position.
+Shows the full reasoning of the override priority chain. All ten handlers are evaluated every cycle; the highest-priority handler that matches wins the cover position, while other handlers still contribute sensor data (e.g. Climate Status is always populated). This is the most detailed view of *why* the cover is at its current position.
 
 | Attribute | Description |
 | --------- | ----------- |
@@ -1189,7 +1194,7 @@ All enhancements are verified to:
 #### Test Coverage
 
 - Dedicated tests for geometric accuracy
-- 1,461 total tests (all passing)
+- 1,795 total tests (all passing)
 - High code coverage on calculation engine
 
 ### Diagnostic Sensors

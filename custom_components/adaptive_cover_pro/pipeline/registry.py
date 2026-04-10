@@ -16,7 +16,13 @@ class PipelineRegistry:
         )
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
-        """Evaluate all handlers and return the first matching result.
+        """Evaluate all handlers and return the highest-priority matching result.
+
+        Every handler is evaluated regardless of priority so that optional data
+        fields (e.g. climate_data) are populated even when a higher-priority
+        handler wins the position.  The final PipelineResult carries the
+        winner's position/control_method/reason plus a field-level merge of
+        optional data from lower-priority handlers.
 
         Builds a full decision_trace of every handler evaluated.
 
@@ -24,60 +30,86 @@ class PipelineRegistry:
             RuntimeError: if no handler matches (DefaultHandler must always match).
 
         """
+        evaluated: list[tuple[OverrideHandler, PipelineResult | None]] = []
+        for handler in self._handlers:
+            evaluated.append((handler, handler.evaluate(snapshot)))
+
+        matches = [(h, r) for h, r in evaluated if r is not None]
+
+        if not matches:
+            raise RuntimeError(  # pragma: no cover
+                "Pipeline exhausted with no handler matching. "
+                "Ensure a DefaultHandler (priority=0, always matches) is registered."
+            )
+
+        winning_handler, winner = matches[0]
+
+        # Build decision trace.  The winning handler is marked matched=True.
+        # Handlers that evaluated and produced a result but were outprioritized
+        # are marked matched=False with an explanatory reason.  Handlers that
+        # returned None get their own describe_skip() reason.
         trace: list[DecisionStep] = []
-
-        for index, handler in enumerate(self._handlers):
-            result = handler.evaluate(snapshot)
-
+        for handler, result in evaluated:
             if result is not None:
+                if handler is winning_handler:
+                    trace.append(
+                        DecisionStep(
+                            handler=handler.name,
+                            matched=True,
+                            reason=result.reason,
+                            position=result.position,
+                        )
+                    )
+                else:
+                    trace.append(
+                        DecisionStep(
+                            handler=handler.name,
+                            matched=False,
+                            reason=f"outprioritized by {winning_handler.name}",
+                            position=result.position,
+                        )
+                    )
+            else:
                 trace.append(
                     DecisionStep(
                         handler=handler.name,
-                        matched=True,
-                        reason=result.reason,
-                        position=result.position,
+                        matched=False,
+                        reason=handler.describe_skip(snapshot),
+                        position=None,
                     )
                 )
-                for skipped in self._handlers[index + 1 :]:
-                    trace.append(
-                        DecisionStep(
-                            handler=skipped.name,
-                            matched=False,
-                            reason="skipped (higher priority matched)",
-                            position=None,
-                        )
-                    )
-                return PipelineResult(
-                    position=result.position,
-                    control_method=result.control_method,
-                    reason=result.reason,
-                    decision_trace=trace,
-                    tilt=result.tilt,
-                    raw_calculated_position=result.raw_calculated_position,
-                    climate_state=result.climate_state,
-                    climate_strategy=result.climate_strategy,
-                    climate_data=result.climate_data,
-                    bypass_auto_control=result.bypass_auto_control,
-                    # Propagate sunset-window flags from the snapshot.
-                    # NOTE: configured_default and configured_sunset_pos are
-                    # intentionally left at their defaults (0 / None) here.
-                    # The coordinator annotates them via dataclasses.replace()
-                    # after evaluation so they never appear in the snapshot
-                    # that handlers can read.
-                    default_position=snapshot.default_position,
-                    is_sunset_active=snapshot.is_sunset_active,
-                )
 
-            trace.append(
-                DecisionStep(
-                    handler=handler.name,
-                    matched=False,
-                    reason=handler.describe_skip(snapshot),
-                    position=None,
-                )
-            )
+        # Field-level merge: fill None optional fields on the winner's result
+        # from lower-priority handlers.  This allows sensor-populating data
+        # (e.g. climate_data) to surface even when the climate handler doesn't
+        # win the position.  Winner's values always take precedence.
+        _MERGEABLE = ("climate_state", "climate_strategy", "climate_data", "tilt")
+        merged: dict[str, object] = {}
+        for field_name in _MERGEABLE:
+            if getattr(winner, field_name) is None:
+                for _, other in matches[1:]:
+                    val = getattr(other, field_name)
+                    if val is not None:
+                        merged[field_name] = val
+                        break
 
-        raise RuntimeError(  # pragma: no cover
-            "Pipeline exhausted with no handler matching. "
-            "Ensure a DefaultHandler (priority=0, always matches) is registered."
+        return PipelineResult(
+            position=winner.position,
+            control_method=winner.control_method,
+            reason=winner.reason,
+            decision_trace=trace,
+            tilt=merged.get("tilt", winner.tilt),  # type: ignore[arg-type]
+            raw_calculated_position=winner.raw_calculated_position,
+            climate_state=merged.get("climate_state", winner.climate_state),  # type: ignore[arg-type]
+            climate_strategy=merged.get("climate_strategy", winner.climate_strategy),  # type: ignore[arg-type]
+            climate_data=merged.get("climate_data", winner.climate_data),
+            bypass_auto_control=winner.bypass_auto_control,
+            # Propagate sunset-window flags from the snapshot.
+            # NOTE: configured_default and configured_sunset_pos are
+            # intentionally left at their defaults (0 / None) here.
+            # The coordinator annotates them via dataclasses.replace()
+            # after evaluation so they never appear in the snapshot
+            # that handlers can read.
+            default_position=snapshot.default_position,
+            is_sunset_active=snapshot.is_sunset_active,
         )

@@ -250,8 +250,8 @@ class TestClimateDataPropagation:
         assert isinstance(result.climate_data, ClimateCoverData)
         assert result.climate_data.is_summer is True
 
-    def test_registry_climate_data_none_when_non_climate_handler_wins(self) -> None:
-        """climate_data is None on registry result when a non-climate handler wins."""
+    def test_registry_climate_data_populated_when_non_climate_handler_wins(self) -> None:
+        """climate_data is populated even when a non-climate handler wins (#182)."""
         snap = make_snapshot(
             manual_override_active=True,
             climate_mode_enabled=True,
@@ -260,7 +260,8 @@ class TestClimateDataPropagation:
         )
         result = self.registry.evaluate(snap)
         assert result.control_method.name == "MANUAL"
-        assert result.climate_data is None
+        assert result.climate_data is not None
+        assert result.climate_data.is_summer is True
 
     def test_registry_copies_tilt_from_winning_handler(self) -> None:
         """Registry result copies tilt field from the winning handler's result."""
