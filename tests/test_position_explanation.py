@@ -767,7 +767,7 @@ class TestPositionExplanationChangeDetection:
         coord._cover_type = "cover_blind"
         coord.last_update_success = True
         coord.last_exception = None
-        coord.last_update_success_time = None
+        coord._last_update_success_time = None
         coord.update_interval = None
 
         # Bind the real method

@@ -328,6 +328,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
 
+        # Time of the last successful _async_update_data() completion.
+        # HA's DataUpdateCoordinator only exposes last_update_success (bool);
+        # we track the timestamp ourselves so diagnostics can report it.
+        self._last_update_success_time: dt.datetime | None = None
+
     # --- Property delegates for CoverCommandService state ---
 
     @property
@@ -1022,6 +1027,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
 
+        # Record successful update time (after build_diagnostic_data so the
+        # diagnostic for this cycle reports the *previous* completed success).
+        self._last_update_success_time = dt.datetime.now(dt.UTC)
+
         # Determine glare_active from last calculation details (vertical covers only)
         glare_active = False
         if hasattr(self._cover_data, "_last_calc_details"):
@@ -1611,7 +1620,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         }
 
         # Coordinator update health
-        _last_success_time = self.last_update_success_time
+        _last_success_time = self._last_update_success_time
         _last_exc = self.last_exception
 
         ctx = DiagnosticContext(
