@@ -158,6 +158,11 @@ class CoverCommandService:
         # daytime targets are not resent overnight.
         self._in_time_window: bool = True
 
+        # Master kill switch — when False, ALL outbound cover commands are blocked,
+        # including safety handlers (force override, weather) and reconciliation.
+        # Synced by the coordinator each update cycle from the Integration Enabled switch.
+        self._enabled: bool = True
+
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
 
@@ -276,6 +281,21 @@ class CoverCommandService:
         """
         self._in_time_window = value
 
+    @property
+    def enabled(self) -> bool:
+        """Whether the integration is enabled (master kill switch)."""
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        """Update the integration enabled flag.
+
+        When False, ALL outbound cover commands are blocked — including safety
+        handlers (force override, weather) and reconciliation.  Synced by the
+        coordinator each update cycle from the Integration Enabled switch.
+        """
+        self._enabled = value
+
     def clear_non_safety_targets(self) -> None:
         """Remove non-safety target_call entries so stale targets cannot be resent.
 
@@ -296,6 +316,68 @@ class CoverCommandService:
                 len(stale),
                 stale,
             )
+
+    # ------------------------------------------------------------------ #
+    # Stop helpers — bypass _enabled gate (shutdown / emergency paths)
+    # ------------------------------------------------------------------ #
+
+    async def stop_in_flight(
+        self, entities: set[str] | None = None
+    ) -> list[str]:
+        """Send stop_cover to every ACP-in-flight entity that supports STOP.
+
+        Intentionally bypasses the ``_enabled`` gate — this IS the shutdown path
+        and must fire before the gate closes.
+
+        Args:
+            entities: Optional subset of entity_ids to consider.  None = all
+                      entries in wait_for_target.
+
+        Returns:
+            List of entity_ids that were actually stopped.
+
+        """
+        stopped: list[str] = []
+        candidates = {
+            eid
+            for eid, waiting in self.wait_for_target.items()
+            if waiting and (entities is None or eid in entities)
+        }
+        for eid in candidates:
+            caps = check_cover_features(self._hass, eid)
+            if caps and caps.get("has_stop"):
+                await self._hass.services.async_call(
+                    "cover", "stop_cover", {"entity_id": eid}
+                )
+                self.wait_for_target[eid] = False
+                self._sent_at.pop(eid, None)
+                stopped.append(eid)
+                self._logger.debug("stop_in_flight: stopped %s", eid)
+        return stopped
+
+    async def stop_all(self, entity_ids: list[str]) -> list[str]:
+        """Send stop_cover to every entity in entity_ids that supports STOP.
+
+        Used by emergency_stop — does NOT check wait_for_target (blanket stop).
+        Intentionally bypasses the ``_enabled`` gate.
+
+        Args:
+            entity_ids: List of cover entity_ids to stop.
+
+        Returns:
+            List of entity_ids that were actually stopped.
+
+        """
+        stopped: list[str] = []
+        for eid in entity_ids:
+            caps = check_cover_features(self._hass, eid)
+            if caps and caps.get("has_stop"):
+                await self._hass.services.async_call(
+                    "cover", "stop_cover", {"entity_id": eid}
+                )
+                stopped.append(eid)
+                self._logger.debug("stop_all: stopped %s", eid)
+        return stopped
 
     # ------------------------------------------------------------------ #
     # Threshold update (called by coordinator on options change)
@@ -471,6 +553,19 @@ class CoverCommandService:
         _trigger = reason
         _inverse = context.inverse_state
         _current = self._get_current_position(entity_id)
+
+        # Hard kill switch — blocks ALL commands, including safety overrides and
+        # force=True calls.  Must be checked before the context.force branch.
+        if not self._enabled:
+            return self._skip(
+                entity_id,
+                "integration_disabled",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+
         if not context.force:
             if not context.auto_control:
                 return self._skip(
@@ -651,6 +746,10 @@ class CoverCommandService:
         # Coordinator hook: time window transition checks, etc.
         if self._on_tick is not None:
             await self._on_tick(now)
+
+        # Hard kill switch — skip ALL reconciliation when integration is disabled.
+        if not self._enabled:
+            return
 
         for entity_id, target in list(self.target_call.items()):
             self._last_reconcile_time[entity_id] = now
