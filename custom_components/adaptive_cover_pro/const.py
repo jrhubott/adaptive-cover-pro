@@ -120,6 +120,25 @@ CONF_MANUAL_THRESHOLD = "manual_threshold"
 CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
 CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
 
+# Debug & Diagnostics
+CONF_DEBUG_MODE = "debug_mode"
+CONF_DEBUG_CATEGORIES = "debug_categories"
+CONF_DEBUG_EVENT_BUFFER_SIZE = "debug_event_buffer_size"
+
+DEBUG_CATEGORY_MANUAL_OVERRIDE = "manual_override"
+DEBUG_CATEGORY_RECONCILIATION = "reconciliation"
+DEBUG_CATEGORY_PIPELINE = "pipeline"
+DEBUG_CATEGORY_MOTION = "motion"
+DEBUG_CATEGORIES_ALL = [
+    DEBUG_CATEGORY_MANUAL_OVERRIDE,
+    DEBUG_CATEGORY_RECONCILIATION,
+    DEBUG_CATEGORY_PIPELINE,
+    DEBUG_CATEGORY_MOTION,
+]
+
+DEFAULT_DEBUG_EVENT_BUFFER_SIZE = 50
+MAX_DEBUG_EVENT_BUFFER_SIZE = 200
+
 # Position verification constants (fixed values, not configurable)
 POSITION_CHECK_INTERVAL_MINUTES = 1  # Fixed interval for position verification
 POSITION_TOLERANCE_PERCENT = 3  # Fixed tolerance for position matching

@@ -1143,6 +1143,39 @@ Sun visibility transition detected: ON → OFF (sun left field of view)
 
 Each log entry is prefixed with the device name so you can filter by device in multi-instance setups.
 
+### Debug Mode (No YAML Required)
+
+For targeted troubleshooting — especially manual override detection issues — use the built-in **Debug Mode** instead of editing `configuration.yaml`.
+
+**How to enable:**
+1. Open the integration options → scroll to **Admin** → select **🔍 Debug & Diagnostics**
+2. Toggle **Enable Debug Mode** on
+3. Select which **Log Categories** to trace:
+   - **Manual Override** — detection decisions, grace period, wait-for-target (most useful for "cover won't respect manual control" issues)
+   - **Reconciliation** — the 1-minute position retry loop
+   - **Pipeline** — the priority handler chain decisions
+   - **Motion** — motion sensor events and timeout state
+4. Adjust the **event buffer size** if needed (default 50 events, up to 200)
+5. Save
+
+**What it does:**
+- Selected categories are logged at **INFO level**, so they appear in the HA log without the global debug setting
+- A rolling ring buffer of manual-override decisions is kept in memory and included in every diagnostics download
+
+**How to collect a bug report:**
+1. Enable Debug Mode and select the relevant categories
+2. Reproduce the issue (move the cover manually, wait for incorrect behavior)
+3. Go to **Settings → Devices & Services → Adaptive Cover Pro** → select the affected cover → **Download Diagnostics**
+4. Attach the downloaded JSON to the GitHub issue
+
+The most useful sections in the diagnostics JSON are:
+- `manual_override_history` — every override decision: set / reset / rejected, with position values, threshold, and reason
+- `cover_command_state` — per-entity snapshot of `target_call`, `wait_for_target`, retry count, safety target, and last command time
+
+**When to disable:** Turn Debug Mode off after collecting data — INFO-level logs are persistent and the ring buffer uses a small amount of memory per event.
+
+**Privacy:** Diagnostics contain entity IDs and position history but no credentials or location data — safe to attach to public GitHub issues.
+
 ## Enhanced Geometric Accuracy
 
 Adaptive Cover Pro includes sophisticated geometric calculations to ensure accurate sun blocking even at extreme sun angles. These improvements work automatically - no configuration required.
