@@ -671,6 +671,39 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 return
 
                 # Non-transitional state, cover stalled, or moved away from target.
+                #
+                # Special case — step-motor shades (Issue #186): some covers
+                # briefly report "open" at an intermediate position between
+                # motor pulses before resuming transit.  If the *new* state is
+                # non-transitional ("open"/"closed") and the *old* state was
+                # transitional ("opening"/"closing"), the cover just paused
+                # mid-transit.  Restart the grace period to allow the motor to
+                # resume without triggering a false manual override.
+                # This does NOT apply to stalls (opening→opening still at same
+                # position), which fall through here with cover_is_transitioning=True.
+                was_transitioning = (
+                    event.old_state is not None
+                    and event.old_state.state in ("opening", "closing")
+                )
+                target = self._cmd_svc.target_call.get(entity_id)
+                if (
+                    not cover_is_transitioning
+                    and was_transitioning
+                    and target is not None
+                    and position is not None
+                    and position != target
+                ):
+                    self._start_grace_period(entity_id)
+                    self.logger.debug(
+                        "Cover %s paused mid-transit at %s (target %s) "
+                        "— restarting grace period",
+                        entity_id,
+                        position,
+                        target,
+                    )
+                    self.logger.debug("Wait for target: %s", self.wait_for_target)
+                    return
+
                 # Clear wait_for_target to allow manual override detection.
                 self._cmd_svc.wait_for_target[entity_id] = False
                 self.logger.debug(

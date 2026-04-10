@@ -122,6 +122,9 @@ def _make_coordinator(
     coordinator._is_in_grace_period = (
         lambda eid: AdaptiveDataUpdateCoordinator._is_in_grace_period(coordinator, eid)
     )
+    coordinator._start_grace_period = (
+        lambda eid: AdaptiveDataUpdateCoordinator._start_grace_period(coordinator, eid)
+    )
 
     return coordinator
 
@@ -311,12 +314,17 @@ class TestStopDetection:
         assert coord._cmd_svc.wait_for_target[entity_id] is False
 
     def test_cover_open_state_not_at_target_clears_wait_for_target(self) -> None:
-        """Cover reporting 'open' state at a position different from target clears wait."""
+        """Cover reporting 'open' at a non-target position clears wait when old state was also open.
+
+        If the old state was not transitional (also "open"), the cover settled
+        somewhere it shouldn't — not a mid-transit pause.
+        """
         entity_id = "cover.blind"
         coord = _make_coordinator(
             entity_id, target_position=75, current_position=100, old_position=95,
             new_state_str="open",
         )
+        # old_state defaults to same as new_state_str ("open") — not transitional
         _call(coord)
         assert coord._cmd_svc.wait_for_target[entity_id] is False
 
@@ -327,6 +335,97 @@ class TestStopDetection:
             entity_id, target_position=50, current_position=0, old_position=5,
             new_state_str="closed",
         )
+        _call(coord)
+        assert coord._cmd_svc.wait_for_target[entity_id] is False
+
+
+# ===========================================================================
+# Issue #186: step-motor shades pause mid-transit (opening → open → opening)
+# ===========================================================================
+
+
+class TestStepMotorIntermediatePause:
+    """Step-motor shades briefly report 'open' at an intermediate position between
+    motor pulses.  This must NOT trigger a false manual override (Issue #186).
+
+    The cover transitions opening→open at a position that is not the target.
+    The fix: restart the grace period so the next opening burst is still protected.
+    """
+
+    @pytest.mark.asyncio
+    async def test_opening_to_open_mid_transit_restarts_grace_period(self) -> None:
+        """Cover pausing mid-transit (opening→open, not at target) keeps wait_for_target.
+
+        Scenario: commanded to 100%, grace expired, cover was opening at 46%,
+        now briefly settles to open at 51%.  Should restart grace period.
+        """
+        entity_id = "cover.patio_shade"
+        coord = _make_coordinator(
+            entity_id, target_position=100, current_position=51, old_position=46,
+            new_state_str="open",
+        )
+        # Simulate the cover was in "opening" state before this event
+        coord.state_change_data.old_state.state = "opening"
+        _call(coord)
+        # wait_for_target must remain True (grace period restarted)
+        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        # Grace period must have been restarted
+        assert coord._grace_mgr.is_in_command_grace_period(entity_id)
+
+    @pytest.mark.asyncio
+    async def test_closing_to_open_mid_transit_restarts_grace_period(self) -> None:
+        """Closing cover pausing mid-transit (closing→open) also restarts grace period."""
+        entity_id = "cover.patio_shade"
+        coord = _make_coordinator(
+            entity_id, target_position=20, current_position=40, old_position=50,
+            new_state_str="open",
+        )
+        coord.state_change_data.old_state.state = "closing"
+        _call(coord)
+        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._grace_mgr.is_in_command_grace_period(entity_id)
+
+    def test_stall_opening_to_opening_unchanged_position_clears_wait_for_target(self) -> None:
+        """A genuine stall (opening→opening, position unchanged) must still clear wait_for_target.
+
+        This is the case where the cover reports opening twice at the same position —
+        a hardware stall, not a motor-pulse pause.
+        """
+        entity_id = "cover.patio_shade"
+        coord = _make_coordinator(
+            entity_id, target_position=100, current_position=51, old_position=51,
+            new_state_str="opening",
+            sent_seconds_ago=15.0,
+        )
+        coord.state_change_data.old_state.state = "opening"
+        _call(coord)
+        assert coord._cmd_svc.wait_for_target[entity_id] is False
+
+    def test_open_at_target_does_not_restart_grace_period(self) -> None:
+        """Cover reaching target position must not restart grace period (normal arrival)."""
+        entity_id = "cover.patio_shade"
+        coord = _make_coordinator(
+            entity_id, target_position=100, current_position=100, old_position=95,
+            new_state_str="open",
+        )
+        coord.state_change_data.old_state.state = "opening"
+        _call(coord)
+        # Target reached — wait_for_target cleared by check_target_reached
+        assert coord._cmd_svc.wait_for_target[entity_id] is False
+
+    def test_open_from_open_not_at_target_clears_wait_for_target(self) -> None:
+        """Cover reporting open→open (not opening→open) at non-target clears wait_for_target.
+
+        Old state was also 'open' (not transitional), so this is not a mid-transit
+        pause — it's a genuine stop.
+        """
+        entity_id = "cover.patio_shade"
+        coord = _make_coordinator(
+            entity_id, target_position=100, current_position=51, old_position=51,
+            new_state_str="open",
+        )
+        # old_state is "open" (not transitional) — not a step-motor pause
+        coord.state_change_data.old_state.state = "open"
         _call(coord)
         assert coord._cmd_svc.wait_for_target[entity_id] is False
 
