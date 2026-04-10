@@ -6,8 +6,6 @@ integration_enable:
   target:
     entity:
       integration: adaptive_cover_pro
-    device:
-      integration: adaptive_cover_pro
 
 integration_disable:
   name: Disable integration
@@ -17,8 +15,6 @@ integration_disable:
     timers are cancelled and reconciliation state is cleared.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
 
 emergency_stop:
@@ -30,8 +26,6 @@ emergency_stop:
     instances and all their covers.
   target:
     entity:
-      integration: adaptive_cover_pro
-    device:
       integration: adaptive_cover_pro
 
 export_config:

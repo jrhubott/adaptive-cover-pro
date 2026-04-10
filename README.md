@@ -631,7 +631,7 @@ If you have multiple ACP instances (one per room), these services let you contro
 | `adaptive_cover_pro.integration_disable` | Disables targeted instances. In-flight ACP moves are stopped immediately, timers cancelled, state cleared. |
 | `adaptive_cover_pro.emergency_stop` | **Panic button.** Sends `cover.stop_cover` to *every* configured cover on targeted instances (capability-checked), then disables the integration. With no target, acts on all ACP instances. |
 
-All three services accept the standard Home Assistant `target:` block — `entity_id`, `device_id`, or `area_id`. Covers not managed by ACP are silently ignored.
+All three services accept the standard Home Assistant `target:` block — `entity_id`, `device_id`, or `area_id`. The UI picker filters by ACP entities; you can also target by device or area in automations/scripts. Covers not managed by ACP are silently ignored.
 
 **Calling from Developer Tools:**
 
