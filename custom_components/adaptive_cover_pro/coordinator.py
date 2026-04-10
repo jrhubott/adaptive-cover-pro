@@ -918,6 +918,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
         self._cmd_svc.auto_control_enabled = self.automatic_control
         self._cmd_svc.in_time_window = self.check_adaptive_time
+        self._cmd_svc.enabled = self.enabled_toggle if self.enabled_toggle is not None else True
 
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
@@ -1641,6 +1642,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def return_to_default_toggle(self, value):
         """Set return to default toggle."""
         self._toggles.return_to_default_toggle = value
+
+    @property
+    def enabled_toggle(self):
+        """Integration enabled toggle — master kill switch — delegates to ToggleManager."""
+        return self._toggles.enabled_toggle
+
+    @enabled_toggle.setter
+    def enabled_toggle(self, value):
+        """Set integration enabled toggle."""
+        self._toggles.enabled_toggle = value
 
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
         """Check time window transitions — delegates to TimeWindowManager.

@@ -41,6 +41,12 @@
       }
     },
     "switch": {
+      "enabled_toggle": {
+        "default": "mdi:power",
+        "state": {
+          "off": "mdi:power-off"
+        }
+      },
       "automatic_control": {
         "default": "mdi:window-shutter-auto",
         "state": {

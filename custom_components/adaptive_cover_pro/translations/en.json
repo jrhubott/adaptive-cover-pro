@@ -973,6 +973,13 @@
       "glare_zone_3": {
         "name": "Glare Zone 4"
       },
+      "enabled_toggle": {
+        "name": "Integration Enabled",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
       "automatic_control": {
         "name": "Automatic Control",
         "state": {

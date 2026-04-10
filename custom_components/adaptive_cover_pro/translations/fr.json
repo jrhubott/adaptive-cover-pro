@@ -903,6 +903,13 @@
       "glare_zone_3": {
         "name": "Zone d'éblouissement 4"
       },
+      "enabled_toggle": {
+        "name": "Intégration activée",
+        "state": {
+          "on": "Activé",
+          "off": "Désactivé"
+        }
+      },
       "automatic_control": {
         "name": "Contrôle automatique",
         "state": {

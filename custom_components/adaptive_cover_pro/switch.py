@@ -37,6 +37,15 @@ async def async_setup_entry(
         config_entry.entry_id
     ]
 
+    enabled_switch = AdaptiveCoverSwitch(
+        config_entry.entry_id,
+        hass,
+        config_entry,
+        coordinator,
+        "Integration Enabled",
+        True,
+        "enabled_toggle",
+    )
     manual_switch = AdaptiveCoverSwitch(
         config_entry.entry_id,
         hass,
@@ -123,7 +132,7 @@ async def async_setup_entry(
     motion_sensors = config_entry.options.get(CONF_MOTION_SENSORS, [])
 
     # Always add control and manual switches for all cover types
-    switches = [control_switch, manual_switch]
+    switches = [enabled_switch, control_switch, manual_switch]
 
     # Add return to default switch for vertical and horizontal covers
     if sensor_type in ["cover_awning", "cover_blind"]:
@@ -233,6 +242,15 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self.coordinator.logger.debug("Turning off")
         self._attr_is_on = False
         setattr(self.coordinator, self._key, False)
+        if self._key == "enabled_toggle" and kwargs.get("added") is not True:
+            # Cancel any deferred motion/weather tasks so they don't fire after
+            # the integration is disabled, and clear all reconciliation state so
+            # nothing is resent automatically when re-enabling.
+            self.coordinator._cancel_motion_timeout()  # noqa: SLF001
+            self.coordinator._cancel_weather_timeout()  # noqa: SLF001
+            self.coordinator._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
+            self.coordinator._cmd_svc._safety_targets.clear()  # noqa: SLF001
+
         if self._key == "automatic_control" and kwargs.get("added") is not True:
             for entity in self.coordinator.manager.manual_controlled:
                 self.coordinator.manager.reset(entity)
