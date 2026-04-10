@@ -1030,5 +1030,19 @@
         "temperature_climate": "Temperature & Climate Mode"
       }
     }
+  },
+  "services": {
+    "integration_enable": {
+      "name": "Enable integration",
+      "description": "Re-enables Adaptive Cover Pro on the targeted instances. Covers stay where they are; positioning resumes on the next natural update cycle."
+    },
+    "integration_disable": {
+      "name": "Disable integration",
+      "description": "Disables Adaptive Cover Pro on the targeted instances. ACP-in-flight cover moves are stopped immediately, deferred timers cancelled, and reconciliation state cleared."
+    },
+    "emergency_stop": {
+      "name": "Emergency stop",
+      "description": "Panic button — sends stop_cover to every configured cover on the targeted instances (capability-checked), then disables the integration. With no target, acts on all ACP instances."
+    }
   }
 }
