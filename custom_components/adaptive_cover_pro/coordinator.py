@@ -571,8 +571,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # HA covers report transitional states ("opening"/"closing") while
                 # moving, then a final state ("stopped"/"open"/"closed") when done.
                 # If ignore_intermediate_states is True, those transitional events
-                # are already filtered out above (lines 508-513), so we only reach
-                # here with final states and always clear wait_for_target.
+                # are already filtered out above, so we only reach here with final
+                # states and always clear wait_for_target.
                 cover_is_transitioning = event.new_state.state in (
                     "opening",
                     "closing",
@@ -581,10 +581,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 if cover_is_transitioning:
                     # Hard backstop: if the command is older than
                     # TRANSIT_TIMEOUT_SECONDS the cover should have arrived.
-                    # Clear wait_for_target so that covers without a final
-                    # "stopped" state (position-only reporters) cannot block
-                    # manual override detection indefinitely when the user
-                    # stops them mid-transit.
+                    # Clear wait_for_target so covers cannot block manual override
+                    # detection indefinitely when stuck or stalled.
                     sent_at = self._cmd_svc._sent_at.get(entity_id)  # noqa: SLF001
                     if sent_at is not None:
                         elapsed = (dt.datetime.now(dt.UTC) - sent_at).total_seconds()
@@ -605,8 +603,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     # Cover is within the transit window — check direction.
                     # If the cover is moving closer to the target it is still
                     # responding to our command; keep wait_for_target=True.
-                    # If it moved away or stalled, clear it so manual override
-                    # detection can run (Issue #147 fix preserved).
+                    # If it moved away or stalled at the same position, clear
+                    # it so manual override detection can run (Issue #147).
+                    #
+                    # Special case — hardware startup delay (Issue #147 v2):
+                    # Some covers have a 10–30+ second delay before the motor
+                    # physically starts.  The first state event fires while the
+                    # cover is still at the pre-command position (old_pos ==
+                    # new_pos == 0 when commanding to 100%).  The state
+                    # transitions from a non-moving state (e.g. "closed") to
+                    # "opening", signalling that the command was received.
+                    # Distinguish this from a mid-transit stall (cover was
+                    # already "opening" but position hasn't changed) by checking
+                    # whether old_state was itself transitional: if not, the
+                    # cover just started and we should keep wait_for_target=True.
                     old_position = self._cmd_svc.read_position_with_capabilities(
                         entity_id, caps, event.old_state
                     )
@@ -619,11 +629,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     ):
                         old_distance = abs(old_position - target)
                         new_distance = abs(position - target)
+
                         if new_distance < old_distance:
-                            # Moving closer to target — still in transit.
+                            # Unambiguously moving toward target — still in transit.
                             self.logger.debug(
-                                "Grace expired but %s still moving toward target "
-                                "%s (was %s, now %s) — keeping wait_for_target",
+                                "Grace expired but %s still in transit toward "
+                                "target %s (was %s, now %s) — keeping wait_for_target",
                                 entity_id,
                                 target,
                                 old_position,
@@ -634,14 +645,38 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                             )
                             return
 
-                # Cover has stopped (non-transitional state), moved away from
-                # target, stalled (equal distances), or position data unavailable.
+                        if new_distance == old_distance:
+                            # Positions equal — could be startup delay or stall.
+                            # If old_state was not transitional the motor just
+                            # engaged; keep wait_for_target (startup delay).
+                            # If old_state was already opening/closing, the cover
+                            # stalled mid-transit; fall through to clear.
+                            old_state_str = (
+                                event.old_state.state
+                                if event.old_state is not None
+                                else None
+                            )
+                            if old_state_str not in ("opening", "closing"):
+                                self.logger.debug(
+                                    "Grace expired but %s position unchanged at %s "
+                                    "(startup delay — old state was %s) "
+                                    "— keeping wait_for_target",
+                                    entity_id,
+                                    position,
+                                    old_state_str,
+                                )
+                                self.logger.debug(
+                                    "Wait for target: %s", self.wait_for_target
+                                )
+                                return
+
+                # Non-transitional state, cover stalled, or moved away from target.
                 # Clear wait_for_target to allow manual override detection.
                 self._cmd_svc.wait_for_target[entity_id] = False
                 self.logger.debug(
-                    "Grace period expired, cover %s not at target and not in "
-                    "active transit — clearing wait_for_target to allow manual "
-                    "override detection (position=%s, state=%s)",
+                    "Grace period expired, cover %s not in transit "
+                    "— clearing wait_for_target "
+                    "(position=%s, state=%s)",
                     entity_id,
                     position,
                     event.new_state.state,
