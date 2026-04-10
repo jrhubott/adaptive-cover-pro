@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import dataclasses
+import json
+import pathlib
 from dataclasses import dataclass, replace
 
 import pytz
@@ -115,6 +118,10 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
+    CONF_DEBUG_CATEGORIES,
+    CONF_DEBUG_EVENT_BUFFER_SIZE,
+    CONF_DEBUG_MODE,
+    DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DOMAIN,
     LOGGER,
     STARTUP_GRACE_PERIOD_SECONDS,
@@ -156,6 +163,11 @@ from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
+
+
+_MANIFEST_VERSION: str = json.loads(
+    (pathlib.Path(__file__).parent / "manifest.json").read_text()
+)["version"]
 
 
 @dataclass
@@ -316,6 +328,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
 
+        # Time of the last successful _async_update_data() completion.
+        # HA's DataUpdateCoordinator only exposes last_update_success (bool);
+        # we track the timestamp ourselves so diagnostics can report it.
+        self._last_update_success_time: dt.datetime | None = None
+
     # --- Property delegates for CoverCommandService state ---
 
     @property
@@ -393,6 +410,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         return self._weather_mgr.is_weather_override_active
+
+    def _debug_log(self, category: str, msg: str, *args) -> None:
+        """Log at INFO when debug_mode is on and category is enabled, else DEBUG."""
+        options = self.config_entry.options
+        if options.get(CONF_DEBUG_MODE) and category in options.get(
+            CONF_DEBUG_CATEGORIES, []
+        ):
+            self.logger.info(msg, *args)
+        else:
+            self.logger.debug(msg, *args)
 
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
@@ -558,7 +585,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # any small positional difference is motor rounding, not a user
                 # action.  The set is cleared at the end of that handler.
                 self._target_just_reached.add(entity_id)
-                self.logger.debug(
+                self._debug_log(
+                    "manual_override",
                     "Target just reached for %s — skipping manual override check for this event",
                     entity_id,
                 )
@@ -588,7 +616,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         elapsed = (dt.datetime.now(dt.UTC) - sent_at).total_seconds()
                         if elapsed > TRANSIT_TIMEOUT_SECONDS:
                             self._cmd_svc.wait_for_target[entity_id] = False
-                            self.logger.debug(
+                            self._debug_log(
+                                "manual_override",
                                 "Transit timeout for %s (%.0fs > %ds) "
                                 "— clearing wait_for_target",
                                 entity_id,
@@ -632,7 +661,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
                         if new_distance < old_distance:
                             # Unambiguously moving toward target — still in transit.
-                            self.logger.debug(
+                            self._debug_log(
+                                "manual_override",
                                 "Grace expired but %s still in transit toward "
                                 "target %s (was %s, now %s) — keeping wait_for_target",
                                 entity_id,
@@ -657,7 +687,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 else None
                             )
                             if old_state_str not in ("opening", "closing"):
-                                self.logger.debug(
+                                self._debug_log(
+                                    "manual_override",
                                     "Grace expired but %s position unchanged at %s "
                                     "(startup delay — old state was %s) "
                                     "— keeping wait_for_target",
@@ -694,7 +725,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     and position != target
                 ):
                     self._start_grace_period(entity_id)
-                    self.logger.debug(
+                    self._debug_log(
+                        "manual_override",
                         "Cover %s paused mid-transit at %s (target %s) "
                         "— restarting grace period",
                         entity_id,
@@ -706,7 +738,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
                 # Clear wait_for_target to allow manual override detection.
                 self._cmd_svc.wait_for_target[entity_id] = False
-                self.logger.debug(
+                self._debug_log(
+                    "manual_override",
                     "Grace period expired, cover %s not in transit "
                     "— clearing wait_for_target "
                     "(position=%s, state=%s)",
@@ -993,6 +1026,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
+
+        # Record successful update time (after build_diagnostic_data so the
+        # diagnostic for this cycle reports the *previous* completed success).
+        self._last_update_success_time = dt.datetime.now(dt.UTC)
 
         # Determine glare_active from last calculation details (vertical covers only)
         glare_active = False
@@ -1545,6 +1582,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result
+
+        # Live cover positions and capabilities
+        cover_entities = self.entities or []
+        _positions = self._cover_provider.read_positions(cover_entities, self._cover_type)
+        _caps = self._cover_provider.read_all_capabilities(cover_entities)
+        _covers = {
+            eid: {
+                "current_position": _positions.get(eid),
+                "available": _positions.get(eid) is not None,
+                "capabilities": dataclasses.asdict(_caps[eid]) if eid in _caps else None,
+            }
+            for eid in cover_entities
+        }
+
+        # Per-entity manual override live state
+        _now = dt.datetime.now(dt.UTC)
+        _reset_secs = self.manager.reset_duration.total_seconds()
+        _mo_entries = {}
+        for eid in self.manager.covers:
+            active = self.manager.manual_control.get(eid, False)
+            started_at = self.manager.manual_control_time.get(eid)
+            if started_at is not None:
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=dt.UTC)
+                elapsed = (_now - started_at).total_seconds()
+                remaining = max(0, _reset_secs - elapsed)
+                _mo_entries[eid] = {
+                    "active": active,
+                    "started_at": started_at.isoformat(),
+                    "remaining_seconds": int(remaining),
+                }
+        _manual_override_state = {
+            "reset_duration_seconds": int(_reset_secs),
+            "tracked_covers": sorted(self.manager.covers),
+            "entries": _mo_entries,
+        }
+
+        # Coordinator update health
+        _last_success_time = self._last_update_success_time
+        _last_exc = self.last_exception
+
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
             cover=self._cover_data,
@@ -1573,6 +1651,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force_override_position=self.config_entry.options.get(
                 CONF_FORCE_OVERRIDE_POSITION, 0
             ),
+            manual_override_events=self.manager.get_event_buffer() or None,
+            cover_command_state=self._cmd_svc.get_all_entity_state_snapshots() or None,
+            debug_config={
+                "debug_mode": self.config_entry.options.get(CONF_DEBUG_MODE, False),
+                "debug_categories": self.config_entry.options.get(
+                    CONF_DEBUG_CATEGORIES, []
+                ),
+                "debug_event_buffer_size": self.config_entry.options.get(
+                    CONF_DEBUG_EVENT_BUFFER_SIZE, DEFAULT_DEBUG_EVENT_BUFFER_SIZE
+                ),
+            },
+            # New meta fields
+            integration_version=_MANIFEST_VERSION,
+            cover_type=self._cover_type,
+            last_update_success=self.last_update_success,
+            last_exception_repr=repr(_last_exc) if _last_exc is not None else None,
+            last_update_success_time_iso=(
+                _last_success_time.isoformat() if _last_success_time is not None else None
+            ),
+            update_interval_seconds=(
+                self.update_interval.total_seconds()
+                if self.update_interval is not None else None
+            ),
+            covers=_covers,
+            manual_override_state=_manual_override_state,
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)

@@ -185,3 +185,32 @@ async def test_motion_sensors_wired_as_listeners(hass: HomeAssistant) -> None:
     opts[CONF_MOTION_SENSORS] = ["binary_sensor.presence"]
     entry = await _setup(hass, options=opts, entry_id="wire_motion_01")
     assert entry.entry_id in hass.data[DOMAIN]
+
+
+# ---------------------------------------------------------------------------
+# Regression: _last_update_success_time attribute must exist on real instances
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) -> None:
+    """Regression: coordinator must own _last_update_success_time.
+
+    HA's DataUpdateCoordinator does NOT expose last_update_success_time; we
+    track it ourselves.  A missing attribute causes build_diagnostic_data()
+    (called every update cycle) to raise AttributeError and crash all cover
+    updates.  This test catches any future accidental rename.
+    """
+    entry = await _setup(hass, entry_id="lust_01")
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Attribute must exist on a real (non-mocked) instance.
+    assert hasattr(coordinator, "_last_update_success_time"), (
+        "AdaptiveDataUpdateCoordinator is missing _last_update_success_time; "
+        "build_diagnostic_data() will crash every update cycle"
+    )
+    # Value is None (no successful cycle yet) or a UTC datetime — both valid.
+    import datetime as _dt
+    val = coordinator._last_update_success_time
+    assert val is None or isinstance(val, _dt.datetime), (
+        f"_last_update_success_time must be None or datetime, got {type(val)}"
+    )

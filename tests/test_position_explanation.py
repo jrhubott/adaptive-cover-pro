@@ -752,6 +752,23 @@ class TestPositionExplanationChangeDetection:
         type(coord).is_motion_detected = PropertyMock(return_value=True)
         coord._motion_mgr = MagicMock()
         coord._motion_mgr._motion_timeout_active = False
+        coord.manager = MagicMock()
+        coord.manager.get_event_buffer.return_value = []
+        coord.manager.covers = set()
+        coord.manager.manual_control = {}
+        coord.manager.manual_control_time = {}
+        coord.manager.reset_duration = __import__("datetime").timedelta(hours=2)
+        coord._cmd_svc = MagicMock()
+        coord._cmd_svc.get_all_entity_state_snapshots.return_value = {}
+        coord.entities = []
+        coord._cover_provider = MagicMock()
+        coord._cover_provider.read_positions.return_value = {}
+        coord._cover_provider.read_all_capabilities.return_value = {}
+        coord._cover_type = "cover_blind"
+        coord.last_update_success = True
+        coord.last_exception = None
+        coord._last_update_success_time = None
+        coord.update_interval = None
 
         # Bind the real method
         coord.build_diagnostic_data = (

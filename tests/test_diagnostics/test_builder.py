@@ -12,7 +12,8 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
 )
-from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+import datetime as dt
+from custom_components.adaptive_cover_pro.pipeline.types import DecisionStep, PipelineResult
 from custom_components.adaptive_cover_pro.const import ControlStatus
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
@@ -705,6 +706,10 @@ class TestFullBuild:
         assert "sun_validity" in diag
         assert "configuration" in diag
         assert "position_explanation" in diag
+        assert "meta" in diag
+        assert "decision_trace" in diag
+        assert "covers" in diag
+        assert "cover_commands" in diag
         assert isinstance(explanation, str)
         assert len(explanation) > 0
 
@@ -712,3 +717,216 @@ class TestFullBuild:
         """The explanation returned as second element matches the one in dict."""
         diag, explanation = builder.build(_base_ctx())
         assert diag["position_explanation"] == explanation
+
+
+# ---------------------------------------------------------------------------
+# Meta section
+# ---------------------------------------------------------------------------
+
+
+class TestMeta:
+    """Tests for the meta section (integration version, cover type, update health)."""
+
+    def test_meta_section_present(self, builder: DiagnosticsBuilder):
+        """meta key is always present in output."""
+        diag, _ = builder.build(_base_ctx())
+        assert "meta" in diag
+
+    def test_meta_integration_version(self, builder: DiagnosticsBuilder):
+        """integration_version is surfaced from context."""
+        ctx = _base_ctx(integration_version="2.15.0")
+        diag, _ = builder.build(ctx)
+        assert diag["meta"]["integration_version"] == "2.15.0"
+
+    def test_meta_cover_type(self, builder: DiagnosticsBuilder):
+        """cover_type is surfaced from context."""
+        ctx = _base_ctx(cover_type="cover_blind")
+        diag, _ = builder.build(ctx)
+        assert diag["meta"]["cover_type"] == "cover_blind"
+
+    def test_meta_coordinator_update_success(self, builder: DiagnosticsBuilder):
+        """coordinator_update.last_update_success reflects context value."""
+        ctx = _base_ctx(last_update_success=False, last_exception_repr="RuntimeError('boom')")
+        diag, _ = builder.build(ctx)
+        update = diag["meta"]["coordinator_update"]
+        assert update["last_update_success"] is False
+        assert update["last_exception"] == "RuntimeError('boom')"
+
+    def test_meta_update_interval(self, builder: DiagnosticsBuilder):
+        """update_interval_seconds is surfaced from context."""
+        ctx = _base_ctx(update_interval_seconds=30.0)
+        diag, _ = builder.build(ctx)
+        assert diag["meta"]["coordinator_update"]["update_interval_seconds"] == 30.0
+
+    def test_meta_defaults_when_not_provided(self, builder: DiagnosticsBuilder):
+        """meta section has stable shape when optional fields are absent."""
+        diag, _ = builder.build(_base_ctx())
+        meta = diag["meta"]
+        assert meta["integration_version"] is None
+        assert meta["cover_type"] is None
+        assert meta["coordinator_update"]["last_exception"] is None
+
+
+# ---------------------------------------------------------------------------
+# Decision trace section
+# ---------------------------------------------------------------------------
+
+
+class TestDecisionTrace:
+    """Tests for the decision_trace section."""
+
+    def test_empty_trace_when_no_pipeline_result(self, builder: DiagnosticsBuilder):
+        """decision_trace is an empty list when pipeline_result is None."""
+        ctx = _base_ctx(pipeline_result=None)
+        diag, _ = builder.build(ctx)
+        assert diag["decision_trace"] == []
+
+    def test_empty_trace_when_pipeline_has_no_steps(self, builder: DiagnosticsBuilder):
+        """decision_trace is an empty list when PipelineResult has no steps."""
+        diag, _ = builder.build(_base_ctx())  # default _make_pr() has empty trace
+        assert diag["decision_trace"] == []
+
+    def test_trace_serialized_correctly(self, builder: DiagnosticsBuilder):
+        """Each DecisionStep is serialized to the expected dict shape."""
+        steps = [
+            DecisionStep(handler="force_override", matched=False, reason="no sensor active", position=None),
+            DecisionStep(handler="manual_override", matched=True, reason="user moved cover", position=50),
+        ]
+        pr = PipelineResult(
+            position=50,
+            control_method=ControlMethod.MANUAL,
+            reason="manual_override",
+            decision_trace=steps,
+        )
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        trace = diag["decision_trace"]
+        assert len(trace) == 2
+        assert trace[0] == {"handler": "force_override", "matched": False, "reason": "no sensor active", "position": None}
+        assert trace[1] == {"handler": "manual_override", "matched": True, "reason": "user moved cover", "position": 50}
+
+    def test_trace_preserves_order(self, builder: DiagnosticsBuilder):
+        """Trace order matches the order of DecisionStep entries."""
+        steps = [
+            DecisionStep(handler="a", matched=False, reason="skip a", position=None),
+            DecisionStep(handler="b", matched=False, reason="skip b", position=None),
+            DecisionStep(handler="c", matched=True, reason="matched c", position=30),
+        ]
+        pr = PipelineResult(position=30, control_method=ControlMethod.SOLAR, reason="c", decision_trace=steps)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        handlers = [s["handler"] for s in diag["decision_trace"]]
+        assert handlers == ["a", "b", "c"]
+
+
+# ---------------------------------------------------------------------------
+# Covers section
+# ---------------------------------------------------------------------------
+
+
+class TestCovers:
+    """Tests for the covers section (live cover entity state)."""
+
+    def test_covers_empty_by_default(self, builder: DiagnosticsBuilder):
+        """covers is an empty dict when no covers context is provided."""
+        diag, _ = builder.build(_base_ctx())
+        assert diag["covers"] == {}
+
+    def test_covers_surfaced_from_context(self, builder: DiagnosticsBuilder):
+        """covers dict from context is surfaced verbatim."""
+        covers = {
+            "cover.living_room": {
+                "current_position": 42,
+                "available": True,
+                "capabilities": {"has_set_position": True, "has_set_tilt_position": False, "has_open": True, "has_close": True},
+            }
+        }
+        diag, _ = builder.build(_base_ctx(covers=covers))
+        assert diag["covers"]["cover.living_room"]["current_position"] == 42
+        assert diag["covers"]["cover.living_room"]["available"] is True
+
+    def test_covers_unavailable_entity(self, builder: DiagnosticsBuilder):
+        """An unavailable cover (None position) is represented correctly."""
+        covers = {"cover.bedroom": {"current_position": None, "available": False, "capabilities": None}}
+        diag, _ = builder.build(_base_ctx(covers=covers))
+        assert diag["covers"]["cover.bedroom"]["available"] is False
+        assert diag["covers"]["cover.bedroom"]["current_position"] is None
+
+
+# ---------------------------------------------------------------------------
+# cover_commands always-on
+# ---------------------------------------------------------------------------
+
+
+class TestCoverCommands:
+    """Tests for the always-on cover_commands section."""
+
+    def test_cover_commands_always_present(self, builder: DiagnosticsBuilder):
+        """cover_commands key is always present even with no command state."""
+        diag, _ = builder.build(_base_ctx())
+        assert "cover_commands" in diag
+        assert isinstance(diag["cover_commands"], dict)
+
+    def test_cover_commands_empty_when_no_state(self, builder: DiagnosticsBuilder):
+        """cover_commands is an empty dict when cover_command_state is None."""
+        diag, _ = builder.build(_base_ctx(cover_command_state=None))
+        assert diag["cover_commands"] == {}
+
+    def test_cover_commands_surfaced_from_context(self, builder: DiagnosticsBuilder):
+        """cover_command_state context value is emitted under cover_commands."""
+        state = {"cover.living_room": {"retry_count": 2, "gave_up": False}}
+        diag, _ = builder.build(_base_ctx(cover_command_state=state))
+        assert diag["cover_commands"]["cover.living_room"]["retry_count"] == 2
+
+    def test_cover_command_state_key_absent(self, builder: DiagnosticsBuilder):
+        """Old cover_command_state key is NOT present — replaced by cover_commands."""
+        diag, _ = builder.build(_base_ctx())
+        assert "cover_command_state" not in diag
+
+
+# ---------------------------------------------------------------------------
+# Manual override state section
+# ---------------------------------------------------------------------------
+
+
+class TestManualOverrideState:
+    """Tests for the manual_override_state section."""
+
+    def test_absent_when_not_provided(self, builder: DiagnosticsBuilder):
+        """manual_override_state section is absent when context field is None."""
+        diag, _ = builder.build(_base_ctx(manual_override_state=None))
+        assert "manual_override_state" not in diag
+
+    def test_state_surfaced_from_context(self, builder: DiagnosticsBuilder):
+        """manual_override_state dict from context is surfaced under the expected key."""
+        now = dt.datetime(2026, 4, 10, 14, 22, 0, tzinfo=dt.timezone.utc)
+        state = {
+            "reset_duration_seconds": 7200,
+            "tracked_covers": ["cover.living_room"],
+            "entries": {
+                "cover.living_room": {
+                    "active": True,
+                    "started_at": now.isoformat(),
+                    "remaining_seconds": 4200,
+                }
+            },
+        }
+        diag, _ = builder.build(_base_ctx(manual_override_state=state))
+        mo = diag["manual_override_state"]
+        assert mo["reset_duration_seconds"] == 7200
+        assert "cover.living_room" in mo["entries"]
+        assert mo["entries"]["cover.living_room"]["remaining_seconds"] == 4200
+
+    def test_remaining_seconds_non_negative(self, builder: DiagnosticsBuilder):
+        """remaining_seconds is always >= 0 (expired overrides show 0)."""
+        state = {
+            "reset_duration_seconds": 7200,
+            "tracked_covers": ["cover.bedroom"],
+            "entries": {
+                "cover.bedroom": {
+                    "active": False,
+                    "started_at": "2026-01-01T00:00:00+00:00",
+                    "remaining_seconds": 0,
+                }
+            },
+        }
+        diag, _ = builder.build(_base_ctx(manual_override_state=state))
+        assert diag["manual_override_state"]["entries"]["cover.bedroom"]["remaining_seconds"] == 0

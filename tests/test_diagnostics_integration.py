@@ -19,15 +19,9 @@ from custom_components.adaptive_cover_pro.const import (
     DOMAIN,
     SensorType,
 )
-# Import the standalone diagnostics.py file directly (not the diagnostics/ package)
-import importlib.util as _ilu
-import pathlib as _pl
-
-_DIAG_PATH = _pl.Path(__file__).parent.parent / "custom_components" / "adaptive_cover_pro" / "diagnostics.py"
-_spec = _ilu.spec_from_file_location("acp_diagnostics_standalone", _DIAG_PATH)
-_diag_mod = _ilu.module_from_spec(_spec)
-_spec.loader.exec_module(_diag_mod)
-async_get_config_entry_diagnostics = _diag_mod.async_get_config_entry_diagnostics
+from custom_components.adaptive_cover_pro.diagnostics import (
+    async_get_config_entry_diagnostics,
+)
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
 pytestmark = pytest.mark.integration

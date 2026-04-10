@@ -296,6 +296,26 @@ class CoverCommandService:
         """
         self._enabled = value
 
+    def get_entity_state_snapshot(self, entity_id: str) -> dict:
+        """Return a diagnostic snapshot of per-entity positioning state."""
+        sent_at = self._sent_at.get(entity_id)
+        reconcile_time = self._last_reconcile_time.get(entity_id)
+        return {
+            "target_call": self.target_call.get(entity_id),
+            "wait_for_target": self.wait_for_target.get(entity_id, False),
+            "retry_count": self._retry_counts.get(entity_id, 0),
+            "gave_up": entity_id in self._gave_up,
+            "last_command_sent_at": sent_at.isoformat() if sent_at else None,
+            "in_manual_override_set": entity_id in self._manual_override_entities,
+            "safety_target": entity_id in self._safety_targets,
+            "last_reconcile_time": reconcile_time.isoformat() if reconcile_time else None,
+        }
+
+    def get_all_entity_state_snapshots(self) -> dict[str, dict]:
+        """Return diagnostic snapshots for all tracked entities."""
+        all_ids = set(self.target_call) | set(self.wait_for_target)
+        return {eid: self.get_entity_state_snapshot(eid) for eid in sorted(all_ids)}
+
     def clear_non_safety_targets(self) -> None:
         """Remove non-safety target_call entries so stale targets cannot be resent.
 

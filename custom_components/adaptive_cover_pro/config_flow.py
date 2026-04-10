@@ -128,6 +128,12 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_DEBUG_CATEGORIES,
+    CONF_DEBUG_EVENT_BUFFER_SIZE,
+    CONF_DEBUG_MODE,
+    DEBUG_CATEGORIES_ALL,
+    DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+    MAX_DEBUG_EVENT_BUFFER_SIZE,
     DOMAIN,
     SensorType,
 )
@@ -157,6 +163,7 @@ MENU_ICONS: dict[str, str] = {
     "sync": "🔄",
     "device": "🔗",
     "summary": "📋",
+    "debug": "🔍",
     "done": "✅",
 }
 
@@ -556,6 +563,34 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
                 step=30,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="seconds",
+            )
+        ),
+    }
+)
+
+DEBUG_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_DEBUG_MODE, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_DEBUG_CATEGORIES,
+            default=[],
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=DEBUG_CATEGORIES_ALL,
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="debug_categories",
+            )
+        ),
+        vol.Optional(
+            CONF_DEBUG_EVENT_BUFFER_SIZE,
+            default=DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=MAX_DEBUG_EVENT_BUFFER_SIZE,
+                step=10,
+                mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
     }
@@ -2394,7 +2429,7 @@ class OptionsFlowHandler(OptionsFlow):
         keys.append("sync")
 
         # ── Admin ────────────────────────────────────────────────────
-        keys.extend(["device", "summary", "done"])
+        keys.extend(["device", "summary", "debug", "done"])
 
         # Fetch localized labels and prepend icons defined in MENU_ICONS
         trans_prefix = "component.adaptive_cover_pro.options.step.init.menu_options."
@@ -2927,6 +2962,20 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="summary",
             data_schema=vol.Schema({}),
             description_placeholders={"summary": summary_text},
+        )
+
+    async def async_step_debug(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage Debug & Diagnostics options."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="debug",
+            data_schema=self.add_suggested_values_to_schema(
+                DEBUG_SCHEMA, user_input or self.options
+            ),
         )
 
     async def async_step_done(
