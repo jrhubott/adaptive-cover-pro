@@ -415,20 +415,43 @@
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Suppress glare control in low light",
           "weather_state": "Weather Conditions"
+        },
+        "data_description": {
+          "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
+          "weather_state": "The weather states that count as 'sun is out'. When the live weather state matches one of these, glare tracking runs normally. When it does not match, the cover returns to its default position. Keep the defaults (sunny, partlycloudy, clear) unless your weather integration uses different state names.",
+          "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
+          "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. Adjust based on sensor placement.",
+          "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. Adjust based on your climate and preference.",
+          "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
+          "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast.",
+          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control."
         }
       },
       "temperature_climate": {
         "title": "Temperature & Climate Mode",
-        "description": "Enable climate mode to adjust cover positions based on indoor/outdoor temperature, presence detection, and seasonal strategies.",
+        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.",
         "data": {
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
+          "outside_threshold": "Outside temperature threshold",
           "presence_entity": "Presence entity (optional)",
           "transparent_blind": "Transparent blind",
           "winter_close_insulation": "Winter insulation mode"
+        },
+        "data_description": {
+          "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
+          "temp_entity": "A climate thermostat or temperature sensor that measures the indoor temperature used to determine the current season (winter/summer/intermediate). Required when climate mode is enabled.",
+          "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat.",
+          "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain.",
+          "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured.",
+          "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
+          "transparent_blind": "Enable when the blind material is sheer or translucent. In summer with occupants present a transparent blind will still close fully to reduce heat gain, whereas an opaque blind would instead follow glare-control tracking.",
+          "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }
       }
     },
@@ -855,20 +878,43 @@
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Suppress glare control in low light",
           "weather_state": "Weather Conditions"
+        },
+        "data_description": {
+          "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
+          "weather_state": "The weather states that count as 'sun is out'. When the live weather state matches one of these, glare tracking runs normally. When it does not match, the cover returns to its default position. Keep the defaults (sunny, partlycloudy, clear) unless your weather integration uses different state names.",
+          "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
+          "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. Adjust based on sensor placement.",
+          "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. Adjust based on your climate and preference.",
+          "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
+          "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast.",
+          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control."
         }
       },
       "temperature_climate": {
         "title": "Temperature & Climate Mode",
-        "description": "Adjust cover positions based on temperature, presence, and seasonal strategies.",
+        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.",
         "data": {
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
           "outside_temp": "Outside temperature sensor (optional)",
+          "outside_threshold": "Outside temperature threshold",
           "presence_entity": "Presence entity (optional)",
           "transparent_blind": "Transparent blind",
           "winter_close_insulation": "Winter insulation mode"
+        },
+        "data_description": {
+          "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
+          "temp_entity": "A climate thermostat or temperature sensor that measures the indoor temperature used to determine the current season (winter/summer/intermediate). Required when climate mode is enabled.",
+          "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat.",
+          "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain.",
+          "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured.",
+          "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
+          "transparent_blind": "Enable when the blind material is sheer or translucent. In summer with occupants present a transparent blind will still close fully to reduce heat gain, whereas an opaque blind would instead follow glare-control tracking.",
+          "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }
       }
     },
