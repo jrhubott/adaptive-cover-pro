@@ -158,6 +158,11 @@ class CoverCommandService:
         # daytime targets are not resent overnight.
         self._in_time_window: bool = True
 
+        # Master kill switch — when False, ALL outbound cover commands are blocked,
+        # including safety handlers (force override, weather) and reconciliation.
+        # Synced by the coordinator each update cycle from the Integration Enabled switch.
+        self._enabled: bool = True
+
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
 
@@ -275,6 +280,21 @@ class CoverCommandService:
         (sent via apply_position(force=True)) are eligible for reconciliation.
         """
         self._in_time_window = value
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the integration is enabled (master kill switch)."""
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        """Update the integration enabled flag.
+
+        When False, ALL outbound cover commands are blocked — including safety
+        handlers (force override, weather) and reconciliation.  Synced by the
+        coordinator each update cycle from the Integration Enabled switch.
+        """
+        self._enabled = value
 
     def clear_non_safety_targets(self) -> None:
         """Remove non-safety target_call entries so stale targets cannot be resent.
@@ -471,6 +491,19 @@ class CoverCommandService:
         _trigger = reason
         _inverse = context.inverse_state
         _current = self._get_current_position(entity_id)
+
+        # Hard kill switch — blocks ALL commands, including safety overrides and
+        # force=True calls.  Must be checked before the context.force branch.
+        if not self._enabled:
+            return self._skip(
+                entity_id,
+                "integration_disabled",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+
         if not context.force:
             if not context.auto_control:
                 return self._skip(
@@ -651,6 +684,10 @@ class CoverCommandService:
         # Coordinator hook: time window transition checks, etc.
         if self._on_tick is not None:
             await self._on_tick(now)
+
+        # Hard kill switch — skip ALL reconciliation when integration is disabled.
+        if not self._enabled:
+            return
 
         for entity_id, target in list(self.target_call.items()):
             self._last_reconcile_time[entity_id] = now

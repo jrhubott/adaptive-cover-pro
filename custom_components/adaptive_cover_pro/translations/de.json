@@ -903,6 +903,13 @@
       "glare_zone_3": {
         "name": "Blendzone 4"
       },
+      "enabled_toggle": {
+        "name": "Integration aktiviert",
+        "state": {
+          "on": "Ein",
+          "off": "Aus"
+        }
+      },
       "automatic_control": {
         "name": "Automatische Steuerung",
         "state": {
