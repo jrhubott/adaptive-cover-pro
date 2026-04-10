@@ -192,6 +192,101 @@ class TestTransitDetection:
 
 
 # ===========================================================================
+# Hardware startup delay (Issue #147 v2 regression guard)
+# ===========================================================================
+
+
+class TestHardwareStartupDelay:
+    """Some covers have a hardware startup delay of 10–30+ seconds between
+    receiving a command and physically beginning to move.  The first state-change
+    event fires while the cover is still at its pre-command position
+    (old_pos == new_pos == starting_pos).  Previously the strict ``new_dist < old_dist``
+    check treated equal distances as "not moving" and cleared wait_for_target,
+    triggering a false manual override on the very next automatic movement.
+
+    The fix: when old_state was not transitional ("closed"/"open") and new_state
+    just became transitional ("opening"), equal distances mean "motor just engaged
+    but hasn't moved yet" — keep wait_for_target=True.
+    """
+
+    def test_first_event_startup_delay_keeps_wait_for_target(self) -> None:
+        """First state event after a slow cover starts must not clear wait_for_target.
+
+        Scenario (user's real bug): command sent to 100%, cover at 0%.
+        24 seconds later the first event fires: state closed→opening, pos=0→0.
+        old_distance == new_distance (both 100), but old_state was "closed"
+        (non-transitional) so this is a startup delay, NOT a stall.
+        """
+        entity_id = "cover.slow_blind"
+        coord = _make_coordinator(
+            entity_id,
+            target_position=100,
+            current_position=0,
+            old_position=0,
+            new_state_str="opening",
+            sent_seconds_ago=24.0,
+        )
+        # Override old_state to "closed" (non-transitional) to simulate state transition
+        coord.state_change_data.old_state.state = "closed"
+        _call(coord)
+        assert coord._cmd_svc.wait_for_target[entity_id] is True
+
+    def test_subsequent_startup_delay_event_still_opening(self) -> None:
+        """Second state event (opening→opening, pos still 0) is a stall — must clear.
+
+        If the cover was ALREADY "opening" and position still hasn't changed,
+        that's a genuine stall — clear wait_for_target so the system can retry.
+        """
+        entity_id = "cover.slow_blind"
+        coord = _make_coordinator(
+            entity_id,
+            target_position=100,
+            current_position=0,
+            old_position=0,
+            new_state_str="opening",
+            sent_seconds_ago=30.0,
+        )
+        # old_state already "opening" (was already transitional) → stall → clear
+        coord.state_change_data.old_state.state = "opening"
+        _call(coord)
+        assert coord._cmd_svc.wait_for_target[entity_id] is False
+
+    def test_full_scenario_cancel_manual_then_auto_move(self) -> None:
+        """Full scenario: manual done, reset, integration commands cover, startup delay.
+
+        After the reset button is pressed the integration sends a command.
+        The cover has a ~24s startup delay before moving.  The first event
+        (closed→opening, pos unchanged) must NOT be treated as a false override.
+        """
+        entity_id = "cover.blind"
+        coord = _make_coordinator(
+            entity_id,
+            target_position=75,
+            current_position=30,
+            old_position=30,
+            new_state_str="opening",
+            sent_seconds_ago=20.0,
+        )
+        # Simulate startup: old state was "closed" before command started cover
+        coord.state_change_data.old_state.state = "closed"
+        _call(coord)
+        assert coord._cmd_svc.wait_for_target[entity_id] is True
+
+        # After cover actually starts moving (pos changes), transit detection works
+        coord2 = _make_coordinator(
+            entity_id,
+            target_position=75,
+            current_position=40,  # now moving
+            old_position=30,
+            new_state_str="opening",
+            sent_seconds_ago=25.0,
+        )
+        coord2.state_change_data.old_state.state = "opening"
+        _call(coord2)
+        assert coord2._cmd_svc.wait_for_target[entity_id] is True  # still in transit
+
+
+# ===========================================================================
 # Stop detection: cover stops before reaching target
 # ===========================================================================
 
