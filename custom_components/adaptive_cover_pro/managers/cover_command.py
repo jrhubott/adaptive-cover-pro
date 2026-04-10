@@ -318,6 +318,68 @@ class CoverCommandService:
             )
 
     # ------------------------------------------------------------------ #
+    # Stop helpers — bypass _enabled gate (shutdown / emergency paths)
+    # ------------------------------------------------------------------ #
+
+    async def stop_in_flight(
+        self, entities: set[str] | None = None
+    ) -> list[str]:
+        """Send stop_cover to every ACP-in-flight entity that supports STOP.
+
+        Intentionally bypasses the ``_enabled`` gate — this IS the shutdown path
+        and must fire before the gate closes.
+
+        Args:
+            entities: Optional subset of entity_ids to consider.  None = all
+                      entries in wait_for_target.
+
+        Returns:
+            List of entity_ids that were actually stopped.
+
+        """
+        stopped: list[str] = []
+        candidates = {
+            eid
+            for eid, waiting in self.wait_for_target.items()
+            if waiting and (entities is None or eid in entities)
+        }
+        for eid in candidates:
+            caps = check_cover_features(self._hass, eid)
+            if caps and caps.get("has_stop"):
+                await self._hass.services.async_call(
+                    "cover", "stop_cover", {"entity_id": eid}
+                )
+                self.wait_for_target[eid] = False
+                self._sent_at.pop(eid, None)
+                stopped.append(eid)
+                self._logger.debug("stop_in_flight: stopped %s", eid)
+        return stopped
+
+    async def stop_all(self, entity_ids: list[str]) -> list[str]:
+        """Send stop_cover to every entity in entity_ids that supports STOP.
+
+        Used by emergency_stop — does NOT check wait_for_target (blanket stop).
+        Intentionally bypasses the ``_enabled`` gate.
+
+        Args:
+            entity_ids: List of cover entity_ids to stop.
+
+        Returns:
+            List of entity_ids that were actually stopped.
+
+        """
+        stopped: list[str] = []
+        for eid in entity_ids:
+            caps = check_cover_features(self._hass, eid)
+            if caps and caps.get("has_stop"):
+                await self._hass.services.async_call(
+                    "cover", "stop_cover", {"entity_id": eid}
+                )
+                stopped.append(eid)
+                self._logger.debug("stop_all: stopped %s", eid)
+        return stopped
+
+    # ------------------------------------------------------------------ #
     # Threshold update (called by coordinator on options change)
     # ------------------------------------------------------------------ #
 

@@ -89,13 +89,14 @@ This integration builds upon the template sensor from this forum post [Automatic
     - Use cases: Glare control when present, energy savings when away, privacy when unoccupied
     - Optional feature - leave sensor list empty to disable
   - **Automatic Position Verification** (built-in reliability feature)
-    - Periodically verifies covers reached the positions we sent them to (every 2 minutes)
-    - Automatically retries failed position commands (up to 3 attempts)
+    - Periodically verifies covers reached the positions we sent them to (every 1 minute)
+    - Automatically retries failed position commands (up to 3 attempts, then gives up)
     - Detects position mismatches between target and actual position (3% tolerance)
-    - Respects manual override detection and skips during active moves
+    - Respects manual override detection, Automatic Control, Integration Enabled, and time window
     - Separate from normal position updates - only retries failed commands, doesn't chase sun movement
     - No configuration required - works automatically when automatic control is enabled
     - Diagnostic sensors available for troubleshooting cover movement issues
+    - See [Position Reconciliation Loop](#position-reconciliation-loop) for details
 
 - **Diagnostic Sensors** (always enabled, no setup required)
   - Real-time troubleshooting sensors to understand integration behavior
@@ -519,6 +520,45 @@ The Weather Override handler (priority 90) moves covers to a safe retract positi
 | Irradiance Entity             | `None`  |       | `sensor.irradiance`                           | Returns measured irradiance                                                                                                                          |
 | Irradiance Threshold          | `300`   |       |                                               | "In non-summer, above threshold, use optimal position. Otherwise, default position or fully open in winter."                                         |
 
+### Position Reconciliation Loop
+
+Adaptive Cover Pro runs a background **reconciliation loop** that checks every configured cover once per minute and resends the last target position if the cover hasn't arrived. This is the mechanism that makes the integration resilient to dropped commands, Z-Wave/Zigbee flakiness, and momentary motor stalls — it's also the mechanism that decides when to *stop* retrying so the integration doesn't fight a physically blocked cover forever.
+
+**How the loop works**
+
+1. Every 1 minute (`POSITION_CHECK_INTERVAL_MINUTES = 1`, not user-configurable), the loop iterates every entity currently in `target_call` (the set of positions the integration has asked for).
+2. For each entity it reads the current reported position and compares it to the target using `position_tolerance = 3%`.
+3. If within tolerance → the target is considered reached, retry counter resets, loop moves on.
+4. If outside tolerance → retry counter increments and the same target is resent (unless any of the gates below block it).
+
+**What blocks a retry**
+
+| Condition | Behaviour |
+|---|---|
+| `wait_for_target` is still true and `< 120 s` since last send | Skip (cover is still expected to be moving) |
+| Entity is in the manual-override set | Skip (don't fight the user) |
+| Automatic Control OFF and entity is not a safety target | Skip |
+| Outside the configured time window and entity is not a safety target | Skip |
+| **Integration Enabled OFF** | Skip ALL entities (safety and non-safety) |
+| Retry count has reached `max_retries = 3` | Log a warning once, add entity to "gave up" set, stop retrying until a new target is set |
+
+**Worst-case retry sequence**
+
+With `max_retries = 3` and a 1-minute interval, a cover that refuses to reach its target will see:
+
+- `t+0 s` — initial send
+- `t+60 s` — retry 1
+- `t+120 s` — retry 2
+- `t+180 s` — retry 3 → integration logs warning and backs off
+
+So the integration tries for **~3 minutes maximum** before giving up on a stuck target. The retry count resumes when a new target is calculated (e.g. the sun moves, a new handler fires). No motor hammering, no infinite loops.
+
+**Safety targets** (from Force Override or Weather Override) are tracked separately: reconciliation continues to resend them even when Automatic Control is OFF or the time window has closed — but they too are halted by Integration Enabled OFF.
+
+**Diagnostic visibility**
+
+The `{device}_position_verification` and `{device}_retry_count` diagnostic sensors expose the current retry count per entity, the last reconciliation timestamp, and whether the integration has given up on any target. Use these when troubleshooting a cover that isn't reaching its commanded position.
+
 ### Blindspot
 
 > The blind spot is shown as an orange shaded area within the FOV in the diagram above (see [Common](#common) section). It represents an angular range within the field of view where obstructions (trees, buildings) block direct sunlight.
@@ -573,13 +613,57 @@ State: current target position (%) determined by the integration.
 | `sensor.{device_name}_end_sun` | | Indicates the ending time when the sun exits the window's view, with an interval of every 5 minutes. |
 | `binary_sensor.{device_name}_manual_override` | `off` | Indicates if manual override is engaged for any blinds. |
 | `binary_sensor.{device_name}_sun_infront` | `off` | Indicates whether the sun is in front of the window within the designated field of view. |
-| `switch.{device_name}_integration_enabled` | `on` | **Master kill switch.** When OFF, *no* cover commands are sent under any circumstances — including Force Override, Weather, and reconciliation. Use this when you need ACP completely silent (e.g. child safety, maintenance, testing). Diagnostic sensors continue updating. Re-enabling resumes on the next natural update cycle; covers are not snapped back to a calculated position. |
+| `switch.{device_name}_integration_enabled` | `on` | **Master kill switch.** When OFF: any ACP-in-flight cover moves are stopped immediately (`cover.stop_cover`, capability-checked), *no* further commands are sent under any circumstances — including Force Override, Weather, and reconciliation. Use this when you need ACP completely silent (e.g. child safety, maintenance, testing). Diagnostic sensors continue updating. Re-enabling resumes on the next natural update cycle; covers are not snapped back to a calculated position. |
 | `switch.{device_name}_automatic_control` | `on` | **Solar tracking toggle.** When OFF, solar, climate, and custom-position handlers stop sending commands. Force Override (priority 100) and Weather Override (priority 90) still fire because they are safety handlers — they must act regardless of whether sun-tracking is paused. Use Integration Enabled (above) if you need those blocked too. |
 | `switch.{device_name}_manual_override` | `on` | **Manual Override Detection Switch**: Enables automatic detection of manual position changes. When enabled, the integration monitors your covers and pauses automatic control if you manually adjust a cover's position (via physical controls, app, or automation). The cover remains in manual mode for the configured duration (default: 2 hours), after which automatic control resumes. This allows you to temporarily take control without disabling automation entirely. Turn this switch off to disable manual override detection and always apply calculated positions. |
 | `switch.{device_name}_return_to_default_when_disabled` (vertical & horizontal only) | `off` | When enabled, covers automatically return to their default position when automatic control is turned off. Useful for retracting awnings or setting blinds to a safe position. |
 | `switch.{device_name}_motion_control` *(only when motion sensors configured)* | `on` | **Motion Control Switch**: Enables or disables motion-based automatic positioning. When off, the motion timeout handler is skipped (lower-priority handlers such as climate and solar remain active). Useful for temporarily disabling occupancy-based control without removing the sensor configuration. |
 | `button.{device_name}_reset_manual_override` | `on` | Resets manual override tags for all covers; if `switch.{device_name}_automatic_control` is on, it also restores blinds to their correct positions. |
 | `sensor.{device_name}_manual_override_end_time` | | Timestamp showing when the manual override expires and automatic control resumes. Unknown when no override is active. Includes a `per_entity` attribute with individual expiry times per cover. See [diagnostic sensor reference](#diagnostic-sensor-reference) for full details. |
+
+### Global Controls (Services)
+
+If you have multiple ACP instances (one per room), these services let you control all of them — or a targeted subset — from a single automation, script, or voice command.
+
+| Service | What it does |
+|---|---|
+| `adaptive_cover_pro.integration_enable` | Re-enables targeted instances. Covers stay where they are; positioning resumes on the next update cycle. |
+| `adaptive_cover_pro.integration_disable` | Disables targeted instances. In-flight ACP moves are stopped immediately, timers cancelled, state cleared. |
+| `adaptive_cover_pro.emergency_stop` | **Panic button.** Sends `cover.stop_cover` to *every* configured cover on targeted instances (capability-checked), then disables the integration. With no target, acts on all ACP instances. |
+
+All three services accept the standard Home Assistant `target:` block — `entity_id`, `device_id`, or `area_id`. Covers not managed by ACP are silently ignored.
+
+**Calling from Developer Tools:**
+
+```yaml
+service: adaptive_cover_pro.emergency_stop
+# no target: hits every ACP instance
+```
+
+```yaml
+service: adaptive_cover_pro.integration_disable
+target:
+  device_id: abc123def456  # one room only
+```
+
+**Automation recipe — single "ACP master" toggle:**
+
+```yaml
+# input_boolean.acp_enabled → drives all instances at once
+automation:
+  - trigger:
+      - platform: state
+        entity_id: input_boolean.acp_enabled
+        to: "off"
+    action:
+      - service: adaptive_cover_pro.integration_disable
+  - trigger:
+      - platform: state
+        entity_id: input_boolean.acp_enabled
+        to: "on"
+    action:
+      - service: adaptive_cover_pro.integration_enable
+```
 
 When climate mode is setup you will also get these entities:
 

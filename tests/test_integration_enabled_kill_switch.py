@@ -419,3 +419,76 @@ async def test_kill_switch_off_blocks_force_override_unlike_auto_control(svc, mo
             "cover.test", 0, "force_override", context=_ctx(force=True, auto_control=True)
         )
     assert outcome == "sent"
+
+
+# ---------------------------------------------------------------------------
+# stop_in_flight / stop_all
+# ---------------------------------------------------------------------------
+
+
+def _patch_caps_with_stop(has_stop=True):
+    return patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={
+            "has_set_position": True,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+            "has_stop": has_stop,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_stop_in_flight_sends_stop_to_waiting_entities(svc, mock_hass):
+    """stop_in_flight sends stop_cover to every entity with wait_for_target=True."""
+    svc.wait_for_target["cover.a"] = True
+    svc.wait_for_target["cover.b"] = True
+
+    with _patch_caps_with_stop(has_stop=True):
+        stopped = await svc.stop_in_flight()
+
+    assert set(stopped) == {"cover.a", "cover.b"}
+    assert mock_hass.services.async_call.call_count == 2
+    calls = [c.args for c in mock_hass.services.async_call.call_args_list]
+    services_called = {(d, s) for d, s, _ in calls}
+    assert ("cover", "stop_cover") in services_called
+
+
+@pytest.mark.asyncio
+async def test_stop_in_flight_skips_covers_without_has_stop(svc, mock_hass):
+    """stop_in_flight skips entities whose cover does not support STOP."""
+    svc.wait_for_target["cover.nostop"] = True
+
+    with _patch_caps_with_stop(has_stop=False):
+        stopped = await svc.stop_in_flight()
+
+    assert stopped == []
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stop_in_flight_skips_entities_not_waiting(svc, mock_hass):
+    """stop_in_flight ignores entities where wait_for_target is False."""
+    svc.wait_for_target["cover.settled"] = False
+
+    with _patch_caps_with_stop(has_stop=True):
+        stopped = await svc.stop_in_flight()
+
+    assert stopped == []
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stop_in_flight_clears_wait_for_target(svc, mock_hass):
+    """stop_in_flight clears wait_for_target for stopped entities."""
+    svc.wait_for_target["cover.moving"] = True
+    svc._sent_at["cover.moving"] = __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    )
+
+    with _patch_caps_with_stop(has_stop=True):
+        await svc.stop_in_flight()
+
+    assert svc.wait_for_target["cover.moving"] is False
+    assert "cover.moving" not in svc._sent_at

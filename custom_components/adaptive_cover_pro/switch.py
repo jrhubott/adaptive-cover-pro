@@ -243,9 +243,10 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self._attr_is_on = False
         setattr(self.coordinator, self._key, False)
         if self._key == "enabled_toggle" and kwargs.get("added") is not True:
-            # Cancel any deferred motion/weather tasks so they don't fire after
-            # the integration is disabled, and clear all reconciliation state so
+            # Stop any ACP-in-flight cover moves FIRST (before the gate closes),
+            # then cancel deferred tasks and clear all reconciliation state so
             # nothing is resent automatically when re-enabling.
+            await self.coordinator._cmd_svc.stop_in_flight()  # noqa: SLF001
             self.coordinator._cancel_motion_timeout()  # noqa: SLF001
             self.coordinator._cancel_weather_timeout()  # noqa: SLF001
             self.coordinator._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
