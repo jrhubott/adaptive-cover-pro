@@ -361,3 +361,109 @@ async def test_start_weather_timeout_callback_triggers_refresh():
     await captured_callback()
     assert coord.state_change is True
     coord.async_refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _check_time_window_transition: auto_control gate at window close
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_window_close_skips_reposition_when_auto_control_off():
+    """_on_window_closed must not send positions when automatic control is OFF.
+
+    Regression: end-of-time-window force-send bypassed the auto_control gate
+    via force=True, moving covers even when the user had disabled automatic control.
+    """
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord.automatic_control = False
+    coord._track_end_time = True
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock()
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+
+    time_mgr = MagicMock()
+
+    async def _invoke(track_end_time, refresh_callback):
+        await refresh_callback()
+
+    time_mgr.check_transition = _invoke
+    coord._time_mgr = time_mgr
+
+    await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    # Stale-target cleanup must still run regardless of auto_control state
+    cmd_svc.clear_non_safety_targets.assert_called_once()
+    # Cover must NOT be repositioned
+    cmd_svc.apply_position.assert_not_called()
+    # Debug log must explain the skip
+    coord.logger.debug.assert_called()
+    logged = coord.logger.debug.call_args[0][0]
+    assert "automatic control is OFF" in logged
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_window_close_sends_reposition_when_auto_control_on():
+    """_on_window_closed sends the effective default when automatic control is ON.
+
+    Happy-path companion to the regression test above.
+    """
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+    coord.automatic_control = True
+    coord._track_end_time = True
+    coord._inverse_state = False
+    coord.entities = [MagicMock()]
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
+    cmd_svc.clear_non_safety_targets = MagicMock()
+    coord._cmd_svc = cmd_svc
+    coord.async_refresh = AsyncMock()
+
+    options = {CONF_DEFAULT_HEIGHT: 0}
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord._build_position_context = MagicMock(return_value=MagicMock(force=True))
+
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+        return_value=(0, False),
+    ):
+        time_mgr = MagicMock()
+
+        async def _invoke_happy(track_end_time, refresh_callback):
+            await refresh_callback()
+
+        time_mgr.check_transition = _invoke_happy
+        coord._time_mgr = time_mgr
+
+        await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
+
+    cmd_svc.apply_position.assert_called_once()
+    assert cmd_svc.apply_position.call_args[0][2] == "end_time_default"

@@ -1848,6 +1848,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._cmd_svc.clear_non_safety_targets()
             if not self._track_end_time:
                 return
+            if not self.automatic_control:
+                self.logger.debug(
+                    "End time reached but automatic control is OFF — "
+                    "skipping return-to-default reposition"
+                )
+                return
             options = self.config_entry.options
             # Compute the current effective default (may already be sunset_pos)
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
