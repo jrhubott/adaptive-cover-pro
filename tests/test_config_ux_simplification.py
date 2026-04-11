@@ -239,13 +239,17 @@ class TestSyncCategoriesSplit:
         """Sync UI categories list does NOT contain legacy 'weather'."""
         assert "weather" not in _SYNC_UI_CATEGORIES
 
-    def test_sync_ui_includes_light_cloud(self):
-        """Sync UI categories list contains light_cloud."""
-        assert "light_cloud" in _SYNC_UI_CATEGORIES
+    def test_sync_ui_includes_light_cloud_split_keys(self):
+        """Sync UI uses light_cloud_values / light_cloud_sensors instead of the mixed key."""
+        assert "light_cloud_values" in _SYNC_UI_CATEGORIES
+        assert "light_cloud_sensors" in _SYNC_UI_CATEGORIES
+        assert "light_cloud" not in _SYNC_UI_CATEGORIES
 
-    def test_sync_ui_includes_temperature_climate(self):
-        """Sync UI categories list contains temperature_climate."""
-        assert "temperature_climate" in _SYNC_UI_CATEGORIES
+    def test_sync_ui_includes_temperature_climate_split_keys(self):
+        """Sync UI uses temperature_climate_values / temperature_climate_sensors instead of the mixed key."""
+        assert "temperature_climate_values" in _SYNC_UI_CATEGORIES
+        assert "temperature_climate_sensors" in _SYNC_UI_CATEGORIES
+        assert "temperature_climate" not in _SYNC_UI_CATEGORIES
 
     def test_sync_ui_categories_all_exist_in_sync_categories(self):
         """Every UI category must have a matching key in SYNC_CATEGORIES."""

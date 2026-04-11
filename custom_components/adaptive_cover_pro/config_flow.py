@@ -1465,6 +1465,18 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_IGNORE_INTERMEDIATE,
         }
     ),
+    "force_override_values": frozenset(
+        {
+            CONF_FORCE_OVERRIDE_POSITION,
+            CONF_FORCE_OVERRIDE_MIN_MODE,
+        }
+    ),
+    "force_override_sensors": frozenset(
+        {
+            CONF_FORCE_OVERRIDE_SENSORS,
+        }
+    ),
+    # Legacy alias: full union of force_override_values + force_override_sensors
     "force_override": frozenset(
         {
             CONF_FORCE_OVERRIDE_SENSORS,
@@ -1472,6 +1484,31 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_FORCE_OVERRIDE_MIN_MODE,
         }
     ),
+    "custom_position_values": frozenset(
+        {
+            CONF_CUSTOM_POSITION_1,
+            CONF_CUSTOM_POSITION_PRIORITY_1,
+            CONF_CUSTOM_POSITION_MIN_MODE_1,
+            CONF_CUSTOM_POSITION_2,
+            CONF_CUSTOM_POSITION_PRIORITY_2,
+            CONF_CUSTOM_POSITION_MIN_MODE_2,
+            CONF_CUSTOM_POSITION_3,
+            CONF_CUSTOM_POSITION_PRIORITY_3,
+            CONF_CUSTOM_POSITION_MIN_MODE_3,
+            CONF_CUSTOM_POSITION_4,
+            CONF_CUSTOM_POSITION_PRIORITY_4,
+            CONF_CUSTOM_POSITION_MIN_MODE_4,
+        }
+    ),
+    "custom_position_sensors": frozenset(
+        {
+            CONF_CUSTOM_POSITION_SENSOR_1,
+            CONF_CUSTOM_POSITION_SENSOR_2,
+            CONF_CUSTOM_POSITION_SENSOR_3,
+            CONF_CUSTOM_POSITION_SENSOR_4,
+        }
+    ),
+    # Legacy alias: full union of custom_position_values + custom_position_sensors
     "custom_position": frozenset(
         {
             CONF_CUSTOM_POSITION_SENSOR_1,
@@ -1492,12 +1529,45 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CUSTOM_POSITION_MIN_MODE_4,
         }
     ),
+    "motion_override_values": frozenset(
+        {
+            CONF_MOTION_TIMEOUT,
+        }
+    ),
+    "motion_override_sensors": frozenset(
+        {
+            CONF_MOTION_SENSORS,
+        }
+    ),
+    # Legacy alias: full union of motion_override_values + motion_override_sensors
     "motion_override": frozenset(
         {
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
         }
     ),
+    "weather_override_values": frozenset(
+        {
+            CONF_WEATHER_BYPASS_AUTO_CONTROL,
+            CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+            CONF_WEATHER_RAIN_THRESHOLD,
+            CONF_WEATHER_OVERRIDE_POSITION,
+            CONF_WEATHER_OVERRIDE_MIN_MODE,
+            CONF_WEATHER_TIMEOUT,
+        }
+    ),
+    "weather_override_sensors": frozenset(
+        {
+            CONF_WEATHER_WIND_SPEED_SENSOR,
+            CONF_WEATHER_WIND_DIRECTION_SENSOR,
+            CONF_WEATHER_RAIN_SENSOR,
+            CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_SEVERE_SENSORS,
+        }
+    ),
+    # Legacy alias: full union of weather_override_values + weather_override_sensors
     "weather_override": frozenset(
         {
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
@@ -1515,6 +1585,24 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_TIMEOUT,
         }
     ),
+    "light_cloud_values": frozenset(
+        {
+            CONF_WEATHER_STATE,
+            CONF_LUX_THRESHOLD,
+            CONF_IRRADIANCE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_THRESHOLD,
+            CONF_CLOUD_SUPPRESSION,
+        }
+    ),
+    "light_cloud_sensors": frozenset(
+        {
+            CONF_WEATHER_ENTITY,
+            CONF_LUX_ENTITY,
+            CONF_IRRADIANCE_ENTITY,
+            CONF_CLOUD_COVERAGE_ENTITY,
+        }
+    ),
+    # Legacy alias: full union of light_cloud_values + light_cloud_sensors
     "light_cloud": frozenset(
         {
             CONF_WEATHER_ENTITY,
@@ -1528,6 +1616,24 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
         }
     ),
+    "temperature_climate_values": frozenset(
+        {
+            CONF_CLIMATE_MODE,
+            CONF_TEMP_LOW,
+            CONF_TEMP_HIGH,
+            CONF_OUTSIDE_THRESHOLD,
+            CONF_TRANSPARENT_BLIND,
+            CONF_WINTER_CLOSE_INSULATION,
+        }
+    ),
+    "temperature_climate_sensors": frozenset(
+        {
+            CONF_TEMP_ENTITY,
+            CONF_OUTSIDETEMP_ENTITY,
+            CONF_PRESENCE_ENTITY,
+        }
+    ),
+    # Legacy alias: full union of temperature_climate_values + temperature_climate_sensors
     "temperature_climate": frozenset(
         {
             CONF_CLIMATE_MODE,
@@ -1591,10 +1697,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
 }
 
-# Categories shown in the sync selector UI.  Excludes legacy aliases
-# ("climate", "weather") whose keys are now covered by "light_cloud" and
-# "temperature_climate".  The legacy keys remain in SYNC_CATEGORIES so
-# _extract_shared_options still works for programmatic callers.
+# Categories shown in the sync selector UI.
+# Mixed categories (force_override, custom_position, motion_override, weather_override,
+# light_cloud, temperature_climate) are split into *_values (thresholds/flags/modes)
+# and *_sensors (entity_id assignments) so users can copy global values without
+# overwriting room-specific sensor assignments (issue #125).
+# Legacy aliases remain in SYNC_CATEGORIES for programmatic callers.
 _SYNC_UI_CATEGORIES: list[str] = [
     "geometry",
     "sun_tracking",
@@ -1603,12 +1711,18 @@ _SYNC_UI_CATEGORIES: list[str] = [
     "interp",
     "automation",
     "manual_override",
-    "force_override",
-    "custom_position",
-    "motion_override",
-    "weather_override",
-    "light_cloud",
-    "temperature_climate",
+    "force_override_values",
+    "force_override_sensors",
+    "custom_position_values",
+    "custom_position_sensors",
+    "motion_override_values",
+    "motion_override_sensors",
+    "weather_override_values",
+    "weather_override_sensors",
+    "light_cloud_values",
+    "light_cloud_sensors",
+    "temperature_climate_values",
+    "temperature_climate_sensors",
     "glare_zones",
 ]
 
@@ -2776,12 +2890,26 @@ class OptionsFlowHandler(OptionsFlow):
             "interp": "Position Calibration",
             "automation": "Schedule & Timing",
             "manual_override": "Manual Override",
+            "force_override_values": "Force Override — Thresholds & Position",
+            "force_override_sensors": "Force Override — Trigger Sensors",
+            "custom_position_values": "Custom Positions — Values & Priorities",
+            "custom_position_sensors": "Custom Positions — Trigger Sensors",
+            "motion_override_values": "Motion Override — Timeout",
+            "motion_override_sensors": "Motion Override — Sensors",
+            "weather_override_values": "Weather Override — Thresholds & Position",
+            "weather_override_sensors": "Weather Override — Sensors",
+            "light_cloud_values": "Light & Cloud — Thresholds",
+            "light_cloud_sensors": "Light & Cloud — Sensors",
+            "temperature_climate_values": "Climate Mode — Thresholds & Settings",
+            "temperature_climate_sensors": "Climate Mode — Room Sensors",
+            "glare_zones": "Glare Zones",
+            # Legacy aliases (kept for back-compat; not shown in UI)
             "force_override": "Force Override",
+            "custom_position": "Custom Positions",
             "motion_override": "Motion Override",
             "weather_override": "Weather Override",
             "light_cloud": "Light Sensors & Cloud Suppression",
             "temperature_climate": "Temperature & Climate Mode",
-            "glare_zones": "Glare Zones",
         }
         category_lines = [
             f"• {_category_labels.get(c, c)}" for c in self.selected_sync_categories
