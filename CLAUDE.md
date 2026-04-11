@@ -529,6 +529,14 @@ Always update docs alongside code changes:
 
 ## Code Standards & Patterns
 
+### No Code Duplication — Always Propose Unified Approaches
+
+**Code duplication is not okay.** When two code paths need the same policy (gates, guards, logging, side-effects), extract a single shared method and have both paths delegate to it. Do not mirror guard blocks, do not copy-paste logic "for now", and do not justify duplication with "they might diverge later".
+
+- When planning a fix that touches logic already present elsewhere, your **first** proposal must be the unified one. Only fall back to duplication if the user explicitly rejects unification.
+- When generalizing an existing method to serve a second caller, preserve the original caller's behavior with safe defaults (optional params, unchanged return semantics for old callers).
+- Prefer growing one method by a few lines over creating a second method that repeats the same gate checks, `force=True` semantics, or logging format.
+
 ### Home Assistant Patterns
 
 - **Async-first** - All I/O is async (state tracking, cover commands)

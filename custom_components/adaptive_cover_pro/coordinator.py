@@ -821,30 +821,82 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force=force,
         )
 
-    async def _async_send_after_override_clear(self, state: int, options: dict) -> None:
-        """Send the current pipeline position after a manual override clears.
+    async def _async_send_after_override_clear(
+        self,
+        state: int,
+        options: dict,
+        *,
+        entities: list[str] | None = None,
+        trigger: str = "manual_override_cleared",
+    ) -> set[str]:
+        """Send the pipeline position after a manual override clears.
 
-        Called when a manual override expires (auto-expiry timer) or when the
-        reset button clears it.  Uses force=True so the command is sent
-        regardless of delta/time thresholds — the cover may be far from the
-        calculated position after sitting in manual for an extended period.
+        Single authoritative path for both the auto-expiry timer and the reset
+        button.  All gate checks live here so neither caller needs to duplicate
+        them.
+
+        **Time-window guard:** Outside the active-hours window the integration
+        has no business repositioning covers.  The normal update cycle sends the
+        correct position when the window reopens.
+
+        **Automatic-control guard:** When Automatic Control is OFF the cover
+        must stay wherever the user left it.
 
         Args:
-            state: Post-reset pipeline position (already computed without override).
+            state: Post-reset pipeline position (computed without the override).
             options: Config entry options dict.
+            entities: Covers to target.  Defaults to ``self.entities`` (all
+                covers), but the reset button supplies only the covers it just
+                cleared so multi-cover instances are not accidentally moved.
+            trigger: Reason string forwarded to ``apply_position`` and recorded
+                in ``last_skipped_action``.  Defaults to
+                ``"manual_override_cleared"`` (auto-expiry); the reset button
+                passes ``"manual_reset"``.
+
+        Returns:
+            Set of entity_ids that were successfully sent to (``"sent"``
+            outcome).  Callers use this to clear ``wait_for_target`` for
+            entities that were gated or skipped.
 
         """
+        target_covers = entities if entities is not None else list(self.entities)
+
+        if not self.check_adaptive_time:
+            self.logger.debug(
+                "Manual override cleared for %s but outside active-hours window — "
+                "skipping reposition (pipeline position was %s; will apply when "
+                "window opens)",
+                target_covers,
+                state,
+            )
+            return set()
+
+        if not self.automatic_control:
+            self.logger.debug(
+                "Manual override cleared for %s but automatic control is OFF — "
+                "skipping reposition (pipeline position was %s)",
+                target_covers,
+                state,
+            )
+            return set()
+
         self.logger.debug(
-            "Sending pipeline position %s after manual override cleared", state
+            "Sending pipeline position %s after manual override cleared for %s",
+            state,
+            target_covers,
         )
         sun_just_appeared = self._check_sun_validity_transition()
-        for cover in self.entities:
+        sent: set[str] = set()
+        for cover in target_covers:
             ctx = self._build_position_context(
                 cover, options, force=True, sun_just_appeared=sun_just_appeared
             )
-            await self._cmd_svc.apply_position(
-                cover, state, "manual_override_cleared", context=ctx
+            outcome, _ = await self._cmd_svc.apply_position(
+                cover, state, trigger, context=ctx
             )
+            if outcome == "sent":
+                sent.add(cover)
+        return sent
 
     async def async_handle_state_change(self, state: int, options):
         """Send position commands to all covers when a tracked entity changes."""
