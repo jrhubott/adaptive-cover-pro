@@ -84,25 +84,26 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
         # default — whichever handler wins now).
         await self.coordinator.async_refresh()
 
-        # Send the fresh pipeline position to every reset cover.
-        # force=True bypasses all gate checks (delta, time threshold, auto_control).
-        # This is required because the cover's last_updated timestamp was set when
-        # the user manually moved it, so _check_time_delta would fire and block
-        # the command even though this is an intentional user reset action.
-        options = self.coordinator.config_entry.options
+        # Delegate to the shared post-override send path.
+        # Time-window and automatic-control gates live there, along with
+        # force=True so time_delta/position_delta are bypassed for this
+        # intentional user reset.
+        sent = await self.coordinator._async_send_after_override_clear(
+            self.coordinator.state,
+            self.coordinator.config_entry.options,
+            entities=reset_entities,
+            trigger="manual_reset",
+        )
+
+        # Entities not sent to (gated by time window / auto-control, or
+        # skipped inside apply_position) must have wait_for_target cleared so
+        # later cover state events are not silently swallowed.
+        # Entities that were sent already have wait_for_target=True set by
+        # apply_position; leave those untouched.
         for entity in reset_entities:
-            ctx = self.coordinator._build_position_context(entity, options, force=True)
-            outcome, _ = await self.coordinator._cmd_svc.apply_position(
-                entity, self.coordinator.state, "manual_reset", context=ctx
-            )
-            if outcome != "sent":
+            if entity not in sent:
                 _LOGGER.debug(
-                    "Manual override reset: no position change sent for %s (%s)",
+                    "Manual override reset: no position change sent for %s",
                     entity,
-                    outcome,
                 )
-            # If sent, apply_position already set wait_for_target=True;
-            # let normal cover-state-change detection clear it on arrival.
-            # If not sent, unblock state tracking now.
-            if outcome != "sent":
                 self.coordinator.wait_for_target[entity] = False

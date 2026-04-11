@@ -1,7 +1,7 @@
 """Tests for manual override detection with grace period."""
 
 import datetime as dt
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -210,29 +210,26 @@ def test_cancel_grace_period_handles_missing_entity():
 
 @pytest.mark.asyncio
 async def test_reset_button_clears_manual_override_and_sends_post_refresh_position():
-    """Reset button must reset override, refresh, then send the fresh pipeline position.
+    """Reset button must reset override, refresh, then delegate to the shared send path.
 
-    Also verifies force=True is used so time_delta_too_small cannot block the send.
+    The shared path (_async_send_after_override_clear) owns force=True and the
+    time-window / auto-control gates.  The button supplies the post-refresh state,
+    the options dict, the target entities, and the "manual_reset" trigger.
     """
     from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
-    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 
     entity_id = "cover.living_room"
     POST_REFRESH_STATE = 52  # position pipeline returns after override is cleared
+    options = {"some_option": True}
 
     coordinator = MagicMock()
     coordinator.manager.is_cover_manual.return_value = True
-    coordinator.config_entry.options = {}
-    coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, manual_override=False,
-        sun_just_appeared=False, min_change=2, time_threshold=2,
-        special_positions=[0, 100], inverse_state=False, force=True,
-    )
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
+    coordinator.config_entry.options = options
     coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
     coordinator.state = POST_REFRESH_STATE
     coordinator.async_refresh = AsyncMock()
+    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
     button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
     button.coordinator = coordinator
@@ -244,26 +241,19 @@ async def test_reset_button_clears_manual_override_and_sends_post_refresh_positi
     coordinator.manager.reset.assert_called_once_with(entity_id)
     coordinator.async_refresh.assert_called_once()
 
-    # _build_position_context must be called with force=True so time/delta gates are bypassed
-    coordinator._build_position_context.assert_called_once()
-    build_kwargs = coordinator._build_position_context.call_args
-    assert build_kwargs.kwargs.get("force") is True or (
-        len(build_kwargs.args) >= 3 and build_kwargs.args[2] is True
-    ), "_build_position_context must be called with force=True"
-
-    # apply_position must be called AFTER refresh with the fresh pipeline position
-    coordinator._cmd_svc.apply_position.assert_called_once()
-    call_args = coordinator._cmd_svc.apply_position.call_args
-    assert call_args[0][0] == entity_id          # entity
-    assert call_args[0][1] == POST_REFRESH_STATE  # fresh state, not pre-refresh
-    assert call_args[0][2] == "manual_reset"      # reason
+    # Must delegate to the shared send path with correct args
+    coordinator._async_send_after_override_clear.assert_called_once()
+    call = coordinator._async_send_after_override_clear.call_args
+    assert call[0][0] == POST_REFRESH_STATE     # post-refresh state
+    assert call[0][1] == options                 # options dict
+    assert call[1].get("entities") == [entity_id]
+    assert call[1].get("trigger") == "manual_reset"
 
 
 @pytest.mark.asyncio
 async def test_reset_button_suppresses_redetection_during_refresh():
     """wait_for_target must be True while async_refresh runs to block re-detection."""
     from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
-    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 
     entity_id = "cover.bedroom"
     states_during_refresh = []
@@ -276,15 +266,10 @@ async def test_reset_button_suppresses_redetection_during_refresh():
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.state = 50
     coordinator.config_entry.options = {}
-    coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, manual_override=False,
-        sun_just_appeared=False, min_change=2, time_threshold=2,
-        special_positions=[0, 100], inverse_state=False,
-    )
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
     coordinator.async_refresh = AsyncMock(side_effect=capture_refresh)
     coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
+    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
     button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
     button.coordinator = coordinator
@@ -298,13 +283,13 @@ async def test_reset_button_suppresses_redetection_during_refresh():
 
 @pytest.mark.asyncio
 async def test_reset_button_clears_wait_for_target_when_no_command_sent():
-    """wait_for_target must be False after reset when apply_position is skipped.
+    """wait_for_target must be False after reset when the shared send path skips the entity.
 
-    With force=True, the only remaining skip reason is no_capable_service
-    (cover doesn't support positioning commands).
+    The shared method (_async_send_after_override_clear) returns a set of sent
+    entity_ids.  If an entity is absent (gated by time window, auto-control off,
+    or no positioning capability), the button must clear wait_for_target.
     """
     from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
-    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 
     entity_id = "cover.no_position_support"
 
@@ -312,13 +297,8 @@ async def test_reset_button_clears_wait_for_target_when_no_command_sent():
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.state = 50
     coordinator.config_entry.options = {}
-    coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, manual_override=False,
-        sun_just_appeared=False, min_change=2, time_threshold=2,
-        special_positions=[0, 100], inverse_state=False, force=True,
-    )
-    # Simulate cover without positioning capability — the only skip that survives force=True
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("skipped", "no_capable_service"))
+    # Shared method returns empty set — entity was not sent to
+    coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
     coordinator.async_refresh = AsyncMock()
     coordinator.wait_for_target = {entity_id: True}  # was True from suppression
     coordinator.cover_state_change = False
@@ -329,7 +309,7 @@ async def test_reset_button_clears_wait_for_target_when_no_command_sent():
 
     await button.async_press()
 
-    # No command sent — wait_for_target must be cleared so state tracking resumes
+    # Not in sent set — wait_for_target must be cleared so state tracking resumes
     assert coordinator.wait_for_target[entity_id] is False
 
 
@@ -389,13 +369,12 @@ async def test_reset_if_needed_returns_empty_when_nothing_expired():
 
 @pytest.mark.asyncio
 async def test_reset_button_sends_correct_position_with_climate_mode():
-    """Button must send the post-refresh pipeline position, not the pre-refresh override pos.
+    """Button must pass the post-refresh pipeline position to the shared send path.
 
     Covers the climate-mode scenario where ManualOverrideHandler returns solar/default
     but ClimateHandler wins after the override is cleared.
     """
     from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
-    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 
     entity_id = "cover.climate_room"
     CLIMATE_POSITION = 70   # what ClimateHandler returns after override clears
@@ -404,19 +383,13 @@ async def test_reset_button_sends_correct_position_with_climate_mode():
     coordinator = MagicMock()
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.config_entry.options = {}
-    coordinator._build_position_context.return_value = PositionContext(
-        auto_control=True, manual_override=False,
-        sun_just_appeared=False, min_change=2, time_threshold=2,
-        special_positions=[0, 100], inverse_state=False, force=True,
-    )
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
     coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
 
     # Simulate: after refresh the pipeline now returns the climate position
     coordinator.state = CLIMATE_POSITION
-
     coordinator.async_refresh = AsyncMock()
+    coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
     button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
     button.coordinator = coordinator
@@ -424,8 +397,8 @@ async def test_reset_button_sends_correct_position_with_climate_mode():
 
     await button.async_press()
 
-    # The position sent must be the post-refresh climate position, not the solar one
-    call_args = coordinator._cmd_svc.apply_position.call_args
-    sent_position = call_args[0][1]
+    # The state passed to the shared method must be the post-refresh climate position
+    call = coordinator._async_send_after_override_clear.call_args
+    sent_position = call[0][0]
     assert sent_position == CLIMATE_POSITION
     assert sent_position != SOLAR_POSITION
