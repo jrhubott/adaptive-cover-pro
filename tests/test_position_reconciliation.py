@@ -1284,6 +1284,9 @@ async def test_stop_in_flight_dry_run_no_send(svc, mock_hass):
     """stop_in_flight with dry_run=True skips async_call but still clears wait_for_target."""
     svc.dry_run = True
     svc.wait_for_target["cover.test"] = True
+    state_obj = MagicMock()
+    state_obj.state = "opening"
+    mock_hass.states.get.return_value = state_obj
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
         return_value={"has_stop": True},
@@ -1298,6 +1301,9 @@ async def test_stop_in_flight_dry_run_no_send(svc, mock_hass):
 async def test_stop_all_dry_run_no_send(svc, mock_hass):
     """stop_all with dry_run=True skips async_call but still reports stopped entities."""
     svc.dry_run = True
+    state_obj = MagicMock()
+    state_obj.state = "closing"
+    mock_hass.states.get.return_value = state_obj
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
         return_value={"has_stop": True},

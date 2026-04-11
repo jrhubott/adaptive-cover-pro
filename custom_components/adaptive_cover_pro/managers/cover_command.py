@@ -361,6 +361,19 @@ class CoverCommandService:
     # Stop helpers — bypass _enabled gate (shutdown / emergency paths)
     # ------------------------------------------------------------------ #
 
+    def _is_cover_in_motion(self, entity_id: str) -> bool:
+        """Return True only if HA reports the cover as opening or closing.
+
+        cover.stop_cover is overloaded on some hardware (Somfy "My", Hunter
+        Douglas favorite, etc.) — on stationary covers it triggers a preset
+        position move instead of a no-op.  Callers in shutdown/emergency
+        paths must gate on actual motion to avoid triggering that preset.
+        """
+        state_obj = self._hass.states.get(entity_id)
+        if state_obj is None:
+            return False
+        return state_obj.state in ("opening", "closing")
+
     async def stop_in_flight(
         self, entities: set[str] | None = None
     ) -> list[str]:
@@ -385,17 +398,29 @@ class CoverCommandService:
         }
         for eid in candidates:
             caps = check_cover_features(self._hass, eid)
-            if caps and caps.get("has_stop"):
-                if self._dry_run:
-                    self._logger.info("[dry_run] would stop_cover %s", eid)
-                else:
-                    await self._hass.services.async_call(
-                        "cover", "stop_cover", {"entity_id": eid}
-                    )
+            if not (caps and caps.get("has_stop")):
+                continue
+            if not self._is_cover_in_motion(eid):
+                state_val = getattr(self._hass.states.get(eid), "state", None)
+                self._logger.debug(
+                    "stop_in_flight: skipping %s — not in motion (state=%s); "
+                    "clearing stale wait_for_target",
+                    eid,
+                    state_val,
+                )
                 self.wait_for_target[eid] = False
                 self._sent_at.pop(eid, None)
-                stopped.append(eid)
-                self._logger.debug("stop_in_flight: stopped %s", eid)
+                continue
+            if self._dry_run:
+                self._logger.info("[dry_run] would stop_cover %s", eid)
+            else:
+                await self._hass.services.async_call(
+                    "cover", "stop_cover", {"entity_id": eid}
+                )
+            self.wait_for_target[eid] = False
+            self._sent_at.pop(eid, None)
+            stopped.append(eid)
+            self._logger.debug("stop_in_flight: stopped %s", eid)
         return stopped
 
     async def stop_all(self, entity_ids: list[str]) -> list[str]:
@@ -414,15 +439,24 @@ class CoverCommandService:
         stopped: list[str] = []
         for eid in entity_ids:
             caps = check_cover_features(self._hass, eid)
-            if caps and caps.get("has_stop"):
-                if self._dry_run:
-                    self._logger.info("[dry_run] would stop_cover %s", eid)
-                else:
-                    await self._hass.services.async_call(
-                        "cover", "stop_cover", {"entity_id": eid}
-                    )
-                stopped.append(eid)
-                self._logger.debug("stop_all: stopped %s", eid)
+            if not (caps and caps.get("has_stop")):
+                continue
+            if not self._is_cover_in_motion(eid):
+                state_val = getattr(self._hass.states.get(eid), "state", None)
+                self._logger.debug(
+                    "stop_all: skipping %s — not in motion (state=%s)",
+                    eid,
+                    state_val,
+                )
+                continue
+            if self._dry_run:
+                self._logger.info("[dry_run] would stop_cover %s", eid)
+            else:
+                await self._hass.services.async_call(
+                    "cover", "stop_cover", {"entity_id": eid}
+                )
+            stopped.append(eid)
+            self._logger.debug("stop_all: stopped %s", eid)
         return stopped
 
     # ------------------------------------------------------------------ #

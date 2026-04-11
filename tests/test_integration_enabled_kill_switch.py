@@ -439,11 +439,33 @@ def _patch_caps_with_stop(has_stop=True):
     )
 
 
+def _stub_cover_state(mock_hass, entity_id: str, state_str: str) -> None:
+    """Make mock_hass.states.get(entity_id) return a state object with state=state_str."""
+    state_obj = MagicMock()
+    state_obj.state = state_str
+    original = mock_hass.states.get.side_effect or (lambda _eid: MagicMock())
+
+    def _side_effect(eid):
+        if eid == entity_id:
+            return state_obj
+        return original(eid)
+
+    mock_hass.states.get.side_effect = _side_effect
+
+
+def _stub_all_covers_state(mock_hass, state_str: str) -> None:
+    """Make mock_hass.states.get always return a state object with state=state_str."""
+    state_obj = MagicMock()
+    state_obj.state = state_str
+    mock_hass.states.get.return_value = state_obj
+
+
 @pytest.mark.asyncio
 async def test_stop_in_flight_sends_stop_to_waiting_entities(svc, mock_hass):
     """stop_in_flight sends stop_cover to every entity with wait_for_target=True."""
     svc.wait_for_target["cover.a"] = True
     svc.wait_for_target["cover.b"] = True
+    _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=True):
         stopped = await svc.stop_in_flight()
@@ -459,6 +481,7 @@ async def test_stop_in_flight_sends_stop_to_waiting_entities(svc, mock_hass):
 async def test_stop_in_flight_skips_covers_without_has_stop(svc, mock_hass):
     """stop_in_flight skips entities whose cover does not support STOP."""
     svc.wait_for_target["cover.nostop"] = True
+    _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=False):
         stopped = await svc.stop_in_flight()
@@ -471,6 +494,7 @@ async def test_stop_in_flight_skips_covers_without_has_stop(svc, mock_hass):
 async def test_stop_in_flight_skips_entities_not_waiting(svc, mock_hass):
     """stop_in_flight ignores entities where wait_for_target is False."""
     svc.wait_for_target["cover.settled"] = False
+    _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=True):
         stopped = await svc.stop_in_flight()
@@ -486,9 +510,71 @@ async def test_stop_in_flight_clears_wait_for_target(svc, mock_hass):
     svc._sent_at["cover.moving"] = __import__("datetime").datetime.now(
         __import__("datetime").timezone.utc
     )
+    _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=True):
         await svc.stop_in_flight()
 
     assert svc.wait_for_target["cover.moving"] is False
     assert "cover.moving" not in svc._sent_at
+
+
+# ---------------------------------------------------------------------------
+# Somfy "My" position regression tests (Issue #197)
+# stop_cover must NOT be sent to stationary covers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stop_in_flight_skips_stationary_cover_somfy_my(svc, mock_hass):
+    """stop_in_flight must not send stop_cover to a cover that is stationary.
+
+    On Somfy RTS/io awnings, stop_cover sent to a stationary cover triggers
+    the "My" preset position instead of being a no-op.  The in-flight
+    bookkeeping (wait_for_target, _sent_at) should still be cleaned up.
+    """
+    svc.wait_for_target["cover.awning"] = True
+    svc._sent_at["cover.awning"] = __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    )
+    _stub_all_covers_state(mock_hass, "open")  # already stationary
+
+    with _patch_caps_with_stop(has_stop=True):
+        stopped = await svc.stop_in_flight()
+
+    assert stopped == []
+    mock_hass.services.async_call.assert_not_called()
+    # Stale bookkeeping must be cleared even though no stop was sent
+    assert svc.wait_for_target["cover.awning"] is False
+    assert "cover.awning" not in svc._sent_at
+
+
+@pytest.mark.asyncio
+async def test_stop_all_skips_stationary_cover_somfy_my(svc, mock_hass):
+    """stop_all must not send stop_cover to a cover that is not in motion.
+
+    This is the emergency_stop path — blanket stop should only fire against
+    covers that are actively opening or closing.
+    """
+    _stub_all_covers_state(mock_hass, "closed")
+
+    with _patch_caps_with_stop(has_stop=True):
+        stopped = await svc.stop_all(["cover.awning"])
+
+    assert stopped == []
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stop_all_stops_only_moving_covers_in_mixed_set(svc, mock_hass):
+    """stop_all sends stop_cover only to the cover that is opening, not the closed one."""
+    _stub_cover_state(mock_hass, "cover.moving", "opening")
+    _stub_cover_state(mock_hass, "cover.idle", "closed")
+
+    with _patch_caps_with_stop(has_stop=True):
+        stopped = await svc.stop_all(["cover.moving", "cover.idle"])
+
+    assert stopped == ["cover.moving"]
+    assert mock_hass.services.async_call.call_count == 1
+    call_args = mock_hass.services.async_call.call_args
+    assert call_args.args == ("cover", "stop_cover", {"entity_id": "cover.moving"})
