@@ -881,7 +881,7 @@ class TestCustomPositionEndToEnd:
                 weather_override_position=0,
                 glare_zones=None,
                 active_zone_names=frozenset(),
-                custom_position_sensors=[("binary_sensor.scene", True, 33, 77, False)],
+                custom_position_sensors=[("binary_sensor.scene", True, 33, 77, False, False)],
             )
             result = pipeline.evaluate(snapshot)
 

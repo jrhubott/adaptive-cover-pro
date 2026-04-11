@@ -55,6 +55,12 @@ from .const import (
     CONF_CUSTOM_POSITION_MIN_MODE_2,
     CONF_CUSTOM_POSITION_MIN_MODE_3,
     CONF_CUSTOM_POSITION_MIN_MODE_4,
+    CONF_CUSTOM_POSITION_USE_MY_1,
+    CONF_CUSTOM_POSITION_USE_MY_2,
+    CONF_CUSTOM_POSITION_USE_MY_3,
+    CONF_CUSTOM_POSITION_USE_MY_4,
+    CONF_MY_POSITION_VALUE,
+    CONF_SUNSET_USE_MY,
     CONF_CUSTOM_POSITION_PRIORITY_1,
     CONF_CUSTOM_POSITION_PRIORITY_2,
     CONF_CUSTOM_POSITION_PRIORITY_3,
@@ -905,6 +911,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             in_time_window=self.check_adaptive_time,
             motion_control_enabled=self._toggles.motion_control,
             custom_position_sensors=self._read_custom_position_sensor_states(options),
+            my_position_value=options.get(CONF_MY_POSITION_VALUE),
+            sunset_use_my=bool(options.get(CONF_SUNSET_USE_MY, False)),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -1098,6 +1106,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             special_positions=build_special_positions(options),
             inverse_state=self._inverse_state,
             force=force,
+            use_my_position=self._pipeline_result.use_my_position if self._pipeline_result else False,
         )
 
     async def _async_send_after_override_clear(
@@ -1581,23 +1590,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _read_custom_position_sensor_states(
         self, options
-    ) -> list[tuple[str, bool, int, int, bool]]:
+    ) -> list[tuple[str, bool, int, int, bool, bool]]:
         """Read custom position sensor states from HA into an ordered list.
 
-        Returns a list of (entity_id, is_on, position, priority, min_mode) tuples for
-        every slot that has both a sensor and a position configured.  Priority
+        Returns a list of (entity_id, is_on, position, priority, min_mode, use_my) tuples
+        for every slot that has both a sensor and a position configured.  Priority
         defaults to DEFAULT_CUSTOM_POSITION_PRIORITY (77) when not set so that
         existing installations behave identically to the previous release.
         min_mode defaults to False so existing installations behave identically.
+        use_my defaults to False; when True the slot triggers the cover's hardware
+        "My" preset via stop_cover instead of the slot's numeric position.
         """
         _sensor_keys = [
-            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1, CONF_CUSTOM_POSITION_MIN_MODE_1),
-            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2, CONF_CUSTOM_POSITION_MIN_MODE_2),
-            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3, CONF_CUSTOM_POSITION_MIN_MODE_3),
-            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4, CONF_CUSTOM_POSITION_MIN_MODE_4),
+            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1, CONF_CUSTOM_POSITION_MIN_MODE_1, CONF_CUSTOM_POSITION_USE_MY_1),
+            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2, CONF_CUSTOM_POSITION_MIN_MODE_2, CONF_CUSTOM_POSITION_USE_MY_2),
+            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3, CONF_CUSTOM_POSITION_MIN_MODE_3, CONF_CUSTOM_POSITION_USE_MY_3),
+            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4, CONF_CUSTOM_POSITION_MIN_MODE_4, CONF_CUSTOM_POSITION_USE_MY_4),
         ]
         result = []
-        for sensor_key, pos_key, pri_key, min_mode_key in _sensor_keys:
+        for sensor_key, pos_key, pri_key, min_mode_key, use_my_key in _sensor_keys:
             sensor = options.get(sensor_key)
             position = options.get(pos_key)
             if sensor and position is not None:
@@ -1607,7 +1618,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
                 min_mode = bool(options.get(min_mode_key, False))
-                result.append((sensor, is_on, int(position), priority, min_mode))
+                use_my = bool(options.get(use_my_key, False))
+                result.append((sensor, is_on, int(position), priority, min_mode, use_my))
         return result
 
     def build_diagnostic_data(self) -> dict:

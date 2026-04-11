@@ -21,6 +21,7 @@ from ..const import (
     ATTR_POSITION,
     ATTR_TILT_POSITION,
     CONF_DEFAULT_HEIGHT,
+    CONF_MY_POSITION_VALUE,
     CONF_SUNSET_POS,
     MAX_POSITION_RETRIES,
     POSITION_CHECK_INTERVAL_MINUTES,
@@ -48,6 +49,7 @@ class PositionContext:
     special_positions: list[int]
     inverse_state: bool = False
     force: bool = False  # Skip all gate checks when True
+    use_my_position: bool = False  # Route through send_my_position() on non-position-capable covers
 
 
 class CoverCommandService:
@@ -368,6 +370,10 @@ class CoverCommandService:
         Douglas favorite, etc.) — on stationary covers it triggers a preset
         position move instead of a no-op.  Callers in shutdown/emergency
         paths must gate on actual motion to avoid triggering that preset.
+
+        Note: send_my_position() intentionally does NOT call this method —
+        it deliberately sends stop_cover to a stationary cover (that is what
+        triggers the My preset).  This gate applies to shutdown paths only.
         """
         state_obj = self._hass.states.get(entity_id)
         if state_obj is None:
@@ -458,6 +464,60 @@ class CoverCommandService:
             stopped.append(eid)
             self._logger.debug("stop_all: stopped %s", eid)
         return stopped
+
+    # ------------------------------------------------------------------ #
+    # "My" position (Somfy / favorite preset)
+    # ------------------------------------------------------------------ #
+
+    async def send_my_position(self, entity_id: str, target: int) -> bool:
+        """Trigger the cover's hardware-stored "My" preset via cover.stop_cover.
+
+        Unlike stop_all/stop_in_flight this DELIBERATELY sends stop_cover to a
+        stationary cover — Somfy RTS motors interpret stop-while-stationary as
+        "move to My".  The caller has already verified the cover lacks
+        set_cover_position and that has_stop is True.
+
+        Records target_call / wait_for_target / _sent_at so reconciliation
+        and delta logic treat this exactly like any other positioning command.
+
+        Note: _is_cover_in_motion() is intentionally NOT called here.  That
+        gate belongs to the shutdown paths (stop_all / stop_in_flight).
+        Sending stop_cover to a stationary cover is the entire point of this
+        method — the two paths have opposite requirements.
+
+        Args:
+            entity_id: Cover entity_id to trigger.
+            target:    The position (0–100) that My represents (user-configured).
+
+        Returns:
+            True if the command was sent (or dry-run logged), False if the
+            cover lacks has_stop capability.
+
+        """
+        caps = check_cover_features(self._hass, entity_id)
+        if not (caps and caps.get("has_stop")):
+            self._logger.debug(
+                "send_my_position: skipping %s — cover does not support STOP", entity_id
+            )
+            return False
+        if self._dry_run:
+            self._logger.info(
+                "[dry_run] would stop_cover %s (My position = %d%%)", entity_id, target
+            )
+        else:
+            await self._hass.services.async_call(
+                "cover", "stop_cover", {"entity_id": entity_id}
+            )
+        now = dt.datetime.now(dt.UTC)
+        self.target_call[entity_id] = target
+        self.wait_for_target[entity_id] = True
+        self._sent_at[entity_id] = now
+        self._retry_counts.pop(entity_id, None)
+        self._gave_up.discard(entity_id)
+        self._logger.debug(
+            "send_my_position: stop_cover sent to %s (My = %d%%)", entity_id, target
+        )
+        return True
 
     # ------------------------------------------------------------------ #
     # Threshold update (called by coordinator on options change)
@@ -705,7 +765,11 @@ class CoverCommandService:
 
         # ----- send command -----
         service, service_data, supports_position = self._prepare_service_call(
-            entity_id, position, context.inverse_state, is_safety=context.force
+            entity_id,
+            position,
+            context.inverse_state,
+            is_safety=context.force,
+            use_my_position=context.use_my_position,
         )
         if service is None:
             return self._skip(
@@ -1091,6 +1155,7 @@ class CoverCommandService:
         caps: dict[str, bool] | None = None,
         reset_retries: bool = True,
         is_safety: bool = False,
+        use_my_position: bool = False,  # noqa: FBT001
     ) -> tuple[str | None, dict | None, bool]:
         """Build the HA service call for this cover/state.
 
@@ -1110,6 +1175,9 @@ class CoverCommandService:
                 (force=True path).  Adds the entity to ``_safety_targets`` so
                 reconciliation will resend it even when automatic control is off.
                 Non-safety targets remove the entity from ``_safety_targets``.
+            use_my_position: If True and the cover lacks set_cover_position,
+                send cover.stop_cover to trigger the hardware My preset instead
+                of falling back to open/close threshold routing.
 
         Returns:
             (service_name, service_data, supports_position).
@@ -1160,6 +1228,27 @@ class CoverCommandService:
                 self._safety_targets.discard(entity)
             self._grace_mgr.start_command_grace_period(entity)
             return service, service_data, True
+
+        # "My" position path (non-position-capable covers only).
+        # stop_cover sent to a stationary Somfy RTS cover triggers the user's
+        # hardware-programmed My preset.  Position-capable covers skip this
+        # branch and fall through to set_cover_position above.
+        if use_my_position and caps.get("has_stop"):
+            self._logger.debug(
+                "My-position routing: stop_cover → %s (My = %d%%)", entity, state
+            )
+            self.target_call[entity] = state
+            self.wait_for_target[entity] = True
+            self._sent_at[entity] = now
+            if reset_retries:
+                self._retry_counts.pop(entity, None)
+                self._gave_up.discard(entity)
+            if is_safety:
+                self._safety_targets.add(entity)
+            else:
+                self._safety_targets.discard(entity)
+            self._grace_mgr.start_command_grace_period(entity)
+            return "stop_cover", {ATTR_ENTITY_ID: entity}, False
 
         # Open/close-only cover
         has_open = caps.get("has_open", False)
@@ -1262,8 +1351,11 @@ def build_special_positions(options: dict) -> list[int]:
     special_positions = [0, 100]
     default_height = options.get(CONF_DEFAULT_HEIGHT)
     sunset_pos = options.get(CONF_SUNSET_POS)
+    my_position_value = options.get(CONF_MY_POSITION_VALUE)
     if default_height is not None:
         special_positions.append(default_height)
     if sunset_pos is not None:
         special_positions.append(sunset_pos)
+    if my_position_value is not None:
+        special_positions.append(my_position_value)
     return special_positions

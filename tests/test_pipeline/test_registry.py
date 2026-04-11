@@ -331,7 +331,7 @@ def test_climate_data_populated_when_custom_position_wins() -> None:
         climate_readings=_summer_readings(),
         climate_options=_climate_options_summer(),
         custom_position_sensors=[
-            ("binary_sensor.custom", True, 50, 77, False),
+            ("binary_sensor.custom", True, 50, 77, False, False),
         ],
     )
     result = registry.evaluate(snap)
@@ -405,7 +405,7 @@ def test_outprioritized_handler_trace_has_descriptive_reason() -> None:
         direct_sun_valid=True,
         calculate_percentage_return=70.0,
         custom_position_sensors=[
-            ("binary_sensor.custom", True, 50, 77, False),
+            ("binary_sensor.custom", True, 50, 77, False, False),
         ],
     )
     result = registry.evaluate(snap)

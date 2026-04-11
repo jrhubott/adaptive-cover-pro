@@ -665,6 +665,20 @@ automation:
       - service: adaptive_cover_pro.integration_enable
 ```
 
+### My Position Support (Somfy RTS)
+
+RTS motors (and some other brands) store a user-programmed "My" preset that can be triggered by sending `cover.stop_cover` while the cover is stationary. ACP can deliberately trigger this preset at specific moments, giving RTS-only covers a third discrete landing position.
+
+**Setup:**
+1. Program My on your remote (press and hold the My button on your Telis/Situo).
+2. Estimate the position My represents (e.g. 40 %).
+3. Set **My position value** to that number in the cover's options.
+4. Enable **Use My at sunset** and/or **Slot N: use My position** on the relevant custom position slot.
+
+> **Note:** ACP cannot query the motor to learn what My is set to. If you re-program My on the remote, update the *My position value* config field to match.
+
+> **Note:** This feature only affects non-position-capable covers (Somfy RTS). Position-capable covers (Z-Wave, MQTT with set_cover_position) gracefully fall through to `set_cover_position(my_position_value)` — My routing via stop_cover is not used.
+
 When climate mode is setup you will also get these entities:
 
 | Entities                                   | Default | Description                                                                                                 |
