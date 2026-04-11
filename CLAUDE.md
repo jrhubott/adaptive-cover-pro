@@ -122,7 +122,7 @@ What changed and why.
 - ✅ X tests passing
 
 ## Related Issues
-Fixes #123
+Refs #123
 ```
 
 **When exiting Plan Mode:** Use AskUserQuestion to ask if user wants to (1) create PR, (2) merge + stable release, or (3) beta release.  
@@ -133,7 +133,7 @@ Fixes #123
 ```bash
 gh issue view 123
 git checkout -b fix/issue-123-short-description
-# Commit with: Fixes #123 (auto-closes on merge) or Related to #123
+# Commit with: Refs #123 (issues auto-close when the fix ships in a stable release)
 git push -u origin fix/issue-123-short-description
 # Ask before gh pr create
 ```
