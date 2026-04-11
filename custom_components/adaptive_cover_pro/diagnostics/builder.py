@@ -255,6 +255,8 @@ class DiagnosticsBuilder:
         diagnostics["control_state_reason"] = cls._get_control_state_reason(ctx)
         if result is not None and result.bypass_auto_control:
             diagnostics["bypass_auto_control"] = True
+        if result is not None and result.use_my_position:
+            diagnostics["use_my_position"] = True
         if result is not None and result.tilt is not None:
             diagnostics["tilt"] = result.tilt
 

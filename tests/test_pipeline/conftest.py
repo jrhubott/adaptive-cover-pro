@@ -66,7 +66,9 @@ def make_snapshot(
     active_zone_names: set[str] | frozenset[str] | None = None,
     in_time_window: bool = True,
     motion_control_enabled: bool = True,
-    custom_position_sensors: list[tuple[str, bool, int, int, bool]] | None = None,
+    custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] | None = None,
+    my_position_value: int | None = None,
+    sunset_use_my: bool = False,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -104,4 +106,6 @@ def make_snapshot(
         in_time_window=in_time_window,
         motion_control_enabled=motion_control_enabled,
         custom_position_sensors=custom_position_sensors if custom_position_sensors is not None else [],
+        my_position_value=my_position_value,
+        sunset_use_my=sunset_use_my,
     )

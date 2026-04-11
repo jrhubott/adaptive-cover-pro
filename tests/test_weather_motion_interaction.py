@@ -344,7 +344,7 @@ class TestCustomPositionPriorityInteractions:
         """Custom position (77) fires before motion timeout (75)."""
         registry = _full_registry()
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False)],
+            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False, False)],
             motion_timeout_active=True,
             default_position=10,
         )
@@ -358,7 +358,7 @@ class TestCustomPositionPriorityInteractions:
         registry = _full_registry()
         snap = make_snapshot(
             manual_override_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False)],
+            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False, False)],
         )
         result = registry.evaluate(snap)
 
@@ -368,7 +368,7 @@ class TestCustomPositionPriorityInteractions:
         """When custom sensor is off and motion timeout active, motion wins."""
         registry = _full_registry()
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", False, 55, 77, False)],  # off
+            custom_position_sensors=[("binary_sensor.scene", False, 55, 77, False, False)],  # off
             motion_timeout_active=True,
             default_position=10,
         )
@@ -381,7 +381,7 @@ class TestCustomPositionPriorityInteractions:
         """Custom position (77) also beats solar (40) when active."""
         registry = _full_registry()
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False)],
+            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False, False)],
             direct_sun_valid=True,
             calculate_percentage_return=90.0,
         )

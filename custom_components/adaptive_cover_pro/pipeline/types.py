@@ -110,15 +110,25 @@ class PipelineSnapshot:
     # Defaults to True for backward compatibility.
     motion_control_enabled: bool = True
 
-    # Custom position sensor states: list of (entity_id, is_on, position, priority, min_mode).
+    # Custom position sensor states: list of (entity_id, is_on, position, priority, min_mode, use_my).
     # Each entry corresponds to one configured custom position slot.  The pipeline
     # creates a separate CustomPositionHandler instance per slot, each with its own
     # priority, so the PipelineRegistry sorts them correctly relative to all other
     # handlers.  The handler reads its own sensor's is_on state from this list by
     # matching entity_id.
     # min_mode: when True, the position acts as a floor (max of configured vs calculated).
+    # use_my: when True and my_position_value is set, trigger the cover's "My" hardware
+    #   preset via cover.stop_cover instead of the slot's numeric position.
     # Defaults to empty list (feature disabled / not configured).
-    custom_position_sensors: list[tuple[str, bool, int, int, bool]] = field(default_factory=list)
+    custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] = field(default_factory=list)
+
+    # Somfy "My" position support.
+    # my_position_value: the position (1–99 %) the user programmed on the motor remote.
+    #   None = feature disabled for this cover.
+    # sunset_use_my: when True, the sunset/end_time return path triggers My instead of
+    #   the normal open/close threshold fallback (for non-position-capable covers).
+    my_position_value: int | None = None
+    sunset_use_my: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -170,3 +180,9 @@ class PipelineResult:
     # that wind/rain/force protection still works when the user has paused
     # normal sun-tracking automation.
     bypass_auto_control: bool = False
+
+    # When True, the coordinator should route this command through
+    # CoverCommandService.send_my_position() on non-position-capable covers
+    # (cover.stop_cover while stationary → triggers the Somfy "My" hardware preset).
+    # Position-capable covers gracefully fall through to set_cover_position(position).
+    use_my_position: bool = False

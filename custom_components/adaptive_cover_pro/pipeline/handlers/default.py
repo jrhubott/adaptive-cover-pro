@@ -22,6 +22,21 @@ class DefaultHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
         """Return the default position as the final fallback."""
         position = compute_default_position(snapshot)
+        # "Use My at sunset" path: route through the cover's hardware-stored My preset
+        # when the sunset window is active and the user has opted in.
+        if (
+            snapshot.is_sunset_active
+            and snapshot.sunset_use_my
+            and snapshot.my_position_value is not None
+        ):
+            pos = snapshot.my_position_value
+            return PipelineResult(
+                position=pos,
+                use_my_position=True,
+                control_method=ControlMethod.DEFAULT,
+                reason=f"sunset position — use My position ({pos}%)",
+                raw_calculated_position=position,
+            )
         pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
         return PipelineResult(
             position=position,
