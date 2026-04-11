@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
 **Date:** 2026-04-11
-**Current Version:** v2.15.3
+**Current Version:** v2.17.3
 **Branch:** `main`
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- `fix/issue-203-diagnostic-sensor-availability` — Hoist `coordinator.data is None` guard to `AdaptiveCoverBaseEntity` so all entity platforms inherit it. The v2.17.2 fix (PR #203) only patched 4 classes; diagnostic sensors (`sun_position`, `control_status`, `climate_status`, `decision_trace`, etc.) were still dropped from the HA registry on startup. Added `tests/test_sensor_availability.py` with 19 tests including a reflection-based completeness check. Released as v2.17.3. Issue #203 closed.
 - `feature/issue-192-persist-manual-override` — Persist manual override across HA reboots/reloads (#192). `AdaptiveCoverManualOverrideEndSensor` inherits `RestoreEntity`; `_restore_from_attributes` rehydrates manager state from persisted `per_entity` expiry map. `async_handle_first_refresh` skips `apply_position` for restored-manual covers. `async_setup_entry` reordered so RestoreEntity hooks run before first refresh. PR #195, merged to main.
 - Direct commits to `main` (v2.15.3) — Fix `_on_window_closed` missing `automatic_control` gate: covers still moved to end-of-window default/sunset position even with Automatic Control OFF. Root cause: `force=True` bypassed service gate; no upstream coordinator check. Fixed with early-return in `_on_window_closed` (matching pattern from `_async_send_after_override_clear`). Added control-gate matrix test + AST allowlist test to prevent recurrence. Updated en.json and README to clarify Automatic Control OFF behavior.
 - `fix/issue-177-force-override-time-delta` — Reset time delta timer when force override releases (#177). Track prev force override state; pass force=True on on→off transition so cover returns to calculated position immediately. PR #181, merged to main.
@@ -27,7 +28,7 @@
 
 ## Tests
 
-**1937 passing, 2 warnings, 0 failing** (+25 new tests including `test_manual_override_persistence.py`).
+**2024 passing, 2 warnings, 0 failing** (+19 new tests in `test_sensor_availability.py`).
 Run: `venv/bin/python -m pytest tests/ -v`
 
 New test files added (all on `feature/comprehensive-ha-interface-testing`):
@@ -77,7 +78,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 | [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.2 — awaiting user confirmation. |
 | [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached and/or maintained | Under investigation. Hypothesis: min_position setting clamps sunset pos. |
 | [#105](https://github.com/jrhubott/adaptive-cover-pro/issues/105) | Force Motion / Manual Override precedence over Night Mode | Under investigation. |
-| [#192](https://github.com/jrhubott/adaptive-cover-pro/issues/192) | Manual override survive reboots | Fixed in PR #195 (merged). Will auto-close when shipped in a stable release. |
+| [#192](https://github.com/jrhubott/adaptive-cover-pro/issues/192) | Manual override survive reboots | Fixed in PR #195 (merged). Shipped in v2.17.3. Will auto-close. |
 
 
 ## Known Gotchas
@@ -118,6 +119,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 
 | Version | Date | Summary |
 |---------|------|----------|
+| [v2.17.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.17.3) | 2026-04-11 | Fix diagnostic sensors dropped from registry on startup; hoist availability guard to base entity class (#203). |
 | [v2.14.4](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.4) | 2026-04-09 | Reset time delta timer when force override releases (#177). |
 | [v2.14.3](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.3) | 2026-04-09 | Fix covers open at midnight (#179), custom positions triggering manual override (#172), horizontal cover NoneType (#174), time window gate at sunrise (#173), tilt >100% (#153), duplicate unique_id (#154), diagnostics mappingproxy (#155). |
 | [v2.14.2](https://github.com/jrhubott/adaptive-cover-pro/releases/tag/v2.14.2) | 2026-04-07 | numpy serialization fix (#149), time window gate for climate/cloud (#145), manual override detection (#147). |
