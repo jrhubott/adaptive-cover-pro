@@ -35,6 +35,7 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
@@ -285,6 +286,7 @@ GEOMETRY_TILT_SCHEMA = vol.Schema(
 
 SUN_TRACKING_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_ENABLE_SUN_TRACKING, default=True): selector.BooleanSelector(),
         vol.Required(CONF_AZIMUTH, default=180): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -1393,6 +1395,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
     "sun_tracking": frozenset(
         {
+            CONF_ENABLE_SUN_TRACKING,
             CONF_FOV_LEFT,
             CONF_FOV_RIGHT,
             CONF_MIN_ELEVATION,
@@ -2212,6 +2215,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     CONF_BLIND_SPOT_ELEVATION, None
                 ),
                 CONF_ENABLE_BLIND_SPOT: self.config.get(CONF_ENABLE_BLIND_SPOT),
+                CONF_ENABLE_SUN_TRACKING: self.config.get(CONF_ENABLE_SUN_TRACKING, True),
                 CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
                 CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
                 CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),

@@ -82,6 +82,7 @@ from .const import (
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -1327,6 +1328,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     )
                 )
 
+        sun_tracking_enabled = options.get(CONF_ENABLE_SUN_TRACKING, True)
+        sun_handlers = [GlareZoneHandler(), SolarHandler()] if sun_tracking_enabled else []
         handlers = [
             ForceOverrideHandler(),
             WeatherOverrideHandler(),
@@ -1335,14 +1338,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             MotionTimeoutHandler(),
             CloudSuppressionHandler(),
             ClimateHandler(),
-            GlareZoneHandler(),
-            SolarHandler(),
+            *sun_handlers,
             DefaultHandler(),
         ]
         self.logger.debug(
-            "Pipeline built with %d custom position handler(s): %s",
+            "Pipeline built with %d custom position handler(s): %s; sun_tracking_enabled=%s",
             len(custom_handlers),
             [(h.name, h.priority) for h in custom_handlers],
+            sun_tracking_enabled,
         )
         return PipelineRegistry(handlers)
 

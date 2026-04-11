@@ -728,7 +728,7 @@ class TestMeta:
     """Tests for the meta section (integration version, cover type, update health)."""
 
     def test_meta_section_present(self, builder: DiagnosticsBuilder):
-        """meta key is always present in output."""
+        """Meta key is always present in output."""
         diag, _ = builder.build(_base_ctx())
         assert "meta" in diag
 
@@ -759,7 +759,7 @@ class TestMeta:
         assert diag["meta"]["coordinator_update"]["update_interval_seconds"] == 30.0
 
     def test_meta_defaults_when_not_provided(self, builder: DiagnosticsBuilder):
-        """meta section has stable shape when optional fields are absent."""
+        """Meta section has stable shape when optional fields are absent."""
         diag, _ = builder.build(_base_ctx())
         meta = diag["meta"]
         assert meta["integration_version"] is None
@@ -826,12 +826,12 @@ class TestCovers:
     """Tests for the covers section (live cover entity state)."""
 
     def test_covers_empty_by_default(self, builder: DiagnosticsBuilder):
-        """covers is an empty dict when no covers context is provided."""
+        """Covers is an empty dict when no covers context is provided."""
         diag, _ = builder.build(_base_ctx())
         assert diag["covers"] == {}
 
     def test_covers_surfaced_from_context(self, builder: DiagnosticsBuilder):
-        """covers dict from context is surfaced verbatim."""
+        """Covers dict from context is surfaced verbatim."""
         covers = {
             "cover.living_room": {
                 "current_position": 42,
@@ -897,7 +897,7 @@ class TestManualOverrideState:
 
     def test_state_surfaced_from_context(self, builder: DiagnosticsBuilder):
         """manual_override_state dict from context is surfaced under the expected key."""
-        now = dt.datetime(2026, 4, 10, 14, 22, 0, tzinfo=dt.timezone.utc)
+        now = dt.datetime(2026, 4, 10, 14, 22, 0, tzinfo=dt.UTC)
         state = {
             "reset_duration_seconds": 7200,
             "tracked_covers": ["cover.living_room"],
