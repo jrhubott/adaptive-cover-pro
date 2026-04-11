@@ -55,16 +55,16 @@ def svc(mock_hass, grace_mgr):
 
 def _ctx(**overrides) -> PositionContext:
     """Return a PositionContext with all gates passing by default."""
-    defaults = dict(
-        auto_control=True,
-        manual_override=False,
-        sun_just_appeared=False,
-        min_change=2,
-        time_threshold=0,  # 0 = always passes
-        special_positions=[0, 100],
-        inverse_state=False,
-        force=False,
-    )
+    defaults = {
+        "auto_control": True,
+        "manual_override": False,
+        "sun_just_appeared": False,
+        "min_change": 2,
+        "time_threshold": 0,  # 0 = always passes
+        "special_positions": [0, 100],
+        "inverse_state": False,
+        "force": False,
+    }
     defaults.update(overrides)
     return PositionContext(**defaults)
 

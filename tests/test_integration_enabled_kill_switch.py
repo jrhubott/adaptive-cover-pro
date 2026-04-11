@@ -61,16 +61,16 @@ def svc(mock_hass, grace_mgr):
 
 
 def _ctx(**overrides) -> PositionContext:
-    defaults = dict(
-        auto_control=True,
-        manual_override=False,
-        sun_just_appeared=False,
-        min_change=2,
-        time_threshold=0,
-        special_positions=[0, 100],
-        inverse_state=False,
-        force=False,
-    )
+    defaults = {
+        "auto_control": True,
+        "manual_override": False,
+        "sun_just_appeared": False,
+        "min_change": 2,
+        "time_threshold": 0,
+        "special_positions": [0, 100],
+        "inverse_state": False,
+        "force": False,
+    }
     defaults.update(overrides)
     return PositionContext(**defaults)
 

@@ -464,7 +464,7 @@ class TestEndToEndIntegration:
 
             normal_state = NormalCoverState(cover=cover)
             assert cover.direct_sun_valid is True
-            calc_pos = normal_state.get_state()
+            normal_state.get_state()
 
             pipeline = _make_pipeline()
             snapshot = _build_pipeline_snapshot(
@@ -518,7 +518,7 @@ class TestEndToEndIntegration:
             )
 
             normal_state = NormalCoverState(cover=cover)
-            calc_pos = normal_state.get_state()
+            normal_state.get_state()
 
             pipeline = _make_pipeline()
             snapshot = _build_pipeline_snapshot(
@@ -563,7 +563,7 @@ class TestEndToEndIntegration:
             )
 
             normal_state = NormalCoverState(cover=cover)
-            calc_pos = normal_state.get_state()
+            normal_state.get_state()
 
             pipeline = _make_pipeline()
             snapshot = _build_pipeline_snapshot(

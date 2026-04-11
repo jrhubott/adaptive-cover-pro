@@ -68,6 +68,19 @@ Data Coordinator Pattern with layered architecture:
 ruff format .                # Format code
 ```
 
+### Ruff Config
+
+Ruff config lives in **`.ruff.toml`** (takes precedence over `pyproject.toml`). Per-file rules:
+- `tests/**/*.py` — D102, D103, D205 suppressed (docstrings not required in tests)
+- `tests/*.py` — above + E402 suppressed (pytest conftest pattern allows post-assignment imports)
+- `scripts/*.py` — T20, D103 suppressed (CLI scripts intentionally use `print`)
+
+**Common linting patterns to follow:**
+- Use `{}` dict literals, not `dict()` calls (C408)
+- Prefix intentionally unused variables with `_` (F841)
+- Use `contextlib.suppress(Exc)` instead of bare `try/except/pass` (SIM105)
+- Combine nested `with` statements into one (SIM117)
+
 ```bash
 venv/bin/python -m pytest tests/ -v
 venv/bin/python -m pytest tests/test_calculation.py -v

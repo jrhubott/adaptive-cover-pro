@@ -24,10 +24,25 @@ import datetime as dt
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry as _MockCE
 
+from custom_components.adaptive_cover_pro.const import (
+    CONF_SENSOR_TYPE as _CST,
+    DOMAIN as _DOM,
+    SensorType as _ST,
+)
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator as _Coord,
+)
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
+)
+from tests.ha_helpers import (
+    HORIZONTAL_OPTIONS as _H_OPTS,
+    TILT_OPTIONS as _T_OPTS,
+    VERTICAL_OPTIONS as _V_OPTS,
+    _patch_coordinator_refresh as _patch_refresh,
 )
 
 
@@ -63,16 +78,16 @@ def _make_svc(mock_hass, grace_mgr) -> CoverCommandService:
 
 def _ctx(**overrides) -> PositionContext:
     """Return a PositionContext with all gates passing by default."""
-    defaults = dict(
-        auto_control=True,
-        manual_override=False,
-        sun_just_appeared=False,
-        min_change=2,
-        time_threshold=0,
-        special_positions=[0, 100, 50],
-        inverse_state=False,
-        force=False,
-    )
+    defaults = {
+        "auto_control": True,
+        "manual_override": False,
+        "sun_just_appeared": False,
+        "min_change": 2,
+        "time_threshold": 0,
+        "special_positions": [0, 100, 50],
+        "inverse_state": False,
+        "force": False,
+    }
     defaults.update(overrides)
     return PositionContext(**defaults)
 
@@ -250,7 +265,7 @@ class TestGracePeriodPerEntity:
         # cover.b has no grace period active
         called_entities = []
 
-        original_start = grace_mgr.start_command_grace_period
+        _original_start = grace_mgr.start_command_grace_period
 
         def track_grace(entity_id):
             called_entities.append(entity_id)
@@ -376,36 +391,18 @@ class TestReconciliationTargetsPerEntity:
 # pytest-homeassistant-custom-component.  ``enable_custom_integrations`` is
 # requested explicitly so our custom component is discoverable.
 
-import pytest as _pytest
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry as _MockCE
-
-from custom_components.adaptive_cover_pro.const import (
-    CONF_SENSOR_TYPE as _CST,
-    DOMAIN as _DOM,
-    SensorType as _ST,
-)
-from custom_components.adaptive_cover_pro.coordinator import (
-    AdaptiveDataUpdateCoordinator as _Coord,
-)
-from tests.ha_helpers import (
-    HORIZONTAL_OPTIONS as _H_OPTS,
-    TILT_OPTIONS as _T_OPTS,
-    VERTICAL_OPTIONS as _V_OPTS,
-    _patch_coordinator_refresh as _patch_refresh,
-)
-
 
 async def _safe_setup(hass, entry_id):
     """Set up an entry, ignoring OperationNotAllowed (already loaded by HA auto-setup)."""
+    import contextlib
+
     from homeassistant.config_entries import OperationNotAllowed  # noqa: PLC0415
-    try:
+
+    with contextlib.suppress(OperationNotAllowed):
         await hass.config_entries.async_setup(entry_id)
-    except OperationNotAllowed:
-        pass  # HA already loaded this entry when setting up a sibling entry
 
 
-@_pytest.mark.integration
+@pytest.mark.integration
 async def test_ha_two_entries_have_independent_coordinators(
     hass, enable_custom_integrations
 ) -> None:
@@ -426,7 +423,7 @@ async def test_ha_two_entries_have_independent_coordinators(
     assert coord_a is not coord_b
 
 
-@_pytest.mark.integration
+@pytest.mark.integration
 async def test_ha_vertical_and_horizontal_coexist(
     hass, enable_custom_integrations
 ) -> None:
@@ -443,7 +440,7 @@ async def test_ha_vertical_and_horizontal_coexist(
     assert entry_h.entry_id in hass.data[_DOM]
 
 
-@_pytest.mark.integration
+@pytest.mark.integration
 async def test_ha_all_three_cover_types_coexist(
     hass, enable_custom_integrations
 ) -> None:
@@ -463,7 +460,7 @@ async def test_ha_all_three_cover_types_coexist(
         assert e.entry_id in hass.data[_DOM], f"Entry {e.entry_id} missing"
 
 
-@_pytest.mark.integration
+@pytest.mark.integration
 async def test_ha_unload_one_entry_leaves_other_intact(
     hass, enable_custom_integrations
 ) -> None:
@@ -483,7 +480,7 @@ async def test_ha_unload_one_entry_leaves_other_intact(
     assert entry_b.entry_id in hass.data[_DOM]
 
 
-@_pytest.mark.integration
+@pytest.mark.integration
 async def test_ha_service_persists_after_single_entry_unloaded(
     hass, enable_custom_integrations
 ) -> None:

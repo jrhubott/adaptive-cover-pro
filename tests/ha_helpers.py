@@ -162,7 +162,6 @@ async def setup_integration(
         {"current_position": 100, "supported_features": 143},
     )
 
-    entry = hass.config_entries.flow.async_init  # placeholder — use MockConfigEntry
     # Use HA's own MockConfigEntry for proper registration
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 

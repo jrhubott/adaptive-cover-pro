@@ -165,11 +165,13 @@ def test_get_blind_data_raises_for_unsupported_type():
     coord.hass.config.time_zone = "UTC"
     coord._pos_sun = (180.0, 45.0)
 
-    with patch.object(
-        type(coord), "pos_sun", new_callable=lambda: property(lambda self: (180.0, 45.0))
+    with (
+        patch.object(
+            type(coord), "pos_sun", new_callable=lambda: property(lambda self: (180.0, 45.0))
+        ),
+        pytest.raises(ValueError, match="Unsupported cover type"),
     ):
-        with pytest.raises(ValueError, match="Unsupported cover type"):
-            coord.get_blind_data(options={})
+        coord.get_blind_data(options={})
 
 
 # ---------------------------------------------------------------------------

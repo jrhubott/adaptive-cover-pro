@@ -93,6 +93,7 @@ class TestGlareZoneHandlerGating:
         # the key is that the time window check passed and other logic ran.
         # We just verify it didn't short-circuit on the time window check.
         # (A result of None here means glare zone doesn't need deeper coverage.)
+        self.handler.evaluate(snap)
 
     def test_returns_none_for_awning_cover(self) -> None:
         """GlareZoneHandler only applies to vertical covers."""

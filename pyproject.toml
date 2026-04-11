@@ -43,6 +43,9 @@ requires = ["poetry-core"]
 
 [tool.ruff]
 exclude = ["notebooks/"]
+src = ["custom_components/adaptive_cover_pro"]
+
+[tool.ruff.lint]
 ignore = [
   "ANN101", # Self... explanatory
   "ANN401", # Opiniated warning on disallowing dynamically typed expressions
@@ -64,10 +67,12 @@ ignore = [
   "W191",
 ]
 select = ["ALL"]
-src = ["custom_components/adaptive_cover_pro"]
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["ALL"]
+"tests/**/*.py" = ["D102", "D103", "D205"]
+"tests/*.py" = ["D102", "D103", "D205", "E402"]
+"scripts/*.py" = ["T201", "D103"]
 
 [tool.ruff.flake8-import-conventions.extend-aliases]
 "homeassistant.helpers.area_registry" = "ar"
