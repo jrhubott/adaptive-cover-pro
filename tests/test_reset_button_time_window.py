@@ -92,7 +92,7 @@ async def test_send_after_override_clear_skips_when_auto_control_off():
 
 @pytest.mark.asyncio
 async def test_send_after_override_clear_sends_to_specified_entities_only():
-    """entities kwarg must restrict the send to those covers, not self.entities."""
+    """Entities kwarg must restrict the send to those covers, not self.entities."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -130,7 +130,7 @@ async def test_send_after_override_clear_defaults_to_all_entities():
 
 @pytest.mark.asyncio
 async def test_send_after_override_clear_uses_custom_trigger():
-    """trigger kwarg must be forwarded to apply_position as the reason string."""
+    """Trigger kwarg must be forwarded to apply_position as the reason string."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )

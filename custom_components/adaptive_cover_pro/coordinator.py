@@ -1307,6 +1307,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
+            if self.manager.is_cover_manual(cover):
+                self.logger.debug(
+                    "Startup: skipping position command for %s (manual override active/restored)",
+                    cover,
+                )
+                continue
             ctx = self._build_position_context(
                 cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
             )

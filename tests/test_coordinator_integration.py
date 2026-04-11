@@ -89,6 +89,7 @@ def _make_coordinator(
     coordinator.manual_threshold = None
     coordinator.wait_for_target = {}
     coordinator.manager = MagicMock()
+    coordinator.manager.is_cover_manual.return_value = False
 
     return coordinator
 
