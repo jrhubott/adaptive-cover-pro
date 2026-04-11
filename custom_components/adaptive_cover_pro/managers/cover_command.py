@@ -163,6 +163,11 @@ class CoverCommandService:
         # Synced by the coordinator each update cycle from the Integration Enabled switch.
         self._enabled: bool = True
 
+        # Dry-run mode — when True, no outbound cover commands are sent, but the
+        # full update cycle (pipeline, diagnostics, sensors) runs normally.
+        # Synced by the coordinator each update cycle from the Debug & Diagnostics option.
+        self._dry_run: bool = False
+
         # Last reconciliation timestamps per entity (for diagnostics sensor)
         self._last_reconcile_time: dict[str, dt.datetime] = {}
 
@@ -296,6 +301,21 @@ class CoverCommandService:
         """
         self._enabled = value
 
+    @property
+    def dry_run(self) -> bool:
+        """Whether dry-run mode is active (no cover commands sent)."""
+        return self._dry_run
+
+    @dry_run.setter
+    def dry_run(self, value: bool) -> None:
+        """Update the dry-run flag.
+
+        When True, the full update cycle runs normally (pipeline, diagnostics,
+        sensors) but no outbound cover commands are sent.  Synced by the
+        coordinator each update cycle from the Debug & Diagnostics option.
+        """
+        self._dry_run = value
+
     def get_entity_state_snapshot(self, entity_id: str) -> dict:
         """Return a diagnostic snapshot of per-entity positioning state."""
         sent_at = self._sent_at.get(entity_id)
@@ -366,9 +386,12 @@ class CoverCommandService:
         for eid in candidates:
             caps = check_cover_features(self._hass, eid)
             if caps and caps.get("has_stop"):
-                await self._hass.services.async_call(
-                    "cover", "stop_cover", {"entity_id": eid}
-                )
+                if self._dry_run:
+                    self._logger.info("[dry_run] would stop_cover %s", eid)
+                else:
+                    await self._hass.services.async_call(
+                        "cover", "stop_cover", {"entity_id": eid}
+                    )
                 self.wait_for_target[eid] = False
                 self._sent_at.pop(eid, None)
                 stopped.append(eid)
@@ -392,9 +415,12 @@ class CoverCommandService:
         for eid in entity_ids:
             caps = check_cover_features(self._hass, eid)
             if caps and caps.get("has_stop"):
-                await self._hass.services.async_call(
-                    "cover", "stop_cover", {"entity_id": eid}
-                )
+                if self._dry_run:
+                    self._logger.info("[dry_run] would stop_cover %s", eid)
+                else:
+                    await self._hass.services.async_call(
+                        "cover", "stop_cover", {"entity_id": eid}
+                    )
                 stopped.append(eid)
                 self._logger.debug("stop_all: stopped %s", eid)
         return stopped
@@ -655,6 +681,28 @@ class CoverCommandService:
                 trigger=_trigger,
                 inverse_state=_inverse,
                 current_position=_current,
+            )
+
+        # ----- dry-run gate -----
+        if self._dry_run:
+            self._logger.info(
+                "[dry_run] would send cover.%s %s → %s%%",
+                service,
+                entity_id,
+                position,
+            )
+            self._track_action(
+                entity_id, service, position, supports_position, context.inverse_state
+            )
+            self.last_cover_action["dry_run"] = True
+            return self._skip(
+                entity_id,
+                "dry_run",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+                extras={"would_send_service": service},
             )
 
         self._logger.info(
@@ -1124,6 +1172,14 @@ class CoverCommandService:
             entity_id, target, reset_retries=False
         )
         if service is None:
+            return
+        if self._dry_run:
+            self._logger.info(
+                "[dry_run] reconciliation would send cover.%s %s → %s%%",
+                service,
+                entity_id,
+                target,
+            )
             return
         try:
             await self._hass.services.async_call(COVER_DOMAIN, service, service_data)

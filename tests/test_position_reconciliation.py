@@ -1226,3 +1226,82 @@ async def test_manual_override_expiry_force_true_bypasses_time_delta(svc, mock_h
         )
     assert outcome == "sent"
     mock_hass.services.async_call.assert_called_once()
+
+
+# ------------------------------------------------------------------ #
+# dry-run mode
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_apply_dry_run_skips_service_call(svc, mock_hass):
+    """Dry-run suppresses async_call, returns ('skipped', 'dry_run'), populates diagnostics."""
+    svc.dry_run = True
+    _patch_position(svc, 30)
+    with _patch_caps(), patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+        return_value=None,
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 60, "solar", context=_ctx()
+        )
+
+    assert outcome == "skipped"
+    assert reason == "dry_run"
+    mock_hass.services.async_call.assert_not_called()
+    # last_cover_action still populated with the intended action
+    assert svc.last_cover_action["entity_id"] == "cover.test"
+    assert svc.last_cover_action["dry_run"] is True
+    # last_skipped_action records the dry_run reason
+    assert svc.last_skipped_action["reason"] == "dry_run"
+    assert svc.last_skipped_action["entity_id"] == "cover.test"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_still_honors_earlier_gates(svc, mock_hass):
+    """When delta is too small AND dry-run is on, delta gate fires before dry-run."""
+    svc.dry_run = True
+    _patch_position(svc, 50)
+    outcome, reason = await svc.apply_position(
+        "cover.test", 51, "solar", context=_ctx(min_change=5)
+    )
+    assert outcome == "skipped"
+    assert reason == "delta_too_small"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_command_dry_run_no_send(svc, mock_hass):
+    """_execute_command with dry_run=True logs but does not call async_call."""
+    svc.dry_run = True
+    with _patch_caps():
+        await svc._execute_command("cover.test", 70)
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stop_in_flight_dry_run_no_send(svc, mock_hass):
+    """stop_in_flight with dry_run=True skips async_call but still clears wait_for_target."""
+    svc.dry_run = True
+    svc.wait_for_target["cover.test"] = True
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={"has_stop": True},
+    ):
+        stopped = await svc.stop_in_flight()
+    mock_hass.services.async_call.assert_not_called()
+    assert "cover.test" in stopped
+    assert svc.wait_for_target["cover.test"] is False
+
+
+@pytest.mark.asyncio
+async def test_stop_all_dry_run_no_send(svc, mock_hass):
+    """stop_all with dry_run=True skips async_call but still reports stopped entities."""
+    svc.dry_run = True
+    with patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={"has_stop": True},
+    ):
+        stopped = await svc.stop_all(["cover.test"])
+    mock_hass.services.async_call.assert_not_called()
+    assert "cover.test" in stopped

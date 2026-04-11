@@ -357,6 +357,14 @@ class TestDiagnosticsBuilderDebugInfo:
         result, _ = builder.build(ctx)
         assert result["debug_config"] == debug_config
 
+    def test_debug_config_dry_run_field_flows_through(self):
+        """dry_run key in debug_config is preserved in the diagnostics payload."""
+        builder = DiagnosticsBuilder()
+        debug_config = {"dry_run": True, "debug_mode": False, "debug_categories": [], "debug_event_buffer_size": 50}
+        ctx = _base_ctx(debug_config=debug_config)
+        result, _ = builder.build(ctx)
+        assert result["debug_config"]["dry_run"] is True
+
     def test_manual_override_history_emitted_when_populated(self):
         """manual_override_history is included in output when events exist."""
         builder = DiagnosticsBuilder()

@@ -199,7 +199,7 @@ Always-present keys: `entity_id`, `reason`, `calculated_position`, `current_posi
 
 Reason-specific: `delta_too_small` → `position_delta`, `min_delta_required`; `time_delta_too_small` → `elapsed_minutes`, `time_threshold_minutes`
 
-Skip codes: `integration_disabled`, `auto_control_off`, `delta_too_small`, `time_delta_too_small`, `manual_override`, `no_capable_service`, `service_call_failed`
+Skip codes: `integration_disabled`, `auto_control_off`, `delta_too_small`, `time_delta_too_small`, `manual_override`, `no_capable_service`, `service_call_failed`, `dry_run`
 
 Signatures:
 - `_skip(entity_id, reason, position, *, trigger="", inverse_state=False, current_position=None, extras=None)`

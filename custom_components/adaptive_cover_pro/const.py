@@ -125,6 +125,7 @@ CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
 CONF_DEBUG_MODE = "debug_mode"
 CONF_DEBUG_CATEGORIES = "debug_categories"
 CONF_DEBUG_EVENT_BUFFER_SIZE = "debug_event_buffer_size"
+CONF_DRY_RUN = "dry_run"
 
 DEBUG_CATEGORY_MANUAL_OVERRIDE = "manual_override"
 DEBUG_CATEGORY_RECONCILIATION = "reconciliation"

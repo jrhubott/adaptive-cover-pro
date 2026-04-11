@@ -122,6 +122,7 @@ from .const import (
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
+    CONF_DRY_RUN,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DOMAIN,
     LOGGER,
@@ -1021,6 +1022,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cmd_svc.auto_control_enabled = self.automatic_control
         self._cmd_svc.in_time_window = self.check_adaptive_time
         self._cmd_svc.enabled = self.enabled_toggle if self.enabled_toggle is not None else True
+        self._cmd_svc.dry_run = self.config_entry.options.get(CONF_DRY_RUN, False)
 
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
@@ -1657,6 +1659,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             manual_override_events=self.manager.get_event_buffer() or None,
             cover_command_state=self._cmd_svc.get_all_entity_state_snapshots() or None,
             debug_config={
+                "dry_run": self.config_entry.options.get(CONF_DRY_RUN, False),
                 "debug_mode": self.config_entry.options.get(CONF_DEBUG_MODE, False),
                 "debug_categories": self.config_entry.options.get(
                     CONF_DEBUG_CATEGORIES, []

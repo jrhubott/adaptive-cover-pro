@@ -132,6 +132,7 @@ from .const import (
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
+    CONF_DRY_RUN,
     DEBUG_CATEGORIES_ALL,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     MAX_DEBUG_EVENT_BUFFER_SIZE,
@@ -572,6 +573,7 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
 
 DEBUG_SCHEMA = vol.Schema(
     {
+        vol.Optional(CONF_DRY_RUN, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_DEBUG_MODE, default=False): selector.BooleanSelector(),
         vol.Optional(
             CONF_DEBUG_CATEGORIES,

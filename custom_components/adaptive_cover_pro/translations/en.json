@@ -867,11 +867,13 @@
         "title": "Debug & Diagnostics",
         "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a ring buffer of manual-override decisions is kept in memory and exposed in the HA Diagnostics download.",
         "data": {
+          "dry_run": "Dry Run (no cover movement)",
           "debug_mode": "Enable Debug Mode",
           "debug_categories": "Log Categories (promoted to INFO when debug mode is on)",
           "debug_event_buffer_size": "Manual override event buffer size"
         },
         "data_description": {
+          "dry_run": "When enabled, the integration runs the full update cycle (pipeline, diagnostics, sensors) but does NOT send any movement commands to your covers. Use for debugging and validating automation settings without disturbing your home. Default: off.",
           "debug_mode": "When enabled, log messages for the selected categories below are promoted from DEBUG to INFO. This means they appear in the Home Assistant log without requiring 'custom_components.adaptive_cover_pro: debug' in configuration.yaml. Turn off when you are done troubleshooting.",
           "debug_categories": "Select which areas to trace. 'Manual Override' covers override detection decisions (most useful for 'cover won't stop manual control' issues). 'Reconciliation' covers the 1-minute position retry loop. 'Pipeline' covers the priority handler chain. 'Motion' covers motion sensor and timeout decisions.",
           "debug_event_buffer_size": "Number of manual-override decision events to keep in the rolling ring buffer. Each event is a small dict (~200 bytes). Increase for intermittent issues that require longer observation windows. The buffer is reset on integration reload."
