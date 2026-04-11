@@ -257,6 +257,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # immediately flagged as a manual override.  Cleared at the end of each
         # async_handle_cover_state_change() call.
         self._target_just_reached: set[str] = set()
+        # Initialised here so coordinator.entities is always defined, even
+        # before the first refresh.  Entity state-writes during platform setup
+        # (which run concurrently with first_refresh) would otherwise hit an
+        # AttributeError if they reference this attribute before _update_options
+        # runs for the first time.  The refresh path overwrites this each cycle.
+        self.entities = self.config_entry.options.get(CONF_ENTITIES, [])
         # Cover engine object — populated at start of each update cycle
         self._cover_data = None
         self.manager = AdaptiveCoverManager(

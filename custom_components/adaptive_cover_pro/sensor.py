@@ -214,6 +214,13 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
         return self._sensor_name
 
     @property
+    def available(self) -> bool:
+        """Return False until coordinator has completed its first refresh."""
+        if self.coordinator.data is None:
+            return False
+        return super().available
+
+    @property
     def native_value(self) -> str | None:
         """Handle when entity is added."""
         return self.data.states["state"]
@@ -290,6 +297,13 @@ class AdaptiveCoverTimeSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
     def name(self):
         """Name of the entity."""
         return self._sensor_name
+
+    @property
+    def available(self) -> bool:
+        """Return False until coordinator has completed its first refresh."""
+        if self.coordinator.data is None:
+            return False
+        return super().available
 
     @property
     def native_value(self) -> str | None:
@@ -725,6 +739,13 @@ class AdaptiveCoverPositionVerificationSensor(
     def name(self) -> str:
         """Name of the entity."""
         return self._sensor_name
+
+    @property
+    def available(self) -> bool:
+        """Return False until coordinator has completed its first refresh."""
+        if self.coordinator.data is None:
+            return False
+        return super().available
 
     @property
     def native_value(self) -> int:
