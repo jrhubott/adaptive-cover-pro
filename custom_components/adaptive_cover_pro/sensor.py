@@ -13,8 +13,11 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
+import datetime as dt
+
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -596,7 +599,7 @@ class AdaptiveCoverLastActionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEnt
 
 
 class AdaptiveCoverManualOverrideEndSensor(
-    AdaptiveCoverDiagnosticSensorBase, SensorEntity
+    AdaptiveCoverDiagnosticSensorBase, SensorEntity, RestoreEntity
 ):
     """Sensor showing when manual override will expire."""
 
@@ -648,6 +651,46 @@ class AdaptiveCoverManualOverrideEndSensor(
                 entity_id: (t + duration).isoformat() for entity_id, t in times.items()
             }
         }
+
+    async def async_added_to_hass(self) -> None:
+        """Restore manual override state from last known HA state after a reboot."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is None:
+            return
+        per_entity = (last.attributes or {}).get("per_entity") or {}
+        self._restore_from_attributes(per_entity)
+
+    def _restore_from_attributes(self, per_entity: dict[str, str]) -> None:
+        """Rehydrate coordinator manager from a per_entity expiry dict.
+
+        per_entity maps cover entity_id → ISO-8601 UTC expiry string.
+        Entries that are expired or not in the current cover set are dropped.
+        """
+        now = dt.datetime.now(dt.UTC)
+        manager = self.coordinator.manager
+        restored_any = False
+
+        for eid, expiry_iso in per_entity.items():
+            if eid not in manager.covers:
+                continue
+            expiry = dt.datetime.fromisoformat(expiry_iso)
+            if expiry <= now:
+                continue
+            started_at = expiry - manager.reset_duration
+            manager.manual_control[eid] = True
+            manager.manual_control_time[eid] = started_at
+            manager._record_event(
+                eid,
+                "restored",
+                our_state=None,
+                new_position=None,
+                reason="restored from RestoreEntity after reboot",
+            )
+            restored_any = True
+
+        if restored_any:
+            self.async_write_ha_state()
 
 
 class AdaptiveCoverPositionVerificationSensor(

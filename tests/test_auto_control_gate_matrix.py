@@ -94,6 +94,11 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
         )
 
     coord._build_position_context = _fake_build_ctx
+
+    manager = MagicMock()
+    manager.is_cover_manual.return_value = False
+    coord.manager = manager
+
     return coord
 
 

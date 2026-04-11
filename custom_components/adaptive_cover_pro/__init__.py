@@ -141,11 +141,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
 
+    # Store coordinator before platform setup so sensor async_added_to_hass can
+    # access it during RestoreEntity rehydration (must run before first_refresh).
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # First refresh runs after platform setup so that RestoreEntity hooks in
+    # async_added_to_hass have already repopulated the manual-override manager
+    # state before async_handle_first_refresh issues positioning commands.
     await coordinator.async_config_entry_first_refresh()
     coordinator._check_initial_motion_state()
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     device_reg = dr.async_get(hass)
 
