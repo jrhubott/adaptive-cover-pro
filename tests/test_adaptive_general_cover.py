@@ -246,9 +246,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid returns False after sunset (reproduces bug scenario)."""
         # Setup: sun still in FOV geometrically, but after sunset time
-        mock_datetime.now.return_value = datetime(
-            2024, 1, 1, 20, 0, 0
-        )  # After sunset
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)  # After sunset
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )
@@ -318,9 +316,7 @@ class TestAdaptiveGeneralCoverProperties:
     ):
         """Test direct_sun_valid returns False before sunrise."""
         # Setup: sun geometrically in FOV, but before sunrise
-        mock_datetime.now.return_value = datetime(
-            2024, 1, 1, 5, 0, 0
-        )  # Before sunrise
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 5, 0, 0)  # Before sunrise
         vertical_cover_instance.sun_data.sunset = MagicMock(
             return_value=datetime(2024, 1, 1, 18, 0, 0)
         )

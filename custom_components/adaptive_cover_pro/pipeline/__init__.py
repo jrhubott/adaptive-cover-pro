@@ -5,7 +5,12 @@ the final cover position and control method for each update cycle.
 """
 
 from .handler import OverrideHandler
-from .helpers import apply_snapshot_limits, compute_default_position, compute_raw_calculated_position, compute_solar_position
+from .helpers import (
+    apply_snapshot_limits,
+    compute_default_position,
+    compute_raw_calculated_position,
+    compute_solar_position,
+)
 from .registry import PipelineRegistry
 from .types import DecisionStep, PipelineResult
 

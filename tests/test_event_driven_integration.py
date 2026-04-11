@@ -33,6 +33,7 @@ pytestmark = pytest.mark.integration
 # Helper
 # ---------------------------------------------------------------------------
 
+
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "ev_01",
@@ -58,6 +59,7 @@ async def _setup(
 # ---------------------------------------------------------------------------
 # 7a: Sun state triggers coordinator update
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_sun_state_change_calls_coordinator(hass: HomeAssistant) -> None:
@@ -100,6 +102,7 @@ async def test_coordinator_async_request_refresh_callable(hass: HomeAssistant) -
 # 7b: Force override lifecycle
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_force_override_sensor_wired(hass: HomeAssistant) -> None:
     """When a force-override sensor is configured, its state changes are tracked."""
@@ -135,6 +138,7 @@ async def test_force_override_off_to_on(hass: HomeAssistant) -> None:
 # 7c: Manual override detection
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_cover_state_change_is_handled(hass: HomeAssistant) -> None:
     """Cover entity position change is processed without crash."""
@@ -157,6 +161,7 @@ async def test_cover_state_change_is_handled(hass: HomeAssistant) -> None:
 # 7d: Delta gating
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_delta_position_option_is_stored(hass: HomeAssistant) -> None:
     """CONF_DELTA_POSITION is correctly read from entry options by the coordinator."""
@@ -173,6 +178,7 @@ async def test_delta_position_option_is_stored(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # 7e: Motion sensor events
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_motion_sensor_on_event_handled(hass: HomeAssistant) -> None:
@@ -209,6 +215,7 @@ async def test_motion_sensor_off_event_handled(hass: HomeAssistant) -> None:
 # 7f: Multiple rapid state changes (stress)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_rapid_sun_changes_do_not_crash(hass: HomeAssistant) -> None:
     """Multiple rapid sun state changes in sequence do not crash the coordinator."""
@@ -218,7 +225,11 @@ async def test_rapid_sun_changes_do_not_crash(hass: HomeAssistant) -> None:
         hass.states.async_set(
             "sun.sun",
             "above_horizon",
-            {"azimuth": 180.0 + elevation, "elevation": float(elevation), "rising": True},
+            {
+                "azimuth": 180.0 + elevation,
+                "elevation": float(elevation),
+                "rising": True,
+            },
         )
     await hass.async_block_till_done()
 

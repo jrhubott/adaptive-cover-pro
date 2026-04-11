@@ -29,7 +29,9 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent
-TRANSLATIONS_DIR = REPO_ROOT / "custom_components" / "adaptive_cover_pro" / "translations"
+TRANSLATIONS_DIR = (
+    REPO_ROOT / "custom_components" / "adaptive_cover_pro" / "translations"
+)
 EN_FILE = TRANSLATIONS_DIR / "en.json"
 
 LANGUAGES = [
@@ -193,14 +195,18 @@ def print_dashboard(analyses: list[dict], en_total: int) -> None:
     print("  Adaptive Cover Pro — Translation Status")
     print(f"  English source: {en_total} translatable strings")
     print()
-    print(f"  {'Language':<10} {'Keys':>9}  {'Missing':>8}  {'Extra':>6}  {'Untranslated':>13}  Status")
-    print(f"  {'─'*10} {'─'*9}  {'─'*8}  {'─'*6}  {'─'*13}  {'─'*20}")
+    print(
+        f"  {'Language':<10} {'Keys':>9}  {'Missing':>8}  {'Extra':>6}  {'Untranslated':>13}  Status"
+    )
+    print(f"  {'─' * 10} {'─' * 9}  {'─' * 8}  {'─' * 6}  {'─' * 13}  {'─' * 20}")
 
     all_done = True
     for a in analyses:
         lang = a["lang"]
         if not a["exists"] or "error" in a:
-            print(f"  {lang:<10} {'—':>9}  {'—':>8}  {'—':>6}  {'—':>13}  {a['status']}")
+            print(
+                f"  {lang:<10} {'—':>9}  {'—':>8}  {'—':>6}  {'—':>13}  {a['status']}"
+            )
             all_done = False
             continue
 
@@ -244,7 +250,9 @@ def print_detail(a: dict) -> None:
         return
 
     if a["missing_keys"]:
-        print(f"  Missing keys ({len(a['missing_keys'])}) — present in en.json but absent here:")
+        print(
+            f"  Missing keys ({len(a['missing_keys'])}) — present in en.json but absent here:"
+        )
         for k in a["missing_keys"][:50]:
             print(f"    - {k}")
         if len(a["missing_keys"]) > 50:
@@ -252,7 +260,9 @@ def print_detail(a: dict) -> None:
         print()
 
     if a["extra_keys"]:
-        print(f"  Extra keys ({len(a['extra_keys'])}) — present here but removed from en.json:")
+        print(
+            f"  Extra keys ({len(a['extra_keys'])}) — present here but removed from en.json:"
+        )
         for k in a["extra_keys"][:50]:
             print(f"    + {k}")
         if len(a["extra_keys"]) > 50:
@@ -260,7 +270,9 @@ def print_detail(a: dict) -> None:
         print()
 
     if a["untranslated"]:
-        print(f"  Untranslated strings ({len(a['untranslated'])}) — value identical to English:")
+        print(
+            f"  Untranslated strings ({len(a['untranslated'])}) — value identical to English:"
+        )
         for k in a["untranslated"][:30]:
             print(f"    ~ {k}")
         if len(a["untranslated"]) > 30:
@@ -308,7 +320,10 @@ def main() -> int:
         if lang == "pt-br":
             lang = "pt-BR"
         if lang not in LANGUAGES:
-            print(f"ERROR: Unknown language '{lang}'. Valid: {', '.join(LANGUAGES)}", file=sys.stderr)
+            print(
+                f"ERROR: Unknown language '{lang}'. Valid: {', '.join(LANGUAGES)}",
+                file=sys.stderr,
+            )
             return 2
         a = analyse_language(lang, en_flat)
         print_detail(a)

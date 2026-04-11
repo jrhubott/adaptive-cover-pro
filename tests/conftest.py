@@ -42,6 +42,7 @@ def make_snapshot_for_cover(cover, default_position: int = 0) -> SimpleNamespace
         is_sunset_active=False,
     )
 
+
 from .cover_helpers import (  # noqa: F401 — re-exported for convenience
     build_horizontal_cover,
     build_tilt_cover,
@@ -63,7 +64,6 @@ def _auto_enable_custom_integrations(request):
     if request.node.get_closest_marker("integration"):
         # Request the plugin's fixture by name via indirect call
         request.getfixturevalue("enable_custom_integrations")
-
 
 
 @pytest.fixture

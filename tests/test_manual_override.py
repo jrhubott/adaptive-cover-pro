@@ -244,8 +244,8 @@ async def test_reset_button_clears_manual_override_and_sends_post_refresh_positi
     # Must delegate to the shared send path with correct args
     coordinator._async_send_after_override_clear.assert_called_once()
     call = coordinator._async_send_after_override_clear.call_args
-    assert call[0][0] == POST_REFRESH_STATE     # post-refresh state
-    assert call[0][1] == options                 # options dict
+    assert call[0][0] == POST_REFRESH_STATE  # post-refresh state
+    assert call[0][1] == options  # options dict
     assert call[1].get("entities") == [entity_id]
     assert call[1].get("trigger") == "manual_reset"
 
@@ -321,7 +321,9 @@ async def test_reset_button_clears_wait_for_target_when_no_command_sent():
 @pytest.mark.asyncio
 async def test_reset_if_needed_returns_expired_entity_ids():
     """reset_if_needed() must return the set of entity IDs whose override just expired."""
-    from custom_components.adaptive_cover_pro.managers.manual_override import AdaptiveCoverManager
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
 
     manager = AdaptiveCoverManager(
         hass=MagicMock(),
@@ -349,7 +351,9 @@ async def test_reset_if_needed_returns_expired_entity_ids():
 @pytest.mark.asyncio
 async def test_reset_if_needed_returns_empty_when_nothing_expired():
     """reset_if_needed() must return an empty set when no overrides have expired."""
-    from custom_components.adaptive_cover_pro.managers.manual_override import AdaptiveCoverManager
+    from custom_components.adaptive_cover_pro.managers.manual_override import (
+        AdaptiveCoverManager,
+    )
 
     manager = AdaptiveCoverManager(
         hass=MagicMock(),
@@ -377,8 +381,8 @@ async def test_reset_button_sends_correct_position_with_climate_mode():
     from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
 
     entity_id = "cover.climate_room"
-    CLIMATE_POSITION = 70   # what ClimateHandler returns after override clears
-    SOLAR_POSITION = 45     # what ManualOverrideHandler was returning during override
+    CLIMATE_POSITION = 70  # what ClimateHandler returns after override clears
+    SOLAR_POSITION = 45  # what ManualOverrideHandler was returning during override
 
     coordinator = MagicMock()
     coordinator.manager.is_cover_manual.return_value = True

@@ -33,6 +33,7 @@ pytestmark = pytest.mark.integration
 # Helper
 # ---------------------------------------------------------------------------
 
+
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "er_01",
@@ -59,6 +60,7 @@ async def _setup(
 # 10a: Unavailable entities
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_sun_entity_unavailable_does_not_crash(hass: HomeAssistant) -> None:
     """Setting sun.sun to unavailable does not crash the coordinator."""
@@ -76,7 +78,9 @@ async def test_cover_entity_unavailable_handled(hass: HomeAssistant) -> None:
     """Cover entity going unavailable does not cause an unhandled exception."""
     opts = dict(VERTICAL_OPTIONS)
     opts[CONF_ENTITIES] = ["cover.bedroom_blind"]
-    entry, coordinator = await _setup(hass, options=opts, entry_id="er_cover_unavail_01")
+    entry, coordinator = await _setup(
+        hass, options=opts, entry_id="er_cover_unavail_01"
+    )
 
     hass.states.async_set("cover.bedroom_blind", "unavailable", {})
     await hass.async_block_till_done()
@@ -89,7 +93,9 @@ async def test_force_override_sensor_unavailable_handled(hass: HomeAssistant) ->
     """Force override sensor going unavailable is treated as inactive (no crash)."""
     opts = dict(VERTICAL_OPTIONS)
     opts[CONF_FORCE_OVERRIDE_SENSORS] = ["binary_sensor.wind_alarm"]
-    entry, coordinator = await _setup(hass, options=opts, entry_id="er_force_unavail_01")
+    entry, coordinator = await _setup(
+        hass, options=opts, entry_id="er_force_unavail_01"
+    )
 
     hass.states.async_set("binary_sensor.wind_alarm", "unavailable", {})
     await hass.async_block_till_done()
@@ -105,7 +111,12 @@ async def test_all_tracked_entities_unavailable(hass: HomeAssistant) -> None:
     opts[CONF_FORCE_OVERRIDE_SENSORS] = ["binary_sensor.storm"]
     entry, coordinator = await _setup(hass, options=opts, entry_id="er_all_unavail_01")
 
-    for entity_id in ["cover.blind_1", "cover.blind_2", "binary_sensor.storm", "sun.sun"]:
+    for entity_id in [
+        "cover.blind_1",
+        "cover.blind_2",
+        "binary_sensor.storm",
+        "sun.sun",
+    ]:
         hass.states.async_set(entity_id, "unavailable", {})
     await hass.async_block_till_done()
 
@@ -115,6 +126,7 @@ async def test_all_tracked_entities_unavailable(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # 10b: Malformed config options
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_none_values_in_options_do_not_crash_setup(hass: HomeAssistant) -> None:
@@ -192,6 +204,7 @@ async def test_climate_mode_enabled_without_temp_entity(hass: HomeAssistant) -> 
 # 10c: Coordinator update failure and recovery
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_coordinator_recovers_after_single_update_error(
     hass: HomeAssistant,
@@ -250,6 +263,7 @@ async def test_coordinator_multiple_update_errors(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # 10d: Rapid/concurrent state changes
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_rapid_cover_position_changes_no_crash(hass: HomeAssistant) -> None:

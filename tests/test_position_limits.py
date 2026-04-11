@@ -167,7 +167,7 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
             cover=cover,
             config=cover.config,
             cover_type="cover_blind",
-            default_position=0,          # sunset_pos via compute_effective_default
+            default_position=0,  # sunset_pos via compute_effective_default
             is_sunset_active=True,
             climate_readings=None,
             climate_mode_enabled=False,
@@ -253,7 +253,7 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
             cover=cover,
             config=cover.config,
             cover_type="cover_blind",
-            default_position=0,          # sunset_pos via compute_effective_default
+            default_position=0,  # sunset_pos via compute_effective_default
             is_sunset_active=True,
             climate_readings=None,
             climate_mode_enabled=False,
@@ -273,7 +273,9 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
 
         # Sunset position is exempt from min/max limits (#128).
         # sunset_pos=0 must not be clamped to min_pos=35.
-        assert result.position == 0, f"Expected 0 (sunset position exempt from min_pos), got {result.position}"
+        assert result.position == 0, (
+            f"Expected 0 (sunset position exempt from min_pos), got {result.position}"
+        )
 
 
 @pytest.mark.unit

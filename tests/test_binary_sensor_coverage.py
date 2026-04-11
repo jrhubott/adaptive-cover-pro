@@ -18,7 +18,9 @@ from custom_components.adaptive_cover_pro.const import (
 )
 
 
-def _make_config_entry(options: dict | None = None, sensor_type: str = SensorType.BLIND):
+def _make_config_entry(
+    options: dict | None = None, sensor_type: str = SensorType.BLIND
+):
     entry = MagicMock()
     entry.entry_id = "test_entry"
     entry.data = {"name": "Test", CONF_SENSOR_TYPE: sensor_type}
@@ -41,6 +43,7 @@ def _make_coordinator(mock_hass=None):
 # Glare active binary sensor creation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_glare_active_binary_sensor_created_when_enabled(hass) -> None:
     """async_setup_entry creates a glare_active binary sensor when glare zones are enabled."""
@@ -62,9 +65,11 @@ async def test_glare_active_binary_sensor_created_when_enabled(hass) -> None:
         await hass.async_block_till_done()
 
     from homeassistant.helpers import entity_registry as er
+
     reg = er.async_get(hass)
     binary_sensor_entities = [
-        e for e in reg.entities.values()
+        e
+        for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id and e.domain == "binary_sensor"
     ]
     entity_unique_ids = [e.unique_id for e in binary_sensor_entities]
@@ -94,9 +99,11 @@ async def test_glare_active_binary_sensor_not_created_when_awning(hass) -> None:
         await hass.async_block_till_done()
 
     from homeassistant.helpers import entity_registry as er
+
     reg = er.async_get(hass)
     binary_sensor_entities = [
-        e for e in reg.entities.values()
+        e
+        for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id and e.domain == "binary_sensor"
     ]
     entity_unique_ids = [e.unique_id for e in binary_sensor_entities]
@@ -106,6 +113,7 @@ async def test_glare_active_binary_sensor_not_created_when_awning(hass) -> None:
 # ---------------------------------------------------------------------------
 # Position mismatch sensor: is_on logic
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_position_mismatch_is_on_true_when_delta_exceeds_tolerance():
@@ -184,6 +192,7 @@ def test_position_mismatch_is_on_false_when_actual_none():
 # ---------------------------------------------------------------------------
 # Position mismatch sensor: extra_state_attributes
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_position_mismatch_extra_state_attributes_with_mismatch():

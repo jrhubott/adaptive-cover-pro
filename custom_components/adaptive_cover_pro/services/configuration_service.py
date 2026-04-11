@@ -90,7 +90,8 @@ class ConfigurationService:
             sunset_off=options.get(CONF_SUNSET_OFFSET) or 0,
             sunrise_off=options.get(
                 CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET)
-            ) or 0,
+            )
+            or 0,
             max_pos=options.get(CONF_MAX_POSITION) or 100,
             min_pos=options.get(CONF_MIN_POSITION) or 0,
             max_pos_sun_only=options.get(CONF_ENABLE_MAX_POSITION, False),

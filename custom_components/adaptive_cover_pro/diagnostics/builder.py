@@ -166,8 +166,12 @@ class DiagnosticsBuilder:
         """
         diagnostics: dict = {}
         sun_azimuth, sun_elevation = ctx.pos_sun
-        diagnostics["sun_azimuth"] = round(sun_azimuth, 1) if sun_azimuth is not None else None
-        diagnostics["sun_elevation"] = round(sun_elevation, 1) if sun_elevation is not None else None
+        diagnostics["sun_azimuth"] = (
+            round(sun_azimuth, 1) if sun_azimuth is not None else None
+        )
+        diagnostics["sun_elevation"] = (
+            round(sun_elevation, 1) if sun_elevation is not None else None
+        )
 
         if ctx.cover and hasattr(ctx.cover, "gamma"):
             diagnostics["gamma"] = round(ctx.cover.gamma, 1)
@@ -204,7 +208,9 @@ class DiagnosticsBuilder:
         # Outside time window — pipeline ran but commands are gated
         if not ctx.check_adaptive_time:
             pos = result.default_position
-            pos_label = "sunset position" if result.is_sunset_active else "default position"
+            pos_label = (
+                "sunset position" if result.is_sunset_active else "default position"
+            )
             return f"Outside time window → {pos_label} {pos}% (commands paused)"
 
         # Base explanation is the pipeline reason (already human-readable)
@@ -313,9 +319,15 @@ class DiagnosticsBuilder:
                 # equals configured_sunset_pos when is_sunset_active=True,
                 # equals configured_default otherwise.
                 "effective": result.default_position if result is not None else 0,
-                "is_sunset_active": result.is_sunset_active if result is not None else False,
-                "configured_default": result.configured_default if result is not None else 0,
-                "configured_sunset_pos": result.configured_sunset_pos if result is not None else None,
+                "is_sunset_active": result.is_sunset_active
+                if result is not None
+                else False,
+                "configured_default": result.configured_default
+                if result is not None
+                else 0,
+                "configured_sunset_pos": result.configured_sunset_pos
+                if result is not None
+                else None,
             },
         }
 
@@ -500,8 +512,7 @@ class DiagnosticsBuilder:
                 "force_override_sensors": options.get(CONF_FORCE_OVERRIDE_SENSORS, []),
                 "force_override_position": options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
                 "force_override_active": (
-                    result is not None
-                    and result.control_method == ControlMethod.FORCE
+                    result is not None and result.control_method == ControlMethod.FORCE
                 ),
                 "motion_sensors": options.get(CONF_MOTION_SENSORS, []),
                 "motion_timeout": options.get(

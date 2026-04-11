@@ -31,6 +31,7 @@ pytestmark = pytest.mark.integration
 # Helper
 # ---------------------------------------------------------------------------
 
+
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "diag_01",
@@ -53,6 +54,7 @@ async def _setup(
 # ---------------------------------------------------------------------------
 # 6a: Structure and content
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_diagnostics_returns_dict(hass: HomeAssistant) -> None:
@@ -110,6 +112,7 @@ async def test_diagnostics_no_sensitive_tokens(hass: HomeAssistant) -> None:
 # 6b: JSON serializability (regression #149)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_diagnostics_result_is_json_serializable(hass: HomeAssistant) -> None:
     """The diagnostics dict must be JSON-serializable with HA's encoder.
@@ -134,7 +137,9 @@ async def test_diagnostics_result_is_json_serializable(hass: HomeAssistant) -> N
     try:
         json.dumps(result, default=_ha_default)
     except (TypeError, ValueError) as exc:
-        pytest.fail(f"Diagnostics result is not JSON-serializable even with HA encoder: {exc}\nResult: {result}")
+        pytest.fail(
+            f"Diagnostics result is not JSON-serializable even with HA encoder: {exc}\nResult: {result}"
+        )
 
 
 @pytest.mark.integration

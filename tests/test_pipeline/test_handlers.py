@@ -215,12 +215,18 @@ class TestMotionTimeoutHandler:
 
     def test_returns_none_when_motion_control_disabled(self) -> None:
         """Return None when motion_control_enabled is False even if timeout is active."""
-        snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=False, default_position=20)
+        snap = make_snapshot(
+            motion_timeout_active=True,
+            motion_control_enabled=False,
+            default_position=20,
+        )
         assert self.handler.evaluate(snap) is None
 
     def test_matches_when_enabled_and_active(self) -> None:
         """Return MOTION result when motion_control_enabled is True and timeout is active."""
-        snap = make_snapshot(motion_timeout_active=True, motion_control_enabled=True, default_position=20)
+        snap = make_snapshot(
+            motion_timeout_active=True, motion_control_enabled=True, default_position=20
+        )
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.MOTION

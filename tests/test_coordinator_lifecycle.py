@@ -30,6 +30,7 @@ pytestmark = pytest.mark.integration
 # Helper
 # ---------------------------------------------------------------------------
 
+
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "lc_01",
@@ -54,6 +55,7 @@ async def _setup(
 # ---------------------------------------------------------------------------
 # 4a: Setup & first refresh
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_coordinator_created_and_stored(hass: HomeAssistant) -> None:
@@ -90,6 +92,7 @@ async def test_two_entries_stored_independently(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # 4c: Unload & cleanup
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_unload_removes_coordinator(hass: HomeAssistant) -> None:
@@ -137,6 +140,7 @@ async def test_reload_creates_new_coordinator_instance(hass: HomeAssistant) -> N
 # 4d: Options change triggers reload
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_options_update_triggers_reload(hass: HomeAssistant) -> None:
     """Updating options causes the entry to reload (new coordinator created)."""
@@ -159,6 +163,7 @@ async def test_options_update_triggers_reload(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # 4b: Entity change wiring (verify listeners are registered)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_force_override_sensors_wired_as_listeners(hass: HomeAssistant) -> None:
@@ -191,6 +196,7 @@ async def test_motion_sensors_wired_as_listeners(hass: HomeAssistant) -> None:
 # Regression: _last_update_success_time attribute must exist on real instances
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) -> None:
     """Regression: coordinator must own _last_update_success_time.
@@ -210,6 +216,7 @@ async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) ->
     )
     # Value is None (no successful cycle yet) or a UTC datetime — both valid.
     import datetime as _dt
+
     val = coordinator._last_update_success_time
     assert val is None or isinstance(val, _dt.datetime), (
         f"_last_update_success_time must be None or datetime, got {type(val)}"

@@ -140,8 +140,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             coord.enabled_toggle = False
             coord.logger.debug("emergency_stop service: stopped and disabled")
 
-    hass.services.async_register(DOMAIN, "integration_enable", handle_integration_enable)
-    hass.services.async_register(DOMAIN, "integration_disable", handle_integration_disable)
+    hass.services.async_register(
+        DOMAIN, "integration_enable", handle_integration_enable
+    )
+    hass.services.async_register(
+        DOMAIN, "integration_disable", handle_integration_disable
+    )
     hass.services.async_register(DOMAIN, "emergency_stop", handle_emergency_stop)
 
 

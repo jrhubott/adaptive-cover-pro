@@ -19,7 +19,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 def _make_coordinator(*, check_adaptive_time=True, automatic_control=True):
     """Minimal coordinator mock for testing _async_send_after_override_clear."""
-    from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        PositionContext,
+    )
 
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
@@ -37,7 +39,9 @@ def _make_coordinator(*, check_adaptive_time=True, automatic_control=True):
         inverse_state=False,
         force=True,
     )
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
+    coordinator._cmd_svc.apply_position = AsyncMock(
+        return_value=("sent", "set_cover_position")
+    )
     return coordinator
 
 
@@ -265,8 +269,8 @@ async def test_reset_button_delegates_to_shared_method_with_correct_args():
 
     coordinator._async_send_after_override_clear.assert_called_once()
     call = coordinator._async_send_after_override_clear.call_args
-    assert call[0][0] == 55          # state
-    assert call[0][1] == options     # options
+    assert call[0][0] == 55  # state
+    assert call[0][1] == options  # options
     assert call[1].get("entities") == [entity_id]
     assert call[1].get("trigger") == "manual_reset"
 

@@ -25,6 +25,7 @@ pytestmark = pytest.mark.unit
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_logger() -> MagicMock:
     logger = MagicMock()
     logger.debug = MagicMock()
@@ -71,6 +72,7 @@ def _build_vertical(sol_azi: float = 180.0, sol_elev: float = 45.0):
 # ---------------------------------------------------------------------------
 # Benchmark: Vertical cover calculation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_vertical_cover_1000_calculations_under_200ms() -> None:
@@ -173,6 +175,7 @@ def test_tilt_cover_1000_calculations_under_200ms() -> None:
 # Benchmark: Many sun angles (varied positions)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_vertical_cover_varied_sun_positions_under_500ms() -> None:
     """1000 vertical calculations with varied sun positions complete under 500ms."""
@@ -193,6 +196,7 @@ def test_vertical_cover_varied_sun_positions_under_500ms() -> None:
 # ---------------------------------------------------------------------------
 # Benchmark: Pipeline evaluation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_pipeline_1000_evaluations_under_500ms() -> None:
@@ -221,8 +225,10 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
     snapshot.weather_bypass_auto_control = False
     snapshot.manual_override_active = False
     snapshot.custom_position_sensors = (
-        (None, False, 0, 77, False, False), (None, False, 0, 77, False, False),
-        (None, False, 0, 77, False, False), (None, False, 0, 77, False, False),
+        (None, False, 0, 77, False, False),
+        (None, False, 0, 77, False, False),
+        (None, False, 0, 77, False, False),
+        (None, False, 0, 77, False, False),
     )
     snapshot.motion_timeout_active = False
     snapshot.cloud_suppression_enabled = False
@@ -255,6 +261,7 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
 # ---------------------------------------------------------------------------
 # Benchmark: Config summary
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_config_summary_under_50ms() -> None:

@@ -11,13 +11,16 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     build_special_positions,
+)
+from custom_components.adaptive_cover_pro.managers.manual_override import (
+    AdaptiveCoverManager,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
@@ -96,7 +99,7 @@ class TestSendMyPosition:
 
         assert result is True
         mock_hass.services.async_call.assert_called_once_with(
-            "cover", "stop_cover", {"entity_id": "cover.somfy"}
+            "cover", "stop_cover", {"entity_id": "cover.somfy"}, context=ANY
         )
 
     @pytest.mark.asyncio
@@ -184,7 +187,7 @@ class TestSendMyPosition:
         # Must succeed and must have sent the stop_cover command
         assert result is True
         mock_hass.services.async_call.assert_called_once_with(
-            "cover", "stop_cover", {"entity_id": "cover.somfy"}
+            "cover", "stop_cover", {"entity_id": "cover.somfy"}, context=ANY
         )
 
 
@@ -329,7 +332,9 @@ class TestCustomPositionHandlerUseMy:
 
     def test_use_my_true_with_value_returns_my_position(self):
         """Sensor on + use_my=True + my_position_value set → result.position == my_position_value, use_my_position==True."""
-        snap = _snapshot_custom(is_on=True, position=50, use_my=True, my_position_value=30)
+        snap = _snapshot_custom(
+            is_on=True, position=50, use_my=True, my_position_value=30
+        )
         result = self._handler(position=50).evaluate(snap)
 
         assert result is not None
@@ -338,7 +343,9 @@ class TestCustomPositionHandlerUseMy:
 
     def test_use_my_true_with_value_none_falls_back_to_slot_position(self):
         """Sensor on + use_my=True + my_position_value=None → falls back to slot position, use_my_position==False."""
-        snap = _snapshot_custom(is_on=True, position=50, use_my=True, my_position_value=None)
+        snap = _snapshot_custom(
+            is_on=True, position=50, use_my=True, my_position_value=None
+        )
         result = self._handler(position=50).evaluate(snap)
 
         assert result is not None
@@ -347,7 +354,9 @@ class TestCustomPositionHandlerUseMy:
 
     def test_use_my_false_normal_behavior(self):
         """Sensor on + use_my=False → slot's numeric position returned (existing behavior)."""
-        snap = _snapshot_custom(is_on=True, position=45, use_my=False, my_position_value=30)
+        snap = _snapshot_custom(
+            is_on=True, position=45, use_my=False, my_position_value=30
+        )
         result = self._handler(position=45).evaluate(snap)
 
         assert result is not None
@@ -356,7 +365,9 @@ class TestCustomPositionHandlerUseMy:
 
     def test_use_my_true_sensor_off_returns_none(self):
         """Sensor off + use_my=True → None (sensor not active, handler passes through)."""
-        snap = _snapshot_custom(is_on=False, position=50, use_my=True, my_position_value=30)
+        snap = _snapshot_custom(
+            is_on=False, position=50, use_my=True, my_position_value=30
+        )
         result = self._handler(position=50).evaluate(snap)
 
         assert result is None
@@ -401,7 +412,10 @@ class TestDefaultHandlerSunsetUseMy:
     def test_sunset_active_use_my_true_value_none_normal_behavior(self):
         """is_sunset_active + sunset_use_my + my_position_value=None → normal default, use_my_position==False."""
         snap = _snapshot_default(
-            is_sunset_active=True, sunset_use_my=True, my_position_value=None, default_position=10
+            is_sunset_active=True,
+            sunset_use_my=True,
+            my_position_value=None,
+            default_position=10,
         )
         result = self._handler.evaluate(snap)
 
@@ -412,7 +426,10 @@ class TestDefaultHandlerSunsetUseMy:
     def test_sunset_inactive_use_my_true_normal_behavior(self):
         """is_sunset_active=False + sunset_use_my=True → My path not taken (not sunset)."""
         snap = _snapshot_default(
-            is_sunset_active=False, sunset_use_my=True, my_position_value=25, default_position=5
+            is_sunset_active=False,
+            sunset_use_my=True,
+            my_position_value=25,
+            default_position=5,
         )
         result = self._handler.evaluate(snap)
 
@@ -421,7 +438,10 @@ class TestDefaultHandlerSunsetUseMy:
     def test_sunset_active_use_my_false_normal_behavior(self):
         """is_sunset_active=True + sunset_use_my=False → My path not taken (opt-in required)."""
         snap = _snapshot_default(
-            is_sunset_active=True, sunset_use_my=False, my_position_value=25, default_position=10
+            is_sunset_active=True,
+            sunset_use_my=False,
+            my_position_value=25,
+            default_position=10,
         )
         result = self._handler.evaluate(snap)
 
@@ -453,7 +473,7 @@ class TestStationaryCoverRegression:
         assert result is True
         # stop_cover was sent even though the cover is stationary
         mock_hass.services.async_call.assert_called_once_with(
-            "cover", "stop_cover", {"entity_id": "cover.awning"}
+            "cover", "stop_cover", {"entity_id": "cover.awning"}, context=ANY
         )
 
     @pytest.mark.asyncio
@@ -487,5 +507,323 @@ class TestStationaryCoverRegression:
             result = await svc.send_my_position("cover.awning", 35)
         assert result is True
         mock_hass.services.async_call.assert_called_once_with(
-            "cover", "stop_cover", {"entity_id": "cover.awning"}
+            "cover", "stop_cover", {"entity_id": "cover.awning"}, context=ANY
         )
+
+
+# ---------------------------------------------------------------------------
+# Context tracking — _call_stop_cover records ACP-originated contexts
+# ---------------------------------------------------------------------------
+
+
+class TestAcpStopContextTracking:
+    """_call_stop_cover records context ids so the service-call listener
+    can distinguish ACP-originated stops from user-initiated ones.
+    """
+
+    @pytest.mark.asyncio
+    async def test_send_my_position_records_context(self, svc, mock_hass):
+        """send_my_position adds a context id to _acp_stop_contexts."""
+        assert len(svc._acp_stop_contexts) == 0
+        with _patch_caps_my(has_stop=True):
+            await svc.send_my_position("cover.somfy", 50)
+        assert len(svc._acp_stop_contexts) == 1
+
+    @pytest.mark.asyncio
+    async def test_stop_all_records_context(self, svc, mock_hass):
+        """stop_all records context ids for in-flight covers."""
+        _stub_all_covers_state(mock_hass, "opening")
+        with _patch_caps_my(has_stop=True):
+            await svc.stop_all(["cover.somfy"])
+        assert len(svc._acp_stop_contexts) == 1
+
+    @pytest.mark.asyncio
+    async def test_stop_in_flight_records_context(self, svc, mock_hass):
+        """stop_in_flight records context ids for in-flight covers."""
+        svc.wait_for_target["cover.somfy"] = True
+        _stub_all_covers_state(mock_hass, "opening")
+        with _patch_caps_my(has_stop=True):
+            await svc.stop_in_flight({"cover.somfy"})
+        assert len(svc._acp_stop_contexts) == 1
+
+    @pytest.mark.asyncio
+    async def test_context_ids_are_unique(self, svc, mock_hass):
+        """Each stop_cover call gets a distinct context id."""
+        _stub_all_covers_state(mock_hass, "opening")
+        with _patch_caps_my(has_stop=True):
+            await svc.stop_all(["cover.somfy"])
+            await svc.stop_all(["cover.somfy"])
+        assert len(svc._acp_stop_contexts) == 2
+        assert len(set(svc._acp_stop_contexts)) == 2
+
+    @pytest.mark.asyncio
+    async def test_context_deque_bounded(self, svc, mock_hass):
+        """_acp_stop_contexts deque is capped at 16 entries."""
+        _stub_all_covers_state(mock_hass, "opening")
+        with _patch_caps_my(has_stop=True):
+            for _ in range(20):
+                await svc.stop_all(["cover.somfy"])
+        assert len(svc._acp_stop_contexts) == 16
+
+
+# ---------------------------------------------------------------------------
+# handle_stop_service_call — manual override manager
+# ---------------------------------------------------------------------------
+
+
+class TestHandleStopServiceCall:
+    """AdaptiveCoverManager.handle_stop_service_call() marks manual override
+    when a user-initiated cover.stop_cover is detected.
+    """
+
+    @pytest.fixture
+    def mgr(self, mock_hass):
+        m = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+        )
+        m.add_covers(["cover.somfy"])
+        return m
+
+    def test_marks_manual_control(self, mgr):
+        """handle_stop_service_call sets manual_control[entity_id] = True."""
+        mgr.handle_stop_service_call("cover.somfy", 50, {})
+        assert mgr.manual_control.get("cover.somfy") is True
+
+    def test_records_event(self, mgr):
+        """handle_stop_service_call appends a 'set' event to the ring buffer."""
+        mgr.handle_stop_service_call("cover.somfy", 50, {})
+        events = mgr.get_event_buffer()
+        assert len(events) == 1
+        assert events[0]["action"] == "set"
+        assert "My position" in events[0]["reason"]
+
+    def test_noop_when_entity_not_tracked(self, mgr):
+        """handle_stop_service_call ignores entities not in self.covers."""
+        mgr.handle_stop_service_call("cover.unknown", 50, {})
+        assert mgr.manual_control.get("cover.unknown") is None
+
+    def test_noop_when_wait_for_target_active(self, mgr):
+        """handle_stop_service_call skips when wait_for_target is True (ACP command in flight)."""
+        mgr.handle_stop_service_call("cover.somfy", 50, {"cover.somfy": True})
+        assert mgr.manual_control.get("cover.somfy") is None
+
+    def test_sets_manual_control_time(self, mgr):
+        """handle_stop_service_call records a timestamp for override duration tracking."""
+        mgr.handle_stop_service_call("cover.somfy", 50, {})
+        assert "cover.somfy" in mgr.manual_control_time
+
+    def test_no_crash_when_entity_id_wrong_type(self, mgr):
+        """handle_stop_service_call is tolerant of unexpected entity ids."""
+        mgr.handle_stop_service_call("cover.other_entity", 50, {})  # not in covers
+
+
+# ---------------------------------------------------------------------------
+# async_check_cover_service_call — coordinator-level integration
+# ---------------------------------------------------------------------------
+
+
+class TestCoverServiceCallHandler:
+    """Integration test for coordinator.async_check_cover_service_call.
+
+    Uses a minimal stub coordinator to verify end-to-end: EVENT_CALL_SERVICE
+    fires → manual override is set (or not) based on context id and config.
+    """
+
+    def _make_event(self, entity_id, context_id=None):
+        """Build a mock EVENT_CALL_SERVICE event for cover.stop_cover."""
+        from homeassistant.core import Context
+
+        ctx = Context(id=context_id) if context_id else Context()
+        event = MagicMock()
+        event.data = {
+            "domain": "cover",
+            "service": "stop_cover",
+            "service_data": {"entity_id": entity_id},
+        }
+        event.context = ctx
+        return event
+
+    @pytest.mark.asyncio
+    async def test_user_stop_sets_manual_override(self, mock_hass):
+        """A user stop_cover event (context not in ACP set) sets manual override."""
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            AdaptiveCoverManager,
+        )
+
+        mgr = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+        )
+        mgr.add_covers(["cover.somfy"])
+
+        # Build a minimal coordinator stub
+        coord = MagicMock()
+        coord.manual_toggle = True
+        coord.automatic_control = True
+        coord.entities = ["cover.somfy"]
+        coord.wait_for_target = {}
+        coord.manager = mgr
+        coord.config_entry.options = {"my_position_value": 50}
+        coord._cmd_svc._acp_stop_contexts = []
+        coord.logger = MagicMock()
+        coord._cmd_svc.target_call = {}
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        event = self._make_event("cover.somfy")
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        assert mgr.manual_control.get("cover.somfy") is True
+        assert coord._cmd_svc.target_call.get("cover.somfy") == 50
+
+    @pytest.mark.asyncio
+    async def test_acp_originated_stop_does_not_set_override(self, mock_hass):
+        """A stop_cover with ACP's own context id does not flag manual override."""
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            AdaptiveCoverManager,
+        )
+
+        mgr = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+        )
+        mgr.add_covers(["cover.somfy"])
+
+        acp_ctx_id = "acp-ctx-001"
+        coord = MagicMock()
+        coord.manual_toggle = True
+        coord.automatic_control = True
+        coord.entities = ["cover.somfy"]
+        coord.wait_for_target = {}
+        coord.manager = mgr
+        coord.config_entry.options = {"my_position_value": 50}
+        coord._cmd_svc._acp_stop_contexts = [acp_ctx_id]
+        coord.logger = MagicMock()
+        coord._cmd_svc.target_call = {}
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        event = self._make_event("cover.somfy", context_id=acp_ctx_id)
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        assert mgr.manual_control.get("cover.somfy") is None
+
+    @pytest.mark.asyncio
+    async def test_no_my_position_value_skips_override(self, mock_hass):
+        """Without my_position_value configured, stop_cover event is a no-op."""
+        from custom_components.adaptive_cover_pro.managers.manual_override import (
+            AdaptiveCoverManager,
+        )
+
+        mgr = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+        )
+        mgr.add_covers(["cover.somfy"])
+
+        coord = MagicMock()
+        coord.manual_toggle = True
+        coord.automatic_control = True
+        coord.entities = ["cover.somfy"]
+        coord.wait_for_target = {}
+        coord.manager = mgr
+        coord.config_entry.options = {}  # no my_position_value
+        coord._cmd_svc._acp_stop_contexts = []
+        coord.logger = MagicMock()
+        coord._cmd_svc.target_call = {}
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        event = self._make_event("cover.somfy")
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        assert mgr.manual_control.get("cover.somfy") is None
+
+    @pytest.mark.asyncio
+    async def test_non_stop_service_is_ignored(self, mock_hass):
+        """Events for services other than stop_cover are ignored."""
+        mgr = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+        )
+        mgr.add_covers(["cover.somfy"])
+
+        coord = MagicMock()
+        coord.manual_toggle = True
+        coord.automatic_control = True
+        coord.entities = ["cover.somfy"]
+        coord.wait_for_target = {}
+        coord.manager = mgr
+        coord.config_entry.options = {"my_position_value": 50}
+        coord._cmd_svc._acp_stop_contexts = []
+        coord.logger = MagicMock()
+        coord._cmd_svc.target_call = {}
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        # Simulate a open_cover service event — should be a no-op
+        event = MagicMock()
+        event.data = {
+            "domain": "cover",
+            "service": "open_cover",
+            "service_data": {"entity_id": "cover.somfy"},
+        }
+        event.context = MagicMock()
+        event.context.id = "some-id"
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+        assert mgr.manual_control.get("cover.somfy") is None
+
+    @pytest.mark.asyncio
+    async def test_list_entity_id_in_service_data(self, mock_hass):
+        """entity_id as a list in service_data is handled correctly."""
+        mgr = AdaptiveCoverManager(
+            hass=mock_hass,
+            reset_duration={"minutes": 15},
+            logger=MagicMock(),
+        )
+        mgr.add_covers(["cover.somfy", "cover.other"])
+
+        coord = MagicMock()
+        coord.manual_toggle = True
+        coord.automatic_control = True
+        coord.entities = ["cover.somfy", "cover.other"]
+        coord.wait_for_target = {}
+        coord.manager = mgr
+        coord.config_entry.options = {"my_position_value": 60}
+        coord._cmd_svc._acp_stop_contexts = []
+        coord.logger = MagicMock()
+        coord._cmd_svc.target_call = {}
+
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        event = MagicMock()
+        event.data = {
+            "domain": "cover",
+            "service": "stop_cover",
+            "service_data": {"entity_id": ["cover.somfy", "cover.other"]},
+        }
+        from homeassistant.core import Context
+
+        event.context = Context()
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        assert mgr.manual_control.get("cover.somfy") is True
+        assert mgr.manual_control.get("cover.other") is True
+        assert coord._cmd_svc.target_call.get("cover.somfy") == 60
+        assert coord._cmd_svc.target_call.get("cover.other") == 60

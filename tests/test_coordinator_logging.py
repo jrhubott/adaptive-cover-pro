@@ -54,7 +54,9 @@ class TestApplyPositionGateLogging:
         svc = _make_cmd_svc()
         ctx = _make_context(auto_control=False)
 
-        outcome, reason = await svc.apply_position("cover.test", 50, "solar", context=ctx)
+        outcome, reason = await svc.apply_position(
+            "cover.test", 50, "solar", context=ctx
+        )
 
         assert outcome == "skipped"
         assert reason == "auto_control_off"
@@ -67,7 +69,9 @@ class TestApplyPositionGateLogging:
         svc._get_current_position = MagicMock(return_value=50)
         ctx = _make_context(min_change=5)
 
-        outcome, reason = await svc.apply_position("cover.test", 51, "solar", context=ctx)
+        outcome, reason = await svc.apply_position(
+            "cover.test", 51, "solar", context=ctx
+        )
 
         assert outcome == "skipped"
         assert reason == "delta_too_small"
@@ -118,15 +122,20 @@ class TestApplyPositionGateLogging:
         svc = _make_cmd_svc()
         svc._get_current_position = MagicMock(return_value=30)
 
-        with patch(
-            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-            return_value=None,
-        ), patch(
-            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
-            return_value={"has_set_position": True, "has_set_tilt_position": False},
+        with (
+            patch(
+                "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+                return_value=None,
+            ),
+            patch(
+                "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+                return_value={"has_set_position": True, "has_set_tilt_position": False},
+            ),
         ):
             ctx = _make_context()
-            outcome, _ = await svc.apply_position("cover.test", 60, "solar", context=ctx)
+            outcome, _ = await svc.apply_position(
+                "cover.test", 60, "solar", context=ctx
+            )
 
         assert outcome == "sent"
         assert "cover.test" in svc.target_call

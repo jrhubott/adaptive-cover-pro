@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_default_position, compute_raw_calculated_position, compute_solar_position
+from ..helpers import (
+    compute_default_position,
+    compute_raw_calculated_position,
+    compute_solar_position,
+)
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -30,7 +34,9 @@ class ManualOverrideHandler(OverrideHandler):
             reason = f"manual override active — holding solar position {position}%"
         else:
             position = compute_default_position(snapshot)
-            pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
+            pos_label = (
+                "sunset position" if snapshot.is_sunset_active else "default position"
+            )
             reason = f"manual override active — holding {pos_label} {position}%"
 
         return PipelineResult(

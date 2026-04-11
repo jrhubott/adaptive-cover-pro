@@ -24,6 +24,7 @@ def _make_manager(mock_hass=None):
 # after_start_time: entity-based branch
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_after_start_time_entity_returns_true_when_state_is_none():
     """Entity returns None state → treats as start passed (returns True)."""
@@ -58,12 +59,15 @@ def test_after_start_time_entity_evaluates_correctly():
     # Use a time far in the past so now >= time is True
     past_time = dt.datetime.now() - dt.timedelta(hours=1)
 
-    with patch(
-        "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-        return_value="2024-01-01T07:00:00",
-    ), patch(
-        "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-        return_value=past_time,
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="2024-01-01T07:00:00",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=past_time,
+        ),
     ):
         result = mgr.after_start_time
 
@@ -84,12 +88,15 @@ def test_after_start_time_entity_returns_false_when_future():
 
     future_time = dt.datetime.now() + dt.timedelta(hours=2)
 
-    with patch(
-        "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-        return_value="2099-01-01T22:00:00",
-    ), patch(
-        "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-        return_value=future_time,
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="2099-01-01T22:00:00",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=future_time,
+        ),
     ):
         result = mgr.after_start_time
 
@@ -99,6 +106,7 @@ def test_after_start_time_entity_returns_false_when_future():
 # ---------------------------------------------------------------------------
 # after_start_time: static config parse failure
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_after_start_time_static_parse_failure_treats_as_passed():
@@ -124,6 +132,7 @@ def test_after_start_time_static_parse_failure_treats_as_passed():
 # end_time: entity-based and midnight branches
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_end_time_from_entity():
     """end_time resolves from entity state."""
@@ -137,12 +146,15 @@ def test_end_time_from_entity():
 
     expected = dt.datetime(2024, 6, 21, 20, 0, 0)
 
-    with patch(
-        "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-        return_value="2024-06-21T20:00:00",
-    ), patch(
-        "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
-        return_value=expected,
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="2024-06-21T20:00:00",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=expected,
+        ),
     ):
         result = mgr.end_time
 
@@ -175,11 +187,14 @@ def test_end_time_midnight_adds_one_day():
 # is_active: start > end logs error
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_is_active_logs_error_when_start_after_end():
     """is_active logs error when cached start time is after end time."""
     from unittest.mock import PropertyMock
-    from custom_components.adaptive_cover_pro.managers.time_window import TimeWindowManager
+    from custom_components.adaptive_cover_pro.managers.time_window import (
+        TimeWindowManager,
+    )
 
     mgr = _make_manager()
     mgr.update_config(
@@ -194,9 +209,26 @@ def test_is_active_logs_error_when_start_after_end():
     future_start = dt.datetime.now() + dt.timedelta(hours=2)
     mgr._cached_start_time = future_start
 
-    with patch.object(TimeWindowManager, "end_time", new_callable=PropertyMock, return_value=past_end), \
-         patch.object(TimeWindowManager, "before_end_time", new_callable=PropertyMock, return_value=True), \
-         patch.object(TimeWindowManager, "after_start_time", new_callable=PropertyMock, return_value=True):
+    with (
+        patch.object(
+            TimeWindowManager,
+            "end_time",
+            new_callable=PropertyMock,
+            return_value=past_end,
+        ),
+        patch.object(
+            TimeWindowManager,
+            "before_end_time",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+        patch.object(
+            TimeWindowManager,
+            "after_start_time",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+    ):
         mgr.is_active
 
     mgr.logger.error.assert_called_once()
@@ -205,6 +237,7 @@ def test_is_active_logs_error_when_start_after_end():
 # ---------------------------------------------------------------------------
 # check_transition
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -249,7 +282,9 @@ async def test_check_transition_calls_callback_on_window_close():
     mgr._last_time_window_state = True
 
     # Now make is_active return False (window just closed)
-    with patch.object(type(mgr), "is_active", new_callable=lambda: property(lambda self: False)):
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: False)
+    ):
         await mgr.check_transition(track_end_time=True, refresh_callback=callback)
 
     callback.assert_called_once()
@@ -265,7 +300,9 @@ async def test_check_transition_no_callback_when_track_end_time_false():
 
     mgr._last_time_window_state = True
 
-    with patch.object(type(mgr), "is_active", new_callable=lambda: property(lambda self: False)):
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: False)
+    ):
         await mgr.check_transition(track_end_time=False, refresh_callback=callback)
 
     callback.assert_not_called()
@@ -281,7 +318,9 @@ async def test_check_transition_no_callback_on_window_open():
 
     mgr._last_time_window_state = False
 
-    with patch.object(type(mgr), "is_active", new_callable=lambda: property(lambda self: True)):
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: True)
+    ):
         await mgr.check_transition(track_end_time=True, refresh_callback=callback)
 
     callback.assert_not_called()

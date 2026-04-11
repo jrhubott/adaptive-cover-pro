@@ -104,6 +104,7 @@ TILT_OPTIONS: dict[str, Any] = {
 # Config entry factories
 # ---------------------------------------------------------------------------
 
+
 def make_config_entry(
     name: str = "Test Cover",
     cover_type: str = SensorType.BLIND,
@@ -197,6 +198,7 @@ def _patch_coordinator_refresh():
 # ---------------------------------------------------------------------------
 # Convenience assertions
 # ---------------------------------------------------------------------------
+
 
 def get_entity_ids_for_entry(
     hass: HomeAssistant, entry: ConfigEntry, platform: str

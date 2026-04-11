@@ -36,7 +36,9 @@ def _make_coordinator(*, check_adaptive_time: bool, automatic_control: bool = Tr
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._cmd_svc = MagicMock()
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
+    coordinator._cmd_svc.apply_position = AsyncMock(
+        return_value=("sent", "set_cover_position")
+    )
     return coordinator
 
 
@@ -87,7 +89,10 @@ async def test_override_clear_sends_position_inside_time_window():
 
     # apply_position must be called for each cover entity
     coordinator._cmd_svc.apply_position.assert_called_once_with(
-        "cover.test_blind", 50, "manual_override_cleared", context=coordinator._build_position_context.return_value
+        "cover.test_blind",
+        50,
+        "manual_override_cleared",
+        context=coordinator._build_position_context.return_value,
     )
 
 
@@ -107,7 +112,10 @@ async def test_override_clear_logs_debug_when_outside_window():
     # A debug log must have been emitted explaining the skip
     coordinator.logger.debug.assert_called()
     logged_message = coordinator.logger.debug.call_args_list[-1][0][0]
-    assert "outside active-hours window" in logged_message or "outside" in logged_message.lower()
+    assert (
+        "outside active-hours window" in logged_message
+        or "outside" in logged_message.lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -177,7 +185,9 @@ async def test_override_clear_inside_window_multiple_covers():
 
     # One apply_position call per cover
     assert coordinator._cmd_svc.apply_position.call_count == 2
-    calls = [call.args[0] for call in coordinator._cmd_svc.apply_position.call_args_list]
+    calls = [
+        call.args[0] for call in coordinator._cmd_svc.apply_position.call_args_list
+    ]
     assert "cover.blind_1" in calls
     assert "cover.blind_2" in calls
 
@@ -246,7 +256,9 @@ async def test_override_clear_sends_when_auto_control_on_inside_window():
     )
 
     coordinator._cmd_svc.apply_position.assert_called_once_with(
-        "cover.test_blind", 40, "manual_override_cleared",
+        "cover.test_blind",
+        40,
+        "manual_override_cleared",
         context=coordinator._build_position_context.return_value,
     )
 
@@ -291,7 +303,10 @@ async def test_override_clear_outside_window_takes_precedence_over_auto_control(
     coordinator._cmd_svc.apply_position.assert_not_called()
     # The time-window message is emitted (first guard)
     logged_args = [call[0][0] for call in coordinator.logger.debug.call_args_list]
-    assert any("outside active-hours window" in msg or "outside" in msg.lower() for msg in logged_args)
+    assert any(
+        "outside active-hours window" in msg or "outside" in msg.lower()
+        for msg in logged_args
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +325,9 @@ def _make_state_change_coordinator(
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._cmd_svc = MagicMock()
-    coordinator._cmd_svc.apply_position = AsyncMock(return_value=("sent", "set_cover_position"))
+    coordinator._cmd_svc.apply_position = AsyncMock(
+        return_value=("sent", "set_cover_position")
+    )
     coordinator._pipeline_bypasses_auto_control = bypass_auto_control
     coordinator._pipeline_result = MagicMock()
     coordinator._pipeline_result.control_method.value = "force"
@@ -389,7 +406,9 @@ async def test_state_change_outside_window_logs_debug():
 
     coordinator.logger.debug.assert_called()
     logged_args = [call[0][0] for call in coordinator.logger.debug.call_args_list]
-    assert any("time window" in msg.lower() or "outside" in msg.lower() for msg in logged_args)
+    assert any(
+        "time window" in msg.lower() or "outside" in msg.lower() for msg in logged_args
+    )
 
 
 @pytest.mark.asyncio

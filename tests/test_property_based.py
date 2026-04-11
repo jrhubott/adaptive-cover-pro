@@ -29,15 +29,21 @@ pytestmark = pytest.mark.unit
 # ---------------------------------------------------------------------------
 
 # Sun azimuth: 0–360 degrees
-_azimuth = st.floats(min_value=0.0, max_value=360.0, allow_nan=False, allow_infinity=False)
+_azimuth = st.floats(
+    min_value=0.0, max_value=360.0, allow_nan=False, allow_infinity=False
+)
 # Sun elevation: -10 to 90 degrees (some below-horizon values for edge case testing)
-_elevation = st.floats(min_value=-10.0, max_value=90.0, allow_nan=False, allow_infinity=False)
+_elevation = st.floats(
+    min_value=-10.0, max_value=90.0, allow_nan=False, allow_infinity=False
+)
 # Window azimuth: 0–360
 _win_azi = st.integers(min_value=0, max_value=360)
 # FOV: 1–90 degrees per side
 _fov = st.integers(min_value=1, max_value=90)
 # Distance from window: 0.1–10 metres
-_distance = st.floats(min_value=0.1, max_value=10.0, allow_nan=False, allow_infinity=False)
+_distance = st.floats(
+    min_value=0.1, max_value=10.0, allow_nan=False, allow_infinity=False
+)
 # Window height: 0.5–6 metres
 _h_win = st.floats(min_value=0.5, max_value=6.0, allow_nan=False, allow_infinity=False)
 # Default position: 0–100%
@@ -63,6 +69,7 @@ def _make_logger() -> MagicMock:
 # ---------------------------------------------------------------------------
 # 9a: Vertical cover — position always 0–100
 # ---------------------------------------------------------------------------
+
 
 @settings(max_examples=200, deadline=1000)
 @given(
@@ -116,6 +123,7 @@ def test_vertical_position_always_0_to_100(
 # 9b: Horizontal cover — position always 0–100
 # ---------------------------------------------------------------------------
 
+
 @settings(max_examples=200, deadline=1000)
 @given(
     sol_azi=_azimuth,
@@ -126,12 +134,24 @@ def test_vertical_position_always_0_to_100(
     distance=_distance,
     h_win=_h_win,
     h_def=_h_def,
-    awn_length=st.floats(min_value=0.5, max_value=6.0, allow_nan=False, allow_infinity=False),
-    awn_angle=st.floats(min_value=0.0, max_value=45.0, allow_nan=False, allow_infinity=False),
+    awn_length=st.floats(
+        min_value=0.5, max_value=6.0, allow_nan=False, allow_infinity=False
+    ),
+    awn_angle=st.floats(
+        min_value=0.0, max_value=45.0, allow_nan=False, allow_infinity=False
+    ),
 )
 def test_horizontal_position_always_0_to_100(
-    sol_azi, sol_elev, win_azi, fov_left, fov_right, distance, h_win, h_def,
-    awn_length, awn_angle
+    sol_azi,
+    sol_elev,
+    win_azi,
+    fov_left,
+    fov_right,
+    distance,
+    h_win,
+    h_def,
+    awn_length,
+    awn_angle,
 ) -> None:
     """Horizontal awning position is always in [0, 100] for any valid input."""
     cover = build_horizontal_cover(
@@ -162,14 +182,13 @@ def test_horizontal_position_always_0_to_100(
         awn_angle=awn_angle,
     )
     position = cover.calculate_position()
-    assert 0 <= position <= 100, (
-        f"Horizontal position {position} out of range"
-    )
+    assert 0 <= position <= 100, f"Horizontal position {position} out of range"
 
 
 # ---------------------------------------------------------------------------
 # 9c: Tilt cover — position always 0–100
 # ---------------------------------------------------------------------------
+
 
 @settings(max_examples=200, deadline=1000)
 @given(
@@ -211,9 +230,7 @@ def test_tilt_position_always_0_to_100(
         sunrise_off=0,
     )
     position = cover.calculate_position()
-    assert 0 <= position <= 100, (
-        f"Tilt position {position} out of range"
-    )
+    assert 0 <= position <= 100, f"Tilt position {position} out of range"
 
 
 def test_tilt_narrow_fov_edge_case() -> None:
@@ -252,6 +269,7 @@ def test_tilt_narrow_fov_edge_case() -> None:
 # 9d: Edge cases — no crash on extreme inputs
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("sol_elev", [-90.0, -0.001, 0.0, 0.001, 1.9, 88.0, 88.5, 90.0])
 def test_vertical_extreme_elevations_no_crash(sol_elev: float) -> None:
     """Vertical cover handles all extreme elevation values without crashing."""
@@ -284,11 +302,21 @@ def test_vertical_extreme_elevations_no_crash(sol_elev: float) -> None:
     assert 0 <= position <= 100
 
 
-@pytest.mark.parametrize("sol_azi,win_azi", [
-    (0.0, 0), (0.0, 180), (180.0, 0), (360.0, 360),
-    (90.0, 270), (270.0, 90), (45.0, 315),
-])
-def test_vertical_extreme_azimuth_combinations_no_crash(sol_azi: float, win_azi: int) -> None:
+@pytest.mark.parametrize(
+    "sol_azi,win_azi",
+    [
+        (0.0, 0),
+        (0.0, 180),
+        (180.0, 0),
+        (360.0, 360),
+        (90.0, 270),
+        (270.0, 90),
+        (45.0, 315),
+    ],
+)
+def test_vertical_extreme_azimuth_combinations_no_crash(
+    sol_azi: float, win_azi: int
+) -> None:
     """Vertical cover handles extreme azimuth combinations without crashing."""
     cover = build_vertical_cover(
         logger=_make_logger(),
@@ -323,6 +351,7 @@ def test_vertical_extreme_azimuth_combinations_no_crash(sol_azi: float, win_azi:
 # 9e: Inverse state always valid (0–100 after inversion)
 # ---------------------------------------------------------------------------
 
+
 @settings(max_examples=300, deadline=500)
 @given(position=st.integers(min_value=0, max_value=100))
 def test_inverse_state_always_valid(position: int) -> None:
@@ -334,6 +363,7 @@ def test_inverse_state_always_valid(position: int) -> None:
 # ---------------------------------------------------------------------------
 # 9f: Pipeline — DefaultHandler always provides fallback
 # ---------------------------------------------------------------------------
+
 
 def test_pipeline_default_handler_never_returns_none() -> None:
     """DefaultHandler always returns a non-None position (the fallback)."""
@@ -361,6 +391,7 @@ def test_pipeline_default_handler_never_returns_none() -> None:
 # ---------------------------------------------------------------------------
 # 9g: Min/max position clamping is always valid
 # ---------------------------------------------------------------------------
+
 
 @settings(max_examples=300, deadline=500)
 @given(

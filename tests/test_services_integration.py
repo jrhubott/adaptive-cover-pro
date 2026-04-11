@@ -30,6 +30,7 @@ pytestmark = pytest.mark.integration
 # Helper
 # ---------------------------------------------------------------------------
 
+
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "svc_01",
@@ -59,6 +60,7 @@ async def _setup(
 # ---------------------------------------------------------------------------
 # 5a: Service registration
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_export_config_service_registered_after_setup(
@@ -115,6 +117,7 @@ async def test_service_removed_after_all_entries_unloaded(
 # ---------------------------------------------------------------------------
 # 5b: Service invocation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_export_config_returns_valid_response(hass: HomeAssistant) -> None:

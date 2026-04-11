@@ -106,8 +106,10 @@ def _patch_caps():
 
 def _patch_position(svc, positions: dict):
     """Patch _get_current_position with a dict mapping entity → position."""
+
     def _get(entity):
         return positions.get(entity, None)
+
     svc._get_current_position = MagicMock(side_effect=_get)
 
 
@@ -180,7 +182,9 @@ class TestManualOverridePerEntity:
     """Manual override on one entity does not prevent commands to other entities."""
 
     @pytest.mark.asyncio
-    async def test_manual_override_only_skips_affected_entity(self, mock_hass, grace_mgr):
+    async def test_manual_override_only_skips_affected_entity(
+        self, mock_hass, grace_mgr
+    ):
         """Entity A in manual override is skipped; entity B still receives command."""
         svc = _make_svc(mock_hass, grace_mgr)
         _patch_position(svc, {"cover.a": 30, "cover.b": 30})
@@ -310,7 +314,9 @@ class TestReconciliationTargetsPerEntity:
     """Reconciliation manages target tracking independently for each entity."""
 
     @pytest.mark.asyncio
-    async def test_reconcile_retries_per_entity_independently(self, mock_hass, grace_mgr):
+    async def test_reconcile_retries_per_entity_independently(
+        self, mock_hass, grace_mgr
+    ):
         """Retry counts are tracked independently per entity."""
         svc = _make_svc(mock_hass, grace_mgr)
         svc.target_call["cover.a"] = 60
@@ -383,7 +389,6 @@ class TestReconciliationTargetsPerEntity:
         assert svc._retry_counts["cover.a"] == 3
 
 
-
 # ---------------------------------------------------------------------------
 # Phase 11: Real HA multi-entry coexistence tests
 # ---------------------------------------------------------------------------
@@ -408,8 +413,20 @@ async def test_ha_two_entries_have_independent_coordinators(
 ) -> None:
     """Two config entries each get their own coordinator in hass.data."""
     opts = dict(_V_OPTS)
-    entry_a = _MockCE(domain=_DOM, data={"name": "HA A", _CST: _ST.BLIND}, options=opts, entry_id="ha_multi_a", title="HA A")
-    entry_b = _MockCE(domain=_DOM, data={"name": "HA B", _CST: _ST.BLIND}, options=opts, entry_id="ha_multi_b", title="HA B")
+    entry_a = _MockCE(
+        domain=_DOM,
+        data={"name": "HA A", _CST: _ST.BLIND},
+        options=opts,
+        entry_id="ha_multi_a",
+        title="HA A",
+    )
+    entry_b = _MockCE(
+        domain=_DOM,
+        data={"name": "HA B", _CST: _ST.BLIND},
+        options=opts,
+        entry_id="ha_multi_b",
+        title="HA B",
+    )
     entry_a.add_to_hass(hass)
     entry_b.add_to_hass(hass)
     with _patch_refresh():
@@ -428,8 +445,20 @@ async def test_ha_vertical_and_horizontal_coexist(
     hass, enable_custom_integrations
 ) -> None:
     """Vertical blind and horizontal awning run simultaneously."""
-    entry_v = _MockCE(domain=_DOM, data={"name": "Blind", _CST: _ST.BLIND}, options=dict(_V_OPTS), entry_id="ha_vt_v", title="Blind")
-    entry_h = _MockCE(domain=_DOM, data={"name": "Awning", _CST: _ST.AWNING}, options=dict(_H_OPTS), entry_id="ha_vt_h", title="Awning")
+    entry_v = _MockCE(
+        domain=_DOM,
+        data={"name": "Blind", _CST: _ST.BLIND},
+        options=dict(_V_OPTS),
+        entry_id="ha_vt_v",
+        title="Blind",
+    )
+    entry_h = _MockCE(
+        domain=_DOM,
+        data={"name": "Awning", _CST: _ST.AWNING},
+        options=dict(_H_OPTS),
+        entry_id="ha_vt_h",
+        title="Awning",
+    )
     entry_v.add_to_hass(hass)
     entry_h.add_to_hass(hass)
     with _patch_refresh():
@@ -446,9 +475,27 @@ async def test_ha_all_three_cover_types_coexist(
 ) -> None:
     """Vertical + horizontal + tilt all run simultaneously."""
     entries = [
-        _MockCE(domain=_DOM, data={"name": "V", _CST: _ST.BLIND},  options=dict(_V_OPTS), entry_id="ha_three_v", title="V"),
-        _MockCE(domain=_DOM, data={"name": "H", _CST: _ST.AWNING}, options=dict(_H_OPTS), entry_id="ha_three_h", title="H"),
-        _MockCE(domain=_DOM, data={"name": "T", _CST: _ST.TILT},   options=dict(_T_OPTS), entry_id="ha_three_t", title="T"),
+        _MockCE(
+            domain=_DOM,
+            data={"name": "V", _CST: _ST.BLIND},
+            options=dict(_V_OPTS),
+            entry_id="ha_three_v",
+            title="V",
+        ),
+        _MockCE(
+            domain=_DOM,
+            data={"name": "H", _CST: _ST.AWNING},
+            options=dict(_H_OPTS),
+            entry_id="ha_three_h",
+            title="H",
+        ),
+        _MockCE(
+            domain=_DOM,
+            data={"name": "T", _CST: _ST.TILT},
+            options=dict(_T_OPTS),
+            entry_id="ha_three_t",
+            title="T",
+        ),
     ]
     for e in entries:
         e.add_to_hass(hass)
@@ -466,8 +513,20 @@ async def test_ha_unload_one_entry_leaves_other_intact(
 ) -> None:
     """Unloading entry A leaves entry B running."""
     opts = dict(_V_OPTS)
-    entry_a = _MockCE(domain=_DOM, data={"name": "A", _CST: _ST.BLIND}, options=opts, entry_id="ha_unload_a", title="A")
-    entry_b = _MockCE(domain=_DOM, data={"name": "B", _CST: _ST.BLIND}, options=opts, entry_id="ha_unload_b", title="B")
+    entry_a = _MockCE(
+        domain=_DOM,
+        data={"name": "A", _CST: _ST.BLIND},
+        options=opts,
+        entry_id="ha_unload_a",
+        title="A",
+    )
+    entry_b = _MockCE(
+        domain=_DOM,
+        data={"name": "B", _CST: _ST.BLIND},
+        options=opts,
+        entry_id="ha_unload_b",
+        title="B",
+    )
     for e in [entry_a, entry_b]:
         e.add_to_hass(hass)
     with _patch_refresh():
@@ -486,8 +545,20 @@ async def test_ha_service_persists_after_single_entry_unloaded(
 ) -> None:
     """export_config service stays registered while second entry is active."""
     opts = dict(_V_OPTS)
-    entry_a = _MockCE(domain=_DOM, data={"name": "SvcA", _CST: _ST.BLIND}, options=opts, entry_id="ha_svc_a", title="SvcA")
-    entry_b = _MockCE(domain=_DOM, data={"name": "SvcB", _CST: _ST.BLIND}, options=opts, entry_id="ha_svc_b", title="SvcB")
+    entry_a = _MockCE(
+        domain=_DOM,
+        data={"name": "SvcA", _CST: _ST.BLIND},
+        options=opts,
+        entry_id="ha_svc_a",
+        title="SvcA",
+    )
+    entry_b = _MockCE(
+        domain=_DOM,
+        data={"name": "SvcB", _CST: _ST.BLIND},
+        options=opts,
+        entry_id="ha_svc_b",
+        title="SvcB",
+    )
     for e in [entry_a, entry_b]:
         e.add_to_hass(hass)
     with _patch_refresh():

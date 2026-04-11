@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import EVENT_CALL_SERVICE, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import (
@@ -102,6 +102,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass,
             _cover_entities,
             coordinator.async_check_cover_state_change,
+        )
+    )
+
+    # Detect user-initiated cover.stop_cover for manual override on non-position-
+    # capable covers (e.g. Somfy RTS) where pressing STOP triggers the "My"
+    # preset but never reports a new position via state change.
+    entry.async_on_unload(
+        hass.bus.async_listen(
+            EVENT_CALL_SERVICE,
+            coordinator.async_check_cover_service_call,
         )
     )
 

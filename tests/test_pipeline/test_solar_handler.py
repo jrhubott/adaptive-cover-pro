@@ -62,12 +62,18 @@ class TestSolarHandler:
 
     def test_returns_none_outside_time_window(self) -> None:
         """Return None when in_time_window is False even if sun is valid."""
-        snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0, in_time_window=False)
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            calculate_percentage_return=60.0,
+            in_time_window=False,
+        )
         assert self.handler.evaluate(snap) is None
 
     def test_matches_inside_time_window(self) -> None:
         """Return result when in_time_window is True and sun is valid."""
-        snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0, in_time_window=True)
+        snap = make_snapshot(
+            direct_sun_valid=True, calculate_percentage_return=60.0, in_time_window=True
+        )
         assert self.handler.evaluate(snap) is not None
 
     def test_describe_skip_outside_time_window(self) -> None:

@@ -293,7 +293,9 @@ GEOMETRY_TILT_SCHEMA = vol.Schema(
 
 SUN_TRACKING_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_ENABLE_SUN_TRACKING, default=True): selector.BooleanSelector(),
+        vol.Required(
+            CONF_ENABLE_SUN_TRACKING, default=True
+        ): selector.BooleanSelector(),
         vol.Required(CONF_AZIMUTH, default=180): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -505,7 +507,9 @@ FORCE_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_FORCE_OVERRIDE_MIN_MODE, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_FORCE_OVERRIDE_MIN_MODE, default=False
+        ): selector.BooleanSelector(),
     }
 )
 
@@ -547,23 +551,39 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_1, default=False): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_USE_MY_1, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_MIN_MODE_1, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_USE_MY_1, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_2, default=False): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_USE_MY_2, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_MIN_MODE_2, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_USE_MY_2, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_3, default=False): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_USE_MY_3, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_MIN_MODE_3, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_USE_MY_3, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_sensor_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_4, default=False): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_USE_MY_4, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_MIN_MODE_4, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CUSTOM_POSITION_USE_MY_4, default=False
+        ): selector.BooleanSelector(),
     }
 )
 
@@ -690,7 +710,9 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_WEATHER_OVERRIDE_MIN_MODE, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_WEATHER_OVERRIDE_MIN_MODE, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_TIMEOUT, default=DEFAULT_WEATHER_TIMEOUT
         ): selector.NumberSelector(
@@ -979,7 +1001,10 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         _sensor = config.get(f"custom_position_sensor_{_i}")
         _pos = config.get(f"custom_position_{_i}")
         if _sensor and _pos is not None:
-            _pri = int(config.get(f"custom_position_priority_{_i}") or DEFAULT_CUSTOM_POSITION_PRIORITY)
+            _pri = int(
+                config.get(f"custom_position_priority_{_i}")
+                or DEFAULT_CUSTOM_POSITION_PRIORITY
+            )
             _use_my = bool(config.get(f"custom_position_use_my_{_i}"))
             _custom_slots.append((_i, _sensor, int(_pos), _pri, _use_my))
     has_custom_position = bool(_custom_slots)
@@ -1361,7 +1386,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         pos_map.append(f"🌧️ Weather danger → {weather_pos}%")
     if has_custom_position:
         for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
-            pos_map.append(f"🎯 Custom #{_slot} on → {_pos_label(_pos, _use_my)} (priority {_pri})")
+            pos_map.append(
+                f"🎯 Custom #{_slot} on → {_pos_label(_pos, _use_my)} (priority {_pri})"
+            )
     if sun_tracking_enabled:
         pos_map.append("☀️ Tracking sun → calculated position")
     min_p = config.get(CONF_MIN_POSITION, 0)
@@ -1370,7 +1397,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         pos_map.append(f"   (clamped to {min_p}%–{max_p}%)")
     sunset_pos = config.get(CONF_SUNSET_POS)
     if sunset_pos is not None:
-        pos_map.append(f"🌅 After sunset → {_pos_label(int(sunset_pos), bool(config.get(CONF_SUNSET_USE_MY)))}")
+        pos_map.append(
+            f"🌅 After sunset → {_pos_label(int(sunset_pos), bool(config.get(CONF_SUNSET_USE_MY)))}"
+        )
     pos_map.append(f"🌙 No sun / default → {default_pos}%")
     for line in pos_map:
         lines.append(line)
@@ -1394,7 +1423,9 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         (40, "Solar", sun_tracking_enabled),
         (0, "Default", True),
     ]
-    if (sensor_type == SensorType.BLIND or sensor_type is None) and sun_tracking_enabled:
+    if (
+        sensor_type == SensorType.BLIND or sensor_type is None
+    ) and sun_tracking_enabled:
         _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
     for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
@@ -2395,7 +2426,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     CONF_BLIND_SPOT_ELEVATION, None
                 ),
                 CONF_ENABLE_BLIND_SPOT: self.config.get(CONF_ENABLE_BLIND_SPOT),
-                CONF_ENABLE_SUN_TRACKING: self.config.get(CONF_ENABLE_SUN_TRACKING, True),
+                CONF_ENABLE_SUN_TRACKING: self.config.get(
+                    CONF_ENABLE_SUN_TRACKING, True
+                ),
                 CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
                 CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
                 CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),

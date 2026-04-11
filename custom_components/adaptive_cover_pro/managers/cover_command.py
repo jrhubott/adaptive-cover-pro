@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+from collections import deque
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
@@ -12,7 +13,7 @@ from homeassistant.const import (
     SERVICE_SET_COVER_POSITION,
     SERVICE_SET_COVER_TILT_POSITION,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.template import state_attr
@@ -49,7 +50,9 @@ class PositionContext:
     special_positions: list[int]
     inverse_state: bool = False
     force: bool = False  # Skip all gate checks when True
-    use_my_position: bool = False  # Route through send_my_position() on non-position-capable covers
+    use_my_position: bool = (
+        False  # Route through send_my_position() on non-position-capable covers
+    )
 
 
 class CoverCommandService:
@@ -134,6 +137,11 @@ class CoverCommandService:
         self.wait_for_target: dict[str, bool] = {}
         self._retry_counts: dict[str, int] = {}
         self._gave_up: set[str] = set()
+
+        # Context ids of cover.stop_cover calls that ACP itself originated.
+        # The EVENT_CALL_SERVICE listener in the coordinator uses this to
+        # distinguish our own stop commands from user-initiated stops.
+        self._acp_stop_contexts: deque[str] = deque(maxlen=16)
 
         # Entities currently under manual override — reconciliation skips these
         # so it doesn't fight the user by resending the old integration target.
@@ -330,7 +338,9 @@ class CoverCommandService:
             "last_command_sent_at": sent_at.isoformat() if sent_at else None,
             "in_manual_override_set": entity_id in self._manual_override_entities,
             "safety_target": entity_id in self._safety_targets,
-            "last_reconcile_time": reconcile_time.isoformat() if reconcile_time else None,
+            "last_reconcile_time": reconcile_time.isoformat()
+            if reconcile_time
+            else None,
         }
 
     def get_all_entity_state_snapshots(self) -> dict[str, dict]:
@@ -380,9 +390,24 @@ class CoverCommandService:
             return False
         return state_obj.state in ("opening", "closing")
 
-    async def stop_in_flight(
-        self, entities: set[str] | None = None
-    ) -> list[str]:
+    async def _call_stop_cover(self, entity_id: str) -> None:
+        """Issue cover.stop_cover and record the call context as ACP-originated.
+
+        All ACP-initiated stop_cover calls must go through this helper so that
+        the EVENT_CALL_SERVICE listener can identify and ignore them, avoiding
+        false manual-override detection.
+
+        Args:
+            entity_id: Cover entity_id to stop.
+
+        """
+        ctx = Context()
+        self._acp_stop_contexts.append(ctx.id)
+        await self._hass.services.async_call(
+            "cover", "stop_cover", {"entity_id": entity_id}, context=ctx
+        )
+
+    async def stop_in_flight(self, entities: set[str] | None = None) -> list[str]:
         """Send stop_cover to every ACP-in-flight entity that supports STOP.
 
         Intentionally bypasses the ``_enabled`` gate — this IS the shutdown path
@@ -420,9 +445,7 @@ class CoverCommandService:
             if self._dry_run:
                 self._logger.info("[dry_run] would stop_cover %s", eid)
             else:
-                await self._hass.services.async_call(
-                    "cover", "stop_cover", {"entity_id": eid}
-                )
+                await self._call_stop_cover(eid)
             self.wait_for_target[eid] = False
             self._sent_at.pop(eid, None)
             stopped.append(eid)
@@ -458,9 +481,7 @@ class CoverCommandService:
             if self._dry_run:
                 self._logger.info("[dry_run] would stop_cover %s", eid)
             else:
-                await self._hass.services.async_call(
-                    "cover", "stop_cover", {"entity_id": eid}
-                )
+                await self._call_stop_cover(eid)
             stopped.append(eid)
             self._logger.debug("stop_all: stopped %s", eid)
         return stopped
@@ -505,9 +526,7 @@ class CoverCommandService:
                 "[dry_run] would stop_cover %s (My position = %d%%)", entity_id, target
             )
         else:
-            await self._hass.services.async_call(
-                "cover", "stop_cover", {"entity_id": entity_id}
-            )
+            await self._call_stop_cover(entity_id)
         now = dt.datetime.now(dt.UTC)
         self.target_call[entity_id] = target
         self.wait_for_target[entity_id] = True
@@ -1219,7 +1238,7 @@ class CoverCommandService:
             self._sent_at[entity] = now
             if reset_retries:
                 self._retry_counts.pop(entity, None)  # New target resets retry count
-                self._gave_up.discard(entity)          # Allow warnings again for new target
+                self._gave_up.discard(entity)  # Allow warnings again for new target
             # Track whether this target was set by a safety override so
             # reconciliation knows whether to resend it when auto_control is off.
             if is_safety:
@@ -1329,12 +1348,13 @@ class CoverCommandService:
             "service": service,
             "position": state if supports_position else self.target_call.get(entity),
             "calculated_position": state,
-            "threshold_used": self._open_close_threshold if not supports_position else None,
+            "threshold_used": self._open_close_threshold
+            if not supports_position
+            else None,
             "inverse_state_applied": inverse_state,
             "timestamp": dt.datetime.now().isoformat(),
             "covers_controlled": 1,
         }
-
 
 
 def build_special_positions(options: dict) -> list[int]:

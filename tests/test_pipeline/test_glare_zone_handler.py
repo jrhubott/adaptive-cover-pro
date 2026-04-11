@@ -81,7 +81,12 @@ class TestGlareZoneHandlerGating:
 
     def test_matches_inside_time_window(self) -> None:
         """Returns result when in_time_window is True and all conditions met."""
-        cover = _make_vertical_cover(direct_sun_valid=True, distance=1.0, gamma=0.0, calculate_percentage_return=40.0)
+        cover = _make_vertical_cover(
+            direct_sun_valid=True,
+            distance=1.0,
+            gamma=0.0,
+            calculate_percentage_return=40.0,
+        )
         snap = make_snapshot(
             cover=cover,
             cover_type="cover_blind",

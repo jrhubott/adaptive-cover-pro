@@ -44,7 +44,9 @@ class CloudSuppressionHandler(OverrideHandler):
             return None
 
         position = compute_default_position(snapshot)
-        pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
+        pos_label = (
+            "sunset position" if snapshot.is_sunset_active else "default position"
+        )
         return PipelineResult(
             position=position,
             control_method=ControlMethod.CLOUD,

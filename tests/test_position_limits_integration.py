@@ -337,7 +337,9 @@ class TestClimateHandlerRespectsPositionLimits:
             max_pos=80,
             max_pos_sun_only=False,
         )
-        registry = PipelineRegistry([ClimateHandler(), SolarHandler(), DefaultHandler()])
+        registry = PipelineRegistry(
+            [ClimateHandler(), SolarHandler(), DefaultHandler()]
+        )
         result = registry.evaluate(snap)
 
         assert result.control_method == ControlMethod.WINTER
@@ -362,7 +364,7 @@ class TestClimateHandlerRespectsPositionLimits:
         readings = ClimateReadings(
             outside_temperature=None,
             inside_temperature=30.0,  # above temp_high=26
-            is_presence=False,        # no presence → close fully
+            is_presence=False,  # no presence → close fully
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
@@ -383,7 +385,9 @@ class TestClimateHandlerRespectsPositionLimits:
             climate_readings=readings,
             climate_options=options,
         )
-        registry = PipelineRegistry([ClimateHandler(), SolarHandler(), DefaultHandler()])
+        registry = PipelineRegistry(
+            [ClimateHandler(), SolarHandler(), DefaultHandler()]
+        )
         result = registry.evaluate(snap)
 
         assert result.control_method == ControlMethod.SUMMER
@@ -396,7 +400,9 @@ class TestClimateHandlerRespectsPositionLimits:
             inside_temperature=10.0,
             max_pos=None,  # no limit
         )
-        registry = PipelineRegistry([ClimateHandler(), SolarHandler(), DefaultHandler()])
+        registry = PipelineRegistry(
+            [ClimateHandler(), SolarHandler(), DefaultHandler()]
+        )
         result = registry.evaluate(snap)
 
         assert result.control_method == ControlMethod.WINTER

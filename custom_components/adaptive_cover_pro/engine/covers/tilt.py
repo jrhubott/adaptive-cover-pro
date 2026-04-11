@@ -82,11 +82,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             return 0.0
 
         slat = 2 * np.arctan(
-            (
-                tan(beta)
-                + np.sqrt(discriminant)
-            )
-            / (1 + self.slat_distance / self.depth)
+            (tan(beta) + np.sqrt(discriminant)) / (1 + self.slat_distance / self.depth)
         )
         result = np.rad2deg(slat)
 

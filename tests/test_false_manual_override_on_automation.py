@@ -67,7 +67,9 @@ def _make_coordinator(
     coordinator.manager = MagicMock()
     coordinator.cover_state_change = True
     coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
-    coordinator._target_just_reached = target_just_reached if target_just_reached is not None else set()
+    coordinator._target_just_reached = (
+        target_just_reached if target_just_reached is not None else set()
+    )
     # Real list so async_handle_cover_state_change can iterate it
     coordinator._pending_cover_events = []
     return coordinator
@@ -143,9 +145,7 @@ async def test_genuine_manual_override_still_detected():
     )
 
     entity_id = "cover.test"
-    coordinator = _make_coordinator(
-        entity_id=entity_id, target=72, manual_threshold=5
-    )
+    coordinator = _make_coordinator(entity_id=entity_id, target=72, manual_threshold=5)
     # User moved cover to 30% — a 42% difference, clearly manual
     event_data = _make_state_change_data(entity_id, position=30)
     coordinator._pending_cover_events = [event_data]
@@ -166,9 +166,7 @@ async def test_target_just_reached_guard_not_triggered_when_set_empty():
     )
 
     entity_id = "cover.test"
-    coordinator = _make_coordinator(
-        entity_id=entity_id, target=50, manual_threshold=10
-    )
+    coordinator = _make_coordinator(entity_id=entity_id, target=50, manual_threshold=10)
     event_data = _make_state_change_data(entity_id, position=50)
     coordinator._pending_cover_events = [event_data]
     coordinator._target_just_reached = set()  # Nothing just reached

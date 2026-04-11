@@ -125,7 +125,9 @@ class TestPresence:
     @pytest.mark.unit
     def test_device_tracker_away(self, provider, mock_hass):
         """device_tracker 'not_home' → False."""
-        mock_hass.states.get.return_value = _mock_state("device_tracker.phone", "not_home")
+        mock_hass.states.get.return_value = _mock_state(
+            "device_tracker.phone", "not_home"
+        )
         readings = provider.read(presence_entity="device_tracker.phone")
         assert readings.is_presence is False
 

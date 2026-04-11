@@ -53,7 +53,14 @@ class CustomPositionHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's sensor is active."""
         # Find our sensor in the snapshot's sensor list by entity_id.
-        for entity_id, is_on, _position, _priority, min_mode, use_my in snapshot.custom_position_sensors:
+        for (
+            entity_id,
+            is_on,
+            _position,
+            _priority,
+            min_mode,
+            use_my,
+        ) in snapshot.custom_position_sensors:
             if entity_id == self._entity_id:
                 if is_on:
                     raw = compute_raw_calculated_position(snapshot)

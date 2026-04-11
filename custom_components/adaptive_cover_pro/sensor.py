@@ -744,9 +744,7 @@ class AdaptiveCoverPositionVerificationSensor(
         if not entities:
             return {}
 
-        per_entity = {
-            e: self.coordinator._cmd_svc.get_diagnostics(e) for e in entities
-        }
+        per_entity = {e: self.coordinator._cmd_svc.get_diagnostics(e) for e in entities}
 
         # Aggregate last reconciliation time
         recon_times = [
@@ -974,8 +972,12 @@ class AdaptiveCoverClimateStatusSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
 
         temp_details = diagnostics.get("temperature_details", {})
         if temp_details:
-            attrs["indoor_temperature"] = temp_details.get("inside_temperature")  # rounded in builder
-            attrs["outdoor_temperature"] = temp_details.get("outside_temperature")  # rounded in builder
+            attrs["indoor_temperature"] = temp_details.get(
+                "inside_temperature"
+            )  # rounded in builder
+            attrs["outdoor_temperature"] = temp_details.get(
+                "outside_temperature"
+            )  # rounded in builder
             attrs["temp_switch"] = temp_details.get("temp_switch")
 
         climate_conditions = diagnostics.get("climate_conditions", {})
@@ -1073,9 +1075,7 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 # True when between (sunset+offset) and (sunrise+offset)
                 attrs["sunset_window_active"] = sun_validity.get("sunset_window_active")
 
-            if (
-                self.coordinator._cover_data is not None
-            ):
+            if self.coordinator._cover_data is not None:
                 attrs["direct_sun_valid"] = (
                     self.coordinator._cover_data.direct_sun_valid
                 )

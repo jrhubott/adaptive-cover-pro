@@ -25,6 +25,7 @@ def _make_coordinator():
 # Toggle property getters and setters
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_motion_control_toggle_getter_setter():
     """motion_control delegates reads/writes to ToggleManager."""
@@ -87,6 +88,7 @@ def test_manual_toggle_getter_setter():
 # _check_sun_validity_transition
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_sun_validity_transition_returns_false_when_no_cover_data():
     """_check_sun_validity_transition returns False when _cover_data is None."""
@@ -147,6 +149,7 @@ def test_sun_validity_transition_detects_sun_left():
 # get_blind_data: unsupported cover type raises ValueError
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_get_blind_data_raises_for_unsupported_type():
     """get_blind_data raises ValueError for unknown cover types."""
@@ -167,7 +170,9 @@ def test_get_blind_data_raises_for_unsupported_type():
 
     with (
         patch.object(
-            type(coord), "pos_sun", new_callable=lambda: property(lambda self: (180.0, 45.0))
+            type(coord),
+            "pos_sun",
+            new_callable=lambda: property(lambda self: (180.0, 45.0)),
         ),
         pytest.raises(ValueError, match="Unsupported cover type"),
     ):
@@ -177,6 +182,7 @@ def test_get_blind_data_raises_for_unsupported_type():
 # ---------------------------------------------------------------------------
 # _build_pipeline: custom position priority fallback
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_build_pipeline_custom_position_priority_fallback():
@@ -209,7 +215,9 @@ def test_build_pipeline_custom_position_priority_fallback():
 
     registry = coord._build_pipeline()
 
-    custom_handlers = [h for h in registry._handlers if isinstance(h, CustomPositionHandler)]
+    custom_handlers = [
+        h for h in registry._handlers if isinstance(h, CustomPositionHandler)
+    ]
     assert len(custom_handlers) == 1
     assert custom_handlers[0].priority == DEFAULT_CUSTOM_POSITION_PRIORITY
 
@@ -217,6 +225,7 @@ def test_build_pipeline_custom_position_priority_fallback():
 # ---------------------------------------------------------------------------
 # _read_custom_position_state: reads entity state
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_read_custom_position_sensor_states_reads_entity_state():
@@ -299,6 +308,7 @@ def test_read_custom_position_sensor_states_with_priority_fallback():
 # ---------------------------------------------------------------------------
 # _start_motion_timeout inner callback
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @pytest.mark.unit

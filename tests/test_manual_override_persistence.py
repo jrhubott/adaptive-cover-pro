@@ -18,6 +18,7 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_manager(reset_minutes: int = 60, covers: set | None = None):
     """Return a real AdaptiveCoverManager with a mock hass."""
     from custom_components.adaptive_cover_pro.managers.manual_override import (
@@ -75,6 +76,7 @@ def _make_sensor(manager):
 # Test 1: Round-trip — per_entity attributes are restored into manager state
 # ---------------------------------------------------------------------------
 
+
 def test_restore_from_attributes_populates_manager_state():
     """Valid future expiry is restored: manual_control and manual_control_time set."""
     eid = "cover.living_room"
@@ -112,6 +114,7 @@ def test_restore_from_attributes_triggers_ha_state_write():
 # Test 2: Expired entries are dropped — no restore
 # ---------------------------------------------------------------------------
 
+
 def test_restore_from_attributes_drops_expired_entries():
     """Expiry already in the past: entity is NOT marked as manual."""
     eid = "cover.bedroom"
@@ -142,6 +145,7 @@ def test_restore_from_attributes_does_not_write_ha_state_when_nothing_restored()
 # Test 3: Entity not in manager.covers is filtered out
 # ---------------------------------------------------------------------------
 
+
 def test_restore_from_attributes_filters_unknown_entities():
     """Entity in stored state but not in manager.covers is silently skipped."""
     known = "cover.known"
@@ -167,6 +171,7 @@ def test_restore_from_attributes_filters_unknown_entities():
 # ---------------------------------------------------------------------------
 # Test 4: Startup skip — async_handle_first_refresh skips manual covers
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_first_refresh_skips_apply_position_for_manual_cover():
@@ -218,6 +223,7 @@ async def test_first_refresh_skips_apply_position_for_manual_cover():
 # ---------------------------------------------------------------------------
 # Test 5: Timezone round-trip
 # ---------------------------------------------------------------------------
+
 
 def test_expiry_isoformat_round_trips_as_utc_aware():
     """ISO-serialized UTC datetime parses back tz-aware and compares with now(UTC)."""

@@ -47,7 +47,9 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
+)
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
@@ -106,7 +108,9 @@ def _force_calls(coord: AdaptiveDataUpdateCoordinator) -> list:
     """Return every apply_position call that passed context.force=True."""
     result = []
     for call in coord._cmd_svc.apply_position.call_args_list:
-        ctx = call.kwargs.get("context") or (call.args[3] if len(call.args) > 3 else None)
+        ctx = call.kwargs.get("context") or (
+            call.args[3] if len(call.args) > 3 else None
+        )
         if ctx is not None and getattr(ctx, "force", False):
             result.append(call)
     return result
@@ -141,7 +145,10 @@ async def _trigger_state_change_force_override(coord):
     coord._check_sun_validity_transition = MagicMock(return_value=False)
     coord.state_change = True
     with patch.object(
-        type(coord), "is_force_override_active", new_callable=PropertyMock, return_value=False
+        type(coord),
+        "is_force_override_active",
+        new_callable=PropertyMock,
+        return_value=False,
     ):
         await coord.async_handle_state_change(50, {}, prev_force_override=False)
 
@@ -158,7 +165,10 @@ async def _trigger_state_change_weather_bypass(coord):
     coord._check_sun_validity_transition = MagicMock(return_value=False)
     coord.state_change = True
     with patch.object(
-        type(coord), "is_force_override_active", new_callable=PropertyMock, return_value=False
+        type(coord),
+        "is_force_override_active",
+        new_callable=PropertyMock,
+        return_value=False,
     ):
         await coord.async_handle_state_change(50, {}, prev_force_override=False)
 

@@ -312,7 +312,9 @@ class TestEndToEndIntegration:
                 is_presence=True,
             )
 
-            climate_state = ClimateCoverState(make_snapshot_for_cover(cover), climate_data)
+            climate_state = ClimateCoverState(
+                make_snapshot_for_cover(cover), climate_data
+            )
             assert cover.direct_sun_valid is True
             assert climate_data.is_winter is True
             climate_pos = climate_state.get_state()
@@ -391,7 +393,9 @@ class TestEndToEndIntegration:
                 is_presence=True,
             )
 
-            climate_state = ClimateCoverState(make_snapshot_for_cover(cover), climate_data)
+            climate_state = ClimateCoverState(
+                make_snapshot_for_cover(cover), climate_data
+            )
             assert climate_data.is_summer is True
             climate_pos = climate_state.get_state()
             assert climate_pos == 0
@@ -790,6 +794,7 @@ class TestCloudSuppressionEndToEnd:
             from custom_components.adaptive_cover_pro.pipeline.types import (
                 ClimateOptions,
             )
+
             climate_options = ClimateOptions(
                 temp_low=None,
                 temp_high=None,
@@ -881,7 +886,9 @@ class TestCustomPositionEndToEnd:
                 weather_override_position=0,
                 glare_zones=None,
                 active_zone_names=frozenset(),
-                custom_position_sensors=[("binary_sensor.scene", True, 33, 77, False, False)],
+                custom_position_sensors=[
+                    ("binary_sensor.scene", True, 33, 77, False, False)
+                ],
             )
             result = pipeline.evaluate(snapshot)
 
@@ -944,6 +951,7 @@ class TestClimateGlareControlEndToEnd:
             from custom_components.adaptive_cover_pro.pipeline.types import (
                 ClimateOptions,
             )
+
             climate_options = ClimateOptions(
                 temp_low=18.0,
                 temp_high=26.0,
@@ -1096,6 +1104,7 @@ class TestHorizontalAwningWithClimateMode:
             from custom_components.adaptive_cover_pro.pipeline.types import (
                 ClimateOptions,
             )
+
             climate_options = ClimateOptions(
                 temp_low=20.0,
                 temp_high=25.0,
@@ -1153,9 +1162,7 @@ class TestHorizontalAwningWithClimateMode:
 
             assert cover.direct_sun_valid is True
             pipeline = _make_pipeline()
-            snapshot = _build_pipeline_snapshot(
-                cover, cover_type="cover_awning"
-            )
+            snapshot = _build_pipeline_snapshot(cover, cover_type="cover_awning")
             result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.SOLAR
@@ -1210,6 +1217,7 @@ class TestTiltCoverWithClimateMode:
             from custom_components.adaptive_cover_pro.pipeline.types import (
                 ClimateOptions,
             )
+
             climate_options = ClimateOptions(
                 temp_low=18.0,
                 temp_high=26.0,

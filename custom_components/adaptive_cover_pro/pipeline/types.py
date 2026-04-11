@@ -120,7 +120,9 @@ class PipelineSnapshot:
     # use_my: when True and my_position_value is set, trigger the cover's "My" hardware
     #   preset via cover.stop_cover instead of the slot's numeric position.
     # Defaults to empty list (feature disabled / not configured).
-    custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] = field(default_factory=list)
+    custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] = field(
+        default_factory=list
+    )
 
     # Somfy "My" position support.
     # my_position_value: the position (1–99 %) the user programmed on the motor remote.
@@ -167,7 +169,7 @@ class PipelineResult:
     # diagnostics and the Decision Trace sensor.
     default_position: int = 0
     is_sunset_active: bool = False
-    configured_default: int = 0           # raw h_def from user config
+    configured_default: int = 0  # raw h_def from user config
     configured_sunset_pos: int | None = None  # raw sunset_pos (None = not configured)
 
     # Optional climate diagnostics set by ClimateHandler

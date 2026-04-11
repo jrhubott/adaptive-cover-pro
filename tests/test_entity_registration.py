@@ -34,6 +34,7 @@ pytestmark = pytest.mark.integration
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _setup_entry(
     hass: HomeAssistant,
     cover_type: str = SensorType.BLIND,
@@ -60,6 +61,7 @@ async def _setup_entry(
 # ---------------------------------------------------------------------------
 # 3a: Entity counts per cover type
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_vertical_cover_creates_sensors(hass: HomeAssistant) -> None:
@@ -92,6 +94,7 @@ async def test_vertical_cover_creates_binary_sensors(hass: HomeAssistant) -> Non
 async def test_horizontal_cover_creates_entities(hass: HomeAssistant) -> None:
     """Horizontal awning creates entities without error."""
     from tests.ha_helpers import HORIZONTAL_OPTIONS
+
     entry = await _setup_entry(
         hass, SensorType.AWNING, options=dict(HORIZONTAL_OPTIONS), entry_id="horiz_01"
     )
@@ -103,6 +106,7 @@ async def test_horizontal_cover_creates_entities(hass: HomeAssistant) -> None:
 async def test_tilt_cover_creates_entities(hass: HomeAssistant) -> None:
     """Tilt cover creates entities without error."""
     from tests.ha_helpers import TILT_OPTIONS
+
     entry = await _setup_entry(
         hass, SensorType.TILT, options=dict(TILT_OPTIONS), entry_id="tilt_01"
     )
@@ -113,6 +117,7 @@ async def test_tilt_cover_creates_entities(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # 3b: Conditional entities
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -> None:
@@ -125,6 +130,7 @@ async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -
     entry_no = await _setup_entry(
         hass, options=opts_no_force, entry_id="no_force_01", name="No Force"
     )
+
     # Check by unique_id suffix, not entity_id (entity_id includes entry name)
     def _has_force_trigger_sensor(entry, reg):
         return any(
@@ -150,13 +156,16 @@ async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -
 
 
 @pytest.mark.integration
-async def test_climate_status_sensor_only_when_climate_mode(hass: HomeAssistant) -> None:
+async def test_climate_status_sensor_only_when_climate_mode(
+    hass: HomeAssistant,
+) -> None:
     """ClimateStatus sensor only created when CONF_CLIMATE_MODE is True."""
     opts_no_climate = dict(VERTICAL_OPTIONS)
     opts_no_climate[CONF_CLIMATE_MODE] = False
     entry_no = await _setup_entry(
         hass, options=opts_no_climate, entry_id="no_climate_01", name="No Climate"
     )
+
     def _has_climate_status_sensor(entry, reg):
         return any(
             "climate_status" in (e.unique_id or "")
@@ -181,13 +190,16 @@ async def test_climate_status_sensor_only_when_climate_mode(hass: HomeAssistant)
 
 
 @pytest.mark.integration
-async def test_motion_control_switch_only_when_motion_sensors(hass: HomeAssistant) -> None:
+async def test_motion_control_switch_only_when_motion_sensors(
+    hass: HomeAssistant,
+) -> None:
     """Motion Control switch only created when motion_sensors is non-empty."""
     opts_no_motion = dict(VERTICAL_OPTIONS)
     opts_no_motion[CONF_MOTION_SENSORS] = []
     entry_no = await _setup_entry(
         hass, options=opts_no_motion, entry_id="no_motion_01", name="No Motion"
     )
+
     def _has_motion_control_switch(entry, reg):
         return any(
             # unique_id is "{entry_id}_Motion Control" (switch_name not key)
@@ -243,6 +255,7 @@ async def test_button_created_when_cover_entities_set(hass: HomeAssistant) -> No
 # 3c: Entity attributes
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_unique_ids_are_unique(hass: HomeAssistant) -> None:
     """All entities in a single entry have distinct unique_ids."""
@@ -291,7 +304,8 @@ async def test_diagnostic_sensors_have_entity_category(hass: HomeAssistant) -> N
     reg = er.async_get(hass)
 
     diagnostic_entities = [
-        e for e in reg.entities.values()
+        e
+        for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id
         and e.entity_category == EntityCategory.DIAGNOSTIC
     ]
@@ -314,8 +328,7 @@ async def test_device_info_standalone_virtual_device(hass: HomeAssistant) -> Non
     device_reg = dr.async_get(hass)
     # The integration should have registered a virtual device
     devices = [
-        d for d in device_reg.devices.values()
-        if entry.entry_id in d.config_entries
+        d for d in device_reg.devices.values() if entry.entry_id in d.config_entries
     ]
     assert len(devices) >= 1, "Expected at least one device for the entry"
 
@@ -323,6 +336,7 @@ async def test_device_info_standalone_virtual_device(hass: HomeAssistant) -> Non
 # ---------------------------------------------------------------------------
 # 3d: Sensor-specific attribute checks
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> None:
@@ -333,13 +347,13 @@ async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> No
     # Find the target position entity
     reg = er.async_get(hass)
     sensor_entities = [
-        e for e in reg.entities.values()
+        e
+        for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id and e.domain == "sensor"
     ]
     # At least one sensor with Cover_Position unique_id suffix
     position_entities = [
-        e for e in sensor_entities
-        if "Cover_Position" in (e.unique_id or "")
+        e for e in sensor_entities if "Cover_Position" in (e.unique_id or "")
     ]
     assert len(position_entities) >= 1, (
         f"Target Position sensor not found. All sensors: {[e.unique_id for e in sensor_entities]}"
@@ -349,6 +363,7 @@ async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> No
 # ---------------------------------------------------------------------------
 # 3e: Entity lifecycle
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_unload_entry_removes_coordinator(hass: HomeAssistant) -> None:

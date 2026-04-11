@@ -284,9 +284,7 @@ class TestClimateProviderApiCoverage:
         """
         sig = inspect.signature(ClimateProvider.read)
         provider_params = {
-            name
-            for name, param in sig.parameters.items()
-            if name != "self"
+            name for name, param in sig.parameters.items() if name != "self"
         }
 
         # All params should be covered: either toggle-derived or options-mapped

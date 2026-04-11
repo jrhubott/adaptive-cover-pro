@@ -33,7 +33,9 @@ def _handler(
     )
 
 
-def _snapshot_with(entity_id: str, is_on: bool, position: int = 50, priority: int = _DEFAULT_PRIORITY):
+def _snapshot_with(
+    entity_id: str, is_on: bool, position: int = 50, priority: int = _DEFAULT_PRIORITY
+):
     """Build a snapshot with a single custom position sensor entry."""
     return make_snapshot(
         custom_position_sensors=[(entity_id, is_on, position, priority, False, False)]
@@ -90,13 +92,17 @@ class TestEvaluateNoMatchingEntity:
     def test_returns_none_when_entity_absent(self) -> None:
         """Different entity_id in snapshot — handler's sensor not present."""
         snapshot = make_snapshot(
-            custom_position_sensors=[("binary_sensor.other", True, 50, 77, False, False)]
+            custom_position_sensors=[
+                ("binary_sensor.other", True, 50, 77, False, False)
+            ]
         )
         assert _handler(entity_id=_ENTITY).evaluate(snapshot) is None
 
     def test_describe_skip_mentions_slot_and_entity(self) -> None:
         snapshot = make_snapshot(custom_position_sensors=[])
-        skip = _handler(slot=2, entity_id="binary_sensor.blackout").describe_skip(snapshot)
+        skip = _handler(slot=2, entity_id="binary_sensor.blackout").describe_skip(
+            snapshot
+        )
         assert "#2" in skip
         assert "binary_sensor.blackout" in skip
 
@@ -136,7 +142,9 @@ class TestEvaluateSensorOn:
 
     def test_reason_contains_slot_entity_and_position(self) -> None:
         snapshot = _snapshot_with("binary_sensor.morning", is_on=True, position=70)
-        result = _handler(slot=2, entity_id="binary_sensor.morning", position=70).evaluate(snapshot)
+        result = _handler(
+            slot=2, entity_id="binary_sensor.morning", position=70
+        ).evaluate(snapshot)
         assert result is not None
         assert "#2" in result.reason
         assert "binary_sensor.morning" in result.reason
@@ -256,56 +264,72 @@ class TestMinimumPositionMode:
     ):
         """Build a snapshot for min_mode tests."""
         return make_snapshot(
-            custom_position_sensors=[(_ENTITY, is_on, position, _DEFAULT_PRIORITY, min_mode, False)],
+            custom_position_sensors=[
+                (_ENTITY, is_on, position, _DEFAULT_PRIORITY, min_mode, False)
+            ],
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
         )
 
     def test_min_mode_off_uses_exact_position(self) -> None:
         """With min_mode off, position is always the configured value (default behavior)."""
-        snap = self._snapshot_min_mode(position=30, min_mode=False, calculate_percentage_return=50.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=False, calculate_percentage_return=50.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert result.position == 30
 
     def test_min_mode_on_calculated_higher_uses_calculated(self) -> None:
         """With min_mode on, if calculated position > floor, use calculated."""
-        snap = self._snapshot_min_mode(position=30, min_mode=True, calculate_percentage_return=50.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=True, calculate_percentage_return=50.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert result.position == 50
 
     def test_min_mode_on_calculated_lower_uses_floor(self) -> None:
         """With min_mode on, if calculated position < floor, use the floor."""
-        snap = self._snapshot_min_mode(position=30, min_mode=True, calculate_percentage_return=10.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=True, calculate_percentage_return=10.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert result.position == 30
 
     def test_min_mode_on_calculated_equal_uses_floor(self) -> None:
         """With min_mode on, if calculated equals floor, position equals floor."""
-        snap = self._snapshot_min_mode(position=30, min_mode=True, calculate_percentage_return=30.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=True, calculate_percentage_return=30.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert result.position == 30
 
     def test_min_mode_on_reason_mentions_minimum_mode(self) -> None:
         """With min_mode on, reason string mentions minimum mode."""
-        snap = self._snapshot_min_mode(position=30, min_mode=True, calculate_percentage_return=50.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=True, calculate_percentage_return=50.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert "minimum mode" in result.reason
 
     def test_min_mode_off_reason_no_minimum_mode_mention(self) -> None:
         """With min_mode off, reason string does not mention minimum mode."""
-        snap = self._snapshot_min_mode(position=30, min_mode=False, calculate_percentage_return=50.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=False, calculate_percentage_return=50.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert "minimum mode" not in result.reason
 
     def test_min_mode_control_method_still_custom_position(self) -> None:
         """ControlMethod remains CUSTOM_POSITION regardless of min_mode."""
-        snap = self._snapshot_min_mode(position=30, min_mode=True, calculate_percentage_return=70.0)
+        snap = self._snapshot_min_mode(
+            position=30, min_mode=True, calculate_percentage_return=70.0
+        )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.CUSTOM_POSITION

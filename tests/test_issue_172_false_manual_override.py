@@ -69,8 +69,12 @@ def _make_coordinator(
         sent_seconds_ago: How many seconds ago the command was sent (for transit timeout).
 
     """
-    from custom_components.adaptive_cover_pro.managers.cover_command import CoverCommandService
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        CoverCommandService,
+    )
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     coordinator = MagicMock()
     coordinator.state_change_data = _make_state_change_data(
@@ -117,20 +121,25 @@ def _make_coordinator(
     cmd_svc.read_position_with_capabilities = MagicMock(side_effect=_read_position)
     coordinator._cmd_svc = cmd_svc
 
-    from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
-
-    coordinator._is_in_grace_period = (
-        lambda eid: AdaptiveDataUpdateCoordinator._is_in_grace_period(coordinator, eid)
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
     )
-    coordinator._start_grace_period = (
-        lambda eid: AdaptiveDataUpdateCoordinator._start_grace_period(coordinator, eid)
+
+    coordinator._is_in_grace_period = lambda eid: (
+        AdaptiveDataUpdateCoordinator._is_in_grace_period(coordinator, eid)
+    )
+    coordinator._start_grace_period = lambda eid: (
+        AdaptiveDataUpdateCoordinator._start_grace_period(coordinator, eid)
     )
 
     return coordinator
 
 
 def _call(coordinator):
-    from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
     AdaptiveDataUpdateCoordinator.process_entity_state_change(coordinator)
 
 
@@ -152,7 +161,10 @@ class TestTransitDetection:
         """
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=45, old_position=35,
+            entity_id,
+            target_position=75,
+            current_position=45,
+            old_position=35,
             new_state_str="opening",
         )
         _call(coord)
@@ -162,7 +174,10 @@ class TestTransitDetection:
         """Cover closing toward a lower target must not clear wait_for_target."""
         entity_id = "cover.awning"
         coord = _make_coordinator(
-            entity_id, target_position=20, current_position=55, old_position=65,
+            entity_id,
+            target_position=20,
+            current_position=55,
+            old_position=65,
             new_state_str="closing",
         )
         _call(coord)
@@ -307,7 +322,10 @@ class TestStopDetection:
         """
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=50, old_position=48,
+            entity_id,
+            target_position=75,
+            current_position=50,
+            old_position=48,
             new_state_str="stopped",
         )
         _call(coord)
@@ -321,7 +339,10 @@ class TestStopDetection:
         """
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=100, old_position=95,
+            entity_id,
+            target_position=75,
+            current_position=100,
+            old_position=95,
             new_state_str="open",
         )
         # old_state defaults to same as new_state_str ("open") — not transitional
@@ -332,7 +353,10 @@ class TestStopDetection:
         """Cover reporting 'closed' state at a position different from target clears wait."""
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=50, current_position=0, old_position=5,
+            entity_id,
+            target_position=50,
+            current_position=0,
+            old_position=5,
             new_state_str="closed",
         )
         _call(coord)
@@ -361,7 +385,10 @@ class TestStepMotorIntermediatePause:
         """
         entity_id = "cover.patio_shade"
         coord = _make_coordinator(
-            entity_id, target_position=100, current_position=51, old_position=46,
+            entity_id,
+            target_position=100,
+            current_position=51,
+            old_position=46,
             new_state_str="open",
         )
         # Simulate the cover was in "opening" state before this event
@@ -377,7 +404,10 @@ class TestStepMotorIntermediatePause:
         """Closing cover pausing mid-transit (closing→open) also restarts grace period."""
         entity_id = "cover.patio_shade"
         coord = _make_coordinator(
-            entity_id, target_position=20, current_position=40, old_position=50,
+            entity_id,
+            target_position=20,
+            current_position=40,
+            old_position=50,
             new_state_str="open",
         )
         coord.state_change_data.old_state.state = "closing"
@@ -385,7 +415,9 @@ class TestStepMotorIntermediatePause:
         assert coord._cmd_svc.wait_for_target[entity_id] is True
         assert coord._grace_mgr.is_in_command_grace_period(entity_id)
 
-    def test_stall_opening_to_opening_unchanged_position_clears_wait_for_target(self) -> None:
+    def test_stall_opening_to_opening_unchanged_position_clears_wait_for_target(
+        self,
+    ) -> None:
         """A genuine stall (opening→opening, position unchanged) must still clear wait_for_target.
 
         This is the case where the cover reports opening twice at the same position —
@@ -393,7 +425,10 @@ class TestStepMotorIntermediatePause:
         """
         entity_id = "cover.patio_shade"
         coord = _make_coordinator(
-            entity_id, target_position=100, current_position=51, old_position=51,
+            entity_id,
+            target_position=100,
+            current_position=51,
+            old_position=51,
             new_state_str="opening",
             sent_seconds_ago=15.0,
         )
@@ -405,7 +440,10 @@ class TestStepMotorIntermediatePause:
         """Cover reaching target position must not restart grace period (normal arrival)."""
         entity_id = "cover.patio_shade"
         coord = _make_coordinator(
-            entity_id, target_position=100, current_position=100, old_position=95,
+            entity_id,
+            target_position=100,
+            current_position=100,
+            old_position=95,
             new_state_str="open",
         )
         coord.state_change_data.old_state.state = "opening"
@@ -421,7 +459,10 @@ class TestStepMotorIntermediatePause:
         """
         entity_id = "cover.patio_shade"
         coord = _make_coordinator(
-            entity_id, target_position=100, current_position=51, old_position=51,
+            entity_id,
+            target_position=100,
+            current_position=51,
+            old_position=51,
             new_state_str="open",
         )
         # old_state is "open" (not transitional) — not a step-motor pause
@@ -448,7 +489,10 @@ class TestManualMoveDetection:
         """
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=35, old_position=45,
+            entity_id,
+            target_position=75,
+            current_position=35,
+            old_position=45,
             new_state_str="opening",
         )
         _call(coord)
@@ -461,7 +505,10 @@ class TestManualMoveDetection:
         """
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=45, old_position=45,
+            entity_id,
+            target_position=75,
+            current_position=45,
+            old_position=45,
             new_state_str="opening",
         )
         _call(coord)
@@ -475,7 +522,10 @@ class TestManualMoveDetection:
         """
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=30, old_position=60,
+            entity_id,
+            target_position=75,
+            current_position=30,
+            old_position=60,
             new_state_str="opening",
         )
         _call(coord)
@@ -525,6 +575,7 @@ class TestTransitTimeout:
     def test_transit_timeout_constant_is_documented(self) -> None:
         """TRANSIT_TIMEOUT_SECONDS must be defined in const.py and be 45."""
         from custom_components.adaptive_cover_pro.const import TRANSIT_TIMEOUT_SECONDS
+
         assert TRANSIT_TIMEOUT_SECONDS == 45
 
 
@@ -544,7 +595,10 @@ class TestIgnoreIntermediateStates:
         """'opening' events are skipped entirely when ignore_intermediate_states=True."""
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=75, current_position=45, old_position=35,
+            entity_id,
+            target_position=75,
+            current_position=45,
+            old_position=35,
             new_state_str="opening",
             ignore_intermediate=True,
         )
@@ -556,7 +610,10 @@ class TestIgnoreIntermediateStates:
         """'closing' events are skipped entirely when ignore_intermediate_states=True."""
         entity_id = "cover.blind"
         coord = _make_coordinator(
-            entity_id, target_position=20, current_position=55, old_position=65,
+            entity_id,
+            target_position=20,
+            current_position=55,
+            old_position=65,
             new_state_str="closing",
             ignore_intermediate=True,
         )
@@ -577,7 +634,9 @@ async def test_multiple_covers_both_processed() -> None:
     covers would cause the second to overwrite the first.  With _pending_cover_events
     as a list, both are processed.
     """
-    from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     def _event(entity_id, position):
         e = MagicMock()
@@ -600,8 +659,12 @@ async def test_multiple_covers_both_processed() -> None:
     coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
     coordinator._target_just_reached = set()
     coordinator._pending_cover_events = [
-        _event("cover.a", 30),  # 42% away from target 72 → should trigger override check
-        _event("cover.b", 20),  # 30% away from target 50 → should trigger override check
+        _event(
+            "cover.a", 30
+        ),  # 42% away from target 72 → should trigger override check
+        _event(
+            "cover.b", 20
+        ),  # 30% away from target 50 → should trigger override check
     ]
 
     await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 50)
@@ -619,7 +682,9 @@ async def test_multiple_covers_both_processed() -> None:
 @pytest.mark.asyncio
 async def test_pending_cover_events_cleared_after_processing() -> None:
     """_pending_cover_events list must be empty after async_handle_cover_state_change runs."""
-    from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     coordinator = MagicMock()
     coordinator.manual_toggle = False  # manual toggle off — skips the inner block

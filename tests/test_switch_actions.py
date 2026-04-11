@@ -17,7 +17,9 @@ from custom_components.adaptive_cover_pro.const import (
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 
 
-def _make_config_entry(options: dict | None = None, sensor_type: str = SensorType.BLIND):
+def _make_config_entry(
+    options: dict | None = None, sensor_type: str = SensorType.BLIND
+):
     entry = MagicMock()
     entry.entry_id = "test_entry"
     entry.data = {"name": "Test", CONF_SENSOR_TYPE: sensor_type}
@@ -59,6 +61,7 @@ def _make_switch(key: str = "automatic_control", coordinator=None, config_entry=
 # ---------------------------------------------------------------------------
 # async_turn_on: automatic_control key
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -126,6 +129,7 @@ async def test_turn_on_non_automatic_control_key_no_position_send():
 # async_turn_off: automatic_control key
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_turn_off_automatic_control_resets_manual_overrides():
@@ -151,7 +155,9 @@ async def test_turn_off_automatic_control_sends_default_position_when_toggle_on(
     config_entry = _make_config_entry(options={CONF_DEFAULT_HEIGHT: 75})
     coord.config_entry = config_entry
 
-    switch = _make_switch(key="automatic_control", coordinator=coord, config_entry=config_entry)
+    switch = _make_switch(
+        key="automatic_control", coordinator=coord, config_entry=config_entry
+    )
     await switch.async_turn_off()
 
     coord._cmd_svc.apply_position.assert_called_once()
@@ -179,6 +185,7 @@ async def test_turn_off_non_automatic_control_key_no_special_logic():
 # Conditional switch creation — integration
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_glare_zone_switches_created_when_configured(hass) -> None:
     """Glare zone switches are created for each named zone."""
@@ -204,9 +211,11 @@ async def test_glare_zone_switches_created_when_configured(hass) -> None:
         await hass.async_block_till_done()
 
     from homeassistant.helpers import entity_registry as er
+
     reg = er.async_get(hass)
     switch_entities = [
-        e for e in reg.entities.values()
+        e
+        for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id and e.domain == "switch"
     ]
     switch_names = [e.unique_id for e in switch_entities]
@@ -237,9 +246,11 @@ async def test_climate_switches_created_when_climate_mode_with_entities(hass) ->
         await hass.async_block_till_done()
 
     from homeassistant.helpers import entity_registry as er
+
     reg = er.async_get(hass)
     switch_entities = [
-        e for e in reg.entities.values()
+        e
+        for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id and e.domain == "switch"
     ]
     # Should have more switches than the base count (temp toggle added)

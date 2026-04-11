@@ -121,8 +121,7 @@ class TestStateChangeWithSolarTracking:
 
         assert coordinator._cmd_svc.apply_position.call_count == 2
         called_entities = [
-            call.args[0]
-            for call in coordinator._cmd_svc.apply_position.call_args_list
+            call.args[0] for call in coordinator._cmd_svc.apply_position.call_args_list
         ]
         assert "cover.blind_1" in called_entities
         assert "cover.blind_2" in called_entities
@@ -258,8 +257,7 @@ class TestFirstRefreshSendsStartupCommands:
 
         assert coordinator._cmd_svc.apply_position.call_count == 3
         called_entities = {
-            call.args[0]
-            for call in coordinator._cmd_svc.apply_position.call_args_list
+            call.args[0] for call in coordinator._cmd_svc.apply_position.call_args_list
         }
         assert called_entities == {"cover.blind_a", "cover.blind_b", "cover.blind_c"}
 

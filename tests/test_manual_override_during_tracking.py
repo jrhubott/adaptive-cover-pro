@@ -20,7 +20,6 @@ import datetime as dt
 from unittest.mock import MagicMock
 
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -58,7 +57,9 @@ def _make_coordinator(
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         CoverCommandService,
     )
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
 
     coordinator = MagicMock()
     coordinator.state_change_data = _make_state_change_data(entity_id, current_position)
@@ -95,8 +96,8 @@ def _make_coordinator(
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator._is_in_grace_period = (
-        lambda eid: AdaptiveDataUpdateCoordinator._is_in_grace_period(coordinator, eid)
+    coordinator._is_in_grace_period = lambda eid: (
+        AdaptiveDataUpdateCoordinator._is_in_grace_period(coordinator, eid)
     )
 
     return coordinator
@@ -116,6 +117,7 @@ class TestProcessEntityStateChange:
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
+
         AdaptiveDataUpdateCoordinator.process_entity_state_change(coordinator)
 
     # ------------------------------------------------------------------
@@ -126,7 +128,9 @@ class TestProcessEntityStateChange:
         """While in grace period, wait_for_target must remain True."""
         entity_id = "cover.test"
         coord = _make_coordinator(
-            entity_id, target_position=30, current_position=50,
+            entity_id,
+            target_position=30,
+            current_position=50,
             grace_expired=False,
         )
         self._call(coord)
@@ -136,7 +140,9 @@ class TestProcessEntityStateChange:
         """When cover arrives at the target, entity is added to _target_just_reached."""
         entity_id = "cover.test"
         coord = _make_coordinator(
-            entity_id, target_position=30, current_position=32,  # within tolerance
+            entity_id,
+            target_position=30,
+            current_position=32,  # within tolerance
             grace_expired=True,
         )
         self._call(coord)
@@ -148,7 +154,9 @@ class TestProcessEntityStateChange:
         """'opening'/'closing' states are skipped when ignore_intermediate_states=True."""
         entity_id = "cover.test"
         coord = _make_coordinator(
-            entity_id, target_position=30, current_position=50,
+            entity_id,
+            target_position=30,
+            current_position=50,
             grace_expired=True,
         )
         coord.state_change_data.new_state.state = "opening"
@@ -171,7 +179,9 @@ class TestProcessEntityStateChange:
         """
         entity_id = "cover.test"
         coord = _make_coordinator(
-            entity_id, target_position=30, current_position=95,  # user moved to 95%
+            entity_id,
+            target_position=30,
+            current_position=95,  # user moved to 95%
             grace_expired=True,
         )
         self._call(coord)
@@ -180,11 +190,15 @@ class TestProcessEntityStateChange:
             "wait_for_target must be cleared when grace expires and cover is not at target"
         )
 
-    def test_grace_expired_target_not_reached_does_not_add_to_target_just_reached(self) -> None:
+    def test_grace_expired_target_not_reached_does_not_add_to_target_just_reached(
+        self,
+    ) -> None:
         """When target is not reached, entity must NOT be added to _target_just_reached."""
         entity_id = "cover.test"
         coord = _make_coordinator(
-            entity_id, target_position=30, current_position=95,
+            entity_id,
+            target_position=30,
+            current_position=95,
             grace_expired=True,
         )
         self._call(coord)

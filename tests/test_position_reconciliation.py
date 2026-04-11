@@ -143,13 +143,14 @@ async def test_apply_skips_manual_override(svc):
 @pytest.mark.asyncio
 async def test_apply_sends_when_all_gates_pass(svc, mock_hass):
     _patch_position(svc, 30)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
-        outcome, _ = await svc.apply_position(
-            "cover.test", 60, "solar", context=_ctx()
-        )
+        outcome, _ = await svc.apply_position("cover.test", 60, "solar", context=_ctx())
     assert outcome == "sent"
     assert svc.target_call["cover.test"] == 60
     assert svc.wait_for_target["cover.test"] is True
@@ -187,9 +188,12 @@ async def test_apply_new_target_resets_retry_count(svc, mock_hass):
     """Sending a new target resets the reconciliation retry counter."""
     svc._retry_counts["cover.test"] = 2
     _patch_position(svc, 30)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
         await svc.apply_position("cover.test", 60, "solar", context=_ctx())
     assert svc._retry_counts.get("cover.test", 0) == 0
@@ -402,8 +406,10 @@ async def test_reconcile_multiple_entities(svc, mock_hass):
     # Only awning should have been retried
     assert mock_hass.services.async_call.call_count == 1
     called_data = mock_hass.services.async_call.call_args[0][2]
-    assert called_data[list(called_data.keys())[0]] == "cover.awning" or \
-        called_data.get("entity_id") == "cover.awning"
+    assert (
+        called_data[list(called_data.keys())[0]] == "cover.awning"
+        or called_data.get("entity_id") == "cover.awning"
+    )
 
 
 # ------------------------------------------------------------------ #
@@ -515,9 +521,9 @@ async def test_reconcile_skips_entity_in_manual_override(svc, mock_hass):
     Regression test for issue #116: user manually moves cover but it snaps
     back because reconciliation fights the manual position.
     """
-    svc.target_call["cover.blind"] = 85       # integration last sent 85%
+    svc.target_call["cover.blind"] = 85  # integration last sent 85%
     svc.wait_for_target["cover.blind"] = False
-    _patch_position(svc, 50)                  # user moved it to 50%
+    _patch_position(svc, 50)  # user moved it to 50%
 
     # Coordinator marks this entity as manually overridden
     svc.manual_override_entities = {"cover.blind"}
@@ -552,8 +558,8 @@ async def test_reconcile_resumes_after_manual_override_cleared(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_reconcile_only_skips_manual_entity_not_others(svc, mock_hass):
     """Reconciliation skips the manually-overridden entity but still retries others."""
-    svc.target_call["cover.blind"] = 85       # manually moved — should skip
-    svc.target_call["cover.awning"] = 70      # auto-controlled — should retry
+    svc.target_call["cover.blind"] = 85  # manually moved — should skip
+    svc.target_call["cover.awning"] = 70  # auto-controlled — should retry
     svc.wait_for_target["cover.blind"] = False
     svc.wait_for_target["cover.awning"] = False
 
@@ -667,13 +673,14 @@ async def test_non_force_apply_removes_from_safety_targets(svc, mock_hass):
     svc._safety_targets.add("cover.test")
 
     _patch_position(svc, 30)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
-        await svc.apply_position(
-            "cover.test", 60, "solar", context=_ctx(force=False)
-        )
+        await svc.apply_position("cover.test", 60, "solar", context=_ctx(force=False))
     assert "cover.test" not in svc._safety_targets
 
 
@@ -701,7 +708,9 @@ async def test_reconcile_skips_non_safety_when_auto_control_off(svc, mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_still_resends_safety_target_when_auto_control_off(svc, mock_hass):
+async def test_reconcile_still_resends_safety_target_when_auto_control_off(
+    svc, mock_hass
+):
     """Safety targets (force override, weather) are resent even when auto control is off.
 
     The whole point of safety overrides is that they work regardless of whether
@@ -849,9 +858,12 @@ async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
     import datetime as _dt
 
     recent = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=30)  # 0.5 min ago
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=recent,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
     ):
         # time_threshold=5 min but force=True — must NOT be blocked
         outcome, detail = await svc.apply_position(
@@ -899,21 +911,22 @@ async def test_safety_target_cleared_on_open_close_non_force(svc, mock_hass):
     """Non-force apply on open/close-only covers also clears safety target."""
     svc._safety_targets.add("cover.test")
 
-    with patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
-        return_value={
-            "has_set_position": False,
-            "has_set_tilt_position": False,
-            "has_open": True,
-            "has_close": True,
-        },
-    ), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+            return_value={
+                "has_set_position": False,
+                "has_set_tilt_position": False,
+                "has_open": True,
+                "has_close": True,
+            },
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
-        await svc.apply_position(
-            "cover.test", 80, "solar", context=_ctx(force=False)
-        )
+        await svc.apply_position("cover.test", 80, "solar", context=_ctx(force=False))
     assert "cover.test" not in svc._safety_targets
 
 
@@ -950,9 +963,12 @@ async def test_special_position_target_bypasses_delta(svc, mock_hass):
     would be blocked if not for the special bypass: cover at 99%, target=100%.
     """
     _patch_position(svc, 99)  # delta=1, below min_change=5
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -972,9 +988,12 @@ async def test_special_position_current_bypasses_delta(svc, mock_hass):
     Because current position (0%) is special, the check is bypassed.
     """
     _patch_position(svc, 0)  # current is special
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1049,9 +1068,12 @@ async def test_sun_just_appeared_sends_despite_same_position(svc, mock_hass):
     This overrides the same-position short-circuit.
     """
     _patch_position(svc, 65)  # same as target
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1075,9 +1097,12 @@ async def test_sun_just_appeared_sends_despite_same_position(svc, mock_hass):
 async def test_sun_just_appeared_bypasses_delta(svc, mock_hass):
     """sun_just_appeared=True bypasses the delta check (small change allowed)."""
     _patch_position(svc, 50)  # delta=1 < min_change=5
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1125,15 +1150,20 @@ async def test_force_override_release_force_true_bypasses_time_delta(svc, mock_h
     """
     _patch_position(svc, 30)  # large enough position delta
     recent = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=recent,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
             60,
             "force_override_cleared",
-            context=_ctx(time_threshold=10, force=True),  # force=True set by coordinator
+            context=_ctx(
+                time_threshold=10, force=True
+            ),  # force=True set by coordinator
         )
     assert outcome == "sent"
     mock_hass.services.async_call.assert_called_once()
@@ -1156,7 +1186,9 @@ async def test_solar_tracking_blocked_by_recent_force_override_move(svc):
             "cover.test",
             60,
             "solar",
-            context=_ctx(time_threshold=10, force=False),  # force=False — pre-fix behavior
+            context=_ctx(
+                time_threshold=10, force=False
+            ),  # force=False — pre-fix behavior
         )
     assert outcome == "skipped"
     assert reason == "time_delta_too_small"
@@ -1167,9 +1199,12 @@ async def test_solar_tracking_passes_when_time_elapsed(svc, mock_hass):
     """Solar tracking is allowed once the time threshold has elapsed."""
     _patch_position(svc, 30)
     old = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=15)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=old,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=old,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1191,9 +1226,12 @@ async def test_force_true_bypasses_time_delta_and_position_delta(svc, mock_hass)
     """
     _patch_position(svc, 59)  # delta=1, below min_change=5
     recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=recent,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1214,9 +1252,12 @@ async def test_manual_override_expiry_force_true_bypasses_time_delta(svc, mock_h
     """
     _patch_position(svc, 30)
     recent = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=3)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=recent,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1238,9 +1279,12 @@ async def test_apply_dry_run_skips_service_call(svc, mock_hass):
     """Dry-run suppresses async_call, returns ('skipped', 'dry_run'), populates diagnostics."""
     svc.dry_run = True
     _patch_position(svc, 30)
-    with _patch_caps(), patch(
-        "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
-        return_value=None,
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=None,
+        ),
     ):
         outcome, reason = await svc.apply_position(
             "cover.test", 60, "solar", context=_ctx()

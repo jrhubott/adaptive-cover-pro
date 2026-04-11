@@ -73,7 +73,9 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
             vertical_position,
             length,
         )
-        return float(np.clip(length, 0, self.awn_length * 2))  # Clip to 2× max as sanity bound
+        return float(
+            np.clip(length, 0, self.awn_length * 2)
+        )  # Clip to 2× max as sanity bound
 
     def calculate_percentage(self) -> float:
         """Convert awning extension to percentage for Home Assistant.

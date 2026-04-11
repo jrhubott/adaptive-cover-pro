@@ -59,9 +59,13 @@ def _make_call(entity_id=None, device_id=None, area_id=None) -> MagicMock:
     call = MagicMock()
     call.data = {}
     if entity_id:
-        call.data["entity_id"] = entity_id if isinstance(entity_id, list) else [entity_id]
+        call.data["entity_id"] = (
+            entity_id if isinstance(entity_id, list) else [entity_id]
+        )
     if device_id:
-        call.data["device_id"] = device_id if isinstance(device_id, list) else [device_id]
+        call.data["device_id"] = (
+            device_id if isinstance(device_id, list) else [device_id]
+        )
     if area_id:
         call.data["area_id"] = area_id if isinstance(area_id, list) else [area_id]
     return call
@@ -177,7 +181,9 @@ async def test_integration_enable_no_target_enables_all():
     hass = _make_hass({"entry_a": coord_a, "entry_b": coord_b})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-3][0][2]  # 3rd-from-last = enable
+    handler = hass.services.async_register.call_args_list[-3][0][
+        2
+    ]  # 3rd-from-last = enable
 
     call = _make_call()
     await handler(call)
@@ -214,7 +220,9 @@ async def test_integration_disable_calls_stop_in_flight():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-2][0][2]  # 2nd-from-last = disable
+    handler = hass.services.async_register.call_args_list[-2][0][
+        2
+    ]  # 2nd-from-last = disable
 
     call = _make_call()
     await handler(call)
@@ -267,7 +275,9 @@ async def test_emergency_stop_calls_stop_all():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-1][0][2]  # last = emergency_stop
+    handler = hass.services.async_register.call_args_list[-1][0][
+        2
+    ]  # last = emergency_stop
 
     call = _make_call()
     await handler(call)

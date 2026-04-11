@@ -151,6 +151,7 @@ _TEMPERATURE_CLIMATE = {
 # Phase 2a: Quick-setup — vertical (cover_blind)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 async def test_quick_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     """Quick-setup path for a vertical blind creates a config entry with safe defaults."""
@@ -211,9 +212,7 @@ async def test_quick_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     assert result["type"] == "form"
     assert result["step_id"] == "summary"
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {}
-    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     # Should be "create_entry"
     assert result["type"] == "create_entry"
     entry = result["result"]
@@ -258,9 +257,7 @@ async def test_quick_setup_horizontal_creates_entry(hass: HomeAssistant) -> None
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {}
-    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
     assert result["result"].data[CONF_SENSOR_TYPE] == SensorType.AWNING
 
@@ -298,9 +295,7 @@ async def test_quick_setup_tilt_creates_entry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {}
-    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
     assert result["result"].data[CONF_SENSOR_TYPE] == SensorType.TILT
 
@@ -308,6 +303,7 @@ async def test_quick_setup_tilt_creates_entry(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # Phase 2a: Full-setup — vertical only (demonstrates all steps)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
@@ -366,9 +362,7 @@ async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     # Summary step
     assert result["type"] == "form"
     assert result["step_id"] == "summary"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {}
-    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
     entry = result["result"]
     assert entry.data[CONF_SENSOR_TYPE] == SensorType.BLIND
@@ -385,6 +379,7 @@ async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # Phase 2c: Validation errors
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_sun_tracking_max_elevation_must_exceed_min(hass: HomeAssistant) -> None:
@@ -453,9 +448,7 @@ async def test_quick_setup_critical_keys_never_none(hass: HomeAssistant) -> None
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {}
-    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
     opts = result["result"].options
     assert opts.get(CONF_DELTA_TIME) is not None, "CONF_DELTA_TIME must not be None"
@@ -467,6 +460,7 @@ async def test_quick_setup_critical_keys_never_none(hass: HomeAssistant) -> None
 # ---------------------------------------------------------------------------
 # Phase 2d: Options flow — reconfigure
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 async def test_options_flow_change_geometry(hass: HomeAssistant) -> None:
@@ -548,6 +542,7 @@ async def test_options_flow_sync_empty_selection_no_abort(hass: HomeAssistant) -
 #                       _build_glare_zones_schema
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_get_azimuth_edges_sums_fov():
     """_get_azimuth_edges returns fov_left + fov_right."""
@@ -573,7 +568,9 @@ def test_get_geometry_schema_unknown_type_returns_vertical():
 @pytest.mark.unit
 def test_build_glare_zones_schema_with_no_options():
     """_build_glare_zones_schema with options=None uses default values."""
-    from custom_components.adaptive_cover_pro.config_flow import _build_glare_zones_schema
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _build_glare_zones_schema,
+    )
     import voluptuous as vol
 
     schema = _build_glare_zones_schema(options=None)
@@ -585,7 +582,9 @@ def test_build_glare_zones_schema_with_no_options():
 @pytest.mark.unit
 def test_build_glare_zones_schema_with_existing_options():
     """_build_glare_zones_schema uses existing option values as defaults."""
-    from custom_components.adaptive_cover_pro.config_flow import _build_glare_zones_schema
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _build_glare_zones_schema,
+    )
     import voluptuous as vol
 
     options = {"glare_zone_1_name": "My Zone", "glare_zone_1_x": 100}
@@ -611,8 +610,11 @@ def test_optional_entities_sets_missing_keys_to_none():
 # OptionsFlow: init menu conditionals (blind_spot, glare_zones)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
-async def test_options_flow_menu_includes_blind_spot_when_enabled(hass: HomeAssistant) -> None:
+async def test_options_flow_menu_includes_blind_spot_when_enabled(
+    hass: HomeAssistant,
+) -> None:
     """OptionsFlow init menu includes blind_spot when CONF_ENABLE_BLIND_SPOT is True."""
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
@@ -637,7 +639,9 @@ async def test_options_flow_menu_includes_blind_spot_when_enabled(hass: HomeAssi
 
 
 @pytest.mark.integration
-async def test_options_flow_menu_includes_glare_zones_for_blind_cover(hass: HomeAssistant) -> None:
+async def test_options_flow_menu_includes_glare_zones_for_blind_cover(
+    hass: HomeAssistant,
+) -> None:
     """OptionsFlow init menu includes glare_zones for cover_blind with CONF_ENABLE_GLARE_ZONES."""
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
@@ -665,46 +669,68 @@ async def test_options_flow_menu_includes_glare_zones_for_blind_cover(hass: Home
 # OptionsFlow: parameterized form steps
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
-@pytest.mark.parametrize("step_id,user_input", [
-    ("cover_entities", {CONF_ENTITIES: ["cover.test_blind"]}),
-    ("geometry", {CONF_HEIGHT_WIN: 2.5, CONF_WINDOW_DEPTH: 0.0, CONF_SILL_HEIGHT: 0.0}),
-    ("position", {
-        CONF_DEFAULT_HEIGHT: 60,
-        CONF_MIN_POSITION: 0,
-        CONF_ENABLE_MIN_POSITION: False,
-        CONF_MAX_POSITION: 100,
-        CONF_ENABLE_MAX_POSITION: False,
-        CONF_SUNSET_OFFSET: 0,
-        CONF_SUNRISE_OFFSET: 0,
-        CONF_INVERSE_STATE: False,
-        "interp": False,
-        "open_close_threshold": 50,
-    }),
-    ("automation", {
-        CONF_DELTA_POSITION: 5,
-        CONF_DELTA_TIME: 2,
-        CONF_START_TIME: "08:00:00",
-        CONF_END_TIME: "20:00:00",
-        CONF_RETURN_SUNSET: False,
-    }),
-    ("manual_override", {
-        CONF_MANUAL_OVERRIDE_DURATION: {"hours": 1},
-        CONF_MANUAL_OVERRIDE_RESET: False,
-        CONF_MANUAL_IGNORE_INTERMEDIATE: False,
-    }),
-    ("force_override", {"force_override_sensors": [], "force_override_position": 0}),
-    ("custom_position", {}),
-    ("motion_override", {"motion_sensors": [], "motion_timeout": 300}),
-    ("weather_override", {
-        "weather_bypass_auto_control": False,
-        "weather_wind_speed_threshold": 50.0,
-        "weather_wind_direction_tolerance": 45,
-        "weather_rain_threshold": 1.0,
-        "weather_severe_sensors": [],
-        "weather_override_position": 0,
-    }),
-])
+@pytest.mark.parametrize(
+    "step_id,user_input",
+    [
+        ("cover_entities", {CONF_ENTITIES: ["cover.test_blind"]}),
+        (
+            "geometry",
+            {CONF_HEIGHT_WIN: 2.5, CONF_WINDOW_DEPTH: 0.0, CONF_SILL_HEIGHT: 0.0},
+        ),
+        (
+            "position",
+            {
+                CONF_DEFAULT_HEIGHT: 60,
+                CONF_MIN_POSITION: 0,
+                CONF_ENABLE_MIN_POSITION: False,
+                CONF_MAX_POSITION: 100,
+                CONF_ENABLE_MAX_POSITION: False,
+                CONF_SUNSET_OFFSET: 0,
+                CONF_SUNRISE_OFFSET: 0,
+                CONF_INVERSE_STATE: False,
+                "interp": False,
+                "open_close_threshold": 50,
+            },
+        ),
+        (
+            "automation",
+            {
+                CONF_DELTA_POSITION: 5,
+                CONF_DELTA_TIME: 2,
+                CONF_START_TIME: "08:00:00",
+                CONF_END_TIME: "20:00:00",
+                CONF_RETURN_SUNSET: False,
+            },
+        ),
+        (
+            "manual_override",
+            {
+                CONF_MANUAL_OVERRIDE_DURATION: {"hours": 1},
+                CONF_MANUAL_OVERRIDE_RESET: False,
+                CONF_MANUAL_IGNORE_INTERMEDIATE: False,
+            },
+        ),
+        (
+            "force_override",
+            {"force_override_sensors": [], "force_override_position": 0},
+        ),
+        ("custom_position", {}),
+        ("motion_override", {"motion_sensors": [], "motion_timeout": 300}),
+        (
+            "weather_override",
+            {
+                "weather_bypass_auto_control": False,
+                "weather_wind_speed_threshold": 50.0,
+                "weather_wind_direction_tolerance": 45,
+                "weather_rain_threshold": 1.0,
+                "weather_severe_sensors": [],
+                "weather_override_position": 0,
+            },
+        ),
+    ],
+)
 async def test_options_flow_form_step_saves_and_returns_to_init(
     hass: HomeAssistant, step_id: str, user_input: dict
 ) -> None:
@@ -865,7 +891,8 @@ async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
 
     # Submit zone data
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {
+        result["flow_id"],
+        {
             "glare_zone_1_name": "East Window",
             "glare_zone_1_x": 0,
             "glare_zone_1_y": 100,
@@ -882,6 +909,6 @@ async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
             "glare_zone_4_x": 0,
             "glare_zone_4_y": 100,
             "glare_zone_4_radius": 30,
-        }
+        },
     )
     assert result["type"] in ("form", "menu", "create_entry")

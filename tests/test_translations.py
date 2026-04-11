@@ -35,6 +35,7 @@ LANGUAGE_CODES = [f.stem for f in TRANSLATION_FILES]
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _load(path: Path) -> dict:
     """Load a JSON file and return the parsed dict."""
     with path.open(encoding="utf-8") as fh:
@@ -97,20 +98,20 @@ def _label_leaf_values(d: object, _key: str = "") -> list[str]:
 
 _EMOJI_RE = re.compile(
     "["
-    "\U0001F600-\U0001F64F"  # emoticons
-    "\U0001F300-\U0001F5FF"  # symbols & pictographs
-    "\U0001F680-\U0001F6FF"  # transport & map
-    "\U0001F700-\U0001F77F"  # alchemical
-    "\U0001F780-\U0001F7FF"  # geometric
-    "\U0001F800-\U0001F8FF"  # supplemental arrows
-    "\U0001F900-\U0001F9FF"  # supplemental symbols
-    "\U0001FA00-\U0001FA6F"  # chess / game symbols
-    "\U0001FA70-\U0001FAFF"  # household objects
-    "\U00002702-\U000027B0"  # dingbats
+    "\U0001f600-\U0001f64f"  # emoticons
+    "\U0001f300-\U0001f5ff"  # symbols & pictographs
+    "\U0001f680-\U0001f6ff"  # transport & map
+    "\U0001f700-\U0001f77f"  # alchemical
+    "\U0001f780-\U0001f7ff"  # geometric
+    "\U0001f800-\U0001f8ff"  # supplemental arrows
+    "\U0001f900-\U0001f9ff"  # supplemental symbols
+    "\U0001fa00-\U0001fa6f"  # chess / game symbols
+    "\U0001fa70-\U0001faff"  # household objects
+    "\U00002702-\U000027b0"  # dingbats
     # Split the broad catch-all to exclude U+2610-2612 (ballot box symbols
     # used in translation descriptions as visual checkboxes, not emoji).
-    "\U000024C2-\U0000260F"  # misc technical / symbols (before ballot boxes)
-    "\U00002613-\U0001F251"  # symbols + enclosed alphanumerics (after ballot boxes)
+    "\U000024c2-\U0000260f"  # misc technical / symbols (before ballot boxes)
+    "\U00002613-\U0001f251"  # symbols + enclosed alphanumerics (after ballot boxes)
     "]+",
     flags=re.UNICODE,
 )
@@ -119,6 +120,7 @@ _EMOJI_RE = re.compile(
 # ---------------------------------------------------------------------------
 # 8a: All files are valid JSON
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_translation_file_valid_json(lang_file: Path) -> None:
@@ -130,6 +132,7 @@ def test_translation_file_valid_json(lang_file: Path) -> None:
 # ---------------------------------------------------------------------------
 # 8b: English is the reference — all languages must have same top-level keys
 # ---------------------------------------------------------------------------
+
 
 def test_all_translations_have_title_key() -> None:
     """All translation files must have a 'title' key."""
@@ -155,6 +158,7 @@ def test_en_json_has_expected_top_level_sections() -> None:
 # ---------------------------------------------------------------------------
 # 8c: No emoji characters (regression guard for issue #146)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_no_emoji_in_translation_values(lang_file: Path) -> None:
@@ -188,6 +192,7 @@ def test_no_icon_mdi_prefix_in_values(lang_file: Path) -> None:
 # 8d: No empty string values
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_no_empty_string_values(lang_file: Path) -> None:
     """No translation value should be an empty string."""
@@ -202,6 +207,7 @@ def test_no_empty_string_values(lang_file: Path) -> None:
 # ---------------------------------------------------------------------------
 # 8e: No zero-width or invisible unicode characters
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_no_invisible_unicode_chars(lang_file: Path) -> None:
@@ -227,6 +233,7 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
 # 8f: strings.json must match en.json (HA contract)
 # ---------------------------------------------------------------------------
 
+
 def test_strings_json_is_valid_json() -> None:
     """strings.json must exist and be valid JSON.
 
@@ -244,6 +251,7 @@ def test_strings_json_is_valid_json() -> None:
 # ---------------------------------------------------------------------------
 # 8g: All files have consistent structure (keys not missing from any language)
 # ---------------------------------------------------------------------------
+
 
 def test_all_languages_have_options_section() -> None:
     """All translation files that have options in en.json should have it too."""
@@ -263,7 +271,19 @@ def test_all_languages_have_options_section() -> None:
 def test_thirteen_translation_files_exist() -> None:
     """Exactly 13 language files exist in the translations directory."""
     expected_languages = {
-        "cs", "de", "en", "es", "fr", "hu", "it", "nl", "pl", "pt-BR", "sk", "sl", "uk"
+        "cs",
+        "de",
+        "en",
+        "es",
+        "fr",
+        "hu",
+        "it",
+        "nl",
+        "pl",
+        "pt-BR",
+        "sk",
+        "sl",
+        "uk",
     }
     actual_languages = {f.stem for f in TRANSLATION_FILES}
     assert actual_languages == expected_languages, (

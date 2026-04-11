@@ -13,7 +13,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
 )
 import datetime as dt
-from custom_components.adaptive_cover_pro.pipeline.types import DecisionStep, PipelineResult
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    DecisionStep,
+    PipelineResult,
+)
 from custom_components.adaptive_cover_pro.const import ControlStatus
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
@@ -324,7 +327,9 @@ class TestPositionExplanation:
 
     def test_outside_time_window_sunset_pos(self, builder: DiagnosticsBuilder):
         """Outside time window with sunset_pos active → shows 'sunset position'."""
-        pr = _make_pr(default_position=20, is_sunset_active=True, configured_sunset_pos=20)
+        pr = _make_pr(
+            default_position=20, is_sunset_active=True, configured_sunset_pos=20
+        )
         _, explanation = builder.build(
             _base_ctx(pipeline_result=pr, check_adaptive_time=False)
         )
@@ -356,9 +361,7 @@ class TestPositionExplanation:
             climate_state=100,
             climate_strategy=ClimateStrategy.WINTER_HEATING,
         )
-        _, explanation = builder.build(
-            _base_ctx(pipeline_result=pr, switch_mode=True)
-        )
+        _, explanation = builder.build(_base_ctx(pipeline_result=pr, switch_mode=True))
         assert "climate" in explanation.lower()
         assert "100%" in explanation
 
@@ -523,7 +526,9 @@ class TestClimateDiagnostics:
         assert "temperature_details" in diag
         assert "climate_conditions" in diag
 
-    def test_active_temperature_rounded_to_one_decimal(self, builder: DiagnosticsBuilder):
+    def test_active_temperature_rounded_to_one_decimal(
+        self, builder: DiagnosticsBuilder
+    ):
         """active_temperature is rounded to 1 decimal place."""
         cd = ClimateCoverData(
             temp_low=20.0,
@@ -547,7 +552,9 @@ class TestClimateDiagnostics:
         diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
         assert diag["active_temperature"] == 22.6  # 22.567 rounded to 1 dp
 
-    def test_temperature_details_rounded_to_one_decimal(self, builder: DiagnosticsBuilder):
+    def test_temperature_details_rounded_to_one_decimal(
+        self, builder: DiagnosticsBuilder
+    ):
         """inside/outside temperatures in temperature_details are rounded to 1 decimal."""
         cd = ClimateCoverData(
             temp_low=20.0,
@@ -746,7 +753,9 @@ class TestMeta:
 
     def test_meta_coordinator_update_success(self, builder: DiagnosticsBuilder):
         """coordinator_update.last_update_success reflects context value."""
-        ctx = _base_ctx(last_update_success=False, last_exception_repr="RuntimeError('boom')")
+        ctx = _base_ctx(
+            last_update_success=False, last_exception_repr="RuntimeError('boom')"
+        )
         diag, _ = builder.build(ctx)
         update = diag["meta"]["coordinator_update"]
         assert update["last_update_success"] is False
@@ -789,8 +798,18 @@ class TestDecisionTrace:
     def test_trace_serialized_correctly(self, builder: DiagnosticsBuilder):
         """Each DecisionStep is serialized to the expected dict shape."""
         steps = [
-            DecisionStep(handler="force_override", matched=False, reason="no sensor active", position=None),
-            DecisionStep(handler="manual_override", matched=True, reason="user moved cover", position=50),
+            DecisionStep(
+                handler="force_override",
+                matched=False,
+                reason="no sensor active",
+                position=None,
+            ),
+            DecisionStep(
+                handler="manual_override",
+                matched=True,
+                reason="user moved cover",
+                position=50,
+            ),
         ]
         pr = PipelineResult(
             position=50,
@@ -801,8 +820,18 @@ class TestDecisionTrace:
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         trace = diag["decision_trace"]
         assert len(trace) == 2
-        assert trace[0] == {"handler": "force_override", "matched": False, "reason": "no sensor active", "position": None}
-        assert trace[1] == {"handler": "manual_override", "matched": True, "reason": "user moved cover", "position": 50}
+        assert trace[0] == {
+            "handler": "force_override",
+            "matched": False,
+            "reason": "no sensor active",
+            "position": None,
+        }
+        assert trace[1] == {
+            "handler": "manual_override",
+            "matched": True,
+            "reason": "user moved cover",
+            "position": 50,
+        }
 
     def test_trace_preserves_order(self, builder: DiagnosticsBuilder):
         """Trace order matches the order of DecisionStep entries."""
@@ -811,7 +840,12 @@ class TestDecisionTrace:
             DecisionStep(handler="b", matched=False, reason="skip b", position=None),
             DecisionStep(handler="c", matched=True, reason="matched c", position=30),
         ]
-        pr = PipelineResult(position=30, control_method=ControlMethod.SOLAR, reason="c", decision_trace=steps)
+        pr = PipelineResult(
+            position=30,
+            control_method=ControlMethod.SOLAR,
+            reason="c",
+            decision_trace=steps,
+        )
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
         handlers = [s["handler"] for s in diag["decision_trace"]]
         assert handlers == ["a", "b", "c"]
@@ -836,7 +870,12 @@ class TestCovers:
             "cover.living_room": {
                 "current_position": 42,
                 "available": True,
-                "capabilities": {"has_set_position": True, "has_set_tilt_position": False, "has_open": True, "has_close": True},
+                "capabilities": {
+                    "has_set_position": True,
+                    "has_set_tilt_position": False,
+                    "has_open": True,
+                    "has_close": True,
+                },
             }
         }
         diag, _ = builder.build(_base_ctx(covers=covers))
@@ -845,7 +884,13 @@ class TestCovers:
 
     def test_covers_unavailable_entity(self, builder: DiagnosticsBuilder):
         """An unavailable cover (None position) is represented correctly."""
-        covers = {"cover.bedroom": {"current_position": None, "available": False, "capabilities": None}}
+        covers = {
+            "cover.bedroom": {
+                "current_position": None,
+                "available": False,
+                "capabilities": None,
+            }
+        }
         diag, _ = builder.build(_base_ctx(covers=covers))
         assert diag["covers"]["cover.bedroom"]["available"] is False
         assert diag["covers"]["cover.bedroom"]["current_position"] is None
@@ -929,4 +974,9 @@ class TestManualOverrideState:
             },
         }
         diag, _ = builder.build(_base_ctx(manual_override_state=state))
-        assert diag["manual_override_state"]["entries"]["cover.bedroom"]["remaining_seconds"] == 0
+        assert (
+            diag["manual_override_state"]["entries"]["cover.bedroom"][
+                "remaining_seconds"
+            ]
+            == 0
+        )

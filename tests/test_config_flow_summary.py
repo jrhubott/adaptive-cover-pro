@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 
-from custom_components.adaptive_cover_pro.config_flow import _build_config_summary, _format_duration
+from custom_components.adaptive_cover_pro.config_flow import (
+    _build_config_summary,
+    _format_duration,
+)
 from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
@@ -384,9 +387,7 @@ def test_sunrise_shows_default_position():
     cfg = {CONF_SUNSET_POS: 80, CONF_DEFAULT_HEIGHT: 45}
     summary = _build_config_summary(cfg, SensorType.BLIND)
     # The sunrise line should reference the default position (45%)
-    sunrise_line = [
-        ln for ln in summary.splitlines() if "After sunrise" in ln
-    ]
+    sunrise_line = [ln for ln in summary.splitlines() if "After sunrise" in ln]
     assert sunrise_line, "No 'After sunrise' line found"
     assert "45%" in sunrise_line[0]
 
@@ -579,7 +580,9 @@ class TestFormatDuration:
 
     def test_hours_and_minutes(self):
         """Hours and non-zero minutes combined."""
-        assert _format_duration({"hours": 2, "minutes": 15, "seconds": 0}) == "2 h 15 min"
+        assert (
+            _format_duration({"hours": 2, "minutes": 15, "seconds": 0}) == "2 h 15 min"
+        )
 
     def test_minutes_only(self):
         """Zero hours, non-zero minutes."""
@@ -591,7 +594,10 @@ class TestFormatDuration:
 
     def test_all_three_components(self):
         """Hours, minutes, and seconds all non-zero."""
-        assert _format_duration({"hours": 1, "minutes": 5, "seconds": 30}) == "1 h 5 min 30 s"
+        assert (
+            _format_duration({"hours": 1, "minutes": 5, "seconds": 30})
+            == "1 h 5 min 30 s"
+        )
 
     def test_all_zero(self):
         """All components zero returns '0 min'."""

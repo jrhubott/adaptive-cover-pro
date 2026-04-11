@@ -25,11 +25,22 @@ def _make_mock_cover(
     the centrally-computed snapshot.default_position.  All default-position
     logic must flow through snapshot.default_position.
     """
-    cover = MagicMock(spec=["direct_sun_valid", "calculate_percentage",
-                             "distance", "gamma", "config", "valid",
-                             "valid_elevation", "is_sun_in_blind_spot",
-                             "sunset_valid", "calculate_position",
-                             "control_state_reason", "sun_data"])
+    cover = MagicMock(
+        spec=[
+            "direct_sun_valid",
+            "calculate_percentage",
+            "distance",
+            "gamma",
+            "config",
+            "valid",
+            "valid_elevation",
+            "is_sun_in_blind_spot",
+            "sunset_valid",
+            "calculate_position",
+            "control_state_reason",
+            "sun_data",
+        ]
+    )
     cover.direct_sun_valid = direct_sun_valid
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
     cover.distance = distance
@@ -105,7 +116,9 @@ def make_snapshot(
         else frozenset(),
         in_time_window=in_time_window,
         motion_control_enabled=motion_control_enabled,
-        custom_position_sensors=custom_position_sensors if custom_position_sensors is not None else [],
+        custom_position_sensors=custom_position_sensors
+        if custom_position_sensors is not None
+        else [],
         my_position_value=my_position_value,
         sunset_use_my=sunset_use_my,
     )

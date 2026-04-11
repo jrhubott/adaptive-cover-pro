@@ -229,9 +229,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_reset = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_RESET, False
         )
-        self.manual_duration = (
-            self.config_entry.options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
-        )
+        self.manual_duration = self.config_entry.options.get(
+            CONF_MANUAL_OVERRIDE_DURATION
+        ) or {"hours": 2}
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
@@ -476,6 +476,67 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self.async_refresh()
         else:
             self.logger.debug("Old state is unknown, not processing")
+
+    async def async_check_cover_service_call(self, event: Event) -> None:
+        """Detect user-initiated cover.stop_cover and start manual override.
+
+        Listens to EVENT_CALL_SERVICE for ``cover.stop_cover`` on tracked
+        entities. If the call was NOT originated by ACP (context-id not in
+        ``_cmd_svc._acp_stop_contexts``) and a ``my_position_value`` is
+        configured, the cover is flagged as manually overridden.
+
+        This path covers non-position-capable covers (e.g. Somfy RTS) where
+        pressing STOP moves to the hardware "My" preset without ever reporting
+        a new position — the normal state-change detection is blind to it.
+        """
+        data = event.data
+        if data.get("domain") != "cover" or data.get("service") != "stop_cover":
+            return
+
+        service_data = data.get("service_data") or {}
+        raw_entity_id = service_data.get("entity_id")
+        if raw_entity_id is None:
+            return
+
+        if isinstance(raw_entity_id, str):
+            called_entities = {raw_entity_id}
+        else:
+            called_entities = set(raw_entity_id)
+
+        tracked = called_entities & set(self.entities)
+        if not tracked:
+            return
+
+        # Skip if ACP originated this stop_cover call.
+        if event.context and event.context.id in self._cmd_svc._acp_stop_contexts:
+            self.logger.debug(
+                "async_check_cover_service_call: ignoring ACP-originated stop_cover "
+                "(context %s)",
+                event.context.id,
+            )
+            return
+
+        if not self.manual_toggle or not self.automatic_control:
+            return
+
+        my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
+        if my_position_value is None:
+            self.logger.debug(
+                "async_check_cover_service_call: user stop_cover on %s but "
+                "my_position_value not configured — skipping manual override",
+                tracked,
+            )
+            return
+
+        for entity_id in tracked:
+            self.manager.handle_stop_service_call(
+                entity_id,
+                int(my_position_value),
+                self.wait_for_target,
+            )
+            # Update target_call so the next reconciliation compares against
+            # My rather than the stale calculated state.
+            self._cmd_svc.target_call[entity_id] = int(my_position_value)
 
     async def async_check_weather_state_change(
         self, event: Event[EventStateChangedData]
@@ -897,12 +958,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             climate_options=self._build_climate_options(options),
             force_override_sensors=self._read_force_sensor_states(options),
             force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
-            force_override_min_mode=bool(options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False)),
+            force_override_min_mode=bool(
+                options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False)
+            ),
             manual_override_active=self.manager.binary_cover_manual,
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
-            weather_override_min_mode=bool(options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)),
+            weather_override_min_mode=bool(
+                options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
+            ),
             weather_bypass_auto_control=options.get(
                 CONF_WEATHER_BYPASS_AUTO_CONTROL, True
             ),
@@ -1029,7 +1094,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
         self._cmd_svc.auto_control_enabled = self.automatic_control
         self._cmd_svc.in_time_window = self.check_adaptive_time
-        self._cmd_svc.enabled = self.enabled_toggle if self.enabled_toggle is not None else True
+        self._cmd_svc.enabled = (
+            self.enabled_toggle if self.enabled_toggle is not None else True
+        )
         self._cmd_svc.dry_run = self.config_entry.options.get(CONF_DRY_RUN, False)
 
         # Update solar times
@@ -1106,7 +1173,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             special_positions=build_special_positions(options),
             inverse_state=self._inverse_state,
             force=force,
-            use_my_position=self._pipeline_result.use_my_position if self._pipeline_result else False,
+            use_my_position=self._pipeline_result.use_my_position
+            if self._pipeline_result
+            else False,
         )
 
     async def _async_send_after_override_clear(
@@ -1204,14 +1273,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         sun_just_appeared = self._check_sun_validity_transition()
         is_safety = self._pipeline_bypasses_auto_control
-        force_override_released = prev_force_override and not self.is_force_override_active
+        force_override_released = (
+            prev_force_override and not self.is_force_override_active
+        )
 
         # Outside the configured time window, only safety handlers (force
         # override, weather) are allowed to move covers.  All other handlers
         # (solar, climate, cloud, default) must not reposition covers before
         # the user's start time or after the end time.  The pipeline still
         # evaluates so diagnostics/sensor state remain correct.
-        if not self.check_adaptive_time and not is_safety and not force_override_released:
+        if (
+            not self.check_adaptive_time
+            and not is_safety
+            and not force_override_released
+        ):
             self.state_change = False
             self.logger.debug("Outside time window — skipping position update")
             return
@@ -1225,7 +1300,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 state,
             )
         else:
-            reason = self._pipeline_result.control_method.value if is_safety else "solar"
+            reason = (
+                self._pipeline_result.control_method.value if is_safety else "solar"
+            )
         for cover in self.entities:
             ctx = self._build_position_context(
                 cover, options, force=use_force, sun_just_appeared=sun_just_appeared
@@ -1302,7 +1379,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # configured operational window.
         if not self.check_adaptive_time and not is_safety:
             self.first_refresh = False
-            self.logger.debug("First refresh outside time window — skipping position update")
+            self.logger.debug(
+                "First refresh outside time window — skipping position update"
+            )
             return
 
         if self._is_reload and not is_safety:
@@ -1345,10 +1424,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         options = self.config_entry.options
         _slot_keys = [
-            (1, CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1),
-            (2, CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2),
-            (3, CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3),
-            (4, CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4),
+            (
+                1,
+                CONF_CUSTOM_POSITION_SENSOR_1,
+                CONF_CUSTOM_POSITION_1,
+                CONF_CUSTOM_POSITION_PRIORITY_1,
+            ),
+            (
+                2,
+                CONF_CUSTOM_POSITION_SENSOR_2,
+                CONF_CUSTOM_POSITION_2,
+                CONF_CUSTOM_POSITION_PRIORITY_2,
+            ),
+            (
+                3,
+                CONF_CUSTOM_POSITION_SENSOR_3,
+                CONF_CUSTOM_POSITION_3,
+                CONF_CUSTOM_POSITION_PRIORITY_3,
+            ),
+            (
+                4,
+                CONF_CUSTOM_POSITION_SENSOR_4,
+                CONF_CUSTOM_POSITION_4,
+                CONF_CUSTOM_POSITION_PRIORITY_4,
+            ),
         ]
         custom_handlers: list[CustomPositionHandler] = []
         for slot, sensor_key, pos_key, pri_key in _slot_keys:
@@ -1366,7 +1465,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
 
         sun_tracking_enabled = options.get(CONF_ENABLE_SUN_TRACKING, True)
-        sun_handlers = [GlareZoneHandler(), SolarHandler()] if sun_tracking_enabled else []
+        sun_handlers = (
+            [GlareZoneHandler(), SolarHandler()] if sun_tracking_enabled else []
+        )
         handlers = [
             ForceOverrideHandler(),
             WeatherOverrideHandler(),
@@ -1401,7 +1502,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.min_change = options.get(CONF_DELTA_POSITION) or 1
         self.time_threshold = options.get(CONF_DELTA_TIME) or 2
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
-        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
+        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION) or {
+            "hours": 2
+        }
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
         self.start_value = options.get(CONF_INTERP_START)
         self.end_value = options.get(CONF_INTERP_END)
@@ -1602,10 +1705,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         "My" preset via stop_cover instead of the slot's numeric position.
         """
         _sensor_keys = [
-            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1, CONF_CUSTOM_POSITION_MIN_MODE_1, CONF_CUSTOM_POSITION_USE_MY_1),
-            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2, CONF_CUSTOM_POSITION_MIN_MODE_2, CONF_CUSTOM_POSITION_USE_MY_2),
-            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3, CONF_CUSTOM_POSITION_MIN_MODE_3, CONF_CUSTOM_POSITION_USE_MY_3),
-            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4, CONF_CUSTOM_POSITION_MIN_MODE_4, CONF_CUSTOM_POSITION_USE_MY_4),
+            (
+                CONF_CUSTOM_POSITION_SENSOR_1,
+                CONF_CUSTOM_POSITION_1,
+                CONF_CUSTOM_POSITION_PRIORITY_1,
+                CONF_CUSTOM_POSITION_MIN_MODE_1,
+                CONF_CUSTOM_POSITION_USE_MY_1,
+            ),
+            (
+                CONF_CUSTOM_POSITION_SENSOR_2,
+                CONF_CUSTOM_POSITION_2,
+                CONF_CUSTOM_POSITION_PRIORITY_2,
+                CONF_CUSTOM_POSITION_MIN_MODE_2,
+                CONF_CUSTOM_POSITION_USE_MY_2,
+            ),
+            (
+                CONF_CUSTOM_POSITION_SENSOR_3,
+                CONF_CUSTOM_POSITION_3,
+                CONF_CUSTOM_POSITION_PRIORITY_3,
+                CONF_CUSTOM_POSITION_MIN_MODE_3,
+                CONF_CUSTOM_POSITION_USE_MY_3,
+            ),
+            (
+                CONF_CUSTOM_POSITION_SENSOR_4,
+                CONF_CUSTOM_POSITION_4,
+                CONF_CUSTOM_POSITION_PRIORITY_4,
+                CONF_CUSTOM_POSITION_MIN_MODE_4,
+                CONF_CUSTOM_POSITION_USE_MY_4,
+            ),
         ]
         result = []
         for sensor_key, pos_key, pri_key, min_mode_key, use_my_key in _sensor_keys:
@@ -1613,13 +1740,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             position = options.get(pos_key)
             if sensor and position is not None:
                 is_on = bool(
-                    (state := self.hass.states.get(sensor))
-                    and state.state == "on"
+                    (state := self.hass.states.get(sensor)) and state.state == "on"
                 )
                 priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
                 min_mode = bool(options.get(min_mode_key, False))
                 use_my = bool(options.get(use_my_key, False))
-                result.append((sensor, is_on, int(position), priority, min_mode, use_my))
+                result.append(
+                    (sensor, is_on, int(position), priority, min_mode, use_my)
+                )
         return result
 
     def build_diagnostic_data(self) -> dict:
@@ -1628,13 +1756,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Live cover positions and capabilities
         cover_entities = self.entities or []
-        _positions = self._cover_provider.read_positions(cover_entities, self._cover_type)
+        _positions = self._cover_provider.read_positions(
+            cover_entities, self._cover_type
+        )
         _caps = self._cover_provider.read_all_capabilities(cover_entities)
         _covers = {
             eid: {
                 "current_position": _positions.get(eid),
                 "available": _positions.get(eid) is not None,
-                "capabilities": dataclasses.asdict(_caps[eid]) if eid in _caps else None,
+                "capabilities": dataclasses.asdict(_caps[eid])
+                if eid in _caps
+                else None,
             }
             for eid in cover_entities
         }
@@ -1712,11 +1844,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             last_update_success=self.last_update_success,
             last_exception_repr=repr(_last_exc) if _last_exc is not None else None,
             last_update_success_time_iso=(
-                _last_success_time.isoformat() if _last_success_time is not None else None
+                _last_success_time.isoformat()
+                if _last_success_time is not None
+                else None
             ),
             update_interval_seconds=(
                 self.update_interval.total_seconds()
-                if self.update_interval is not None else None
+                if self.update_interval is not None
+                else None
             ),
             covers=_covers,
             manual_override_state=_manual_override_state,

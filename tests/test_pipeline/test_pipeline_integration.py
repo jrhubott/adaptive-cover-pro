@@ -250,7 +250,9 @@ class TestClimateDataPropagation:
         assert isinstance(result.climate_data, ClimateCoverData)
         assert result.climate_data.is_summer is True
 
-    def test_registry_climate_data_populated_when_non_climate_handler_wins(self) -> None:
+    def test_registry_climate_data_populated_when_non_climate_handler_wins(
+        self,
+    ) -> None:
         """climate_data is populated even when a non-climate handler wins (#182)."""
         snap = make_snapshot(
             manual_override_active=True,
@@ -298,7 +300,9 @@ class TestCustomPositionPriority:
     def test_custom_position_beats_motion_timeout(self) -> None:
         """CUSTOM_POSITION fires instead of motion timeout when a sensor is active."""
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 55, 77, False, False)
+            ],
             motion_timeout_active=True,
             default_position=10,
         )
@@ -310,7 +314,9 @@ class TestCustomPositionPriority:
         """MANUAL fires before custom_position when manual override is active."""
         snap = make_snapshot(
             manual_override_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 55, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 55, 77, False, False)
+            ],
         )
         result = self.registry.evaluate(snap)
         assert result.control_method == ControlMethod.MANUAL
@@ -320,7 +326,9 @@ class TestCustomPositionPriority:
         # Build registry with the matching position for this test
         registry_33 = _make_registry(custom_position=33)
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 33, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 33, 77, False, False)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=80.0,
         )
@@ -331,7 +339,9 @@ class TestCustomPositionPriority:
     def test_solar_fires_when_custom_sensors_all_off(self) -> None:
         """Solar handler wins when custom sensors are configured but all off."""
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", False, 33, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", False, 33, 77, False, False)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=72.0,
         )
@@ -341,7 +351,9 @@ class TestCustomPositionPriority:
     def test_default_fires_when_no_custom_sensors_and_no_sun(self) -> None:
         """Default handler wins when custom sensors are off and sun not in FOV."""
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", False, 50, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", False, 50, 77, False, False)
+            ],
             direct_sun_valid=False,
             default_position=20,
         )
@@ -360,14 +372,18 @@ class TestCustomPositionConfigurablePriority:
 
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(slot=1, entity_id="binary_sensor.scene", position=30, priority=95),
+                CustomPositionHandler(
+                    slot=1, entity_id="binary_sensor.scene", position=30, priority=95
+                ),
                 WeatherOverrideHandler(),
                 SolarHandler(),
                 DefaultHandler(),
             ]
         )
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 30, 95, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 30, 95, False, False)
+            ],
             weather_override_active=True,
             weather_override_position=0,
         )
@@ -379,13 +395,17 @@ class TestCustomPositionConfigurablePriority:
         """Custom slot at priority 35 (below solar 40) does not fire when sun is valid."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(slot=1, entity_id="binary_sensor.scene", position=80, priority=35),
+                CustomPositionHandler(
+                    slot=1, entity_id="binary_sensor.scene", position=80, priority=35
+                ),
                 SolarHandler(),
                 DefaultHandler(),
             ]
         )
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.scene", True, 80, 35, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 80, 35, False, False)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=60.0,
         )
@@ -396,8 +416,12 @@ class TestCustomPositionConfigurablePriority:
         """When two custom slots are active, the higher-priority slot wins."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(slot=1, entity_id="binary_sensor.slot1", position=20, priority=85),
-                CustomPositionHandler(slot=2, entity_id="binary_sensor.slot2", position=60, priority=70),
+                CustomPositionHandler(
+                    slot=1, entity_id="binary_sensor.slot1", position=20, priority=85
+                ),
+                CustomPositionHandler(
+                    slot=2, entity_id="binary_sensor.slot2", position=60, priority=70
+                ),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -416,8 +440,12 @@ class TestCustomPositionConfigurablePriority:
         """When the higher-priority slot is off, the lower-priority slot wins."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(slot=1, entity_id="binary_sensor.slot1", position=20, priority=85),
-                CustomPositionHandler(slot=2, entity_id="binary_sensor.slot2", position=60, priority=70),
+                CustomPositionHandler(
+                    slot=1, entity_id="binary_sensor.slot1", position=20, priority=85
+                ),
+                CustomPositionHandler(
+                    slot=2, entity_id="binary_sensor.slot2", position=60, priority=70
+                ),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -437,7 +465,9 @@ class TestCustomPositionConfigurablePriority:
         registry = PipelineRegistry(
             [
                 ManualOverrideHandler(),
-                CustomPositionHandler(slot=1, entity_id="binary_sensor.scene", position=45, priority=77),
+                CustomPositionHandler(
+                    slot=1, entity_id="binary_sensor.scene", position=45, priority=77
+                ),
                 MotionTimeoutHandler(),
                 SolarHandler(),
                 DefaultHandler(),
@@ -446,7 +476,9 @@ class TestCustomPositionConfigurablePriority:
         # Manual active → custom should NOT fire
         snap_manual = make_snapshot(
             manual_override_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 45, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 45, 77, False, False)
+            ],
         )
         result = registry.evaluate(snap_manual)
         assert result.control_method == ControlMethod.MANUAL
@@ -455,7 +487,9 @@ class TestCustomPositionConfigurablePriority:
         snap_motion = make_snapshot(
             manual_override_active=False,
             motion_timeout_active=True,
-            custom_position_sensors=[("binary_sensor.scene", True, 45, 77, False, False)],
+            custom_position_sensors=[
+                ("binary_sensor.scene", True, 45, 77, False, False)
+            ],
             default_position=10,
         )
         result = registry.evaluate(snap_motion)
@@ -490,7 +524,7 @@ class TestClimateStrategyEndToEnd:
         readings = ClimateReadings(
             outside_temperature=None,
             inside_temperature=30.0,  # above temp_high=26
-            is_presence=False,        # no one home → no-presence path → close
+            is_presence=False,  # no one home → no-presence path → close
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
@@ -528,7 +562,7 @@ class TestClimateStrategyEndToEnd:
         readings = ClimateReadings(
             outside_temperature=None,
             inside_temperature=30.0,  # above temp_high=26
-            is_presence=True,         # someone home
+            is_presence=True,  # someone home
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
@@ -574,7 +608,7 @@ class TestClimateStrategyEndToEnd:
             temp_low=18.0,
             temp_high=26.0,
             temp_switch=False,
-            transparent_blind=True,   # transparent → close fully with presence
+            transparent_blind=True,  # transparent → close fully with presence
             temp_summer_outside=None,
             cloud_suppression_enabled=False,
             winter_close_insulation=False,
@@ -737,8 +771,8 @@ class TestClimateStrategyEndToEnd:
     def test_outside_temp_used_when_temp_switch_enabled(self) -> None:
         """When temp_switch=True, outside_temperature drives summer/winter."""
         readings = ClimateReadings(
-            outside_temperature=32.0,   # hot outside → summer
-            inside_temperature=22.0,    # inside is comfortable — ignored when temp_switch=True
+            outside_temperature=32.0,  # hot outside → summer
+            inside_temperature=22.0,  # inside is comfortable — ignored when temp_switch=True
             is_presence=True,
             is_sunny=True,
             lux_below_threshold=False,
@@ -748,9 +782,9 @@ class TestClimateStrategyEndToEnd:
         options = ClimateOptions(
             temp_low=18.0,
             temp_high=26.0,
-            temp_switch=True,           # use outside temp
+            temp_switch=True,  # use outside temp
             transparent_blind=False,
-            temp_summer_outside=None,   # no secondary outside gate
+            temp_summer_outside=None,  # no secondary outside gate
             cloud_suppression_enabled=False,
             winter_close_insulation=False,
         )
@@ -775,7 +809,7 @@ class TestClimateStrategyEndToEnd:
         readings = ClimateReadings(
             outside_temperature=None,
             inside_temperature=30.0,
-            is_presence=False,          # no one home
+            is_presence=False,  # no one home
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
@@ -805,7 +839,7 @@ class TestClimateStrategyEndToEnd:
         readings = ClimateReadings(
             outside_temperature=None,
             inside_temperature=12.0,
-            is_presence=False,          # no one home
+            is_presence=False,  # no one home
             is_sunny=True,
             lux_below_threshold=False,
             irradiance_below_threshold=False,
@@ -834,7 +868,7 @@ class TestClimateStrategyEndToEnd:
         """is_presence=True uses the with-presence path (solar tracking in glare zone)."""
         readings = ClimateReadings(
             outside_temperature=None,
-            inside_temperature=22.0,    # between temp_low and temp_high
+            inside_temperature=22.0,  # between temp_low and temp_high
             is_presence=True,
             is_sunny=True,
             lux_below_threshold=False,

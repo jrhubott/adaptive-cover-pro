@@ -69,6 +69,7 @@ def make_climate_data(mock_hass, **overrides):
 def make_climate_state(cover, climate_data, default_position=50):
     """Build a ClimateCoverState with a minimal snapshot namespace."""
     from tests.conftest import make_snapshot_for_cover
+
     snapshot = make_snapshot_for_cover(cover, default_position)
     return ClimateCoverState(snapshot, climate_data)
 
@@ -259,7 +260,9 @@ class TestClimateStrategyNormalWithPresence:
         assert state_handler.climate_strategy == ClimateStrategy.WINTER_HEATING
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_low_light_strategy(self, mock_datetime, mock_hass, mock_logger, vertical_cover):
+    def test_low_light_strategy(
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
+    ):
         """Not summer + low lux → LOW_LIGHT."""
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
@@ -560,7 +563,9 @@ class TestBuildPositionExplanation:
             reason="force override active (sensor.x) — position 0% [bypasses automatic control]",
             position=0,
         )
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "force override" in result.lower()
         assert "0%" in result
 
@@ -572,7 +577,9 @@ class TestBuildPositionExplanation:
             position=30,
             default_position=30,
         )
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "motion" in result.lower()
         assert "30%" in result
 
@@ -582,12 +589,16 @@ class TestBuildPositionExplanation:
             control_method=ControlMethod.MANUAL,
             reason="manual override active — holding solar position 50%",
         )
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "manual" in result.lower()
 
     def test_outside_time_window_with_sunset_position(self, builder):
         """Outside time window with sunset_pos active → shows 'sunset position' label."""
-        pr = _make_pr(default_position=30, is_sunset_active=True, configured_sunset_pos=30)
+        pr = _make_pr(
+            default_position=30, is_sunset_active=True, configured_sunset_pos=30
+        )
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(pipeline_result=pr, check_adaptive_time=False)
         )
@@ -613,7 +624,9 @@ class TestBuildPositionExplanation:
             default_position=20,
             is_sunset_active=True,
         )
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "sunset position" in result.lower()
         assert "20%" in result
 
@@ -624,20 +637,26 @@ class TestBuildPositionExplanation:
             reason="no active condition — default position 100%",
             default_position=100,
         )
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "default position" in result.lower()
         assert "100%" in result
 
     def test_sun_tracking_no_limits(self, builder):
         """Sun tracking, no limits → reason from solar handler."""
         pr = _make_pr(reason="sun in FOV — position 65%", raw_calculated_position=65)
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "65%" in result
 
     def test_sun_tracking_with_min_limit(self, builder):
         """Solar tracking position included in reason."""
         pr = _make_pr(reason="sun in FOV — position 60%", raw_calculated_position=60)
-        result = DiagnosticsBuilder._build_position_explanation(_base_ctx(pipeline_result=pr))
+        result = DiagnosticsBuilder._build_position_explanation(
+            _base_ctx(pipeline_result=pr)
+        )
         assert "60%" in result
 
     def test_climate_winter_heating(self, builder):
@@ -686,7 +705,9 @@ class TestBuildPositionExplanation:
 
     def test_sun_tracking_with_interpolation(self, builder):
         """Interpolation applied → shows interpolated final value."""
-        pr = _make_pr(reason="sun in FOV — position 72%", position=72, raw_calculated_position=72)
+        pr = _make_pr(
+            reason="sun in FOV — position 72%", position=72, raw_calculated_position=72
+        )
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(pipeline_result=pr, use_interpolation=True, final_state=65)
         )
@@ -695,7 +716,9 @@ class TestBuildPositionExplanation:
 
     def test_sun_tracking_with_inverse(self, builder):
         """Inverse state applied → shows inversed final value."""
-        pr = _make_pr(reason="sun in FOV — position 72%", position=72, raw_calculated_position=72)
+        pr = _make_pr(
+            reason="sun in FOV — position 72%", position=72, raw_calculated_position=72
+        )
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(pipeline_result=pr, inverse_state=True, final_state=28)
         )

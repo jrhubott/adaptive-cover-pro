@@ -125,9 +125,7 @@ class SunGeometry:
         sunset = self.sun_data.sunset().replace(tzinfo=None)
         sunrise = self.sun_data.sunrise().replace(tzinfo=None)
         now_naive = datetime.now(UTC).replace(tzinfo=None)
-        after_sunset = now_naive > (
-            sunset + timedelta(minutes=self.config.sunset_off)
-        )
+        after_sunset = now_naive > (sunset + timedelta(minutes=self.config.sunset_off))
         before_sunrise = now_naive < (
             sunrise + timedelta(minutes=self.config.sunrise_off)
         )

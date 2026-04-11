@@ -259,9 +259,7 @@ def _make_coordinator_with_options(options: dict):
 
     coord = SimpleNamespace()
     # Replicate the fixed coordinator __init__ logic exactly
-    coord.manual_duration = (
-        options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
-    )
+    coord.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
     coord.manager = AdaptiveCoverManager(hass, coord.manual_duration, logger)
     return coord
 
@@ -526,8 +524,8 @@ class TestTimedeltaSafetyRegression:
         """Verify 'value or default' for integer delta fields."""
         assert (None or 1) == 1
         assert (None or 2) == 2
-        assert (3 or 1) == 3   # real value preserved
-        assert (5 or 2) == 5   # real value preserved
+        assert (3 or 1) == 3  # real value preserved
+        assert (5 or 2) == 5  # real value preserved
 
 
 # ---------------------------------------------------------------------------
@@ -579,7 +577,11 @@ class TestQuickVsFullSetupParity:
     def test_critical_keys_never_none_in_full_setup(self):
         """The three crashing keys must also never be None in full-setup output."""
         options = _build_options_from_config(_FULL_SETUP_CONFIG)
-        for key in (CONF_MANUAL_OVERRIDE_DURATION, CONF_DELTA_POSITION, CONF_DELTA_TIME):
+        for key in (
+            CONF_MANUAL_OVERRIDE_DURATION,
+            CONF_DELTA_POSITION,
+            CONF_DELTA_TIME,
+        ):
             assert options[key] is not None, (
                 f"{key} was None in full-setup options — schema defaults not applied"
             )

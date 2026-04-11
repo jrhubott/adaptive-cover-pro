@@ -21,7 +21,10 @@ from custom_components.adaptive_cover_pro.pipeline.helpers import (
 # Minimal snapshot / cover helpers
 # ---------------------------------------------------------------------------
 
-def _make_config(*, min_pos=None, max_pos=None, min_pos_sun_only=False, max_pos_sun_only=False):
+
+def _make_config(
+    *, min_pos=None, max_pos=None, min_pos_sun_only=False, max_pos_sun_only=False
+):
     return SimpleNamespace(
         min_pos=min_pos,
         max_pos=max_pos,
@@ -38,10 +41,17 @@ def _make_cover(*, direct_sun_valid=True, calc_pct=50.0):
     return cover
 
 
-def _make_snapshot(*, calc_pct=50.0, default_position=30, direct_sun_valid=True,
-                   min_pos=None, max_pos=None,
-                   min_pos_sun_only=False, max_pos_sun_only=False,
-                   is_sunset_active=False):
+def _make_snapshot(
+    *,
+    calc_pct=50.0,
+    default_position=30,
+    direct_sun_valid=True,
+    min_pos=None,
+    max_pos=None,
+    min_pos_sun_only=False,
+    max_pos_sun_only=False,
+    is_sunset_active=False,
+):
     return SimpleNamespace(
         cover=_make_cover(direct_sun_valid=direct_sun_valid, calc_pct=calc_pct),
         config=_make_config(

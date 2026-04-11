@@ -11,7 +11,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import CONF_ENABLE_SUN_TRACKING
-from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,

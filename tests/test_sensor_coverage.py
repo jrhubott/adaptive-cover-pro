@@ -42,12 +42,13 @@ def _make_hass():
 # AdaptiveCoverClimateStatusSensor.native_value
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_climate_status_native_value_summer_mode():
     """Returns 'Summer Mode' when is_summer is True."""
-    coord = _make_coordinator(diagnostics={
-        "climate_conditions": {"is_summer": True, "is_winter": False}
-    })
+    coord = _make_coordinator(
+        diagnostics={"climate_conditions": {"is_summer": True, "is_winter": False}}
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverClimateStatusSensor(
         config_entry_id="test_entry",
@@ -63,9 +64,9 @@ def test_climate_status_native_value_summer_mode():
 @pytest.mark.unit
 def test_climate_status_native_value_winter_mode():
     """Returns 'Winter Mode' when is_winter is True."""
-    coord = _make_coordinator(diagnostics={
-        "climate_conditions": {"is_summer": False, "is_winter": True}
-    })
+    coord = _make_coordinator(
+        diagnostics={"climate_conditions": {"is_summer": False, "is_winter": True}}
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverClimateStatusSensor(
         config_entry_id="test_entry",
@@ -81,9 +82,9 @@ def test_climate_status_native_value_winter_mode():
 @pytest.mark.unit
 def test_climate_status_native_value_intermediate():
     """Returns 'Intermediate' when neither summer nor winter."""
-    coord = _make_coordinator(diagnostics={
-        "climate_conditions": {"is_summer": False, "is_winter": False}
-    })
+    coord = _make_coordinator(
+        diagnostics={"climate_conditions": {"is_summer": False, "is_winter": False}}
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverClimateStatusSensor(
         config_entry_id="test_entry",
@@ -132,21 +133,24 @@ def test_climate_status_native_value_none_when_no_climate_conditions():
 # AdaptiveCoverSunPositionSensor.extra_state_attributes — elevation limits
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_sun_position_attributes_include_min_max_elevation():
     """extra_state_attributes includes min/max elevation when configured."""
-    coord = _make_coordinator(diagnostics={
-        "sun_azimuth": 180.0,
-        "sun_elevation": 45.0,
-        "gamma": 0.0,
-        "configuration": {
-            "min_elevation": 10.0,
-            "max_elevation": 80.0,
-            "azimuth": 180,
-            "fov_left": 45,
-            "fov_right": 45,
-        },
-    })
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": 0.0,
+            "configuration": {
+                "min_elevation": 10.0,
+                "max_elevation": 80.0,
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+            },
+        }
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverSunPositionSensor(
         unique_id="test_entry",
@@ -164,16 +168,18 @@ def test_sun_position_attributes_include_min_max_elevation():
 @pytest.mark.unit
 def test_sun_position_attributes_no_min_max_when_not_configured():
     """extra_state_attributes omits min/max elevation when not in config."""
-    coord = _make_coordinator(diagnostics={
-        "sun_azimuth": 180.0,
-        "sun_elevation": 45.0,
-        "gamma": None,
-        "configuration": {
-            "azimuth": 180,
-            "fov_left": 45,
-            "fov_right": 45,
-        },
-    })
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": None,
+            "configuration": {
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+            },
+        }
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverSunPositionSensor(
         unique_id="test_entry",
@@ -191,19 +197,21 @@ def test_sun_position_attributes_no_min_max_when_not_configured():
 @pytest.mark.unit
 def test_sun_position_attributes_blind_spot_range_calculated():
     """extra_state_attributes includes blind_spot_range when blind spot is enabled."""
-    coord = _make_coordinator(diagnostics={
-        "sun_azimuth": 180.0,
-        "sun_elevation": 45.0,
-        "gamma": None,
-        "configuration": {
-            "azimuth": 180,
-            "fov_left": 45,
-            "fov_right": 45,
-            "enable_blind_spot": True,
-            "blind_spot_left": 10.0,
-            "blind_spot_right": 5.0,
-        },
-    })
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": None,
+            "configuration": {
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+                "enable_blind_spot": True,
+                "blind_spot_left": 10.0,
+                "blind_spot_right": 5.0,
+            },
+        }
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverSunPositionSensor(
         unique_id="test_entry",
@@ -224,19 +232,22 @@ def test_sun_position_attributes_blind_spot_range_calculated():
 # AdaptiveCoverLastActionSensor
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_last_action_sensor_native_value_with_timestamp():
     """native_value formats timestamp correctly when action has a valid timestamp."""
     ts = "2024-06-21T14:30:00+00:00"
-    coord = _make_coordinator(diagnostics={
-        "last_cover_action": {
-            "entity_id": "cover.test_blind",
-            "service": "set_cover_position",
-            "position": 50,
-            "calculated_position": 50,
-            "timestamp": ts,
+    coord = _make_coordinator(
+        diagnostics={
+            "last_cover_action": {
+                "entity_id": "cover.test_blind",
+                "service": "set_cover_position",
+                "position": 50,
+                "calculated_position": 50,
+                "timestamp": ts,
+            }
         }
-    })
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverLastActionSensor(
         config_entry_id="test_entry",
@@ -255,15 +266,17 @@ def test_last_action_sensor_native_value_with_timestamp():
 @pytest.mark.unit
 def test_last_action_sensor_native_value_without_timestamp():
     """native_value works when timestamp is absent."""
-    coord = _make_coordinator(diagnostics={
-        "last_cover_action": {
-            "entity_id": "cover.test_blind",
-            "service": "set_cover_position",
-            "position": 50,
-            "calculated_position": 50,
-            "timestamp": "",  # empty timestamp
+    coord = _make_coordinator(
+        diagnostics={
+            "last_cover_action": {
+                "entity_id": "cover.test_blind",
+                "service": "set_cover_position",
+                "position": 50,
+                "calculated_position": 50,
+                "timestamp": "",  # empty timestamp
+            }
         }
-    })
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverLastActionSensor(
         config_entry_id="test_entry",
@@ -279,18 +292,20 @@ def test_last_action_sensor_native_value_without_timestamp():
 @pytest.mark.unit
 def test_last_action_sensor_extra_state_attributes():
     """extra_state_attributes returns full action dict."""
-    coord = _make_coordinator(diagnostics={
-        "last_cover_action": {
-            "entity_id": "cover.test_blind",
-            "service": "set_cover_position",
-            "position": 50,
-            "calculated_position": 50,
-            "inverse_state_applied": False,
-            "timestamp": "2024-06-21T14:30:00+00:00",
-            "covers_controlled": 2,
-            "threshold_used": 50,
+    coord = _make_coordinator(
+        diagnostics={
+            "last_cover_action": {
+                "entity_id": "cover.test_blind",
+                "service": "set_cover_position",
+                "position": 50,
+                "calculated_position": 50,
+                "inverse_state_applied": False,
+                "timestamp": "2024-06-21T14:30:00+00:00",
+                "covers_controlled": 2,
+                "threshold_used": 50,
+            }
         }
-    })
+    )
     entry = _make_config_entry()
     sensor = AdaptiveCoverLastActionSensor(
         config_entry_id="test_entry",

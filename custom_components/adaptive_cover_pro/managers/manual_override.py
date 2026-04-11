@@ -205,6 +205,51 @@ class AdaptiveCoverManager:
             self.mark_manual_control(entity_id)
             self.set_last_updated(entity_id, new_state, allow_reset)
 
+    def handle_stop_service_call(
+        self,
+        entity_id: str,
+        my_position_value: int,
+        wait_target_call: dict,
+    ) -> None:
+        """Mark manual override when a user-initiated cover.stop_cover is detected.
+
+        Called by the coordinator's EVENT_CALL_SERVICE handler after confirming
+        the stop was NOT originated by ACP (context-id check). This path covers
+        non-position-capable covers (e.g. Somfy RTS) where pressing STOP moves
+        the cover to the hardware "My" preset but never reports a new position,
+        so the normal state-change detection path is blind to it.
+
+        Args:
+            entity_id:        Cover entity_id that received stop_cover.
+            my_position_value: The position (0–100) the My preset represents.
+            wait_target_call:  Dict of entity_id → wait_for_target bool from
+                               CoverCommandService; used as a belt-and-braces
+                               guard on top of the context-id filter.
+
+        """
+        if entity_id not in self.covers:
+            return
+        if wait_target_call.get(entity_id):
+            self.logger.debug(
+                "handle_stop_service_call: ignoring stop for %s — wait_for_target active",
+                entity_id,
+            )
+            return
+        self.logger.debug(
+            "Manual override via user stop_cover for %s (My position = %d%%)",
+            entity_id,
+            my_position_value,
+        )
+        self._record_event(
+            entity_id,
+            "set",
+            our_state=my_position_value,
+            new_position=my_position_value,
+            reason="user stop_cover to My position",
+        )
+        self.mark_manual_control(entity_id)
+        self.manual_control_time.setdefault(entity_id, dt.datetime.now(dt.UTC))
+
     def set_last_updated(self, entity_id, new_state, allow_reset):
         """Set last updated time for manual control.
 

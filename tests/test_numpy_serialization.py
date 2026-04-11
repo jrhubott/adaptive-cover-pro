@@ -106,7 +106,9 @@ class TestSafetyMarginCalculatorTypes:
 
         result = SafetyMarginCalculator.calculate(gamma=45.0, sol_elev=30.0)
         assert isinstance(result, float), f"Expected float, got {type(result)}"
-        assert not isinstance(result, np.floating), "Got numpy float, expected Python float"
+        assert not isinstance(result, np.floating), (
+            "Got numpy float, expected Python float"
+        )
 
     def test_returns_python_float_extreme_gamma(self) -> None:
         from custom_components.adaptive_cover_pro.geometry import SafetyMarginCalculator
@@ -188,7 +190,9 @@ class TestEdgeCaseHandlerTypes:
         from custom_components.adaptive_cover_pro.geometry import EdgeCaseHandler
 
         is_edge, pos = EdgeCaseHandler.check_and_handle(89.0, 10.0, 3.0, 2.5)
-        _assert_json_serialisable({"is_edge": is_edge, "pos": pos}, "EdgeCaseHandler result")
+        _assert_json_serialisable(
+            {"is_edge": is_edge, "pos": pos}, "EdgeCaseHandler result"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -280,20 +284,26 @@ class TestInterpolatePositionTypes:
     """interpolate_position() must return a Python float (not numpy.float64)."""
 
     def test_returns_python_float_when_interpolated(self) -> None:
-        from custom_components.adaptive_cover_pro.position_utils import interpolate_position
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
+        )
 
         result = interpolate_position(50.0, 10.0, 90.0, None, None)
         assert isinstance(result, (int, float)), f"Expected numeric, got {type(result)}"
         assert not isinstance(result, np.floating), "Got numpy float"
 
     def test_returns_original_when_no_range(self) -> None:
-        from custom_components.adaptive_cover_pro.position_utils import interpolate_position
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
+        )
 
         result = interpolate_position(50.0, None, None, None, None)
         assert not isinstance(result, np.generic)
 
     def test_json_serialisable_interpolated(self) -> None:
-        from custom_components.adaptive_cover_pro.position_utils import interpolate_position
+        from custom_components.adaptive_cover_pro.position_utils import (
+            interpolate_position,
+        )
 
         result = interpolate_position(50.0, 10.0, 90.0, None, None)
         _assert_json_serialisable(result, "interpolate_position()")
@@ -321,7 +331,9 @@ class TestVerticalCoverCalcDetailsTypes:
         violations = _check_native_types(details)
         assert not violations, f"numpy types in _last_calc_details: {violations}"
 
-    def test_edge_case_high_elevation_details_are_native_types(self, _base_params) -> None:
+    def test_edge_case_high_elevation_details_are_native_types(
+        self, _base_params
+    ) -> None:
         """High-elevation edge case branch must produce native types in details."""
         cover = self._cover(_base_params, gamma=10.0, sol_elev=89.0)
         cover.calculate_position()

@@ -204,6 +204,7 @@ class TestRingBufferEvents:
         event.new_state.attributes = {}  # no current_position key
         # Mock get_open_close_state to return None
         from unittest.mock import patch
+
         with patch(
             "custom_components.adaptive_cover_pro.managers.manual_override.get_open_close_state",
             return_value=None,
@@ -242,7 +243,14 @@ class TestRingBufferEvents:
             wait_target_call={},
             manual_threshold=3,
         )
-        required_keys = {"ts", "entity_id", "action", "our_state", "new_position", "reason"}
+        required_keys = {
+            "ts",
+            "entity_id",
+            "action",
+            "our_state",
+            "new_position",
+            "reason",
+        }
         for ev in mgr.get_event_buffer():
             assert required_keys.issubset(ev.keys()), f"Missing keys in: {ev}"
 
@@ -342,7 +350,9 @@ class TestDiagnosticsBuilderDebugInfo:
     def test_debug_section_omitted_when_all_none(self):
         """All debug fields are absent when context fields are None."""
         builder = DiagnosticsBuilder()
-        ctx = _base_ctx()  # manual_override_events=None, cover_command_state=None, debug_config=None
+        ctx = (
+            _base_ctx()
+        )  # manual_override_events=None, cover_command_state=None, debug_config=None
         result, _ = builder.build(ctx)
         assert "debug_config" not in result
         assert "manual_override_history" not in result
@@ -352,7 +362,11 @@ class TestDiagnosticsBuilderDebugInfo:
     def test_debug_config_emitted_when_provided(self):
         """debug_config is included in output when provided."""
         builder = DiagnosticsBuilder()
-        debug_config = {"debug_mode": True, "debug_categories": ["manual_override"], "debug_event_buffer_size": 50}
+        debug_config = {
+            "debug_mode": True,
+            "debug_categories": ["manual_override"],
+            "debug_event_buffer_size": 50,
+        }
         ctx = _base_ctx(debug_config=debug_config)
         result, _ = builder.build(ctx)
         assert result["debug_config"] == debug_config
@@ -360,7 +374,12 @@ class TestDiagnosticsBuilderDebugInfo:
     def test_debug_config_dry_run_field_flows_through(self):
         """dry_run key in debug_config is preserved in the diagnostics payload."""
         builder = DiagnosticsBuilder()
-        debug_config = {"dry_run": True, "debug_mode": False, "debug_categories": [], "debug_event_buffer_size": 50}
+        debug_config = {
+            "dry_run": True,
+            "debug_mode": False,
+            "debug_categories": [],
+            "debug_event_buffer_size": 50,
+        }
         ctx = _base_ctx(debug_config=debug_config)
         result, _ = builder.build(ctx)
         assert result["debug_config"]["dry_run"] is True
@@ -368,7 +387,13 @@ class TestDiagnosticsBuilderDebugInfo:
     def test_manual_override_history_emitted_when_populated(self):
         """manual_override_history is included in output when events exist."""
         builder = DiagnosticsBuilder()
-        events = [{"ts": "2024-01-01T00:00:00+00:00", "action": "set", "entity_id": "cover.test"}]
+        events = [
+            {
+                "ts": "2024-01-01T00:00:00+00:00",
+                "action": "set",
+                "entity_id": "cover.test",
+            }
+        ]
         ctx = _base_ctx(manual_override_events=events)
         result, _ = builder.build(ctx)
         assert result["manual_override_history"] == events

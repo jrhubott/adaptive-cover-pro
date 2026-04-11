@@ -26,6 +26,7 @@ def _common_kwargs():
 # __getattr__ fallback chain
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_getattr_vert_config_field_on_vertical_cover():
     """Accessing a vert_config field (h_win) on vertical cover delegates correctly."""
@@ -38,7 +39,9 @@ def test_getattr_vert_config_field_on_vertical_cover():
 @pytest.mark.unit
 def test_getattr_tilt_config_field_on_tilt_cover():
     """Accessing a tilt_config field (slat_distance) on tilt cover delegates correctly."""
-    cover = build_tilt_cover(**_common_kwargs(), slat_distance=0.03, depth=0.02, mode="mode1")
+    cover = build_tilt_cover(
+        **_common_kwargs(), slat_distance=0.03, depth=0.02, mode="mode1"
+    )
     val = cover.slat_distance
     assert val == 0.03
 
@@ -54,7 +57,9 @@ def test_getattr_horiz_config_field_on_horizontal_cover():
 @pytest.mark.unit
 def test_getattr_vert_field_on_non_vertical_raises():
     """Accessing a vert_config field on a tilt cover (which has no vert_config) raises AttributeError."""
-    cover = build_tilt_cover(**_common_kwargs(), slat_distance=0.03, depth=0.02, mode="mode1")
+    cover = build_tilt_cover(
+        **_common_kwargs(), slat_distance=0.03, depth=0.02, mode="mode1"
+    )
     with pytest.raises(AttributeError):
         _ = cover.h_win
 
@@ -71,20 +76,42 @@ def test_getattr_unknown_field_raises():
 # control_state_reason: "Default" fallback
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_control_state_reason_default_fallback():
     """Returns 'Default' when sun is valid but not direct, not in blind spot, and not sunset."""
     from unittest.mock import patch, PropertyMock
-    from custom_components.adaptive_cover_pro.engine.covers.vertical import AdaptiveVerticalCover
+    from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+        AdaptiveVerticalCover,
+    )
 
     cover = build_vertical_cover(**_common_kwargs(), h_win=2.0, distance=0.5)
 
     # Patch to produce the "Default" path:
     # valid=True, direct_sun_valid=False, sunset_valid=False, is_sun_in_blind_spot=False
-    with patch.object(AdaptiveVerticalCover, "direct_sun_valid", new_callable=PropertyMock, return_value=False), \
-         patch.object(AdaptiveVerticalCover, "sunset_valid", new_callable=PropertyMock, return_value=False), \
-         patch.object(AdaptiveVerticalCover, "valid", new_callable=PropertyMock, return_value=True), \
-         patch.object(AdaptiveVerticalCover, "is_sun_in_blind_spot", new_callable=PropertyMock, return_value=False):
+    with (
+        patch.object(
+            AdaptiveVerticalCover,
+            "direct_sun_valid",
+            new_callable=PropertyMock,
+            return_value=False,
+        ),
+        patch.object(
+            AdaptiveVerticalCover,
+            "sunset_valid",
+            new_callable=PropertyMock,
+            return_value=False,
+        ),
+        patch.object(
+            AdaptiveVerticalCover, "valid", new_callable=PropertyMock, return_value=True
+        ),
+        patch.object(
+            AdaptiveVerticalCover,
+            "is_sun_in_blind_spot",
+            new_callable=PropertyMock,
+            return_value=False,
+        ),
+    ):
         reason = cover.control_state_reason
 
     assert reason == "Default"
@@ -94,11 +121,18 @@ def test_control_state_reason_default_fallback():
 def test_control_state_reason_direct_sun():
     """Returns 'Direct Sun' when direct_sun_valid is True."""
     from unittest.mock import patch, PropertyMock
-    from custom_components.adaptive_cover_pro.engine.covers.vertical import AdaptiveVerticalCover
+    from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+        AdaptiveVerticalCover,
+    )
 
     cover = build_vertical_cover(**_common_kwargs(), h_win=2.0, distance=0.5)
 
-    with patch.object(AdaptiveVerticalCover, "direct_sun_valid", new_callable=PropertyMock, return_value=True):
+    with patch.object(
+        AdaptiveVerticalCover,
+        "direct_sun_valid",
+        new_callable=PropertyMock,
+        return_value=True,
+    ):
         reason = cover.control_state_reason
 
     assert reason == "Direct Sun"
@@ -108,12 +142,26 @@ def test_control_state_reason_direct_sun():
 def test_control_state_reason_sunset_offset():
     """Returns 'Default: Sunset Offset' when sunset_valid is True."""
     from unittest.mock import patch, PropertyMock
-    from custom_components.adaptive_cover_pro.engine.covers.vertical import AdaptiveVerticalCover
+    from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+        AdaptiveVerticalCover,
+    )
 
     cover = build_vertical_cover(**_common_kwargs(), h_win=2.0, distance=0.5)
 
-    with patch.object(AdaptiveVerticalCover, "direct_sun_valid", new_callable=PropertyMock, return_value=False), \
-         patch.object(AdaptiveVerticalCover, "sunset_valid", new_callable=PropertyMock, return_value=True):
+    with (
+        patch.object(
+            AdaptiveVerticalCover,
+            "direct_sun_valid",
+            new_callable=PropertyMock,
+            return_value=False,
+        ),
+        patch.object(
+            AdaptiveVerticalCover,
+            "sunset_valid",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+    ):
         reason = cover.control_state_reason
 
     assert reason == "Default: Sunset Offset"

@@ -212,7 +212,7 @@ async def test_safety_targets_cleared_on_disable_prevents_replay(svc, mock_hass)
 
     # Simulate what the switch OFF transition does
     svc.clear_non_safety_targets()  # clears non-safety (cover.force is safety, kept)
-    svc._safety_targets.clear()     # explicitly cleared on Integration Enabled OFF
+    svc._safety_targets.clear()  # explicitly cleared on Integration Enabled OFF
     # Now clear target_call entry that was safety (no longer in _safety_targets, remove manually)
     svc.target_call.clear()
 
@@ -290,7 +290,9 @@ async def test_position_verification_does_not_retry_beyond_max(svc, mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_delta_prevents_hammering_when_cover_reports_same_position(svc, mock_hass):
+async def test_delta_prevents_hammering_when_cover_reports_same_position(
+    svc, mock_hass
+):
     """Delta threshold short-circuits redundant sends when cover position is already at target.
 
     If a cover reports a position matching the target (within tolerance), reconciliation
@@ -372,7 +374,10 @@ async def test_automatic_control_off_allows_force_override(svc, mock_hass):
 
     with _patch_caps():
         outcome, reason = await svc.apply_position(
-            "cover.test", 0, "force_override", context=_ctx(force=True, auto_control=True)
+            "cover.test",
+            0,
+            "force_override",
+            context=_ctx(force=True, auto_control=True),
         )
 
     assert outcome == "sent"
@@ -395,7 +400,9 @@ async def test_automatic_control_off_blocks_solar(svc, mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_kill_switch_off_blocks_force_override_unlike_auto_control(svc, mock_hass):
+async def test_kill_switch_off_blocks_force_override_unlike_auto_control(
+    svc, mock_hass
+):
     """Kill switch OFF blocks force override; Automatic Control OFF does NOT.
 
     This is the key behavioral difference:
@@ -416,7 +423,10 @@ async def test_kill_switch_off_blocks_force_override_unlike_auto_control(svc, mo
     svc.enabled = True
     with _patch_caps():
         outcome, reason = await svc.apply_position(
-            "cover.test", 0, "force_override", context=_ctx(force=True, auto_control=True)
+            "cover.test",
+            0,
+            "force_override",
+            context=_ctx(force=True, auto_control=True),
         )
     assert outcome == "sent"
 

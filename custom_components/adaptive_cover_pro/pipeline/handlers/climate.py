@@ -20,7 +20,11 @@ from ...const import (
 from ...engine.covers import AdaptiveTiltCover
 from ...enums import ClimateStrategy, ControlMethod, CoverType, TiltMode
 from ..handler import OverrideHandler
-from ..helpers import apply_snapshot_limits, compute_raw_calculated_position, compute_solar_position
+from ..helpers import (
+    apply_snapshot_limits,
+    compute_raw_calculated_position,
+    compute_solar_position,
+)
 from ..types import PipelineResult, PipelineSnapshot
 
 # ---------------------------------------------------------------------------
@@ -133,7 +137,9 @@ class ClimateCoverState:
             or self.climate_data.blind_type == CoverType.TILT.value
         )
         result = self.tilt_state() if is_tilt else self.normal_type_cover()
-        return apply_snapshot_limits(self.snapshot, result, sun_valid=self.cover.direct_sun_valid)
+        return apply_snapshot_limits(
+            self.snapshot, result, sun_valid=self.cover.direct_sun_valid
+        )
 
     def _solar_position(self) -> int:
         """Compute solar-tracked position with limits applied."""

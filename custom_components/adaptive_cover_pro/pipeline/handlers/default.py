@@ -37,7 +37,9 @@ class DefaultHandler(OverrideHandler):
                 reason=f"sunset position — use My position ({pos}%)",
                 raw_calculated_position=position,
             )
-        pos_label = "sunset position" if snapshot.is_sunset_active else "default position"
+        pos_label = (
+            "sunset position" if snapshot.is_sunset_active else "default position"
+        )
         return PipelineResult(
             position=position,
             control_method=ControlMethod.DEFAULT,

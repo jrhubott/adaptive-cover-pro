@@ -1056,5 +1056,3 @@ def test_motion_status_sensor_startup_no_motion():
 
     sensor = _make_motion_status_sensor(coordinator)
     assert sensor.native_value == "no_motion"
-
-

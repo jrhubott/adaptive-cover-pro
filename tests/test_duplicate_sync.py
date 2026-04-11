@@ -247,9 +247,7 @@ class TestSyncCategorySplit:
 
     def test_temperature_climate_legacy_key_returns_full_union(self):
         """Selecting old 'temperature_climate' must still return all keys (back-compat)."""
-        entry = _make_entry(
-            {CONF_TEMP_ENTITY: "sensor.temp", CONF_TEMP_LOW: 18.0}
-        )
+        entry = _make_entry({CONF_TEMP_ENTITY: "sensor.temp", CONF_TEMP_LOW: 18.0})
         result = _extract_shared_options(entry, ["temperature_climate"])
         assert CONF_TEMP_ENTITY in result
         assert CONF_TEMP_LOW in result
@@ -401,9 +399,17 @@ class TestSyncCategorySplit:
 
     def test_sync_categories_still_has_legacy_mixed_keys(self):
         """SYNC_CATEGORIES must retain the original mixed keys for backward compat."""
-        for key in ("light_cloud", "temperature_climate", "motion_override",
-                    "force_override", "custom_position", "weather_override"):
-            assert key in SYNC_CATEGORIES, f"Legacy key '{key}' missing from SYNC_CATEGORIES"
+        for key in (
+            "light_cloud",
+            "temperature_climate",
+            "motion_override",
+            "force_override",
+            "custom_position",
+            "weather_override",
+        ):
+            assert key in SYNC_CATEGORIES, (
+                f"Legacy key '{key}' missing from SYNC_CATEGORIES"
+            )
 
 
 class TestEnsureUniqueName:

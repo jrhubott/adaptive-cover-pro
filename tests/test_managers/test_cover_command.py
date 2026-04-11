@@ -193,9 +193,12 @@ def test_check_position_delta_sun_just_appeared_bypass(cmd_svc):
     """Returns True when sun_just_appeared bypasses delta check."""
     with patch.object(cmd_svc, "_get_current_position", return_value=60):
         # Same position, delta=0, but sun_just_appeared overrides
-        assert cmd_svc._check_position_delta(
-            "cover.test", 60, 5, [0, 100], sun_just_appeared=True
-        ) is True
+        assert (
+            cmd_svc._check_position_delta(
+                "cover.test", 60, 5, [0, 100], sun_just_appeared=True
+            )
+            is True
+        )
 
 
 def test_check_position_delta_custom_special_positions(cmd_svc):
@@ -366,7 +369,9 @@ def test_track_action_open_close_service(cmd_svc):
 def test_track_action_inverse_state(cmd_svc):
     """Records inverse_state_applied correctly."""
     cmd_svc.target_call["cover.test"] = 30
-    cmd_svc._track_action("cover.test", "set_cover_position", 30, True, inverse_state=True)
+    cmd_svc._track_action(
+        "cover.test", "set_cover_position", 30, True, inverse_state=True
+    )
     assert cmd_svc.last_cover_action["inverse_state_applied"] is True
 
 

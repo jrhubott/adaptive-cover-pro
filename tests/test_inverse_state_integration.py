@@ -103,9 +103,7 @@ class TestSolarPositionInverted:
     def test_no_inversion_without_inverse_state_flag(self):
         """Without inverse_state=True, the pipeline position is returned as-is."""
         result = _make_pipeline_result(position=30, control_method=ControlMethod.SOLAR)
-        coord = _make_coordinator(
-            pipeline_result=result, inverse_state_enabled=False
-        )
+        coord = _make_coordinator(pipeline_result=result, inverse_state_enabled=False)
 
         state = AdaptiveDataUpdateCoordinator.state.fget(coord)
 
@@ -264,7 +262,9 @@ class TestInterpolationAndInverseStateConflict:
 
         # Interpolated: interp(50, [0,100], [20,80]) = 50
         # Inverse NOT applied (interpolation takes precedence)
-        assert state == 50  # Not 50 (inverse of 50 is still 50, but test the non-midpoint case)
+        assert (
+            state == 50
+        )  # Not 50 (inverse of 50 is still 50, but test the non-midpoint case)
 
     def test_interpolation_remaps_without_inversion(self):
         """Pipeline 0% → interpolation maps to 20%, inverse NOT applied (would give 80%)."""
@@ -313,4 +313,7 @@ class TestInterpolationAndInverseStateConflict:
         # Warning must be logged about the conflict
         coord.logger.info.assert_called()
         logged = [call[0][0] for call in coord.logger.info.call_args_list]
-        assert any("inverse" in msg.lower() and "interpolation" in msg.lower() for msg in logged)
+        assert any(
+            "inverse" in msg.lower() and "interpolation" in msg.lower()
+            for msg in logged
+        )

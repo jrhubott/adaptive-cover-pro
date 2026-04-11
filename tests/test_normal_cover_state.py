@@ -50,7 +50,9 @@ class TestNormalCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_get_state_after_sunset_returns_h_def(self, mock_datetime, vertical_cover_instance):
+    def test_get_state_after_sunset_returns_h_def(
+        self, mock_datetime, vertical_cover_instance
+    ):
         """NormalCoverState uses h_def (not sunset_pos) when sun not in FOV.
 
         Sunset-aware default position is now handled centrally by
