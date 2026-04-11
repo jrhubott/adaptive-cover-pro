@@ -126,7 +126,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time."
         }
       },
       "manual_override": {
@@ -509,7 +509,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time."
         }
       },
       "cover_entities": {
@@ -1006,7 +1006,8 @@
         "state": {
           "on": "On",
           "off": "Off"
-        }
+        },
+        "description": "Master switch for solar tracking. When OFF, the integration stops sending solar, climate, custom-position, motion-timeout, and end-of-time-window Return-to-Default commands. Force Override and Weather Override continue to fire because they are safety overrides. Manual cover movements are always respected."
       },
       "motion_control": {
         "name": "Motion Control",

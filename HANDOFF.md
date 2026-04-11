@@ -1,7 +1,7 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-09
-**Current Version:** v2.14.4
+**Date:** 2026-04-10
+**Current Version:** v2.15.3
 **Branch:** `main`
 
 > Quick start: read this file, then `git status && git log --oneline -5`.
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- Direct commits to `main` (v2.15.3) — Fix `_on_window_closed` missing `automatic_control` gate: covers still moved to end-of-window default/sunset position even with Automatic Control OFF. Root cause: `force=True` bypassed service gate; no upstream coordinator check. Fixed with early-return in `_on_window_closed` (matching pattern from `_async_send_after_override_clear`). Added control-gate matrix test + AST allowlist test to prevent recurrence. Updated en.json and README to clarify Automatic Control OFF behavior.
 - `fix/issue-177-force-override-time-delta` — Reset time delta timer when force override releases (#177). Track prev force override state; pass force=True on on→off transition so cover returns to calculated position immediately. PR #181, merged to main.
 - `fix/issue-179-covers-open-at-midnight` — Gate first-refresh and reconciliation on time window (#179). PR #180, beta v2.14.3-beta.2 released. Awaiting user confirmation.
 - Direct commits to `main` — Fix covers moving outside time window (#173, #170); fix horizontal cover NoneType crash on window_depth (#174). Beta v2.14.3-beta.1 released.
@@ -25,7 +26,7 @@
 
 ## Tests
 
-**1767 passing, 2 warnings, 0 failing** (+10 new tests for #177 fix).
+**1912 passing, 2 warnings, 0 failing** (+6 new tests: control-gate matrix ×5, AST allowlist ×1).
 Run: `venv/bin/python -m pytest tests/ -v`
 
 New test files added (all on `feature/comprehensive-ha-interface-testing`):
