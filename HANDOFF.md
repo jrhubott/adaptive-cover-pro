@@ -1,6 +1,6 @@
 # Adaptive Cover Pro — Developer Handoff
 
-**Date:** 2026-04-10
+**Date:** 2026-04-11
 **Current Version:** v2.15.3
 **Branch:** `main`
 
@@ -10,6 +10,7 @@
 ---
 
 **Recent Merges:**
+- `feature/issue-192-persist-manual-override` — Persist manual override across HA reboots/reloads (#192). `AdaptiveCoverManualOverrideEndSensor` inherits `RestoreEntity`; `_restore_from_attributes` rehydrates manager state from persisted `per_entity` expiry map. `async_handle_first_refresh` skips `apply_position` for restored-manual covers. `async_setup_entry` reordered so RestoreEntity hooks run before first refresh. PR #195, merged to main.
 - Direct commits to `main` (v2.15.3) — Fix `_on_window_closed` missing `automatic_control` gate: covers still moved to end-of-window default/sunset position even with Automatic Control OFF. Root cause: `force=True` bypassed service gate; no upstream coordinator check. Fixed with early-return in `_on_window_closed` (matching pattern from `_async_send_after_override_clear`). Added control-gate matrix test + AST allowlist test to prevent recurrence. Updated en.json and README to clarify Automatic Control OFF behavior.
 - `fix/issue-177-force-override-time-delta` — Reset time delta timer when force override releases (#177). Track prev force override state; pass force=True on on→off transition so cover returns to calculated position immediately. PR #181, merged to main.
 - `fix/issue-179-covers-open-at-midnight` — Gate first-refresh and reconciliation on time window (#179). PR #180, beta v2.14.3-beta.2 released. Awaiting user confirmation.
@@ -26,7 +27,7 @@
 
 ## Tests
 
-**1912 passing, 2 warnings, 0 failing** (+6 new tests: control-gate matrix ×5, AST allowlist ×1).
+**1937 passing, 2 warnings, 0 failing** (+25 new tests including `test_manual_override_persistence.py`).
 Run: `venv/bin/python -m pytest tests/ -v`
 
 New test files added (all on `feature/comprehensive-ha-interface-testing`):
@@ -76,6 +77,7 @@ All 12 non-English translation files are being replaced from scratch using `en.j
 | [#131](https://github.com/jrhubott/adaptive-cover-pro/issues/131) | Erratic behavior with multiple covers / unavailable entity | Most underlying bugs fixed in v2.14.2 — awaiting user confirmation. |
 | [#128](https://github.com/jrhubott/adaptive-cover-pro/issues/128) | Sunset position not reached and/or maintained | Under investigation. Hypothesis: min_position setting clamps sunset pos. |
 | [#105](https://github.com/jrhubott/adaptive-cover-pro/issues/105) | Force Motion / Manual Override precedence over Night Mode | Under investigation. |
+| [#192](https://github.com/jrhubott/adaptive-cover-pro/issues/192) | Manual override survive reboots | Fixed in PR #195 (merged). Will auto-close when shipped in a stable release. |
 
 
 ## Known Gotchas
