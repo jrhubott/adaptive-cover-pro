@@ -111,13 +111,6 @@ class AdaptiveCoverBinarySensor(AdaptiveCoverBaseEntity, BinarySensorEntity):
         return self._binary_name
 
     @property
-    def available(self) -> bool:
-        """Return False until coordinator has completed its first refresh."""
-        if self.coordinator.data is None:
-            return False
-        return super().available
-
-    @property
     def is_on(self) -> bool:
         """Return true if the binary sensor is on."""
         return self.coordinator.data.states[self._key]

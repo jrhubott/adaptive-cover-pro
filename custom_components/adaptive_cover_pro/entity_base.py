@@ -80,6 +80,26 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
         }
         return type_map.get(cover_type, "Unknown")
 
+    @property
+    def available(self) -> bool:
+        """Return False until coordinator.data is populated.
+
+        All Adaptive Cover Pro entities read from coordinator.data in their
+        state properties. Home Assistant's entity-add path calls
+        async_write_ha_state() as soon as the entity is added to the platform,
+        which races with async_config_entry_first_refresh(). If the write
+        happens first, every state property raises AttributeError and HA
+        drops the entity from the registry for the whole session. Returning
+        False here tells HA to use STATE_UNAVAILABLE and skip state reads
+        until the coordinator has real data.
+
+        This is the single point of enforcement — do not duplicate this
+        guard in subclasses.
+        """
+        if self.coordinator.data is None:
+            return False
+        return super().available
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from coordinator."""
