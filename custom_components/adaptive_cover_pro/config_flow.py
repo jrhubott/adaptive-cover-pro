@@ -965,8 +965,11 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     has_custom_position = bool(_custom_slots)
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
+    sun_tracking_enabled = config.get(CONF_ENABLE_SUN_TRACKING, True)
     has_glare = (
-        bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
+        bool(config.get(CONF_ENABLE_GLARE_ZONES))
+        and sensor_type == SensorType.BLIND
+        and sun_tracking_enabled
     )
 
     lines: list[str] = []
@@ -1182,22 +1185,28 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     fov_r = config.get(CONF_FOV_RIGHT)
     min_elev = config.get(CONF_MIN_ELEVATION)
     max_elev = config.get(CONF_MAX_ELEVATION)
-    sun_parts = []
-    if azimuth is not None:
-        sun_parts.append(f"azimuth {azimuth}°")
-    if fov_l is not None and fov_r is not None:
-        sun_parts.append(f"±{fov_l}°/{fov_r}° field of view")
-    elev_parts = []
-    if min_elev is not None:
-        elev_parts.append(f"above {min_elev}°")
-    if max_elev is not None:
-        elev_parts.append(f"below {max_elev}°")
-    if elev_parts:
-        sun_parts.append(f"elevation {' and '.join(elev_parts)}")
-    sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
-    lines.append(
-        f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight."
-    )
+    if sun_tracking_enabled:
+        sun_parts = []
+        if azimuth is not None:
+            sun_parts.append(f"azimuth {azimuth}°")
+        if fov_l is not None and fov_r is not None:
+            sun_parts.append(f"±{fov_l}°/{fov_r}° field of view")
+        elev_parts = []
+        if min_elev is not None:
+            elev_parts.append(f"above {min_elev}°")
+        if max_elev is not None:
+            elev_parts.append(f"below {max_elev}°")
+        if elev_parts:
+            sun_parts.append(f"elevation {' and '.join(elev_parts)}")
+        sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
+        lines.append(
+            f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight."
+        )
+    else:
+        lines.append(
+            "☀️ Sun tracking disabled — covers hold position; climate, manual override, "
+            "custom positions, and other overrides remain active."
+        )
 
     # Timing window
     start_time = config.get(CONF_START_TIME)
@@ -1309,7 +1318,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if has_custom_position:
         for _slot, _eid, _pos, _pri in _custom_slots:
             pos_map.append(f"🎯 Custom #{_slot} on → {_pos}% (priority {_pri})")
-    pos_map.append("☀️ Tracking sun → calculated position")
+    if sun_tracking_enabled:
+        pos_map.append("☀️ Tracking sun → calculated position")
     min_p = config.get(CONF_MIN_POSITION, 0)
     max_p = config.get(CONF_MAX_POSITION, 100)
     if min_p != 0 or max_p != 100:
@@ -1337,10 +1347,10 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         (75, "Motion", has_motion),
         (60, "Cloud", has_cloud),
         (50, "Climate", has_climate),
-        (40, "Solar", True),
+        (40, "Solar", sun_tracking_enabled),
         (0, "Default", True),
     ]
-    if sensor_type == SensorType.BLIND or sensor_type is None:
+    if (sensor_type == SensorType.BLIND or sensor_type is None) and sun_tracking_enabled:
         _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
     for _slot, _eid, _pos, _pri in _custom_slots:

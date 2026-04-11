@@ -7,6 +7,7 @@ from custom_components.adaptive_cover_pro.config_flow import _build_config_summa
 from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
@@ -950,3 +951,46 @@ def test_full_vertical_config_smoke():
     assert "95%" in summary
     assert "Inverse state" in summary
     assert "Position calibration" in summary
+
+
+# ---------------------------------------------------------------------------
+# Sun tracking toggle
+# ---------------------------------------------------------------------------
+
+
+def test_sun_tracking_disabled_shows_disabled_message():
+    """When enable_sun_tracking is False, summary says tracking is disabled."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_AZIMUTH: 180}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Sun tracking disabled" in summary
+    assert "Tracks the sun" not in summary
+
+
+def test_sun_tracking_enabled_shows_tracking_message():
+    """When enable_sun_tracking is True (default), summary says it tracks the sun."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: True, CONF_AZIMUTH: 180}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Tracks the sun" in summary
+    assert "Sun tracking disabled" not in summary
+
+
+def test_sun_tracking_default_enabled_shows_tracking_message():
+    """When enable_sun_tracking is absent (defaults to True), summary shows tracking."""
+    cfg = {CONF_AZIMUTH: 180}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Tracks the sun" in summary
+    assert "Sun tracking disabled" not in summary
+
+
+def test_sun_tracking_disabled_hides_glare_zones():
+    """Glare zone entry is omitted when sun tracking is disabled."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_ENABLE_GLARE_ZONES: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Glare" not in summary
+
+
+def test_sun_tracking_disabled_priority_chain_shows_solar_inactive():
+    """Priority chain marks Solar (and Glare) as inactive when sun tracking is off."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_ENABLE_GLARE_ZONES: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "❌Solar" in summary or "Solar" not in summary or "✅Solar" not in summary
