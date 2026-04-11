@@ -10,7 +10,7 @@ from custom_components.adaptive_cover_pro.managers.weather import WeatherManager
 
 
 @pytest.fixture
-def hass():
+def mock_hass():
     """Return a mock Home Assistant instance."""
     return MagicMock()
 
@@ -22,9 +22,9 @@ def logger():
 
 
 @pytest.fixture
-def mgr(hass, logger):
+def mgr(mock_hass, logger):
     """Return a WeatherManager with no sensors configured."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -56,9 +56,9 @@ def test_configured_sensors_empty_when_none(mgr):
     assert mgr.configured_sensors == []
 
 
-def test_configured_sensors_includes_all(hass, logger):
+def test_configured_sensors_includes_all(mock_hass, logger):
     """Returns all configured entity IDs."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor="sensor.wind_dir",
@@ -92,9 +92,9 @@ def test_not_active_when_no_sensors(mgr):
     assert mgr.is_weather_override_active is False
 
 
-def test_active_when_flag_set_and_sensors_configured(hass, logger):
+def test_active_when_flag_set_and_sensors_configured(mock_hass, logger):
     """Returns True when _override_active is True and sensors configured."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -112,9 +112,9 @@ def test_active_when_flag_set_and_sensors_configured(hass, logger):
     assert m.is_weather_override_active is True
 
 
-def test_not_active_when_flag_false(hass, logger):
+def test_not_active_when_flag_false(mock_hass, logger):
     """Returns False when sensors configured but flag not set."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -134,9 +134,9 @@ def test_not_active_when_flag_false(hass, logger):
 # --- is_any_condition_active: wind speed ---
 
 
-def test_wind_speed_above_threshold(hass, logger):
+def test_wind_speed_above_threshold(mock_hass, logger):
     """Returns True when wind speed exceeds threshold."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -150,13 +150,13 @@ def test_wind_speed_above_threshold(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("75.0")
+    mock_hass.states.get.return_value = _make_state("75.0")
     assert m.is_any_condition_active is True
 
 
-def test_wind_speed_below_threshold(hass, logger):
+def test_wind_speed_below_threshold(mock_hass, logger):
     """Returns False when wind speed is below threshold."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -170,13 +170,13 @@ def test_wind_speed_below_threshold(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("20.0")
+    mock_hass.states.get.return_value = _make_state("20.0")
     assert m.is_any_condition_active is False
 
 
-def test_wind_speed_unavailable_treated_as_inactive(hass, logger):
+def test_wind_speed_unavailable_treated_as_inactive(mock_hass, logger):
     """Unavailable wind sensor does not trigger override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -190,13 +190,13 @@ def test_wind_speed_unavailable_treated_as_inactive(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("unavailable")
+    mock_hass.states.get.return_value = _make_state("unavailable")
     assert m.is_any_condition_active is False
 
 
-def test_wind_speed_unknown_treated_as_inactive(hass, logger):
+def test_wind_speed_unknown_treated_as_inactive(mock_hass, logger):
     """Unknown wind sensor state does not trigger override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -210,13 +210,13 @@ def test_wind_speed_unknown_treated_as_inactive(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("unknown")
+    mock_hass.states.get.return_value = _make_state("unknown")
     assert m.is_any_condition_active is False
 
 
-def test_wind_speed_none_state_treated_as_inactive(hass, logger):
+def test_wind_speed_none_state_treated_as_inactive(mock_hass, logger):
     """Missing wind sensor entity does not trigger override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -230,16 +230,16 @@ def test_wind_speed_none_state_treated_as_inactive(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
     assert m.is_any_condition_active is False
 
 
 # --- is_any_condition_active: wind direction ---
 
 
-def _make_wind_mgr(hass, logger, *, win_azi=180, tolerance=45):
+def _make_wind_mgr(mock_hass, logger, *, win_azi=180, tolerance=45):
     """Build WeatherManager with wind speed + direction configured."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind_speed",
         wind_direction_sensor="sensor.wind_dir",
@@ -256,8 +256,8 @@ def _make_wind_mgr(hass, logger, *, win_azi=180, tolerance=45):
     return m
 
 
-def _dir_states(hass, speed: float, direction: float):
-    """Configure hass.states.get to return speed+direction for respective sensors."""
+def _dir_states(mock_hass, speed: float, direction: float):
+    """Configure mock_hass.states.get to return speed+direction for respective sensors."""
 
     def get_state(entity_id):
         if entity_id == "sensor.wind_speed":
@@ -266,58 +266,58 @@ def _dir_states(hass, speed: float, direction: float):
             return _make_state(str(direction))
         return None
 
-    hass.states.get.side_effect = get_state
+    mock_hass.states.get.side_effect = get_state
 
 
-def test_wind_direction_within_tolerance_triggers(hass, logger):
+def test_wind_direction_within_tolerance_triggers(mock_hass, logger):
     """Wind from same direction as window azimuth (within tolerance) triggers."""
-    m = _make_wind_mgr(hass, logger, win_azi=180, tolerance=45)
-    _dir_states(hass, speed=75.0, direction=190.0)  # 10° from 180 — within 45°
+    m = _make_wind_mgr(mock_hass, logger, win_azi=180, tolerance=45)
+    _dir_states(mock_hass, speed=75.0, direction=190.0)  # 10° from 180 — within 45°
     assert m.is_any_condition_active is True
 
 
-def test_wind_direction_outside_tolerance_no_trigger(hass, logger):
+def test_wind_direction_outside_tolerance_no_trigger(mock_hass, logger):
     """Wind from different direction (outside tolerance) does not trigger."""
-    m = _make_wind_mgr(hass, logger, win_azi=180, tolerance=45)
-    _dir_states(hass, speed=75.0, direction=280.0)  # 100° from 180 — outside 45°
+    m = _make_wind_mgr(mock_hass, logger, win_azi=180, tolerance=45)
+    _dir_states(mock_hass, speed=75.0, direction=280.0)  # 100° from 180 — outside 45°
     assert m.is_any_condition_active is False
 
 
-def test_wind_direction_wraparound(hass, logger):
+def test_wind_direction_wraparound(mock_hass, logger):
     """Angular distance handles 0°/360° wraparound correctly."""
     # Window faces north (0°). Wind from 350° is only 10° away.
-    m = _make_wind_mgr(hass, logger, win_azi=0, tolerance=45)
-    _dir_states(hass, speed=75.0, direction=350.0)  # 10° from 0° via wraparound
+    m = _make_wind_mgr(mock_hass, logger, win_azi=0, tolerance=45)
+    _dir_states(mock_hass, speed=75.0, direction=350.0)  # 10° from 0° via wraparound
     assert m.is_any_condition_active is True
 
 
-def test_wind_direction_wraparound_outside(hass, logger):
+def test_wind_direction_wraparound_outside(mock_hass, logger):
     """Wraparound check correctly excludes wind from opposite direction."""
     # Window faces north (0°). Wind from 180° is 180° away.
-    m = _make_wind_mgr(hass, logger, win_azi=0, tolerance=45)
-    _dir_states(hass, speed=75.0, direction=180.0)
+    m = _make_wind_mgr(mock_hass, logger, win_azi=0, tolerance=45)
+    _dir_states(mock_hass, speed=75.0, direction=180.0)
     assert m.is_any_condition_active is False
 
 
-def test_wind_direction_unavailable_assumes_exposed(hass, logger):
+def test_wind_direction_unavailable_assumes_exposed(mock_hass, logger):
     """Direction sensor unavailable → assume wind hits window (safe default)."""
-    m = _make_wind_mgr(hass, logger, win_azi=180, tolerance=45)
+    m = _make_wind_mgr(mock_hass, logger, win_azi=180, tolerance=45)
 
     def get_state(entity_id):
         if entity_id == "sensor.wind_speed":
             return _make_state("75.0")
         return _make_state("unavailable")
 
-    hass.states.get.side_effect = get_state
+    mock_hass.states.get.side_effect = get_state
     assert m.is_any_condition_active is True
 
 
 # --- is_any_condition_active: rain ---
 
 
-def test_rain_above_threshold_triggers(hass, logger):
+def test_rain_above_threshold_triggers(mock_hass, logger):
     """Returns True when rain rate exceeds threshold."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -331,13 +331,13 @@ def test_rain_above_threshold_triggers(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("5.0")
+    mock_hass.states.get.return_value = _make_state("5.0")
     assert m.is_any_condition_active is True
 
 
-def test_rain_below_threshold_no_trigger(hass, logger):
+def test_rain_below_threshold_no_trigger(mock_hass, logger):
     """Returns False when rain rate is below threshold."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -351,16 +351,16 @@ def test_rain_below_threshold_no_trigger(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("0.2")
+    mock_hass.states.get.return_value = _make_state("0.2")
     assert m.is_any_condition_active is False
 
 
 # --- is_any_condition_active: binary sensors ---
 
 
-def test_is_raining_binary_on_triggers(hass, logger):
+def test_is_raining_binary_on_triggers(mock_hass, logger):
     """IsRaining binary 'on' triggers override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -374,13 +374,13 @@ def test_is_raining_binary_on_triggers(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("on")
+    mock_hass.states.get.return_value = _make_state("on")
     assert m.is_any_condition_active is True
 
 
-def test_is_raining_binary_off_no_trigger(hass, logger):
+def test_is_raining_binary_off_no_trigger(mock_hass, logger):
     """IsRaining binary 'off' does not trigger override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -394,13 +394,13 @@ def test_is_raining_binary_off_no_trigger(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("off")
+    mock_hass.states.get.return_value = _make_state("off")
     assert m.is_any_condition_active is False
 
 
-def test_is_windy_binary_on_triggers(hass, logger):
+def test_is_windy_binary_on_triggers(mock_hass, logger):
     """IsWindy binary 'on' triggers override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -414,13 +414,13 @@ def test_is_windy_binary_on_triggers(hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("on")
+    mock_hass.states.get.return_value = _make_state("on")
     assert m.is_any_condition_active is True
 
 
-def test_severe_any_on_triggers(hass, logger):
+def test_severe_any_on_triggers(mock_hass, logger):
     """Any severe weather binary 'on' triggers override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -440,13 +440,13 @@ def test_severe_any_on_triggers(hass, logger):
         s.state = "on" if entity_id == "binary_sensor.hail" else "off"
         return s
 
-    hass.states.get.side_effect = get_state
+    mock_hass.states.get.side_effect = get_state
     assert m.is_any_condition_active is True
 
 
-def test_severe_all_off_no_trigger(hass, logger):
+def test_severe_all_off_no_trigger(mock_hass, logger):
     """Severe sensors all off does not trigger."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor=None,
         wind_direction_sensor=None,
@@ -460,16 +460,16 @@ def test_severe_all_off_no_trigger(hass, logger):
         severe_sensors=["binary_sensor.hail", "binary_sensor.frost"],
         timeout_seconds=300,
     )
-    hass.states.get.return_value = _make_state("off")
+    mock_hass.states.get.return_value = _make_state("off")
     assert m.is_any_condition_active is False
 
 
 # --- OR logic ---
 
 
-def test_or_logic_single_condition_sufficient(hass, logger):
+def test_or_logic_single_condition_sufficient(mock_hass, logger):
     """Only one condition active is sufficient to trigger override."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -491,16 +491,16 @@ def test_or_logic_single_condition_sufficient(hass, logger):
             return _make_state("5.0")  # above threshold
         return None
 
-    hass.states.get.side_effect = get_state
+    mock_hass.states.get.side_effect = get_state
     assert m.is_any_condition_active is True
 
 
 # --- record_conditions_active ---
 
 
-def test_record_conditions_active_sets_flag(hass, logger):
+def test_record_conditions_active_sets_flag(mock_hass, logger):
     """record_conditions_active sets _override_active to True."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -518,9 +518,9 @@ def test_record_conditions_active_sets_flag(hass, logger):
     assert m._override_active is True
 
 
-def test_record_conditions_active_cancels_timeout(hass, logger):
+def test_record_conditions_active_cancels_timeout(mock_hass, logger):
     """record_conditions_active cancels a running clear-delay timeout."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -547,9 +547,9 @@ def test_record_conditions_active_cancels_timeout(hass, logger):
 # --- cancel_weather_timeout ---
 
 
-def test_cancel_timeout_cancels_task(hass, logger):
+def test_cancel_timeout_cancels_task(mock_hass, logger):
     """cancel_weather_timeout cancels running task and clears reference."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     task = MagicMock()
     task.done.return_value = False
     m._timeout_task = task
@@ -566,9 +566,9 @@ def test_cancel_timeout_no_task_safe(mgr):
     assert mgr._timeout_task is None
 
 
-def test_cancel_timeout_already_done(hass, logger):
+def test_cancel_timeout_already_done(mock_hass, logger):
     """Does not call cancel on an already-done task."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     task = MagicMock()
     task.done.return_value = True
     m._timeout_task = task
@@ -583,9 +583,9 @@ def test_cancel_timeout_already_done(hass, logger):
 
 
 @pytest.mark.asyncio
-async def test_timeout_handler_deactivates_when_clear(hass, logger):
+async def test_timeout_handler_deactivates_when_clear(mock_hass, logger):
     """Timeout handler deactivates override and calls refresh when conditions clear."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -615,9 +615,9 @@ async def test_timeout_handler_deactivates_when_clear(hass, logger):
 
 
 @pytest.mark.asyncio
-async def test_timeout_handler_stays_active_if_conditions_return(hass, logger):
+async def test_timeout_handler_stays_active_if_conditions_return(mock_hass, logger):
     """Timeout handler keeps override active if conditions return during sleep."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor=None,
@@ -649,9 +649,9 @@ async def test_timeout_handler_stays_active_if_conditions_return(hass, logger):
 # --- update_config ---
 
 
-def test_update_config_stores_all_values(hass, logger):
+def test_update_config_stores_all_values(mock_hass, logger):
     """update_config correctly stores all configuration values."""
-    m = WeatherManager(hass=hass, logger=logger)
+    m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
         wind_direction_sensor="sensor.dir",

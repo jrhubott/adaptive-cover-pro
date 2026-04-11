@@ -9,6 +9,7 @@ import pytest
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
+    CustomPositionHandler,
     DefaultHandler,
     ForceOverrideHandler,
     ManualOverrideHandler,
@@ -154,7 +155,7 @@ def test_handlers_sorted_by_priority_descending() -> None:
 
 
 def test_decision_trace_records_all() -> None:
-    """Trace includes the winning handler plus all skipped handlers."""
+    """Trace includes the winning handler plus all evaluated handlers."""
     registry = PipelineRegistry(ALL_HANDLERS)
     snap = make_snapshot(
         force_override_sensors={"binary_sensor.s": True},
@@ -166,10 +167,11 @@ def test_decision_trace_records_all() -> None:
     # First step is the winner.
     assert result.decision_trace[0].handler == "force_override"
     assert result.decision_trace[0].matched is True
-    # All subsequent steps should be skipped (not matched).
+    # All subsequent steps should not be matched.
     for step in result.decision_trace[1:]:
         assert step.matched is False
-        assert step.reason == "skipped (higher priority matched)"
+        # Handlers that evaluated but were outprioritized get a descriptive reason.
+        assert step.reason != "skipped (higher priority matched)"
 
 
 def test_decision_trace_non_matching_handlers_record_skip_reason() -> None:
@@ -213,18 +215,18 @@ def test_full_pipeline_force_wins() -> None:
     assert result.control_method == ControlMethod.FORCE
 
 
-def test_full_pipeline_motion_timeout_beats_manual() -> None:
-    """Motion timeout (priority 80) beats manual override (priority 70)."""
+def test_full_pipeline_manual_override_beats_motion_timeout() -> None:
+    """Manual override (priority 80) beats motion timeout (priority 75)."""
     registry = PipelineRegistry(ALL_HANDLERS)
     snap = make_snapshot(
         calculate_percentage_return=50.0,
         default_position=int(20.0),
         motion_timeout_active=True,
         manual_override_active=True,
+        motion_control_enabled=True,
     )
     result = registry.evaluate(snap)
-    assert result.position == 20
-    assert result.control_method == ControlMethod.MOTION
+    assert result.control_method == ControlMethod.MANUAL
 
 
 def test_full_pipeline_climate_summer() -> None:
@@ -289,9 +291,133 @@ def test_result_carries_full_trace_through_registry() -> None:
     result = registry.evaluate(snap)
     # 6 handlers registered — trace must have 6 entries.
     assert len(result.decision_trace) == 6
-    # Solar matched — the rest are skipped.
+    # Solar matched — exactly one handler is marked as the winner.
     winning = [s for s in result.decision_trace if s.matched]
-    skipped = [s for s in result.decision_trace if not s.matched]
+    non_winning = [s for s in result.decision_trace if not s.matched]
     assert len(winning) == 1
     assert winning[0].handler == "solar"
-    assert len(skipped) == 5
+    assert len(non_winning) == 5
+
+
+# ---------------------------------------------------------------------------
+# Climate data propagation tests (issue #182)
+# ---------------------------------------------------------------------------
+
+
+def _make_custom_position_handler() -> CustomPositionHandler:
+    """CustomPositionHandler wired to binary_sensor.custom."""
+    return CustomPositionHandler(
+        slot=1,
+        entity_id="binary_sensor.custom",
+        position=50,
+        priority=77,
+    )
+
+
+def test_climate_data_populated_when_custom_position_wins() -> None:
+    """Climate data is available on the result even when CustomPositionHandler wins."""
+    handlers = [
+        _make_custom_position_handler(),
+        ClimateHandler(),
+        SolarHandler(),
+        DefaultHandler(),
+    ]
+    registry = PipelineRegistry(handlers)
+    cover = _make_climate_cover(direct_sun_valid=True, calculate_percentage_return=60.0)
+    snap = make_snapshot(
+        cover=cover,
+        direct_sun_valid=True,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_climate_options_summer(),
+        custom_position_sensors=[
+            ("binary_sensor.custom", True, 50, 77, False),
+        ],
+    )
+    result = registry.evaluate(snap)
+    # Custom position wins for position.
+    assert result.position == 50
+    # But climate data is still populated from the climate handler.
+    assert result.climate_data is not None
+    assert result.climate_data.is_summer is True
+    assert result.climate_strategy is not None
+
+
+def test_climate_data_populated_when_force_override_wins() -> None:
+    """Climate data is available on the result even when ForceOverrideHandler wins."""
+    registry = PipelineRegistry(ALL_HANDLERS)
+    cover = _make_climate_cover(direct_sun_valid=True, calculate_percentage_return=60.0)
+    snap = make_snapshot(
+        cover=cover,
+        direct_sun_valid=True,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_climate_options_summer(),
+        force_override_sensors={"binary_sensor.s": True},
+        force_override_position=0,
+    )
+    result = registry.evaluate(snap)
+    assert result.position == 0
+    assert result.control_method == ControlMethod.FORCE
+    assert result.climate_data is not None
+    assert result.climate_data.is_summer is True
+
+
+def test_climate_data_none_when_climate_mode_disabled() -> None:
+    """climate_data remains None when climate mode is not enabled."""
+    registry = PipelineRegistry(ALL_HANDLERS)
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        calculate_percentage_return=55.0,
+        climate_mode_enabled=False,
+    )
+    result = registry.evaluate(snap)
+    assert result.climate_data is None
+    assert result.climate_strategy is None
+
+
+def test_climate_handler_wins_data_from_winner() -> None:
+    """When ClimateHandler wins, climate_data comes from the winner directly."""
+    registry = PipelineRegistry(ALL_HANDLERS)
+    cover = _make_climate_cover(direct_sun_valid=True, calculate_percentage_return=50.0)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=_winter_readings(),
+        climate_options=_climate_options_winter(),
+        direct_sun_valid=True,
+    )
+    result = registry.evaluate(snap)
+    assert result.control_method == ControlMethod.WINTER
+    assert result.climate_data is not None
+    assert result.climate_data.is_winter is True
+
+
+def test_outprioritized_handler_trace_has_descriptive_reason() -> None:
+    """Handlers that evaluated but lost get an 'outprioritized by' trace reason."""
+    handlers = [
+        _make_custom_position_handler(),
+        SolarHandler(),
+        DefaultHandler(),
+    ]
+    registry = PipelineRegistry(handlers)
+    snap = make_snapshot(
+        direct_sun_valid=True,
+        calculate_percentage_return=70.0,
+        custom_position_sensors=[
+            ("binary_sensor.custom", True, 50, 77, False),
+        ],
+    )
+    result = registry.evaluate(snap)
+    # All handlers evaluated — 3 entries in trace.
+    assert len(result.decision_trace) == 3
+    winner_step = result.decision_trace[0]
+    assert winner_step.matched is True
+    # SolarHandler evaluated and got a result but was outprioritized.
+    solar_step = next(s for s in result.decision_trace if s.handler == "solar")
+    assert solar_step.matched is False
+    assert "outprioritized" in solar_step.reason
+    # DefaultHandler evaluated and got a result but was outprioritized.
+    default_step = next(s for s in result.decision_trace if s.handler == "default")
+    assert default_step.matched is False
+    assert "outprioritized" in default_step.reason

@@ -24,6 +24,8 @@ class CloudSuppressionHandler(OverrideHandler):
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return default position when no direct sun is detected."""
+        if not snapshot.in_time_window:
+            return None
         if snapshot.climate_readings is None:
             return None
         if snapshot.climate_options is None:
@@ -50,6 +52,8 @@ class CloudSuppressionHandler(OverrideHandler):
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 
-    def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002
+    def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when cloud suppression is not active."""
+        if not snapshot.in_time_window:
+            return "outside time window"
         return "cloud suppression inactive (direct sun present or feature disabled)"

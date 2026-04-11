@@ -1,0 +1,88 @@
+name: "Mark Issues Awaiting Release"
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  mark-awaiting-release:
+    name: "Label issues merged but not yet released"
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: "Collect referenced issues"
+        id: issues
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          # Issues linked via the native "Development" panel (closingIssuesReferences)
+          LINKED=$(gh pr view "$PR" --repo "$REPO" \
+                     --json closingIssuesReferences,body \
+                     --jq '[.closingIssuesReferences[].number] | map(tostring) | join(" ")')
+
+          # Issues referenced in the PR body with common keywords
+          BODY=$(gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""')
+          BODY_REFS=$(echo "$BODY" \
+            | grep -oiE '(refs|closes|fixes|resolves|related to)[[:space:]]*[:#]?[[:space:]]*#[0-9]+' \
+            | grep -oE '#[0-9]+' \
+            | tr -d '#' \
+            | tr '\n' ' ')
+
+          # Deduplicate
+          ALL=$(echo "$LINKED $BODY_REFS" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')
+          echo "issues=$ALL" >> "$GITHUB_OUTPUT"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          echo "Found issue references: $ALL"
+
+      - name: "Ensure awaiting-release label exists"
+        run: |
+          gh label create "awaiting-release" \
+            --repo "${{ github.repository }}" \
+            --color "FBCA04" \
+            --description "Fix merged, waiting for the next stable release" \
+            2>/dev/null || true
+
+      - name: "Label and comment on each open issue"
+        run: |
+          PR="${{ steps.issues.outputs.pr }}"
+          REPO="${{ github.repository }}"
+          ISSUES="${{ steps.issues.outputs.issues }}"
+
+          if [ -z "$ISSUES" ]; then
+            echo "No issue references found — nothing to do."
+            exit 0
+          fi
+
+          TOUCHED=""
+          for N in $ISSUES; do
+            STATE=$(gh issue view "$N" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "")
+            if [ "$STATE" != "OPEN" ]; then
+              echo "Issue #$N is not open (state=$STATE) — skipping."
+              continue
+            fi
+
+            echo "Labelling issue #$N..."
+            gh issue edit "$N" --repo "$REPO" --add-label "awaiting-release"
+
+            echo "Commenting on issue #$N..."
+            gh issue comment "$N" --repo "$REPO" --body \
+              "The fix for this issue has been merged in #${PR} and will ship in the next stable release. It will be closed automatically when that release is published."
+
+            TOUCHED="$TOUCHED #$N"
+          done
+
+          if [ -n "$TOUCHED" ]; then
+            echo "### Marked as awaiting-release" >> "$GITHUB_STEP_SUMMARY"
+            echo "Issues labelled:$TOUCHED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No open issues to label." >> "$GITHUB_STEP_SUMMARY"
+          fi

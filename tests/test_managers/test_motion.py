@@ -10,7 +10,7 @@ from custom_components.adaptive_cover_pro.managers.motion import MotionManager
 
 
 @pytest.fixture
-def hass():
+def mock_hass():
     """Return a mock Home Assistant instance."""
     return MagicMock()
 
@@ -22,9 +22,9 @@ def logger():
 
 
 @pytest.fixture
-def mgr(hass, logger):
+def mgr(mock_hass, logger):
     """Return a MotionManager configured with no sensors."""
-    m = MotionManager(hass=hass, logger=logger)
+    m = MotionManager(hass=mock_hass, logger=logger)
     m.update_config(sensors=[], timeout_seconds=300)
     return m
 
@@ -37,43 +37,43 @@ def test_is_motion_detected_no_sensors(mgr):
     assert mgr.is_motion_detected is True
 
 
-def test_is_motion_detected_sensor_on(hass, logger):
+def test_is_motion_detected_sensor_on(mock_hass, logger):
     """Returns True when a configured sensor is on."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     state = MagicMock()
     state.state = "on"
-    hass.states.get.return_value = state
+    mock_hass.states.get.return_value = state
 
     assert mgr.is_motion_detected is True
 
 
-def test_is_motion_detected_sensor_off(hass, logger):
+def test_is_motion_detected_sensor_off(mock_hass, logger):
     """Returns False when all configured sensors are off."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     state = MagicMock()
     state.state = "off"
-    hass.states.get.return_value = state
+    mock_hass.states.get.return_value = state
 
     assert mgr.is_motion_detected is False
 
 
-def test_is_motion_detected_sensor_unavailable(hass, logger):
+def test_is_motion_detected_sensor_unavailable(mock_hass, logger):
     """Returns False when sensor state is unavailable (None)."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
 
     assert mgr.is_motion_detected is False
 
 
-def test_is_motion_detected_or_logic(hass, logger):
+def test_is_motion_detected_or_logic(mock_hass, logger):
     """Returns True when any one of multiple sensors is on (OR logic)."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(
         sensors=[
             "binary_sensor.motion_living",
@@ -87,7 +87,7 @@ def test_is_motion_detected_or_logic(hass, logger):
         s.state = "on" if entity_id == "binary_sensor.motion_kitchen" else "off"
         return s
 
-    hass.states.get.side_effect = get_state
+    mock_hass.states.get.side_effect = get_state
 
     assert mgr.is_motion_detected is True
 
@@ -100,18 +100,18 @@ def test_is_motion_timeout_active_no_sensors(mgr):
     assert mgr.is_motion_timeout_active is False
 
 
-def test_is_motion_timeout_active_when_set(hass, logger):
+def test_is_motion_timeout_active_when_set(mock_hass, logger):
     """Returns True when _motion_timeout_active flag is True and sensors configured."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
     mgr._motion_timeout_active = True
 
     assert mgr.is_motion_timeout_active is True
 
 
-def test_is_motion_timeout_active_sensors_but_flag_false(hass, logger):
+def test_is_motion_timeout_active_sensors_but_flag_false(mock_hass, logger):
     """Returns False when sensors configured but flag not set."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     assert mgr.is_motion_timeout_active is False
@@ -138,9 +138,9 @@ def test_last_motion_time_tracking(mgr):
 # --- record_motion_detected ---
 
 
-def test_record_motion_detected_clears_active_flag(hass, logger):
+def test_record_motion_detected_clears_active_flag(mock_hass, logger):
     """record_motion_detected() clears _motion_timeout_active."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
     mgr._motion_timeout_active = True
 
@@ -149,9 +149,9 @@ def test_record_motion_detected_clears_active_flag(hass, logger):
     assert mgr._motion_timeout_active is False
 
 
-def test_record_motion_detected_cancels_task(hass, logger):
+def test_record_motion_detected_cancels_task(mock_hass, logger):
     """record_motion_detected() cancels a running timeout task."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     task = MagicMock()
@@ -167,9 +167,9 @@ def test_record_motion_detected_cancels_task(hass, logger):
 # --- cancel_motion_timeout ---
 
 
-def test_cancel_motion_timeout(hass, logger):
+def test_cancel_motion_timeout(mock_hass, logger):
     """Cancels mock task and sets _motion_timeout_task to None."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
 
     task = MagicMock()
     task.done.return_value = False
@@ -187,9 +187,9 @@ def test_cancel_motion_timeout_no_task(mgr):
     assert mgr._motion_timeout_task is None
 
 
-def test_cancel_motion_timeout_already_done(hass, logger):
+def test_cancel_motion_timeout_already_done(mock_hass, logger):
     """Does not call cancel when task is already done."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
 
     task = MagicMock()
     task.done.return_value = True
@@ -205,9 +205,9 @@ def test_cancel_motion_timeout_already_done(hass, logger):
 
 
 @pytest.mark.asyncio
-async def test_motion_timeout_handler_sets_active(hass, logger):
+async def test_motion_timeout_handler_sets_active(mock_hass, logger):
     """Timeout handler sets active flag and calls refresh when motion absent."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     # Patch is_motion_detected to return False (no motion after timeout)
@@ -224,9 +224,9 @@ async def test_motion_timeout_handler_sets_active(hass, logger):
 
 
 @pytest.mark.asyncio
-async def test_motion_timeout_handler_skips_if_motion(hass, logger):
+async def test_motion_timeout_handler_skips_if_motion(mock_hass, logger):
     """Timeout handler does not set active flag if motion was re-detected."""
-    mgr = MotionManager(hass=hass, logger=logger)
+    mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     # Patch is_motion_detected to return True (motion during timeout)

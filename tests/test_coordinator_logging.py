@@ -31,16 +31,16 @@ def _make_cmd_svc():
 
 def _make_context(**overrides):
     """Build a PositionContext with all gates passing by default."""
-    defaults = dict(
-        auto_control=True,
-        manual_override=False,
-        sun_just_appeared=False,
-        min_change=2,
-        time_threshold=2,
-        special_positions=[0, 100],
-        inverse_state=False,
-        force=False,
-    )
+    defaults = {
+        "auto_control": True,
+        "manual_override": False,
+        "sun_just_appeared": False,
+        "min_change": 2,
+        "time_threshold": 2,
+        "special_positions": [0, 100],
+        "inverse_state": False,
+        "force": False,
+    }
     defaults.update(overrides)
     return PositionContext(**defaults)
 
@@ -165,6 +165,9 @@ class TestRecordSkippedAction:
         assert svc.last_skipped_action["entity_id"] == "cover.living_room"
         assert svc.last_skipped_action["reason"] == "Outside time window"
         assert svc.last_skipped_action["calculated_position"] == 75
+        assert svc.last_skipped_action["current_position"] is None
+        assert svc.last_skipped_action["trigger"] is None
+        assert svc.last_skipped_action["inverse_state_applied"] is False
         assert svc.last_skipped_action["timestamp"] is not None
 
 

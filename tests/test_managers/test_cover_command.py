@@ -20,7 +20,7 @@ def logger():
 
 
 @pytest.fixture
-def hass():
+def mock_hass():
     """Return a mock Home Assistant instance."""
     return MagicMock()
 
@@ -32,10 +32,10 @@ def grace_mgr():
 
 
 @pytest.fixture
-def cmd_svc(hass, logger, grace_mgr):
+def cmd_svc(mock_hass, logger, grace_mgr):
     """Return a CoverCommandService for vertical blind (default)."""
     return CoverCommandService(
-        hass=hass,
+        hass=mock_hass,
         logger=logger,
         cover_type="cover_blind",
         grace_mgr=grace_mgr,
@@ -44,10 +44,10 @@ def cmd_svc(hass, logger, grace_mgr):
 
 
 @pytest.fixture
-def tilt_cmd_svc(hass, logger, grace_mgr):
+def tilt_cmd_svc(mock_hass, logger, grace_mgr):
     """Return a CoverCommandService for tilt cover."""
     return CoverCommandService(
-        hass=hass,
+        hass=mock_hass,
         logger=logger,
         cover_type="cover_tilt",
         grace_mgr=grace_mgr,
@@ -105,10 +105,10 @@ def test_get_cover_capabilities_from_entity(cmd_svc):
 # --- Position reading ---
 
 
-def test_read_position_with_capabilities_position_cover(cmd_svc, hass):
+def test_read_position_with_capabilities_position_cover(cmd_svc, mock_hass):
     """Reads current_position for position-capable non-tilt cover."""
     caps = {"has_set_position": True, "has_set_tilt_position": False}
-    hass.states.get.return_value = MagicMock(attributes={"current_position": 42})
+    mock_hass.states.get.return_value = MagicMock(attributes={"current_position": 42})
 
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.state_attr",
@@ -119,7 +119,7 @@ def test_read_position_with_capabilities_position_cover(cmd_svc, hass):
     assert result == 42
 
 
-def test_read_position_with_capabilities_tilt_cover(tilt_cmd_svc, hass):
+def test_read_position_with_capabilities_tilt_cover(tilt_cmd_svc, mock_hass):
     """Reads current_tilt_position for tilt cover."""
     caps = {"has_set_position": False, "has_set_tilt_position": True}
 
@@ -133,7 +133,7 @@ def test_read_position_with_capabilities_tilt_cover(tilt_cmd_svc, hass):
 
 
 def test_read_position_with_capabilities_state_obj(cmd_svc):
-    """Uses state_obj attributes instead of hass.states when provided."""
+    """Uses state_obj attributes instead of mock_hass.states when provided."""
     caps = {"has_set_position": True}
     state_obj = MagicMock()
     state_obj.attributes = {"current_position": 75}
@@ -142,7 +142,7 @@ def test_read_position_with_capabilities_state_obj(cmd_svc):
     assert result == 75
 
 
-def test_read_position_open_close_fallback(cmd_svc, hass):
+def test_read_position_open_close_fallback(cmd_svc, mock_hass):
     """Falls back to get_open_close_state when has_set_position is False."""
     caps = {"has_set_position": False, "has_set_tilt_position": False}
 
@@ -381,7 +381,31 @@ def test_record_skipped_action(cmd_svc):
     assert action["entity_id"] == "cover.bedroom"
     assert action["reason"] == "Outside time window"
     assert action["calculated_position"] == 45
+    assert action["current_position"] is None
+    assert action["trigger"] is None
+    assert action["inverse_state_applied"] is False
     assert action["timestamp"] is not None
+
+
+def test_record_skipped_action_with_extras(cmd_svc):
+    """Records reason-specific extras alongside base fields."""
+    cmd_svc.record_skipped_action(
+        "cover.bedroom",
+        "delta_too_small",
+        45,
+        trigger="solar",
+        current_position=42,
+        inverse_state=True,
+        extras={"position_delta": 3, "min_delta_required": 5},
+    )
+
+    action = cmd_svc.last_skipped_action
+    assert action["entity_id"] == "cover.bedroom"
+    assert action["trigger"] == "solar"
+    assert action["current_position"] == 42
+    assert action["inverse_state_applied"] is True
+    assert action["position_delta"] == 3
+    assert action["min_delta_required"] == 5
 
 
 def test_record_skipped_action_overwrites_previous(cmd_svc):

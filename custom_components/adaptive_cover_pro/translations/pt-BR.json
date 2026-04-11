@@ -75,6 +75,7 @@
           "sunset_position": "Sunset Position",
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -87,6 +88,7 @@
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
@@ -99,8 +101,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "Move covers to current default position when end time is reached"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -109,8 +110,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "title": "Schedule & Timing",
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
@@ -141,6 +141,30 @@
         "data_description": {
           "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings. Manual control still works. Leave empty to disable this feature.",
           "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = fully closed/retracted, 100% = fully open. Default: 0%."
+        }
+      },
+      "custom_position": {
+        "title": "Custom Positions",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each sensor has its own target position — the first active sensor (in order 1→4) determines the position. If all sensors are off, this step is skipped and lower-priority rules apply. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "data": {
+          "custom_position_sensor_1": "Sensor 1",
+          "custom_position_1": "Position for Sensor 1",
+          "custom_position_sensor_2": "Sensor 2",
+          "custom_position_2": "Position for Sensor 2",
+          "custom_position_sensor_3": "Sensor 3",
+          "custom_position_3": "Position for Sensor 3",
+          "custom_position_sensor_4": "Sensor 4",
+          "custom_position_4": "Position for Sensor 4"
+        },
+        "data_description": {
+          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Sensors are evaluated in order (1→4) — the first active sensor wins. Leave empty to skip this slot.",
+          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
+          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
+          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
+          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
         }
       },
       "motion_override": {
@@ -276,6 +300,7 @@
           "weather": "Weather Conditions",
           "manual_override": "Manual Override",
           "force_override": "Force Override",
+          "custom_position": "Custom Positions",
           "motion_override": "Motion Override",
           "weather_override": "Weather Override",
           "device": "Device Association",
@@ -292,8 +317,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "Move covers to current default position when end time is reached"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -302,8 +326,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening."
         },
         "title": "Schedule & Timing",
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
@@ -374,6 +397,7 @@
           "sunset_position": "Sunset Position",
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -386,6 +410,7 @@
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. Common uses: Privacy (0% = fully closed), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
@@ -416,6 +441,30 @@
         "data_description": {
           "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings. Manual control still works. Leave empty to disable this feature.",
           "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = fully closed/retracted, 100% = fully open. Default: 0%."
+        }
+      },
+      "custom_position": {
+        "title": "Custom Positions",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each sensor has its own target position — the first active sensor (in order 1→4) determines the position. If all sensors are off, this step is skipped and lower-priority rules apply. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "data": {
+          "custom_position_sensor_1": "Sensor 1",
+          "custom_position_1": "Position for Sensor 1",
+          "custom_position_sensor_2": "Sensor 2",
+          "custom_position_2": "Position for Sensor 2",
+          "custom_position_sensor_3": "Sensor 3",
+          "custom_position_3": "Position for Sensor 3",
+          "custom_position_sensor_4": "Sensor 4",
+          "custom_position_4": "Position for Sensor 4"
+        },
+        "data_description": {
+          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Sensors are evaluated in order (1→4) — the first active sensor wins. Leave empty to skip this slot.",
+          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
+          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
+          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
+          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
         }
       },
       "motion_override": {
@@ -564,6 +613,7 @@
           "manual_override": "Manual Override",
           "motion_timeout": "Motion Timeout",
           "force_override": "Force Override",
+          "custom_position": "Custom Position",
           "weather_override": "Weather Override",
           "cloud_suppression": "Cloud Suppression"
         }

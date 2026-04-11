@@ -91,6 +91,11 @@ class PipelineSnapshot:
     # Users can disable this if they want weather override to respect the auto-control toggle.
     weather_bypass_auto_control: bool = True
 
+    # Minimum position mode: when True, the configured position acts as a floor —
+    # the handler returns max(configured, raw_calculated) instead of always returning configured.
+    force_override_min_mode: bool = False
+    weather_override_min_mode: bool = False
+
     # True when current time is within the configured start/end operational window.
     # Handlers that should only run during the active window (e.g. SolarHandler,
     # GlareZoneHandler) check this field and return None when it is False.
@@ -104,6 +109,16 @@ class PipelineSnapshot:
     # allowing lower-priority handlers to run as if motion timeout is inactive.
     # Defaults to True for backward compatibility.
     motion_control_enabled: bool = True
+
+    # Custom position sensor states: list of (entity_id, is_on, position, priority, min_mode).
+    # Each entry corresponds to one configured custom position slot.  The pipeline
+    # creates a separate CustomPositionHandler instance per slot, each with its own
+    # priority, so the PipelineRegistry sorts them correctly relative to all other
+    # handlers.  The handler reads its own sensor's is_on state from this list by
+    # matching entity_id.
+    # min_mode: when True, the position acts as a floor (max of configured vs calculated).
+    # Defaults to empty list (feature disabled / not configured).
+    custom_position_sensors: list[tuple[str, bool, int, int, bool]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

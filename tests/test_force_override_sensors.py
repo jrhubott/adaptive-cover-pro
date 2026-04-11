@@ -12,10 +12,10 @@ from custom_components.adaptive_cover_pro.const import (
 
 
 @pytest.fixture
-def mock_coordinator(hass):
+def mock_coordinator(mock_hass):
     """Create a mock coordinator with essential attributes."""
     coordinator = MagicMock()
-    coordinator.hass = hass
+    coordinator.hass = mock_hass
     coordinator.logger = MagicMock()
     coordinator._automatic_control = True
     coordinator.manager = MagicMock()
@@ -33,7 +33,7 @@ def mock_coordinator(hass):
 
 
 @pytest.mark.unit
-def test_is_force_override_active_logic_no_sensors(hass):
+def test_is_force_override_active_logic_no_sensors(mock_hass):
     """Test is_force_override_active returns False with no sensors."""
     # Simulate the property logic
     sensors = []
@@ -41,48 +41,48 @@ def test_is_force_override_active_logic_no_sensors(hass):
         result = False
     else:
         result = any(
-            hass.states.get(sensor) and hass.states.get(sensor).state == "on"
+            mock_hass.states.get(sensor) and mock_hass.states.get(sensor).state == "on"
             for sensor in sensors
         )
     assert result is False
 
 
 @pytest.mark.unit
-def test_is_force_override_active_logic_single_sensor_active(hass):
+def test_is_force_override_active_logic_single_sensor_active(mock_hass):
     """Test is_force_override_active returns True with one active sensor."""
     sensors = ["binary_sensor.rain"]
 
     # Setup: sensor is on
     state_obj = MagicMock()
     state_obj.state = "on"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
     result = any(
-        hass.states.get(sensor) and hass.states.get(sensor).state == "on"
+        mock_hass.states.get(sensor) and mock_hass.states.get(sensor).state == "on"
         for sensor in sensors
     )
     assert result is True
 
 
 @pytest.mark.unit
-def test_is_force_override_active_logic_single_sensor_inactive(hass):
+def test_is_force_override_active_logic_single_sensor_inactive(mock_hass):
     """Test is_force_override_active returns False with inactive sensor."""
     sensors = ["binary_sensor.rain"]
 
     # Setup: sensor is off
     state_obj = MagicMock()
     state_obj.state = "off"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
     result = any(
-        hass.states.get(sensor) and hass.states.get(sensor).state == "on"
+        mock_hass.states.get(sensor) and mock_hass.states.get(sensor).state == "on"
         for sensor in sensors
     )
     assert result is False
 
 
 @pytest.mark.unit
-def test_is_force_override_active_logic_multiple_one_active(hass):
+def test_is_force_override_active_logic_multiple_one_active(mock_hass):
     """Test with multiple sensors, one active."""
     sensors = ["binary_sensor.rain", "binary_sensor.wind"]
 
@@ -95,42 +95,42 @@ def test_is_force_override_active_logic_multiple_one_active(hass):
             state_obj.state = "off"
         return state_obj
 
-    hass.states.get.side_effect = get_state
+    mock_hass.states.get.side_effect = get_state
 
     result = any(
-        hass.states.get(sensor) and hass.states.get(sensor).state == "on"
+        mock_hass.states.get(sensor) and mock_hass.states.get(sensor).state == "on"
         for sensor in sensors
     )
     assert result is True
 
 
 @pytest.mark.unit
-def test_is_force_override_active_logic_sensor_unavailable(hass):
+def test_is_force_override_active_logic_sensor_unavailable(mock_hass):
     """Test that unavailable sensors are treated as inactive."""
     sensors = ["binary_sensor.rain"]
 
     # Setup: sensor is unavailable
     state_obj = MagicMock()
     state_obj.state = "unavailable"
-    hass.states.get.return_value = state_obj
+    mock_hass.states.get.return_value = state_obj
 
     result = any(
-        hass.states.get(sensor) and hass.states.get(sensor).state == "on"
+        mock_hass.states.get(sensor) and mock_hass.states.get(sensor).state == "on"
         for sensor in sensors
     )
     assert result is False
 
 
 @pytest.mark.unit
-def test_is_force_override_active_logic_sensor_missing(hass):
+def test_is_force_override_active_logic_sensor_missing(mock_hass):
     """Test that missing entities are treated as inactive."""
     sensors = ["binary_sensor.rain"]
 
     # Setup: entity doesn't exist
-    hass.states.get.return_value = None
+    mock_hass.states.get.return_value = None
 
     result = any(
-        hass.states.get(sensor) and hass.states.get(sensor).state == "on"
+        mock_hass.states.get(sensor) and mock_hass.states.get(sensor).state == "on"
         for sensor in sensors
     )
     assert result is False

@@ -14,10 +14,9 @@ Covers:
 from __future__ import annotations
 
 import datetime as dt
-from datetime import UTC, timedelta
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from custom_components.adaptive_cover_pro.helpers import compute_effective_default
 
@@ -264,7 +263,7 @@ class TestBoundaries:
     """Exact boundary values: strictly greater-than / less-than semantics."""
 
     def test_exactly_at_sunset_offset_boundary_is_not_active(self):
-        """now == sunset+offset is NOT after the boundary (uses strict >)."""
+        """Now == sunset+offset is NOT after the boundary (uses strict >)."""
         sun = _make_sun_data(sunset_hour=20)
         today = dt.date.today()
         exactly_at = dt.datetime(today.year, today.month, today.day, 20, 15, 0)
@@ -277,7 +276,7 @@ class TestBoundaries:
         assert active is False
 
     def test_exactly_at_sunrise_offset_boundary_is_not_active(self):
-        """now == sunrise+offset is NOT before the boundary (uses strict <)."""
+        """Now == sunrise+offset is NOT before the boundary (uses strict <)."""
         sun = _make_sun_data(sunrise_hour=6)
         today = dt.date.today()
         exactly_at = dt.datetime(today.year, today.month, today.day, 6, 30, 0)

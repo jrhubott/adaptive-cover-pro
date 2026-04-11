@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections import deque
 
 from homeassistant.core import HomeAssistant
 
+from ..const import DEFAULT_DEBUG_EVENT_BUFFER_SIZE, POSITION_TOLERANCE_PERCENT
 from ..helpers import get_open_close_state
 
 
@@ -37,6 +39,40 @@ class AdaptiveCoverManager:
         self.manual_control_time: dict[str, dt.datetime] = {}
         self.reset_duration = dt.timedelta(**reset_duration)
         self.logger = logger
+        self._event_buffer: deque[dict] = deque(maxlen=DEFAULT_DEBUG_EVENT_BUFFER_SIZE)
+
+    def _record_event(
+        self,
+        entity_id: str,
+        action: str,
+        *,
+        our_state,
+        new_position,
+        effective_threshold=None,
+        reason: str = "",
+    ) -> None:
+        """Append a manual-override decision event to the ring buffer."""
+        self._event_buffer.append(
+            {
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "entity_id": entity_id,
+                "action": action,
+                "our_state": our_state,
+                "new_position": new_position,
+                "effective_threshold": effective_threshold,
+                "reason": reason,
+            }
+        )
+
+    def get_event_buffer(self) -> list[dict]:
+        """Return a snapshot of the manual-override decision ring buffer."""
+        return list(self._event_buffer)
+
+    def resize_event_buffer(self, size: int) -> None:
+        """Resize the ring buffer, preserving the most-recent events."""
+        new_buf: deque[dict] = deque(maxlen=size)
+        new_buf.extend(self._event_buffer)
+        self._event_buffer = new_buf
 
     def add_covers(self, entity):
         """Add covers to tracking.
@@ -82,6 +118,13 @@ class AdaptiveCoverManager:
         if entity_id not in self.covers:
             return
         if wait_target_call.get(entity_id):
+            self._record_event(
+                entity_id,
+                "rejected_wait_for_target",
+                our_state=our_state,
+                new_position=None,
+                reason="wait_for_target active",
+            )
             return
 
         new_state = event.new_state
@@ -102,17 +145,41 @@ class AdaptiveCoverManager:
                 "Position unavailable for %s (entity in transient state), skipping override check",
                 entity_id,
             )
+            self._record_event(
+                entity_id,
+                "rejected_position_unavailable",
+                our_state=our_state,
+                new_position=None,
+                reason="position unavailable (transient state)",
+            )
             return
 
         if new_position != our_state:
-            if (
-                manual_threshold is not None
-                and abs(our_state - new_position) < manual_threshold
-            ):
+            # Use the larger of the user-configured threshold and the position
+            # tolerance constant as the minimum detectable change.  This prevents
+            # motor rounding and position-reporting imprecision (up to
+            # POSITION_TOLERANCE_PERCENT) from triggering false manual overrides
+            # even when the user has not configured an explicit threshold.
+            effective_threshold = max(
+                manual_threshold if manual_threshold is not None else 0,
+                POSITION_TOLERANCE_PERCENT,
+            )
+            if abs(our_state - new_position) < effective_threshold:
                 self.logger.debug(
-                    "Position change is less than threshold %s for %s",
-                    manual_threshold,
+                    "Position change %s%% is less than effective threshold %s%% for %s (user threshold=%s, tolerance floor=%s)",
+                    abs(our_state - new_position),
+                    effective_threshold,
                     entity_id,
+                    manual_threshold,
+                    POSITION_TOLERANCE_PERCENT,
+                )
+                self._record_event(
+                    entity_id,
+                    "rejected_within_threshold",
+                    our_state=our_state,
+                    new_position=new_position,
+                    effective_threshold=effective_threshold,
+                    reason=f"delta {abs(our_state - new_position):.1f}% < threshold {effective_threshold}%",
                 )
                 return
             self.logger.debug(
@@ -126,6 +193,14 @@ class AdaptiveCoverManager:
                 entity_id,
                 self.reset_duration.total_seconds(),
                 allow_reset,
+            )
+            self._record_event(
+                entity_id,
+                "set",
+                our_state=our_state,
+                new_position=new_position,
+                effective_threshold=effective_threshold,
+                reason=f"delta {abs(our_state - new_position):.1f}% >= threshold {effective_threshold}%",
             )
             self.mark_manual_control(entity_id)
             self.set_last_updated(entity_id, new_state, allow_reset)
@@ -213,6 +288,13 @@ class AdaptiveCoverManager:
         self.manual_control[entity_id] = False
         self.manual_control_time.pop(entity_id, None)
         self.logger.debug("Reset manual override for %s", entity_id)
+        self._record_event(
+            entity_id,
+            "reset",
+            our_state=None,
+            new_position=None,
+            reason="manual override cleared",
+        )
 
     def is_cover_manual(self, entity_id):
         """Check if cover is manual.

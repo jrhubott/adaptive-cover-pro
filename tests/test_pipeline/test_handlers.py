@@ -100,6 +100,90 @@ class TestForceOverrideHandler:
         assert ForceOverrideHandler.name == "force_override"
 
 
+class TestForceOverrideHandlerMinMode:
+    """Tests for ForceOverrideHandler minimum position mode."""
+
+    handler = ForceOverrideHandler()
+
+    def test_min_mode_off_uses_exact_position(self) -> None:
+        """With min_mode off, position is always the configured value (default behavior)."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=30,
+            force_override_min_mode=False,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 30
+
+    def test_min_mode_on_calculated_higher_uses_calculated(self) -> None:
+        """With min_mode on, if calculated position > floor, use calculated."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=30,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 50
+
+    def test_min_mode_on_calculated_lower_uses_floor(self) -> None:
+        """With min_mode on, if calculated position < floor, use the floor."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=30,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=10.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 30
+
+    def test_min_mode_on_calculated_equal_uses_floor(self) -> None:
+        """With min_mode on, if calculated equals floor, position equals floor."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=30,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=30.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 30
+
+    def test_min_mode_on_reason_mentions_minimum_mode(self) -> None:
+        """With min_mode on, reason string mentions minimum mode."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=30,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "minimum mode" in result.reason
+
+    def test_min_mode_control_method_still_force(self) -> None:
+        """ControlMethod remains FORCE regardless of min_mode."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=30,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=70.0,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.FORCE
+
+
 # ---------------------------------------------------------------------------
 # MotionTimeoutHandler
 # ---------------------------------------------------------------------------
@@ -153,9 +237,9 @@ class TestMotionTimeoutHandler:
         assert "motion" in reason.lower()
         assert "disabled" not in reason.lower()
 
-    def test_priority_is_80(self) -> None:
-        """MotionTimeoutHandler has priority 80."""
-        assert MotionTimeoutHandler.priority == 80
+    def test_priority_is_75(self) -> None:
+        """MotionTimeoutHandler has priority 75."""
+        assert MotionTimeoutHandler.priority == 75
 
     def test_name(self) -> None:
         """MotionTimeoutHandler name is 'motion_timeout'."""
@@ -206,9 +290,9 @@ class TestManualOverrideHandler:
         reason = self.handler.describe_skip(snap)
         assert "manual" in reason.lower()
 
-    def test_priority_is_70(self) -> None:
-        """ManualOverrideHandler has priority 70."""
-        assert ManualOverrideHandler.priority == 70
+    def test_priority_is_80(self) -> None:
+        """ManualOverrideHandler has priority 80."""
+        assert ManualOverrideHandler.priority == 80
 
     def test_name(self) -> None:
         """ManualOverrideHandler name is 'manual_override'."""
@@ -293,7 +377,7 @@ class TestDefaultHandler:
 
     def test_returns_default_position(self) -> None:
         """Return the default_position with DEFAULT method."""
-        snap = make_snapshot(default_position=int(42))
+        snap = make_snapshot(default_position=42)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 42
@@ -301,7 +385,7 @@ class TestDefaultHandler:
 
     def test_zero_default_position(self) -> None:
         """Handle default_position=0 correctly (falsy value check)."""
-        snap = make_snapshot(default_position=int(0))
+        snap = make_snapshot(default_position=0)
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position == 0

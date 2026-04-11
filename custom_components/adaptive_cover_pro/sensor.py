@@ -184,6 +184,7 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0  # Positions are integers (0–100%)
 
     def __init__(
         self,
@@ -202,7 +203,7 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
             "Cover_Position",
             "mdi:sun-compass",
         )
-        self._sensor_name = "Cover Position"
+        self._sensor_name = "Target Position"
 
     @property
     def name(self):
@@ -235,6 +236,29 @@ class AdaptiveCoverSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
                 attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
                 attrs["safety_margin"] = calc_details.get("safety_margin")
                 attrs["effective_distance"] = calc_details.get("effective_distance")
+
+        # Actual positions — show what every managed cover currently reports
+        snapshot = self.coordinator._snapshot
+        if snapshot and snapshot.cover_positions:
+            actual_positions = dict(snapshot.cover_positions)
+            attrs["actual_positions"] = actual_positions
+
+            # all_at_target: True when every cover with a known position is
+            # within tolerance of the coordinator's current target position.
+            target = self.data.states.get("state")
+            tolerance = self.coordinator._cmd_svc._position_tolerance
+            if target is not None:
+                try:
+                    target_int = int(target)
+                    attrs["all_at_target"] = all(
+                        pos is not None and abs(pos - target_int) <= tolerance
+                        for pos in actual_positions.values()
+                    )
+                except (TypeError, ValueError):
+                    attrs["all_at_target"] = None
+            else:
+                attrs["all_at_target"] = None
+
         return attrs
 
 
@@ -280,6 +304,7 @@ class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEn
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "°"
+    _attr_suggested_display_precision = 1  # 0.1° is sufficient for azimuth display
 
     def __init__(
         self,
@@ -325,7 +350,7 @@ class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEn
         # Elevation
         elevation = diagnostics.get("sun_elevation")
         if elevation is not None:
-            attrs["elevation"] = elevation
+            attrs["elevation"] = round(elevation, 1)
 
         # Elevation limits from config
         min_elev = config.get("min_elevation")
@@ -338,8 +363,9 @@ class AdaptiveCoverSunPositionSensor(AdaptiveCoverDiagnosticSensorBase, SensorEn
         # Gamma
         gamma = diagnostics.get("gamma")
         if gamma is not None:
+            gamma = round(gamma, 1)
             attrs["gamma"] = gamma
-            abs_gamma = abs(gamma)
+            abs_gamma = round(abs(gamma), 1)
             if abs_gamma < 10:
                 interpretation = "nearly perpendicular"
             elif abs_gamma < 45:
@@ -900,13 +926,13 @@ class AdaptiveCoverClimateStatusSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
 
         active_temp = diagnostics.get("active_temperature")
         if active_temp is not None:
-            attrs["active_temperature"] = active_temp
+            attrs["active_temperature"] = active_temp  # already rounded in builder
             attrs["temperature_unit"] = self._temp_unit
 
         temp_details = diagnostics.get("temperature_details", {})
         if temp_details:
-            attrs["indoor_temperature"] = temp_details.get("inside_temperature")
-            attrs["outdoor_temperature"] = temp_details.get("outside_temperature")
+            attrs["indoor_temperature"] = temp_details.get("inside_temperature")  # rounded in builder
+            attrs["outdoor_temperature"] = temp_details.get("outside_temperature")  # rounded in builder
             attrs["temp_switch"] = temp_details.get("temp_switch")
 
         climate_conditions = diagnostics.get("climate_conditions", {})
@@ -1059,14 +1085,39 @@ class AdaptiveCoverLastSkippedActionSensor(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return entity, position, and timestamp of the skipped action."""
+        """Return diagnostic context for the last skipped action.
+
+        Always-present attributes (when a skip has been recorded):
+            entity_id, calculated_position, current_position,
+            trigger, inverse_state_applied, timestamp.
+
+        Reason-specific attributes (present only when relevant):
+            delta_too_small   → position_delta, min_delta_required
+            time_delta_too_small → elapsed_minutes, time_threshold_minutes
+        """
         if not self.data or not self.data.diagnostics:
             return None
         action = self.data.diagnostics.get("last_skipped_action")
         if not action or not action.get("entity_id"):
             return None
-        return {
+
+        attrs: dict[str, Any] = {
             "entity_id": action.get("entity_id"),
             "calculated_position": action.get("calculated_position"),
+            "current_position": action.get("current_position"),
+            "trigger": action.get("trigger"),
+            "inverse_state_applied": action.get("inverse_state_applied", False),
             "timestamp": action.get("timestamp"),
         }
+
+        # Reason-specific extras — only add when present in the record
+        for key in (
+            "position_delta",
+            "min_delta_required",
+            "elapsed_minutes",
+            "time_threshold_minutes",
+        ):
+            if key in action:
+                attrs[key] = action[key]
+
+        return attrs

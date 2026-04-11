@@ -42,9 +42,29 @@ CONF_MAX_POSITION = "max_position"
 CONF_MIN_POSITION = "min_position"
 CONF_ENABLE_MAX_POSITION = "enable_max_position"
 CONF_ENABLE_MIN_POSITION = "enable_min_position"
+CONF_ENABLE_SUN_TRACKING = "enable_sun_tracking"
 CONF_OUTSIDETEMP_ENTITY = "outside_temp"
 CONF_FORCE_OVERRIDE_SENSORS = "force_override_sensors"
 CONF_FORCE_OVERRIDE_POSITION = "force_override_position"
+CONF_FORCE_OVERRIDE_MIN_MODE = "force_override_min_mode"
+
+CONF_CUSTOM_POSITION_SENSOR_1 = "custom_position_sensor_1"
+CONF_CUSTOM_POSITION_1 = "custom_position_1"
+CONF_CUSTOM_POSITION_PRIORITY_1 = "custom_position_priority_1"
+CONF_CUSTOM_POSITION_MIN_MODE_1 = "custom_position_min_mode_1"
+CONF_CUSTOM_POSITION_SENSOR_2 = "custom_position_sensor_2"
+CONF_CUSTOM_POSITION_2 = "custom_position_2"
+CONF_CUSTOM_POSITION_PRIORITY_2 = "custom_position_priority_2"
+CONF_CUSTOM_POSITION_MIN_MODE_2 = "custom_position_min_mode_2"
+CONF_CUSTOM_POSITION_SENSOR_3 = "custom_position_sensor_3"
+CONF_CUSTOM_POSITION_3 = "custom_position_3"
+CONF_CUSTOM_POSITION_PRIORITY_3 = "custom_position_priority_3"
+CONF_CUSTOM_POSITION_MIN_MODE_3 = "custom_position_min_mode_3"
+CONF_CUSTOM_POSITION_SENSOR_4 = "custom_position_sensor_4"
+CONF_CUSTOM_POSITION_4 = "custom_position_4"
+CONF_CUSTOM_POSITION_PRIORITY_4 = "custom_position_priority_4"
+CONF_CUSTOM_POSITION_MIN_MODE_4 = "custom_position_min_mode_4"
+DEFAULT_CUSTOM_POSITION_PRIORITY = 77
 CONF_MOTION_SENSORS = "motion_sensors"
 CONF_MOTION_TIMEOUT = "motion_timeout"
 CONF_ENABLE_BLIND_SPOT = "blind_spot"
@@ -83,6 +103,7 @@ CONF_WEATHER_IS_RAINING_SENSOR = "weather_is_raining_sensor"
 CONF_WEATHER_IS_WINDY_SENSOR = "weather_is_windy_sensor"
 CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
+CONF_WEATHER_OVERRIDE_MIN_MODE = "weather_override_min_mode"
 CONF_WEATHER_TIMEOUT = "weather_timeout"
 CONF_WEATHER_BYPASS_AUTO_CONTROL = "weather_bypass_auto_control"
 
@@ -100,6 +121,26 @@ CONF_MANUAL_THRESHOLD = "manual_threshold"
 CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
 CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
 
+# Debug & Diagnostics
+CONF_DEBUG_MODE = "debug_mode"
+CONF_DEBUG_CATEGORIES = "debug_categories"
+CONF_DEBUG_EVENT_BUFFER_SIZE = "debug_event_buffer_size"
+CONF_DRY_RUN = "dry_run"
+
+DEBUG_CATEGORY_MANUAL_OVERRIDE = "manual_override"
+DEBUG_CATEGORY_RECONCILIATION = "reconciliation"
+DEBUG_CATEGORY_PIPELINE = "pipeline"
+DEBUG_CATEGORY_MOTION = "motion"
+DEBUG_CATEGORIES_ALL = [
+    DEBUG_CATEGORY_MANUAL_OVERRIDE,
+    DEBUG_CATEGORY_RECONCILIATION,
+    DEBUG_CATEGORY_PIPELINE,
+    DEBUG_CATEGORY_MOTION,
+]
+
+DEFAULT_DEBUG_EVENT_BUFFER_SIZE = 50
+MAX_DEBUG_EVENT_BUFFER_SIZE = 200
+
 # Position verification constants (fixed values, not configurable)
 POSITION_CHECK_INTERVAL_MINUTES = 1  # Fixed interval for position verification
 POSITION_TOLERANCE_PERCENT = 3  # Fixed tolerance for position matching
@@ -110,6 +151,18 @@ COMMAND_GRACE_PERIOD_SECONDS = 5.0  # Time to ignore position changes after comm
 STARTUP_GRACE_PERIOD_SECONDS = (
     30.0  # Time to disable manual override detection on startup
 )
+
+# Maximum time (seconds) to suppress manual override detection after sending a
+# position command.  Once this threshold is crossed, wait_for_target is cleared
+# even if the cover still reports a transitional state ("opening"/"closing").
+#
+# Purpose: covers that do not report a final state ("stopped"/"open"/"closed")
+# when the user stops them mid-transit — only emitting position updates — would
+# otherwise keep wait_for_target=True indefinitely, preventing manual override
+# detection until the reconciliation timer fired.  This constant caps that
+# window at a value that accommodates most motorized blinds and awnings, which
+# typically complete a full traverse in 20–40 seconds.
+TRANSIT_TIMEOUT_SECONDS = 45
 
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection

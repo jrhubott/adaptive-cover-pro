@@ -16,6 +16,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
+from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_AWNING_ANGLE,
@@ -34,9 +35,28 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_CUSTOM_POSITION_1,
+    CONF_CUSTOM_POSITION_2,
+    CONF_CUSTOM_POSITION_3,
+    CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_MIN_MODE_1,
+    CONF_CUSTOM_POSITION_MIN_MODE_2,
+    CONF_CUSTOM_POSITION_MIN_MODE_3,
+    CONF_CUSTOM_POSITION_MIN_MODE_4,
+    CONF_CUSTOM_POSITION_PRIORITY_1,
+    CONF_CUSTOM_POSITION_PRIORITY_2,
+    CONF_CUSTOM_POSITION_PRIORITY_3,
+    CONF_CUSTOM_POSITION_PRIORITY_4,
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+    CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_FOV_LEFT,
@@ -89,6 +109,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
@@ -108,6 +129,13 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_DEBUG_CATEGORIES,
+    CONF_DEBUG_EVENT_BUFFER_SIZE,
+    CONF_DEBUG_MODE,
+    CONF_DRY_RUN,
+    DEBUG_CATEGORIES_ALL,
+    DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+    MAX_DEBUG_EVENT_BUFFER_SIZE,
     DOMAIN,
     SensorType,
 )
@@ -115,6 +143,31 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
+
+# Icons for options menu — defined once here so all languages use the same icons.
+# Text labels come from translations at runtime.
+MENU_ICONS: dict[str, str] = {
+    "cover_entities": "🪟",
+    "geometry": "📐",
+    "sun_tracking": "☀️",
+    "position": "📊",
+    "interp": "📊",
+    "blind_spot": "🌳",
+    "glare_zones": "🔆",
+    "automation": "⏱️",
+    "light_cloud": "☁️",
+    "temperature_climate": "🌡️",
+    "force_override": "🚨",
+    "weather_override": "🌧️",
+    "manual_override": "✋",
+    "custom_position": "🎯",
+    "motion_override": "🚶",
+    "sync": "🔄",
+    "device": "🔗",
+    "summary": "📋",
+    "debug": "🔍",
+    "done": "✅",
+}
 
 
 CONFIG_SCHEMA = vol.Schema(
@@ -150,15 +203,6 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="cm",
-            )
-        ),
-        vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=5,
-                step=0.1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="m",
             )
         ),
         vol.Optional(CONF_WINDOW_DEPTH, default=0.0): selector.NumberSelector(
@@ -210,15 +254,6 @@ GEOMETRY_HORIZONTAL_SCHEMA = vol.Schema(
                 unit_of_measurement="m",
             )
         ),
-        vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=5,
-                step=0.1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="m",
-            )
-        ),
     }
 )
 
@@ -252,6 +287,7 @@ GEOMETRY_TILT_SCHEMA = vol.Schema(
 
 SUN_TRACKING_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_ENABLE_SUN_TRACKING, default=True): selector.BooleanSelector(),
         vol.Required(CONF_AZIMUTH, default=180): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -294,6 +330,15 @@ SUN_TRACKING_SCHEMA = vol.Schema(
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="°",
+            )
+        ),
+        vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.1,
+                max=5,
+                step=0.1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="m",
             )
         ),
         vol.Optional(CONF_ENABLE_BLIND_SPOT, default=False): selector.BooleanSelector(),
@@ -344,14 +389,29 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Required(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
+        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes"
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
             )
         ),
-        vol.Required(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
+        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes"
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=99,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
             )
         ),
         vol.Optional(CONF_INVERSE_STATE, default=False): selector.BooleanSelector(),
@@ -361,7 +421,7 @@ POSITION_SCHEMA = vol.Schema(
 
 AUTOMATION_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_DELTA_POSITION, default=1): selector.NumberSelector(
+        vol.Required(CONF_DELTA_POSITION, default=2): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
                 max=90,
@@ -373,6 +433,7 @@ AUTOMATION_SCHEMA = vol.Schema(
         vol.Optional(CONF_DELTA_TIME, default=2): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=2,
+                max=60,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="minutes",
             )
@@ -384,15 +445,6 @@ AUTOMATION_SCHEMA = vol.Schema(
         vol.Optional(CONF_END_TIME, default="00:00:00"): selector.TimeSelector(),
         vol.Optional(CONF_END_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
-        vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=99,
-                step=1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="%",
-            )
         ),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
     }
@@ -438,6 +490,61 @@ FORCE_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_FORCE_OVERRIDE_MIN_MODE, default=False): selector.BooleanSelector(),
+    }
+)
+
+
+def _position_slider() -> selector.NumberSelector:
+    """Return a reusable 0-100% position slider selector."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0,
+            max=100,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+            unit_of_measurement="%",
+        )
+    )
+
+
+def _binary_sensor_selector() -> selector.EntitySelector:
+    """Return a single binary_sensor entity selector."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=["binary_sensor"], multiple=False)
+    )
+
+
+def _priority_slider() -> selector.NumberSelector:
+    """Return a number selector for pipeline priority (1-99)."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=1,
+            max=99,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+        )
+    )
+
+
+CUSTOM_POSITION_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_1, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_2, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_3, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
+        vol.Optional(CONF_CUSTOM_POSITION_MIN_MODE_4, default=False): selector.BooleanSelector(),
     }
 )
 
@@ -464,6 +571,35 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
+DEBUG_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_DRY_RUN, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_DEBUG_MODE, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_DEBUG_CATEGORIES,
+            default=[],
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=DEBUG_CATEGORIES_ALL,
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="debug_categories",
+            )
+        ),
+        vol.Optional(
+            CONF_DEBUG_EVENT_BUFFER_SIZE,
+            default=DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10,
+                max=MAX_DEBUG_EVENT_BUFFER_SIZE,
+                step=10,
+                mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+    }
+)
+
 WEATHER_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(
@@ -484,7 +620,6 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 max=200,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
-
             )
         ),
         vol.Optional(
@@ -510,7 +645,6 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 max=100,
                 step=0.5,
                 mode=selector.NumberSelectorMode.SLIDER,
-
             )
         ),
         vol.Optional(
@@ -537,6 +671,7 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_WEATHER_OVERRIDE_MIN_MODE, default=False): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_TIMEOUT, default=DEFAULT_WEATHER_TIMEOUT
         ): selector.NumberSelector(
@@ -551,13 +686,39 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-CLIMATE_SCHEMA = vol.Schema(
+# --- Light & Cloud (works without climate mode) ---
+LIGHT_CLOUD_SCHEMA = vol.Schema(
     {
-        # --- Light & Weather (works without climate mode) ---
         vol.Optional(
             CONF_WEATHER_ENTITY, default=vol.UNDEFINED
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain="weather")
+        ),
+        vol.Optional(
+            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                multiple=True,
+                sort=False,
+                options=[
+                    "clear-night",
+                    "clear",
+                    "cloudy",
+                    "fog",
+                    "hail",
+                    "lightning",
+                    "lightning-rainy",
+                    "partlycloudy",
+                    "pouring",
+                    "rainy",
+                    "snowy",
+                    "snowy-rainy",
+                    "sunny",
+                    "windy",
+                    "windy-variant",
+                    "exceptional",
+                ],
+            )
         ),
         vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(
@@ -594,21 +755,26 @@ CLIMATE_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
-        # --- Climate Mode (temperature-based control) ---
+    }
+)
+
+# --- Temperature Climate Mode ---
+TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
+    {
         vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
         ),
-        vol.Required(CONF_TEMP_LOW, default=21): selector.NumberSelector(
+        vol.Optional(CONF_TEMP_LOW, default=21): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
-                max=86,
+                max=90,
                 step=1,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="°",
             )
         ),
-        vol.Required(CONF_TEMP_HIGH, default=25): selector.NumberSelector(
+        vol.Optional(CONF_TEMP_HIGH, default=25): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=90,
@@ -622,7 +788,7 @@ CLIMATE_SCHEMA = vol.Schema(
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["sensor"])
         ),
-        vol.Optional(CONF_OUTSIDE_THRESHOLD, default=0): selector.NumberSelector(
+        vol.Optional(CONF_OUTSIDE_THRESHOLD, default=25): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=100,
@@ -641,6 +807,14 @@ CLIMATE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_WINTER_CLOSE_INSULATION, default=False
         ): selector.BooleanSelector(),
+    }
+)
+
+# Combined schema for backward compatibility (used by SYNC_CATEGORIES)
+CLIMATE_SCHEMA = vol.Schema(
+    {
+        **dict(LIGHT_CLOUD_SCHEMA.schema.items()),
+        **dict(TEMPERATURE_CLIMATE_SCHEMA.schema.items()),
     }
 )
 
@@ -714,6 +888,37 @@ def _get_azimuth_edges(data) -> int:
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
 
 
+def _format_duration(dur: dict | int | float | None) -> str:
+    """Format a DurationSelector value (dict or legacy int minutes) as human-readable text.
+
+    A DurationSelector stores ``{"hours": H, "minutes": M, "seconds": S}``.
+    Legacy configs may store a plain number (treated as minutes).
+    Zero-valued components are omitted unless all are zero (returns "0 min").
+    Examples:
+        {"hours": 5, "minutes": 0, "seconds": 0} -> "5 h"
+        {"hours": 2, "minutes": 15, "seconds": 0} -> "2 h 15 min"
+        {"hours": 0, "minutes": 30, "seconds": 0} -> "30 min"
+        {"hours": 0, "minutes": 0, "seconds": 45} -> "45 s"
+        120 (legacy int)                           -> "120 min"
+
+    """
+    if dur is None:
+        return ""
+    if isinstance(dur, (int, float)):
+        return f"{int(dur)} min"
+    h = int(dur.get("hours", 0) or 0)
+    m = int(dur.get("minutes", 0) or 0)
+    s = int(dur.get("seconds", 0) or 0)
+    parts = []
+    if h:
+        parts.append(f"{h} h")
+    if m:
+        parts.append(f"{m} min")
+    if s:
+        parts.append(f"{s} s")
+    return " ".join(parts) if parts else "0 min"
+
+
 def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa: C901, PLR0912, PLR0915
     """Build a narrative summary of the current configuration.
 
@@ -749,10 +954,22 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         ]
     )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
+    # Build per-slot custom position data: list of (slot, entity_id, position, priority)
+    _custom_slots: list[tuple[int, str, int, int]] = []
+    for _i in range(1, 5):
+        _sensor = config.get(f"custom_position_sensor_{_i}")
+        _pos = config.get(f"custom_position_{_i}")
+        if _sensor and _pos is not None:
+            _pri = int(config.get(f"custom_position_priority_{_i}") or DEFAULT_CUSTOM_POSITION_PRIORITY)
+            _custom_slots.append((_i, _sensor, int(_pos), _pri))
+    has_custom_position = bool(_custom_slots)
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
+    sun_tracking_enabled = config.get(CONF_ENABLE_SUN_TRACKING, True)
     has_glare = (
-        bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
+        bool(config.get(CONF_ENABLE_GLARE_ZONES))
+        and sensor_type == SensorType.BLIND
+        and sun_tracking_enabled
     )
 
     lines: list[str] = []
@@ -855,19 +1072,10 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
             f"🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{delay_str}."
         )
 
-    # Motion timeout (80)
-    if has_motion:
-        n = len(config.get(CONF_MOTION_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
-        lines.append(
-            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
-            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
-        )
-
-    # Manual override (70)
+    # Manual override (80)
     mo_parts = []
     if manual_dur is not None:
-        mo_parts.append(f"pauses for {manual_dur} min")
+        mo_parts.append(f"pauses for {_format_duration(manual_dur)}")
     threshold = config.get(CONF_MANUAL_THRESHOLD)
     if threshold is not None:
         mo_parts.append(f"threshold {threshold}%")
@@ -877,6 +1085,22 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     lines.append(
         f"✋ Manual override: pauses automatic control when you move the cover{mo_str}."
     )
+
+    # Custom positions — each slot at its own configured priority
+    if has_custom_position:
+        for _slot, _eid, _pos, _pri in _custom_slots:
+            lines.append(
+                f"🎯 Custom #{_slot}: if {_eid} is on → {_pos}% (priority {_pri})."
+            )
+
+    # Motion timeout (75)
+    if has_motion:
+        n = len(config.get(CONF_MOTION_SENSORS) or [])
+        sensor_word = "sensor" if n == 1 else "sensors"
+        lines.append(
+            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
+            f"({n} {sensor_word}) → covers return to default ({default_pos}%)."
+        )
 
     # Cloud suppression (60)
     if has_cloud:
@@ -961,22 +1185,28 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     fov_r = config.get(CONF_FOV_RIGHT)
     min_elev = config.get(CONF_MIN_ELEVATION)
     max_elev = config.get(CONF_MAX_ELEVATION)
-    sun_parts = []
-    if azimuth is not None:
-        sun_parts.append(f"azimuth {azimuth}°")
-    if fov_l is not None and fov_r is not None:
-        sun_parts.append(f"±{fov_l}°/{fov_r}° field of view")
-    elev_parts = []
-    if min_elev is not None:
-        elev_parts.append(f"above {min_elev}°")
-    if max_elev is not None:
-        elev_parts.append(f"below {max_elev}°")
-    if elev_parts:
-        sun_parts.append(f"elevation {' and '.join(elev_parts)}")
-    sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
-    lines.append(
-        f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight."
-    )
+    if sun_tracking_enabled:
+        sun_parts = []
+        if azimuth is not None:
+            sun_parts.append(f"azimuth {azimuth}°")
+        if fov_l is not None and fov_r is not None:
+            sun_parts.append(f"±{fov_l}°/{fov_r}° field of view")
+        elev_parts = []
+        if min_elev is not None:
+            elev_parts.append(f"above {min_elev}°")
+        if max_elev is not None:
+            elev_parts.append(f"below {max_elev}°")
+        if elev_parts:
+            sun_parts.append(f"elevation {' and '.join(elev_parts)}")
+        sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
+        lines.append(
+            f"☀️ Tracks the sun{sun_desc} and calculates position to block direct sunlight."
+        )
+    else:
+        lines.append(
+            "☀️ Sun tracking disabled — covers hold position; climate, manual override, "
+            "custom positions, and other overrides remain active."
+        )
 
     # Timing window
     start_time = config.get(CONF_START_TIME)
@@ -984,6 +1214,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     end_time = config.get(CONF_END_TIME)
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
+    sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
+    sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     timing_parts = []
     if start_time:
         timing_parts.append(f"from {start_time}")
@@ -997,9 +1229,33 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         timing_str = (
             " ".join(timing_parts) if timing_parts else "Active during daylight"
         )
-        lines.append(f"  🕒 {timing_str}.")
+        indent = "\u00a0" * 4
+        lines.append(f"{indent}🕒 {timing_str}.")
         if sunset_pos is not None:
-            lines.append(f"  🌅 After end time/sunset → {sunset_pos}%.")
+            # Build offset annotation strings (omitted when offset is 0)
+            def _offset_str(minutes: int) -> str:
+                if minutes > 0:
+                    return f" (+{minutes} min)"
+                if minutes < 0:
+                    return f" ({minutes} min)"
+                return ""
+
+            sunset_off_str = _offset_str(int(sunset_off))
+            sunrise_off_str = _offset_str(int(sunrise_off))
+            has_end_time = bool(end_time or end_entity)
+            if has_end_time and int(sunset_pos) != int(default_pos):
+                lines.append(f"{indent}🔚 After end time → {default_pos}%.")
+                lines.append(
+                    f"{indent}🌅 After sunset{sunset_off_str} → {sunset_pos}%."
+                )
+            else:
+                label = "end time/sunset" if has_end_time else "sunset"
+                lines.append(
+                    f"{indent}🌅 After {label}{sunset_off_str} → {sunset_pos}%."
+                )
+            lines.append(
+                f"{indent}🌄 After sunrise{sunrise_off_str} → {default_pos}% (tracking resumes)."
+            )
 
     # Blind spot
     if config.get(CONF_ENABLE_BLIND_SPOT):
@@ -1049,28 +1305,59 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         lines.append(" · ".join(limit_parts))
 
     # =========================================================================
+    # Section 3b: Position Map (what position in each scenario)
+    # =========================================================================
+    lines.append("")
+    lines.append("**Position Map** (what your covers do in each situation)")
+
+    pos_map: list[str] = []
+    if has_force:
+        pos_map.append(f"🔒 Safety override active → {force_pos}%")
+    if has_weather:
+        pos_map.append(f"🌧️ Weather danger → {weather_pos}%")
+    if has_custom_position:
+        for _slot, _eid, _pos, _pri in _custom_slots:
+            pos_map.append(f"🎯 Custom #{_slot} on → {_pos}% (priority {_pri})")
+    if sun_tracking_enabled:
+        pos_map.append("☀️ Tracking sun → calculated position")
+    min_p = config.get(CONF_MIN_POSITION, 0)
+    max_p = config.get(CONF_MAX_POSITION, 100)
+    if min_p != 0 or max_p != 100:
+        pos_map.append(f"   (clamped to {min_p}%–{max_p}%)")
+    sunset_pos = config.get(CONF_SUNSET_POS)
+    if sunset_pos is not None:
+        pos_map.append(f"🌅 After sunset → {sunset_pos}%")
+    pos_map.append(f"🌙 No sun / default → {default_pos}%")
+    for line in pos_map:
+        lines.append(line)
+
+    # =========================================================================
     # Section 4: Decision Priority (compact reference)
     # =========================================================================
     def _ch(active: bool, short: str, pri: int) -> str:
         mark = "✅" if active else "❌"
         return f"{mark}{short}"
 
-    chain = [
-        _ch(has_force, "Force", 100),
-        _ch(has_weather, "Weather", 90),
-        _ch(has_motion, "Motion", 80),
-        _ch(True, "Manual", 70),
-        _ch(has_cloud, "Cloud", 60),
-        _ch(has_climate, "Climate", 50),
+    # Build the full priority chain including per-slot custom positions.
+    # Each entry is (priority, label, active) so we can sort and render.
+    _chain_entries: list[tuple[int, str, bool]] = [
+        (100, "Force", has_force),
+        (90, "Weather", has_weather),
+        (80, "Manual", True),
+        (75, "Motion", has_motion),
+        (60, "Cloud", has_cloud),
+        (50, "Climate", has_climate),
+        (40, "Solar", sun_tracking_enabled),
+        (0, "Default", True),
     ]
-    if sensor_type == SensorType.BLIND or sensor_type is None:
-        chain.append(_ch(has_glare, "Glare", 45))
-    chain.extend(
-        [
-            _ch(True, "Solar", 40),
-            _ch(True, "Default", 0),
-        ]
-    )
+    if (sensor_type == SensorType.BLIND or sensor_type is None) and sun_tracking_enabled:
+        _chain_entries.append((45, "Glare", has_glare))
+    # Insert one entry per custom slot at its configured priority
+    for _slot, _eid, _pos, _pri in _custom_slots:
+        _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
+    # Sort highest priority first
+    _chain_entries.sort(key=lambda e: e[0], reverse=True)
+    chain = [_ch(active, short, pri) for pri, short, active in _chain_entries]
 
     lines.append("")
     lines.append("**Decision Priority** (highest wins, ✅ active ❌ not configured)")
@@ -1108,7 +1395,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "geometry": frozenset(
         {
             CONF_HEIGHT_WIN,
-            CONF_DISTANCE,
             CONF_WINDOW_DEPTH,
             CONF_SILL_HEIGHT,
             CONF_WINDOW_WIDTH,
@@ -1121,10 +1407,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
     "sun_tracking": frozenset(
         {
+            CONF_ENABLE_SUN_TRACKING,
             CONF_FOV_LEFT,
             CONF_FOV_RIGHT,
             CONF_MIN_ELEVATION,
             CONF_MAX_ELEVATION,
+            CONF_DISTANCE,
             CONF_ENABLE_BLIND_SPOT,
         }
     ),
@@ -1145,6 +1433,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNSET_POS,
             CONF_SUNSET_OFFSET,
             CONF_SUNRISE_OFFSET,
+            CONF_OPEN_CLOSE_THRESHOLD,
             CONF_INVERSE_STATE,
             CONF_INTERP,
         }
@@ -1165,7 +1454,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_START_ENTITY,
             CONF_END_TIME,
             CONF_END_ENTITY,
-            CONF_OPEN_CLOSE_THRESHOLD,
             CONF_RETURN_SUNSET,
         }
     ),
@@ -1181,6 +1469,27 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         {
             CONF_FORCE_OVERRIDE_SENSORS,
             CONF_FORCE_OVERRIDE_POSITION,
+            CONF_FORCE_OVERRIDE_MIN_MODE,
+        }
+    ),
+    "custom_position": frozenset(
+        {
+            CONF_CUSTOM_POSITION_SENSOR_1,
+            CONF_CUSTOM_POSITION_1,
+            CONF_CUSTOM_POSITION_PRIORITY_1,
+            CONF_CUSTOM_POSITION_MIN_MODE_1,
+            CONF_CUSTOM_POSITION_SENSOR_2,
+            CONF_CUSTOM_POSITION_2,
+            CONF_CUSTOM_POSITION_PRIORITY_2,
+            CONF_CUSTOM_POSITION_MIN_MODE_2,
+            CONF_CUSTOM_POSITION_SENSOR_3,
+            CONF_CUSTOM_POSITION_3,
+            CONF_CUSTOM_POSITION_PRIORITY_3,
+            CONF_CUSTOM_POSITION_MIN_MODE_3,
+            CONF_CUSTOM_POSITION_SENSOR_4,
+            CONF_CUSTOM_POSITION_4,
+            CONF_CUSTOM_POSITION_PRIORITY_4,
+            CONF_CUSTOM_POSITION_MIN_MODE_4,
         }
     ),
     "motion_override": frozenset(
@@ -1202,9 +1511,37 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_IS_WINDY_SENSOR,
             CONF_WEATHER_SEVERE_SENSORS,
             CONF_WEATHER_OVERRIDE_POSITION,
+            CONF_WEATHER_OVERRIDE_MIN_MODE,
             CONF_WEATHER_TIMEOUT,
         }
     ),
+    "light_cloud": frozenset(
+        {
+            CONF_WEATHER_ENTITY,
+            CONF_WEATHER_STATE,
+            CONF_LUX_ENTITY,
+            CONF_LUX_THRESHOLD,
+            CONF_IRRADIANCE_ENTITY,
+            CONF_IRRADIANCE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_ENTITY,
+            CONF_CLOUD_COVERAGE_THRESHOLD,
+            CONF_CLOUD_SUPPRESSION,
+        }
+    ),
+    "temperature_climate": frozenset(
+        {
+            CONF_CLIMATE_MODE,
+            CONF_TEMP_ENTITY,
+            CONF_TEMP_LOW,
+            CONF_TEMP_HIGH,
+            CONF_OUTSIDETEMP_ENTITY,
+            CONF_OUTSIDE_THRESHOLD,
+            CONF_PRESENCE_ENTITY,
+            CONF_TRANSPARENT_BLIND,
+            CONF_WINTER_CLOSE_INSULATION,
+        }
+    ),
+    # Legacy alias for backward compat
     "climate": frozenset(
         {
             CONF_WEATHER_ENTITY,
@@ -1253,6 +1590,27 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         }
     ),
 }
+
+# Categories shown in the sync selector UI.  Excludes legacy aliases
+# ("climate", "weather") whose keys are now covered by "light_cloud" and
+# "temperature_climate".  The legacy keys remain in SYNC_CATEGORIES so
+# _extract_shared_options still works for programmatic callers.
+_SYNC_UI_CATEGORIES: list[str] = [
+    "geometry",
+    "sun_tracking",
+    "blind_spot",
+    "position",
+    "interp",
+    "automation",
+    "manual_override",
+    "force_override",
+    "custom_position",
+    "motion_override",
+    "weather_override",
+    "light_cloud",
+    "temperature_climate",
+    "glare_zones",
+]
 
 
 def _extract_shared_options(
@@ -1310,14 +1668,23 @@ def _get_geometry_schema(sensor_type: str) -> vol.Schema:
     return GEOMETRY_VERTICAL_SCHEMA
 
 
+def _get_sun_tracking_schema(sensor_type: str | None) -> vol.Schema:
+    """Return sun tracking schema, adding glare zones toggle for vertical covers."""
+    if sensor_type == SensorType.BLIND:
+        return SUN_TRACKING_SCHEMA.extend(
+            {
+                vol.Optional(
+                    CONF_ENABLE_GLARE_ZONES, default=False
+                ): selector.BooleanSelector(),
+            }
+        )
+    return SUN_TRACKING_SCHEMA
+
+
 def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
     """Build the glare zones schema: enable toggle, window width, and 4 zone slots."""
     opts = options or {}
-    schema_dict: dict = {
-        vol.Optional(
-            CONF_ENABLE_GLARE_ZONES, default=opts.get(CONF_ENABLE_GLARE_ZONES, False)
-        ): (selector.BooleanSelector()),
-    }
+    schema_dict: dict = {}
     for i in range(1, 5):
         prefix = f"glare_zone_{i}"
         schema_dict[
@@ -1368,6 +1735,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self.config: dict[str, Any] = {}
         self.mode: str = "basic"
         self.selected_source_entry_id: str | None = None
+        self.setup_mode: str = "quick"  # "quick" or "full"
 
     def optional_entities(self, keys: list, user_input: dict[str, Any]) -> None:
         """Set value to None if key does not exist in user_input."""
@@ -1396,11 +1764,28 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input:
             self.config = user_input
             self.type_blind = self.config[CONF_MODE]
-            return await self.async_step_cover_entities()
+            return await self.async_step_setup_mode()
         return self.async_show_form(
             step_id="create_new",
             data_schema=CONFIG_SCHEMA,
         )
+
+    async def async_step_setup_mode(self, user_input: dict[str, Any] | None = None):
+        """Choose between quick and full setup."""
+        return self.async_show_menu(
+            step_id="setup_mode",
+            menu_options=["quick_setup", "full_setup"],
+        )
+
+    async def async_step_quick_setup(self, user_input: dict[str, Any] | None = None):
+        """Start quick setup — minimal steps."""
+        self.setup_mode = "quick"
+        return await self.async_step_cover_entities()
+
+    async def async_step_full_setup(self, user_input: dict[str, Any] | None = None):
+        """Start full setup — all configuration steps."""
+        self.setup_mode = "full"
+        return await self.async_step_cover_entities()
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Select cover entities."""
@@ -1501,7 +1886,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             ):
                 return self.async_show_form(
                     step_id="sun_tracking",
-                    data_schema=SUN_TRACKING_SCHEMA,
+                    data_schema=_get_sun_tracking_schema(self.type_blind),
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
                     },
@@ -1509,16 +1894,22 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_position()
         return self.async_show_form(
-            step_id="sun_tracking", data_schema=SUN_TRACKING_SCHEMA
+            step_id="sun_tracking",
+            data_schema=_get_sun_tracking_schema(self.type_blind),
         )
 
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
         """Configure position settings."""
         if user_input is not None:
             self.config.update(user_input)
+            # Quick setup: skip optional screens, go straight to summary
+            if self.setup_mode == "quick":
+                return await self.async_step_summary()
             if self.config.get(CONF_ENABLE_BLIND_SPOT):
                 return await self.async_step_blind_spot()
-            if self.type_blind == SensorType.BLIND:
+            if self.type_blind == SensorType.BLIND and self.config.get(
+                CONF_ENABLE_GLARE_ZONES
+            ):
                 return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
@@ -1567,7 +1958,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            if self.type_blind == SensorType.BLIND:
+            if self.type_blind == SensorType.BLIND and self.config.get(
+                CONF_ENABLE_GLARE_ZONES
+            ):
                 return await self.async_step_glare_zones()
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
@@ -1616,9 +2009,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure force override sensors."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_motion_override()
+            return await self.async_step_custom_position()
         return self.async_show_form(
             step_id="force_override", data_schema=FORCE_OVERRIDE_SCHEMA
+        )
+
+    async def async_step_custom_position(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure custom position sensors."""
+        if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_motion_override()
+        return self.async_show_form(
+            step_id="custom_position", data_schema=CUSTOM_POSITION_SCHEMA
         )
 
     async def async_step_motion_override(
@@ -1648,13 +2052,56 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 user_input,
             )
             self.config.update(user_input)
-            return await self.async_step_climate()
+            return await self.async_step_light_cloud()
         return self.async_show_form(
             step_id="weather_override", data_schema=WEATHER_OVERRIDE_SCHEMA
         )
 
+    async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
+        """Configure light sensors, weather conditions, and cloud suppression."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_ENTITY,
+                    CONF_LUX_ENTITY,
+                    CONF_IRRADIANCE_ENTITY,
+                    CONF_CLOUD_COVERAGE_ENTITY,
+                ],
+                user_input,
+            )
+            self.config.update(user_input)
+            return await self.async_step_temperature_climate()
+        return self.async_show_form(
+            step_id="light_cloud", data_schema=LIGHT_CLOUD_SCHEMA
+        )
+
+    async def async_step_temperature_climate(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure temperature-based climate mode."""
+        if user_input is not None:
+            entities = [
+                CONF_TEMP_ENTITY,
+                CONF_OUTSIDETEMP_ENTITY,
+                CONF_PRESENCE_ENTITY,
+            ]
+            self.optional_entities(entities, user_input)
+            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
+                CONF_TEMP_ENTITY
+            ):
+                return self.async_show_form(
+                    step_id="temperature_climate",
+                    data_schema=TEMPERATURE_CLIMATE_SCHEMA,
+                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                )
+            self.config.update(user_input)
+            return await self.async_step_summary()
+        return self.async_show_form(
+            step_id="temperature_climate", data_schema=TEMPERATURE_CLIMATE_SCHEMA
+        )
+
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
-        """Manage climate options."""
+        """Manage climate options (combined, for backward compat with options flow)."""
         if user_input is not None:
             entities = [
                 CONF_TEMP_ENTITY,
@@ -1746,8 +2193,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_OUTSIDETEMP_ENTITY: self.config.get(CONF_OUTSIDETEMP_ENTITY),
                 CONF_CLIMATE_MODE: self.config.get(CONF_CLIMATE_MODE),
                 CONF_WEATHER_STATE: self.config.get(CONF_WEATHER_STATE),
-                CONF_DELTA_POSITION: self.config.get(CONF_DELTA_POSITION),
-                CONF_DELTA_TIME: self.config.get(CONF_DELTA_TIME),
+                CONF_DELTA_POSITION: self.config.get(CONF_DELTA_POSITION) or 2,
+                CONF_DELTA_TIME: self.config.get(CONF_DELTA_TIME) or 2,
                 CONF_START_TIME: self.config.get(CONF_START_TIME),
                 CONF_START_ENTITY: self.config.get(CONF_START_ENTITY),
                 CONF_END_TIME: self.config.get(CONF_END_TIME),
@@ -1764,7 +2211,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 ),
                 CONF_MANUAL_OVERRIDE_DURATION: self.config.get(
                     CONF_MANUAL_OVERRIDE_DURATION
-                ),
+                )
+                or {"hours": 2},
                 CONF_MANUAL_OVERRIDE_RESET: self.config.get(CONF_MANUAL_OVERRIDE_RESET),
                 CONF_MANUAL_THRESHOLD: self.config.get(CONF_MANUAL_THRESHOLD),
                 CONF_MANUAL_IGNORE_INTERMEDIATE: self.config.get(
@@ -1779,6 +2227,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     CONF_BLIND_SPOT_ELEVATION, None
                 ),
                 CONF_ENABLE_BLIND_SPOT: self.config.get(CONF_ENABLE_BLIND_SPOT),
+                CONF_ENABLE_SUN_TRACKING: self.config.get(CONF_ENABLE_SUN_TRACKING, True),
                 CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
                 CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
                 CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),
@@ -1958,48 +2407,59 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         # ── Core Setup ───────────────────────────────────────────────
-        menu_options = [
+        keys = [
             "cover_entities",
             "geometry",
             "sun_tracking",
         ]
 
         # ── Position & Zones ─────────────────────────────────────────
-        menu_options.append("position")
+        keys.append("position")
         if self.options.get(CONF_INTERP):
-            menu_options.append("interp")
+            keys.append("interp")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
-            menu_options.append("blind_spot")
-        if self.sensor_type == SensorType.BLIND:
-            menu_options.append("glare_zones")
+            keys.append("blind_spot")
+        if self.sensor_type == SensorType.BLIND and self.options.get(
+            CONF_ENABLE_GLARE_ZONES
+        ):
+            keys.append("glare_zones")
 
         # ── Schedule & Automation ────────────────────────────────────
-        menu_options.append("automation")
+        keys.append("automation")
 
-        # ── Climate & Weather ────────────────────────────────────────
-        menu_options.append("climate")
-        if self.options.get(CONF_WEATHER_ENTITY):
-            menu_options.append("weather")
+        # ── Light, Climate & Weather ────────────────────────────────
+        keys.extend(["light_cloud", "temperature_climate"])
 
-        # ── Override Controls ────────────────────────────────────────
-        menu_options.extend(
+        # ── Override Controls (priority order: highest → lowest) ─────
+        keys.extend(
             [
-                "manual_override",
-                "force_override",
-                "motion_override",
-                "weather_override",
+                "force_override",  # Priority 100
+                "weather_override",  # Priority 90
+                "manual_override",  # Priority 80
+                "custom_position",  # Priority 77
+                "motion_override",  # Priority 75
             ]
         )
+
+        # ── Multi-Cover Management ──────────────────────────────────
+        keys.append("sync")
 
         # ── Admin ────────────────────────────────────────────────────
-        menu_options.extend(
-            [
-                "device",
-                "summary",
-                "sync",
-                "done",
-            ]
+        keys.extend(["device", "summary", "debug", "done"])
+
+        # Fetch localized labels and prepend icons defined in MENU_ICONS
+        trans_prefix = "component.adaptive_cover_pro.options.step.init.menu_options."
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "options",
+            integrations=["adaptive_cover_pro"],
         )
+        menu_options: dict[str, str] = {
+            key: f"{MENU_ICONS.get(key, '')} {translations.get(f'{trans_prefix}{key}', key)}".strip()
+            for key in keys
+        }
+
         return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
@@ -2051,10 +2511,11 @@ class OptionsFlowHandler(OptionsFlow):
                 and user_input.get(CONF_MIN_ELEVATION) is not None
                 and user_input[CONF_MAX_ELEVATION] <= user_input[CONF_MIN_ELEVATION]
             ):
+                schema = _get_sun_tracking_schema(self.sensor_type)
                 return self.async_show_form(
                     step_id="sun_tracking",
                     data_schema=self.add_suggested_values_to_schema(
-                        SUN_TRACKING_SCHEMA, user_input or self.options
+                        schema, user_input or self.options
                     ),
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
@@ -2062,10 +2523,11 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             self.options.update(user_input)
             return await self.async_step_init()
+        schema = _get_sun_tracking_schema(self.sensor_type)
         return self.async_show_form(
             step_id="sun_tracking",
             data_schema=self.add_suggested_values_to_schema(
-                SUN_TRACKING_SCHEMA, user_input or self.options
+                schema, user_input or self.options
             ),
         )
 
@@ -2118,6 +2580,20 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="force_override",
             data_schema=self.add_suggested_values_to_schema(
                 FORCE_OVERRIDE_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_custom_position(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage custom position sensors."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="custom_position",
+            data_schema=self.add_suggested_values_to_schema(
+                CUSTOM_POSITION_SCHEMA, user_input or self.options
             ),
         )
 
@@ -2219,17 +2695,18 @@ class OptionsFlowHandler(OptionsFlow):
 
         available = [
             cat
-            for cat, keys in SYNC_CATEGORIES.items()
-            if any(k in self._config_entry.options for k in keys)
+            for cat in _SYNC_UI_CATEGORIES
+            if cat in SYNC_CATEGORIES
+            and any(k in self._config_entry.options for k in SYNC_CATEGORIES[cat])
         ]
 
         if user_input is not None:
             targets = user_input.get("target_entries", [])
             if not targets:
-                return self.async_abort(reason="no_targets_selected")  # type: ignore[return-value]
+                return await self.async_step_init()
             selected = user_input.get("sync_categories", [])
             if not selected:
-                return self.async_abort(reason="no_categories_selected")  # type: ignore[return-value]
+                return await self.async_step_init()
             self.selected_sync_targets = targets
             self.selected_sync_categories = selected
             return await self.async_step_sync_confirm()
@@ -2302,8 +2779,9 @@ class OptionsFlowHandler(OptionsFlow):
             "force_override": "Force Override",
             "motion_override": "Motion Override",
             "weather_override": "Weather Override",
-            "climate": "Climate",
-            "weather": "Weather Conditions",
+            "light_cloud": "Light Sensors & Cloud Suppression",
+            "temperature_climate": "Temperature & Climate Mode",
+            "glare_zones": "Glare Zones",
         }
         category_lines = [
             f"• {_category_labels.get(c, c)}" for c in self.selected_sync_categories
@@ -2395,8 +2873,59 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         )
 
+    async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
+        """Manage light sensors, weather conditions, and cloud suppression."""
+        if user_input is not None:
+            self.optional_entities(
+                [
+                    CONF_WEATHER_ENTITY,
+                    CONF_LUX_ENTITY,
+                    CONF_IRRADIANCE_ENTITY,
+                    CONF_CLOUD_COVERAGE_ENTITY,
+                ],
+                user_input,
+            )
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="light_cloud",
+            data_schema=self.add_suggested_values_to_schema(
+                LIGHT_CLOUD_SCHEMA, user_input or self.options
+            ),
+        )
+
+    async def async_step_temperature_climate(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Manage temperature-based climate mode."""
+        if user_input is not None:
+            entities = [
+                CONF_TEMP_ENTITY,
+                CONF_OUTSIDETEMP_ENTITY,
+                CONF_PRESENCE_ENTITY,
+            ]
+            self.optional_entities(entities, user_input)
+            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
+                CONF_TEMP_ENTITY
+            ):
+                return self.async_show_form(
+                    step_id="temperature_climate",
+                    data_schema=self.add_suggested_values_to_schema(
+                        TEMPERATURE_CLIMATE_SCHEMA, user_input or self.options
+                    ),
+                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                )
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="temperature_climate",
+            data_schema=self.add_suggested_values_to_schema(
+                TEMPERATURE_CLIMATE_SCHEMA, user_input or self.options
+            ),
+        )
+
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
-        """Manage climate options."""
+        """Manage climate options (legacy combined step, kept for backward compat)."""
         if user_input is not None:
             entities = [
                 CONF_TEMP_ENTITY,
@@ -2449,6 +2978,20 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="summary",
             data_schema=vol.Schema({}),
             description_placeholders={"summary": summary_text},
+        )
+
+    async def async_step_debug(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage Debug & Diagnostics options."""
+        if user_input is not None:
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="debug",
+            data_schema=self.add_suggested_values_to_schema(
+                DEBUG_SCHEMA, user_input or self.options
+            ),
         )
 
     async def async_step_done(

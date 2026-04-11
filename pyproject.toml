@@ -26,9 +26,11 @@ python = "^3.12"
 
 [tool.poetry.group.dev.dependencies]
 hass-nabucasa = "0.75.1"
+hypothesis = ">=6.0"
 pre-commit = "4.0.1"
 pre-commit-hooks = "5.0.0"
 pylint = "3.3.1"
+pytest-homeassistant-custom-component = ">=0.13"
 ruff = "0.9.1"
 
 [tool.poetry.urls]
@@ -41,6 +43,9 @@ requires = ["poetry-core"]
 
 [tool.ruff]
 exclude = ["notebooks/"]
+src = ["custom_components/adaptive_cover_pro"]
+
+[tool.ruff.lint]
 ignore = [
   "ANN101", # Self... explanatory
   "ANN401", # Opiniated warning on disallowing dynamically typed expressions
@@ -62,10 +67,12 @@ ignore = [
   "W191",
 ]
 select = ["ALL"]
-src = ["custom_components/adaptive_cover_pro"]
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["ALL"]
+"tests/**/*.py" = ["D102", "D103", "D205"]
+"tests/*.py" = ["D102", "D103", "D205", "E402"]
+"scripts/*.py" = ["T201", "D103"]
 
 [tool.ruff.flake8-import-conventions.extend-aliases]
 "homeassistant.helpers.area_registry" = "ar"

@@ -7,9 +7,7 @@ and compute_raw_calculated_position.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
 
-import pytest
 
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
     apply_snapshot_limits,
@@ -42,7 +40,8 @@ def _make_cover(*, direct_sun_valid=True, calc_pct=50.0):
 
 def _make_snapshot(*, calc_pct=50.0, default_position=30, direct_sun_valid=True,
                    min_pos=None, max_pos=None,
-                   min_pos_sun_only=False, max_pos_sun_only=False):
+                   min_pos_sun_only=False, max_pos_sun_only=False,
+                   is_sunset_active=False):
     return SimpleNamespace(
         cover=_make_cover(direct_sun_valid=direct_sun_valid, calc_pct=calc_pct),
         config=_make_config(
@@ -52,6 +51,7 @@ def _make_snapshot(*, calc_pct=50.0, default_position=30, direct_sun_valid=True,
             max_pos_sun_only=max_pos_sun_only,
         ),
         default_position=default_position,
+        is_sunset_active=is_sunset_active,
     )
 
 
@@ -178,6 +178,36 @@ class TestComputeDefaultPosition:
         )
         assert compute_default_position(snap) == 30
 
+    def test_sunset_active_skips_min_limit(self):
+        """Sunset position is not clamped by min_pos even when always-apply is set (#128)."""
+        snap = _make_snapshot(
+            default_position=0,
+            min_pos=50,
+            min_pos_sun_only=False,  # always apply — but sunset exempts it
+            is_sunset_active=True,
+        )
+        assert compute_default_position(snap) == 0
+
+    def test_sunset_active_skips_max_limit(self):
+        """Sunset position is not clamped by max_pos (e.g. sunset_pos=100, max=80)."""
+        snap = _make_snapshot(
+            default_position=100,
+            max_pos=80,
+            max_pos_sun_only=False,
+            is_sunset_active=True,
+        )
+        assert compute_default_position(snap) == 100
+
+    def test_sunset_inactive_still_applies_min_limit(self):
+        """Normal default position (not sunset) still respects min_pos. Regression guard."""
+        snap = _make_snapshot(
+            default_position=0,
+            min_pos=50,
+            min_pos_sun_only=False,
+            is_sunset_active=False,
+        )
+        assert compute_default_position(snap) == 50
+
 
 # ---------------------------------------------------------------------------
 # compute_raw_calculated_position
@@ -215,3 +245,14 @@ class TestComputeRawCalculatedPosition:
         """Max limit is applied in the default path."""
         snap = _make_snapshot(default_position=95, direct_sun_valid=False, max_pos=80)
         assert compute_raw_calculated_position(snap) == 80
+
+    def test_sunset_active_skips_limits_in_default_path(self):
+        """Sunset position bypasses min/max limits in the default path (#128)."""
+        snap = _make_snapshot(
+            default_position=0,
+            min_pos=50,
+            min_pos_sun_only=False,
+            direct_sun_valid=False,
+            is_sunset_active=True,
+        )
+        assert compute_raw_calculated_position(snap) == 0

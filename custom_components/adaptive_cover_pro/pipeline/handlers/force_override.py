@@ -26,13 +26,20 @@ class ForceOverrideHandler(OverrideHandler):
         if not any(snapshot.force_override_sensors.values()):
             return None
         active = [e for e, on in snapshot.force_override_sensors.items() if on]
-        pos = snapshot.force_override_position
+        configured = snapshot.force_override_position
+        raw = compute_raw_calculated_position(snapshot)
+        if snapshot.force_override_min_mode:
+            pos = max(configured, raw)
+            mode_note = f" [minimum mode — floor {configured}%, calculated {raw}%]"
+        else:
+            pos = configured
+            mode_note = ""
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.FORCE,
-            reason=f"force override active ({', '.join(active)}) — position {pos}% [bypasses automatic control]",
+            reason=f"force override active ({', '.join(active)}) — position {pos}%{mode_note} [bypasses automatic control]",
             bypass_auto_control=True,
-            raw_calculated_position=compute_raw_calculated_position(snapshot),
+            raw_calculated_position=raw,
         )
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:  # noqa: ARG002

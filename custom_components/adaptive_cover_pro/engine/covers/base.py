@@ -169,7 +169,7 @@ class AdaptiveGeneralCover(ABC):
         """Check if sun is in front of window within field of view."""
         azi_min = self.config.fov_left
         azi_max = self.config.fov_right
-        valid = (
+        valid = bool(
             (self.gamma < azi_min) & (self.gamma > -azi_max) & (self.valid_elevation)
         )
         self.logger.debug("Sun in front of window (ignoring blindspot)? %s", valid)

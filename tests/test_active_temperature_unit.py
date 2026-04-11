@@ -22,17 +22,17 @@ def mock_config_entry():
 
 
 @pytest.fixture
-def mock_coordinator(hass):
+def mock_coordinator(mock_hass):
     """Return a mock coordinator."""
     coordinator = MagicMock()
-    coordinator.hass = hass
+    coordinator.hass = mock_hass
     coordinator.async_add_listener = MagicMock(return_value=lambda: None)
     return coordinator
 
 
 @pytest.mark.unit
 def test_climate_status_sensor_exposes_temperature_unit(
-    hass, mock_config_entry, mock_coordinator
+    mock_hass, mock_config_entry, mock_coordinator
 ):
     """Climate status sensor must expose temperature with the correct HA unit in attributes.
 
@@ -40,11 +40,11 @@ def test_climate_status_sensor_exposes_temperature_unit(
     """
     sensor = AdaptiveCoverClimateStatusSensor(
         mock_config_entry.entry_id,
-        hass,
+        mock_hass,
         mock_config_entry,
         "Test Cover",
         mock_coordinator,
-        hass,
+        mock_hass,
     )
 
     assert sensor._temp_unit is not None
@@ -57,33 +57,33 @@ def test_climate_status_sensor_exposes_temperature_unit(
 
 @pytest.mark.unit
 def test_climate_status_temperature_unit_matches_hass_config(
-    hass, mock_config_entry, mock_coordinator
+    mock_hass, mock_config_entry, mock_coordinator
 ):
-    """Climate status sensor temperature_unit attribute must match hass.config.units.temperature_unit."""
+    """Climate status sensor temperature_unit attribute must match mock_hass.config.units.temperature_unit."""
     sensor = AdaptiveCoverClimateStatusSensor(
         mock_config_entry.entry_id,
-        hass,
+        mock_hass,
         mock_config_entry,
         "Test Cover",
         mock_coordinator,
-        hass,
+        mock_hass,
     )
 
-    assert sensor._temp_unit == hass.config.units.temperature_unit
+    assert sensor._temp_unit == mock_hass.config.units.temperature_unit
 
 
 @pytest.mark.unit
 def test_climate_status_attributes_include_temperature(
-    hass, mock_config_entry, mock_coordinator
+    mock_hass, mock_config_entry, mock_coordinator
 ):
     """Climate status sensor must include active_temperature and temperature_unit in attributes."""
     sensor = AdaptiveCoverClimateStatusSensor(
         mock_config_entry.entry_id,
-        hass,
+        mock_hass,
         mock_config_entry,
         "Test Cover",
         mock_coordinator,
-        hass,
+        mock_hass,
     )
 
     mock_coordinator.data = MagicMock()
@@ -110,4 +110,4 @@ def test_climate_status_attributes_include_temperature(
     assert "active_temperature" in attrs
     assert attrs["active_temperature"] == 22.5
     assert "temperature_unit" in attrs
-    assert attrs["temperature_unit"] == hass.config.units.temperature_unit
+    assert attrs["temperature_unit"] == mock_hass.config.units.temperature_unit

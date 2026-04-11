@@ -15,12 +15,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
 )
-from custom_components.adaptive_cover_pro.const import (
-    CONF_DEFAULT_HEIGHT,
-    CONF_ENABLE_MIN_POSITION,
-    CONF_MIN_POSITION,
-    CONF_SUNSET_POS,
-)
 from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
@@ -34,7 +28,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 # ---------------------------------------------------------------------------
 
 
-def make_climate_data(hass, **overrides):
+def make_climate_data(mock_hass, **overrides):
     """Build a ClimateCoverData with minimal defaults."""
     defaults = {
         "temp_low": 20.0,
@@ -52,7 +46,7 @@ def make_climate_data(hass, **overrides):
         "winter_close_insulation": False,
     }
     defaults.update(overrides)
-    # Remove keys not in ClimateCoverData (e.g. 'hass' passed by callers)
+    # Remove keys not in ClimateCoverData (e.g. 'mock_hass' passed by callers)
     valid_keys = {
         "temp_low",
         "temp_high",
@@ -213,7 +207,7 @@ class TestClimateStrategyNormalWithPresence:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_winter_heating_strategy(
-        self, mock_datetime, hass, mock_logger, vertical_cover
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
         """Winter + sun valid → WINTER_HEATING."""
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -225,7 +219,7 @@ class TestClimateStrategyNormalWithPresence:
         )
 
         climate_data = make_climate_data(
-            hass,
+            mock_hass,
             is_presence=True,
             temp_low=20.0,
             temp_high=25.0,
@@ -265,7 +259,7 @@ class TestClimateStrategyNormalWithPresence:
         assert state_handler.climate_strategy == ClimateStrategy.WINTER_HEATING
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
-    def test_low_light_strategy(self, mock_datetime, hass, mock_logger, vertical_cover):
+    def test_low_light_strategy(self, mock_datetime, mock_hass, mock_logger, vertical_cover):
         """Not summer + low lux → LOW_LIGHT."""
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover.sun_data.sunset = MagicMock(
@@ -276,7 +270,7 @@ class TestClimateStrategyNormalWithPresence:
         )
 
         climate_data = make_climate_data(
-            hass, is_presence=True, lux_below_threshold=True
+            mock_hass, is_presence=True, lux_below_threshold=True
         )
 
         with (
@@ -306,7 +300,7 @@ class TestClimateStrategyNormalWithPresence:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_summer_cooling_strategy(
-        self, mock_datetime, hass, mock_logger, vertical_cover
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
         """Summer + transparent blind → SUMMER_COOLING."""
         mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
@@ -318,7 +312,7 @@ class TestClimateStrategyNormalWithPresence:
         )
 
         climate_data = make_climate_data(
-            hass,
+            mock_hass,
             transparent_blind=True,
             is_presence=True,
             is_sunny=True,
@@ -355,7 +349,7 @@ class TestClimateStrategyNormalWithPresence:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_glare_control_strategy(
-        self, mock_datetime, hass, mock_logger, vertical_cover
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
         """Normal sunny conditions with presence → GLARE_CONTROL."""
         mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
@@ -367,7 +361,7 @@ class TestClimateStrategyNormalWithPresence:
         )
 
         climate_data = make_climate_data(
-            hass,
+            mock_hass,
             transparent_blind=False,
             is_presence=True,
             is_sunny=True,
@@ -412,7 +406,7 @@ class TestClimateStrategyNormalWithoutPresence:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_summer_cooling_without_presence(
-        self, mock_datetime, hass, mock_logger, vertical_cover
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
         """Summer + sun valid + no presence → SUMMER_COOLING."""
         mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
@@ -423,7 +417,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 6, 21, 5, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, is_presence=False)
+        climate_data = make_climate_data(mock_hass, is_presence=False)
 
         with (
             patch.object(
@@ -459,7 +453,7 @@ class TestClimateStrategyNormalWithoutPresence:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_winter_heating_without_presence(
-        self, mock_datetime, hass, mock_logger, vertical_cover
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
         """Winter + sun valid + no presence → WINTER_HEATING."""
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -470,7 +464,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, is_presence=False)
+        climate_data = make_climate_data(mock_hass, is_presence=False)
 
         with (
             patch.object(
@@ -506,7 +500,7 @@ class TestClimateStrategyNormalWithoutPresence:
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_low_light_without_presence_no_sun(
-        self, mock_datetime, hass, mock_logger, vertical_cover
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
         """Sun not valid + no presence → LOW_LIGHT (default position)."""
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
@@ -517,7 +511,7 @@ class TestClimateStrategyNormalWithoutPresence:
             return_value=datetime(2024, 1, 1, 6, 0, 0)
         )
 
-        climate_data = make_climate_data(hass, is_presence=False)
+        climate_data = make_climate_data(mock_hass, is_presence=False)
 
         with (
             patch.object(
@@ -758,6 +752,23 @@ class TestPositionExplanationChangeDetection:
         type(coord).is_motion_detected = PropertyMock(return_value=True)
         coord._motion_mgr = MagicMock()
         coord._motion_mgr._motion_timeout_active = False
+        coord.manager = MagicMock()
+        coord.manager.get_event_buffer.return_value = []
+        coord.manager.covers = set()
+        coord.manager.manual_control = {}
+        coord.manager.manual_control_time = {}
+        coord.manager.reset_duration = __import__("datetime").timedelta(hours=2)
+        coord._cmd_svc = MagicMock()
+        coord._cmd_svc.get_all_entity_state_snapshots.return_value = {}
+        coord.entities = []
+        coord._cover_provider = MagicMock()
+        coord._cover_provider.read_positions.return_value = {}
+        coord._cover_provider.read_all_capabilities.return_value = {}
+        coord._cover_type = "cover_blind"
+        coord.last_update_success = True
+        coord.last_exception = None
+        coord._last_update_success_time = None
+        coord.update_interval = None
 
         # Bind the real method
         coord.build_diagnostic_data = (

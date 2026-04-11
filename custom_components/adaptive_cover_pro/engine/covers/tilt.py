@@ -100,6 +100,13 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             )
             return 0.0
 
+        if isinstance(self.mode, TiltMode):
+            max_degrees = self.mode.max_degrees
+        else:
+            max_degrees = TiltMode(self.mode).max_degrees
+
+        result = max(0.0, min(float(max_degrees), result))
+
         self.logger.debug(
             "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",
             self.sol_elev,

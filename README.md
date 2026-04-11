@@ -32,6 +32,8 @@ This integration builds upon the template sensor from this forum post [Automatic
   - [Horizontal](#horizontal)
   - [Tilt](#tilt)
   - [Automation](#automation)
+  - [Custom Position](#custom-position)
+  - [Weather Safety](#weather-safety)
   - [Climate](#climate)
   - [Blindspot](#blindspot)
 - [Entities](#entities)
@@ -76,6 +78,7 @@ This integration builds upon the template sensor from this forum post [Automatic
     - When ANY sensor is active, ALL covers move to a configured safe position
     - Default position: 0% (fully retracted/closed) for rain/wind protection
     - Customizable position: Set to 100% for security sensors (emergency access)
+    - **Minimum position mode**: optionally treat the override position as a floor — covers won't go below it but solar tracking can still open them higher
     - Manual control still works during force override
   - **Motion-Based Automatic Control** - Occupancy-based automation
     - Configure motion sensors to enable/disable sun positioning based on room occupancy
@@ -86,27 +89,29 @@ This integration builds upon the template sensor from this forum post [Automatic
     - Use cases: Glare control when present, energy savings when away, privacy when unoccupied
     - Optional feature - leave sensor list empty to disable
   - **Automatic Position Verification** (built-in reliability feature)
-    - Periodically verifies covers reached the positions we sent them to (every 2 minutes)
-    - Automatically retries failed position commands (up to 3 attempts)
+    - Periodically verifies covers reached the positions we sent them to (every 1 minute)
+    - Automatically retries failed position commands (up to 3 attempts, then gives up)
     - Detects position mismatches between target and actual position (3% tolerance)
-    - Respects manual override detection and skips during active moves
+    - Respects manual override detection, Automatic Control, Integration Enabled, and time window
     - Separate from normal position updates - only retries failed commands, doesn't chase sun movement
     - No configuration required - works automatically when automatic control is enabled
     - Diagnostic sensors available for troubleshooting cover movement issues
+    - See [Position Reconciliation Loop](#position-reconciliation-loop) for details
 
 - **Diagnostic Sensors** (always enabled, no setup required)
   - Real-time troubleshooting sensors to understand integration behavior
   - All sensors use diagnostic entity category
-  - 9 consolidated sensors covering all aspects of integration behavior:
+  - 10 always-created diagnostic sensors plus 2 conditional:
     - **Sun Position** — azimuth, elevation, gamma, FOV bounds, in_fov in one sensor
     - **Control Status** — why covers are/aren't moving, delta thresholds, time since last action
-    - **Calculated Position** — raw geometric position with `position_explanation` attribute showing the full decision chain (e.g. `"Sun tracking (45%) → Climate: Winter Heating → 100%"`)
+    - **Decision Trace** — full pipeline evaluation showing which handler won and why; includes `position_explanation` on the Target Position sensor showing the complete decision chain (e.g. `"Sun tracking (45%) → Climate: Winter Heating → 100%"`)
+    - **Last Skipped Action** — most recent suppressed move with reason, position delta, and thresholds
     - **Last Cover Action** — most recent cover command with full details
     - **Manual Override End Time** — when automatic control will resume
     - **Position Verification** — last check time and retry count combined
     - **Motion Status** — motion control state; shows `not_configured` when no motion sensors are set up
-    - **Climate Status** — active temperature and climate strategy combined (when climate mode enabled)
-    - **Force Override Triggers** — count and per-sensor status (when force override sensors configured)
+    - **Climate Status** — active temperature and climate strategy *(conditional: only when climate mode is configured)*
+    - **Force Override Triggers** — count and per-sensor status *(conditional: only when force override sensors are configured)*
 
 - **Enhanced Geometric Accuracy** (automatic improvements)
   - Angle-dependent safety margins for better sun blocking at extreme angles
@@ -123,7 +128,7 @@ This integration builds upon the template sensor from this forum post [Automatic
     - **Your Cover** — what is being controlled and the physical window dimensions
     - **How It Decides** — a narrative explanation of every active rule in priority order (sun tracking, timing, blind spot, glare zones, climate, cloud suppression, manual override, motion timeout, weather safety, force override)
     - **Position Limits** — default position, min/max range, delta thresholds, and flags like inverse state and interpolation — all on one line
-    - **Decision Priority** — a compact one-line reference showing all 9 pipeline handlers with ✅ (active) or ❌ (not configured) status
+    - **Decision Priority** — a compact one-line reference showing all 10 pipeline handlers with ✅ (active) or ❌ (not configured) status
   - Only configured features are shown — unconfigured sections are omitted to keep the summary concise
 
 ## Installation
@@ -183,7 +188,7 @@ Range: 10%–95% (during sun tracking only) · Default: 60% · Min change: 2% ·
 Min interval: 2 min · Inverse state · Interpolation on
 
 Decision Priority (highest wins, ✅ active ❌ not configured)
-✅Force(100) → ✅Weather(90) → ❌Motion(80) → ✅Manual(70) → ✅Cloud(60)
+✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Custom(77) → ❌Motion(75) → ✅Cloud(60)
 → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
 ```
 
@@ -198,7 +203,7 @@ Decision Priority (highest wins, ✅ active ❌ not configured)
 
 ## Modes
 
-This component supports two calculation modes — **Basic** and **Climate** — both wrapped by a shared override pipeline. The pipeline evaluates handlers in priority order; the first handler that produces a result wins.
+This component supports two calculation modes — **Basic** and **Climate** — both wrapped by a shared override pipeline. Every handler is evaluated each cycle; the highest-priority handler that produces a result wins the cover position.
 
 ### Override pipeline
 
@@ -206,10 +211,14 @@ Regardless of which calculation mode is active, every position decision passes t
 
 | Priority | Override | Behavior |
 |----------|----------|----------|
-| 100 | **Force override** | Binary sensor(s) force cover to a fixed position — no other logic runs |
-| 80 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
-| 70 | **Manual override** | If the user physically moved the cover, automatic control is paused |
+| 100 | **Force override** | Binary sensor(s) force cover to a fixed position (or a minimum floor if minimum position mode is enabled) |
+| 90 | **Weather override** | Wind speed, rain rate, or severe-weather binary sensors exceed configured thresholds; covers retract to a safe position (or minimum floor), bypassing automatic control |
+| 80 | **Manual override** | If the user physically moved the cover, automatic control is paused |
+| 1–99 | **Custom position** | Up to 4 configurable binary-sensor/position pairs; when a sensor is on, the cover moves to the configured position (or uses it as a minimum floor). Each slot has an individual priority (default 77) |
+| 75 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
+| 60 | **Cloud suppression** | Lux, irradiance, cloud coverage, or weather state indicates no direct sun; solar tracking is skipped and cover returns to default |
 | 50 | **Climate** | Active when Climate mode is enabled — applies temperature/presence/light strategy (see below) |
+| 45 | **Glare zone** | Vertical blinds only — sun would reach a named floor zone; cover extends to shield that area |
 | 40 | **Solar** | Active when sun is within the window's field of view and elevation limits — uses calculated sun-tracking position |
 | 0 | **Default** | Final fallback — returns the configured default position (or sunset position if applicable) |
 
@@ -233,11 +242,13 @@ graph TD
   subgraph PIPE ["Override Pipeline (all modes)"]
     direction TB
     P1["Force override active?"] -->|Yes| R_FORCE["Fixed position"]
-    P1 -->|No| P2["Motion timeout active?"]
-    P2 -->|Yes| R_MOTION["Default position"]
+    P1 -->|No| P2["Weather override active?"]
+    P2 -->|Yes| R_WEATHER["Safe retract position"]
     P2 -->|No| P3["Manual override active?"]
     P3 -->|Yes| R_MANUAL["Hold position"]
-    P3 -->|No| MODE{"Climate mode\nenabled?"}
+    P3 -->|No| P4["Motion timeout active?"]
+    P4 -->|Yes| R_MOTION["Default position"]
+    P4 -->|No| MODE{"Climate mode\nenabled?"}
   end
 
   MODE -->|No| BASIC
@@ -352,6 +363,8 @@ The Minimal Position and Maximum Position settings create boundaries for automat
 
 **Most users should leave these toggles UNCHECKED** for consistent protection and predictable behavior. The "checked" option is for advanced users who want limits to apply only during active sun tracking, allowing more flexibility during other times.
 
+> **Note:** The configured **sunset position** is always exempt from min/max position limits — it is sent as-is regardless of these toggles, so your covers can fully close (or open) at night even if a minimum position is set.
+
 **Common use cases:**
 - **Minimum Position** (e.g., 20%): Prevents cover from fully closing, maintains some natural light, protects from jamming at bottom
 - **Maximum Position** (e.g., 80%): Prevents cover from fully opening, maintains some privacy/shade, protects from jamming at top
@@ -424,7 +437,7 @@ Interpolated List: [100, 75, 50, 25, 0]
 | Awning Height              | 2       | 0.1-6 | Height from work area to awning mounting point |
 | Awning Length (horizontal) | 2.1     | 0.3-6 | Length of the awning when fully extended       |
 | Awning Angle               | 0       | 0-45  | Angle of the awning from the wall              |
-| Glare Zone                 | 0.5     | 0.1-5 | Objects within this distance of the cover recieve direct sunlight |
+| Glare Zone                 | 0.5     | 0.1-5 | Objects within this distance of the cover receive direct sunlight |
 
 ### Tilt
 
@@ -440,20 +453,56 @@ Interpolated List: [100, 75, 50, 25, 0]
 
 | Variables                                  | Default      | Range | Description                                                                                    |
 | ------------------------------------------ | ------------ | ----- | ---------------------------------------------------------------------------------------------- |
-| Minimum Delta Position                     | 1            | 1-90  | Minimum position change required before another change can occur                               |
+| Minimum Delta Position                     | 2            | 1-90  | Minimum position change required before another change can occur                               |
 | Minimum Delta Time                         | 2            |       | Minimum time gap between position change                                                       |
 | Start Time                                 | `"00:00:00"` |       | Earliest time a cover can be adjusted after midnight                                           |
 | Start Time Entity                          | None         |       | The earliest moment a cover may be changed after midnight. _Overrides the `start_time` value_  |
-| Manual Override Duration                   | `15 min`     |       | Minimum duration for manual control status to remain active                                    |
+| Manual Override Duration                   | `2 hours`    |       | Minimum duration for manual control status to remain active                                    |
 | Manual Override reset Timer                | False        |       | Resets duration timer each time the position changes while the manual control status is active |
 | Manual Override Threshold                  | None         | 1-99  | Minimal position change to be recognized as manual change                                      |
 | Manual Override ignore intermediate states | False        |       | Ignore StateChangedEvents that have state `opening` or `closing`                               |
 | End Time                                   | `"00:00:00"` |       | Latest time a cover can be adjusted each day                                                   |
 | End Time Entity                            | None         |       | The latest moment a cover may be changed . _Overrides the `end_time` value_                    |
-| Adjust at end time                         | `False`      |       | Make sure to always update the position to the default setting at the end time.                |
+| Adjust at end time                         | `False`      |       | Make sure to always update the position to the default setting at the end time. Only fires when Automatic Control is ON — if Automatic Control is disabled, covers stay where they are at end time. |
 | **Motion Sensors** (Occupancy-based control) |   |   |   |
 | Motion Sensors for Occupancy Control       | None (empty) |       | List of binary sensors that control sun positioning based on room occupancy. When ANY sensor detects motion, covers use automatic positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable feature. |
 | Motion Timeout Duration                    | `300`        | 30-3600 | Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Default: 300 seconds (5 minutes). |
+
+### Custom Position
+
+Up to 4 custom position slots, each pairing a binary sensor with a fixed cover position. When the sensor is `on`, the cover moves to the configured position (priority 77 by default, overriding solar and climate but not manual or force override). Each slot has an independent configurable priority (1–99).
+
+| Variables | Default | Range | Description |
+| --------- | ------- | ----- | ----------- |
+| Custom Position Sensor 1–4 | None | | Binary sensor entity. When `on`, triggers the custom position for that slot. |
+| Custom Position 1–4 | 0 | 0–100 | Cover position (%) to move to when the sensor is active. |
+| Custom Position Priority 1–4 | 77 | 1–99 | Pipeline evaluation priority for this slot. Higher = evaluated before lower-numbered handlers. Multiple slots are evaluated in descending priority order. |
+| Minimum Mode 1–4 | Off | | When enabled, the position acts as a minimum floor — the cover won't go below it, but higher positions from solar tracking or other handlers are still allowed through. When disabled (default), the cover is always set to exactly the configured position. |
+
+**Example use cases:**
+- A bedroom schedule sensor forces blinds closed (0%) for an afternoon nap
+- A movie sensor moves living room blinds to 80% when the TV is on
+- Multiple sensors at different priorities let you stack logic (e.g. "watching TV" overrides general solar but a "morning coffee" sensor takes priority over both)
+
+### Weather Safety
+
+The Weather Override handler (priority 90) moves covers to a safe retract position and bypasses automatic control when wind speed, rain rate, or a binary severe-weather sensor exceeds its threshold. Safety covers retract immediately; when all conditions clear the cover waits a configurable timeout before returning to automatic control.
+
+| Variables | Default | Range | Description |
+| --------- | ------- | ----- | ----------- |
+| Wind Speed Sensor | None | | Numeric sensor (km/h or m/s) measuring wind speed. |
+| Wind Speed Threshold | None | | Wind speed above which covers retract. Units must match your sensor. |
+| Wind Direction Sensor | None | | Optional numeric sensor (degrees). When set, override only applies when wind is within the tolerance of the window azimuth. |
+| Wind Direction Tolerance | 45° | 0–180 | Degrees either side of the window azimuth within which wind direction activates the override. |
+| Rain Rate Sensor | None | | Numeric sensor (mm/h) measuring rain intensity. |
+| Rain Rate Threshold | None | | Rain rate above which covers retract. |
+| Is Raining Sensor | None | | Binary sensor that activates the override when `on`. |
+| Is Windy Sensor | None | | Binary sensor that activates the override when `on`. |
+| Severe Weather Sensors | None | | List of additional binary sensors (storm, hail, etc.) — any `on` triggers the override. |
+| Weather Override Position | 0 | 0–100 | Cover position (%) to move to when any condition is active. Default 0% = fully retracted/closed. |
+| Minimum Position Mode | Off | | When enabled, the override position acts as a minimum floor — the cover won't close below it, but higher positions from solar tracking are still allowed. When disabled (default), the cover is always sent to the exact override position. |
+| Recovery Timeout | 0 s | 0–3600 | Seconds to wait after all conditions clear before resuming automatic control. Prevents covers from rapidly cycling when conditions are borderline. |
+| Bypass Automatic Control | True | | When `on`, weather override fires even if Automatic Control is disabled. Ensures safety-critical retraction always happens. |
 
 ### Climate
 
@@ -470,6 +519,45 @@ Interpolated List: [100, 75, 50, 25, 0]
 | Lux Threshold                 | `1000`  |       |                                               | "In non-summer, above threshold, use optimal position. Otherwise, default position or fully open in winter."                                         |
 | Irradiance Entity             | `None`  |       | `sensor.irradiance`                           | Returns measured irradiance                                                                                                                          |
 | Irradiance Threshold          | `300`   |       |                                               | "In non-summer, above threshold, use optimal position. Otherwise, default position or fully open in winter."                                         |
+
+### Position Reconciliation Loop
+
+Adaptive Cover Pro runs a background **reconciliation loop** that checks every configured cover once per minute and resends the last target position if the cover hasn't arrived. This is the mechanism that makes the integration resilient to dropped commands, Z-Wave/Zigbee flakiness, and momentary motor stalls — it's also the mechanism that decides when to *stop* retrying so the integration doesn't fight a physically blocked cover forever.
+
+**How the loop works**
+
+1. Every 1 minute (`POSITION_CHECK_INTERVAL_MINUTES = 1`, not user-configurable), the loop iterates every entity currently in `target_call` (the set of positions the integration has asked for).
+2. For each entity it reads the current reported position and compares it to the target using `position_tolerance = 3%`.
+3. If within tolerance → the target is considered reached, retry counter resets, loop moves on.
+4. If outside tolerance → retry counter increments and the same target is resent (unless any of the gates below block it).
+
+**What blocks a retry**
+
+| Condition | Behaviour |
+|---|---|
+| `wait_for_target` is still true and `< 120 s` since last send | Skip (cover is still expected to be moving) |
+| Entity is in the manual-override set | Skip (don't fight the user) |
+| Automatic Control OFF and entity is not a safety target | Skip |
+| Outside the configured time window and entity is not a safety target | Skip |
+| **Integration Enabled OFF** | Skip ALL entities (safety and non-safety) |
+| Retry count has reached `max_retries = 3` | Log a warning once, add entity to "gave up" set, stop retrying until a new target is set |
+
+**Worst-case retry sequence**
+
+With `max_retries = 3` and a 1-minute interval, a cover that refuses to reach its target will see:
+
+- `t+0 s` — initial send
+- `t+60 s` — retry 1
+- `t+120 s` — retry 2
+- `t+180 s` — retry 3 → integration logs warning and backs off
+
+So the integration tries for **~3 minutes maximum** before giving up on a stuck target. The retry count resumes when a new target is calculated (e.g. the sun moves, a new handler fires). No motor hammering, no infinite loops.
+
+**Safety targets** (from Force Override or Weather Override) are tracked separately: reconciliation continues to resend them even when Automatic Control is OFF or the time window has closed — but they too are halted by Integration Enabled OFF.
+
+**Diagnostic visibility**
+
+The `{device}_position_verification` and `{device}_retry_count` diagnostic sensors expose the current retry count per entity, the last reconciliation timestamp, and whether the integration has given up on any target. Use these when troubleshooting a cover that isn't reaching its commanded position.
 
 ### Blindspot
 
@@ -500,7 +588,7 @@ These entities are always available:
 
 ---
 
-**`sensor.{device_name}_cover_position`**
+**`sensor.{device_name}_cover_position`** *(displayed as "Target Position")*
 
 State: current target position (%) determined by the integration.
 
@@ -508,26 +596,74 @@ State: current target position (%) determined by the integration.
 | --------- | ----------- |
 | `reason` | Which pipeline rule is driving the position — answers *"what decision rule won?"* (e.g. `"no active condition — default position 100%"`). See [Understanding Reason vs. Position Explanation](#understanding-reason-vs-position-explanation). |
 | `position_explanation` | How the final position number was determined after the pipeline chose a position — answers *"where did this specific number come from?"* (e.g. `"Sunset Position (100%)"` or `"Sun Tracking (67%) → Max Position Limit → 80%"`). |
-| `control_method` | The winning pipeline handler: `solar`, `default`, `manual_override`, `force_override`, `motion_timeout`, `summer`, or `winter`. |
+| `control_method` | The winning pipeline handler: `solar`, `default`, `manual_override`, `force_override`, `weather_override`, `cloud_suppression`, `custom_position`, `glare_zone`, `motion_timeout`, `summer`, or `winter`. |
 | `raw_calculated_position` | The raw geometric sun-tracking position before any limits, climate adjustments, or inversion are applied. |
 | `edge_case_detected` | `true` when geometric edge-case handling was triggered (e.g. very low elevation or near-parallel sun angle). |
 | `safety_margin` | The safety margin multiplier applied to the geometric calculation (≥1.0; activates at steep gamma or low/high elevation). |
 | `effective_distance` | The effective distance used in the geometric calculation after sill height offset is applied. |
+| `actual_positions` | Dict of every managed cover entity ID → its current reported position. Lets you compare where covers actually are vs. the target at a glance. |
+| `all_at_target` | `true` when every cover with a known position is within the position tolerance of the target. `false` indicates one or more covers haven't reached the desired position yet. |
 
 ---
 
 | Entities | Default | Description |
 | --------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `sensor.{device_name}_control_method` | `solar` | **Cover Position Driver**: Shows what is currently controlling the cover position. Values (in priority order): **`force_override`** — a safety binary sensor is active; cover moves to the override position. **`motion_timeout`** — no occupancy detected after the configured timeout; cover returns to its default position. **`manual_override`** — you manually moved the cover; automatic control is paused. **`summer`** — climate mode active and temperature is above the max threshold; cover closes to block heat. **`winter`** — climate mode active and temperature is below the min threshold; cover opens to maximise solar heat gain. **`solar`** — sun is within the field of view; cover follows the calculated sun-position. **`default`** — sun is outside the field of view, elevation limits, blind spot, or the sunrise/sunset offset window; cover holds the default position. |
+| `sensor.{device_name}_control_method` | `solar` | **Cover Position Driver**: Shows what is currently controlling the cover position. Values (in priority order): **`force_override`** — a force-override binary sensor is active; cover moves to the configured override position. **`weather_override`** — wind speed, rain rate, or a severe-weather sensor exceeded its threshold; covers retract to the safe position. **`manual_override`** — you manually moved the cover; automatic control is paused. **`custom_position`** — a custom-position binary sensor is active; cover moves to the configured position for that slot. **`motion_timeout`** — no occupancy detected after the configured timeout; cover returns to its default position. **`cloud_suppression`** — lux, irradiance, cloud coverage, or weather indicates no direct sun; solar tracking is skipped and cover returns to default. **`summer`** — climate mode active and temperature is above the max threshold; cover closes to block heat. **`winter`** — climate mode active and temperature is below the min threshold; cover opens to maximise solar heat gain. **`glare_zone`** — vertical blinds only: sun would reach a protected floor zone; cover extends to shield it. **`solar`** — sun is within the field of view; cover follows the calculated sun-position. **`default`** — sun is outside the field of view, elevation limits, blind spot, or the sunrise/sunset offset window; cover holds the default position. |
 | `sensor.{device_name}_start_sun` | | Shows the starting time when the sun enters the window's view, with an interval of every 5 minutes. |
 | `sensor.{device_name}_end_sun` | | Indicates the ending time when the sun exits the window's view, with an interval of every 5 minutes. |
 | `binary_sensor.{device_name}_manual_override` | `off` | Indicates if manual override is engaged for any blinds. |
 | `binary_sensor.{device_name}_sun_infront` | `off` | Indicates whether the sun is in front of the window within the designated field of view. |
-| `switch.{device_name}_automatic_control` | `on` | Activates the adaptive control feature. When enabled, blinds adjust based on calculated position, unless manually overridden. |
-| `switch.{device_name}_manual_override` | `on` | **Manual Override Detection Switch**: Enables automatic detection of manual position changes. When enabled, the integration monitors your covers and pauses automatic control if you manually adjust a cover's position (via physical controls, app, or automation). The cover remains in manual mode for the configured duration (default: 15 minutes), after which automatic control resumes. This allows you to temporarily take control without disabling automation entirely. Turn this switch off to disable manual override detection and always apply calculated positions. |
-| `switch.{device_name}_return_to_default_when_disabled` (vertical & horizontal only) | `off` | When enabled, covers automatically return to their default position when automatic control is turned off. Useful for retracting awnings or setting blinds to a safe position. |
+| `switch.{device_name}_integration_enabled` | `on` | **Master kill switch.** When OFF: any ACP-in-flight cover moves are stopped immediately (`cover.stop_cover`, capability-checked), *no* further commands are sent under any circumstances — including Force Override, Weather, and reconciliation. Use this when you need ACP completely silent (e.g. child safety, maintenance, testing). Diagnostic sensors continue updating. Re-enabling resumes on the next natural update cycle; covers are not snapped back to a calculated position. |
+| `switch.{device_name}_automatic_control` | `on` | **Solar tracking toggle.** When OFF, the integration stops sending solar, climate, custom-position, motion-timeout, and end-of-time-window Return-to-Default commands. Force Override (priority 100) and Weather Override (priority 90) still fire because they are safety handlers — they must act regardless of whether sun-tracking is paused. Use Integration Enabled (above) if you need those blocked too. |
+| `switch.{device_name}_manual_override` | `on` | **Manual Override Detection Switch**: Enables automatic detection of manual position changes. When enabled, the integration monitors your covers and pauses automatic control if you manually adjust a cover's position (via physical controls, app, or automation). The cover remains in manual mode for the configured duration (default: 2 hours), after which automatic control resumes. This allows you to temporarily take control without disabling automation entirely. Turn this switch off to disable manual override detection and always apply calculated positions. |
+| `switch.{device_name}_return_to_default_when_disabled` (vertical & horizontal only) | `off` | When enabled, covers return to their default position *immediately* when you turn Automatic Control OFF (a one-time reposition on the toggle event). Distinct from the *end-of-time-window* Return-to-Default (`return_sunset` option), which fires at the configured end time and is itself gated on Automatic Control — see [Operational Hours](#operational-hours). |
+| `switch.{device_name}_motion_control` *(only when motion sensors configured)* | `on` | **Motion Control Switch**: Enables or disables motion-based automatic positioning. When off, the motion timeout handler is skipped (lower-priority handlers such as climate and solar remain active). Useful for temporarily disabling occupancy-based control without removing the sensor configuration. |
 | `button.{device_name}_reset_manual_override` | `on` | Resets manual override tags for all covers; if `switch.{device_name}_automatic_control` is on, it also restores blinds to their correct positions. |
 | `sensor.{device_name}_manual_override_end_time` | | Timestamp showing when the manual override expires and automatic control resumes. Unknown when no override is active. Includes a `per_entity` attribute with individual expiry times per cover. See [diagnostic sensor reference](#diagnostic-sensor-reference) for full details. |
+
+### Global Controls (Services)
+
+If you have multiple ACP instances (one per room), these services let you control all of them — or a targeted subset — from a single automation, script, or voice command.
+
+| Service | What it does |
+|---|---|
+| `adaptive_cover_pro.integration_enable` | Re-enables targeted instances. Covers stay where they are; positioning resumes on the next update cycle. |
+| `adaptive_cover_pro.integration_disable` | Disables targeted instances. In-flight ACP moves are stopped immediately, timers cancelled, state cleared. |
+| `adaptive_cover_pro.emergency_stop` | **Panic button.** Sends `cover.stop_cover` to *every* configured cover on targeted instances (capability-checked), then disables the integration. With no target, acts on all ACP instances. |
+
+All three services accept the standard Home Assistant `target:` block — `entity_id`, `device_id`, or `area_id`. The UI picker filters by ACP entities; you can also target by device or area in automations/scripts. Covers not managed by ACP are silently ignored.
+
+**Calling from Developer Tools:**
+
+```yaml
+service: adaptive_cover_pro.emergency_stop
+# no target: hits every ACP instance
+```
+
+```yaml
+service: adaptive_cover_pro.integration_disable
+target:
+  device_id: abc123def456  # one room only
+```
+
+**Automation recipe — single "ACP master" toggle:**
+
+```yaml
+# input_boolean.acp_enabled → drives all instances at once
+automation:
+  - trigger:
+      - platform: state
+        entity_id: input_boolean.acp_enabled
+        to: "off"
+    action:
+      - service: adaptive_cover_pro.integration_disable
+  - trigger:
+      - platform: state
+        entity_id: input_boolean.acp_enabled
+        to: "on"
+    action:
+      - service: adaptive_cover_pro.integration_enable
+```
 
 When climate mode is setup you will also get these entities:
 
@@ -542,14 +678,14 @@ These sensors are always created for every device (no configuration required). T
 
 #### Understanding Reason vs. Position Explanation
 
-The `cover_position` sensor exposes two attributes that answer different questions about why a cover is at a given position:
+The Target Position sensor (`cover_position`) exposes two attributes that answer different questions about why a cover is at a given position:
 
 | Attribute | Layer | Answers | Example |
 | --------- | ----- | ------- | ------- |
 | **`reason`** | Pipeline (override priority chain) | *Which rule won?* | `"no active condition — default position 100%"` |
 | **`position_explanation`** | Calculation engine (post-pipeline) | *Where did this number come from?* | `"Sunset Position (100%)"` |
 
-**`reason`** reflects the pipeline decision. The integration evaluates eight handlers in priority order — force override (100) → wind (95) → motion timeout (80) → manual override (70) → climate (50) → solar (40) → cloud suppression (35) → default (0). The `reason` tells you which handler claimed control and why it won.
+**`reason`** reflects the pipeline decision. The integration evaluates ten handlers in priority order — force override (100) → weather (90) → manual override (80) → custom position (1–99) → motion timeout (75) → cloud suppression (60) → climate (50) → glare zone (45) → solar (40) → default (0). The `reason` tells you which handler claimed control and why it won.
 
 **`position_explanation`** reflects what happened *after* the pipeline chose a position. Even when the same handler wins, the final number can differ due to sunset/sunrise position settings, min/max position limits, inverse state, interpolation, or safety margins. The `position_explanation` traces those post-pipeline adjustments.
 
@@ -606,7 +742,7 @@ State: current automation status — `active`, `automatic_control_off`, `manual_
 
 State: the winning pipeline handler — `solar`, `default`, `manual_override`, `force_override`, `motion_timeout`, `summer`, `winter`, or `unknown`.
 
-Shows the full reasoning of the override priority chain. Eight handlers are evaluated in priority order; the first handler to claim control wins. This is the most detailed view of *why* the cover is at its current position.
+Shows the full reasoning of the override priority chain. All ten handlers are evaluated every cycle; the highest-priority handler that matches wins the cover position, while other handlers still contribute sensor data (e.g. Climate Status is always populated). This is the most detailed view of *why* the cover is at its current position.
 
 | Attribute | Description |
 | --------- | ----------- |
@@ -640,15 +776,29 @@ State: timestamp of the most recent cover command sent.
 
 **`sensor.{device_name}_last_skipped_action`**
 
-State: the reason the most recent automatic move was suppressed (e.g. `"Position delta too small"`, `"Manual override active"`, `"Outside time window"`). State is `"No action skipped"` when the last update sent a command successfully.
+State: the reason the most recent automatic move was suppressed (e.g. `"delta_too_small"`, `"manual_override"`, `"auto_control_off"`). State is `"No action skipped"` when the last update sent a command successfully.
 
-Use this when a cover doesn't move and you expect it to — it tells you exactly why the command was suppressed.
+Use this when a cover doesn't move and you expect it to — it tells you exactly why the command was suppressed, what the cover was actually at, and what thresholds were in play.
+
+**Always-present attributes:**
 
 | Attribute | Description |
 | --------- | ----------- |
 | `entity_id` | The cover that would have been commanded. |
 | `calculated_position` | The position the integration wanted to send. |
+| `current_position` | The cover's actual reported position at the moment the skip occurred. Compare to `calculated_position` to understand the gap. |
+| `trigger` | What initiated the positioning attempt: `solar`, `startup`, `sunset`, `reconciliation`, `force_override`, `end_time_default`, etc. |
+| `inverse_state_applied` | `true` if inverse-state mapping was active when the skip happened. |
 | `timestamp` | When the skip occurred. |
+
+**Reason-specific attributes** (present only for the relevant skip reason):
+
+| Attribute | Skip reason | Description |
+| --------- | ----------- | ----------- |
+| `position_delta` | `delta_too_small` | Absolute difference between current and target position (e.g. `2`). |
+| `min_delta_required` | `delta_too_small` | Configured minimum change threshold (e.g. `5`). Move suppressed because `position_delta < min_delta_required`. |
+| `elapsed_minutes` | `time_delta_too_small` | Minutes elapsed since the last command was sent (e.g. `1.4`). |
+| `time_threshold_minutes` | `time_delta_too_small` | Configured minimum time between commands in minutes. Move suppressed because `elapsed_minutes < time_threshold_minutes`. |
 
 ---
 
@@ -883,9 +1033,9 @@ Only rules that are configured and active are shown. Unconfigured features are o
 
 **Position Limits** — a compact one-line summary of the default position, min/max range (with a note if the range only applies during sun tracking), minimum position change, minimum interval between moves, and any active flags (inverse state, interpolation).
 
-**Decision Priority** — a single line showing all 9 pipeline handlers in priority order with ✅ (active in your config) or ❌ (not configured) for each:
+**Decision Priority** — a single line showing all 10 pipeline handlers in priority order with ✅ (active in your config) or ❌ (not configured) for each:
 ```
-✅Force(100) → ✅Weather(90) → ❌Motion(80) → ✅Manual(70) → ✅Cloud(60)
+✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Custom(77) → ❌Motion(75) → ✅Cloud(60)
  → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
 ```
 This answers the common question: *"what overrides what?"* — the leftmost ✅ handler that fires wins.
@@ -917,24 +1067,31 @@ The `sensor.{device_name}_decision_trace` sensor is the starting point. Its **st
 
 The **`trace` attribute** lists every handler evaluated — including why each one passed or was skipped — so you can see the full priority chain.
 
-### Step 2 — Check the Cover Position Attributes
+### Step 2 — Check the Target Position Attributes
 
-The `sensor.{device_name}_cover_position` sensor exposes two attributes that tell you more:
+The `sensor.{device_name}_cover_position` sensor (displayed as **Target Position**) exposes two attributes that tell you more:
 
 - **`reason`** — which pipeline rule claimed control and why (e.g. `"no active condition — default position 100%"`)
 - **`position_explanation`** — where the final number came from after the pipeline decided (e.g. `"Sun Tracking (67%) → Max Position Limit → 80%"`)
 
 Together these answer "who won?" and "where did this specific number come from?"
 
+You can also check `actual_positions` and `all_at_target` on this same sensor to see whether each cover has actually reached the target position yet.
+
 ### Step 3 — Cover Isn't Moving When You Expect It To
 
-Check `sensor.{device_name}_last_skipped_action`. Its **state** is the exact reason the most recent automatic move was suppressed:
+Check `sensor.{device_name}_last_skipped_action`. Its **state** is the machine-readable reason the most recent automatic move was suppressed:
 
-- `"Position delta too small"` — change was less than the configured minimum delta
-- `"Time delta too small"` — not enough time has passed since the last move
-- `"Manual override active"` — automatic control is paused
-- `"Outside time window"` — current time is outside the configured start/end window
-- `"Automatic control disabled"` — the automatic control switch is off
+| State | Meaning |
+| ----- | ------- |
+| `delta_too_small` | Change less than the configured minimum delta. Check `position_delta` vs. `min_delta_required` attributes. |
+| `time_delta_too_small` | Not enough time since the last move. Check `elapsed_minutes` vs. `time_threshold_minutes` attributes. |
+| `manual_override` | Automatic control is paused because a manual move was detected. |
+| `auto_control_off` | The Automatic Control switch is off. |
+| `no_capable_service` | No usable HA service found for this cover entity. |
+| `service_call_failed` | HA service call was sent but threw an error. Check the HA logs. |
+
+The `current_position` attribute shows where the cover actually was when the skip occurred, and `trigger` shows what initiated the attempt (`solar`, `startup`, `sunset`, etc.).
 
 ### Step 4 — Climate Mode Behavior
 
@@ -985,6 +1142,39 @@ Sun visibility transition detected: ON → OFF (sun left field of view)
 ```
 
 Each log entry is prefixed with the device name so you can filter by device in multi-instance setups.
+
+### Debug Mode (No YAML Required)
+
+For targeted troubleshooting — especially manual override detection issues — use the built-in **Debug Mode** instead of editing `configuration.yaml`.
+
+**How to enable:**
+1. Open the integration options → scroll to **Admin** → select **🔍 Debug & Diagnostics**
+2. Toggle **Enable Debug Mode** on
+3. Select which **Log Categories** to trace:
+   - **Manual Override** — detection decisions, grace period, wait-for-target (most useful for "cover won't respect manual control" issues)
+   - **Reconciliation** — the 1-minute position retry loop
+   - **Pipeline** — the priority handler chain decisions
+   - **Motion** — motion sensor events and timeout state
+4. Adjust the **event buffer size** if needed (default 50 events, up to 200)
+5. Save
+
+**What it does:**
+- Selected categories are logged at **INFO level**, so they appear in the HA log without the global debug setting
+- A rolling ring buffer of manual-override decisions is kept in memory and included in every diagnostics download
+
+**How to collect a bug report:**
+1. Enable Debug Mode and select the relevant categories
+2. Reproduce the issue (move the cover manually, wait for incorrect behavior)
+3. Go to **Settings → Devices & Services → Adaptive Cover Pro** → select the affected cover → **Download Diagnostics**
+4. Attach the downloaded JSON to the GitHub issue
+
+The most useful sections in the diagnostics JSON are:
+- `manual_override_history` — every override decision: set / reset / rejected, with position values, threshold, and reason
+- `cover_command_state` — per-entity snapshot of `target_call`, `wait_for_target`, retry count, safety target, and last command time
+
+**When to disable:** Turn Debug Mode off after collecting data — INFO-level logs are persistent and the ring buffer uses a small amount of memory per event.
+
+**Privacy:** Diagnostics contain entity IDs and position history but no credentials or location data — safe to attach to public GitHub issues.
 
 ## Enhanced Geometric Accuracy
 
@@ -1121,9 +1311,9 @@ All enhancements are verified to:
 
 #### Test Coverage
 
-- 34 dedicated tests for geometric accuracy
-- 214 total integration tests (all passing)
-- 92% code coverage on calculation engine
+- Dedicated tests for geometric accuracy
+- 1,795 total tests (all passing)
+- High code coverage on calculation engine
 
 ### Diagnostic Sensors
 

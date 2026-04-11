@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import dataclasses
+import json
+import pathlib
 from dataclasses import dataclass, replace
 
 import pytz
@@ -44,6 +47,24 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
+    CONF_CUSTOM_POSITION_1,
+    CONF_CUSTOM_POSITION_2,
+    CONF_CUSTOM_POSITION_3,
+    CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_MIN_MODE_1,
+    CONF_CUSTOM_POSITION_MIN_MODE_2,
+    CONF_CUSTOM_POSITION_MIN_MODE_3,
+    CONF_CUSTOM_POSITION_MIN_MODE_4,
+    CONF_CUSTOM_POSITION_PRIORITY_1,
+    CONF_CUSTOM_POSITION_PRIORITY_2,
+    CONF_CUSTOM_POSITION_PRIORITY_3,
+    CONF_CUSTOM_POSITION_PRIORITY_4,
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+    CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
@@ -57,9 +78,11 @@ from .const import (
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -79,8 +102,11 @@ from .const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_TEMP_ENTITY,
     CONF_TEMP_LOW,
     CONF_TEMP_HIGH,
+    CONF_OUTSIDETEMP_ENTITY,
+    CONF_PRESENCE_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_OUTSIDE_THRESHOLD,
@@ -93,9 +119,15 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_IRRADIANCE_THRESHOLD,
+    CONF_DEBUG_CATEGORIES,
+    CONF_DEBUG_EVENT_BUFFER_SIZE,
+    CONF_DEBUG_MODE,
+    CONF_DRY_RUN,
+    DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DOMAIN,
     LOGGER,
     STARTUP_GRACE_PERIOD_SECONDS,
+    TRANSIT_TIMEOUT_SECONDS,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -103,7 +135,11 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
-from .managers.cover_command import CoverCommandService, PositionContext, build_special_positions
+from .managers.cover_command import (
+    CoverCommandService,
+    PositionContext,
+    build_special_positions,
+)
 from .managers.grace_period import GracePeriodManager
 from .managers.manual_override import AdaptiveCoverManager, inverse_state
 from .managers.motion import MotionManager
@@ -114,6 +150,7 @@ from .position_utils import interpolate_position
 from .pipeline.handlers import (
     ClimateHandler,
     CloudSuppressionHandler,
+    CustomPositionHandler,
     DefaultHandler,
     ForceOverrideHandler,
     GlareZoneHandler,
@@ -128,6 +165,11 @@ from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
+
+
+_MANIFEST_VERSION: str = json.loads(
+    (pathlib.Path(__file__).parent / "manifest.json").read_text()
+)["version"]
 
 
 @dataclass
@@ -181,14 +223,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_reset = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_RESET, False
         )
-        self.manual_duration = self.config_entry.options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2}
+        self.manual_duration = (
+            self.config_entry.options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
         )
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
+        # Set to True when the coordinator is created during a config-entry reload
+        # (HA already running) vs. a cold HA boot.  On reload, first-refresh dispatch
+        # is suppressed for non-safety handlers to avoid disturbing covers that the
+        # user has manually positioned.  Cleared after first refresh.
+        self._is_reload: bool = False
         self._weather_readings: ClimateReadings | None = None
         self.state_change_data: StateChangedData | None = None
+        # Queue of cover state-change events pending manual override evaluation.
+        # Each call to async_check_cover_state_change() appends to this list so
+        # that rapid events from multiple covers are all processed rather than
+        # the last event silently overwriting earlier ones (single-variable race).
+        # async_handle_cover_state_change() drains the list on every refresh.
+        self._pending_cover_events: list[StateChangedData] = []
+        # Entities whose target was just reached in the current state-change event.
+        # When process_entity_state_change() clears wait_for_target because the cover
+        # reached its commanded position (within tolerance), the same event also
+        # triggers async_handle_cover_state_change() with wait_for_target already
+        # False.  Without this guard the cover's final resting position (which may
+        # differ from the commanded value by up to POSITION_TOLERANCE_PERCENT) is
+        # immediately flagged as a manual override.  Cleared at the end of each
+        # async_handle_cover_state_change() call.
+        self._target_just_reached: set[str] = set()
         # Cover engine object — populated at start of each update cycle
         self._cover_data = None
         self.manager = AdaptiveCoverManager(
@@ -207,20 +269,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
         # Weather override tracking
         self._weather_mgr = WeatherManager(hass=self.hass, logger=self.logger)
-        # Override pipeline
-        self._pipeline = PipelineRegistry(
-            [
-                ForceOverrideHandler(),
-                WeatherOverrideHandler(),
-                MotionTimeoutHandler(),
-                ManualOverrideHandler(),
-                CloudSuppressionHandler(),
-                ClimateHandler(),
-                GlareZoneHandler(),
-                SolarHandler(),
-                DefaultHandler(),
-            ]
-        )
+        # Override pipeline — custom position handlers are created per-slot so
+        # each can carry an independent priority configured by the user.
+        self._pipeline = self._build_pipeline()
         self._pipeline_result = None
 
         self._cached_options = None
@@ -248,6 +299,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Current state snapshot (built at start of each update cycle)
         self._snapshot: CoverStateSnapshot | None = None
 
+        # Track force override state across update cycles so we can detect
+        # the release transition and bypass time/position delta gates.
+        self._prev_force_override_active: bool = False
+
         # Diagnostics builder (extracted from coordinator)
         self._diagnostics_builder = DiagnosticsBuilder()
 
@@ -274,6 +329,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
+
+        # Time of the last successful _async_update_data() completion.
+        # HA's DataUpdateCoordinator only exposes last_update_success (bool);
+        # we track the timestamp ourselves so diagnostics can report it.
+        self._last_update_success_time: dt.datetime | None = None
 
     # --- Property delegates for CoverCommandService state ---
 
@@ -320,9 +380,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if any configured force override sensor is in "on" state
 
         """
-        return any(
-            self._read_force_sensor_states(self.config_entry.options).values()
-        )
+        return any(self._read_force_sensor_states(self.config_entry.options).values())
 
     @property
     def is_motion_detected(self) -> bool:
@@ -354,6 +412,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         return self._weather_mgr.is_weather_override_active
+
+    def _debug_log(self, category: str, msg: str, *args) -> None:
+        """Log at INFO when debug_mode is on and category is enabled, else DEBUG."""
+        options = self.config_entry.options
+        if options.get(CONF_DEBUG_MODE) and category in options.get(
+            CONF_DEBUG_CATEGORIES, []
+        ):
+            self.logger.info(msg, *args)
+        else:
+            self.logger.debug(msg, *args)
 
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
@@ -395,6 +463,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.state_change_data.old_state.state != "unknown":
             self.cover_state_change = True
             self.process_entity_state_change()
+            # Keep a per-event copy so async_handle_cover_state_change() can
+            # process all covers that fired in a single refresh window, not
+            # just the last one to overwrite state_change_data.
+            self._pending_cover_events.append(self.state_change_data)
             await self.async_refresh()
         else:
             self.logger.debug("Old state is unknown, not processing")
@@ -463,10 +535,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         if new_state.state == "on":
             # Motion detected - immediate response
-            was_timeout_active = self._motion_mgr._motion_timeout_active
-            self._motion_mgr.record_motion_detected()
+            # Returns True if timeout was active (expired) or pending (task
+            # still running), so we refresh in both cases, not just when the
+            # timeout had already fully expired.
+            needs_refresh = self._motion_mgr.record_motion_detected()
 
-            if was_timeout_active:
+            if needs_refresh:
                 self.logger.info("Motion detected - resuming automatic sun positioning")
                 self.state_change = True
                 await self.async_refresh()
@@ -505,7 +579,176 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             position = self._cmd_svc.read_position_with_capabilities(
                 entity_id, caps, event.new_state
             )
-            self._cmd_svc.check_target_reached(entity_id, position)
+            reached = self._cmd_svc.check_target_reached(entity_id, position)
+            if reached:
+                # Mark this entity so async_handle_cover_state_change() skips the
+                # manual override comparison for this event.  The cover has just
+                # settled at its commanded position (within position tolerance) —
+                # any small positional difference is motor rounding, not a user
+                # action.  The set is cleared at the end of that handler.
+                self._target_just_reached.add(entity_id)
+                self._debug_log(
+                    "manual_override",
+                    "Target just reached for %s — skipping manual override check for this event",
+                    entity_id,
+                )
+            else:
+                # Grace period expired but the cover is not at the commanded target.
+                # Determine whether the cover is still actively moving toward the
+                # target (integration-initiated transit) or has stopped / moved away
+                # (user action — Issue #147).
+                #
+                # HA covers report transitional states ("opening"/"closing") while
+                # moving, then a final state ("stopped"/"open"/"closed") when done.
+                # If ignore_intermediate_states is True, those transitional events
+                # are already filtered out above, so we only reach here with final
+                # states and always clear wait_for_target.
+                cover_is_transitioning = event.new_state.state in (
+                    "opening",
+                    "closing",
+                )
+
+                if cover_is_transitioning:
+                    # Hard backstop: if the command is older than
+                    # TRANSIT_TIMEOUT_SECONDS the cover should have arrived.
+                    # Clear wait_for_target so covers cannot block manual override
+                    # detection indefinitely when stuck or stalled.
+                    sent_at = self._cmd_svc._sent_at.get(entity_id)  # noqa: SLF001
+                    if sent_at is not None:
+                        elapsed = (dt.datetime.now(dt.UTC) - sent_at).total_seconds()
+                        if elapsed > TRANSIT_TIMEOUT_SECONDS:
+                            self._cmd_svc.wait_for_target[entity_id] = False
+                            self._debug_log(
+                                "manual_override",
+                                "Transit timeout for %s (%.0fs > %ds) "
+                                "— clearing wait_for_target",
+                                entity_id,
+                                elapsed,
+                                TRANSIT_TIMEOUT_SECONDS,
+                            )
+                            self.logger.debug(
+                                "Wait for target: %s", self.wait_for_target
+                            )
+                            return
+
+                    # Cover is within the transit window — check direction.
+                    # If the cover is moving closer to the target it is still
+                    # responding to our command; keep wait_for_target=True.
+                    # If it moved away or stalled at the same position, clear
+                    # it so manual override detection can run (Issue #147).
+                    #
+                    # Special case — hardware startup delay (Issue #147 v2):
+                    # Some covers have a 10–30+ second delay before the motor
+                    # physically starts.  The first state event fires while the
+                    # cover is still at the pre-command position (old_pos ==
+                    # new_pos == 0 when commanding to 100%).  The state
+                    # transitions from a non-moving state (e.g. "closed") to
+                    # "opening", signalling that the command was received.
+                    # Distinguish this from a mid-transit stall (cover was
+                    # already "opening" but position hasn't changed) by checking
+                    # whether old_state was itself transitional: if not, the
+                    # cover just started and we should keep wait_for_target=True.
+                    old_position = self._cmd_svc.read_position_with_capabilities(
+                        entity_id, caps, event.old_state
+                    )
+                    target = self._cmd_svc.target_call.get(entity_id)
+
+                    if (
+                        old_position is not None
+                        and position is not None
+                        and target is not None
+                    ):
+                        old_distance = abs(old_position - target)
+                        new_distance = abs(position - target)
+
+                        if new_distance < old_distance:
+                            # Unambiguously moving toward target — still in transit.
+                            self._debug_log(
+                                "manual_override",
+                                "Grace expired but %s still in transit toward "
+                                "target %s (was %s, now %s) — keeping wait_for_target",
+                                entity_id,
+                                target,
+                                old_position,
+                                position,
+                            )
+                            self.logger.debug(
+                                "Wait for target: %s", self.wait_for_target
+                            )
+                            return
+
+                        if new_distance == old_distance:
+                            # Positions equal — could be startup delay or stall.
+                            # If old_state was not transitional the motor just
+                            # engaged; keep wait_for_target (startup delay).
+                            # If old_state was already opening/closing, the cover
+                            # stalled mid-transit; fall through to clear.
+                            old_state_str = (
+                                event.old_state.state
+                                if event.old_state is not None
+                                else None
+                            )
+                            if old_state_str not in ("opening", "closing"):
+                                self._debug_log(
+                                    "manual_override",
+                                    "Grace expired but %s position unchanged at %s "
+                                    "(startup delay — old state was %s) "
+                                    "— keeping wait_for_target",
+                                    entity_id,
+                                    position,
+                                    old_state_str,
+                                )
+                                self.logger.debug(
+                                    "Wait for target: %s", self.wait_for_target
+                                )
+                                return
+
+                # Non-transitional state, cover stalled, or moved away from target.
+                #
+                # Special case — step-motor shades (Issue #186): some covers
+                # briefly report "open" at an intermediate position between
+                # motor pulses before resuming transit.  If the *new* state is
+                # non-transitional ("open"/"closed") and the *old* state was
+                # transitional ("opening"/"closing"), the cover just paused
+                # mid-transit.  Restart the grace period to allow the motor to
+                # resume without triggering a false manual override.
+                # This does NOT apply to stalls (opening→opening still at same
+                # position), which fall through here with cover_is_transitioning=True.
+                was_transitioning = (
+                    event.old_state is not None
+                    and event.old_state.state in ("opening", "closing")
+                )
+                target = self._cmd_svc.target_call.get(entity_id)
+                if (
+                    not cover_is_transitioning
+                    and was_transitioning
+                    and target is not None
+                    and position is not None
+                    and position != target
+                ):
+                    self._start_grace_period(entity_id)
+                    self._debug_log(
+                        "manual_override",
+                        "Cover %s paused mid-transit at %s (target %s) "
+                        "— restarting grace period",
+                        entity_id,
+                        position,
+                        target,
+                    )
+                    self.logger.debug("Wait for target: %s", self.wait_for_target)
+                    return
+
+                # Clear wait_for_target to allow manual override detection.
+                self._cmd_svc.wait_for_target[entity_id] = False
+                self._debug_log(
+                    "manual_override",
+                    "Grace period expired, cover %s not in transit "
+                    "— clearing wait_for_target "
+                    "(position=%s, state=%s)",
+                    entity_id,
+                    position,
+                    event.new_state.state,
+                )
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
@@ -546,14 +789,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._motion_mgr.cancel_motion_timeout()
 
     def _check_initial_motion_state(self) -> None:
-        """Set no-motion state immediately if all sensors are off at startup.
+        """Initialize motion state from current sensor readings at startup/reload.
 
-        Prevents the Motion Status sensor from showing ``waiting_for_data``
-        indefinitely when sensors are already off when HA starts.
+        Reads each configured motion sensor and sets the appropriate state so
+        the Motion Status sensor reflects reality immediately instead of showing
+        ``waiting_for_data`` until the first sensor state change event arrives.
+
+        - Any sensor **on**  → record_motion_detected() sets last_motion_time
+          so the sensor shows ``motion_detected``.
+        - All sensors **off** → set_no_motion() marks the timeout active so
+          the sensor shows ``no_motion``.
         """
         if not self.config_entry.options.get(CONF_MOTION_SENSORS):
             return
-        if not self.is_motion_detected:
+        if self.is_motion_detected:
+            self._motion_mgr.record_motion_detected()
+        else:
             self._motion_mgr.set_no_motion()
 
     def _start_weather_timeout(self) -> None:
@@ -580,8 +831,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         This means diagnostics, Decision Trace, and sensor state are always
         up-to-date even when no commands are being sent.
         """
-        # Always read weather/lux/irradiance for cloud suppression (independent of climate mode)
-        self._read_weather_conditions(options)
+        # Read all climate-related entities (temp, presence, weather, lux, irradiance, cloud).
+        # The result is stored in self._weather_readings and passed to PipelineSnapshot
+        # so ClimateHandler and CloudSuppressionHandler can self-evaluate.
+        self._read_climate_state(options)
 
         # Compute the effective default position from astronomical sunset/sunrise.
         # This is the single source of truth — all pipeline handlers use it via
@@ -591,7 +844,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)  # None when not configured
         sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-        sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+        sunrise_off = int(
+            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+        )
         effective_default, is_sunset_active = compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -636,10 +891,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             climate_options=self._build_climate_options(options),
             force_override_sensors=self._read_force_sensor_states(options),
             force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
+            force_override_min_mode=bool(options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False)),
             manual_override_active=self.manager.binary_cover_manual,
             motion_timeout_active=self.is_motion_timeout_active,
             weather_override_active=self.is_weather_override_active,
             weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
+            weather_override_min_mode=bool(options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)),
             weather_bypass_auto_control=options.get(
                 CONF_WEATHER_BYPASS_AUTO_CONTROL, True
             ),
@@ -647,6 +904,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             active_zone_names=frozenset(active_zone_names),
             in_time_window=self.check_adaptive_time,
             motion_control_enabled=self._toggles.motion_control,
+            custom_position_sensors=self._read_custom_position_sensor_states(options),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -706,6 +964,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         options = self.config_entry.options
         self._update_options(options)
 
+        # Capture force override state before this cycle so we can detect
+        # the release transition in async_handle_state_change().
+        prev_force_override = self._prev_force_override_active
+
         # Build unified state snapshot for this update cycle
         _sun_azimuth = state_attr(self.hass, "sun.sun", "azimuth")
         _sun_elevation = state_attr(self.hass, "sun.sun", "elevation")
@@ -736,9 +998,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Calculate cover state (pipeline runs with up-to-date override state)
         state = self._calculate_cover_state(cover_data, options)
 
+        # Update prev state for next cycle (current force override state is now
+        # captured in the snapshot we just built).
+        self._prev_force_override_active = self.is_force_override_active
+
         # Handle types of changes
         if self.state_change:
-            await self.async_handle_state_change(state, options)
+            await self.async_handle_state_change(state, options, prev_force_override)
         elif auto_expired:
             # One or more manual overrides just timed out.  Proactively send
             # the fresh pipeline position so covers don't linger at the
@@ -749,11 +1015,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.first_refresh:
             await self.async_handle_first_refresh(state, options)
 
+        # Sync gate state to CoverCommandService so reconciliation respects
+        # both manual override and automatic control.  Done after all change
+        # handlers so the manager's manual_controlled list is fully up-to-date.
+        self._cmd_svc.manual_override_entities = set(self.manager.manual_controlled)
+        self._cmd_svc.auto_control_enabled = self.automatic_control
+        self._cmd_svc.in_time_window = self.check_adaptive_time
+        self._cmd_svc.enabled = self.enabled_toggle if self.enabled_toggle is not None else True
+        self._cmd_svc.dry_run = self.config_entry.options.get(CONF_DRY_RUN, False)
+
         # Update solar times
         start, end = await self._update_solar_times_if_needed(self._cover_data)
 
         # Build diagnostic data (always enabled)
         diagnostics = self.build_diagnostic_data()
+
+        # Record successful update time (after build_diagnostic_data so the
+        # diagnostic for this cycle reports the *previous* completed success).
+        self._last_update_success_time = dt.datetime.now(dt.UTC)
 
         # Determine glare_active from last calculation details (vertical covers only)
         glare_active = False
@@ -898,57 +1177,199 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 sent.add(cover)
         return sent
 
-    async def async_handle_state_change(self, state: int, options):
-        """Send position commands to all covers when a tracked entity changes."""
+    async def async_handle_state_change(
+        self, state: int, options, prev_force_override: bool = False
+    ):
+        """Send position commands to all covers when a tracked entity changes.
+
+        When the active pipeline result has bypass_auto_control=True (force
+        override or weather safety handler), we pass force=True to the position
+        context so that time_delta and position_delta gates cannot block
+        safety-critical commands.  The reason string also reflects the handler
+        that won rather than always saying "solar".
+
+        When a force override just released (prev_force_override=True and it is
+        now inactive), force=True is also passed so the time delta check cannot
+        block the return to the calculated position.  The force override's own
+        position change should not count against the time threshold.
+        """
         sun_just_appeared = self._check_sun_validity_transition()
+        is_safety = self._pipeline_bypasses_auto_control
+        force_override_released = prev_force_override and not self.is_force_override_active
+
+        # Outside the configured time window, only safety handlers (force
+        # override, weather) are allowed to move covers.  All other handlers
+        # (solar, climate, cloud, default) must not reposition covers before
+        # the user's start time or after the end time.  The pipeline still
+        # evaluates so diagnostics/sensor state remain correct.
+        if not self.check_adaptive_time and not is_safety and not force_override_released:
+            self.state_change = False
+            self.logger.debug("Outside time window — skipping position update")
+            return
+
+        use_force = is_safety or force_override_released
+        if force_override_released:
+            reason = "force_override_cleared"
+            self.logger.debug(
+                "Force override released — bypassing time/position delta gates "
+                "to return to calculated position %s",
+                state,
+            )
+        else:
+            reason = self._pipeline_result.control_method.value if is_safety else "solar"
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
-            await self._cmd_svc.apply_position(cover, state, "solar", context=ctx)
+            ctx = self._build_position_context(
+                cover, options, force=use_force, sun_just_appeared=sun_just_appeared
+            )
+            await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
         self.state_change = False
         self.logger.debug("State change handled")
 
     async def async_handle_cover_state_change(self, state: int):
-        """Compare actual cover position to expected; set manual override if they differ."""
+        """Compare actual cover position to expected; set manual override if they differ.
+
+        Drains self._pending_cover_events so that rapid state changes from
+        multiple covers are all evaluated, not just the most recent one.
+        """
+        # Drain and clear the queue atomically so a concurrent refresh that
+        # fires while we iterate does not re-process the same events.
+        events = self._pending_cover_events[:]
+        self._pending_cover_events.clear()
+
         if self.manual_toggle and self.automatic_control:
-            # Check startup grace period FIRST to prevent false manual override
-            # detection during HA restart when covers respond slowly
+            # Check startup grace period FIRST; suppress all events during
+            # HA restart when covers respond slowly.
             if self._is_in_startup_grace_period():
-                entity_id = self.state_change_data.entity_id
+                entity_ids = [e.entity_id for e in events]
                 self.logger.debug(
-                    "Position change for %s ignored (in startup grace period)",
-                    entity_id,
+                    "Position changes for %s ignored (in startup grace period)",
+                    entity_ids,
                 )
                 self.cover_state_change = False
                 return
 
-            # Get the entity_id from state_change_data
-            entity_id = self.state_change_data.entity_id
+            for event_data in events:
+                entity_id = event_data.entity_id
 
-            # Use target_call if available (contains actual sent position),
-            # otherwise fall back to calculated state.
-            # This is critical for open/close-only covers where the calculated
-            # state gets transformed (via threshold) to 0 or 100 before sending.
-            expected_position = self.target_call.get(entity_id, state)
+                # Skip manual override detection when the cover just reached its
+                # commanded target in this same event.  process_entity_state_change()
+                # adds the entity to _target_just_reached when check_target_reached()
+                # clears wait_for_target; without this guard the small positional
+                # difference allowed by POSITION_TOLERANCE_PERCENT would be
+                # misidentified as a user-initiated manual override.
+                if entity_id in self._target_just_reached:
+                    self._target_just_reached.discard(entity_id)
+                    self.logger.debug(
+                        "Skipping manual override check for %s — cover just reached commanded target",
+                        entity_id,
+                    )
+                    continue
 
-            self.manager.handle_state_change(
-                self.state_change_data,
-                expected_position,
-                self._cover_type,
-                self.manual_reset,
-                self.wait_for_target,
-                self.manual_threshold,
-            )
+                # Use target_call if available (contains actual sent position),
+                # otherwise fall back to calculated state.
+                # This is critical for open/close-only covers where the calculated
+                # state gets transformed (via threshold) to 0 or 100 before sending.
+                expected_position = self.target_call.get(entity_id, state)
+
+                self.manager.handle_state_change(
+                    event_data,
+                    expected_position,
+                    self._cover_type,
+                    self.manual_reset,
+                    self.wait_for_target,
+                    self.manual_threshold,
+                )
+
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
+        is_safety = self._pipeline_bypasses_auto_control
+
+        # Outside the time window, only safety handlers (force override, weather)
+        # are allowed to move covers on startup.  This prevents covers from
+        # repositioning when HA restarts at midnight or another time outside the
+        # configured operational window.
+        if not self.check_adaptive_time and not is_safety:
+            self.first_refresh = False
+            self.logger.debug("First refresh outside time window — skipping position update")
+            return
+
+        if self._is_reload and not is_safety:
+            self.first_refresh = False
+            self._is_reload = False
+            self.logger.debug(
+                "First refresh during config-entry reload — "
+                "skipping position update to avoid disturbing user-controlled covers"
+            )
+            return
+
         sun_just_appeared = self._check_sun_validity_transition()
         for cover in self.entities:
-            ctx = self._build_position_context(cover, options, sun_just_appeared=sun_just_appeared)
+            ctx = self._build_position_context(
+                cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
+            )
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
+        self._is_reload = False
         self.logger.debug("First refresh handled")
+
+    def _build_pipeline(self) -> PipelineRegistry:
+        """Build the override pipeline, creating one CustomPositionHandler per slot.
+
+        Called once at coordinator initialisation.  Because the integration
+        reloads fully on every options change (see ``_async_update_listener``
+        in ``__init__.py``), this method always sees the current configuration
+        and there is no need to rebuild the pipeline at runtime.
+
+        Custom position slots are created only for entries that have both a
+        sensor and a position configured.  Each carries an independent priority
+        so the PipelineRegistry can sort them into the correct evaluation order
+        alongside all other handlers.
+        """
+        options = self.config_entry.options
+        _slot_keys = [
+            (1, CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1),
+            (2, CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2),
+            (3, CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3),
+            (4, CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4),
+        ]
+        custom_handlers: list[CustomPositionHandler] = []
+        for slot, sensor_key, pos_key, pri_key in _slot_keys:
+            sensor = options.get(sensor_key)
+            position = options.get(pos_key)
+            if sensor and position is not None:
+                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
+                custom_handlers.append(
+                    CustomPositionHandler(
+                        slot=slot,
+                        entity_id=sensor,
+                        position=int(position),
+                        priority=priority,
+                    )
+                )
+
+        sun_tracking_enabled = options.get(CONF_ENABLE_SUN_TRACKING, True)
+        sun_handlers = [GlareZoneHandler(), SolarHandler()] if sun_tracking_enabled else []
+        handlers = [
+            ForceOverrideHandler(),
+            WeatherOverrideHandler(),
+            ManualOverrideHandler(),
+            *custom_handlers,
+            MotionTimeoutHandler(),
+            CloudSuppressionHandler(),
+            ClimateHandler(),
+            *sun_handlers,
+            DefaultHandler(),
+        ]
+        self.logger.debug(
+            "Pipeline built with %d custom position handler(s): %s; sun_tracking_enabled=%s",
+            len(custom_handlers),
+            [(h.name, h.priority) for h in custom_handlers],
+            sun_tracking_enabled,
+        )
+        return PipelineRegistry(handlers)
 
     def _update_options(self, options):
         """Update coordinator options from config entry.
@@ -962,10 +1383,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         """
         self.entities = options.get(CONF_ENTITIES, [])
-        self.min_change = options.get(CONF_DELTA_POSITION, 1)
-        self.time_threshold = options.get(CONF_DELTA_TIME, 2)
+        self.min_change = options.get(CONF_DELTA_POSITION) or 1
+        self.time_threshold = options.get(CONF_DELTA_TIME) or 2
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
-        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION, {"hours": 2})
+        self.manual_duration = options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2}
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
         self.start_value = options.get(CONF_INTERP_START)
         self.end_value = options.get(CONF_INTERP_END)
@@ -1098,10 +1519,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state_attr(self.hass, "sun.sun", "elevation"),
         ]
 
-    def _read_weather_conditions(self, options) -> None:
-        """Read weather/lux/irradiance/cloud-coverage into self._weather_readings (always runs)."""
+    def _read_climate_state(self, options) -> None:
+        """Read all climate-related entities into self._weather_readings.
+
+        This is the single call to ClimateProvider.read() for each update cycle.
+        It reads temperature sensors, presence, weather, lux, irradiance, and
+        cloud coverage.  All pipeline handlers (ClimateHandler, CloudSuppressionHandler)
+        consume the result via snapshot.climate_readings.
+
+        NOTE: If ClimateProvider.read() gains new keyword parameters, they MUST
+        also be wired here from the corresponding options key.  The coordinator
+        wiring test (test_coordinator_climate_wiring.py) will catch any mismatch.
+        """
         cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
         self._weather_readings = self._climate_provider.read(
+            temp_entity=options.get(CONF_TEMP_ENTITY),
+            outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
+            presence_entity=options.get(CONF_PRESENCE_ENTITY),
             weather_entity=options.get(CONF_WEATHER_ENTITY),
             weather_condition=options.get(CONF_WEATHER_STATE),
             use_lux=bool(self._toggles.lux_toggle),
@@ -1139,9 +1573,81 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             for sensor in sensors
         }
 
+    def _read_custom_position_sensor_states(
+        self, options
+    ) -> list[tuple[str, bool, int, int, bool]]:
+        """Read custom position sensor states from HA into an ordered list.
+
+        Returns a list of (entity_id, is_on, position, priority, min_mode) tuples for
+        every slot that has both a sensor and a position configured.  Priority
+        defaults to DEFAULT_CUSTOM_POSITION_PRIORITY (77) when not set so that
+        existing installations behave identically to the previous release.
+        min_mode defaults to False so existing installations behave identically.
+        """
+        _sensor_keys = [
+            (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1, CONF_CUSTOM_POSITION_PRIORITY_1, CONF_CUSTOM_POSITION_MIN_MODE_1),
+            (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2, CONF_CUSTOM_POSITION_PRIORITY_2, CONF_CUSTOM_POSITION_MIN_MODE_2),
+            (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3, CONF_CUSTOM_POSITION_PRIORITY_3, CONF_CUSTOM_POSITION_MIN_MODE_3),
+            (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4, CONF_CUSTOM_POSITION_PRIORITY_4, CONF_CUSTOM_POSITION_MIN_MODE_4),
+        ]
+        result = []
+        for sensor_key, pos_key, pri_key, min_mode_key in _sensor_keys:
+            sensor = options.get(sensor_key)
+            position = options.get(pos_key)
+            if sensor and position is not None:
+                is_on = bool(
+                    (state := self.hass.states.get(sensor))
+                    and state.state == "on"
+                )
+                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
+                min_mode = bool(options.get(min_mode_key, False))
+                result.append((sensor, is_on, int(position), priority, min_mode))
+        return result
+
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result
+
+        # Live cover positions and capabilities
+        cover_entities = self.entities or []
+        _positions = self._cover_provider.read_positions(cover_entities, self._cover_type)
+        _caps = self._cover_provider.read_all_capabilities(cover_entities)
+        _covers = {
+            eid: {
+                "current_position": _positions.get(eid),
+                "available": _positions.get(eid) is not None,
+                "capabilities": dataclasses.asdict(_caps[eid]) if eid in _caps else None,
+            }
+            for eid in cover_entities
+        }
+
+        # Per-entity manual override live state
+        _now = dt.datetime.now(dt.UTC)
+        _reset_secs = self.manager.reset_duration.total_seconds()
+        _mo_entries = {}
+        for eid in self.manager.covers:
+            active = self.manager.manual_control.get(eid, False)
+            started_at = self.manager.manual_control_time.get(eid)
+            if started_at is not None:
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=dt.UTC)
+                elapsed = (_now - started_at).total_seconds()
+                remaining = max(0, _reset_secs - elapsed)
+                _mo_entries[eid] = {
+                    "active": active,
+                    "started_at": started_at.isoformat(),
+                    "remaining_seconds": int(remaining),
+                }
+        _manual_override_state = {
+            "reset_duration_seconds": int(_reset_secs),
+            "tracked_covers": sorted(self.manager.covers),
+            "entries": _mo_entries,
+        }
+
+        # Coordinator update health
+        _last_success_time = self._last_update_success_time
+        _last_exc = self.last_exception
+
         ctx = DiagnosticContext(
             pos_sun=self.pos_sun,
             cover=self._cover_data,
@@ -1170,6 +1676,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force_override_position=self.config_entry.options.get(
                 CONF_FORCE_OVERRIDE_POSITION, 0
             ),
+            manual_override_events=self.manager.get_event_buffer() or None,
+            cover_command_state=self._cmd_svc.get_all_entity_state_snapshots() or None,
+            debug_config={
+                "dry_run": self.config_entry.options.get(CONF_DRY_RUN, False),
+                "debug_mode": self.config_entry.options.get(CONF_DEBUG_MODE, False),
+                "debug_categories": self.config_entry.options.get(
+                    CONF_DEBUG_CATEGORIES, []
+                ),
+                "debug_event_buffer_size": self.config_entry.options.get(
+                    CONF_DEBUG_EVENT_BUFFER_SIZE, DEFAULT_DEBUG_EVENT_BUFFER_SIZE
+                ),
+            },
+            # New meta fields
+            integration_version=_MANIFEST_VERSION,
+            cover_type=self._cover_type,
+            last_update_success=self.last_update_success,
+            last_exception_repr=repr(_last_exc) if _last_exc is not None else None,
+            last_update_success_time_iso=(
+                _last_success_time.isoformat() if _last_success_time is not None else None
+            ),
+            update_interval_seconds=(
+                self.update_interval.total_seconds()
+                if self.update_interval is not None else None
+            ),
+            covers=_covers,
+            manual_override_state=_manual_override_state,
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)
@@ -1212,7 +1744,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self._inverse_state and not self._use_interpolation:
             state = inverse_state(state)
 
-        return state
+        # interpolate_position() returns numpy float64; inverse_state() returns int.
+        # Always coerce to plain Python int so sensors/diagnostics never see a float.
+        return int(round(state))
 
     # --- Toggle property delegates (switch entities use setattr) ---
 
@@ -1306,6 +1840,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Set return to default toggle."""
         self._toggles.return_to_default_toggle = value
 
+    @property
+    def enabled_toggle(self):
+        """Integration enabled toggle — master kill switch — delegates to ToggleManager."""
+        return self._toggles.enabled_toggle
+
+    @enabled_toggle.setter
+    def enabled_toggle(self, value):
+        """Set integration enabled toggle."""
+        self._toggles.enabled_toggle = value
+
     async def _check_time_window_transition(self, now: dt.datetime) -> None:
         """Check time window transitions — delegates to TimeWindowManager.
 
@@ -1315,16 +1859,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         to all covers.  The command bypasses all gate checks so covers move
         immediately regardless of delta/time thresholds.
         """
+
         async def _on_window_closed() -> None:
             """Force-send effective default when end time is reached."""
+            # Always clear stale daytime targets when the window closes so
+            # reconciliation cannot resend them overnight.  Safety targets
+            # (placed via force=True) are preserved.
+            self._cmd_svc.clear_non_safety_targets()
             if not self._track_end_time:
+                return
+            if not self.automatic_control:
+                self.logger.debug(
+                    "End time reached but automatic control is OFF — "
+                    "skipping return-to-default reposition"
+                )
                 return
             options = self.config_entry.options
             # Compute the current effective default (may already be sunset_pos)
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
             sunset_pos_cfg = options.get(CONF_SUNSET_POS)
             sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-            sunrise_off = int(options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0))
+            sunrise_off = int(
+                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+            )
             cover_data = self.get_blind_data(options=options)
             effective_pos, is_sunset = compute_effective_default(
                 h_def=h_def,
@@ -1333,7 +1890,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 sunset_off=sunset_off,
                 sunrise_off=sunrise_off,
             )
-            pos_to_send = inverse_state(effective_pos) if self._inverse_state else effective_pos
+            pos_to_send = (
+                inverse_state(effective_pos) if self._inverse_state else effective_pos
+            )
             self.logger.info(
                 "End time reached — force-sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",

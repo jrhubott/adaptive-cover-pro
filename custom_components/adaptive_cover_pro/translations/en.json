@@ -55,20 +55,26 @@
         "title": "Sun Tracking",
         "description": "Configure window orientation and sun tracking angles.",
         "data": {
+          "enable_sun_tracking": "Enable sun tracking",
           "set_azimuth": "Window Azimuth",
           "fov_left": "Field of view left",
           "fov_right": "Field of view right",
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
-          "blind_spot": "Setup Blindspot"
+          "blind_spot": "Setup Blindspot",
+          "enable_glare_zones": "Enable Glare Zones",
+          "distance_shaded_area": "Shaded area"
         },
         "data_description": {
+          "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (both solar positioning and glare-zone handling). Disable to skip all sun-driven positioning while keeping climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
         }
       },
       "position": {
@@ -83,6 +89,7 @@
           "sunset_position": "Sunset Position",
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -95,6 +102,7 @@
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Common uses: Privacy (0%), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
@@ -109,8 +117,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "Move covers to current default position when end time is reached"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -119,8 +126,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time."
         }
       },
       "manual_override": {
@@ -141,14 +147,56 @@
       },
       "force_override": {
         "title": "Force Override",
-        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. ⚡ Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
         "data": {
           "force_override_sensors": "Force override sensors",
-          "force_override_position": "Force override position"
+          "force_override_position": "Force override position",
+          "force_override_min_mode": "Minimum position mode"
         },
         "data_description": {
           "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings, including the Automatic Control switch. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "force_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position."
+        }
+      },
+      "custom_position": {
+        "title": "Custom Positions",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "data": {
+          "custom_position_sensor_1": "Sensor 1",
+          "custom_position_1": "Position for Sensor 1",
+          "custom_position_priority_1": "Priority for Slot 1",
+          "custom_position_min_mode_1": "Minimum mode for Slot 1",
+          "custom_position_sensor_2": "Sensor 2",
+          "custom_position_2": "Position for Sensor 2",
+          "custom_position_priority_2": "Priority for Slot 2",
+          "custom_position_min_mode_2": "Minimum mode for Slot 2",
+          "custom_position_sensor_3": "Sensor 3",
+          "custom_position_3": "Position for Sensor 3",
+          "custom_position_priority_3": "Priority for Slot 3",
+          "custom_position_min_mode_3": "Minimum mode for Slot 3",
+          "custom_position_sensor_4": "Sensor 4",
+          "custom_position_4": "Position for Sensor 4",
+          "custom_position_priority_4": "Priority for Slot 4",
+          "custom_position_min_mode_4": "Minimum mode for Slot 4"
+        },
+        "data_description": {
+          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
+          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed, 100% = open.",
+          "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
+          "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
+          "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
+          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
+          "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
+          "custom_position_min_mode_2": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
+          "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
+          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
+          "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
+          "custom_position_min_mode_3": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
+          "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
+          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
+          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77).",
+          "custom_position_min_mode_4": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position."
         }
       },
       "motion_override": {
@@ -178,6 +226,7 @@
           "weather_is_windy_sensor": "Is Windy binary sensor",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
+          "weather_override_min_mode": "Minimum position mode",
           "weather_timeout": "Clear delay"
         },
         "data_description": {
@@ -192,6 +241,7 @@
           "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
           "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
       },
@@ -345,6 +395,66 @@
       "summary": {
         "title": "Configuration Summary",
         "description": "{summary}"
+      },
+      "setup_mode": {
+        "title": "Setup Mode",
+        "description": "Choose how much to configure now. You can always adjust all settings later from the options menu.",
+        "menu_options": {
+          "quick_setup": "Quick Setup — Window basics + sun tracking only (recommended for first-time setup)",
+          "full_setup": "Full Setup — All options including climate, overrides, and automation"
+        }
+      },
+      "light_cloud": {
+        "title": "Light Sensors & Cloud Suppression",
+        "description": "Configure light and weather sensors to detect when clouds block direct sunlight. These work independently of climate mode.",
+        "data": {
+          "weather_entity": "Weather entity (optional)",
+          "lux_entity": "Lux sensor (optional)",
+          "lux_threshold": "Lux threshold",
+          "irradiance_entity": "Irradiance sensor (optional)",
+          "irradiance_threshold": "Irradiance threshold",
+          "cloud_coverage_entity": "Cloud coverage sensor (optional)",
+          "cloud_coverage_threshold": "Cloud coverage threshold",
+          "cloud_suppression": "Suppress glare control in low light",
+          "weather_state": "Weather Conditions"
+        },
+        "data_description": {
+          "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
+          "weather_state": "The weather states that count as 'sun is out'. When the live weather state matches one of these, glare tracking runs normally. When it does not match, the cover returns to its default position. Keep the defaults (sunny, partlycloudy, clear) unless your weather integration uses different state names.",
+          "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
+          "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. Adjust based on sensor placement.",
+          "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. Adjust based on your climate and preference.",
+          "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
+          "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast.",
+          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control."
+        }
+      },
+      "temperature_climate": {
+        "title": "Temperature & Climate Mode",
+        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.",
+        "data": {
+          "climate_mode": "Enable climate mode",
+          "temp_entity": "Inside temperature entity",
+          "temp_low": "Low temperature threshold",
+          "temp_high": "High temperature threshold",
+          "outside_temp": "Outside temperature sensor (optional)",
+          "outside_threshold": "Outside temperature threshold",
+          "presence_entity": "Presence entity (optional)",
+          "transparent_blind": "Transparent blind",
+          "winter_close_insulation": "Winter insulation mode"
+        },
+        "data_description": {
+          "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
+          "temp_entity": "A climate thermostat or temperature sensor that measures the indoor temperature used to determine the current season (winter/summer/intermediate). Required when climate mode is enabled.",
+          "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat.",
+          "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain.",
+          "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured.",
+          "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
+          "transparent_blind": "Enable when the blind material is sheer or translucent. In summer with occupants present a transparent blind will still close fully to reduce heat gain, whereas an opaque blind would instead follow glare-control tracking.",
+          "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
+        }
       }
     },
     "abort": {
@@ -357,7 +467,7 @@
       "init": {
         "menu_options": {
           "cover_entities": "Cover Entities",
-          "geometry": "Cover Geometry",
+          "geometry": "Window Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
           "blind_spot": "Blind Spot",
@@ -368,12 +478,16 @@
           "weather": "Weather Conditions",
           "manual_override": "Manual Override",
           "force_override": "Force Override",
+          "custom_position": "Custom Positions",
           "motion_override": "Motion Override",
           "weather_override": "Weather Override",
           "device": "Device Association",
           "summary": "Configuration Summary",
-          "sync": "Copy Settings to Other Covers",
-          "done": "Save & Exit"
+          "sync": "Copy to Other Covers",
+          "debug": "Debug & Diagnostics",
+          "done": "Save & Close",
+          "light_cloud": "Light Sensors & Cloud",
+          "temperature_climate": "Temperature & Climate"
         }
       },
       "automation": {
@@ -386,8 +500,7 @@
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
           "end_entity": "Entity indicating ending time",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "open_close_threshold": "Open/Close threshold"
+          "return_sunset": "Move covers to current default position when end time is reached"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -396,8 +509,7 @@
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
           "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions."
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time."
         }
       },
       "cover_entities": {
@@ -440,20 +552,26 @@
         "title": "Sun Tracking",
         "description": "Configure window orientation and sun tracking angles.",
         "data": {
+          "enable_sun_tracking": "Enable sun tracking",
           "set_azimuth": "Window Azimuth",
           "fov_left": "Field of view left",
           "fov_right": "Field of view right",
           "min_elevation": "Minimum Elevation of the sun",
           "max_elevation": "Maximum Elevation of the sun",
-          "blind_spot": "Setup Blindspot"
+          "blind_spot": "Setup Blindspot",
+          "enable_glare_zones": "Enable Glare Zones",
+          "distance_shaded_area": "Shaded area"
         },
         "data_description": {
+          "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (both solar positioning and glare-zone handling). Disable to skip all sun-driven positioning while keeping climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
           "min_elevation": "Track sun only when elevation is ABOVE this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 15° to ignore low morning/evening sun. Leave empty to track sun at all elevations.",
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
-          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day."
+          "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
+          "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
         }
       },
       "position": {
@@ -468,6 +586,7 @@
           "sunset_position": "Sunset Position",
           "sunset_offset": "Sunset Offset",
           "sunrise_offset": "Sunrise Offset",
+          "open_close_threshold": "Open/Close threshold",
           "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
@@ -480,6 +599,7 @@
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Common uses: Privacy (0%), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
@@ -502,14 +622,56 @@
       },
       "force_override": {
         "title": "Force Override",
-        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. ⚡ Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
         "data": {
           "force_override_sensors": "Force override sensors",
-          "force_override_position": "Force override position"
+          "force_override_position": "Force override position",
+          "force_override_min_mode": "Minimum position mode"
         },
         "data_description": {
           "force_override_sensors": "Binary sensors that override automatic control and move covers to the configured position when active. When ANY selected sensor is 'on', ALL covers move to the configured position regardless of any other settings, including the Automatic Control switch. Manual control still works. Leave empty to disable this feature.",
-          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%."
+          "force_override_position": "Position (0-100%) to move covers to when force override sensors are active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "force_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position."
+        }
+      },
+      "custom_position": {
+        "title": "Custom Positions",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "data": {
+          "custom_position_sensor_1": "Sensor 1",
+          "custom_position_1": "Position for Sensor 1",
+          "custom_position_priority_1": "Priority for Slot 1",
+          "custom_position_min_mode_1": "Minimum mode for Slot 1",
+          "custom_position_sensor_2": "Sensor 2",
+          "custom_position_2": "Position for Sensor 2",
+          "custom_position_priority_2": "Priority for Slot 2",
+          "custom_position_min_mode_2": "Minimum mode for Slot 2",
+          "custom_position_sensor_3": "Sensor 3",
+          "custom_position_3": "Position for Sensor 3",
+          "custom_position_priority_3": "Priority for Slot 3",
+          "custom_position_min_mode_3": "Minimum mode for Slot 3",
+          "custom_position_sensor_4": "Sensor 4",
+          "custom_position_4": "Position for Sensor 4",
+          "custom_position_priority_4": "Priority for Slot 4",
+          "custom_position_min_mode_4": "Minimum mode for Slot 4"
+        },
+        "data_description": {
+          "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
+          "custom_position_1": "Position (0-100%) to move covers to when Sensor 1 is active. 0% = closed, 100% = open.",
+          "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
+          "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
+          "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
+          "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
+          "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
+          "custom_position_min_mode_2": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
+          "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
+          "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
+          "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
+          "custom_position_min_mode_3": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
+          "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
+          "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
+          "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77).",
+          "custom_position_min_mode_4": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position."
         }
       },
       "motion_override": {
@@ -539,6 +701,7 @@
           "weather_is_windy_sensor": "Is Windy binary sensor",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
+          "weather_override_min_mode": "Minimum position mode",
           "weather_timeout": "Clear delay"
         },
         "data_description": {
@@ -553,6 +716,7 @@
           "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
+          "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
           "weather_timeout": "Seconds to wait after ALL conditions clear before resuming normal control. Prevents rapid toggling during gusty or intermittent conditions. Set to 0 for instant resume."
         }
       },
@@ -699,11 +863,79 @@
         "title": "Configuration Summary",
         "description": "{summary}"
       },
+      "debug": {
+        "title": "Debug & Diagnostics",
+        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a ring buffer of manual-override decisions is kept in memory and exposed in the HA Diagnostics download.",
+        "data": {
+          "dry_run": "Dry Run (no cover movement)",
+          "debug_mode": "Enable Debug Mode",
+          "debug_categories": "Log Categories (promoted to INFO when debug mode is on)",
+          "debug_event_buffer_size": "Manual override event buffer size"
+        },
+        "data_description": {
+          "dry_run": "When enabled, the integration runs the full update cycle (pipeline, diagnostics, sensors) but does NOT send any movement commands to your covers. Use for debugging and validating automation settings without disturbing your home. Default: off.",
+          "debug_mode": "When enabled, log messages for the selected categories below are promoted from DEBUG to INFO. This means they appear in the Home Assistant log without requiring 'custom_components.adaptive_cover_pro: debug' in configuration.yaml. Turn off when you are done troubleshooting.",
+          "debug_categories": "Select which areas to trace. 'Manual Override' covers override detection decisions (most useful for 'cover won't stop manual control' issues). 'Reconciliation' covers the 1-minute position retry loop. 'Pipeline' covers the priority handler chain. 'Motion' covers motion sensor and timeout decisions.",
+          "debug_event_buffer_size": "Number of manual-override decision events to keep in the rolling ring buffer. Each event is a small dict (~200 bytes). Increase for intermittent issues that require longer observation windows. The buffer is reset on integration reload."
+        }
+      },
       "sync_confirm": {
         "title": "Copy Settings — Confirm",
         "description": "Copying settings from **{source_name}**. Your current settings will be saved before copying.\n\nThe following categories will be overwritten:\n\n{categories_summary}\n\nOn these covers:\n\n{entries_summary}\n\nEach cover will keep its own name, entities, azimuth, and device association.",
         "data": {
           "confirm": "Confirm sync"
+        }
+      },
+      "light_cloud": {
+        "title": "Light Sensors & Cloud Suppression",
+        "description": "Configure light and weather sensors to detect when clouds block direct sunlight.",
+        "data": {
+          "weather_entity": "Weather entity (optional)",
+          "lux_entity": "Lux sensor (optional)",
+          "lux_threshold": "Lux threshold",
+          "irradiance_entity": "Irradiance sensor (optional)",
+          "irradiance_threshold": "Irradiance threshold",
+          "cloud_coverage_entity": "Cloud coverage sensor (optional)",
+          "cloud_coverage_threshold": "Cloud coverage threshold",
+          "cloud_suppression": "Suppress glare control in low light",
+          "weather_state": "Weather Conditions"
+        },
+        "data_description": {
+          "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
+          "weather_state": "The weather states that count as 'sun is out'. When the live weather state matches one of these, glare tracking runs normally. When it does not match, the cover returns to its default position. Keep the defaults (sunny, partlycloudy, clear) unless your weather integration uses different state names.",
+          "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
+          "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. Adjust based on sensor placement.",
+          "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. Adjust based on your climate and preference.",
+          "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
+          "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast.",
+          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control."
+        }
+      },
+      "temperature_climate": {
+        "title": "Temperature & Climate Mode",
+        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.",
+        "data": {
+          "climate_mode": "Enable climate mode",
+          "temp_entity": "Inside temperature entity",
+          "temp_low": "Low temperature threshold",
+          "temp_high": "High temperature threshold",
+          "outside_temp": "Outside temperature sensor (optional)",
+          "outside_threshold": "Outside temperature threshold",
+          "presence_entity": "Presence entity (optional)",
+          "transparent_blind": "Transparent blind",
+          "winter_close_insulation": "Winter insulation mode"
+        },
+        "data_description": {
+          "climate_mode": "Turn on to enable all climate-based cover control. When off, all settings on this screen are ignored and the cover follows normal sun/glare tracking.",
+          "temp_entity": "A climate thermostat or temperature sensor that measures the indoor temperature used to determine the current season (winter/summer/intermediate). Required when climate mode is enabled.",
+          "temp_low": "Indoor (or outdoor, if an outside sensor is configured) temperature below which the season is treated as winter. In winter the cover opens fully when the sun is hitting the window to capture solar heat.",
+          "temp_high": "Indoor (or outdoor, if an outside sensor is configured) temperature above which the season is treated as summer — provided the outside threshold is also exceeded. In summer the cover closes to block heat gain.",
+          "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured.",
+          "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
+          "transparent_blind": "Enable when the blind material is sheer or translucent. In summer with occupants present a transparent blind will still close fully to reduce heat gain, whereas an opaque blind would instead follow glare-control tracking.",
+          "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }
       }
     },
@@ -743,6 +975,7 @@
           "manual_override": "Manual Override",
           "motion_timeout": "Motion Timeout",
           "force_override": "Force Override",
+          "custom_position": "Custom Position",
           "weather_override": "Weather Override",
           "cloud_suppression": "Cloud Suppression"
         }
@@ -761,12 +994,20 @@
       "glare_zone_3": {
         "name": "Glare Zone 4"
       },
+      "enabled_toggle": {
+        "name": "Integration Enabled",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
       "automatic_control": {
         "name": "Automatic Control",
         "state": {
           "on": "On",
           "off": "Off"
-        }
+        },
+        "description": "Master switch for solar tracking. When OFF, the integration stops sending solar, climate, custom-position, motion-timeout, and end-of-time-window Return-to-Default commands. Force Override and Weather Override continue to fire because they are safety overrides. Manual cover movements are always respected."
       },
       "motion_control": {
         "name": "Motion Control",
@@ -791,6 +1032,14 @@
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
       }
     },
+    "debug_categories": {
+      "options": {
+        "manual_override": "Manual Override (detection decisions, grace period, wait-for-target)",
+        "reconciliation": "Reconciliation (1-minute position retry loop)",
+        "pipeline": "Pipeline (priority handler chain decisions)",
+        "motion": "Motion (sensor events, timeout state)"
+      }
+    },
     "sync_categories": {
       "options": {
         "geometry": "Cover Geometry (dimensions, depth, sill height)",
@@ -801,12 +1050,29 @@
         "automation": "Schedule & Timing (deltas, start/end times)",
         "manual_override": "Manual Override",
         "force_override": "Force Override",
+        "custom_position": "Custom Positions",
         "motion_override": "Motion Override",
         "weather_override": "Weather Override",
         "glare_zones": "Glare Zones",
         "climate": "Climate Configuration (temperature, presence, lux)",
-        "weather": "Weather Conditions"
+        "weather": "Weather Conditions",
+        "light_cloud": "Light Sensors & Cloud Suppression",
+        "temperature_climate": "Temperature & Climate Mode"
       }
+    }
+  },
+  "services": {
+    "integration_enable": {
+      "name": "Enable integration",
+      "description": "Re-enables Adaptive Cover Pro on the targeted instances. Covers stay where they are; positioning resumes on the next natural update cycle."
+    },
+    "integration_disable": {
+      "name": "Disable integration",
+      "description": "Disables Adaptive Cover Pro on the targeted instances. ACP-in-flight cover moves are stopped immediately, deferred timers cancelled, and reconciliation state cleared."
+    },
+    "emergency_stop": {
+      "name": "Emergency stop",
+      "description": "Panic button — sends stop_cover to every configured cover on the targeted instances (capability-checked), then disables the integration. With no target, acts on all ACP instances."
     }
   }
 }

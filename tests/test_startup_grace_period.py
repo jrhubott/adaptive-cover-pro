@@ -245,8 +245,10 @@ async def test_startup_grace_period_allows_manual_override_after_expiration():
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
     coordinator.cover_state_change = True
-    coordinator.state_change_data = MagicMock()
-    coordinator.state_change_data.entity_id = "cover.test"
+    state_data = MagicMock()
+    state_data.entity_id = "cover.test"
+    coordinator.state_change_data = state_data
+    coordinator._pending_cover_events = [state_data]
     coordinator.target_call = {"cover.test": 50}
     coordinator._cover_type = "cover_blind"
     coordinator.manual_reset = False

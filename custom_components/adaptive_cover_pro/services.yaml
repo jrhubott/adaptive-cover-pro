@@ -1,3 +1,33 @@
+integration_enable:
+  name: Enable integration
+  description: >-
+    Re-enables Adaptive Cover Pro on the targeted instances. Covers stay where they
+    are; positioning resumes on the next natural update cycle.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
+integration_disable:
+  name: Disable integration
+  description: >-
+    Disables Adaptive Cover Pro on the targeted instances. Any ACP-in-flight cover
+    moves are stopped immediately (cover.stop_cover). Deferred motion and weather
+    timers are cancelled and reconciliation state is cleared.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
+emergency_stop:
+  name: Emergency stop
+  description: >-
+    Panic button — sends stop_cover to every configured cover on the targeted
+    instances (capability-checked), regardless of whether the cover is currently
+    moving, then disables the integration. With no target, acts on all ACP
+    instances and all their covers.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
 export_config:
   name: Export configuration
   description: >-

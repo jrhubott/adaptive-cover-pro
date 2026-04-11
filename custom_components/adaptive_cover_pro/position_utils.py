@@ -37,7 +37,7 @@ def interpolate_position(
         normal_range = list(map(int, normal_list))
         new_range = list(map(int, new_list))
     if new_range:
-        state = np.interp(state, normal_range, new_range)
+        state = float(np.interp(state, normal_range, new_range))
     return state
 
 

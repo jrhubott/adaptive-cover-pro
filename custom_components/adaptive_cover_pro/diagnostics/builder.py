@@ -69,6 +69,25 @@ class DiagnosticContext:
     force_override_sensors: list = field(default_factory=list)
     force_override_position: int = 0
 
+    # Debug & diagnostics (optional — only populated when debug_mode is on or buffer has entries)
+    manual_override_events: list[dict] | None = None
+    cover_command_state: dict[str, dict] | None = None
+    debug_config: dict | None = None
+
+    # Meta — integration identity and coordinator health
+    integration_version: str | None = None
+    cover_type: str | None = None
+    last_update_success: bool = True
+    last_exception_repr: str | None = None
+    last_update_success_time_iso: str | None = None
+    update_interval_seconds: float | None = None
+
+    # Live cover entity state (positions + capabilities)
+    covers: dict[str, dict] = field(default_factory=dict)
+
+    # Manual override live state (per-entity map)
+    manual_override_state: dict | None = None
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -119,13 +138,18 @@ class DiagnosticsBuilder:
 
         """
         diagnostics: dict = {}
+        diagnostics.update(self._build_meta(ctx))
         diagnostics.update(self._build_solar(ctx))
         diagnostics.update(self._build_position(ctx))
+        diagnostics.update(self._build_decision_trace(ctx))
         diagnostics.update(self._build_time_window(ctx))
         diagnostics.update(self._build_sun_validity(ctx))
         diagnostics.update(self._build_climate(ctx))
         diagnostics.update(self._build_last_action(ctx))
+        diagnostics.update(self._build_covers(ctx))
+        diagnostics.update(self._build_manual_override_state(ctx))
         diagnostics.update(self._build_configuration(ctx))
+        diagnostics.update(self._build_debug_info(ctx))
 
         explanation = diagnostics.get("position_explanation", "")
         return diagnostics, explanation
@@ -134,14 +158,19 @@ class DiagnosticsBuilder:
 
     @staticmethod
     def _build_solar(ctx: DiagnosticContext) -> dict:
-        """Build solar position diagnostics."""
+        """Build solar position diagnostics.
+
+        Sun angles are rounded to 1 decimal place here — the single rounding
+        point for all consumers (sensors, Decision Trace, REST API).  Full
+        float precision is kept inside the calculation engine and pipeline.
+        """
         diagnostics: dict = {}
         sun_azimuth, sun_elevation = ctx.pos_sun
-        diagnostics["sun_azimuth"] = sun_azimuth
-        diagnostics["sun_elevation"] = sun_elevation
+        diagnostics["sun_azimuth"] = round(sun_azimuth, 1) if sun_azimuth is not None else None
+        diagnostics["sun_elevation"] = round(sun_elevation, 1) if sun_elevation is not None else None
 
         if ctx.cover and hasattr(ctx.cover, "gamma"):
-            diagnostics["gamma"] = ctx.cover.gamma
+            diagnostics["gamma"] = round(ctx.cover.gamma, 1)
 
         return diagnostics
 
@@ -224,6 +253,10 @@ class DiagnosticsBuilder:
 
         diagnostics["control_status"] = cls._determine_control_status(ctx)
         diagnostics["control_state_reason"] = cls._get_control_state_reason(ctx)
+        if result is not None and result.bypass_auto_control:
+            diagnostics["bypass_auto_control"] = True
+        if result is not None and result.tilt is not None:
+            diagnostics["tilt"] = result.tilt
 
         explanation = cls._build_position_explanation(ctx)
         diagnostics["position_explanation"] = explanation
@@ -310,10 +343,22 @@ class DiagnosticsBuilder:
             climate_data = result.climate_data
             diagnostics["climate_control_method"] = result.control_method
 
-            diagnostics["active_temperature"] = climate_data.get_current_temperature
+            # Round temperatures to 1 decimal — presentation boundary.
+            raw_temp = climate_data.get_current_temperature
+            diagnostics["active_temperature"] = (
+                round(raw_temp, 1) if isinstance(raw_temp, (int, float)) else raw_temp
+            )
+
+            def _round_temp(val: object) -> object:
+                """Round a temperature value to 1 decimal if numeric."""
+                try:
+                    return round(float(val), 1)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    return val
+
             diagnostics["temperature_details"] = {
-                "inside_temperature": climate_data.inside_temperature,
-                "outside_temperature": climate_data.outside_temperature,
+                "inside_temperature": _round_temp(climate_data.inside_temperature),
+                "outside_temperature": _round_temp(climate_data.outside_temperature),
                 "temp_switch": climate_data.temp_switch,
             }
 
@@ -340,6 +385,70 @@ class DiagnosticsBuilder:
         if ctx.last_skipped_action.get("entity_id"):
             diagnostics["last_skipped_action"] = ctx.last_skipped_action.copy()
         return diagnostics
+
+    @staticmethod
+    def _build_debug_info(ctx: DiagnosticContext) -> dict:
+        """Build debug & diagnostics section."""
+        diagnostics: dict = {}
+
+        if ctx.debug_config is not None:
+            diagnostics["debug_config"] = ctx.debug_config
+
+        if ctx.manual_override_events:
+            diagnostics["manual_override_history"] = ctx.manual_override_events
+
+        # Always emit cover_commands (empty dict when nothing active)
+        diagnostics["cover_commands"] = ctx.cover_command_state or {}
+
+        return diagnostics
+
+    @staticmethod
+    def _build_meta(ctx: DiagnosticContext) -> dict:
+        """Build integration identity and coordinator health section."""
+        return {
+            "meta": {
+                "integration_version": ctx.integration_version,
+                "cover_type": ctx.cover_type,
+                "coordinator_update": {
+                    "last_update_success": ctx.last_update_success,
+                    "last_exception": ctx.last_exception_repr,
+                    "last_update_success_time": ctx.last_update_success_time_iso,
+                    "update_interval_seconds": ctx.update_interval_seconds,
+                },
+            }
+        }
+
+    @staticmethod
+    def _build_decision_trace(ctx: DiagnosticContext) -> dict:
+        """Build per-handler decision trace from pipeline result."""
+        result = ctx.pipeline_result
+        if result is None or not result.decision_trace:
+            return {"decision_trace": []}
+        return {
+            "decision_trace": [
+                {
+                    "handler": step.handler,
+                    "matched": step.matched,
+                    "reason": step.reason,
+                    "position": step.position,
+                }
+                for step in result.decision_trace
+            ]
+        }
+
+    @staticmethod
+    def _build_covers(ctx: DiagnosticContext) -> dict:
+        """Build live cover entity state section."""
+        if not ctx.covers:
+            return {"covers": {}}
+        return {"covers": ctx.covers}
+
+    @staticmethod
+    def _build_manual_override_state(ctx: DiagnosticContext) -> dict:
+        """Build per-entity manual override live state section."""
+        if ctx.manual_override_state is None:
+            return {}
+        return {"manual_override_state": ctx.manual_override_state}
 
     @staticmethod
     def _build_configuration(ctx: DiagnosticContext) -> dict:

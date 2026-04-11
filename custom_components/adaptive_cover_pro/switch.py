@@ -37,6 +37,15 @@ async def async_setup_entry(
         config_entry.entry_id
     ]
 
+    enabled_switch = AdaptiveCoverSwitch(
+        config_entry.entry_id,
+        hass,
+        config_entry,
+        coordinator,
+        "Integration Enabled",
+        True,
+        "enabled_toggle",
+    )
     manual_switch = AdaptiveCoverSwitch(
         config_entry.entry_id,
         hass,
@@ -72,6 +81,7 @@ async def async_setup_entry(
         "Outside Temperature",
         False,
         "temp_toggle",
+        enabled_default=False,
     )
     lux_switch = AdaptiveCoverSwitch(
         config_entry.entry_id,
@@ -81,6 +91,7 @@ async def async_setup_entry(
         "Lux",
         True,
         "lux_toggle",
+        enabled_default=False,
     )
     irradiance_switch = AdaptiveCoverSwitch(
         config_entry.entry_id,
@@ -90,6 +101,7 @@ async def async_setup_entry(
         "Irradiance",
         True,
         "irradiance_toggle",
+        enabled_default=False,
     )
     return_default_switch = AdaptiveCoverSwitch(
         config_entry.entry_id,
@@ -120,7 +132,7 @@ async def async_setup_entry(
     motion_sensors = config_entry.options.get(CONF_MOTION_SENSORS, [])
 
     # Always add control and manual switches for all cover types
-    switches = [control_switch, manual_switch]
+    switches = [enabled_switch, control_switch, manual_switch]
 
     # Add return to default switch for vertical and horizontal covers
     if sensor_type in ["cover_awning", "cover_blind"]:
@@ -183,6 +195,8 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         initial_state: bool,
         key: str,
         device_class: SwitchDeviceClass | None = None,
+        *,
+        enabled_default: bool = True,
     ) -> None:
         """Initialize the switch."""
         super().__init__(entry_id, hass, config_entry, coordinator)
@@ -193,6 +207,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self._attr_device_class = device_class
         self._initial_state = initial_state
         self._attr_unique_id = f"{entry_id}_{switch_name}"
+        self._attr_entity_registry_enabled_default = enabled_default
 
         self.coordinator.logger.debug("Setup switch")
 
@@ -213,7 +228,9 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                     not self.coordinator.manager.is_cover_manual(entity)
                     and self.coordinator.check_adaptive_time
                 ):
-                    ctx = self.coordinator._build_position_context(entity, options, force=True)
+                    ctx = self.coordinator._build_position_context(
+                        entity, options, force=True
+                    )
                     await self.coordinator._cmd_svc.apply_position(
                         entity, self.coordinator.state, "auto_control_on", context=ctx
                     )
@@ -225,6 +242,16 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self.coordinator.logger.debug("Turning off")
         self._attr_is_on = False
         setattr(self.coordinator, self._key, False)
+        if self._key == "enabled_toggle" and kwargs.get("added") is not True:
+            # Stop any ACP-in-flight cover moves FIRST (before the gate closes),
+            # then cancel deferred tasks and clear all reconciliation state so
+            # nothing is resent automatically when re-enabling.
+            await self.coordinator._cmd_svc.stop_in_flight()  # noqa: SLF001
+            self.coordinator._cancel_motion_timeout()  # noqa: SLF001
+            self.coordinator._cancel_weather_timeout()  # noqa: SLF001
+            self.coordinator._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
+            self.coordinator._cmd_svc._safety_targets.clear()  # noqa: SLF001
+
         if self._key == "automatic_control" and kwargs.get("added") is not True:
             for entity in self.coordinator.manager.manual_controlled:
                 self.coordinator.manager.reset(entity)
@@ -242,7 +269,9 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                 )
                 options = self.coordinator.config_entry.options
                 for entity in self.coordinator.entities:
-                    ctx = self.coordinator._build_position_context(entity, options, force=True)
+                    ctx = self.coordinator._build_position_context(
+                        entity, options, force=True
+                    )
                     await self.coordinator._cmd_svc.apply_position(
                         entity, default_position, "auto_control_off", context=ctx
                     )
