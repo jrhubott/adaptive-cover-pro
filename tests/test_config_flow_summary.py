@@ -9,6 +9,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
     CONF_ENABLE_SUN_TRACKING,
     CONF_BLIND_SPOT_ELEVATION,
+    CONF_MY_POSITION_VALUE,
+    CONF_SUNSET_USE_MY,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
@@ -994,3 +996,63 @@ def test_sun_tracking_disabled_priority_chain_shows_solar_inactive():
     cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_ENABLE_GLARE_ZONES: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "❌Solar" in summary or "Solar" not in summary or "✅Solar" not in summary
+
+
+# ---------------------------------------------------------------------------
+# My Preset (Somfy) support
+# ---------------------------------------------------------------------------
+
+
+def test_summary_shows_my_preset_for_sunset():
+    """Sunset target renders as 'My (N%)' when CONF_SUNSET_USE_MY is True and value is set."""
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_POS] = 30
+    cfg[CONF_MY_POSITION_VALUE] = 50
+    cfg[CONF_SUNSET_USE_MY] = True
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "My (50%)" in summary
+    # The raw configured percent should not appear as a sunset target
+    assert "→ 30%" not in summary
+
+
+def test_summary_shows_my_preset_for_custom_slot():
+    """Custom slot renders 'My (N%)' when use_my flag is set and value is configured."""
+    cfg = _minimal_vertical()
+    cfg["custom_position_sensor_1"] = "binary_sensor.my_sensor"
+    cfg["custom_position_1"] = 40
+    cfg["custom_position_use_my_1"] = True
+    cfg[CONF_MY_POSITION_VALUE] = 50
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "My (50%)" in summary
+    # Raw percent should not appear as the custom target
+    assert "→ 40%" not in summary
+
+
+def test_summary_falls_back_when_my_value_unset():
+    """Shows fallback text and warning when use_my is True but My Preset Value is not set."""
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_POS] = 30
+    cfg[CONF_SUNSET_USE_MY] = True
+    # CONF_MY_POSITION_VALUE intentionally absent
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "My (not set → 30%)" in summary
+    assert "⚠️" in summary
+    assert "My Preset Value is not set" in summary
+
+
+def test_summary_hides_my_info_when_unused():
+    """No My preset lines appear when no use_my flags are set and value is absent."""
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_POS] = 30
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "🎛️ Somfy My preset" not in summary
+    assert "⚠️ Somfy My preset" not in summary
+    assert "My (" not in summary
+
+
+def test_summary_shows_my_info_line_when_value_set_globally():
+    """Info line appears showing the configured My value even if no use_my flags are enabled."""
+    cfg = _minimal_vertical()
+    cfg[CONF_MY_POSITION_VALUE] = 50
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "🎛️ Somfy My preset: 50%" in summary

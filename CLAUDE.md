@@ -198,6 +198,18 @@ Checklist: ✅ write tests → ✅ all pass → ✅ check coverage for modified 
 - When generalizing an existing method to serve a second caller, preserve the original caller's behavior with safe defaults (optional params, unchanged return semantics for old callers).
 - Prefer growing one method by a few lines over creating a second method that repeats the same gate checks, `force=True` semantics, or logging format.
 
+### Configuration Summary Must Track Every Behavior-Affecting Option
+
+`_build_config_summary()` in `config_flow.py` is the user's final sanity check before saving — shown by `async_step_summary` in both the initial setup flow (~line 2279) and the options flow (~line 3127). It is a hand-written narrative, **not** a generic key/value dump, so it does not update itself when you add a new option.
+
+**Rule:** Any change that adds or modifies a `CONF_*` option which influences cover behavior (position targets, overrides, gates, schedules, preset routing, etc.) must, in the same change:
+
+1. Update `_build_config_summary()` so the summary truthfully reflects the new behavior. Use an existing section where the option fits ("How It Decides", "Position Limits", "Position Map", "Decision Priority") — only add a new section if none fits.
+2. If the option has a footgun (e.g. a bool flag that silently no-ops when a paired value is blank), surface it as a `⚠️` warning line in the summary.
+3. Add or update tests in `tests/test_config_flow_summary.py` asserting both the rendered text and any fall-through / warning paths.
+
+**Exempt:** purely diagnostic options that don't change what the cover does (e.g. a logging toggle). When in doubt, add the line — the summary is cheap real-estate and users rely on it.
+
 ### Home Assistant Patterns
 - Async-first — all I/O is async; never block the event loop
 - Coordinator pattern for entity updates; `_handle_coordinator_update()` in entities
@@ -209,6 +221,7 @@ Checklist: ✅ write tests → ✅ all pass → ✅ check coverage for modified 
 3. Read in `coordinator.py` from `self.config_entry.options`
 4. Expose via sensor/switch if needed
 5. Translations in `translations/en.json`
+6. Update `_build_config_summary()` + `tests/test_config_flow_summary.py` (see rule above)
 
 **Optional numeric fields:** Use `NumberSelectorMode.SLIDER` (not `BOX`). BOX doesn't preserve `None` — clearing saves `0`. Check `if value is not None` (not `if value`) to distinguish 0% from unset.
 

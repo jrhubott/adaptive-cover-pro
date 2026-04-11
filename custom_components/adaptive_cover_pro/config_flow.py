@@ -973,15 +973,17 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         ]
     )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
-    # Build per-slot custom position data: list of (slot, entity_id, position, priority)
-    _custom_slots: list[tuple[int, str, int, int]] = []
+    # Build per-slot custom position data: list of (slot, entity_id, position, priority, use_my)
+    _custom_slots: list[tuple[int, str, int, int, bool]] = []
     for _i in range(1, 5):
         _sensor = config.get(f"custom_position_sensor_{_i}")
         _pos = config.get(f"custom_position_{_i}")
         if _sensor and _pos is not None:
             _pri = int(config.get(f"custom_position_priority_{_i}") or DEFAULT_CUSTOM_POSITION_PRIORITY)
-            _custom_slots.append((_i, _sensor, int(_pos), _pri))
+            _use_my = bool(config.get(f"custom_position_use_my_{_i}"))
+            _custom_slots.append((_i, _sensor, int(_pos), _pri, _use_my))
     has_custom_position = bool(_custom_slots)
+    my_pos = config.get(CONF_MY_POSITION_VALUE)  # None = not configured
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
     sun_tracking_enabled = config.get(CONF_ENABLE_SUN_TRACKING, True)
@@ -990,6 +992,14 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         and sensor_type == SensorType.BLIND
         and sun_tracking_enabled
     )
+
+    def _pos_label(raw_pct: int, use_my: bool) -> str:
+        """Render a target as 'My (N%)' when the My preset flag is active."""
+        if use_my and my_pos is not None:
+            return f"My ({my_pos}%)"
+        if use_my:
+            return f"My (not set → {raw_pct}%)"
+        return f"{raw_pct}%"
 
     lines: list[str] = []
 
@@ -1107,9 +1117,10 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
 
     # Custom positions — each slot at its own configured priority
     if has_custom_position:
-        for _slot, _eid, _pos, _pri in _custom_slots:
+        for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
+            target = _pos_label(_pos, _use_my)
             lines.append(
-                f"🎯 Custom #{_slot}: if {_eid} is on → {_pos}% (priority {_pri})."
+                f"🎯 Custom #{_slot}: if {_eid} is on → {target} (priority {_pri})."
             )
 
     # Motion timeout (75)
@@ -1262,15 +1273,17 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
             sunset_off_str = _offset_str(int(sunset_off))
             sunrise_off_str = _offset_str(int(sunrise_off))
             has_end_time = bool(end_time or end_entity)
+            _sunset_use_my = bool(config.get(CONF_SUNSET_USE_MY))
+            _sunset_target = _pos_label(int(sunset_pos), _sunset_use_my)
             if has_end_time and int(sunset_pos) != int(default_pos):
                 lines.append(f"{indent}🔚 After end time → {default_pos}%.")
                 lines.append(
-                    f"{indent}🌅 After sunset{sunset_off_str} → {sunset_pos}%."
+                    f"{indent}🌅 After sunset{sunset_off_str} → {_sunset_target}."
                 )
             else:
                 label = "end time/sunset" if has_end_time else "sunset"
                 lines.append(
-                    f"{indent}🌅 After {label}{sunset_off_str} → {sunset_pos}%."
+                    f"{indent}🌅 After {label}{sunset_off_str} → {_sunset_target}."
                 )
             lines.append(
                 f"{indent}🌄 After sunrise{sunrise_off_str} → {default_pos}% (tracking resumes)."
@@ -1323,6 +1336,18 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         lines.append("**Position Limits**")
         lines.append(" · ".join(limit_parts))
 
+    # Somfy My preset info / warning
+    _any_use_my = bool(config.get(CONF_SUNSET_USE_MY)) or any(
+        bool(config.get(f"custom_position_use_my_{_i}")) for _i in range(1, 5)
+    )
+    if my_pos is not None:
+        lines.append(f"🎛️ Somfy My preset: {my_pos}% (used where enabled above)")
+    elif _any_use_my:
+        lines.append(
+            "⚠️ Somfy My preset is enabled for one or more targets but "
+            "My Preset Value is not set — falls back to configured %."
+        )
+
     # =========================================================================
     # Section 3b: Position Map (what position in each scenario)
     # =========================================================================
@@ -1335,8 +1360,8 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if has_weather:
         pos_map.append(f"🌧️ Weather danger → {weather_pos}%")
     if has_custom_position:
-        for _slot, _eid, _pos, _pri in _custom_slots:
-            pos_map.append(f"🎯 Custom #{_slot} on → {_pos}% (priority {_pri})")
+        for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
+            pos_map.append(f"🎯 Custom #{_slot} on → {_pos_label(_pos, _use_my)} (priority {_pri})")
     if sun_tracking_enabled:
         pos_map.append("☀️ Tracking sun → calculated position")
     min_p = config.get(CONF_MIN_POSITION, 0)
@@ -1345,7 +1370,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
         pos_map.append(f"   (clamped to {min_p}%–{max_p}%)")
     sunset_pos = config.get(CONF_SUNSET_POS)
     if sunset_pos is not None:
-        pos_map.append(f"🌅 After sunset → {sunset_pos}%")
+        pos_map.append(f"🌅 After sunset → {_pos_label(int(sunset_pos), bool(config.get(CONF_SUNSET_USE_MY)))}")
     pos_map.append(f"🌙 No sun / default → {default_pos}%")
     for line in pos_map:
         lines.append(line)
@@ -1372,7 +1397,7 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
     if (sensor_type == SensorType.BLIND or sensor_type is None) and sun_tracking_enabled:
         _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
-    for _slot, _eid, _pos, _pri in _custom_slots:
+    for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
         _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
     # Sort highest priority first
     _chain_entries.sort(key=lambda e: e[0], reverse=True)
