@@ -957,7 +957,19 @@
         "climate": "Klimakonfiguration (Temperatur, Anwesenheit, Lux)",
         "weather": "Wetterbedingungen",
         "light_cloud": "Lichtsensoren & Wolkenunterdrückung",
-        "temperature_climate": "Temperatur & Klimamodus"
+        "temperature_climate": "Temperatur & Klimamodus",
+        "force_override_values": "Force Override — Thresholds & Position",
+        "force_override_sensors": "Force Override — Trigger Sensors",
+        "custom_position_values": "Custom Positions — Values & Priorities",
+        "custom_position_sensors": "Custom Positions — Trigger Sensors",
+        "motion_override_values": "Motion Override — Timeout",
+        "motion_override_sensors": "Motion Override — Sensors",
+        "weather_override_values": "Weather Override — Thresholds & Position",
+        "weather_override_sensors": "Weather Override — Sensors",
+        "light_cloud_values": "Light & Cloud — Thresholds",
+        "light_cloud_sensors": "Light & Cloud — Sensors",
+        "temperature_climate_values": "Climate Mode — Thresholds & Settings",
+        "temperature_climate_sensors": "Climate Mode — Room Sensors"
       }
     }
   }
