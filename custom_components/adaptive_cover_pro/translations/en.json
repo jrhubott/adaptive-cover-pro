@@ -1030,8 +1030,7 @@
         "state": {
           "on": "On",
           "off": "Off"
-        },
-        "description": "Master switch for solar tracking. When OFF, the integration stops sending solar, climate, custom-position, motion-timeout, and end-of-time-window Return-to-Default commands. Force Override and Weather Override continue to fire because they are safety overrides. Manual cover movements are always respected."
+        }
       },
       "motion_control": {
         "name": "Motion Control",
