@@ -36,7 +36,7 @@ def _handler(
 def _snapshot_with(entity_id: str, is_on: bool, position: int = 50, priority: int = _DEFAULT_PRIORITY):
     """Build a snapshot with a single custom position sensor entry."""
     return make_snapshot(
-        custom_position_sensors=[(entity_id, is_on, position, priority, False)]
+        custom_position_sensors=[(entity_id, is_on, position, priority, False, False)]
     )
 
 
@@ -90,7 +90,7 @@ class TestEvaluateNoMatchingEntity:
     def test_returns_none_when_entity_absent(self) -> None:
         """Different entity_id in snapshot — handler's sensor not present."""
         snapshot = make_snapshot(
-            custom_position_sensors=[("binary_sensor.other", True, 50, 77, False)]
+            custom_position_sensors=[("binary_sensor.other", True, 50, 77, False, False)]
         )
         assert _handler(entity_id=_ENTITY).evaluate(snapshot) is None
 
@@ -166,8 +166,8 @@ class TestPerInstanceIsolation:
     def test_handler_ignores_other_sensors(self) -> None:
         """Handler for entity A is not triggered by entity B being on."""
         sensors = [
-            ("binary_sensor.slot1", False, 30, 77, False),
-            ("binary_sensor.slot2", True, 70, 77, False),
+            ("binary_sensor.slot1", False, 30, 77, False, False),
+            ("binary_sensor.slot2", True, 70, 77, False, False),
         ]
         snapshot = make_snapshot(custom_position_sensors=sensors)
 
@@ -184,8 +184,8 @@ class TestPerInstanceIsolation:
     def test_both_on_both_handlers_fire(self) -> None:
         """When both sensors are on, both handlers independently return results."""
         sensors = [
-            ("binary_sensor.slot1", True, 30, 95, False),
-            ("binary_sensor.slot2", True, 70, 60, False),
+            ("binary_sensor.slot1", True, 30, 95, False, False),
+            ("binary_sensor.slot2", True, 70, 60, False, False),
         ]
         snapshot = make_snapshot(custom_position_sensors=sensors)
 
@@ -256,7 +256,7 @@ class TestMinimumPositionMode:
     ):
         """Build a snapshot for min_mode tests."""
         return make_snapshot(
-            custom_position_sensors=[(_ENTITY, is_on, position, _DEFAULT_PRIORITY, min_mode)],
+            custom_position_sensors=[(_ENTITY, is_on, position, _DEFAULT_PRIORITY, min_mode, False)],
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
         )
