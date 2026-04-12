@@ -138,7 +138,7 @@ class ClimateCoverState:
         )
         result = self.tilt_state() if is_tilt else self.normal_type_cover()
         return apply_snapshot_limits(
-            self.snapshot, result, sun_valid=self.cover.direct_sun_valid
+            self.snapshot, result, sun_valid=False
         )
 
     def _solar_position(self) -> int:

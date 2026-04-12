@@ -117,5 +117,5 @@ def compute_default_position(snapshot: PipelineSnapshot) -> int:
     return apply_snapshot_limits(
         snapshot,
         snapshot.default_position,
-        sun_valid=snapshot.cover.direct_sun_valid,
+        sun_valid=False,
     )
