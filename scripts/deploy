@@ -175,11 +175,11 @@ EOF
         done
         echo ""
 
-        # Phase 2: Wait for all integrations to finish loading (up to 120s)
+        # Phase 2: Wait for all integrations to finish loading (up to 260s)
         # /api/config returns {"state": "RUNNING"} once startup is complete.
         READY=false
         if $API_UP; then
-            for i in $(seq 1 60); do
+            for i in $(seq 1 130); do
                 sleep 2
                 printf "\r    Phase 2/2 — waiting for startup to complete... %ds" $((i * 2))
                 RESPONSE=$(curl -sf --max-time 3 "${HA_URL}/api/config" \
