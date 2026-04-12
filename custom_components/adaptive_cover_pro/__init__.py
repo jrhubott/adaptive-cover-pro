@@ -11,6 +11,7 @@ from homeassistant.helpers.event import (
 )
 
 from .const import (
+    CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CUSTOM_POSITION_SENSOR_1,
     CONF_CUSTOM_POSITION_SENSOR_2,
     CONF_CUSTOM_POSITION_SENSOR_3,
@@ -19,7 +20,10 @@ from .const import (
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_LUX_ENTITY,
     CONF_MOTION_SENSORS,
+    CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
@@ -65,8 +69,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _force_override_sensors = entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
     _motion_sensors = entry.options.get(CONF_MOTION_SENSORS, [])
+    _cloud_coverage_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
+    _lux_entity = entry.options.get(CONF_LUX_ENTITY)
+    _irradiance_entity = entry.options.get(CONF_IRRADIANCE_ENTITY)
+    _outside_temp_entity = entry.options.get(CONF_OUTSIDETEMP_ENTITY)
     _entities = ["sun.sun"]
-    for entity in [_temp_entity, _presence_entity, _weather_entity, _end_time_entity]:
+    for entity in [
+        _temp_entity,
+        _presence_entity,
+        _weather_entity,
+        _end_time_entity,
+        _cloud_coverage_entity,
+        _lux_entity,
+        _irradiance_entity,
+        _outside_temp_entity,
+    ]:
         if entity is not None:
             _entities.append(entity)
 
