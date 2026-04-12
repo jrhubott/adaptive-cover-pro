@@ -3,13 +3,16 @@
 # Deploy adaptive_cover_pro to a Home Assistant server via SMB.
 #
 # Usage:
-#   ./scripts/deploy [--dry-run] [--reboot]
+#   ./scripts/deploy [--dry-run] [--reboot] [--verbose] [--help]
 #
 # Flags:
 #   --dry-run   Simulate rsync without copying files
 #   --reboot    Restart HA automatically after deploy without prompting
+#   --verbose   Show rsync file list, curl responses, and bash trace (set -x)
+#   --help      Show help and exit
 #
 # Environment variables:
+#   INTEGRATION   Integration directory name under custom_components/ (default: auto-detected)
 #   HA_SMB_HOST   SMB hostname or IP (default: home-assistant.home)
 #   HA_SMB_SHARE  SMB share name (default: config)
 #   HA_SMB_USER   SMB username (optional; omit for guest access)
@@ -28,16 +31,44 @@ fi
 
 HA_SMB_HOST="${HA_SMB_HOST:-home-assistant.home}"
 HA_SMB_SHARE="${HA_SMB_SHARE:-config}"
+INTEGRATION="${INTEGRATION:-$(ls custom_components/ 2>/dev/null | head -1)}"
 DRY_RUN=false
 AUTO_REBOOT=false
+VERBOSE=false
 MOUNTED_BY_US=false
 
 for arg in "$@"; do
     case "$arg" in
-        --dry-run) DRY_RUN=true ;;
-        --reboot)  AUTO_REBOOT=true ;;
+        --dry-run)    DRY_RUN=true ;;
+        --reboot)     AUTO_REBOOT=true ;;
+        --verbose|-v) VERBOSE=true ;;
+        --help|-h)
+            cat <<'HELP'
+Usage: ./scripts/deploy [--dry-run] [--reboot] [--verbose] [--help]
+
+Flags:
+  --dry-run   Simulate rsync without copying files
+  --reboot    Restart HA automatically after deploy without prompting
+  --verbose   Show rsync file list, curl responses, and bash trace (set -x)
+  --help      Show this help message and exit
+
+Environment variables (or set in .deploy config file):
+  INTEGRATION   Integration name under custom_components/ (default: auto-detected)
+  HA_SMB_HOST   SMB hostname or IP       (default: home-assistant.home)
+  HA_SMB_SHARE  SMB share name           (default: config)
+  HA_SMB_USER   SMB username             (optional; omit for guest access)
+  HA_SMB_PASS   SMB password             (optional)
+  HA_URL        Home Assistant URL        (default: http://home-assistant.home:8123)
+  HA_TOKEN      Long-lived access token  (optional; prompted if not set)
+HELP
+            exit 0
+            ;;
     esac
 done
+
+if $VERBOSE; then
+    set -x
+fi
 
 if $DRY_RUN; then
     echo "==> Dry run mode — no files will be copied"
@@ -75,7 +106,11 @@ else
     MOUNT_POINT="$(mktemp -d)"
     MOUNTED_BY_US=true
     echo "==> Mounting smb://${HA_SMB_HOST}/${HA_SMB_SHARE} → ${MOUNT_POINT}..."
-    mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" 2>/dev/null || true
+    if $VERBOSE; then
+        mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" || true
+    else
+        mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" 2>/dev/null || true
+    fi
     if ! mount | grep -q "on ${MOUNT_POINT} "; then
         echo "    Guest access failed; trying with credentials..."
         read -r -p "    SMB username: " SMB_USER
@@ -86,8 +121,8 @@ else
 fi
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
-SRC="custom_components/adaptive_cover_pro/"
-DST="${MOUNT_POINT}/custom_components/adaptive_cover_pro/"
+SRC="custom_components/${INTEGRATION}/"
+DST="${MOUNT_POINT}/custom_components/${INTEGRATION}/"
 
 RSYNC_OPTS=(
     --archive
@@ -97,8 +132,11 @@ RSYNC_OPTS=(
     --exclude="*.pyc"
     --exclude="simulation/"
     --human-readable
-    --verbose
 )
+
+if $VERBOSE; then
+    RSYNC_OPTS+=(--verbose)
+fi
 
 if $DRY_RUN; then
     RSYNC_OPTS+=(--dry-run)
@@ -116,7 +154,7 @@ else
     if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
         GIT_HASH="${GIT_HASH}-dirty"
     fi
-    BASE_VERSION="$(python3 -c "import json; print(json.load(open('custom_components/adaptive_cover_pro/manifest.json'))['version'])")"
+    BASE_VERSION="$(python3 -c "import json; print(json.load(open('custom_components/${INTEGRATION}/manifest.json'))['version'])")"
     DEV_VERSION="${BASE_VERSION}-dev.${GIT_HASH}"
     echo "==> Stamping version ${DEV_VERSION} in deployed manifest.json..."
     python3 - "${DST}manifest.json" "${DEV_VERSION}" <<'EOF'
@@ -148,9 +186,15 @@ EOF
 
     if [[ "${HA_RESTART,,}" != "n" ]]; then
         REBOOT_START=$(date +%s)
-        curl -sf -X POST "${HA_URL}/api/services/homeassistant/restart" \
-            -H "Authorization: Bearer ${HA_TOKEN}" \
-            -H "Content-Type: application/json" > /dev/null
+        if $VERBOSE; then
+            curl -fv -X POST "${HA_URL}/api/services/homeassistant/restart" \
+                -H "Authorization: Bearer ${HA_TOKEN}" \
+                -H "Content-Type: application/json"
+        else
+            curl -sf -X POST "${HA_URL}/api/services/homeassistant/restart" \
+                -H "Authorization: Bearer ${HA_TOKEN}" \
+                -H "Content-Type: application/json" > /dev/null
+        fi
         echo "    Restart requested — waiting for HA to come back..."
 
         # Wait for HA to go down first (up to 15s)
@@ -167,10 +211,15 @@ EOF
         for i in $(seq 1 30); do
             sleep 2
             printf "\r    Phase 1/2 — waiting for web server... %ds" $((i * 2))
-            if curl -sf --max-time 3 "${HA_URL}/api/" \
-                    -H "Authorization: Bearer ${HA_TOKEN}" > /dev/null 2>&1; then
-                API_UP=true
-                break
+            if $VERBOSE; then
+                curl -f --max-time 3 "${HA_URL}/api/" \
+                    -H "Authorization: Bearer ${HA_TOKEN}" && API_UP=true && break || true
+            else
+                if curl -sf --max-time 3 "${HA_URL}/api/" \
+                        -H "Authorization: Bearer ${HA_TOKEN}" > /dev/null 2>&1; then
+                    API_UP=true
+                    break
+                fi
             fi
         done
         echo ""
@@ -182,8 +231,13 @@ EOF
             for i in $(seq 1 130); do
                 sleep 2
                 printf "\r    Phase 2/2 — waiting for startup to complete... %ds" $((i * 2))
-                RESPONSE=$(curl -sf --max-time 3 "${HA_URL}/api/config" \
-                    -H "Authorization: Bearer ${HA_TOKEN}" 2>/dev/null)
+                if $VERBOSE; then
+                    RESPONSE=$(curl -f --max-time 3 "${HA_URL}/api/config" \
+                        -H "Authorization: Bearer ${HA_TOKEN}" 2>&1 || true)
+                else
+                    RESPONSE=$(curl -sf --max-time 3 "${HA_URL}/api/config" \
+                        -H "Authorization: Bearer ${HA_TOKEN}" 2>/dev/null)
+                fi
                 if [[ -n "$RESPONSE" ]]; then
                     HA_STATE=$(python3 -c \
                         "import json,sys; print(json.loads(sys.argv[1]).get('state',''))" \
