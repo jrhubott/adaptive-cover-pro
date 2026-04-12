@@ -10,13 +10,15 @@
         }
       },
       "cover_entities": {
-        "title": "Cover Entities",
+        "title": "Covers & Device",
         "description": "Select the cover entities this instance will control.",
         "data": {
-          "group": "Cover Entities"
+          "group": "Cover Entities",
+          "linked_device_id": "Attach to Device"
         },
         "data_description": {
-          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows."
+          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
         }
       },
       "geometry": {
@@ -248,16 +250,6 @@
         "title": "Position Calibration",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
       },
-      "device_association": {
-        "title": "Link to Existing Device",
-        "description": "Optionally attach this integration's entities to an existing device (e.g., the physical blind motor). Select 'None' to keep them as a standalone Adaptive Cover virtual device.",
-        "data": {
-          "linked_device_id": "Attach to Device"
-        },
-        "data_description": {
-          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
-        }
-      },
       "duplicate_select": {
         "title": "Duplicate Cover — Select Source",
         "description": "Choose which existing cover to duplicate settings from.",
@@ -288,7 +280,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "cover_entities": "Cover Entities",
+          "cover_entities": "Covers & Device",
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
@@ -303,7 +295,6 @@
           "custom_position": "Custom Positions",
           "motion_override": "Motion Override",
           "weather_override": "Weather Override",
-          "device": "Device Association",
           "summary": "Configuration Summary",
           "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
@@ -332,13 +323,15 @@
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
-        "title": "Cover Entities",
+        "title": "Covers & Device",
         "description": "Select the cover entities this instance will control.",
         "data": {
-          "group": "Cover Entities"
+          "group": "Cover Entities",
+          "linked_device_id": "Attach to Device"
         },
         "data_description": {
-          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows."
+          "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
         }
       },
       "geometry": {
@@ -547,16 +540,6 @@
         },
         "title": "Position Calibration",
         "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
-      },
-      "device": {
-        "title": "Device Association",
-        "description": "Link this integration's entities to an existing device (e.g., the physical blind motor) or remove an existing link.",
-        "data": {
-          "linked_device_id": "Attach to Device"
-        },
-        "data_description": {
-          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
-        }
       },
       "sync": {
         "title": "Copy Settings to Other Covers",

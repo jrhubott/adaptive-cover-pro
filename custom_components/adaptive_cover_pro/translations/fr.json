@@ -16,13 +16,15 @@
         }
       },
       "cover_entities": {
-        "title": "Entités de store",
+        "title": "Stores & Appareil",
         "description": "Sélectionnez les entités de store que cette instance va contrôler.",
         "data": {
-          "group": "Entités de store"
+          "group": "Entités de store",
+          "linked_device_id": "Associer à l'appareil"
         },
         "data_description": {
-          "group": "Sélectionnez les entités de store à contrôler via cette instance d'intégration. Vous pouvez sélectionner plusieurs stores en tant que groupe (tous recevront les mêmes commandes de position). Ne sélectionnez que les stores associés à cette fenêtre — créez des instances d'intégration séparées pour des fenêtres différentes."
+          "group": "Sélectionnez les entités de store à contrôler via cette instance d'intégration. Vous pouvez sélectionner plusieurs stores en tant que groupe (tous recevront les mêmes commandes de position). Ne sélectionnez que les stores associés à cette fenêtre — créez des instances d'intégration séparées pour des fenêtres différentes.",
+          "linked_device_id": "Sélectionnez un appareil physique dans lequel fusionner les entités de cette intégration. Les capteurs, commutateurs et boutons apparaîtront directement sous cet appareil dans Home Assistant. Sélectionner 'Aucun (appareil indépendant)' pour revenir à un appareil virtuel Adaptive Cover séparé."
         }
       },
       "geometry": {
@@ -352,16 +354,6 @@
           "interp_list_new": "Positions de sortie pour le mappage d'interpolation (positions réellement envoyées au store). Saisir les positions réelles correspondantes : 0, 20, 40, 65, 100. Même longueur que la liste d'interpolation."
         }
       },
-      "device_association": {
-        "title": "Associer à un appareil existant",
-        "description": "Associez optionnellement les entités de cette intégration à un appareil existant (ex. le moteur physique du store). Sélectionner 'Aucun' pour les conserver comme appareil virtuel Adaptive Cover indépendant.",
-        "data": {
-          "linked_device_id": "Associer à l'appareil"
-        },
-        "data_description": {
-          "linked_device_id": "Sélectionnez un appareil physique dans lequel fusionner les entités de cette intégration. Les capteurs, commutateurs et boutons apparaîtront directement sous cet appareil dans Home Assistant. Sélectionner 'Aucun (appareil indépendant)' pour revenir à un appareil virtuel Adaptive Cover séparé."
-        }
-      },
       "duplicate_select": {
         "title": "Dupliquer le store — Sélectionner la source",
         "description": "Choisissez le store existant dont vous souhaitez dupliquer les paramètres.",
@@ -429,7 +421,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "cover_entities": "Entités de store",
+          "cover_entities": "Stores & Appareil",
           "geometry": "Géométrie de fenêtre",
           "sun_tracking": "Suivi solaire",
           "position": "Paramètres de position",
@@ -444,7 +436,6 @@
           "custom_position": "Positions personnalisées",
           "motion_override": "Priorité mouvement",
           "weather_override": "Priorité météo",
-          "device": "Association d'appareil",
           "summary": "Résumé de la configuration",
           "sync": "Copier vers d'autres stores",
           "done": "Enregistrer et fermer",
@@ -475,13 +466,15 @@
         }
       },
       "cover_entities": {
-        "title": "Entités de store",
+        "title": "Stores & Appareil",
         "description": "Sélectionnez les entités de store que cette instance va contrôler.",
         "data": {
-          "group": "Entités de store"
+          "group": "Entités de store",
+          "linked_device_id": "Associer à l'appareil"
         },
         "data_description": {
-          "group": "Sélectionnez les entités de store à contrôler. Plusieurs stores peuvent être sélectionnés en groupe. Ne sélectionnez que les stores pour cette fenêtre — créez des instances séparées pour d'autres fenêtres."
+          "group": "Sélectionnez les entités de store à contrôler. Plusieurs stores peuvent être sélectionnés en groupe. Ne sélectionnez que les stores pour cette fenêtre — créez des instances séparées pour d'autres fenêtres.",
+          "linked_device_id": "Sélectionnez un appareil physique pour la fusion. Sélectionner 'Aucun (appareil indépendant)' pour un appareil virtuel séparé."
         }
       },
       "geometry": {
@@ -787,16 +780,6 @@
           "glare_zone_4_x": "Décalage depuis le centre de fenêtre en cm. Positif = droite.",
           "glare_zone_4_y": "Distance dans la pièce en cm.",
           "glare_zone_4_radius": "Rayon de protection en cm."
-        }
-      },
-      "device": {
-        "title": "Association d'appareil",
-        "description": "Associez les entités de cette intégration à un appareil existant ou supprimez une association existante.",
-        "data": {
-          "linked_device_id": "Associer à l'appareil"
-        },
-        "data_description": {
-          "linked_device_id": "Sélectionnez un appareil physique pour la fusion. Sélectionner 'Aucun (appareil indépendant)' pour un appareil virtuel séparé."
         }
       },
       "sync": {

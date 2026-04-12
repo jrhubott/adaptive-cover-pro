@@ -17,12 +17,15 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from unittest.mock import patch
+
 from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
+    CONF_DEVICE_ID,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
@@ -911,4 +914,266 @@ async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
             "glare_zone_4_radius": 30,
         },
     )
+    assert result["type"] in ("form", "menu", "create_entry")
+
+
+# ---------------------------------------------------------------------------
+# Merged cover_entities + device association screen
+# ---------------------------------------------------------------------------
+
+
+def _mock_devices_from_entities(devices: dict):
+    """Return a coroutine that always returns ``devices`` for _get_devices_from_entities."""
+
+    async def _fake(*_args, **_kwargs):
+        return devices
+
+    return _fake
+
+
+@pytest.mark.integration
+async def test_config_flow_cover_entities_no_devices_skips_device_selector(
+    hass: HomeAssistant,
+) -> None:
+    """When selected entities have no associated devices, cover_entities shows only once."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Blind", CONF_MODE: SensorType.BLIND}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+    assert result["step_id"] == "cover_entities"
+
+    with patch(
+        "custom_components.adaptive_cover_pro.config_flow._get_devices_from_entities",
+        side_effect=_mock_devices_from_entities({}),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_ENTITIES: []}
+        )
+
+    assert result["step_id"] == "geometry"
+
+
+@pytest.mark.integration
+async def test_config_flow_cover_entities_with_devices_shows_device_selector(
+    hass: HomeAssistant,
+) -> None:
+    """When entities have associated devices, cover_entities re-renders with device selector."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Blind", CONF_MODE: SensorType.BLIND}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+    assert result["step_id"] == "cover_entities"
+
+    devices = {"device_abc123": "My Blind Motor"}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.config_flow._get_devices_from_entities",
+        side_effect=_mock_devices_from_entities(devices),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_ENTITIES: []}
+        )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "cover_entities"
+    schema_str_keys = [str(k) for k in result["data_schema"].schema]
+    assert CONF_DEVICE_ID in schema_str_keys, (
+        f"Expected {CONF_DEVICE_ID} in schema, got: {schema_str_keys}"
+    )
+
+
+@pytest.mark.integration
+async def test_config_flow_cover_entities_standalone_selection_proceeds_to_geometry(
+    hass: HomeAssistant,
+) -> None:
+    """Selecting 'None (standalone device)' proceeds to geometry without storing CONF_DEVICE_ID."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Blind", CONF_MODE: SensorType.BLIND}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+
+    devices = {"device_abc123": "My Blind Motor"}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.config_flow._get_devices_from_entities",
+        side_effect=_mock_devices_from_entities(devices),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_ENTITIES: []}
+        )
+
+    # Pass 2: select standalone
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ENTITIES: [], CONF_DEVICE_ID: "__standalone__"},
+    )
+    assert result["step_id"] == "geometry"
+
+
+@pytest.mark.integration
+async def test_config_flow_cover_entities_real_device_selection_stores_device_id(
+    hass: HomeAssistant,
+) -> None:
+    """Selecting a real device stores CONF_DEVICE_ID and proceeds to geometry."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Test Blind", CONF_MODE: SensorType.BLIND}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+
+    devices = {"device_abc123": "My Blind Motor"}
+
+    with patch(
+        "custom_components.adaptive_cover_pro.config_flow._get_devices_from_entities",
+        side_effect=_mock_devices_from_entities(devices),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_ENTITIES: []}
+        )
+
+    flow = hass.config_entries.flow._progress.get(result["flow_id"])
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ENTITIES: [], CONF_DEVICE_ID: "device_abc123"},
+    )
+    assert result["step_id"] == "geometry"
+    if flow is not None:
+        assert flow.config.get(CONF_DEVICE_ID) == "device_abc123"
+
+
+@pytest.mark.integration
+async def test_options_flow_cover_entities_no_device_in_menu(
+    hass: HomeAssistant,
+) -> None:
+    """The 'device' menu item no longer appears in the options flow init menu."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Menu Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="no_device_menu_01",
+        title="Menu Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    assert "device" not in result.get("menu_options", [])
+
+
+@pytest.mark.integration
+async def test_options_flow_cover_entities_combined_form_no_devices(
+    hass: HomeAssistant,
+) -> None:
+    """Options cover_entities step shows only entity selector when no devices are available."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "CE Options Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="ce_opts_nodev_01",
+        title="CE Options Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cover_entities"}
+        )
+
+    assert result["step_id"] == "cover_entities"
+    schema_str_keys = [str(k) for k in result["data_schema"].schema]
+    # device selector should NOT be present when no devices are found
+    assert CONF_DEVICE_ID not in schema_str_keys
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    assert result["type"] in ("form", "menu", "create_entry")
+
+
+@pytest.mark.integration
+async def test_options_flow_cover_entities_combined_form_with_devices(
+    hass: HomeAssistant,
+) -> None:
+    """Options cover_entities step includes device selector when devices are available."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "CE Options Dev Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="ce_opts_dev_01",
+        title="CE Options Dev Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    devices = {"device_xyz789": "Smart Blind Motor"}
+    with patch(
+        "custom_components.adaptive_cover_pro.config_flow._get_devices_from_entities",
+        side_effect=_mock_devices_from_entities(devices),
+    ):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        if result["type"] == "menu":
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"], {"next_step_id": "cover_entities"}
+            )
+
+        assert result["step_id"] == "cover_entities"
+        schema_str_keys = [str(k) for k in result["data_schema"].schema]
+        assert CONF_DEVICE_ID in schema_str_keys, (
+            f"Expected {CONF_DEVICE_ID} in schema keys, got: {schema_str_keys}"
+        )
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_ENTITIES: [], CONF_DEVICE_ID: "device_xyz789"}
+        )
+
     assert result["type"] in ("form", "menu", "create_entry")

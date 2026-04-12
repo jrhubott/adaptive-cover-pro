@@ -288,7 +288,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "cover_entities": "Cover Entities",
+          "cover_entities": "Covers & Device",
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
@@ -302,7 +302,6 @@
           "force_override": "Force Override",
           "motion_override": "Motion Override",
           "weather_override": "Weather Override",
-          "device": "Device Association",
           "summary": "Configuration Summary",
           "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
