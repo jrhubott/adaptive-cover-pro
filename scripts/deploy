@@ -3,7 +3,11 @@
 # Deploy adaptive_cover_pro to a Home Assistant server via SMB.
 #
 # Usage:
-#   ./scripts/deploy [--dry-run]
+#   ./scripts/deploy [--dry-run] [--reboot]
+#
+# Flags:
+#   --dry-run   Simulate rsync without copying files
+#   --reboot    Restart HA automatically after deploy without prompting
 #
 # Environment variables:
 #   HA_SMB_HOST   SMB hostname or IP (default: home-assistant.home)
@@ -25,10 +29,17 @@ fi
 HA_SMB_HOST="${HA_SMB_HOST:-home-assistant.home}"
 HA_SMB_SHARE="${HA_SMB_SHARE:-config}"
 DRY_RUN=false
+AUTO_REBOOT=false
 MOUNTED_BY_US=false
 
-if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=true
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=true ;;
+        --reboot)  AUTO_REBOOT=true ;;
+    esac
+done
+
+if $DRY_RUN; then
     echo "==> Dry run mode — no files will be copied"
 fi
 
@@ -127,8 +138,16 @@ EOF
     if [[ -z "${HA_TOKEN:-}" ]]; then
         read -r -p "    Long-lived access token: " HA_TOKEN
     fi
-    read -r -p "    Restart Home Assistant now? [Y/n] " HA_RESTART
+
+    if $AUTO_REBOOT; then
+        HA_RESTART="y"
+        echo "    Rebooting HA (--reboot)..."
+    else
+        read -r -p "    Restart Home Assistant now? [Y/n] " HA_RESTART
+    fi
+
     if [[ "${HA_RESTART,,}" != "n" ]]; then
+        REBOOT_START=$(date +%s)
         curl -sf -X POST "${HA_URL}/api/services/homeassistant/restart" \
             -H "Authorization: Bearer ${HA_TOKEN}" \
             -H "Content-Type: application/json" > /dev/null
@@ -178,12 +197,15 @@ EOF
             echo ""
         fi
 
+        REBOOT_END=$(date +%s)
+        REBOOT_ELAPSED=$(( REBOOT_END - REBOOT_START ))
+
         if $READY; then
-            echo "    HA is up and running."
+            echo "    HA is up and running (reboot took ${REBOOT_ELAPSED}s)."
         elif ! $API_UP; then
-            echo "    Timed out waiting for web server — check the server manually."
+            echo "    Timed out waiting for web server after ${REBOOT_ELAPSED}s — check the server manually."
         else
-            echo "    Web server responded but startup did not complete — check the HA log."
+            echo "    Web server responded but startup did not complete after ${REBOOT_ELAPSED}s — check the HA log."
         fi
     else
         echo "    Restart manually: Developer Tools → YAML → Restart"
