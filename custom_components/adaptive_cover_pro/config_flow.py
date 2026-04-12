@@ -960,6 +960,136 @@ def _format_duration(dur: dict | int | float | None) -> str:
     return " ".join(parts) if parts else "0 min"
 
 
+def _check_cover_capabilities(
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None,
+) -> tuple[dict[str, dict[str, bool] | None], list[str]]:
+    """Inspect bound cover entities and return capabilities + warning lines.
+
+    Returns:
+        cap_map:  entity_id → feature dict (None if entity unavailable)
+        warnings: list of ⚠️ strings — per-entity and cross-entity issues
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return {}, []
+
+    from .helpers import check_cover_features
+
+    cap_map: dict[str, dict[str, bool] | None] = {}
+    warnings: list[str] = []
+
+    for eid in entities:
+        caps = check_cover_features(hass, eid)
+        cap_map[eid] = caps
+        if caps is None:
+            warnings.append(f"⚠️ {eid}: not ready (unavailable)")
+        else:
+            if not caps.get("has_set_position"):
+                warnings.append(
+                    f"⚠️ {eid} is open/close-only — will be driven via "
+                    "threshold compare, not set_position."
+                )
+            state = hass.states.get(eid)
+            if state and state.attributes.get("assumed_state"):
+                warnings.append(
+                    f"⚠️ {eid} has assumed_state — real position cannot be "
+                    "read back, which may affect position verification and delta-bypass."
+                )
+
+    known: dict[str, dict[str, bool]] = {
+        eid: caps for eid, caps in cap_map.items() if caps is not None
+    }
+
+    if known:
+        has_pos = {eid for eid, caps in known.items() if caps.get("has_set_position")}
+        no_pos = {eid for eid, caps in known.items() if not caps.get("has_set_position")}
+
+        if has_pos and no_pos:
+            warnings.append(
+                "⚠️ Mixed capabilities: some covers support set_position, "
+                "others are open/close-only — they will be driven differently."
+            )
+
+        if sensor_type == SensorType.TILT:
+            if not any(caps.get("has_set_tilt_position") for caps in known.values()):
+                warnings.append(
+                    "⚠️ Configured as tilt (venetian) but no bound cover "
+                    "advertises set_tilt_position."
+                )
+        elif sensor_type in (SensorType.BLIND, SensorType.AWNING):
+            if not any(caps.get("has_set_position") for caps in known.values()):
+                type_word = (
+                    "vertical blind" if sensor_type == SensorType.BLIND else "awning"
+                )
+                warnings.append(
+                    f"⚠️ Configured as {type_word} but no bound cover supports "
+                    "set_position — only open/close will be issued."
+                )
+
+        min_pos_val = config.get(CONF_MIN_POSITION)
+        max_pos_val = config.get(CONF_MAX_POSITION)
+        enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
+        enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
+        limits_in_use = (
+            (min_pos_val is not None and min_pos_val != 0)
+            or (max_pos_val is not None and max_pos_val != 100)
+            or enable_min_val
+            or enable_max_val
+        )
+        oc_only = [eid for eid in no_pos if eid in known]
+        if limits_in_use and oc_only:
+            oc_str = ", ".join(oc_only)
+            warnings.append(
+                f"⚠️ Position limits are configured but {oc_str} "
+                "is open/close-only — limits will be ignored on that cover."
+            )
+
+    return cap_map, warnings
+
+
+def _build_cover_capabilities_text(
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None = None,
+) -> str:
+    """Build a Cover Capabilities block for the Debug & Diagnostics screen.
+
+    Returns a markdown string (possibly empty) describing each bound cover's
+    detected features plus any cross-entity consistency warnings.
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return ""
+
+    cap_map, warnings = _check_cover_capabilities(config, sensor_type, hass)
+
+    cap_label_map = {
+        "has_set_position": "set position",
+        "has_set_tilt_position": "set tilt",
+        "has_open": "open",
+        "has_close": "close",
+        "has_stop": "stop",
+    }
+
+    lines: list[str] = ["**Cover Capabilities**"]
+    for eid in entities:
+        caps = cap_map.get(eid)
+        if caps is None:
+            lines.append(f"{eid}: not ready (unavailable)")
+        else:
+            cap_list = ", ".join(
+                label for key, label in cap_label_map.items() if caps.get(key)
+            )
+            lines.append(f"{eid}: {cap_list or 'none detected'}")
+
+    if warnings:
+        lines.extend(warnings)
+
+    return "\n".join(lines)
+
+
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     config: dict,
     sensor_type: str | None,
@@ -1089,98 +1219,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             lines.append(", ".join(parts))
 
     # =========================================================================
-    # Section 1b: Cover Capabilities
+    # Section 1c: Cover Capability Warnings
     # =========================================================================
-    if hass is not None and entities:
-        from .helpers import check_cover_features
-
+    _, cap_warnings = _check_cover_capabilities(config, sensor_type, hass)
+    if cap_warnings:
         lines.append("")
-        lines.append("**Cover Capabilities**")
-
-        cap_map: dict[str, dict[str, bool] | None] = {}
-        cap_label_map = {
-            "has_set_position": "set position",
-            "has_set_tilt_position": "set tilt",
-            "has_open": "open",
-            "has_close": "close",
-            "has_stop": "stop",
-        }
-
-        for eid in entities:
-            caps = check_cover_features(hass, eid)
-            cap_map[eid] = caps
-            if caps is None:
-                lines.append(f"⚠️ {eid}: not ready (unavailable)")
-            else:
-                cap_list = ", ".join(
-                    label
-                    for key, label in cap_label_map.items()
-                    if caps.get(key)
-                )
-                lines.append(f"{eid}: {cap_list or 'none detected'}")
-                if not caps.get("has_set_position"):
-                    lines.append(
-                        f"  ⚠️ {eid} is open/close-only — will be driven via "
-                        "threshold compare, not set_position."
-                    )
-                # (5) Assumed state
-                state = hass.states.get(eid)
-                if state and state.attributes.get("assumed_state"):
-                    lines.append(
-                        f"  ⚠️ {eid} has assumed_state — real position cannot be "
-                        "read back, which may affect position verification and delta-bypass."
-                    )
-
-        # Cross-entity consistency warnings — only for entities whose caps are known
-        known: dict[str, dict[str, bool]] = {
-            eid: caps for eid, caps in cap_map.items() if caps is not None
-        }
-
-        if known:
-            # (6) Mixed capabilities
-            has_pos = {eid for eid, caps in known.items() if caps.get("has_set_position")}
-            no_pos = {eid for eid, caps in known.items() if not caps.get("has_set_position")}
-            if has_pos and no_pos:
-                lines.append(
-                    "⚠️ Mixed capabilities: some covers support set_position, "
-                    "others are open/close-only — they will be driven differently."
-                )
-
-            # (7) Sensor-type vs. capability mismatch
-            if sensor_type == SensorType.TILT:
-                if not any(caps.get("has_set_tilt_position") for caps in known.values()):
-                    lines.append(
-                        "⚠️ Configured as tilt (venetian) but no bound cover "
-                        "advertises set_tilt_position."
-                    )
-            elif sensor_type in (SensorType.BLIND, SensorType.AWNING):
-                if not any(caps.get("has_set_position") for caps in known.values()):
-                    type_word = (
-                        "vertical blind" if sensor_type == SensorType.BLIND else "awning"
-                    )
-                    lines.append(
-                        f"⚠️ Configured as {type_word} but no bound cover supports "
-                        "set_position — only open/close will be issued."
-                    )
-
-            # (8) Position limits configured but cover is open/close-only
-            min_pos_val = config.get(CONF_MIN_POSITION)
-            max_pos_val = config.get(CONF_MAX_POSITION)
-            enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
-            enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
-            limits_in_use = (
-                (min_pos_val is not None and min_pos_val != 0)
-                or (max_pos_val is not None and max_pos_val != 100)
-                or enable_min_val
-                or enable_max_val
-            )
-            oc_only = [eid for eid in no_pos if eid in known]
-            if limits_in_use and oc_only:
-                oc_str = ", ".join(oc_only)
-                lines.append(
-                    f"⚠️ Position limits are configured but {oc_str} "
-                    "is open/close-only — limits will be ignored on that cover."
-                )
+        lines.append("**Cover Warnings**")
+        lines.extend(cap_warnings)
 
     # =========================================================================
     # Section 2: How It Decides
@@ -3300,11 +3345,15 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             self.options.update(user_input)
             return await self.async_step_init()
+        caps_text = _build_cover_capabilities_text(
+            self.options, self.sensor_type, self.hass
+        )
         return self.async_show_form(
             step_id="debug",
             data_schema=self.add_suggested_values_to_schema(
                 DEBUG_SCHEMA, user_input or self.options
             ),
+            description_placeholders={"cover_capabilities": caps_text},
         )
 
     async def async_step_done(

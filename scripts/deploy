@@ -143,23 +143,47 @@ EOF
             fi
         done
 
-        # Now wait for HA to come back up (up to 120s)
-        READY=false
-        for i in $(seq 1 60); do
+        # Phase 1: Wait for HA web server to respond (up to 60s)
+        API_UP=false
+        for i in $(seq 1 30); do
             sleep 2
-            printf "\r    Waiting for HA... %ds" $((i * 2))
+            printf "\r    Phase 1/2 — waiting for web server... %ds" $((i * 2))
             if curl -sf --max-time 3 "${HA_URL}/api/" \
                     -H "Authorization: Bearer ${HA_TOKEN}" > /dev/null 2>&1; then
-                READY=true
+                API_UP=true
                 break
             fi
         done
-
         echo ""
+
+        # Phase 2: Wait for all integrations to finish loading (up to 120s)
+        # /api/config returns {"state": "RUNNING"} once startup is complete.
+        READY=false
+        if $API_UP; then
+            for i in $(seq 1 60); do
+                sleep 2
+                printf "\r    Phase 2/2 — waiting for startup to complete... %ds" $((i * 2))
+                RESPONSE=$(curl -sf --max-time 3 "${HA_URL}/api/config" \
+                    -H "Authorization: Bearer ${HA_TOKEN}" 2>/dev/null)
+                if [[ -n "$RESPONSE" ]]; then
+                    HA_STATE=$(python3 -c \
+                        "import json,sys; print(json.loads(sys.argv[1]).get('state',''))" \
+                        "$RESPONSE" 2>/dev/null)
+                    if [[ "$HA_STATE" == "RUNNING" ]]; then
+                        READY=true
+                        break
+                    fi
+                fi
+            done
+            echo ""
+        fi
+
         if $READY; then
-            echo "    HA is back up."
+            echo "    HA is up and running."
+        elif ! $API_UP; then
+            echo "    Timed out waiting for web server — check the server manually."
         else
-            echo "    Timed out waiting for HA — check the server manually."
+            echo "    Web server responded but startup did not complete — check the HA log."
         fi
     else
         echo "    Restart manually: Developer Tools → YAML → Restart"

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from custom_components.adaptive_cover_pro.config_flow import (
     _build_config_summary,
+    _build_cover_capabilities_text,
     _format_duration,
 )
 from custom_components.adaptive_cover_pro.const import (
@@ -1065,7 +1066,7 @@ def test_summary_shows_my_info_line_when_value_set_globally():
 
 
 # ---------------------------------------------------------------------------
-# Section 1b: Cover Capabilities
+# Section 1b: Cover Capabilities (now shown on Debug & Diagnostics screen)
 # ---------------------------------------------------------------------------
 
 
@@ -1099,19 +1100,45 @@ def _make_hass(entity_states: dict) -> object:
     return hass
 
 
-def test_capabilities_section_absent_without_hass():
-    """Cover Capabilities section is not rendered when hass is not passed."""
+def test_capability_listing_not_in_summary():
+    """Full capability listing (entity: set position, open...) is not in _build_config_summary."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.living_room": {"supported_features": feats}})
     cfg = {CONF_ENTITIES: ["cover.living_room"]}
-    summary = _build_config_summary(cfg, SensorType.BLIND)
+    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
+    # Full listing section header is not shown — only warnings
     assert "Cover Capabilities" not in summary
+    # No warnings for a well-configured cover
+    assert "Cover Warnings" not in summary
+
+
+def test_capability_warnings_appear_in_summary():
+    """Actionable capability warnings appear in _build_config_summary."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    # Open/close-only cover — should produce a warning
+    feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.blind": {"supported_features": feats}})
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
+    assert "Cover Warnings" in summary
+    assert "open/close-only" in summary
+
+
+def test_capabilities_section_absent_without_hass():
+    """_build_cover_capabilities_text returns empty string when hass is not passed."""
+    cfg = {CONF_ENTITIES: ["cover.living_room"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND)
+    assert result == ""
 
 
 def test_capabilities_section_absent_without_entities():
-    """Cover Capabilities section is not rendered when entities list is empty."""
-
+    """_build_cover_capabilities_text returns empty string when entities list is empty."""
     hass = _make_hass({})
-    summary = _build_config_summary({CONF_ENTITIES: []}, SensorType.BLIND, hass)
-    assert "Cover Capabilities" not in summary
+    result = _build_cover_capabilities_text({CONF_ENTITIES: []}, SensorType.BLIND, hass)
+    assert result == ""
 
 
 def test_capabilities_section_renders_full_featured_cover():
@@ -1126,13 +1153,13 @@ def test_capabilities_section_renders_full_featured_cover():
     )
     hass = _make_hass({"cover.blind": {"supported_features": feats}})
     cfg = {CONF_ENTITIES: ["cover.blind"]}
-    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
-    assert "Cover Capabilities" in summary
-    assert "cover.blind" in summary
-    assert "set position" in summary
-    assert "open" in summary
-    assert "close" in summary
-    assert "stop" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "Cover Capabilities" in result
+    assert "cover.blind" in result
+    assert "set position" in result
+    assert "open" in result
+    assert "close" in result
+    assert "stop" in result
 
 
 def test_capabilities_section_warns_on_open_close_only():
@@ -1142,9 +1169,9 @@ def test_capabilities_section_warns_on_open_close_only():
     feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
     hass = _make_hass({"cover.blind": {"supported_features": feats}})
     cfg = {CONF_ENTITIES: ["cover.blind"]}
-    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
-    assert "open/close-only" in summary
-    assert "threshold compare" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "open/close-only" in result
+    assert "threshold compare" in result
 
 
 def test_capabilities_section_unavailable_entity():
@@ -1152,8 +1179,8 @@ def test_capabilities_section_unavailable_entity():
     hass = _make_hass({"cover.blind": {"state": "unavailable", "supported_features": 0}})
     # check_cover_features returns None for unavailable state
     cfg = {CONF_ENTITIES: ["cover.blind"]}
-    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
-    assert "not ready" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "not ready" in result
 
 
 def test_capabilities_section_assumed_state_warning():
@@ -1165,9 +1192,9 @@ def test_capabilities_section_assumed_state_warning():
         {"cover.blind": {"supported_features": feats, "assumed_state": True}}
     )
     cfg = {CONF_ENTITIES: ["cover.blind"]}
-    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
-    assert "assumed_state" in summary
-    assert "position cannot be read back" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "assumed_state" in result
+    assert "position cannot be read back" in result
 
 
 def test_capabilities_section_mixed_caps_warning():
@@ -1187,9 +1214,9 @@ def test_capabilities_section_mixed_caps_warning():
         }
     )
     cfg = {CONF_ENTITIES: ["cover.a", "cover.b"]}
-    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
-    assert "Mixed capabilities" in summary
-    assert "driven differently" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "Mixed capabilities" in result
+    assert "driven differently" in result
 
 
 def test_capabilities_section_tilt_type_mismatch():
@@ -1199,9 +1226,9 @@ def test_capabilities_section_tilt_type_mismatch():
     feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
     hass = _make_hass({"cover.blind": {"supported_features": feats}})
     cfg = {CONF_ENTITIES: ["cover.blind"]}
-    summary = _build_config_summary(cfg, SensorType.TILT, hass)
-    assert "set_tilt_position" in summary
-    assert "tilt (venetian)" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.TILT, hass)
+    assert "set_tilt_position" in result
+    assert "tilt (venetian)" in result
 
 
 def test_capabilities_section_position_limits_ignored_warning():
@@ -1215,7 +1242,7 @@ def test_capabilities_section_position_limits_ignored_warning():
         CONF_ENABLE_MIN_POSITION: True,
         CONF_MIN_POSITION: 10,
     }
-    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
-    assert "Position limits" in summary
-    assert "limits will be ignored" in summary
-    assert "cover.blind" in summary
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "Position limits" in result
+    assert "limits will be ignored" in result
+    assert "cover.blind" in result

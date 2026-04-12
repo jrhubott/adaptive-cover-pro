@@ -889,7 +889,7 @@
       },
       "debug": {
         "title": "Debug & Diagnostics",
-        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a ring buffer of manual-override decisions is kept in memory and exposed in the HA Diagnostics download.",
+        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a ring buffer of manual-override decisions is kept in memory and exposed in the HA Diagnostics download.\n\n{cover_capabilities}",
         "data": {
           "dry_run": "Dry Run (no cover movement)",
           "debug_mode": "Enable Debug Mode",
