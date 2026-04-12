@@ -476,3 +476,42 @@ class TestClimateHandlerTimeWindow:
         )
         result = self.handler.evaluate(snap)
         assert result is None
+
+
+class TestClimateHandlerPositionLimits:
+    """Climate handler must not be clamped by sun-only position limits."""
+
+    handler = ClimateHandler()
+
+    def test_sun_only_max_not_applied_to_winter_heating_position(self) -> None:
+        """Regression #105: sun-only max limit must NOT clamp winter heating position.
+
+        Winter heating returns 100% (fully open). A sun-only max limit of 26%
+        should not clamp it — climate mode is not solar tracking.
+        """
+        cover = _make_blind_cover(direct_sun_valid=True)
+        cover.valid = True
+        cover.config.max_pos = 26
+        cover.config.max_pos_sun_only = True  # "during sun tracking only"
+
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=15.0,  # cold → winter heating
+                is_presence=True,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,  # inside below low → winter
+                temp_high=26.0,
+            ),
+            default_position=50,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.WINTER
+        assert result.position == 100, (
+            f"Expected winter heating position 100 but got {result.position}. "
+            "Sun-only max limit must not clamp climate handler output."
+        )

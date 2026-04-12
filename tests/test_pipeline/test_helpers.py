@@ -178,15 +178,44 @@ class TestComputeDefaultPosition:
         # Sun is invalid → sun-only min limit must NOT be applied
         assert compute_default_position(snap) == 5
 
-    def test_sun_only_limits_applied_when_sun_valid(self):
-        """Sun-only limits ARE applied when sun is valid (edge case in some handlers)."""
+    def test_sun_only_limits_not_applied_to_default_even_when_sun_valid(self):
+        """Sun-only limits are NOT applied to default position even when sun is geometrically valid.
+
+        The default position is not a sun-tracking position, so sun-only
+        limits should never constrain it — regardless of whether the sun
+        happens to be in the FOV. (Regression test for cloud-suppression bug #105.)
+        """
         snap = _make_snapshot(
             default_position=5,
             min_pos=30,
             min_pos_sun_only=True,
             direct_sun_valid=True,
         )
-        assert compute_default_position(snap) == 30
+        assert compute_default_position(snap) == 5
+
+    def test_cloud_suppression_scenario_max_not_clamped(self):
+        """Regression #105: cloud suppression should not clamp default to sun-only max.
+
+        User has default=50, max_pos=26 (sun-only). When cloud suppression
+        is active, compute_default_position should return 50, not 26.
+        """
+        snap = _make_snapshot(
+            default_position=50,
+            max_pos=26,
+            max_pos_sun_only=True,
+            direct_sun_valid=True,
+        )
+        assert compute_default_position(snap) == 50
+
+    def test_sun_only_min_not_applied_to_default(self):
+        """Sun-only min limit should not raise the default position."""
+        snap = _make_snapshot(
+            default_position=5,
+            min_pos=30,
+            min_pos_sun_only=True,
+            direct_sun_valid=True,
+        )
+        assert compute_default_position(snap) == 5
 
     def test_sunset_active_skips_min_limit(self):
         """Sunset position is not clamped by min_pos even when always-apply is set (#128)."""
