@@ -236,12 +236,12 @@ EOF
                         -H "Authorization: Bearer ${HA_TOKEN}" 2>&1 || true)
                 else
                     RESPONSE=$(curl -sf --max-time 3 "${HA_URL}/api/config" \
-                        -H "Authorization: Bearer ${HA_TOKEN}" 2>/dev/null)
+                        -H "Authorization: Bearer ${HA_TOKEN}" 2>/dev/null || true)
                 fi
                 if [[ -n "$RESPONSE" ]]; then
                     HA_STATE=$(python3 -c \
                         "import json,sys; print(json.loads(sys.argv[1]).get('state',''))" \
-                        "$RESPONSE" 2>/dev/null)
+                        "$RESPONSE" 2>/dev/null || true)
                     if [[ "$HA_STATE" == "RUNNING" ]]; then
                         READY=true
                         break
