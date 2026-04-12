@@ -960,7 +960,11 @@ def _format_duration(dur: dict | int | float | None) -> str:
     return " ".join(parts) if parts else "0 min"
 
 
-def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa: C901, PLR0912, PLR0915
+def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None = None,
+) -> str:
     """Build a narrative summary of the current configuration.
 
     Produces four sections:
@@ -1083,6 +1087,100 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
             parts.append(f"mode: {v}")
         if parts:
             lines.append(", ".join(parts))
+
+    # =========================================================================
+    # Section 1b: Cover Capabilities
+    # =========================================================================
+    if hass is not None and entities:
+        from .helpers import check_cover_features
+
+        lines.append("")
+        lines.append("**Cover Capabilities**")
+
+        cap_map: dict[str, dict[str, bool] | None] = {}
+        cap_label_map = {
+            "has_set_position": "set position",
+            "has_set_tilt_position": "set tilt",
+            "has_open": "open",
+            "has_close": "close",
+            "has_stop": "stop",
+        }
+
+        for eid in entities:
+            caps = check_cover_features(hass, eid)
+            cap_map[eid] = caps
+            if caps is None:
+                lines.append(f"⚠️ {eid}: not ready (unavailable)")
+            else:
+                cap_list = ", ".join(
+                    label
+                    for key, label in cap_label_map.items()
+                    if caps.get(key)
+                )
+                lines.append(f"{eid}: {cap_list or 'none detected'}")
+                if not caps.get("has_set_position"):
+                    lines.append(
+                        f"  ⚠️ {eid} is open/close-only — will be driven via "
+                        "threshold compare, not set_position."
+                    )
+                # (5) Assumed state
+                state = hass.states.get(eid)
+                if state and state.attributes.get("assumed_state"):
+                    lines.append(
+                        f"  ⚠️ {eid} has assumed_state — real position cannot be "
+                        "read back, which may affect position verification and delta-bypass."
+                    )
+
+        # Cross-entity consistency warnings — only for entities whose caps are known
+        known: dict[str, dict[str, bool]] = {
+            eid: caps for eid, caps in cap_map.items() if caps is not None
+        }
+
+        if known:
+            # (6) Mixed capabilities
+            has_pos = {eid for eid, caps in known.items() if caps.get("has_set_position")}
+            no_pos = {eid for eid, caps in known.items() if not caps.get("has_set_position")}
+            if has_pos and no_pos:
+                lines.append(
+                    "⚠️ Mixed capabilities: some covers support set_position, "
+                    "others are open/close-only — they will be driven differently."
+                )
+
+            # (7) Sensor-type vs. capability mismatch
+            if sensor_type == SensorType.TILT:
+                if not any(caps.get("has_set_tilt_position") for caps in known.values()):
+                    lines.append(
+                        "⚠️ Configured as tilt (venetian) but no bound cover "
+                        "advertises set_tilt_position."
+                    )
+            elif sensor_type in (SensorType.BLIND, SensorType.AWNING):
+                if not any(caps.get("has_set_position") for caps in known.values()):
+                    type_word = (
+                        "vertical blind" if sensor_type == SensorType.BLIND else "awning"
+                    )
+                    lines.append(
+                        f"⚠️ Configured as {type_word} but no bound cover supports "
+                        "set_position — only open/close will be issued."
+                    )
+
+            # (8) Position limits configured but cover is open/close-only
+            min_pos_val = config.get(CONF_MIN_POSITION)
+            max_pos_val = config.get(CONF_MAX_POSITION)
+            enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
+            enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
+            limits_in_use = (
+                (min_pos_val is not None and min_pos_val != 0)
+                or (max_pos_val is not None and max_pos_val != 100)
+                or enable_min_val
+                or enable_max_val
+            )
+            oc_only = [eid for eid in no_pos if eid in known]
+            if limits_in_use and oc_only:
+                oc_str = ", ".join(oc_only)
+                lines.append(
+                    f"⚠️ Position limits are configured but {oc_str} "
+                    "is open/close-only — limits will be ignored on that cover."
+                )
 
     # =========================================================================
     # Section 2: How It Decides
@@ -2336,7 +2434,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Show a read-only summary of all collected configuration before creating the entry."""
         if user_input is not None:
             return await self.async_step_update()
-        summary_text = _build_config_summary(self.config, self.type_blind)
+        summary_text = _build_config_summary(self.config, self.type_blind, self.hass)
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),
@@ -3188,7 +3286,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Show a read-only summary of the current configuration."""
         if user_input is not None:
             return await self.async_step_init()
-        summary_text = _build_config_summary(self.options, self.sensor_type)
+        summary_text = _build_config_summary(self.options, self.sensor_type, self.hass)
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),

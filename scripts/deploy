@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+
+# Deploy adaptive_cover_pro to a Home Assistant server via SMB.
+#
+# Usage:
+#   ./scripts/deploy [--dry-run]
+#
+# Environment variables:
+#   HA_SMB_HOST   SMB hostname or IP (default: home-assistant.home)
+#   HA_SMB_SHARE  SMB share name (default: config)
+#   HA_SMB_USER   SMB username (optional; omit for guest access)
+#   HA_SMB_PASS   SMB password (optional)
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+# ── Load config file ─────────────────────────────────────────────────────────
+# Copy .deploy.example to .deploy and fill in your values (file is .gitignored)
+if [[ -f ".deploy" ]]; then
+    # shellcheck source=/dev/null
+    source ".deploy"
+fi
+
+HA_SMB_HOST="${HA_SMB_HOST:-home-assistant.home}"
+HA_SMB_SHARE="${HA_SMB_SHARE:-config}"
+DRY_RUN=false
+MOUNTED_BY_US=false
+
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=true
+    echo "==> Dry run mode — no files will be copied"
+fi
+
+# ── Cleanup on exit ──────────────────────────────────────────────────────────
+cleanup() {
+    if $MOUNTED_BY_US && [[ -n "${MOUNT_POINT:-}" ]]; then
+        if mount | grep -q "on ${MOUNT_POINT} "; then
+            echo "==> Unmounting ${MOUNT_POINT}..."
+            diskutil unmount force "${MOUNT_POINT}" 2>/dev/null || umount "${MOUNT_POINT}" 2>/dev/null || true
+        fi
+        rmdir "${MOUNT_POINT}" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+# ── Build SMB URL ────────────────────────────────────────────────────────────
+if [[ -n "${HA_SMB_USER:-}" ]]; then
+    PASS_PART=""
+    if [[ -n "${HA_SMB_PASS:-}" ]]; then
+        PASS_PART=":${HA_SMB_PASS}"
+    fi
+    SMB_URL="//${HA_SMB_USER}${PASS_PART}@${HA_SMB_HOST}/${HA_SMB_SHARE}"
+else
+    SMB_URL="//${HA_SMB_HOST}/${HA_SMB_SHARE}"
+fi
+
+# ── Mount (reuse existing mount if present) ───────────────────────────────────
+EXISTING_MOUNT="$(mount | grep -i "${HA_SMB_HOST}/${HA_SMB_SHARE}" | awk '{print $3}' | head -1)"
+if [[ -n "$EXISTING_MOUNT" ]]; then
+    echo "==> Share already mounted at ${EXISTING_MOUNT}, reusing it."
+    MOUNT_POINT="$EXISTING_MOUNT"
+else
+    MOUNT_POINT="$(mktemp -d)"
+    MOUNTED_BY_US=true
+    echo "==> Mounting smb://${HA_SMB_HOST}/${HA_SMB_SHARE} → ${MOUNT_POINT}..."
+    mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" 2>/dev/null || true
+    if ! mount | grep -q "on ${MOUNT_POINT} "; then
+        echo "    Guest access failed; trying with credentials..."
+        read -r -p "    SMB username: " SMB_USER
+        read -r -s -p "    SMB password: " SMB_PASS
+        echo
+        mount_smbfs "//${SMB_USER}:${SMB_PASS}@${HA_SMB_HOST}/${HA_SMB_SHARE}" "${MOUNT_POINT}"
+    fi
+fi
+
+# ── Deploy ───────────────────────────────────────────────────────────────────
+SRC="custom_components/adaptive_cover_pro/"
+DST="${MOUNT_POINT}/custom_components/adaptive_cover_pro/"
+
+RSYNC_OPTS=(
+    --archive
+    --delete
+    --inplace
+    --exclude="__pycache__/"
+    --exclude="*.pyc"
+    --exclude="simulation/"
+    --human-readable
+    --verbose
+)
+
+if $DRY_RUN; then
+    RSYNC_OPTS+=(--dry-run)
+fi
+
+echo "==> Deploying ${SRC} → ${DST}..."
+rsync "${RSYNC_OPTS[@]}" "${SRC}" "${DST}"
+
+if $DRY_RUN; then
+    echo ""
+    echo "==> Dry run complete — no files were copied."
+else
+    # ── Stamp dev version in deployed manifest.json ───────────────────────────
+    GIT_HASH="$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        GIT_HASH="${GIT_HASH}-dirty"
+    fi
+    BASE_VERSION="$(python3 -c "import json; print(json.load(open('custom_components/adaptive_cover_pro/manifest.json'))['version'])")"
+    DEV_VERSION="${BASE_VERSION}-dev.${GIT_HASH}"
+    echo "==> Stamping version ${DEV_VERSION} in deployed manifest.json..."
+    python3 - "${DST}manifest.json" "${DEV_VERSION}" <<'EOF'
+import json, sys
+path, version = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    m = json.load(f)
+m['version'] = version
+with open(path, 'w') as f:
+    json.dump(m, f, indent=2)
+    f.write('\n')
+EOF
+
+    echo ""
+    echo "==> Deploy complete (version ${DEV_VERSION})."
+
+    # ── Offer to restart HA ───────────────────────────────────────────────────
+    HA_URL="${HA_URL:-http://home-assistant.home:8123}"
+    if [[ -z "${HA_TOKEN:-}" ]]; then
+        read -r -p "    Long-lived access token: " HA_TOKEN
+    fi
+    read -r -p "    Restart Home Assistant now? [Y/n] " HA_RESTART
+    if [[ "${HA_RESTART,,}" != "n" ]]; then
+        curl -sf -X POST "${HA_URL}/api/services/homeassistant/restart" \
+            -H "Authorization: Bearer ${HA_TOKEN}" \
+            -H "Content-Type: application/json" > /dev/null
+        echo "    Restart requested — waiting for HA to come back..."
+
+        # Wait for HA to go down first (up to 15s)
+        for _ in $(seq 1 15); do
+            sleep 1
+            if ! curl -sf --max-time 2 "${HA_URL}/api/" \
+                    -H "Authorization: Bearer ${HA_TOKEN}" > /dev/null 2>&1; then
+                break
+            fi
+        done
+
+        # Now wait for HA to come back up (up to 120s)
+        READY=false
+        for i in $(seq 1 60); do
+            sleep 2
+            printf "\r    Waiting for HA... %ds" $((i * 2))
+            if curl -sf --max-time 3 "${HA_URL}/api/" \
+                    -H "Authorization: Bearer ${HA_TOKEN}" > /dev/null 2>&1; then
+                READY=true
+                break
+            fi
+        done
+
+        echo ""
+        if $READY; then
+            echo "    HA is back up."
+        else
+            echo "    Timed out waiting for HA — check the server manually."
+        fi
+    else
+        echo "    Restart manually: Developer Tools → YAML → Restart"
+    fi
+fi
