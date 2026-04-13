@@ -1491,6 +1491,7 @@ NUM_DAYS = 7
 
 - [Optimal Control of Venetian Blinds for Minimizing Energy Use and Maximizing Daylight](https://www.mdpi.com/1996-1073/13/7/1731) — Academic paper (MDPI Energies, 2020) used for the venetian blind tilt optimization algorithm
 - [Automatic Blinds/Sunscreen Control Based on Sun Platform](https://community.home-assistant.io/t/automatic-blinds-sunscreen-control-based-on-sun-platform/573818) — Home Assistant community post with in-depth explanation of the calculation variables
+- [Solar Math Deep Dive Review (Issue #206)](https://github.com/jrhubott/adaptive-cover-pro/issues/206) — Full mathematical verification of all five core solar formulas (surface azimuth, profile angle, venetian slat optimization, vertical shadow height, awning extension) against ASHRAE Fundamentals, NRC Canada CBD-59, and Duffie & Beckman
 
 ## Credits
 
