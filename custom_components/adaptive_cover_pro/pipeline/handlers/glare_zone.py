@@ -1,4 +1,10 @@
-"""Glare zone handler — extend blind to protect specific floor zones from glare."""
+"""Glare zone handler — lower blind to protect specific floor zones from glare.
+
+Fix: use min() (closest zone) instead of max() (farthest zone) for zone
+selection. The closest zone demands the most blind coverage because smaller
+effective distance → lower position% → more blind deployed.
+Thanks to @ZamenWolk for identifying this in GitHub issue #213.
+"""
 
 from __future__ import annotations
 
@@ -15,15 +21,20 @@ from ..types import PipelineResult, PipelineSnapshot
 
 
 class GlareZoneHandler(OverrideHandler):
-    """Extend the blind further when active glare zones require additional protection.
+    """Lower the blind further when active glare zones need more protection than SolarHandler.
 
     Priority 45 — between ClimateHandler (50) and SolarHandler (40).
     Only applies to vertical covers (cover_blind). Computes effective distances
     for all active glare zones using pure geometry, then returns a position
-    based on the maximum distance if it exceeds the cover's base distance.
+    based on the minimum (closest) zone distance when it is less than the
+    cover's base distance.
 
-    Falls through to SolarHandler (returns None) when the base distance
-    already provides sufficient coverage for all zones.
+    Geometry: smaller effective distance → lower position% → more blind deployed.
+    A zone closer to the window than the base distance is in the illuminated area
+    and needs the blind lowered further than SolarHandler would compute.
+
+    Falls through to SolarHandler (returns None) when all zones are at or beyond
+    the base distance (already in shadow from normal solar tracking).
     """
 
     name = "glare_zone"
@@ -59,15 +70,20 @@ class GlareZoneHandler(OverrideHandler):
         if not zone_results:
             return None
 
-        max_distance = max(d for _, d in zone_results)
-        contributing_zones = [name for name, d in zone_results if d == max_distance]
+        # The CLOSEST zone is most restrictive: smaller distance → lower position%
+        # → more blind deployed → more protection. A blind set to block sun beyond
+        # depth d allows sun to penetrate up to d from the window. So the zone
+        # nearest to the window demands the most blind coverage.
+        min_distance = min(d for _, d in zone_results)
+        contributing_zones = [name for name, d in zone_results if d == min_distance]
 
-        if max_distance <= base_distance:
-            # No zone requires deeper coverage — let SolarHandler handle it
+        if min_distance >= base_distance:
+            # All zones are at or beyond the base distance — they're already in
+            # shadow from SolarHandler's normal calculation. No override needed.
             return None
 
         state = int(
-            round(cover.calculate_percentage(effective_distance_override=max_distance))
+            round(cover.calculate_percentage(effective_distance_override=min_distance))
         )
         state = max(state, 1)
         position = apply_snapshot_limits(snapshot, state, sun_valid=True)
@@ -78,7 +94,7 @@ class GlareZoneHandler(OverrideHandler):
             control_method=ControlMethod.GLARE_ZONE,
             reason=(
                 f"glare zone protection ({zone_names}) — "
-                f"effective distance {max_distance:.2f}m → position {position}%"
+                f"effective distance {min_distance:.2f}m → position {position}%"
             ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )

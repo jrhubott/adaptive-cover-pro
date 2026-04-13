@@ -22,9 +22,13 @@ def glare_zone_effective_distance(
 ) -> float | None:
     """Convert a glare zone to an effective distance (metres) for this sun angle.
 
-    Returns the perpendicular depth into the room (in metres) that the blind
-    must shade to protect the nearest edge of the zone circle. Returns None if
-    the sun cannot reach this zone through the window opening at angle gamma.
+    Returns the perpendicular depth into the room (in metres) to the nearest
+    edge of the zone circle facing the sun. Returns None if the sun cannot
+    reach this zone through the window opening at angle gamma.
+
+    A smaller return value means the zone is closer to the window and requires
+    MORE blind coverage (lower position%) to protect. The GlareZoneHandler
+    uses min() across zones to select the most restrictive (closest) zone.
 
     Args:
         zone: The glare zone definition (x, y in cm, radius in cm).
