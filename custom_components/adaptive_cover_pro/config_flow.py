@@ -150,6 +150,8 @@ _LOGGER = logging.getLogger(__name__)
 
 SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 
+_STANDALONE_SENTINEL = "__standalone__"
+
 # Icons for options menu — defined once here so all languages use the same icons.
 # Text labels come from translations at runtime.
 MENU_ICONS: dict[str, str] = {
@@ -169,7 +171,6 @@ MENU_ICONS: dict[str, str] = {
     "custom_position": "🎯",
     "motion_override": "🚶",
     "sync": "🔄",
-    "device": "🔗",
     "summary": "📋",
     "debug": "🔍",
     "done": "✅",
@@ -960,7 +961,142 @@ def _format_duration(dur: dict | int | float | None) -> str:
     return " ".join(parts) if parts else "0 min"
 
 
-def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa: C901, PLR0912, PLR0915
+def _check_cover_capabilities(
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None,
+) -> tuple[dict[str, dict[str, bool] | None], list[str]]:
+    """Inspect bound cover entities and return capabilities + warning lines.
+
+    Returns:
+        cap_map:  entity_id → feature dict (None if entity unavailable)
+        warnings: list of ⚠️ strings — per-entity and cross-entity issues
+
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return {}, []
+
+    from .helpers import check_cover_features
+
+    cap_map: dict[str, dict[str, bool] | None] = {}
+    warnings: list[str] = []
+
+    for eid in entities:
+        caps = check_cover_features(hass, eid)
+        cap_map[eid] = caps
+        if caps is None:
+            warnings.append(f"⚠️ {eid}: not ready (unavailable)")
+        else:
+            if not caps.get("has_set_position"):
+                warnings.append(
+                    f"⚠️ {eid} is open/close-only — will be driven via "
+                    "threshold compare, not set_position."
+                )
+            state = hass.states.get(eid)
+            if state and state.attributes.get("assumed_state"):
+                warnings.append(
+                    f"⚠️ {eid} has assumed_state — real position cannot be "
+                    "read back, which may affect position verification and delta-bypass."
+                )
+
+    known: dict[str, dict[str, bool]] = {
+        eid: caps for eid, caps in cap_map.items() if caps is not None
+    }
+
+    if known:
+        has_pos = {eid for eid, caps in known.items() if caps.get("has_set_position")}
+        no_pos = {eid for eid, caps in known.items() if not caps.get("has_set_position")}
+
+        if has_pos and no_pos:
+            warnings.append(
+                "⚠️ Mixed capabilities: some covers support set_position, "
+                "others are open/close-only — they will be driven differently."
+            )
+
+        if sensor_type == SensorType.TILT:
+            if not any(caps.get("has_set_tilt_position") for caps in known.values()):
+                warnings.append(
+                    "⚠️ Configured as tilt (venetian) but no bound cover "
+                    "advertises set_tilt_position."
+                )
+        elif sensor_type in (SensorType.BLIND, SensorType.AWNING):
+            if not any(caps.get("has_set_position") for caps in known.values()):
+                type_word = (
+                    "vertical blind" if sensor_type == SensorType.BLIND else "awning"
+                )
+                warnings.append(
+                    f"⚠️ Configured as {type_word} but no bound cover supports "
+                    "set_position — only open/close will be issued."
+                )
+
+        min_pos_val = config.get(CONF_MIN_POSITION)
+        max_pos_val = config.get(CONF_MAX_POSITION)
+        enable_min_val = config.get(CONF_ENABLE_MIN_POSITION)
+        enable_max_val = config.get(CONF_ENABLE_MAX_POSITION)
+        limits_in_use = (
+            (min_pos_val is not None and min_pos_val != 0)
+            or (max_pos_val is not None and max_pos_val != 100)
+            or enable_min_val
+            or enable_max_val
+        )
+        oc_only = [eid for eid in no_pos if eid in known]
+        if limits_in_use and oc_only:
+            oc_str = ", ".join(oc_only)
+            warnings.append(
+                f"⚠️ Position limits are configured but {oc_str} "
+                "is open/close-only — limits will be ignored on that cover."
+            )
+
+    return cap_map, warnings
+
+
+def _build_cover_capabilities_text(
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None = None,
+) -> str:
+    """Build a Cover Capabilities block for the Debug & Diagnostics screen.
+
+    Returns a markdown string (possibly empty) describing each bound cover's
+    detected features plus any cross-entity consistency warnings.
+    """
+    entities: list[str] = config.get(CONF_ENTITIES) or []
+    if hass is None or not entities:
+        return ""
+
+    cap_map, warnings = _check_cover_capabilities(config, sensor_type, hass)
+
+    cap_label_map = {
+        "has_set_position": "set position",
+        "has_set_tilt_position": "set tilt",
+        "has_open": "open",
+        "has_close": "close",
+        "has_stop": "stop",
+    }
+
+    lines: list[str] = ["**Cover Capabilities**"]
+    for eid in entities:
+        caps = cap_map.get(eid)
+        if caps is None:
+            lines.append(f"{eid}: not ready (unavailable)")
+        else:
+            cap_list = ", ".join(
+                label for key, label in cap_label_map.items() if caps.get(key)
+            )
+            lines.append(f"{eid}: {cap_list or 'none detected'}")
+
+    if warnings:
+        lines.extend(warnings)
+
+    return "\n".join(lines)
+
+
+def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
+    config: dict,
+    sensor_type: str | None,
+    hass: HomeAssistant | None = None,
+) -> str:
     """Build a narrative summary of the current configuration.
 
     Produces four sections:
@@ -1083,6 +1219,15 @@ def _build_config_summary(config: dict, sensor_type: str | None) -> str:  # noqa
             parts.append(f"mode: {v}")
         if parts:
             lines.append(", ".join(parts))
+
+    # =========================================================================
+    # Section 1c: Cover Capability Warnings
+    # =========================================================================
+    _, cap_warnings = _check_cover_capabilities(config, sensor_type, hass)
+    if cap_warnings:
+        lines.append("")
+        lines.append("**Cover Warnings**")
+        lines.extend(cap_warnings)
 
     # =========================================================================
     # Section 2: How It Decides
@@ -1832,8 +1977,15 @@ def _extract_shared_options(
     return {k: v for k, v in entry.options.items() if k in allowed_keys}
 
 
-def _build_cover_entity_schema(sensor_type: str) -> vol.Schema:
-    """Build entity selector schema based on cover type."""
+def _build_cover_entity_schema(
+    sensor_type: str,
+    devices: dict[str, str] | None = None,
+) -> vol.Schema:
+    """Build entity selector schema based on cover type.
+
+    When devices is provided and non-empty, a device association selector is
+    appended so both fields appear on the same form.
+    """
     if sensor_type == SensorType.TILT:
         entity_selector = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -1853,7 +2005,22 @@ def _build_cover_entity_schema(sensor_type: str) -> vol.Schema:
                 ),
             )
         )
-    return vol.Schema({vol.Optional(CONF_ENTITIES, default=[]): entity_selector})
+    schema_dict: dict = {vol.Optional(CONF_ENTITIES, default=[]): entity_selector}
+    if devices:
+        options_list = [
+            {"value": _STANDALONE_SENTINEL, "label": "None (standalone device)"}
+        ]
+        for device_id, device_name in devices.items():
+            options_list.append({"value": device_id, "label": device_name})
+        schema_dict[vol.Required(CONF_DEVICE_ID, default=_STANDALONE_SENTINEL)] = (
+            selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options_list,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+        )
+    return vol.Schema(schema_dict)
 
 
 def _get_geometry_schema(sensor_type: str) -> vol.Schema:
@@ -1935,6 +2102,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self.mode: str = "basic"
         self.selected_source_entry_id: str | None = None
         self.setup_mode: str = "quick"  # "quick" or "full"
+        self._has_device_options: bool = False
+        self._cover_devices: dict[str, str] = {}
 
     def optional_entities(self, keys: list, user_input: dict[str, Any]) -> None:
         """Set value to None if key does not exist in user_input."""
@@ -1987,16 +2156,30 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return await self.async_step_cover_entities()
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
-        """Select cover entities."""
-        if user_input is not None:
-            self.config.update(user_input)
+        """Select cover entities and optionally link to a physical device.
 
-            # Extract first cover entity's name to auto-populate device name
+        Pass 1 (entities only): user selects cover entities; if they have associated
+        physical devices the form is re-rendered with a device selector appended.
+        Pass 2 (combined, only when devices exist): both fields are submitted together
+        and the flow proceeds to geometry.
+        """
+        if user_input is not None:
+            if self._has_device_options:
+                # Pass 2: process entity + device selection
+                self.config.update(user_input)
+                device_id = user_input.get(CONF_DEVICE_ID, _STANDALONE_SENTINEL)
+                if device_id and device_id != _STANDALONE_SENTINEL:
+                    self.config[CONF_DEVICE_ID] = device_id
+                else:
+                    self.config.pop(CONF_DEVICE_ID, None)
+                return await self.async_step_geometry()
+
+            # Pass 1: store entities, auto-name, check for associated devices
+            self.config.update(user_input)
             if CONF_ENTITIES in user_input and user_input[CONF_ENTITIES]:
                 first_entity_id = user_input[CONF_ENTITIES][0]
                 entity_reg = er.async_get(self.hass)
                 entity_entry = entity_reg.async_get(first_entity_id)
-
                 if entity_entry:
                     entity_name = (
                         entity_entry.original_name
@@ -2005,54 +2188,22 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     )
                     self.config["name"] = f"Adaptive {entity_name}"
 
-            # Check for device association
             entity_ids = self.config.get(CONF_ENTITIES, [])
             devices = await _get_devices_from_entities(self.hass, entity_ids)
             if devices:
-                return await self.async_step_device_association()
+                self._has_device_options = True
+                self._cover_devices = devices
+                schema = _build_cover_entity_schema(self.type_blind, devices=devices)
+                return self.async_show_form(
+                    step_id="cover_entities",
+                    data_schema=self.add_suggested_values_to_schema(
+                        schema, self.config
+                    ),
+                )
             return await self.async_step_geometry()
 
         schema = _build_cover_entity_schema(self.type_blind)
         return self.async_show_form(step_id="cover_entities", data_schema=schema)
-
-    async def async_step_device_association(
-        self, user_input: dict[str, Any] | None = None
-    ):
-        """Show optional device association step."""
-        _standalone_sentinel = "__standalone__"
-        entity_ids = self.config.get(CONF_ENTITIES, [])
-        devices = await _get_devices_from_entities(self.hass, entity_ids)
-
-        if not devices:
-            return await self.async_step_geometry()
-
-        if user_input is not None:
-            device_id = user_input.get(CONF_DEVICE_ID, _standalone_sentinel)
-            if device_id and device_id != _standalone_sentinel:
-                self.config[CONF_DEVICE_ID] = device_id
-            else:
-                self.config.pop(CONF_DEVICE_ID, None)
-            return await self.async_step_geometry()
-
-        options_list = [
-            {"value": _standalone_sentinel, "label": "None (standalone device)"}
-        ]
-        for device_id, device_name in devices.items():
-            options_list.append({"value": device_id, "label": device_name})
-
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_DEVICE_ID, default=_standalone_sentinel
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=options_list,
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-            }
-        )
-        return self.async_show_form(step_id="device_association", data_schema=schema)
 
     async def async_step_geometry(self, user_input: dict[str, Any] | None = None):
         """Configure cover geometry dimensions."""
@@ -2336,7 +2487,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Show a read-only summary of all collected configuration before creating the entry."""
         if user_input is not None:
             return await self.async_step_update()
-        summary_text = _build_config_summary(self.config, self.type_blind)
+        summary_text = _build_config_summary(self.config, self.type_blind, self.hass)
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),
@@ -2646,7 +2797,7 @@ class OptionsFlowHandler(OptionsFlow):
         keys.append("sync")
 
         # ── Admin ────────────────────────────────────────────────────
-        keys.extend(["device", "summary", "debug", "done"])
+        keys.extend(["summary", "debug", "done"])
 
         # Fetch localized labels and prepend icons defined in MENU_ICONS
         trans_prefix = "component.adaptive_cover_pro.options.step.init.menu_options."
@@ -2664,17 +2815,27 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
-        """Adjust cover entities."""
+        """Adjust cover entities and device association on a single combined form."""
+        entity_ids = self.options.get(CONF_ENTITIES, [])
+        devices = await _get_devices_from_entities(self.hass, entity_ids)
+
         if user_input is not None:
             self.options.update(user_input)
+            device_id = user_input.get(CONF_DEVICE_ID, _STANDALONE_SENTINEL)
+            if device_id and device_id != _STANDALONE_SENTINEL:
+                self.options[CONF_DEVICE_ID] = device_id
+            else:
+                self.options.pop(CONF_DEVICE_ID, None)
             return await self.async_step_init()
 
-        schema = _build_cover_entity_schema(self.sensor_type)
+        current_device = self.options.get(CONF_DEVICE_ID) or _STANDALONE_SENTINEL
+        schema = _build_cover_entity_schema(self.sensor_type, devices=devices or None)
+        suggested = dict(self.options)
+        if devices:
+            suggested.setdefault(CONF_DEVICE_ID, current_device)
         return self.async_show_form(
             step_id="cover_entities",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, user_input or self.options
-            ),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
         )
 
     async def async_step_geometry(self, user_input: dict[str, Any] | None = None):
@@ -2833,49 +2994,6 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="weather_override",
             data_schema=self.add_suggested_values_to_schema(
                 WEATHER_OVERRIDE_SCHEMA, user_input or self.options
-            ),
-        )
-
-    async def async_step_device(self, user_input: dict[str, Any] | None = None):
-        """Manage device association."""
-        _standalone_sentinel = "__standalone__"
-        entity_ids = self.options.get(CONF_ENTITIES, [])
-        devices = await _get_devices_from_entities(self.hass, entity_ids)
-
-        if user_input is not None:
-            device_id = user_input.get(CONF_DEVICE_ID, _standalone_sentinel)
-            if device_id and device_id != _standalone_sentinel:
-                self.options[CONF_DEVICE_ID] = device_id
-            else:
-                self.options.pop(CONF_DEVICE_ID, None)
-            return await self.async_step_init()
-
-        if not devices:
-            # No devices available — clear any stale association and update immediately
-            self.options.pop(CONF_DEVICE_ID, None)
-            return await self.async_step_init()
-
-        current_device = self.options.get(CONF_DEVICE_ID) or _standalone_sentinel
-        options_list = [
-            {"value": _standalone_sentinel, "label": "None (standalone device)"}
-        ]
-        for device_id, device_name in devices.items():
-            options_list.append({"value": device_id, "label": device_name})
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_DEVICE_ID): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=options_list,
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-            }
-        )
-        return self.async_show_form(
-            step_id="device",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, {CONF_DEVICE_ID: current_device}
             ),
         )
 
@@ -3188,7 +3306,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Show a read-only summary of the current configuration."""
         if user_input is not None:
             return await self.async_step_init()
-        summary_text = _build_config_summary(self.options, self.sensor_type)
+        summary_text = _build_config_summary(self.options, self.sensor_type, self.hass)
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),
@@ -3202,11 +3320,15 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             self.options.update(user_input)
             return await self.async_step_init()
+        caps_text = _build_cover_capabilities_text(
+            self.options, self.sensor_type, self.hass
+        )
         return self.async_show_form(
             step_id="debug",
             data_schema=self.add_suggested_values_to_schema(
                 DEBUG_SCHEMA, user_input or self.options
             ),
+            description_placeholders={"cover_capabilities": caps_text},
         )
 
     async def async_step_done(

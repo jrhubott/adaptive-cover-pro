@@ -1,0 +1,13 @@
+# Deploy configuration for scripts/deploy
+# Copy this file to .deploy and fill in your values.
+# .deploy is .gitignored — never commit credentials.
+
+# SMB share settings
+HA_SMB_HOST="home-assistant.home"
+HA_SMB_SHARE="config"
+#HA_SMB_USER="your-username"   # omit for guest access
+#HA_SMB_PASS="your-password"
+
+# Home Assistant REST API (used for optional restart after deploy)
+HA_URL="http://home-assistant.home:8123"
+#HA_TOKEN="your-long-lived-access-token"

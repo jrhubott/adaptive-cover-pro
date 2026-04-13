@@ -63,7 +63,7 @@ class SunGeometry:
 
         Gamma is the horizontal angle between the window's perpendicular and the
         sun's position, normalized to -180 to +180 degrees. Positive values indicate
-        sun to the right of window normal, negative to the left.
+        sun to the left of window normal (looking outward), negative to the right.
 
         Returns:
             Gamma angle in degrees (-180 to +180).

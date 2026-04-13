@@ -180,6 +180,11 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             )  # ~2.9° minimum
             effective_distance -= sill_offset
 
+        # Floor at zero: large sill_offset can exceed effective_distance,
+        # which is physically correct (sun can't reach floor) but produces
+        # confusing negative intermediates in debug logs.
+        effective_distance = max(effective_distance, 0.0)
+
         # Base calculation: project to vertical blind height.
         # Clamp cos(gamma) to a minimum of 0.01 (≈89.4°) to prevent division
         # by near-zero between the edge-case threshold (85°) and 90°.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from custom_components.adaptive_cover_pro.config_flow import (
     _build_config_summary,
+    _build_cover_capabilities_text,
     _format_duration,
 )
 from custom_components.adaptive_cover_pro.const import (
@@ -1062,3 +1063,186 @@ def test_summary_shows_my_info_line_when_value_set_globally():
     cfg[CONF_MY_POSITION_VALUE] = 50
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "🎛️ Somfy My preset: 50%" in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 1b: Cover Capabilities (now shown on Debug & Diagnostics screen)
+# ---------------------------------------------------------------------------
+
+
+def _make_hass(entity_states: dict) -> object:
+    """Build a minimal hass stub for cover-capabilities tests.
+
+    entity_states maps entity_id → dict with keys:
+      - "state": str (default "open")
+      - "supported_features": int (default 0)
+      - "assumed_state": bool (default False)
+    Returns an object whose .states.get(entity_id) mimics HA state objects.
+    """
+    from unittest.mock import MagicMock
+
+    def _get_state(entity_id):
+        if entity_id not in entity_states:
+            return None
+        spec = entity_states[entity_id]
+        s = MagicMock()
+        s.state = spec.get("state", "open")
+        attrs = {}
+        if "supported_features" in spec:
+            attrs["supported_features"] = spec["supported_features"]
+        if spec.get("assumed_state"):
+            attrs["assumed_state"] = True
+        s.attributes = attrs
+        return s
+
+    hass = MagicMock()
+    hass.states.get.side_effect = _get_state
+    return hass
+
+
+def test_capability_listing_not_in_summary():
+    """Full capability listing (entity: set position, open...) is not in _build_config_summary."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.living_room": {"supported_features": feats}})
+    cfg = {CONF_ENTITIES: ["cover.living_room"]}
+    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
+    # Full listing section header is not shown — only warnings
+    assert "Cover Capabilities" not in summary
+    # No warnings for a well-configured cover
+    assert "Cover Warnings" not in summary
+
+
+def test_capability_warnings_appear_in_summary():
+    """Actionable capability warnings appear in _build_config_summary."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    # Open/close-only cover — should produce a warning
+    feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.blind": {"supported_features": feats}})
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    summary = _build_config_summary(cfg, SensorType.BLIND, hass)
+    assert "Cover Warnings" in summary
+    assert "open/close-only" in summary
+
+
+def test_capabilities_section_absent_without_hass():
+    """_build_cover_capabilities_text returns empty string when hass is not passed."""
+    cfg = {CONF_ENTITIES: ["cover.living_room"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND)
+    assert result == ""
+
+
+def test_capabilities_section_absent_without_entities():
+    """_build_cover_capabilities_text returns empty string when entities list is empty."""
+    hass = _make_hass({})
+    result = _build_cover_capabilities_text({CONF_ENTITIES: []}, SensorType.BLIND, hass)
+    assert result == ""
+
+
+def test_capabilities_section_renders_full_featured_cover():
+    """Full-featured cover shows set position, open, close, stop in capabilities."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = (
+        CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+        | CoverEntityFeature.STOP
+    )
+    hass = _make_hass({"cover.blind": {"supported_features": feats}})
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "Cover Capabilities" in result
+    assert "cover.blind" in result
+    assert "set position" in result
+    assert "open" in result
+    assert "close" in result
+    assert "stop" in result
+
+
+def test_capabilities_section_warns_on_open_close_only():
+    """Open/close-only cover renders ⚠️ threshold-compare warning."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.blind": {"supported_features": feats}})
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "open/close-only" in result
+    assert "threshold compare" in result
+
+
+def test_capabilities_section_unavailable_entity():
+    """Unavailable entity renders ⚠️ not-ready warning."""
+    hass = _make_hass({"cover.blind": {"state": "unavailable", "supported_features": 0}})
+    # check_cover_features returns None for unavailable state
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "not ready" in result
+
+
+def test_capabilities_section_assumed_state_warning():
+    """Cover with assumed_state attribute renders ⚠️ assumed-state warning."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass(
+        {"cover.blind": {"supported_features": feats, "assumed_state": True}}
+    )
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "assumed_state" in result
+    assert "position cannot be read back" in result
+
+
+def test_capabilities_section_mixed_caps_warning():
+    """Two covers with different set_position support renders mixed-capabilities warning."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    hass = _make_hass(
+        {
+            "cover.a": {
+                "supported_features": CoverEntityFeature.SET_POSITION
+                | CoverEntityFeature.OPEN
+                | CoverEntityFeature.CLOSE
+            },
+            "cover.b": {
+                "supported_features": CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+            },
+        }
+    )
+    cfg = {CONF_ENTITIES: ["cover.a", "cover.b"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "Mixed capabilities" in result
+    assert "driven differently" in result
+
+
+def test_capabilities_section_tilt_type_mismatch():
+    """Tilt sensor_type with no set_tilt_position cover renders mismatch warning."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.blind": {"supported_features": feats}})
+    cfg = {CONF_ENTITIES: ["cover.blind"]}
+    result = _build_cover_capabilities_text(cfg, SensorType.TILT, hass)
+    assert "set_tilt_position" in result
+    assert "tilt (venetian)" in result
+
+
+def test_capabilities_section_position_limits_ignored_warning():
+    """Position limits configured + open/close-only cover renders ignored-limits warning."""
+    from homeassistant.components.cover import CoverEntityFeature
+
+    feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    hass = _make_hass({"cover.blind": {"supported_features": feats}})
+    cfg = {
+        CONF_ENTITIES: ["cover.blind"],
+        CONF_ENABLE_MIN_POSITION: True,
+        CONF_MIN_POSITION: 10,
+    }
+    result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
+    assert "Position limits" in result
+    assert "limits will be ignored" in result
+    assert "cover.blind" in result

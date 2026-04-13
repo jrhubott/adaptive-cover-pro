@@ -21,6 +21,9 @@ coverage.xml
 # don't place superpower documents in the repo
 docs/superpowers/
 
+# Deploy config (credentials — never commit)
+.deploy
+
 # Home Assistant configuration
 config/*
 !config/configuration.yaml

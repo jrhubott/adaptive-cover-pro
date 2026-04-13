@@ -16,13 +16,15 @@
         }
       },
       "cover_entities": {
-        "title": "Abdeckungs-Entitäten",
+        "title": "Abdeckungen & Gerät",
         "description": "Wählen Sie die Abdeckungs-Entitäten aus, die diese Instanz steuern soll.",
         "data": {
-          "group": "Abdeckungs-Entitäten"
+          "group": "Abdeckungs-Entitäten",
+          "linked_device_id": "An Gerät anhängen"
         },
         "data_description": {
-          "group": "Wählen Sie die Abdeckungs-Entitäten aus, die über diese Integrationsinstanz gesteuert werden sollen. Sie können mehrere Abdeckungen als Gruppe auswählen (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Abdeckungen für dieses Fenster – erstellen Sie für andere Fenster separate Integrationsinstanzen."
+          "group": "Wählen Sie die Abdeckungs-Entitäten aus, die über diese Integrationsinstanz gesteuert werden sollen. Sie können mehrere Abdeckungen als Gruppe auswählen (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Abdeckungen für dieses Fenster – erstellen Sie für andere Fenster separate Integrationsinstanzen.",
+          "linked_device_id": "Physisches Gerät auswählen, in das die Entitäten zusammengeführt werden. Sensoren, Schalter und Schaltflächen erscheinen dann direkt unter diesem Gerät. 'Kein (eigenständiges Gerät)' wählen, um ein separates virtuelles Adaptive Cover-Gerät zu behalten."
         }
       },
       "geometry": {
@@ -352,16 +354,6 @@
           "interp_list_new": "Ausgangspositionen für benutzerdefinierte Interpolationszuordnung (tatsächlich gesendete Werte). Entsprechende echte Positionen eingeben, z. B.: 0, 20, 40, 65, 100. Gleiche Länge wie Interpolationsliste."
         }
       },
-      "device_association": {
-        "title": "Mit vorhandenem Gerät verknüpfen",
-        "description": "Hängen Sie die Entitäten dieser Integration optional an ein vorhandenes Gerät (z. B. den physischen Jalousienmotor) an. 'Kein' auswählen, um sie als eigenständiges virtuelles Adaptive Cover-Gerät zu behalten.",
-        "data": {
-          "linked_device_id": "An Gerät anhängen"
-        },
-        "data_description": {
-          "linked_device_id": "Physisches Gerät auswählen, in das die Entitäten zusammengeführt werden. Sensoren, Schalter und Schaltflächen erscheinen dann direkt unter diesem Gerät. 'Kein (eigenständiges Gerät)' wählen, um ein separates virtuelles Adaptive Cover-Gerät zu behalten."
-        }
-      },
       "duplicate_select": {
         "title": "Abdeckung duplizieren — Quelle auswählen",
         "description": "Wählen Sie, von welcher vorhandenen Abdeckung die Einstellungen dupliziert werden sollen.",
@@ -429,7 +421,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "cover_entities": "Abdeckungs-Entitäten",
+          "cover_entities": "Abdeckungen & Gerät",
           "geometry": "Fenstergeometrie",
           "sun_tracking": "Sonnenverfolgung",
           "position": "Positionseinstellungen",
@@ -444,7 +436,6 @@
           "custom_position": "Benutzerdefinierte Positionen",
           "motion_override": "Bewegungsübersteuerung",
           "weather_override": "Wetterübersteuerung",
-          "device": "Gerätezuordnung",
           "summary": "Konfigurationsübersicht",
           "sync": "Einstellungen auf andere Abdeckungen kopieren",
           "done": "Speichern & Schließen",
@@ -475,13 +466,15 @@
         }
       },
       "cover_entities": {
-        "title": "Abdeckungs-Entitäten",
+        "title": "Abdeckungen & Gerät",
         "description": "Wählen Sie die Abdeckungs-Entitäten aus, die diese Instanz steuern soll.",
         "data": {
-          "group": "Abdeckungs-Entitäten"
+          "group": "Abdeckungs-Entitäten",
+          "linked_device_id": "An Gerät anhängen"
         },
         "data_description": {
-          "group": "Wählen Sie die Abdeckungs-Entitäten aus. Mehrere Abdeckungen als Gruppe auswählen möglich. Nur Abdeckungen für dieses Fenster – separate Instanzen für andere Fenster erstellen."
+          "group": "Wählen Sie die Abdeckungs-Entitäten aus. Mehrere Abdeckungen als Gruppe auswählen möglich. Nur Abdeckungen für dieses Fenster – separate Instanzen für andere Fenster erstellen.",
+          "linked_device_id": "Physisches Gerät auswählen für Zusammenführung. 'Kein (eigenständiges Gerät)' für separates Gerät."
         }
       },
       "geometry": {
@@ -787,16 +780,6 @@
           "glare_zone_4_x": "Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
           "glare_zone_4_y": "Raumtiefe in cm.",
           "glare_zone_4_radius": "Schutzradius in cm."
-        }
-      },
-      "device": {
-        "title": "Gerätezuordnung",
-        "description": "Entitäten dieser Integration mit einem vorhandenen Gerät verknüpfen oder eine bestehende Verknüpfung entfernen.",
-        "data": {
-          "linked_device_id": "An Gerät anhängen"
-        },
-        "data_description": {
-          "linked_device_id": "Physisches Gerät auswählen für Zusammenführung. 'Kein (eigenständiges Gerät)' für separates Gerät."
         }
       },
       "sync": {

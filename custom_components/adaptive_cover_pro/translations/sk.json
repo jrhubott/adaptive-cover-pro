@@ -10,13 +10,15 @@
         }
       },
       "cover_entities": {
-        "title": "Cover Entities",
+        "title": "Covers & Device",
         "description": "Select the cover entities this instance will control.",
         "data": {
-          "group": "Krycie entity"
+          "group": "Krycie entity",
+          "linked_device_id": "Attach to Device"
         },
         "data_description": {
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie"
+          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
         }
       },
       "geometry": {
@@ -246,16 +248,6 @@
         "title": "Position Calibration",
         "description": "Upravte hodnoty, pri ktorých sa kryt efektívne otvára alebo zatvára. Ideálne pre kryty, ktoré sa úplne neotvoria pri 0 % alebo nezatvoria pri 100 %. \n Prvé dva posuvníky sú pre 2-bodové nastavenie, možnosti zoznamu sú pre viacbodové nastavenie"
       },
-      "device_association": {
-        "title": "Link to Existing Device",
-        "description": "Optionally attach this integration's entities to an existing device (e.g., the physical blind motor). Select 'None' to keep them as a standalone Adaptive Cover virtual device.",
-        "data": {
-          "linked_device_id": "Attach to Device"
-        },
-        "data_description": {
-          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
-        }
-      },
       "duplicate_select": {
         "title": "Duplicate Cover — Select Source",
         "description": "Choose which existing cover to duplicate settings from.",
@@ -286,7 +278,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "cover_entities": "Cover Entities",
+          "cover_entities": "Covers & Device",
           "geometry": "Cover Geometry",
           "sun_tracking": "Sun Tracking",
           "position": "Position Settings",
@@ -301,7 +293,6 @@
           "custom_position": "Custom Positions",
           "motion_override": "Motion Override",
           "weather_override": "Weather Override",
-          "device": "Device Association",
           "summary": "Configuration Summary",
           "sync": "Copy Settings to Other Covers",
           "done": "Save & Exit"
@@ -330,13 +321,15 @@
         "description": "Configure automation timing, position change thresholds, and active hours for automatic control."
       },
       "cover_entities": {
-        "title": "Cover Entities",
+        "title": "Covers & Device",
         "description": "Select the cover entities this instance will control.",
         "data": {
-          "group": "Krycie entity"
+          "group": "Krycie entity",
+          "linked_device_id": "Attach to Device"
         },
         "data_description": {
-          "group": "Vyberte entity na riadenie prostredníctvom integrácie"
+          "group": "Vyberte entity na riadenie prostredníctvom integrácie",
+          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
         }
       },
       "geometry": {
@@ -543,16 +536,6 @@
         },
         "title": "Position Calibration",
         "description": "Upravte hodnoty, pri ktorých sa kryt efektívne otvára alebo zatvára. Ideálne pre kryty, ktoré sa úplne neotvoria pri 0 % alebo nezatvoria pri 100 %. \n Prvé dva posuvníky sú pre 2-bodové nastavenie, možnosti zoznamu sú pre viacbodové nastavenie"
-      },
-      "device": {
-        "title": "Device Association",
-        "description": "Link this integration's entities to an existing device (e.g., the physical blind motor) or remove an existing link.",
-        "data": {
-          "linked_device_id": "Attach to Device"
-        },
-        "data_description": {
-          "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown."
-        }
       },
       "sync": {
         "title": "Copy Settings to Other Covers",
