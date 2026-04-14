@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
@@ -141,6 +142,38 @@ class TestCloudSuppressionHandler:
     def test_name(self) -> None:
         """CloudSuppressionHandler name is 'cloud_suppression'."""
         assert CloudSuppressionHandler.name == "cloud_suppression"
+
+    def test_sun_only_max_not_applied_to_default_regression_105(self) -> None:
+        """Regression #105: sun-only max limit must NOT clamp the default position.
+
+        User scenario: default=50, max_pos=26 (sun-only), sun geometrically in FOV
+        but cloudy. Cloud suppression fires and should return 50, not 26.
+        """
+        cover = MagicMock()
+        cover.direct_sun_valid = True  # sun is geometrically in FOV
+        cover.valid = True
+        cover.calculate_percentage = MagicMock(return_value=15.0)
+        cover.logger = MagicMock()
+        config = MagicMock()
+        config.min_pos = None
+        config.max_pos = 26
+        config.min_pos_sun_only = False
+        config.max_pos_sun_only = True  # "during sun tracking only"
+        cover.config = config
+
+        snap = make_snapshot(
+            cover=cover,
+            climate_readings=_make_readings(cloud_coverage_above_threshold=True),
+            climate_options=_make_options(enabled=True),
+            default_position=50,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.CLOUD
+        assert result.position == 50, (
+            f"Expected default position 50 but got {result.position}. "
+            "Sun-only max limit must not clamp cloud suppression output."
+        )
 
 
 # ---------------------------------------------------------------------------
