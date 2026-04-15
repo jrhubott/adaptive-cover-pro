@@ -352,9 +352,9 @@ class CoverCommandService:
         """Remove non-safety target_call entries so stale targets cannot be resent.
 
         Called by the coordinator when the time window transitions from
-        active to inactive.  Safety targets (force override, weather,
-        end_time_default) are preserved so reconciliation can still drive
-        covers to their safe position.
+        active to inactive.  Safety targets (force override, weather) are
+        preserved so reconciliation can still drive covers to their safe
+        position.
         """
         stale = [eid for eid in self.target_call if eid not in self._safety_targets]
         for eid in stale:
@@ -367,6 +367,31 @@ class CoverCommandService:
                 "Cleared %d stale non-safety target(s) on window close: %s",
                 len(stale),
                 stale,
+            )
+
+    def discard_target(self, entity_id: str) -> None:
+        """Remove all tracking state for an entity, including safety targets.
+
+        Called when a manual override starts for an entity so that any
+        pre-existing integration target (including safety-tagged end-time
+        defaults) cannot be resurrected by reconciliation while — or after
+        — the user is controlling the cover.
+
+        Args:
+            entity_id: Cover entity ID to clear.
+
+        """
+        had_target = entity_id in self.target_call
+        self.target_call.pop(entity_id, None)
+        self.wait_for_target.pop(entity_id, None)
+        self._sent_at.pop(entity_id, None)
+        self._retry_counts.pop(entity_id, None)
+        self._gave_up.discard(entity_id)
+        self._safety_targets.discard(entity_id)
+        if had_target:
+            self._logger.debug(
+                "Discarded stale target for %s on manual override start",
+                entity_id,
             )
 
     # ------------------------------------------------------------------ #
