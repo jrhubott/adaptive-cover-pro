@@ -222,6 +222,19 @@ Regardless of which calculation mode is active, every position decision passes t
 | 40 | **Solar** | Active when sun is within the window's field of view and elevation limits — uses calculated sun-tracking position |
 | 0 | **Default** | Final fallback — returns the configured default position (or sunset position if applicable) |
 
+#### Sensor priority: irradiance, lux, and weather
+
+When irradiance, lux (brightness), and weather sensors are all configured, they don't blend into a single score — they feed different pipeline handlers and are evaluated by priority:
+
+1. **Severe weather (priority 90)** — `Wind Speed Sensor`, `Rain Rate Sensor`, `Is Raining Sensor`, `Is Windy Sensor`, and `Severe Weather Sensors` feed the Weather Override handler. OR logic: any one tripping retracts the cover to `Weather Override Position`, regardless of what lux or irradiance report.
+2. **Cloud suppression (priority 60)** — `Lux Entity` + `Lux Threshold`, `Irradiance Entity` + `Irradiance Threshold`, `Cloud Coverage Entity` + `Cloud Coverage Threshold`, and the `Weather Entity` state (matched against the configured "sunny" condition list) feed this handler. OR logic again: if **any** of these indicates it isn't sunny enough, solar tracking is skipped and the cover goes to the default (or sunset) position.
+3. **Solar (priority 40)** — runs only when every cloud-suppression input agrees it's sunny and the sun is within the window's field of view.
+
+Two things worth flagging:
+
+- The **weather entity is used in two places**. Its *state* ("sunny"/"cloudy"/…) feeds cloud suppression at 60, while the severe-condition sensors (wind, rain, is-raining, is-windy, severe) feed the weather override at 90. They are configured separately.
+- Cloud suppression is **OR, not AND** across its inputs. If you've wired up both a lux sensor and an irradiance sensor, either one falling below its threshold will suppress solar tracking — set thresholds accordingly, or leave one unconfigured if you don't want it to gate.
+
 ### Basic mode
 
 The pipeline skips the Climate handler (priority 50). When the sun is within the configured field of view and above the minimum elevation, the integration uses the geometrically calculated blind position to block direct sunlight. Otherwise it falls back to the default position or the configured sunset position if the sun has set.
