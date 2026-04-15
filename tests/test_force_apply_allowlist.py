@@ -55,9 +55,8 @@ ALLOWED_LITERAL_FORCE_TRUE_SITES: frozenset[str] = frozenset(
         # Manual-override expiry path. Gated by automatic_control before the call.
         # See coordinator.py::_async_send_after_override_clear, line ~1140.
         "_async_send_after_override_clear",
-        # End-of-time-window return-to-default path. Gated by automatic_control
-        # before the call (v2.15.3 fix). See coordinator.py::_on_window_closed.
-        "_on_window_closed",
+        # _on_window_closed removed: it now uses force=False so the end-time
+        # target is not safety-tagged.  See issue #215/#216 fix.
     }
 )
 

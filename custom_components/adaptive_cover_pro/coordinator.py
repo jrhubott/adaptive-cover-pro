@@ -535,11 +535,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         for entity_id in tracked:
+            was_manual = self.manager.is_cover_manual(entity_id)
             self.manager.handle_stop_service_call(
                 entity_id,
                 int(my_position_value),
                 self.wait_for_target,
             )
+            # When a cover transitions into manual override via stop_cover,
+            # discard any pre-existing safety-tagged target so reconciliation
+            # cannot resurrect it (issue #215/#216).
+            if not was_manual and self.manager.is_cover_manual(entity_id):
+                self._cmd_svc.discard_target(entity_id)
             # Update target_call so the next reconciliation compares against
             # My rather than the stale calculated state.
             self._cmd_svc.target_call[entity_id] = int(my_position_value)
@@ -1363,6 +1369,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # state gets transformed (via threshold) to 0 or 100 before sending.
                 expected_position = self.target_call.get(entity_id, state)
 
+                was_manual = self.manager.is_cover_manual(entity_id)
                 self.manager.handle_state_change(
                     event_data,
                     expected_position,
@@ -1371,6 +1378,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     self.wait_for_target,
                     self.manual_threshold,
                 )
+                # When a cover transitions into manual override, discard any
+                # pre-existing integration target (including safety-tagged
+                # end-time defaults) so reconciliation cannot resurrect it
+                # later (issue #215/#216).
+                if not was_manual and self.manager.is_cover_manual(entity_id):
+                    self._cmd_svc.discard_target(entity_id)
 
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
@@ -2020,10 +2033,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
 
         async def _on_window_closed() -> None:
-            """Force-send effective default when end time is reached."""
+            """Send effective default when end time is reached.
+
+            Does NOT use force=True so the target is never tagged as a safety
+            target.  Safety-tagging an end-time send lets reconciliation
+            resurrect the target hours later after a manual override expires
+            (issue #215/#216).  The necessary guards (return_sunset toggle,
+            automatic_control) are already applied above; there is no reason
+            to bypass the command-service delta/manual-override gates here.
+            """
             # Always clear stale daytime targets when the window closes so
-            # reconciliation cannot resend them overnight.  Safety targets
-            # (placed via force=True) are preserved.
+            # reconciliation cannot resend them overnight.
             self._cmd_svc.clear_non_safety_targets()
             if not self._track_end_time:
                 return
@@ -2053,14 +2073,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 inverse_state(effective_pos) if self._inverse_state else effective_pos
             )
             self.logger.info(
-                "End time reached — force-sending effective default %s%% "
+                "End time reached — sending effective default %s%% "
                 "(sunset_active=%s) to %s cover(s)",
                 pos_to_send,
                 is_sunset,
                 len(self.entities),
             )
             for cover_entity in self.entities:
-                ctx = self._build_position_context(cover_entity, options, force=True)
+                ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
                     cover_entity, pos_to_send, "end_time_default", context=ctx
                 )
