@@ -17,22 +17,40 @@ bypass all CoverCommandService gate checks (auto_control, delta, time_delta,
 etc.).  Every such site must either:
 
 a) Pre-gate on ``self.automatic_control`` (non-safety paths), or
-b) Be a declared safety bypass (ForceOverrideHandler, WeatherOverrideHandler).
+b) Be a declared force bypass (safety handler OR transitional path).
 
 In both cases, a human reviewer must acknowledge the site by adding it to the
 allowlist here AND adding a row to ``test_auto_control_gate_matrix.py``.
 
+force=True vs is_safety=True — two independent flags
+------------------------------------------------------
+``force=True`` means "bypass gate checks (delta, time, manual override) for
+this one send".  It does NOT automatically classify the target as a safety
+target.
+
+``is_safety=True`` means "this target is safety-critical and must persist across
+window boundaries — reconciliation resends it even when outside the time window
+or with auto_control=OFF".  Only genuine safety handlers (ForceOverride,
+WeatherOverride) should set this True.
+
+Transitional paths that need to bypass gates for a one-shot send (e.g.
+``_async_send_after_override_clear``) use ``force=True, is_safety=False`` (the
+default) — they get through the gates but do not persist as safety targets.
+This decoupling was introduced in the fix for issue #223.
+
 How to respond when this test fails
 -------------------------------------
 1. Identify the new ``force=True`` call site in ``coordinator.py``.
-2. Decide: is this a safety bypass (force/weather override) or a non-safety path?
-   - **Non-safety:** Add an ``automatic_control`` early-return guard *before* the
-     ``_build_position_context`` call (see ``_async_send_after_override_clear`` or
-     ``_on_window_closed`` for the pattern).
-   - **Safety bypass:** Document why ``automatic_control=OFF`` must not block this
-     path.
+2. Decide: does this path bypass ``automatic_control`` intentionally?
+   - **Non-bypass (gated):** Add an ``automatic_control`` early-return guard
+     *before* the ``_build_position_context`` call (see
+     ``_async_send_after_override_clear`` for the pattern).
+   - **Intentional bypass:** Decide whether it is a safety target (ForceOverride,
+     Weather) or a transitional one-shot (override clear, force_released).
+     Transitional paths use the default ``is_safety=False``.
 3. Add the enclosing function name to ``ALLOWED_LITERAL_FORCE_TRUE_SITES`` below.
-4. Add a row to ``CONTROL_GATE_MATRIX`` in ``test_auto_control_gate_matrix.py``.
+4. Add a row to ``CONTROL_GATE_MATRIX`` in ``test_auto_control_gate_matrix.py``
+   with the correct ``is_safety_bypass`` and ``is_safety_target`` values.
 """
 
 from __future__ import annotations

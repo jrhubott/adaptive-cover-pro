@@ -138,12 +138,19 @@ async def test_override_clear_uses_force_true_inside_window():
         coordinator, state=75, options={"test_option": True}
     )
 
-    # _build_position_context must be called with force=True
+    # _build_position_context must be called with force=True but NOT is_safety
+    # (override clear bypasses gates but is not a safety-critical target)
     coordinator._build_position_context.assert_called_once_with(
         "cover.test_blind",
         {"test_option": True},
         force=True,
         sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+    )
+    ctx = coordinator._build_position_context.call_args
+    assert not ctx.kwargs.get("is_safety", False), (
+        "_async_send_after_override_clear must NOT pass is_safety=True — "
+        "override-clear targets are NOT safety targets and must not persist "
+        "across window boundaries (fix for issue #223)"
     )
 
 
@@ -880,4 +887,207 @@ class TestIssue215StaleSafetyTarget:
         assert entity_id not in svc.target_call, (
             "After discard_target, entity must not appear in target_call — "
             "reconcile loop has nothing to process"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue #223: override-clear must NOT safety-tag the target
+# ---------------------------------------------------------------------------
+
+
+class TestIssue223OverrideClearSafetyTag:
+    """Regression tests for issue #223.
+
+    Root cause: _async_send_after_override_clear called apply_position with
+    force=True (to bypass delta gates), but force=True was conflated with
+    is_safety=True, adding the entity to _safety_targets.  When the window
+    later closed, clear_non_safety_targets() preserved the entity and
+    reconciliation bypassed the time-window guard, resending the stale target.
+
+    Fix: decouple force (bypass gates) from is_safety (safety target
+    classification) by adding an explicit is_safety field to PositionContext.
+    _async_send_after_override_clear still uses force=True but is_safety
+    defaults to False, so the target is cleaned up normally when the window
+    closes.
+    """
+
+    def _make_svc(self):
+        import logging
+
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            CoverCommandService,
+        )
+
+        hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.attributes = {"supported_features": 143}
+        mock_state.last_updated = None
+        hass.states.get.return_value = mock_state
+        hass.services.async_call = AsyncMock()
+        grace_mgr = MagicMock()
+        return CoverCommandService(
+            hass=hass,
+            logger=logging.getLogger("test"),
+            cover_type="cover_blind",
+            grace_mgr=grace_mgr,
+        )
+
+    @pytest.mark.asyncio
+    async def test_override_clear_does_not_safety_tag_entity(self):
+        """Override-clear apply_position must NOT add entity to _safety_targets.
+
+        force=True is still used to bypass delta/time gates, but is_safety must
+        remain False so the target does not persist across window boundaries.
+        """
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            PositionContext,
+        )
+
+        svc = self._make_svc()
+        svc._enabled = True
+        entity_id = "cover.bedroom_blind"
+
+        ctx = PositionContext(
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=5,
+            time_threshold=2,
+            special_positions=[0, 100],
+            force=True,
+            is_safety=False,  # override clear: bypass gates but NOT safety
+        )
+        await svc.apply_position(entity_id, 55, "manual_override_cleared", context=ctx)
+
+        assert entity_id not in svc._safety_targets, (
+            "Override-clear target must NOT be tagged as a safety target. "
+            "is_safety=False ensures the target is cleaned up when the window "
+            "closes (fix for issue #223)."
+        )
+
+    @pytest.mark.asyncio
+    async def test_override_clear_target_cleared_by_window_close(self):
+        """After override-clear, clear_non_safety_targets() must remove the target.
+
+        If the entity was incorrectly safety-tagged, clear_non_safety_targets()
+        would preserve it and reconciliation would resend it outside the window.
+        """
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            PositionContext,
+        )
+
+        svc = self._make_svc()
+        svc._enabled = True
+        entity_id = "cover.bedroom_blind"
+
+        ctx = PositionContext(
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=5,
+            time_threshold=2,
+            special_positions=[0, 100],
+            force=True,
+            is_safety=False,
+        )
+        await svc.apply_position(entity_id, 55, "manual_override_cleared", context=ctx)
+
+        # Simulate window closing
+        svc.clear_non_safety_targets()
+
+        assert entity_id not in svc.target_call, (
+            "After window close, override-clear target must be removed — "
+            "it was not safety-tagged so clear_non_safety_targets() must clear it."
+        )
+
+    @pytest.mark.asyncio
+    async def test_safety_handler_still_tags_entity(self):
+        """Safety handlers (force override, weather) must still tag entities.
+
+        Verifies that the fix does not accidentally break genuine safety targets.
+        """
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            PositionContext,
+        )
+
+        svc = self._make_svc()
+        svc._enabled = True
+        entity_id = "cover.bedroom_blind"
+
+        ctx = PositionContext(
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=5,
+            time_threshold=2,
+            special_positions=[0, 100],
+            force=True,
+            is_safety=True,  # genuine safety handler
+        )
+        await svc.apply_position(entity_id, 0, "force_override", context=ctx)
+
+        assert entity_id in svc._safety_targets, (
+            "Safety handler target must be tagged — reconciliation needs it to "
+            "persist across window boundaries."
+        )
+
+    @pytest.mark.asyncio
+    async def test_reconcile_skips_override_clear_target_outside_window(self):
+        """Full scenario: override clears → window closes → reconcile must skip.
+
+        This is the exact bug from issue #223: the cover should NOT be resent
+        after the window closes if the override expired during the window.
+        """
+        import logging
+
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            CoverCommandService,
+            PositionContext,
+        )
+
+        hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.attributes = {"supported_features": 143, "current_position": 55}
+        mock_state.last_updated = None
+        mock_state.state = "open"
+        hass.states.get.return_value = mock_state
+        hass.services.async_call = AsyncMock()
+
+        svc = CoverCommandService(
+            hass=hass,
+            logger=logging.getLogger("test"),
+            cover_type="cover_blind",
+            grace_mgr=MagicMock(),
+        )
+        svc._enabled = True
+        entity_id = "cover.bedroom_blind"
+
+        # Step 1: Override clears inside window → apply_position(force=True, is_safety=False)
+        ctx = PositionContext(
+            auto_control=True,
+            manual_override=False,
+            sun_just_appeared=False,
+            min_change=5,
+            time_threshold=2,
+            special_positions=[0, 100],
+            force=True,
+            is_safety=False,
+        )
+        await svc.apply_position(entity_id, 55, "manual_override_cleared", context=ctx)
+        svc.wait_for_target[entity_id] = False  # cover reached position
+
+        # Step 2: Window closes → clear_non_safety_targets removes the target
+        svc.in_time_window = False
+        svc.clear_non_safety_targets()
+
+        # Reset the mock so we only track calls made BY reconciliation
+        hass.services.async_call.reset_mock()
+
+        # Step 3: Reconciliation — must NOT resend (target was cleared)
+        await svc._reconcile(dt.datetime.now(UTC))
+
+        hass.services.async_call.assert_not_called(), (
+            "Reconciliation must not resend the override-clear target outside the "
+            "time window — the entity was not safety-tagged and was cleaned up "
+            "when the window closed (fix for issue #223)."
         )

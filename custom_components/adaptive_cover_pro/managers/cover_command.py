@@ -50,6 +50,7 @@ class PositionContext:
     special_positions: list[int]
     inverse_state: bool = False
     force: bool = False  # Skip all gate checks when True
+    is_safety: bool = False  # Safety-critical target (persists across window boundaries)
     use_my_position: bool = (
         False  # Route through send_my_position() on non-position-capable covers
     )
@@ -147,7 +148,7 @@ class CoverCommandService:
         # so it doesn't fight the user by resending the old integration target.
         # Updated by the coordinator after every manual override state change.
         # Safety handlers (force override, weather) overwrite target_call via
-        # apply_position(force=True) so they always take effect regardless.
+        # apply_position(is_safety=True) so they always take effect regardless.
         self._manual_override_entities: set[str] = set()
 
         # Whether automatic control is currently enabled.  Synced by the
@@ -156,10 +157,10 @@ class CoverCommandService:
         # doesn't fight the user's intention to pause automation.
         self._auto_control_enabled: bool = True
 
-        # Entities whose current target_call was set via apply_position(force=True).
+        # Entities whose current target_call was set via apply_position(is_safety=True).
         # These are safety targets (force override, weather) and reconciliation
-        # must still resend them even when _auto_control_enabled is False.
-        # Cleared when a subsequent non-force target overwrites the entry.
+        # must still resend them even when _auto_control_enabled is False or the
+        # time window is closed.  Cleared when a non-safety target overwrites the entry.
         self._safety_targets: set[str] = set()
 
         # Whether the coordinator's operational time window is currently active.
@@ -260,8 +261,8 @@ class CoverCommandService:
 
         Called by the coordinator after each update cycle so reconciliation
         knows which entities to skip.  Safety handlers (force override,
-        weather) overwrite target_call via apply_position(force=True) so they
-        always take effect regardless of this set.
+        weather) overwrite target_call via apply_position(is_safety=True) so
+        they always take effect regardless of this set.
         """
         self._manual_override_entities = set(entities)
 
@@ -276,7 +277,7 @@ class CoverCommandService:
 
         Called by the coordinator each update cycle so reconciliation knows
         whether to resend non-safety targets.  When False, only targets that
-        were sent via apply_position(force=True) — i.e. safety overrides —
+        were sent via apply_position(is_safety=True) — i.e. safety overrides —
         are eligible for reconciliation resends.
         """
         self._auto_control_enabled = value
@@ -292,7 +293,7 @@ class CoverCommandService:
 
         Called by the coordinator each update cycle so reconciliation knows
         whether to resend non-safety targets.  When False, only safety targets
-        (sent via apply_position(force=True)) are eligible for reconciliation.
+        (sent via apply_position(is_safety=True)) are eligible for reconciliation.
         """
         self._in_time_window = value
 
@@ -812,7 +813,7 @@ class CoverCommandService:
             entity_id,
             position,
             context.inverse_state,
-            is_safety=context.force,
+            is_safety=context.is_safety,
             use_my_position=context.use_my_position,
         )
         if service is None:
@@ -938,10 +939,10 @@ class CoverCommandService:
         3. If entity is in ``_manual_override_entities`` → skip resend so
            reconciliation does not fight the user's intentional move.
            Safety handlers (force override, weather) overwrite ``target_call``
-           via ``apply_position(force=True)`` so they are always protected.
+           via ``apply_position(is_safety=True)`` so they are always protected.
         4. If ``_auto_control_enabled`` is False and the entity is not in
            ``_safety_targets`` → skip.  Safety targets (set via
-           ``apply_position(force=True)``) are still resent so covers reach
+           ``apply_position(is_safety=True)``) are still resent so covers reach
            a safe position regardless of the automatic control toggle.
         5. If ``_in_time_window`` is False and entity is not in ``_safety_targets``
            → skip.  Prevents stale daytime targets from being resent overnight.
@@ -986,8 +987,8 @@ class CoverCommandService:
             # 2. Skip entities under manual override — the user moved the cover
             # intentionally; resending the integration's stale target would fight
             # the user.  Safety handlers (force override, weather) bypass this by
-            # calling apply_position(force=True) which overwrites target_call with
-            # the safety position, so they are always protected by reconciliation.
+            # calling apply_position(is_safety=True) which overwrites target_call
+            # with the safety position, so they are always protected by reconciliation.
             if entity_id in self._manual_override_entities:
                 self._logger.debug(
                     "Reconcile: %s in manual override — skipping resend", entity_id
@@ -996,7 +997,7 @@ class CoverCommandService:
 
             # 3. Skip non-safety targets when automatic control is off.  Safety
             # targets (force override, weather) are still resent because they
-            # were placed via apply_position(force=True) and are tracked in
+            # were placed via apply_position(is_safety=True) and are tracked in
             # _safety_targets — covers must reach a safe position regardless of
             # the automatic control toggle.
             if not self._auto_control_enabled and entity_id not in self._safety_targets:
@@ -1216,8 +1217,9 @@ class CoverCommandService:
                 ``_execute_command`` so reconciliation retries do not reset the
                 counter they themselves manage.
             is_safety: If True, this target was set via a safety override
-                (force=True path).  Adds the entity to ``_safety_targets`` so
-                reconciliation will resend it even when automatic control is off.
+                (force override, weather handler).  Adds the entity to
+                ``_safety_targets`` so reconciliation will resend it even when
+                automatic control is off or outside the time window.
                 Non-safety targets remove the entity from ``_safety_targets``.
             use_my_position: If True and the cover lacks set_cover_position,
                 send cover.stop_cover to trigger the hardware My preset instead

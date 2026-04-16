@@ -614,6 +614,44 @@ class TestClimateDiagnostics:
         assert "active_temperature" not in diag
         assert "climate_strategy" not in diag
 
+    def test_climate_conditions_includes_cloud_coverage_above_threshold(
+        self, builder: DiagnosticsBuilder
+    ):
+        """climate_conditions must include cloud_coverage_above_threshold (Issue #222)."""
+        cd = self._make_climate_data()
+        pr = _make_pr(
+            control_method=ControlMethod.WINTER,
+            climate_data=cd,
+        )
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        conditions = diag["climate_conditions"]
+        assert "cloud_coverage_above_threshold" in conditions
+        assert conditions["cloud_coverage_above_threshold"] is False
+
+    def test_climate_conditions_cloud_coverage_true_when_active(
+        self, builder: DiagnosticsBuilder
+    ):
+        """cloud_coverage_above_threshold is True when the flag is set."""
+        cd = ClimateCoverData(
+            temp_low=20.0,
+            temp_high=25.0,
+            temp_switch=True,
+            blind_type="cover_blind",
+            transparent_blind=False,
+            temp_summer_outside=22.5,
+            outside_temperature="22.5",
+            inside_temperature="23.0",
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            winter_close_insulation=False,
+            cloud_coverage_above_threshold=True,
+        )
+        pr = _make_pr(control_method=ControlMethod.CLOUD, climate_data=cd)
+        diag, _ = builder.build(_base_ctx(climate_mode=True, pipeline_result=pr))
+        assert diag["climate_conditions"]["cloud_coverage_above_threshold"] is True
+
 
 # ---------------------------------------------------------------------------
 # Last action diagnostics

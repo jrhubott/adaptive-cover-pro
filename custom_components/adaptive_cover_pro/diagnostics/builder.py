@@ -386,6 +386,7 @@ class DiagnosticsBuilder:
                 "is_sunny": climate_data.is_sunny,
                 "lux_below_threshold": climate_data.lux_below_threshold,
                 "irradiance_below_threshold": climate_data.irradiance_below_threshold,
+                "cloud_coverage_above_threshold": climate_data.cloud_coverage_above_threshold,
             }
 
         return diagnostics
