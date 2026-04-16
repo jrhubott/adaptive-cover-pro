@@ -16,7 +16,6 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
-from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_AWNING_ANGLE,
@@ -151,30 +150,6 @@ _LOGGER = logging.getLogger(__name__)
 SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 
 _STANDALONE_SENTINEL = "__standalone__"
-
-# Icons for options menu — defined once here so all languages use the same icons.
-# Text labels come from translations at runtime.
-MENU_ICONS: dict[str, str] = {
-    "cover_entities": "🪟",
-    "geometry": "📐",
-    "sun_tracking": "☀️",
-    "position": "📊",
-    "interp": "📊",
-    "blind_spot": "🌳",
-    "glare_zones": "🔆",
-    "automation": "⏱️",
-    "light_cloud": "☁️",
-    "temperature_climate": "🌡️",
-    "force_override": "🚨",
-    "weather_override": "🌧️",
-    "manual_override": "✋",
-    "custom_position": "🎯",
-    "motion_override": "🚶",
-    "sync": "🔄",
-    "summary": "📋",
-    "debug": "🔍",
-    "done": "✅",
-}
 
 
 CONFIG_SCHEMA = vol.Schema(
@@ -2799,20 +2774,7 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Admin ────────────────────────────────────────────────────
         keys.extend(["summary", "debug", "done"])
 
-        # Fetch localized labels and prepend icons defined in MENU_ICONS
-        trans_prefix = "component.adaptive_cover_pro.options.step.init.menu_options."
-        translations = await async_get_translations(
-            self.hass,
-            self.hass.config.language,
-            "options",
-            integrations=["adaptive_cover_pro"],
-        )
-        menu_options: dict[str, str] = {
-            key: f"{MENU_ICONS.get(key, '')} {translations.get(f'{trans_prefix}{key}', key)}".strip()
-            for key in keys
-        }
-
-        return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
+        return self.async_show_menu(step_id="init", menu_options=keys)
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Adjust cover entities and device association on a single combined form."""
