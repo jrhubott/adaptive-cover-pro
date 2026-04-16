@@ -646,25 +646,47 @@ async def test_reconcile_with_force_override_sensor_scenario(svc, mock_hass):
 
 
 # ------------------------------------------------------------------ #
-# Bug fix: force=True commands mark safety targets;
-#          _reconcile skips non-safety targets when auto_control is off
+# is_safety flag controls safety target classification;
+# force flag is independent (bypasses gates only);
+# _reconcile skips non-safety targets when auto_control is off
 # ------------------------------------------------------------------ #
 
 
 @pytest.mark.asyncio
-async def test_force_apply_marks_safety_target(svc, mock_hass):
-    """apply_position(force=True) adds entity to _safety_targets."""
+async def test_safety_apply_marks_safety_target(svc, mock_hass):
+    """apply_position(is_safety=True) adds entity to _safety_targets."""
     _patch_position(svc, 30)
     with _patch_caps():
         await svc.apply_position(
-            "cover.test", 0, "force_override", context=_ctx(force=True)
+            "cover.test", 0, "force_override", context=_ctx(force=True, is_safety=True)
         )
     assert "cover.test" in svc._safety_targets
 
 
 @pytest.mark.asyncio
-async def test_non_force_apply_removes_from_safety_targets(svc, mock_hass):
-    """apply_position(force=False) removes entity from _safety_targets.
+async def test_force_without_is_safety_does_not_mark_safety_target(svc, mock_hass):
+    """apply_position(force=True, is_safety=False) does NOT add entity to _safety_targets.
+
+    force=True only bypasses gate checks (delta, time, manual override).
+    Safety target classification is controlled exclusively by is_safety.
+    Callers like _async_send_after_override_clear use force=True to bypass
+    gates but is_safety=False so the target does not persist across window
+    boundaries (fix for issue #223).
+    """
+    _patch_position(svc, 30)
+    with _patch_caps():
+        await svc.apply_position(
+            "cover.test",
+            0,
+            "manual_override_cleared",
+            context=_ctx(force=True, is_safety=False),
+        )
+    assert "cover.test" not in svc._safety_targets
+
+
+@pytest.mark.asyncio
+async def test_non_safety_apply_removes_from_safety_targets(svc, mock_hass):
+    """apply_position(is_safety=False) removes entity from _safety_targets.
 
     When a safety override clears and normal solar tracking resumes, the
     entity should no longer be treated as a safety target.
@@ -720,7 +742,7 @@ async def test_reconcile_still_resends_safety_target_when_auto_control_off(
     svc.wait_for_target["cover.test"] = False
     _patch_position(svc, 50)  # Cover hasn't reached safety position yet
 
-    # Mark as safety target (sent via force=True)
+    # Mark as safety target (sent via is_safety=True)
     svc._safety_targets.add("cover.test")
     # Automatic control is off
     svc.auto_control_enabled = False
@@ -785,7 +807,7 @@ async def test_reconcile_resends_safety_target_outside_time_window(svc, mock_has
     svc.wait_for_target["cover.test"] = False
     _patch_position(svc, 50)  # Cover hasn't reached safety position yet
 
-    # Mark as safety target (sent via force=True)
+    # Mark as safety target (sent via is_safety=True)
     svc._safety_targets.add("cover.test")
     # Time window is closed
     svc.in_time_window = False
@@ -932,7 +954,7 @@ async def test_safety_target_cleared_on_open_close_non_force(svc, mock_hass):
 
 @pytest.mark.asyncio
 async def test_safety_target_set_on_open_close_force(svc, mock_hass):
-    """Force apply on open/close-only covers marks entity as safety target."""
+    """Safety apply on open/close-only covers marks entity as safety target."""
     with patch(
         "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
         return_value={
@@ -943,7 +965,7 @@ async def test_safety_target_set_on_open_close_force(svc, mock_hass):
         },
     ):
         await svc.apply_position(
-            "cover.test", 0, "force_override", context=_ctx(force=True)
+            "cover.test", 0, "force_override", context=_ctx(force=True, is_safety=True)
         )
     assert "cover.test" in svc._safety_targets
 

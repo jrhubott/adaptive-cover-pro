@@ -145,11 +145,12 @@ class TestStateChangeWithSolarTracking:
             coordinator, state=55, options={}
         )
 
-        # _build_position_context must be called WITHOUT force=True
+        # _build_position_context must be called WITHOUT force=True or is_safety
         coordinator._build_position_context.assert_called_once_with(
             "cover.test",
             {},
             force=False,
+            is_safety=False,
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
@@ -227,6 +228,7 @@ class TestStateChangeWithDefaultPosition:
             "cover.blind",
             {},
             force=False,
+            is_safety=False,
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
@@ -440,6 +442,7 @@ class TestStateChangeWithSafetyHandlerBypass:
             "cover.test",
             {"test": True},
             force=True,  # ← safety bypass
+            is_safety=True,  # ← safety target classification
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
@@ -547,6 +550,7 @@ class TestForceOverrideRelease:
             "cover.test",
             {},
             force=True,  # ← must bypass time/position delta gates
+            is_safety=False,  # ← force override release is NOT a safety target
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
@@ -590,6 +594,7 @@ class TestForceOverrideRelease:
             "cover.test",
             {},
             force=False,  # ← normal solar tracking respects gates
+            is_safety=False,
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
@@ -620,6 +625,7 @@ class TestForceOverrideRelease:
             "cover.test",
             {},
             force=True,  # ← safety bypass from bypass_auto_control
+            is_safety=True,  # ← force override active = safety target
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 

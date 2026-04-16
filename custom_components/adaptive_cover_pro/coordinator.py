@@ -1159,6 +1159,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         options: dict,
         *,
         force: bool = False,
+        is_safety: bool = False,
         sun_just_appeared: bool = False,
     ) -> PositionContext:
         """Build a PositionContext for the given cover entity.
@@ -1169,7 +1170,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         Args:
             entity: Cover entity ID
             options: Config entry options dict
-            force: If True, all gate checks are bypassed
+            force: If True, all gate checks are bypassed (delta, time, manual
+                override).  Use for any intentional non-solar reposition.
+            is_safety: If True, the target is classified as safety-critical
+                (force override, weather) and will persist across window
+                boundaries — reconciliation will resend it even when outside
+                the active-hours window or with auto control off.  Must be
+                kept independent of ``force``: override-clear and toggle
+                actions need ``force=True`` (bypass gates) but
+                ``is_safety=False`` (don't persist past the window).
             sun_just_appeared: Pre-computed sun transition flag. Call
                 ``_check_sun_validity_transition()`` once before a multi-entity
                 loop and pass the result here so the stateful transition check
@@ -1185,6 +1194,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             special_positions=build_special_positions(options),
             inverse_state=self._inverse_state,
             force=force,
+            is_safety=is_safety,
             use_my_position=self._pipeline_result.use_my_position
             if self._pipeline_result
             else False,
@@ -1317,7 +1327,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
         for cover in self.entities:
             ctx = self._build_position_context(
-                cover, options, force=use_force, sun_just_appeared=sun_just_appeared
+                cover,
+                options,
+                force=use_force,
+                is_safety=is_safety,
+                sun_just_appeared=sun_just_appeared,
             )
             await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
         self.state_change = False
@@ -1421,7 +1435,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 continue
             ctx = self._build_position_context(
-                cover, options, force=is_safety, sun_just_appeared=sun_just_appeared
+                cover,
+                options,
+                force=is_safety,
+                is_safety=is_safety,
+                sun_just_appeared=sun_just_appeared,
             )
             await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
         self.first_refresh = False
