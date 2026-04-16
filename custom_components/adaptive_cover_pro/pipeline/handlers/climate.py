@@ -53,6 +53,7 @@ class ClimateCoverData:
     lux_below_threshold: bool
     irradiance_below_threshold: bool
     winter_close_insulation: bool
+    cloud_coverage_above_threshold: bool = False
 
     @property
     def get_current_temperature(self) -> float | None:
@@ -320,6 +321,7 @@ class ClimateHandler(OverrideHandler):
             lux_below_threshold=r.lux_below_threshold,
             irradiance_below_threshold=r.irradiance_below_threshold,
             winter_close_insulation=opts.winter_close_insulation,
+            cloud_coverage_above_threshold=r.cloud_coverage_above_threshold,
         )
 
         climate_cover_state = ClimateCoverState(snapshot, climate_data)

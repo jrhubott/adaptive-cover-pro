@@ -34,23 +34,28 @@ class CloudSuppressionHandler(OverrideHandler):
             return None
 
         r = snapshot.climate_readings
-        suppressed = (
-            not r.is_sunny
-            or r.lux_below_threshold
-            or r.irradiance_below_threshold
-            or r.cloud_coverage_above_threshold
-        )
-        if not suppressed:
+        triggers = []
+        if not r.is_sunny:
+            triggers.append("weather not sunny")
+        if r.lux_below_threshold:
+            triggers.append("lux below threshold")
+        if r.irradiance_below_threshold:
+            triggers.append("irradiance below threshold")
+        if r.cloud_coverage_above_threshold:
+            triggers.append("cloud coverage above threshold")
+
+        if not triggers:
             return None
 
         position = compute_default_position(snapshot)
         pos_label = (
             "sunset position" if snapshot.is_sunset_active else "default position"
         )
+        trigger_detail = ", ".join(triggers)
         return PipelineResult(
             position=position,
             control_method=ControlMethod.CLOUD,
-            reason=f"cloud/low-light suppression — no direct sun detected → {pos_label} {position}%",
+            reason=f"cloud/low-light suppression — {trigger_detail} → {pos_label} {position}%",
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
 

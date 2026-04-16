@@ -235,3 +235,84 @@ class TestCloudHandlerTimeWindow:
         )
         result = self.handler.evaluate(snap)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Reason string includes specific trigger labels (Issue #222)
+# ---------------------------------------------------------------------------
+
+
+class TestCloudHandlerReasonString:
+    """Reason string must identify which condition(s) triggered suppression."""
+
+    handler = CloudSuppressionHandler()
+
+    def test_reason_includes_weather_not_sunny(self) -> None:
+        """Reason must mention 'weather not sunny' when is_sunny is False."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "weather not sunny" in result.reason
+
+    def test_reason_includes_lux_below_threshold(self) -> None:
+        """Reason must mention 'lux below threshold' when lux fires."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=True, lux_below_threshold=True),
+            climate_options=_make_options(enabled=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "lux below threshold" in result.reason
+
+    def test_reason_includes_irradiance_below_threshold(self) -> None:
+        """Reason must mention 'irradiance below threshold' when irradiance fires."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(
+                is_sunny=True, irradiance_below_threshold=True
+            ),
+            climate_options=_make_options(enabled=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "irradiance below threshold" in result.reason
+
+    def test_reason_includes_cloud_coverage_above_threshold(self) -> None:
+        """Reason must mention 'cloud coverage above threshold' when cloud fires."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(
+                is_sunny=True, cloud_coverage_above_threshold=True
+            ),
+            climate_options=_make_options(enabled=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "cloud coverage above threshold" in result.reason
+
+    def test_reason_lists_multiple_triggers(self) -> None:
+        """When multiple conditions fire, all should appear in the reason string."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(
+                is_sunny=False,
+                lux_below_threshold=True,
+                cloud_coverage_above_threshold=True,
+            ),
+            climate_options=_make_options(enabled=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "weather not sunny" in result.reason
+        assert "lux below threshold" in result.reason
+        assert "cloud coverage above threshold" in result.reason
+
+    def test_reason_does_not_say_no_direct_sun_detected(self) -> None:
+        """Old generic phrase 'no direct sun detected' must not appear (Issue #222)."""
+        snap = make_snapshot(
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "no direct sun detected" not in result.reason
