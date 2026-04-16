@@ -168,6 +168,29 @@ def compute_effective_default(
     return effective, is_sunset_active
 
 
+def should_use_tilt(is_tilt_cover: bool, caps) -> bool:
+    """Return True if tilt services/attributes should be used for this cover.
+
+    Activates when the cover is configured as tilt OR when the entity only
+    supports tilt operations (has SET_TILT_POSITION but not SET_POSITION),
+    regardless of config-level sensor_type.
+
+    Args:
+        is_tilt_cover: Whether the cover is configured as ``cover_tilt``.
+        caps: Capability source — either a ``dict`` (from ``check_cover_features``)
+              or a ``CoverCapabilities`` dataclass.
+
+    """
+    if is_tilt_cover:
+        return True
+    if isinstance(caps, dict):
+        return not caps.get("has_set_position", True) and caps.get(
+            "has_set_tilt_position", False
+        )
+    # CoverCapabilities dataclass
+    return not caps.has_set_position and caps.has_set_tilt_position
+
+
 def get_open_close_state(hass: HomeAssistant, entity_id: str) -> int | None:
     """Map open/closed state to position value for open/close-only covers.
 
