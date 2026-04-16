@@ -23,7 +23,7 @@ from ..types import PipelineResult, PipelineSnapshot
 class GlareZoneHandler(OverrideHandler):
     """Lower the blind further when active glare zones need more protection than SolarHandler.
 
-    Priority 45 — between ClimateHandler (50) and SolarHandler (40).
+    Priority 55 — above ClimateHandler (50), below CloudSuppressionHandler (60).
     Only applies to vertical covers (cover_blind). Computes effective distances
     for all active glare zones using pure geometry, then returns a position
     based on the minimum (closest) zone distance when it is less than the
@@ -38,7 +38,7 @@ class GlareZoneHandler(OverrideHandler):
     """
 
     name = "glare_zone"
-    priority = 45
+    priority = 55
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return glare-zone-adjusted position when a zone requires deeper coverage."""

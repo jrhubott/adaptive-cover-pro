@@ -266,9 +266,9 @@ class TestGlareZoneHandlerLogic:
         assert "valid" in result.reason
         assert "blocked" not in result.reason
 
-    def test_priority_is_45(self) -> None:
-        """GlareZoneHandler has priority 45."""
-        assert GlareZoneHandler.priority == 45
+    def test_priority_is_55(self) -> None:
+        """GlareZoneHandler has priority 55 — above ClimateHandler (50), below CloudSuppressionHandler (60)."""
+        assert GlareZoneHandler.priority == 55
 
     def test_name(self) -> None:
         """GlareZoneHandler name is 'glare_zone'."""

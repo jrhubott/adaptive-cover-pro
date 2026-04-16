@@ -25,6 +25,12 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override impo
 from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
     MotionTimeoutHandler,
 )
+from unittest.mock import MagicMock, patch
+
+from custom_components.adaptive_cover_pro.config_types import GlareZone, GlareZonesConfig
+from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
+    GlareZoneHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
@@ -949,3 +955,136 @@ class TestClimateStrategyEndToEnd:
             "REGRESSION (Issue #134): climate_data.outside_temperature is None — "
             "outside_entity is not being forwarded to ClimateProvider.read()"
         )
+
+
+def _climate_readings_intermediate() -> ClimateReadings:
+    """Intermediate temperature — triggers GLARE_CONTROL strategy in ClimateHandler."""
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=22.0,  # between temp_low=18 and temp_high=26
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+
+
+def _climate_options_intermediate() -> ClimateOptions:
+    return ClimateOptions(
+        temp_low=18.0,
+        temp_high=26.0,
+        temp_switch=False,
+        transparent_blind=False,
+        temp_summer_outside=None,
+        cloud_suppression_enabled=False,
+        winter_close_insulation=False,
+    )
+
+
+def _make_glare_climate_cover(calculate_percentage_return: float = 91.0):
+    """Mock vertical cover satisfying both GlareZoneHandler and ClimateHandler."""
+    cover = MagicMock()
+    cover.direct_sun_valid = True
+    cover.valid = True
+    cover.distance = 3.0
+    cover.gamma = 0.0
+    cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    config = MagicMock()
+    config.min_pos = None
+    config.max_pos = None
+    config.min_pos_sun_only = False
+    config.max_pos_sun_only = False
+    cover.config = config
+    return cover
+
+
+class TestGlareZoneVsClimatePriority:
+    """Regression for issue #231 — glare zone must beat climate's GLARE_CONTROL strategy."""
+
+    def _make_registry(self) -> PipelineRegistry:
+        return PipelineRegistry(
+            [
+                ForceOverrideHandler(),
+                ManualOverrideHandler(),
+                MotionTimeoutHandler(),
+                CloudSuppressionHandler(),
+                GlareZoneHandler(),
+                ClimateHandler(),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
+
+    def test_glare_zone_beats_climate_glare_control(self) -> None:
+        """Glare zone overrides climate's solar-tracking position when a zone is active.
+
+        REGRESSION (Issue #231): GlareZoneHandler.priority was 45, below
+        ClimateHandler (50). Climate's GLARE_CONTROL strategy (pure solar tracking)
+        always won, making glare zones completely ineffective when climate mode was on.
+        """
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="tv", x=0.0, y=150.0, radius=30.0)],
+            window_width=120.0,
+        )
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=glare_cfg,
+            active_zone_names={"tv"},
+        )
+        # effective distance 1.0m < base_distance 3.0m → zone demands more coverage
+        with patch(
+            "custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone.glare_zone_effective_distance",
+            return_value=1.0,
+        ):
+            result = self._make_registry().evaluate(snap)
+
+        assert result.control_method == ControlMethod.GLARE_ZONE, (
+            "REGRESSION (Issue #231): GlareZoneHandler was outprioritized by "
+            "ClimateHandler even though climate was only doing solar tracking."
+        )
+
+    def test_climate_wins_when_no_glare_zones_active(self) -> None:
+        """Climate wins normally when no glare zones are configured."""
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=None,
+            active_zone_names=set(),
+        )
+        result = self._make_registry().evaluate(snap)
+        assert result.control_method != ControlMethod.GLARE_ZONE
+
+    def test_climate_wins_when_zone_beyond_base_distance(self) -> None:
+        """Climate wins when the glare zone is beyond the base distance (already shaded)."""
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="tv", x=0.0, y=150.0, radius=30.0)],
+            window_width=120.0,
+        )
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=glare_cfg,
+            active_zone_names={"tv"},
+        )
+        # effective distance 5.0m >= base_distance 3.0m → zone already shaded, fall through
+        with patch(
+            "custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone.glare_zone_effective_distance",
+            return_value=5.0,
+        ):
+            result = self._make_registry().evaluate(snap)
+
+        assert result.control_method != ControlMethod.GLARE_ZONE
