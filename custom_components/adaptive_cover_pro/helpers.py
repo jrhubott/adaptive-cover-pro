@@ -82,9 +82,15 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
         _LOGGER.debug("Cover %s state not available yet", entity_id)
         return None
 
-    # Check if entity is ready
-    if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-        _LOGGER.debug("Cover %s not ready (state: %s)", entity_id, state.state)
+    # STATE_UNAVAILABLE means the entity has no data at all — skip it.
+    # STATE_UNKNOWN is safe to proceed: Z-Wave covers often report unknown
+    # positional state permanently but still populate supported_features.
+    if state.state == STATE_UNAVAILABLE:
+        _LOGGER.debug("Cover %s unavailable, skipping capability check", entity_id)
+        return None
+
+    if state.state == STATE_UNKNOWN and "supported_features" not in state.attributes:
+        _LOGGER.debug("Cover %s unknown state with no features, skipping", entity_id)
         return None
 
     # Check if supported_features attribute exists
