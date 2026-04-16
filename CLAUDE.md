@@ -163,9 +163,10 @@ git add release_notes/vX.Y.Z.md && git commit -m "docs: Add release notes for vX
 | Branch | Release type | Command |
 |--------|-------------|---------|
 | `feature/*`, `fix/*` | Beta (prerelease) | `./scripts/release beta ...` |
+| `main` | Beta (prerelease) | `./scripts/release beta ...` |
 | `main` | Stable | `./scripts/release patch ...` |
 
-⚠️ If creating beta from main, STOP — create a feature branch first.  
+⚠️ Beta releases from main are allowed — the script warns and confirms automatically.  
 ⚠️ Only create releases when explicitly requested by the user. NEVER create proactively.
 
 **Release notes rules:** ❌ No `Co-Authored-By:` or AI attributions. ✅ Always use `--notes release_notes/vX.Y.Z.md` (never `--editor`).
