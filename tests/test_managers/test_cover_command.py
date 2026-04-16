@@ -483,3 +483,50 @@ def test_build_special_positions_with_actual_keys():
     assert 10 in positions
     assert 0 in positions
     assert 100 in positions
+
+
+# --- Tilt-only entity under cover_blind config (bug fix coverage) ---
+
+
+def test_prepare_service_call_tilt_only_under_cover_blind(mock_hass, logger, grace_mgr):
+    """Tilt-only entity (features=240) under cover_blind must use set_cover_tilt_position."""
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        open_close_threshold=50,
+    )
+    # Caps that mimic supported_features=240 (tilt-only: SET_TILT_POSITION + OPEN_TILT + CLOSE_TILT + STOP_TILT)
+    caps = {
+        "has_set_position": False,
+        "has_set_tilt_position": True,
+        "has_open": False,
+        "has_close": False,
+    }
+    service, data, supports_position = svc._prepare_service_call(
+        "cover.tilt_only_blind", 45, caps=caps
+    )
+    assert service == "set_cover_tilt_position"
+    assert data["tilt_position"] == 45
+    assert data["entity_id"] == "cover.tilt_only_blind"
+    assert supports_position is True
+
+
+def test_read_position_tilt_only_under_cover_blind(mock_hass, logger, grace_mgr):
+    """Tilt-only entity under cover_blind must read current_tilt_position, not current_position."""
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        open_close_threshold=50,
+    )
+    caps = {"has_set_position": False, "has_set_tilt_position": True}
+    state_obj = MagicMock()
+    state_obj.attributes = {"current_tilt_position": 60, "current_position": None}
+
+    result = svc._read_position_with_capabilities(
+        "cover.tilt_only_blind", caps, state_obj
+    )
+    assert result == 60
