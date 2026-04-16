@@ -283,7 +283,7 @@
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
           "interp": "Position Calibration",
-          "automation": "Wijzig Automatiseringsinstellingen",
+          "automation": "⏱ Wijzig Automatiseringsinstellingen",
           "climate": "Bewerk Klimaatconfiguratie",
           "weather": "Weather Conditions",
           "manual_override": "Manual Override",

@@ -295,7 +295,7 @@
           "blind_spot": "Blind Spot",
           "glare_zones": "Glare Zones",
           "interp": "Interpolation",
-          "automation": "Schedule & Timing",
+          "automation": "⏱ Schedule & Timing",
           "climate": "Climate Configuration",
           "weather": "Weather Conditions",
           "manual_override": "Manual Override",
@@ -304,7 +304,11 @@
           "weather_override": "Weather Override",
           "summary": "Configuration Summary",
           "sync": "Copy Settings to Other Covers",
-          "done": "Save & Exit"
+          "done": "Save & Exit",
+          "custom_position": "Custom Positions",
+          "debug": "Debug & Diagnostics",
+          "light_cloud": "Light Sensors & Cloud",
+          "temperature_climate": "Temperature & Climate"
         }
       },
       "automation": {

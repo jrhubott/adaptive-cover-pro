@@ -668,6 +668,49 @@ async def test_options_flow_menu_includes_glare_zones_for_blind_cover(
     assert "glare_zones" in result.get("menu_options", [])
 
 
+@pytest.mark.integration
+async def test_options_flow_menu_returns_list_not_dict(
+    hass: HomeAssistant,
+) -> None:
+    """menu_options must be a list so HA translates client-side (issue #227)."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Lang Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="lang_menu_01",
+        title="Lang Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    assert isinstance(result["menu_options"], list), (
+        f"menu_options should be a list for client-side translation, got {type(result['menu_options'])}"
+    )
+
+
+def test_config_flow_does_not_import_async_get_translations() -> None:
+    """config_flow must not import async_get_translations (issue #227).
+
+    Server-side translation fetching used self.hass.config.language (system language)
+    rather than the per-user language. The fix removes the import entirely and lets
+    HA's frontend translate menu labels client-side.
+    """
+    import importlib
+    import custom_components.adaptive_cover_pro.config_flow as cf_module
+
+    importlib.reload(cf_module)
+    assert not hasattr(cf_module, "async_get_translations"), (
+        "config_flow must not import async_get_translations — "
+        "menu translation should be handled client-side by HA's frontend"
+    )
+
+
 # ---------------------------------------------------------------------------
 # OptionsFlow: parameterized form steps
 # ---------------------------------------------------------------------------
