@@ -94,8 +94,8 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
         return None
 
     if state.state == STATE_UNKNOWN and "supported_features" in state.attributes:
-        _LOGGER.warning(
-            "[adaptive_cover_pro PATCH v1] Cover %s: unknown state but supported_features=%s present — proceeding with capability check (tilt-only fix active)",
+        _LOGGER.debug(
+            "Cover %s: unknown state but supported_features=%s present — proceeding with capability check",
             entity_id,
             state.attributes.get("supported_features"),
         )
