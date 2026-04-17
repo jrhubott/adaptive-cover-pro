@@ -79,6 +79,27 @@ class TimeWindowManager:
             self.logger.error("Start time is after end time")
         return self.before_end_time and self.after_start_time
 
+    def _normalize_to_today(self, time: dt.datetime) -> dt.datetime:
+        """Normalize a future-dated entity time to today's date.
+
+        Sun entity sensors (e.g., sensor.sun_next_rising) roll forward to
+        tomorrow's datetime once the event passes. This method pins such times
+        back to today so time window comparisons work correctly for the
+        remainder of the current day.
+
+        Args:
+            time: Parsed datetime from an entity sensor.
+
+        Returns:
+            The datetime with today's date if the original was a future date,
+            otherwise unchanged.
+
+        """
+        today = dt.date.today()
+        if time.date() > today:
+            return time.replace(year=today.year, month=today.month, day=today.day)
+        return time
+
     @property
     def after_start_time(self) -> bool:
         """Check if current time is after start time.
@@ -100,6 +121,7 @@ class TimeWindowManager:
                     self._start_time_entity,
                 )
                 return True
+            time = self._normalize_to_today(time)
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s ", time, now, now >= time
             )
@@ -134,6 +156,8 @@ class TimeWindowManager:
             time = get_datetime_from_str(
                 get_safe_state(self._hass, self._end_time_entity)
             )
+            if time is not None:
+                time = self._normalize_to_today(time)
         elif self._end_time_config is not None:
             time = get_datetime_from_str(self._end_time_config)
             if time is not None and time.time() == dt.time(0, 0):
