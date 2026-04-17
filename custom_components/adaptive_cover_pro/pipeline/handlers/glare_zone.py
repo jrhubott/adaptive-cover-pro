@@ -23,11 +23,16 @@ from ..types import PipelineResult, PipelineSnapshot
 class GlareZoneHandler(OverrideHandler):
     """Lower the blind further when active glare zones need more protection than SolarHandler.
 
-    Priority 45 — between ClimateHandler (50) and SolarHandler (40).
+    Priority 45 — below ClimateHandler (50), above SolarHandler (40).
     Only applies to vertical covers (cover_blind). Computes effective distances
     for all active glare zones using pure geometry, then returns a position
     based on the minimum (closest) zone distance when it is less than the
     cover's base distance.
+
+    ClimateHandler defers its GLARE_CONTROL case (returns None), so this
+    handler fires naturally when climate mode is on and the sun is tracking.
+    When climate mode is off, this handler fires directly after time-window
+    and cover-type gates.
 
     Geometry: smaller effective distance → lower position% → more blind deployed.
     A zone closer to the window than the base distance is in the illuminated area

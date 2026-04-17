@@ -25,6 +25,12 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override impo
 from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
     MotionTimeoutHandler,
 )
+from unittest.mock import MagicMock, patch
+
+from custom_components.adaptive_cover_pro.config_types import GlareZone, GlareZonesConfig
+from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
+    GlareZoneHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
@@ -91,7 +97,7 @@ def _climate_options_summer() -> ClimateOptions:
         temp_low=18.0,
         temp_high=26.0,
         temp_switch=False,
-        transparent_blind=False,
+        transparent_blind=True,  # triggers SUMMER_COOLING close — climate wins directly
         temp_summer_outside=None,
         cloud_suppression_enabled=False,
         winter_close_insulation=False,
@@ -553,11 +559,12 @@ class TestClimateStrategyEndToEnd:
         assert result.position == 0
 
     def test_summer_strategy_with_presence_tracks_solar(self) -> None:
-        """Presence + summer + opaque blind → SUMMER method but solar-tracked position.
+        """Presence + summer + opaque blind → climate defers, SolarHandler tracks sun.
 
-        When occupants are present and the blind is opaque, summer strategy keeps
-        the blind in solar-tracking mode (GLARE_CONTROL) rather than closing fully.
-        Closing fully with occupants present would block all natural light.
+        When occupants are present and the blind is opaque, ClimateHandler defers
+        (GLARE_CONTROL strategy returns None) so SolarHandler wins at priority 40.
+        The cover solar-tracks rather than closing fully — same position outcome as
+        before, but now cleanly owned by SolarHandler.
         """
         readings = ClimateReadings(
             outside_temperature=None,
@@ -572,7 +579,7 @@ class TestClimateStrategyEndToEnd:
             temp_low=18.0,
             temp_high=26.0,
             temp_switch=False,
-            transparent_blind=False,  # opaque blind
+            transparent_blind=False,  # opaque blind → climate defers
             temp_summer_outside=None,
             cloud_suppression_enabled=False,
             winter_close_insulation=False,
@@ -585,8 +592,8 @@ class TestClimateStrategyEndToEnd:
             calculate_percentage_return=60.0,
         )
         result = self.registry.evaluate(snap)
-        # SUMMER control method (temperature is above threshold) but position is solar
-        assert result.control_method == ControlMethod.SUMMER
+        # SolarHandler wins (climate deferred) — SOLAR control method, solar-tracked position
+        assert result.control_method == ControlMethod.SOLAR
         assert result.position == 60  # solar-tracked, not closed
 
     def test_summer_strategy_with_presence_and_transparent_blind_closes(self) -> None:
@@ -758,9 +765,9 @@ class TestClimateStrategyEndToEnd:
             calculate_percentage_return=55.0,
         )
         result = self.registry.evaluate(snap)
-        # Not summer, not winter → control_method is SOLAR (glare control path)
+        # Not summer, not winter → climate defers (GLARE_CONTROL), SolarHandler wins
         assert result.control_method == ControlMethod.SOLAR, (
-            "With null temperature, climate mode should degrade to glare control (SOLAR). "
+            "With null temperature, climate defers to SolarHandler (SOLAR). "
             "If this changes, update this test and the Issue #134 regression notes."
         )
 
@@ -783,7 +790,7 @@ class TestClimateStrategyEndToEnd:
             temp_low=18.0,
             temp_high=26.0,
             temp_switch=True,  # use outside temp
-            transparent_blind=False,
+            transparent_blind=True,  # SUMMER_COOLING path — climate closes to 0%
             temp_summer_outside=None,  # no secondary outside gate
             cloud_suppression_enabled=False,
             winter_close_insulation=False,
@@ -928,7 +935,7 @@ class TestClimateStrategyEndToEnd:
             temp_low=18.0,
             temp_high=26.0,
             temp_switch=False,
-            transparent_blind=False,
+            transparent_blind=True,  # SUMMER_COOLING → climate wins, climate_data on result
             temp_summer_outside=None,
             cloud_suppression_enabled=False,
             winter_close_insulation=False,
@@ -949,3 +956,163 @@ class TestClimateStrategyEndToEnd:
             "REGRESSION (Issue #134): climate_data.outside_temperature is None — "
             "outside_entity is not being forwarded to ClimateProvider.read()"
         )
+
+
+def _climate_readings_intermediate() -> ClimateReadings:
+    """Intermediate temperature — ClimateHandler defers (returns None) for GLARE_CONTROL."""
+    return ClimateReadings(
+        outside_temperature=None,
+        inside_temperature=22.0,  # between temp_low=18 and temp_high=26
+        is_presence=True,
+        is_sunny=True,
+        lux_below_threshold=False,
+        irradiance_below_threshold=False,
+        cloud_coverage_above_threshold=False,
+    )
+
+
+def _climate_options_intermediate() -> ClimateOptions:
+    return ClimateOptions(
+        temp_low=18.0,
+        temp_high=26.0,
+        temp_switch=False,
+        transparent_blind=False,
+        temp_summer_outside=None,
+        cloud_suppression_enabled=False,
+        winter_close_insulation=False,
+    )
+
+
+def _make_glare_climate_cover(calculate_percentage_return: float = 91.0):
+    """Mock vertical cover satisfying both GlareZoneHandler and ClimateHandler."""
+    cover = MagicMock()
+    cover.direct_sun_valid = True
+    cover.valid = True
+    cover.distance = 3.0
+    cover.gamma = 0.0
+    cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
+    config = MagicMock()
+    config.min_pos = None
+    config.max_pos = None
+    config.min_pos_sun_only = False
+    config.max_pos_sun_only = False
+    cover.config = config
+    return cover
+
+
+class TestGlareZoneVsClimatePriority:
+    """Regression for issue #231 — glare zone wins because climate defers GLARE_CONTROL."""
+
+    def _make_registry(self) -> PipelineRegistry:
+        return PipelineRegistry(
+            [
+                ForceOverrideHandler(),
+                ManualOverrideHandler(),
+                MotionTimeoutHandler(),
+                CloudSuppressionHandler(),
+                GlareZoneHandler(),
+                ClimateHandler(),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
+
+    def test_glare_zone_beats_climate_glare_control(self) -> None:
+        """Glare zone wins when climate mode defers in the intermediate-season case.
+
+        REGRESSION (Issue #231): ClimateHandler previously computed solar position
+        directly for GLARE_CONTROL and outprioritized GlareZoneHandler (priority 45).
+        Fix: ClimateHandler returns None for GLARE_CONTROL, allowing GlareZoneHandler
+        to fire naturally at priority 45 (below ClimateHandler at 50).
+        """
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="tv", x=0.0, y=150.0, radius=30.0)],
+            window_width=120.0,
+        )
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=glare_cfg,
+            active_zone_names={"tv"},
+        )
+        # effective distance 1.0m < base_distance 3.0m → zone demands more coverage
+        with patch(
+            "custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone.glare_zone_effective_distance",
+            return_value=1.0,
+        ):
+            result = self._make_registry().evaluate(snap)
+
+        assert result.control_method == ControlMethod.GLARE_ZONE, (
+            "REGRESSION (Issue #231): GlareZone must win when climate defers "
+            "the glare-control case to lower-priority handlers."
+        )
+
+    def test_solar_wins_when_no_glare_zones_active(self) -> None:
+        """Solar wins when climate defers and no glare zones are configured."""
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=None,
+            active_zone_names=set(),
+        )
+        result = self._make_registry().evaluate(snap)
+        assert result.control_method == ControlMethod.SOLAR
+
+    def test_solar_wins_when_zone_beyond_base_distance(self) -> None:
+        """Solar wins when climate defers and the glare zone is already shaded."""
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="tv", x=0.0, y=150.0, radius=30.0)],
+            window_width=120.0,
+        )
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=glare_cfg,
+            active_zone_names={"tv"},
+        )
+        # effective distance 5.0m >= base_distance 3.0m → zone already shaded, fall through
+        with patch(
+            "custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone.glare_zone_effective_distance",
+            return_value=5.0,
+        ):
+            result = self._make_registry().evaluate(snap)
+
+        assert result.control_method != ControlMethod.GLARE_ZONE
+
+    def test_climate_wins_directly_when_no_presence(self) -> None:
+        """Climate wins directly (no defer) when nobody is home — never reaches glare/solar."""
+        no_presence_readings = ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=22.0,
+            is_presence=False,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        )
+        snap = make_snapshot(
+            cover=_make_glare_climate_cover(),
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=no_presence_readings,
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            glare_zones=None,
+            active_zone_names=set(),
+        )
+        result = self._make_registry().evaluate(snap)
+        # normal_without_presence returns default — climate wins and populates climate_data
+        assert result.climate_data is not None  # climate won (not glare/solar which have no climate_data)
+        assert result.control_method != ControlMethod.GLARE_ZONE

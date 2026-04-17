@@ -217,8 +217,8 @@ Regardless of which calculation mode is active, every position decision passes t
 | 1–99 | **Custom position** | Up to 4 configurable binary-sensor/position pairs; when a sensor is on, the cover moves to the configured position (or uses it as a minimum floor). Each slot has an individual priority (default 77) |
 | 75 | **Motion timeout** | If all occupancy sensors report no motion for the configured timeout, cover returns to default position |
 | 60 | **Cloud suppression** | Lux, irradiance, cloud coverage, or weather state indicates no direct sun; solar tracking is skipped and cover returns to default |
-| 50 | **Climate** | Active when Climate mode is enabled — applies temperature/presence/light strategy (see below) |
-| 45 | **Glare zone** | Vertical blinds only — sun would reach a named floor zone; cover extends to shield that area |
+| 50 | **Climate** | Active when Climate mode is enabled — applies temperature/presence/light strategy (see below); defers sun-tracking decisions to glare zone and solar handlers |
+| 45 | **Glare zone** | Vertical blinds only — sun would reach a named floor zone; cover extends further than solar tracking alone to shield that area |
 | 40 | **Solar** | Active when sun is within the window's field of view and elevation limits — uses calculated sun-tracking position |
 | 0 | **Default** | Final fallback — returns the configured default position (or sunset position if applicable) |
 
@@ -246,7 +246,9 @@ The pipeline skips the Climate handler (priority 50). When the sun is within the
 >
 > **Temperature Unit Consistency Required:** All temperature sensors must use the same unit system (°C or °F). The integration does not automatically convert between units. See [Known Limitations](#known-limitations--best-practices) for details.
 
-Climate mode enables the Climate handler (priority 50), which takes precedence over solar tracking. It uses indoor temperature, presence, weather, and light sensors to choose a strategy. Decisions are made in priority order — the first matching condition wins.
+Climate mode enables the Climate handler (priority 50), which sits above glare zone (45) and solar (40) in the pipeline. It uses indoor temperature, presence, weather, and light sensors to choose a strategy. Decisions are made in priority order — the first matching condition wins.
+
+**Fall-through when presence is detected:** When presence is detected and conditions don't require winter heating, low-light defaults, or summer cooling on a transparent blind, Climate deliberately returns no result and lets the pipeline fall through to the Glare Zone handler (priority 45) and then Solar handler (priority 40). This means sun-tracking position is always computed by a single source of truth — the Solar handler — rather than duplicated inside Climate. The Decision Trace will show `climate: matched=False, reason=deferred glare-control to solar/glare handlers` in this case.
 
 ```mermaid
 graph TD
@@ -284,7 +286,7 @@ graph TD
     CP2 -->|Yes| CP_L["Default position"]
     CP2 -->|No| CP3{"Summer?\n(temp > max comfort\n+ transparent blind)"}
     CP3 -->|Yes| CP_S["0% — fully closed\n(heat blocking)"]
-    CP3 -->|No| CP_G["Calculated position\n(glare control)"]
+    CP3 -->|No| CP_G["Defer → Glare Zone / Solar\n(presence + sunny day)"]
 
     CA -->|No| CN1{"Sun in\nfield of view?"}
     CN1 -->|No| CN_D["Default position"]
@@ -304,7 +306,7 @@ graph TD
   1. **Winter heating**: Indoor temperature below the minimum comfort threshold and sun in front of the window → open to 100% for passive solar heating. Takes priority over all other conditions.
   2. **Low light**: Not summer, and light levels are low (lux/irradiance below threshold) or weather is not sunny → default position to maximise daylight.
   3. **Summer cooling**: Indoor temperature above the maximum comfort threshold **and the "Transparent blind" option is enabled** → close to 0% to block heat while still allowing diffused light through sheer fabric. If "Transparent blind" is off (opaque blind), this step is skipped and the calculated sun-tracking position is used instead.
-  4. **Glare control**: All other conditions (comfortable temperature, sunny day) → calculated sun-tracking position.
+  4. **Glare control / fall-through**: All other conditions (comfortable temperature, sunny day) → Climate returns no result and the pipeline falls through to Glare Zone (priority 45, if a protected floor zone is in the sun's path) and then Solar (priority 40, for standard sun-tracking position). This keeps sun-position calculations in a single place rather than duplicating them inside Climate.
 
 - **Without Presence**:
   The objective is energy efficiency; glare and daylight are not considered.

@@ -267,7 +267,7 @@ class TestGlareZoneHandlerLogic:
         assert "blocked" not in result.reason
 
     def test_priority_is_45(self) -> None:
-        """GlareZoneHandler has priority 45."""
+        """GlareZoneHandler has priority 45 — below ClimateHandler (50), above SolarHandler (40)."""
         assert GlareZoneHandler.priority == 45
 
     def test_name(self) -> None:
@@ -794,3 +794,4 @@ class TestGlareZoneRegressionMaxVsMin:
             active_zone_names={"couch"},
         )
         assert self.handler.evaluate(snap) is None
+
