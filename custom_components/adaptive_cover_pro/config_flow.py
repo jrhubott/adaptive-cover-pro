@@ -1006,7 +1006,9 @@ def _check_cover_capabilities(
 
     if known:
         has_pos = {eid for eid, caps in known.items() if caps.get("has_set_position")}
-        no_pos = {eid for eid, caps in known.items() if not caps.get("has_set_position")}
+        no_pos = {
+            eid for eid, caps in known.items() if not caps.get("has_set_position")
+        }
 
         if has_pos and no_pos:
             warnings.append(
