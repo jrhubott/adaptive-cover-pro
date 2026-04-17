@@ -714,7 +714,7 @@ The Target Position sensor (`cover_position`) exposes two attributes that answer
 | **`reason`** | Pipeline (override priority chain) | *Which rule won?* | `"no active condition — default position 100%"` |
 | **`position_explanation`** | Calculation engine (post-pipeline) | *Where did this number come from?* | `"Sunset Position (100%)"` |
 
-**`reason`** reflects the pipeline decision. The integration evaluates ten handlers in priority order — force override (100) → weather (90) → manual override (80) → custom position (1–99) → motion timeout (75) → cloud suppression (60) → glare zone (55) → climate (50) → solar (40) → default (0). The `reason` tells you which handler claimed control and why it won.
+**`reason`** reflects the pipeline decision. The integration evaluates ten handlers in priority order — force override (100) → weather (90) → manual override (80) → custom position (1–99) → motion timeout (75) → cloud suppression (60) → climate (50) → glare zone (45) → solar (40) → default (0). The `reason` tells you which handler claimed control and why it won.
 
 **`position_explanation`** reflects what happened *after* the pipeline chose a position. Even when the same handler wins, the final number can differ due to sunset/sunrise position settings, min/max position limits, inverse state, interpolation, or safety margins. The `position_explanation` traces those post-pipeline adjustments.
 
