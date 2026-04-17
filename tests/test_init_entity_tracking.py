@@ -13,10 +13,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_END_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_SENSOR_TYPE,
+    CONF_START_ENTITY,
     DOMAIN,
     SensorType,
 )
@@ -149,3 +151,32 @@ async def test_unset_climate_entities_not_in_tracked_list(hass) -> None:
         "sensor.outside_temp",
     ]:
         assert entity_id not in all_tracked
+
+
+async def test_start_entity_tracked(hass) -> None:
+    """Start time entity (e.g. sensor.sun_next_rising) triggers pipeline refresh when it rolls over."""
+    _, calls = await _setup_entry_capture_tracked(
+        hass,
+        extra_options={CONF_START_ENTITY: "sensor.sun_next_rising"},
+        entry_id="track_start_01",
+    )
+    all_tracked = [e for call in calls for e in call]
+    assert "sensor.sun_next_rising" in all_tracked, (
+        "CONF_START_ENTITY must be registered for state-change tracking so the "
+        "coordinator refreshes immediately when sensor.sun_next_rising rolls over "
+        "to tomorrow after sunrise."
+    )
+
+
+async def test_end_entity_tracked(hass) -> None:
+    """End time entity (e.g. sensor.sun_next_setting) triggers pipeline refresh when it rolls over."""
+    _, calls = await _setup_entry_capture_tracked(
+        hass,
+        extra_options={CONF_END_ENTITY: "sensor.sun_next_setting"},
+        entry_id="track_end_01",
+    )
+    all_tracked = [e for call in calls for e in call]
+    assert "sensor.sun_next_setting" in all_tracked, (
+        "CONF_END_ENTITY must be registered for state-change tracking so the "
+        "coordinator refreshes immediately when sensor.sun_next_setting rolls over."
+    )

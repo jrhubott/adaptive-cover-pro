@@ -189,7 +189,7 @@ Min interval: 2 min · Inverse state · Interpolation on
 
 Decision Priority (highest wins, ✅ active ❌ not configured)
 ✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Custom(77) → ❌Motion(75) → ✅Cloud(60)
-→ ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
+→ ❌Glare(55) → ✅Climate(50) → ✅Solar(40) → ✅Default(0)
 ```
 
 ## Cover Types
@@ -714,7 +714,7 @@ The Target Position sensor (`cover_position`) exposes two attributes that answer
 | **`reason`** | Pipeline (override priority chain) | *Which rule won?* | `"no active condition — default position 100%"` |
 | **`position_explanation`** | Calculation engine (post-pipeline) | *Where did this number come from?* | `"Sunset Position (100%)"` |
 
-**`reason`** reflects the pipeline decision. The integration evaluates ten handlers in priority order — force override (100) → weather (90) → manual override (80) → custom position (1–99) → motion timeout (75) → cloud suppression (60) → climate (50) → glare zone (45) → solar (40) → default (0). The `reason` tells you which handler claimed control and why it won.
+**`reason`** reflects the pipeline decision. The integration evaluates ten handlers in priority order — force override (100) → weather (90) → manual override (80) → custom position (1–99) → motion timeout (75) → cloud suppression (60) → glare zone (55) → climate (50) → solar (40) → default (0). The `reason` tells you which handler claimed control and why it won.
 
 **`position_explanation`** reflects what happened *after* the pipeline chose a position. Even when the same handler wins, the final number can differ due to sunset/sunrise position settings, min/max position limits, inverse state, interpolation, or safety margins. The `position_explanation` traces those post-pipeline adjustments.
 
@@ -1065,7 +1065,7 @@ Only rules that are configured and active are shown. Unconfigured features are o
 **Decision Priority** — a single line showing all 10 pipeline handlers in priority order with ✅ (active in your config) or ❌ (not configured) for each:
 ```
 ✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Custom(77) → ❌Motion(75) → ✅Cloud(60)
- → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
+ → ❌Glare(55) → ✅Climate(50) → ✅Solar(40) → ✅Default(0)
 ```
 This answers the common question: *"what overrides what?"* — the leftmost ✅ handler that fires wins.
 

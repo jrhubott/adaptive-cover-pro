@@ -329,7 +329,7 @@ def test_check_cover_features_returns_none_when_unknown(mock_hass):
     """Test check_cover_features returns None when entity unknown."""
     state_obj = MagicMock()
     state_obj.state = "unknown"
-    state_obj.attributes = {"supported_features": 15}
+    state_obj.attributes = {}
     mock_hass.states.get.return_value = state_obj
 
     result = check_cover_features(mock_hass, "cover.test")

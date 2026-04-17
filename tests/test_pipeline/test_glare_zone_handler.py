@@ -14,6 +14,8 @@ from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
+from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
 
 

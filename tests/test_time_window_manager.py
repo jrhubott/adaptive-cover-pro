@@ -324,3 +324,251 @@ async def test_check_transition_no_callback_on_window_open():
         await mgr.check_transition(track_end_time=True, refresh_callback=callback)
 
     callback.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Sun entity rollover normalization (#226)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_after_start_time_entity_normalizes_tomorrow_to_today():
+    """Sun entity rolled to tomorrow's date is normalized back to today.
+
+    After today's sunrise passes, sensor.sun_next_rising flips to tomorrow's
+    datetime. after_start_time must still return True for the rest of today.
+    """
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="sensor.sun_next_rising",
+        end_time=None,
+        end_time_entity=None,
+    )
+
+    today = dt.date.today()
+    tomorrow = today + dt.timedelta(days=1)
+    # Simulate the sensor reporting tomorrow's sunrise (06:30 tomorrow)
+    tomorrow_sunrise = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 6, 30)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=tomorrow_sunrise,
+        ),
+    ):
+        result = mgr.after_start_time
+
+    # Normalized to today at 06:30 — which is in the past during any normal test run
+    assert result is True
+
+
+@pytest.mark.unit
+def test_after_start_time_entity_no_normalize_when_today():
+    """A past time with today's date is not affected by normalization."""
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="sensor.sun_next_rising",
+        end_time=None,
+        end_time_entity=None,
+    )
+
+    today = dt.date.today()
+    # Sunrise already passed today — entity still shows today's date
+    past_today = dt.datetime(today.year, today.month, today.day, 6, 30)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=past_today,
+        ),
+    ):
+        result = mgr.after_start_time
+
+    assert result is True
+
+
+@pytest.mark.unit
+def test_after_start_time_entity_future_today_returns_false():
+    """A future time with today's date (before event) is not normalized and returns False."""
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="sensor.sun_next_rising",
+        end_time=None,
+        end_time_entity=None,
+    )
+
+    # Entity reports today's date but 1 hour in the future — small enough to never cross midnight
+    future_today = dt.datetime.now() + dt.timedelta(hours=1)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=future_today,
+        ),
+    ):
+        result = mgr.after_start_time
+
+    assert result is False
+
+
+@pytest.mark.unit
+def test_end_time_entity_normalizes_tomorrow_to_today():
+    """Sun entity rolled to tomorrow's date is normalized in end_time property."""
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+
+    today = dt.date.today()
+    tomorrow = today + dt.timedelta(days=1)
+    tomorrow_sunset = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 20, 30)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=tomorrow_sunset,
+        ),
+    ):
+        result = mgr.end_time
+
+    expected = dt.datetime(today.year, today.month, today.day, 20, 30)
+    assert result == expected
+
+
+@pytest.mark.unit
+def test_end_time_entity_no_normalize_when_today():
+    """An end time with today's date is returned unchanged."""
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity=None,
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+
+    today = dt.date.today()
+    today_sunset = dt.datetime(today.year, today.month, today.day, 20, 30)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            return_value=today_sunset,
+        ),
+    ):
+        result = mgr.end_time
+
+    assert result == today_sunset
+
+
+@pytest.mark.unit
+def test_is_active_with_sun_entities_after_rollover():
+    """Both sun entities rolled to tomorrow — is_active returns True, no error logged.
+
+    Uses sunrise=00:01 and sunset=23:59 so the window is always active regardless
+    of when the test runs. Verifies normalization integrates correctly end-to-end.
+    """
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="sensor.sun_next_rising",
+        end_time=None,
+        end_time_entity="sensor.sun_next_setting",
+    )
+
+    today = dt.date.today()
+    tomorrow = today + dt.timedelta(days=1)
+    # Use extreme times so the window is active regardless of when the test runs
+    tomorrow_sunrise = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 1)
+    tomorrow_sunset = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 59)
+
+    # is_active evaluates before_end_time first (calls end_time → get_datetime_from_str),
+    # then after_start_time (calls get_datetime_from_str again). Iterator must match that order.
+    parsed_values = iter([tomorrow_sunset, tomorrow_sunrise])
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="irrelevant-raw-state",
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
+            side_effect=lambda _: next(parsed_values),
+        ),
+    ):
+        result = mgr.is_active
+
+    assert result is True
+    mgr.logger.error.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# check_transition — window-open callback (#226 gap fix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_check_transition_calls_on_window_open_callback():
+    """on_window_open callback is invoked when window transitions inactive→active."""
+    mgr = _make_manager()
+    mgr.update_config(None, None, None, None)
+    close_cb = AsyncMock()
+    open_cb = AsyncMock()
+
+    mgr._last_time_window_state = False
+
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: True)
+    ):
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=close_cb,
+            on_window_open=open_cb,
+        )
+
+    open_cb.assert_called_once()
+    close_cb.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_check_transition_no_on_window_open_no_error():
+    """check_transition works without on_window_open (default None) on window open."""
+    mgr = _make_manager()
+    mgr.update_config(None, None, None, None)
+    close_cb = AsyncMock()
+
+    mgr._last_time_window_state = False
+
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: True)
+    ):
+        await mgr.check_transition(track_end_time=True, refresh_callback=close_cb)
+
+    close_cb.assert_not_called()
