@@ -189,7 +189,7 @@ Min interval: 2 min · Inverse state · Interpolation on
 
 Decision Priority (highest wins, ✅ active ❌ not configured)
 ✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Custom(77) → ❌Motion(75) → ✅Cloud(60)
-→ ❌Glare(55) → ✅Climate(50) → ✅Solar(40) → ✅Default(0)
+→ ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
 ```
 
 ## Cover Types
@@ -248,13 +248,13 @@ The pipeline skips the Climate handler (priority 50). When the sun is within the
 
 Climate mode enables the Climate handler (priority 50), which sits above glare zone (45) and solar (40) in the pipeline. It uses indoor temperature, presence, weather, and light sensors to choose a strategy. Decisions are made in priority order — the first matching condition wins.
 
-**Fall-through when presence is detected:** When presence is detected and conditions don't require winter heating, low-light defaults, or summer cooling on a transparent blind, Climate deliberately returns no result and lets the pipeline fall through to the Glare Zone handler (priority 45) and then Solar handler (priority 40). This means sun-tracking position is always computed by a single source of truth — the Solar handler — rather than duplicated inside Climate. The Decision Trace will show `climate: matched=False, reason=deferred glare-control to solar/glare handlers` in this case.
+**Fall-through on comfortable sunny days:** When someone is home, the temperature is within the comfortable range, and it's a sunny day, Climate has no heating or cooling work to do and deliberately returns no result. The pipeline falls through to the Glare Zone handler (priority 45) — which lowers the blind further if a floor zone is in the sun's path — and then the Solar handler (priority 40) for standard sun-tracking. This means sun-position calculations live in a single place rather than being duplicated inside Climate. The Decision Trace will show `climate: matched=False, reason=deferred glare-control to solar/glare handlers` in this case.
 
 ```mermaid
 graph TD
   A[("fa:fa-sun Sun data")] --> PIPE
 
-  subgraph PIPE ["Override Pipeline (all modes)"]
+  subgraph PIPE ["Override Pipeline (highest priority wins)"]
     direction TB
     P1["Force override active?"] -->|Yes| R_FORCE["Fixed position"]
     P1 -->|No| P2["Weather override active?"]
@@ -263,20 +263,15 @@ graph TD
     P3 -->|Yes| R_MANUAL["Hold position"]
     P3 -->|No| P4["Motion timeout active?"]
     P4 -->|Yes| R_MOTION["Default position"]
-    P4 -->|No| MODE{"Climate mode\nenabled?"}
+    P4 -->|No| P5["Cloud suppression active?\n(lux / irradiance / weather)"]
+    P5 -->|Yes| R_CLOUD["Default position"]
+    P5 -->|No| MODE{"Climate mode\nenabled?"}
   end
 
-  MODE -->|No| BASIC
+  MODE -->|No| SOLAR
   MODE -->|Yes| CLIMATE
 
-  subgraph BASIC ["Basic Mode (Solar → Default)"]
-    direction TB
-    B1{"Sun in field\nof view?"}
-    B1 -->|Yes| B2["Calculated position"]
-    B1 -->|No| B3["Default / sunset position"]
-  end
-
-  subgraph CLIMATE ["Climate Mode"]
+  subgraph CLIMATE ["Climate handler (priority 50)"]
     direction TB
     CA{"Presence\ndetected?"}
 
@@ -286,7 +281,7 @@ graph TD
     CP2 -->|Yes| CP_L["Default position"]
     CP2 -->|No| CP3{"Summer?\n(temp > max comfort\n+ transparent blind)"}
     CP3 -->|Yes| CP_S["0% — fully closed\n(heat blocking)"]
-    CP3 -->|No| CP_G["Defer → Glare Zone / Solar\n(presence + sunny day)"]
+    CP3 -->|No| CP_G(["No result — defer to\nGlare Zone / Solar"])
 
     CA -->|No| CN1{"Sun in\nfield of view?"}
     CN1 -->|No| CN_D["Default position"]
@@ -295,6 +290,25 @@ graph TD
     CN2 -->|No| CN3{"Winter?\n(temp < min comfort)"}
     CN3 -->|Yes| CN_W["100% — fully open"]
     CN3 -->|No| CN_D2["Default position"]
+  end
+
+  CP_G --> GLARE
+
+  subgraph GLARE ["Glare Zone handler (priority 45, vertical blinds only)"]
+    direction TB
+    G1{"Active zone\nin sun's path?"}
+    G1 -->|Yes| G2["Lower blind to\nshield floor zone"]
+    G1 -->|No| G3(["No result — defer to Solar"])
+  end
+
+  G3 --> SOLAR
+  GLARE --> SOLAR
+
+  subgraph SOLAR ["Solar handler (priority 40)"]
+    direction TB
+    B1{"Sun in field\nof view?"}
+    B1 -->|Yes| B2["Calculated sun-tracking position"]
+    B1 -->|No| B3["Default / sunset position"]
   end
 ```
 
@@ -1065,7 +1079,7 @@ Only rules that are configured and active are shown. Unconfigured features are o
 **Decision Priority** — a single line showing all 10 pipeline handlers in priority order with ✅ (active in your config) or ❌ (not configured) for each:
 ```
 ✅Force(100) → ✅Weather(90) → ✅Manual(80) → ❌Custom(77) → ❌Motion(75) → ✅Cloud(60)
- → ❌Glare(55) → ✅Climate(50) → ✅Solar(40) → ✅Default(0)
+ → ✅Climate(50) → ❌Glare(45) → ✅Solar(40) → ✅Default(0)
 ```
 This answers the common question: *"what overrides what?"* — the leftmost ✅ handler that fires wins.
 
