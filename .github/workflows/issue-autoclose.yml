@@ -1,0 +1,45 @@
+name: "Auto-close Confirmed Issues"
+
+on:
+  schedule:
+    # Run daily at noon UTC
+    - cron: '0 12 * * *'
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  autoclose:
+    name: "Close Stale Waiting-for-Confirmation Issues"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/stale@v9
+        with:
+          # Only process issues carrying this label
+          only-issue-labels: 'waiting-for-confirmation'
+
+          # Days of inactivity before acting (reset by any new comment or activity)
+          days-before-issue-stale: 14
+
+          # Close immediately once the stale period elapses (no separate stale warning step)
+          days-before-issue-close: 0
+
+          # Keep the same label rather than replacing it with a "Stale" label
+          stale-issue-label: 'waiting-for-confirmation'
+
+          close-issue-message: >
+            Closing this issue as we haven't heard back to confirm the fix.
+            Feel free to reopen if you're still experiencing this problem — we're happy to take another look.
+
+          # Never process PRs in this workflow
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+
+          # Skip issues with these labels regardless of inactivity
+          exempt-issue-labels: 'pinned,security,Bug'
+
+          # Avoid hitting rate limits on large issue backlogs
+          operations-per-run: 50

@@ -1,0 +1,162 @@
+name: "Release Issue Lifecycle"
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  release-lifecycle:
+    name: "Process Issues on Stable Release"
+    runs-on: ubuntu-latest
+    # Only run for stable releases; skip betas/pre-releases
+    if: github.event.release.prerelease == false && !contains(github.event.release.tag_name, '-beta') && !contains(github.event.release.tag_name, '-alpha') && !contains(github.event.release.tag_name, '-rc')
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4.2.1
+        with:
+          fetch-depth: 0
+
+      - name: "Find previous stable tag and extract issue references"
+        id: refs
+        run: |
+          CURRENT_TAG="${{ github.event.release.tag_name }}"
+
+          # Find the previous stable tag (exclude pre-release tags)
+          PREV_TAG=$(git tag --sort=-version:refname \
+            | grep -v -E '\-(beta|alpha|rc)\.' \
+            | grep -v "^${CURRENT_TAG}$" \
+            | head -1)
+
+          echo "current_tag=${CURRENT_TAG}" >> $GITHUB_OUTPUT
+          echo "prev_tag=${PREV_TAG}" >> $GITHUB_OUTPUT
+          echo "Previous stable tag: ${PREV_TAG:-'(none)'}"
+
+          # Get commit range
+          if [ -z "$PREV_TAG" ]; then
+            LOG=$(git log --pretty=format:"%s%n%b" "${CURRENT_TAG}")
+          else
+            LOG=$(git log --pretty=format:"%s%n%b" "${PREV_TAG}..${CURRENT_TAG}")
+          fi
+
+          # Extract unique issue/PR numbers from standard GitHub reference keywords
+          NUMBERS=$(echo "$LOG" \
+            | grep -ioE '(refs?|closes?|fixes?|resolves?)[[:space:]]+#[0-9]+' \
+            | grep -oE '#[0-9]+' \
+            | tr -d '#' \
+            | sort -u \
+            | tr '\n' ' ')
+
+          echo "numbers=${NUMBERS}" >> $GITHUB_OUTPUT
+          echo "Referenced numbers: ${NUMBERS:-'(none)'}"
+
+      - name: "Apply waiting-for-confirmation to issues; notify PRs"
+        uses: actions/github-script@v7
+        env:
+          NUMBERS: ${{ steps.refs.outputs.numbers }}
+          CURRENT_TAG: ${{ steps.refs.outputs.current_tag }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        with:
+          script: |
+            const numbers = process.env.NUMBERS.trim().split(/\s+/).filter(Boolean).map(Number);
+            const tag = process.env.CURRENT_TAG;
+            const releaseUrl = process.env.RELEASE_URL;
+
+            if (numbers.length === 0) {
+              console.log('No issue/PR references found in this release range.');
+              return;
+            }
+
+            console.log(`Processing: #${numbers.join(', #')}`);
+
+            // Ensure the waiting-for-confirmation label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'waiting-for-confirmation',
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'waiting-for-confirmation',
+                color: '0075CA',
+                description: 'Shipped in a release — awaiting reporter verification',
+              });
+              console.log('Created waiting-for-confirmation label.');
+            }
+
+            for (const num of numbers) {
+              let item;
+              try {
+                const response = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                });
+                item = response.data;
+              } catch {
+                console.log(`#${num} not found, skipping.`);
+                continue;
+              }
+
+              const isPR = !!item.pull_request;
+              const currentLabels = item.labels.map(l => l.name);
+
+              if (isPR) {
+                // Remove awaiting-release from merged PRs and notify
+                if (currentLabels.includes('awaiting-release')) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    name: 'awaiting-release',
+                  }).catch(() => {});
+                }
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  body: `This was included in [**${tag}**](${releaseUrl}). Thank you for the contribution! 🎉`,
+                });
+                console.log(`Notified PR #${num} of release ${tag}.`);
+
+              } else {
+                // Issue — swap to waiting-for-confirmation and comment
+                if (currentLabels.includes('awaiting-release')) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    name: 'awaiting-release',
+                  }).catch(() => {});
+                }
+
+                // Only open issues get the confirmation label
+                if (item.state === 'open') {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    labels: ['waiting-for-confirmation'],
+                  });
+
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf we don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
+                  });
+                  console.log(`Labeled issue #${num} as waiting-for-confirmation.`);
+                } else {
+                  console.log(`Issue #${num} is already closed, skipping.`);
+                }
+              }
+            }

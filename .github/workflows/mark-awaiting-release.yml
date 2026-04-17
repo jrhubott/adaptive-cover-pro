@@ -1,0 +1,130 @@
+name: "Mark Issues Awaiting Release"
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  mark-awaiting-release:
+    name: "Label Referenced Issues and PRs"
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+
+    steps:
+      - name: "Process merged PR references"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const prBody = context.payload.pull_request.body || '';
+
+            // Fetch all commits in this PR
+            const commits = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+
+            // Combine PR body + all commit messages for parsing
+            const allText = [
+              prBody,
+              ...commits.data.map(c => c.commit.message),
+            ].join('\n');
+
+            // Extract referenced issue/PR numbers
+            const pattern = /(?:refs?|closes?|fixes?|resolves?)\s+#(\d+)/gi;
+            const found = new Set();
+            let match;
+            while ((match = pattern.exec(allText)) !== null) {
+              found.add(parseInt(match[1], 10));
+            }
+
+            if (found.size === 0) {
+              console.log('No issue/PR references found in this PR.');
+              return;
+            }
+
+            console.log(`Found references: #${[...found].join(', #')}`);
+
+            // Ensure the awaiting-release label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'awaiting-release',
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'awaiting-release',
+                color: 'FFA500',
+                description: 'Fix merged, pending next stable release',
+              });
+              console.log('Created awaiting-release label.');
+            }
+
+            for (const num of found) {
+              // Skip the PR itself
+              if (num === prNumber) continue;
+
+              let item;
+              try {
+                const response = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                });
+                item = response.data;
+              } catch {
+                console.log(`#${num} not found, skipping.`);
+                continue;
+              }
+
+              const isPR = !!item.pull_request;
+              const isOpen = item.state === 'open';
+
+              if (isPR) {
+                // Label merged PRs that are referenced (for tracking)
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  labels: ['awaiting-release'],
+                }).catch(() => {});
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  body: `This PR was referenced in #${prNumber} which has been merged to \`main\` and will ship in the next stable release.`,
+                });
+                console.log(`Labeled PR #${num} as awaiting-release.`);
+              } else if (isOpen) {
+                // Label open issues
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  labels: ['awaiting-release'],
+                });
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  body: `A fix for this issue has been merged in #${prNumber} and will ship in the next stable release.`,
+                });
+                console.log(`Labeled issue #${num} as awaiting-release.`);
+              } else {
+                console.log(`#${num} is closed, skipping.`);
+              }
+            }
