@@ -226,6 +226,26 @@ class TestSunny:
         )
         assert readings.is_sunny is True
 
+    @pytest.mark.unit
+    def test_unavailable_weather_entity_returns_true(self, provider, mock_hass):
+        """Unavailable weather entity → True (assume sunny, don't suppress)."""
+        mock_hass.states.get.return_value = _mock_state("weather.home", "unavailable")
+        readings = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny", "partlycloudy"],
+        )
+        assert readings.is_sunny is True
+
+    @pytest.mark.unit
+    def test_missing_weather_entity_returns_true(self, provider, mock_hass):
+        """Missing weather entity (states.get returns None) → True."""
+        mock_hass.states.get.return_value = None
+        readings = provider.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny", "partlycloudy"],
+        )
+        assert readings.is_sunny is True
+
 
 # ---------------------------------------------------------------------------
 # Lux

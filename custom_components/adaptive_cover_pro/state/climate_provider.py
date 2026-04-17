@@ -124,6 +124,9 @@ class ClimateProvider:
             self._logger.debug("is_sunny(): No weather entity defined")
             return True
         weather_state = get_safe_state(self._hass, weather_entity)
+        if weather_state is None:
+            self._logger.debug("is_sunny(): Weather entity unavailable, assuming sunny")
+            return True
         if weather_condition is not None:
             matches = weather_state in weather_condition
             self._logger.debug("is_sunny(): Weather: %s = %s", weather_state, matches)
