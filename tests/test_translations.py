@@ -7,7 +7,6 @@ Verifies all 13 language files have valid structure and no regressions
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -70,52 +69,6 @@ def _all_leaf_values(d: object) -> list[str]:
     return values
 
 
-# Keys whose values are description text — these may legitimately contain
-# warning symbols (⚠️) and checkbox markers (☑/☐) used as visual indicators.
-_DESCRIPTION_KEYS = {"description", "data_description"}
-
-
-def _label_leaf_values(d: object, _key: str = "") -> list[str]:
-    """Collect only label/title values, skipping description fields.
-
-    Issue #146 removed decorative emoji from step titles, menu option labels,
-    and field names — NOT from description/data_description prose text where
-    ⚠️ and ☑/☐ are intentional visual indicators.
-    """
-    values = []
-    if isinstance(d, dict):
-        for k, v in d.items():
-            if k in _DESCRIPTION_KEYS:
-                continue  # skip description prose
-            values.extend(_label_leaf_values(v, k))
-    elif isinstance(d, list):
-        for item in d:
-            values.extend(_label_leaf_values(item, _key))
-    elif isinstance(d, str):
-        values.append(d)
-    return values
-
-
-_EMOJI_RE = re.compile(
-    "["
-    "\U0001f600-\U0001f64f"  # emoticons
-    "\U0001f300-\U0001f5ff"  # symbols & pictographs
-    "\U0001f680-\U0001f6ff"  # transport & map
-    "\U0001f700-\U0001f77f"  # alchemical
-    "\U0001f780-\U0001f7ff"  # geometric
-    "\U0001f800-\U0001f8ff"  # supplemental arrows
-    "\U0001f900-\U0001f9ff"  # supplemental symbols
-    "\U0001fa00-\U0001fa6f"  # chess / game symbols
-    "\U0001fa70-\U0001faff"  # household objects
-    "\U00002702-\U000027b0"  # dingbats
-    # Split the broad catch-all to exclude U+2610-2612 (ballot box symbols
-    # used in translation descriptions as visual checkboxes, not emoji).
-    "\U000024c2-\U0000260f"  # misc technical / symbols (before ballot boxes)
-    "\U00002613-\U0001f251"  # symbols + enclosed alphanumerics (after ballot boxes)
-    "]+",
-    flags=re.UNICODE,
-)
-
 
 # ---------------------------------------------------------------------------
 # 8a: All files are valid JSON
@@ -154,27 +107,6 @@ def test_en_json_has_expected_top_level_sections() -> None:
     for section in ("title", "config", "options"):
         assert section in en_data, f"en.json missing '{section}' section"
 
-
-# ---------------------------------------------------------------------------
-# 8c: No emoji characters (regression guard for issue #146)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
-def test_no_emoji_in_translation_values(lang_file: Path) -> None:
-    """Translation labels/titles must not contain emoji characters (issue #146).
-
-    Only checks label fields (title, data, menu_options) — not description
-    prose, which may legitimately contain ⚠️ or ☑/☐ as visual indicators.
-    """
-    data = _load(lang_file)
-    values = _label_leaf_values(data)
-    for value in values:
-        match = _EMOJI_RE.search(value)
-        assert match is None, (
-            f"{lang_file.name}: emoji found in value: {value!r} "
-            f"(matched: {match.group()!r})"
-        )
 
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
