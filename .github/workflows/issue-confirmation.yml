@@ -1,0 +1,69 @@
+name: "Close Issue on User Confirmation"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  close-on-confirmation:
+    name: "Close if Reporter Confirms Fix"
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'waiting-for-confirmation')
+
+    steps:
+      - name: "Check comment for confirmation and close"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.comment.body.toLowerCase();
+
+            const confirmationPhrases = [
+              'confirmed',
+              'fixed',
+              'resolved',
+              'works',
+              'working',
+              'solved',
+              'closing',
+              'can close',
+              'please close',
+              'good to close',
+              'no longer',
+              'not happening',
+              'not reproducing',
+            ];
+
+            const isConfirmation = confirmationPhrases.some(p => body.includes(p));
+            if (!isConfirmation) return;
+
+            const commenter = context.payload.comment.user.login;
+            const issueNumber = context.payload.issue.number;
+
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              name: 'waiting-for-confirmation',
+            }).catch(() => {});
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `Thanks for confirming @${commenter}! Closing this issue. Feel free to reopen if the problem comes back.`,
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              state: 'closed',
+              state_reason: 'completed',
+            });
+
+            console.log(`Closed issue #${issueNumber} on confirmation from @${commenter}.`);
