@@ -50,6 +50,14 @@ class GlareZoneHandler(OverrideHandler):
             return None
         if not snapshot.cover.direct_sun_valid:
             return None
+        # Respect presence sensor when climate mode is enabled — nobody home means
+        # no glare protection needed (consistent with ClimateHandler behavior).
+        if (
+            snapshot.climate_mode_enabled
+            and snapshot.climate_readings is not None
+            and not snapshot.climate_readings.is_presence
+        ):
+            return None
 
         cover = cast(AdaptiveVerticalCover, snapshot.cover)
         window_half_width = snapshot.glare_zones.window_width / 2.0
@@ -103,4 +111,10 @@ class GlareZoneHandler(OverrideHandler):
         """Reason when glare zone handler does not match."""
         if not snapshot.in_time_window:
             return "outside time window"
+        if (
+            snapshot.climate_mode_enabled
+            and snapshot.climate_readings is not None
+            and not snapshot.climate_readings.is_presence
+        ):
+            return "no presence detected (climate mode)"
         return "no active glare zones or sun not in FOV"
