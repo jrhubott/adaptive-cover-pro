@@ -171,6 +171,17 @@ EOF
     echo ""
     echo "==> Deploy complete (version ${DEV_VERSION})."
 
+    # ── Tag the deployed commit in git ────────────────────────────────────────
+    GIT_TAG="deploy/${DEV_VERSION}"
+    if [[ "$GIT_HASH" == *"-dirty" ]]; then
+        echo "==> Skipping git tag — working tree is dirty."
+    else
+        echo "==> Tagging deployed commit as ${GIT_TAG}..."
+        git tag "${GIT_TAG}"
+        git push origin "${GIT_TAG}" 2>/dev/null && echo "    Tag pushed to origin." \
+            || echo "    Warning: tag created locally but could not push to origin."
+    fi
+
     # ── Offer to restart HA ───────────────────────────────────────────────────
     HA_URL="${HA_URL:-http://home-assistant.home:8123}"
     if [[ -z "${HA_TOKEN:-}" ]]; then
