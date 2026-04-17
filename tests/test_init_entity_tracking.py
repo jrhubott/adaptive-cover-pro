@@ -43,8 +43,12 @@ async def _setup_entry_capture_tracked(
     )
     entry.add_to_hass(hass)
 
-    hass.states.async_set("sun.sun", "above_horizon", {"azimuth": 180.0, "elevation": 45.0})
-    hass.states.async_set("cover.test_blind", "open", {"current_position": 100, "supported_features": 143})
+    hass.states.async_set(
+        "sun.sun", "above_horizon", {"azimuth": 180.0, "elevation": 45.0}
+    )
+    hass.states.async_set(
+        "cover.test_blind", "open", {"current_position": 100, "supported_features": 143}
+    )
 
     tracked_calls: list[list[str]] = []
 
@@ -57,7 +61,13 @@ async def _setup_entry_capture_tracked(
             tracked_calls.append(list(entity_ids))
         return original(hass_, entity_ids, callback)
 
-    with patch("custom_components.adaptive_cover_pro.async_track_state_change_event", side_effect=_capture), _patch_coordinator_refresh():
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.async_track_state_change_event",
+            side_effect=_capture,
+        ),
+        _patch_coordinator_refresh(),
+    ):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -132,5 +142,10 @@ async def test_unset_climate_entities_not_in_tracked_list(hass) -> None:
     _, calls = await _setup_entry_capture_tracked(hass, entry_id="track_none_01")
     all_tracked = [e for call in calls for e in call]
     # None of these should appear when not configured
-    for entity_id in ["sensor.cloud_coverage", "sensor.lux", "sensor.irradiance", "sensor.outside_temp"]:
+    for entity_id in [
+        "sensor.cloud_coverage",
+        "sensor.lux",
+        "sensor.irradiance",
+        "sensor.outside_temp",
+    ]:
         assert entity_id not in all_tracked

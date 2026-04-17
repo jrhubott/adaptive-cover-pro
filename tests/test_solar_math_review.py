@@ -37,7 +37,10 @@ from tests.cover_helpers import (
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-def _common_kwargs(mock_sun_data, mock_logger, *, sol_elev: float = 45.0, sol_azi: float = 180.0):
+
+def _common_kwargs(
+    mock_sun_data, mock_logger, *, sol_elev: float = 45.0, sol_azi: float = 180.0
+):
     """Return base kwargs for building cover instances. sol_elev and sol_azi can be overridden."""
     return {
         "logger": mock_logger,
@@ -69,8 +72,12 @@ def _make_sun_geometry(
         sun_data = MagicMock()
         sun_data.timezone = "UTC"
         now_utc = datetime.now(UTC).replace(tzinfo=None)
-        sun_data.sunset.return_value = (now_utc + timedelta(hours=12)).replace(tzinfo=None)
-        sun_data.sunrise.return_value = (now_utc - timedelta(hours=6)).replace(tzinfo=None)
+        sun_data.sunset.return_value = (now_utc + timedelta(hours=12)).replace(
+            tzinfo=None
+        )
+        sun_data.sunrise.return_value = (now_utc - timedelta(hours=6)).replace(
+            tzinfo=None
+        )
 
     config = make_cover_config(
         win_azi=win_azi,
@@ -94,7 +101,9 @@ def _make_sun_geometry(
     )
 
 
-def _make_full_day_sun_data(azimuth: float = 180.0, elevation: float = 30.0) -> MagicMock:
+def _make_full_day_sun_data(
+    azimuth: float = 180.0, elevation: float = 30.0
+) -> MagicMock:
     """Build a mock SunData where the sun is at constant azimuth/elevation all day.
 
     sunrise and sunset are placed at the very start and end of the time grid so
@@ -125,6 +134,7 @@ def _make_full_day_sun_data(azimuth: float = 180.0, elevation: float = 30.0) -> 
 # ===========================================================================
 # 1. Gamma sign convention
 # ===========================================================================
+
 
 class TestGammaSignConvention:
     """Verify sign convention: positive gamma = sun to the LEFT of window normal."""
@@ -162,6 +172,7 @@ class TestGammaSignConvention:
 # ===========================================================================
 # 2. valid_elevation with partial limits
 # ===========================================================================
+
 
 class TestValidElevationPartialLimits:
     """valid_elevation with only min or only max configured."""
@@ -207,6 +218,7 @@ class TestValidElevationPartialLimits:
 # 3. FOV boundary (gamma == fov_left / fov_right)
 # ===========================================================================
 
+
 class TestFOVBoundary:
     """Behavior at exact FOV boundary — the valid property uses strict inequalities."""
 
@@ -244,6 +256,7 @@ class TestFOVBoundary:
 # 4. control_state_reason missing branches
 # ===========================================================================
 
+
 class TestControlStateReasonAllBranches:
     """All branches of control_state_reason including previously untested ones."""
 
@@ -256,14 +269,30 @@ class TestControlStateReasonAllBranches:
             distance=0.5,
         )
         with (
-            patch.object(AdaptiveVerticalCover, "direct_sun_valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "sunset_valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "valid_elevation",
-                         new_callable=PropertyMock, return_value=True),
+            patch.object(
+                AdaptiveVerticalCover,
+                "direct_sun_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "valid_elevation",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
         ):
             assert cover.control_state_reason == "Default: FOV Exit"
 
@@ -276,14 +305,30 @@ class TestControlStateReasonAllBranches:
             distance=0.5,
         )
         with (
-            patch.object(AdaptiveVerticalCover, "direct_sun_valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "sunset_valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "valid_elevation",
-                         new_callable=PropertyMock, return_value=False),
+            patch.object(
+                AdaptiveVerticalCover,
+                "direct_sun_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "valid_elevation",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
         ):
             assert cover.control_state_reason == "Default: Elevation Limit"
 
@@ -296,14 +341,30 @@ class TestControlStateReasonAllBranches:
             distance=0.5,
         )
         with (
-            patch.object(AdaptiveVerticalCover, "direct_sun_valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "sunset_valid",
-                         new_callable=PropertyMock, return_value=False),
-            patch.object(AdaptiveVerticalCover, "valid",
-                         new_callable=PropertyMock, return_value=True),
-            patch.object(AdaptiveVerticalCover, "is_sun_in_blind_spot",
-                         new_callable=PropertyMock, return_value=True),
+            patch.object(
+                AdaptiveVerticalCover,
+                "direct_sun_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "valid",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                AdaptiveVerticalCover,
+                "is_sun_in_blind_spot",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
         ):
             assert cover.control_state_reason == "Default: Blind Spot"
 
@@ -311,6 +372,7 @@ class TestControlStateReasonAllBranches:
 # ===========================================================================
 # 5. Tilt cover negative discriminant
 # ===========================================================================
+
 
 class TestTiltNegativeDiscriminant:
     """Tilt calculation when slat geometry cannot block the sun (negative discriminant)."""
@@ -332,7 +394,9 @@ class TestTiltNegativeDiscriminant:
         )
 
     @pytest.mark.unit
-    def test_negative_discriminant_percentage_returns_zero(self, mock_sun_data, mock_logger):
+    def test_negative_discriminant_percentage_returns_zero(
+        self, mock_sun_data, mock_logger
+    ):
         """calculate_percentage() returns 0 (closed) when discriminant is negative."""
         cover = build_tilt_cover(
             **_common_kwargs(mock_sun_data, mock_logger),
@@ -357,7 +421,9 @@ class TestTiltNegativeDiscriminant:
         assert 0.0 < result <= 90.0, f"Expected angle in (0, 90], got {result}"
 
     @pytest.mark.unit
-    def test_discriminant_boundary_s_over_d_equals_one(self, mock_sun_data, mock_logger):
+    def test_discriminant_boundary_s_over_d_equals_one(
+        self, mock_sun_data, mock_logger
+    ):
         """With s/d = 1, discriminant = tan(beta)^2 which is non-negative for all beta."""
         # slat_distance=depth → s/d=1, discriminant = tan(beta)^2 - 1 + 1 = tan(beta)^2 >= 0
         cover = build_tilt_cover(
@@ -374,6 +440,7 @@ class TestTiltNegativeDiscriminant:
 # ===========================================================================
 # 6. Horizontal awning division-by-zero guard
 # ===========================================================================
+
 
 class TestHorizontalDivisionByZeroGuard:
     """Horizontal awning geometry.
@@ -460,6 +527,7 @@ class TestHorizontalDivisionByZeroGuard:
 # 7. Non-zero sill_height
 # ===========================================================================
 
+
 class TestSillHeight:
     """Sill height parameter reduces required blind coverage."""
 
@@ -528,11 +596,14 @@ class TestSillHeight:
 # 8. effective_distance_override (GlareZoneHandler path)
 # ===========================================================================
 
+
 class TestEffectiveDistanceOverride:
     """Non-None effective_distance_override uses the supplied distance."""
 
     @pytest.mark.unit
-    def test_override_larger_distance_gives_taller_shadow(self, mock_sun_data, mock_logger):
+    def test_override_larger_distance_gives_taller_shadow(
+        self, mock_sun_data, mock_logger
+    ):
         """Override with larger distance → taller shadow than using self.distance."""
         cover = build_vertical_cover(
             **_common_kwargs(mock_sun_data, mock_logger),
@@ -547,7 +618,9 @@ class TestEffectiveDistanceOverride:
         )
 
     @pytest.mark.unit
-    def test_override_smaller_distance_gives_shorter_shadow(self, mock_sun_data, mock_logger):
+    def test_override_smaller_distance_gives_shorter_shadow(
+        self, mock_sun_data, mock_logger
+    ):
         """Override with smaller distance → shorter shadow than using self.distance."""
         cover = build_vertical_cover(
             **_common_kwargs(mock_sun_data, mock_logger),
@@ -566,9 +639,9 @@ class TestEffectiveDistanceOverride:
             h_win=2.0,
             distance=0.5,
         )
-        assert cover.calculate_position(effective_distance_override=None) == pytest.approx(
-            cover.calculate_position()
-        )
+        assert cover.calculate_position(
+            effective_distance_override=None
+        ) == pytest.approx(cover.calculate_position())
 
     @pytest.mark.unit
     def test_override_source_recorded_as_glare_zone(self, mock_sun_data, mock_logger):
@@ -597,6 +670,7 @@ class TestEffectiveDistanceOverride:
 # 9. solar_times() method
 # ===========================================================================
 
+
 class TestSolarTimes:
     """solar_times() returns the FOV entry/exit time window for the current day.
 
@@ -612,8 +686,11 @@ class TestSolarTimes:
         sun_data = _make_full_day_sun_data(azimuth=0.0, elevation=30.0)
         config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
         sg = SunGeometry(
-            sol_azi=0.0, sol_elev=30.0,
-            sun_data=sun_data, config=config, logger=MagicMock(),
+            sol_azi=0.0,
+            sol_elev=30.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
         )
         start, end = sg.solar_times()
         assert start is None
@@ -626,8 +703,11 @@ class TestSolarTimes:
         sun_data = _make_full_day_sun_data(azimuth=180.0, elevation=30.0)
         config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
         sg = SunGeometry(
-            sol_azi=180.0, sol_elev=30.0,
-            sun_data=sun_data, config=config, logger=MagicMock(),
+            sol_azi=180.0,
+            sol_elev=30.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
         )
         start, end = sg.solar_times()
         assert start is not None
@@ -643,8 +723,11 @@ class TestSolarTimes:
         sun_data = _make_full_day_sun_data(azimuth=180.0, elevation=0.0)
         config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
         sg = SunGeometry(
-            sol_azi=180.0, sol_elev=0.0,
-            sun_data=sun_data, config=config, logger=MagicMock(),
+            sol_azi=180.0,
+            sol_elev=0.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
         )
         start, end = sg.solar_times()
         assert start is None
@@ -658,8 +741,11 @@ class TestSolarTimes:
         sun_data = _make_full_day_sun_data(azimuth=226.0, elevation=30.0)
         config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
         sg = SunGeometry(
-            sol_azi=226.0, sol_elev=30.0,
-            sun_data=sun_data, config=config, logger=MagicMock(),
+            sol_azi=226.0,
+            sol_elev=30.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
         )
         start, end = sg.solar_times()
         assert start is None
@@ -670,10 +756,15 @@ class TestSolarTimes:
         """Times where elevation is below min_elevation are excluded."""
         # Sun at elevation 10°; min_elevation=15° → all points excluded
         sun_data = _make_full_day_sun_data(azimuth=180.0, elevation=10.0)
-        config = make_cover_config(win_azi=180, fov_left=45, fov_right=45, min_elevation=15.0)
+        config = make_cover_config(
+            win_azi=180, fov_left=45, fov_right=45, min_elevation=15.0
+        )
         sg = SunGeometry(
-            sol_azi=180.0, sol_elev=10.0,
-            sun_data=sun_data, config=config, logger=MagicMock(),
+            sol_azi=180.0,
+            sol_elev=10.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
         )
         start, end = sg.solar_times()
         assert start is None

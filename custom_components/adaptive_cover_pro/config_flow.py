@@ -152,6 +152,7 @@ SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 _STANDALONE_SENTINEL = "__standalone__"
 
 
+
 CONFIG_SCHEMA = vol.Schema(
     {
         vol.Required("name"): selector.TextSelector(),
@@ -981,7 +982,9 @@ def _check_cover_capabilities(
 
     if known:
         has_pos = {eid for eid, caps in known.items() if caps.get("has_set_position")}
-        no_pos = {eid for eid, caps in known.items() if not caps.get("has_set_position")}
+        no_pos = {
+            eid for eid, caps in known.items() if not caps.get("has_set_position")
+        }
 
         if has_pos and no_pos:
             warnings.append(
@@ -2774,7 +2777,11 @@ class OptionsFlowHandler(OptionsFlow):
         # ── Admin ────────────────────────────────────────────────────
         keys.extend(["summary", "debug", "done"])
 
-        return self.async_show_menu(step_id="init", menu_options=keys)
+        # Use a list so HA translates labels client-side using the user's language preference.
+        # Icons are embedded directly in each translation string (e.g. "🪟 Covers & Device").
+        menu_options: list[str] = keys
+
+        return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Adjust cover entities and device association on a single combined form."""

@@ -452,12 +452,14 @@ async def test_state_change_clears_state_change_flag_outside_window():
 # ---------------------------------------------------------------------------
 
 
-def _make_sun_data_utc(*, sunset_utc_hour: int, sunset_utc_minute: int = 0,
-                       sunrise_utc_hour: int = 5) -> MagicMock:
+def _make_sun_data_utc(
+    *, sunset_utc_hour: int, sunset_utc_minute: int = 0, sunrise_utc_hour: int = 5
+) -> MagicMock:
     """Return a mock SunData whose sunset/sunrise methods return UTC naive datetimes."""
     today = dt.date.today()
-    sunset_dt = dt.datetime(today.year, today.month, today.day,
-                            sunset_utc_hour, sunset_utc_minute, 0)
+    sunset_dt = dt.datetime(
+        today.year, today.month, today.day, sunset_utc_hour, sunset_utc_minute, 0
+    )
     sunrise_dt = dt.datetime(today.year, today.month, today.day, sunrise_utc_hour, 0, 0)
     sun = MagicMock()
     sun.sunset.return_value = sunset_dt
@@ -489,13 +491,17 @@ class TestIssue215EuropeParisSunsetConfig:
         sent, the value would still be 0 (closed), not 100 (open). The fact that the user
         observed 100% is therefore external to ACP.
         """
-        from custom_components.adaptive_cover_pro.helpers import compute_effective_default
+        from custom_components.adaptive_cover_pro.helpers import (
+            compute_effective_default,
+        )
 
         # Paris April sunset ~18:45 UTC; 23:58 CEST = 21:58 UTC
-        sun_data = _make_sun_data_utc(sunset_utc_hour=18, sunset_utc_minute=45,
-                                      sunrise_utc_hour=5)
-        now_utc = dt.datetime(dt.date.today().year, dt.date.today().month,
-                              dt.date.today().day, 21, 58, 0)
+        sun_data = _make_sun_data_utc(
+            sunset_utc_hour=18, sunset_utc_minute=45, sunrise_utc_hour=5
+        )
+        now_utc = dt.datetime(
+            dt.date.today().year, dt.date.today().month, dt.date.today().day, 21, 58, 0
+        )
 
         with _freeze_helpers_now(now_utc):
             effective, is_sunset_active = compute_effective_default(
@@ -520,13 +526,17 @@ class TestIssue215EuropeParisSunsetConfig:
 
         Regression guard: end_time transitions before sunset+offset should send h_def.
         """
-        from custom_components.adaptive_cover_pro.helpers import compute_effective_default
+        from custom_components.adaptive_cover_pro.helpers import (
+            compute_effective_default,
+        )
 
         # Same Paris April config, but now=17:00 UTC — before sunset+20=19:05 UTC
-        sun_data = _make_sun_data_utc(sunset_utc_hour=18, sunset_utc_minute=45,
-                                      sunrise_utc_hour=5)
-        now_utc = dt.datetime(dt.date.today().year, dt.date.today().month,
-                              dt.date.today().day, 17, 0, 0)
+        sun_data = _make_sun_data_utc(
+            sunset_utc_hour=18, sunset_utc_minute=45, sunrise_utc_hour=5
+        )
+        now_utc = dt.datetime(
+            dt.date.today().year, dt.date.today().month, dt.date.today().day, 17, 0, 0
+        )
 
         with _freeze_helpers_now(now_utc):
             effective, is_sunset_active = compute_effective_default(
@@ -837,7 +847,7 @@ class TestIssue215StaleSafetyTarget:
         manager = MagicMock()
         manager.is_cover_manual.side_effect = [
             False,  # was_manual check (before handle_state_change)
-            True,   # is_cover_manual check (after handle_state_change)
+            True,  # is_cover_manual check (after handle_state_change)
         ]
         manager.handle_state_change = MagicMock()
         coordinator.manager = manager
@@ -1086,8 +1096,11 @@ class TestIssue223OverrideClearSafetyTag:
         # Step 3: Reconciliation — must NOT resend (target was cleared)
         await svc._reconcile(dt.datetime.now(UTC))
 
-        hass.services.async_call.assert_not_called(), (
-            "Reconciliation must not resend the override-clear target outside the "
-            "time window — the entity was not safety-tagged and was cleaned up "
-            "when the window closed (fix for issue #223)."
+        (
+            hass.services.async_call.assert_not_called(),
+            (
+                "Reconciliation must not resend the override-clear target outside the "
+                "time window — the entity was not safety-tagged and was cleaned up "
+                "when the window closed (fix for issue #223)."
+            ),
         )
