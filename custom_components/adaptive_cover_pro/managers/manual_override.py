@@ -8,7 +8,7 @@ from collections import deque
 from homeassistant.core import HomeAssistant
 
 from ..const import DEFAULT_DEBUG_EVENT_BUFFER_SIZE, POSITION_TOLERANCE_PERCENT
-from ..helpers import get_open_close_state
+from ..helpers import check_cover_features, get_open_close_state, should_use_tilt
 
 
 class AdaptiveCoverManager:
@@ -129,7 +129,8 @@ class AdaptiveCoverManager:
 
         new_state = event.new_state
 
-        if blind_type == "cover_tilt":
+        caps = check_cover_features(self.hass, entity_id)
+        if should_use_tilt(blind_type == "cover_tilt", caps if caps is not None else {}):
             new_position = new_state.attributes.get("current_tilt_position")
         else:
             new_position = new_state.attributes.get("current_position")

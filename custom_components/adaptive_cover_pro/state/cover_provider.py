@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.helpers.template import state_attr
 
-from ..helpers import check_cover_features, get_open_close_state
+from ..helpers import check_cover_features, get_open_close_state, should_use_tilt
 from .snapshot import CoverCapabilities
 
 if TYPE_CHECKING:
@@ -35,7 +35,8 @@ class CoverProvider:
         positions = {}
         for entity in entities:
             caps = self.read_single_capabilities(entity)
-            if cover_type == "cover_tilt":
+            use_tilt = should_use_tilt(cover_type == "cover_tilt", caps)
+            if use_tilt:
                 if caps.has_set_tilt_position:
                     positions[entity] = state_attr(
                         self._hass, entity, "current_tilt_position"
