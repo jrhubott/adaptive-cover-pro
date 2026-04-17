@@ -84,7 +84,7 @@ jobs:
           echo "issues=$ALL" >> "$GITHUB_OUTPUT"
           echo "Found issue references: $ALL"
 
-      - name: "Close issues and remove awaiting-release label"
+      - name: "Close issues"
         run: |
           CURRENT="${{ steps.tags.outputs.current }}"
           REPO="${{ github.repository }}"
@@ -104,9 +104,6 @@ jobs:
               echo "Issue #$N is not open (state=$STATE) — skipping."
               continue
             fi
-
-            echo "Removing awaiting-release label from #$N (if present)..."
-            gh issue edit "$N" --repo "$REPO" --remove-label "awaiting-release" 2>/dev/null || true
 
             echo "Closing issue #$N..."
             gh issue close "$N" --repo "$REPO" \
