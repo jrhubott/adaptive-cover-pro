@@ -232,7 +232,7 @@ async def _trigger_first_refresh_safety(coord):
 async def _trigger_window_close_return_sunset(coord):
     coord._track_end_time = True
 
-    async def _invoke(track_end_time, refresh_callback):
+    async def _invoke(track_end_time, refresh_callback, on_window_open=None):
         await refresh_callback()
 
     coord._time_mgr = MagicMock()

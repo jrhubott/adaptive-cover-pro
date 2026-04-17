@@ -191,7 +191,12 @@ class TimeWindowManager:
         """Get cached start time from last evaluation (for diagnostics)."""
         return self._cached_start_time
 
-    async def check_transition(self, track_end_time: bool, refresh_callback) -> None:
+    async def check_transition(
+        self,
+        track_end_time: bool,
+        refresh_callback,
+        on_window_open=None,
+    ) -> None:
         """Check if time window state has changed and trigger refresh if needed.
 
         Detects when the operational time window changes state
@@ -200,7 +205,9 @@ class TimeWindowManager:
 
         Args:
             track_end_time: Whether to track end time transitions
-            refresh_callback: Async callback to trigger coordinator refresh
+            refresh_callback: Async callback invoked when window closes
+            on_window_open: Optional async callback invoked when window opens
+                (inactive→active), so covers reposition at the start of the day
 
         """
         # Initialize tracking on first call
@@ -219,8 +226,10 @@ class TimeWindowManager:
             )
             self._last_time_window_state = current_state
 
-            # If we just left the time window, return covers to default position
-            if not current_state and track_end_time:
+            if current_state and on_window_open is not None:
+                self.logger.info("Time window opened, repositioning covers")
+                await on_window_open()
+            elif not current_state and track_end_time:
                 self.logger.info(
                     "End time reached, returning covers to default position"
                 )

@@ -19,6 +19,7 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_END_ENTITY,
     CONF_ENTITIES,
+    CONF_START_ENTITY,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
@@ -67,6 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _presence_entity = entry.options.get(CONF_PRESENCE_ENTITY)
     _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
+    _start_time_entity = entry.options.get(CONF_START_ENTITY)
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _force_override_sensors = entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
     _motion_sensors = entry.options.get(CONF_MOTION_SENSORS, [])
@@ -79,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _temp_entity,
         _presence_entity,
         _weather_entity,
+        _start_time_entity,
         _end_time_entity,
         _cloud_coverage_entity,
         _lux_entity,

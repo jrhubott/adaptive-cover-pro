@@ -525,3 +525,50 @@ def test_is_active_with_sun_entities_after_rollover():
 
     assert result is True
     mgr.logger.error.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# check_transition — window-open callback (#226 gap fix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_check_transition_calls_on_window_open_callback():
+    """on_window_open callback is invoked when window transitions inactive→active."""
+    mgr = _make_manager()
+    mgr.update_config(None, None, None, None)
+    close_cb = AsyncMock()
+    open_cb = AsyncMock()
+
+    mgr._last_time_window_state = False
+
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: True)
+    ):
+        await mgr.check_transition(
+            track_end_time=True,
+            refresh_callback=close_cb,
+            on_window_open=open_cb,
+        )
+
+    open_cb.assert_called_once()
+    close_cb.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_check_transition_no_on_window_open_no_error():
+    """check_transition works without on_window_open (default None) on window open."""
+    mgr = _make_manager()
+    mgr.update_config(None, None, None, None)
+    close_cb = AsyncMock()
+
+    mgr._last_time_window_state = False
+
+    with patch.object(
+        type(mgr), "is_active", new_callable=lambda: property(lambda self: True)
+    ):
+        await mgr.check_transition(track_end_time=True, refresh_callback=close_cb)
+
+    close_cb.assert_not_called()

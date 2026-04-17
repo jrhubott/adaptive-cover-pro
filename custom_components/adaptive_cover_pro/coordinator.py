@@ -2105,9 +2105,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # Trigger a normal refresh so sensor state and diagnostics update
             await self.async_refresh()
 
+        async def _on_window_open() -> None:
+            """Trigger a full refresh when the time window opens.
+
+            This ensures covers reposition at the start of the day when the
+            window transitions from inactive to active (e.g. at sunrise when
+            sensor.sun_next_rising is the start entity).
+            """
+            self.state_change = True
+            await self.async_refresh()
+
         await self._time_mgr.check_transition(
             track_end_time=self._track_end_time,
             refresh_callback=_on_window_closed,
+            on_window_open=_on_window_open,
         )
 
     def _check_sun_validity_transition(self) -> bool:

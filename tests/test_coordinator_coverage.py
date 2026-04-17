@@ -407,7 +407,7 @@ async def test_window_close_skips_reposition_when_auto_control_off():
 
     time_mgr = MagicMock()
 
-    async def _invoke(track_end_time, refresh_callback):
+    async def _invoke(track_end_time, refresh_callback, on_window_open=None):
         await refresh_callback()
 
     time_mgr.check_transition = _invoke
@@ -469,7 +469,7 @@ async def test_window_close_sends_reposition_when_auto_control_on():
     ):
         time_mgr = MagicMock()
 
-        async def _invoke_happy(track_end_time, refresh_callback):
+        async def _invoke_happy(track_end_time, refresh_callback, on_window_open=None):
             await refresh_callback()
 
         time_mgr.check_transition = _invoke_happy
