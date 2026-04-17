@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from ..const import DOMAIN
 from .export_service import EXPORT_CONFIG_SCHEMA, async_handle_export
+from .options_service import OPTIONS_SERVICE_NAMES, register_options_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -148,6 +149,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(DOMAIN, "emergency_stop", handle_emergency_stop)
 
+    register_options_services(hass)
+
 
 async def async_unload_services(hass: HomeAssistant) -> None:
     """Remove integration services when the last config entry is unloaded."""
@@ -157,3 +160,5 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, "integration_enable")
     hass.services.async_remove(DOMAIN, "integration_disable")
     hass.services.async_remove(DOMAIN, "emergency_stop")
+    for name in OPTIONS_SERVICE_NAMES:
+        hass.services.async_remove(DOMAIN, name)

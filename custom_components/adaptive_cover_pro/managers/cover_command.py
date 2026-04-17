@@ -28,7 +28,7 @@ from ..const import (
     POSITION_CHECK_INTERVAL_MINUTES,
     POSITION_TOLERANCE_PERCENT,
 )
-from ..helpers import check_cover_features, get_last_updated, get_open_close_state
+from ..helpers import check_cover_features, get_last_updated, get_open_close_state, should_use_tilt
 
 
 @dataclasses.dataclass
@@ -50,7 +50,9 @@ class PositionContext:
     special_positions: list[int]
     inverse_state: bool = False
     force: bool = False  # Skip all gate checks when True
-    is_safety: bool = False  # Safety-critical target (persists across window boundaries)
+    is_safety: bool = (
+        False  # Safety-critical target (persists across window boundaries)
+    )
     use_my_position: bool = (
         False  # Route through send_my_position() on non-position-capable covers
     )
@@ -597,7 +599,9 @@ class CoverCommandService:
         self, entity: str, caps: dict[str, bool], state_obj=None
     ) -> int | None:
         """Read position based on cover type and capabilities."""
-        if self.is_tilt_cover:
+        use_tilt = should_use_tilt(self.is_tilt_cover, caps)
+
+        if use_tilt:
             if caps.get("has_set_tilt_position", True):
                 if state_obj:
                     return state_obj.attributes.get("current_tilt_position")
@@ -1233,9 +1237,12 @@ class CoverCommandService:
         if caps is None:
             caps = self.get_cover_capabilities(entity)
 
+        # Determine whether to use tilt services for this entity.
+        use_tilt = should_use_tilt(self.is_tilt_cover, caps)
+
         supports_position = (
             caps.get("has_set_tilt_position", True)
-            if self.is_tilt_cover
+            if use_tilt
             else caps.get("has_set_position", True)
         )
 
@@ -1251,11 +1258,11 @@ class CoverCommandService:
         if supports_position:
             service = (
                 SERVICE_SET_COVER_TILT_POSITION
-                if self.is_tilt_cover
+                if use_tilt
                 else SERVICE_SET_COVER_POSITION
             )
             service_data = {ATTR_ENTITY_ID: entity}
-            if self.is_tilt_cover:
+            if use_tilt:
                 service_data[ATTR_TILT_POSITION] = state
             else:
                 service_data[ATTR_POSITION] = state

@@ -59,7 +59,8 @@ class TestClimateCoverState:
             climate_data,
         )
         result = state_handler.normal_type_cover()
-        assert isinstance(result, (int, np.integer))
+        # Intermediate + sunny + presence defers to solar/glare pipeline
+        assert result is None
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
@@ -207,8 +208,8 @@ class TestClimateCoverState:
             climate_data,
         )
         result = state_handler.normal_with_presence()
-        # Intermediate conditions → use calculated position
-        assert result == 25  # Calculated position for this config
+        # Intermediate + sunny + presence defers to solar/glare pipeline
+        assert result is None
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
@@ -362,7 +363,8 @@ class TestClimateCoverState:
             climate_data,
         )
         result = state_handler.get_state()
-        assert 0 <= result <= 100
+        # Intermediate + sunny + presence defers to solar/glare pipeline
+        assert result is None
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
@@ -408,8 +410,8 @@ class TestClimateCoverState:
         vertical_cover_instance.max_pos_bool = False
 
         climate_data = _make_climate(
-            inside_temperature="22.0",
-            is_sunny=True,
+            inside_temperature="18.0",  # Below temp_low (20) → winter → returns 100
+            is_sunny=False,
             is_presence=True,
         )
 
@@ -439,9 +441,10 @@ class TestClimateCoverState:
         vertical_cover_instance.min_pos_bool = False
 
         climate_data = _make_climate(
-            inside_temperature="22.0",
+            inside_temperature="27.0",  # Above temp_high (25) → summer + transparent → returns 0
             is_sunny=True,
             is_presence=True,
+            transparent_blind=True,
         )
 
         state_handler = ClimateCoverState(
@@ -576,8 +579,8 @@ class TestClimateCoverState:
     ):
         """Test normal operation on mild sunny day.
 
-        Not winter, not summer, sunny weather.
-        Should use calculated position for glare control.
+        Not winter, not summer, sunny weather, presence detected.
+        After refactor, GLARE_CONTROL defers to solar/glare pipeline → returns None.
         """
         mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
         vertical_cover_instance.sun_data.sunset = MagicMock(
@@ -606,9 +609,8 @@ class TestClimateCoverState:
             )
             result = state_handler.normal_with_presence()
 
-            assert isinstance(result, (int, np.integer))
-            assert result != 100  # Not winter mode
-            assert result != vertical_cover_instance.config.h_def  # Not default
+            # Intermediate + sunny + presence defers to solar/glare pipeline
+            assert result is None
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")

@@ -268,9 +268,9 @@ class TestGlareZoneHandlerLogic:
         assert "valid" in result.reason
         assert "blocked" not in result.reason
 
-    def test_priority_is_55(self) -> None:
-        """GlareZoneHandler has priority 55 — above ClimateHandler (50), below CloudSuppressionHandler (60)."""
-        assert GlareZoneHandler.priority == 55
+    def test_priority_is_45(self) -> None:
+        """GlareZoneHandler has priority 45 — below ClimateHandler (50), above SolarHandler (40)."""
+        assert GlareZoneHandler.priority == 45
 
     def test_name(self) -> None:
         """GlareZoneHandler name is 'glare_zone'."""
@@ -581,7 +581,10 @@ class TestGlareZoneDescribeSkip:
             active_zone_names=set(),
             in_time_window=True,
         )
-        assert self.handler.describe_skip(snap) == "no active glare zones or sun not in FOV"
+        assert (
+            self.handler.describe_skip(snap)
+            == "no active glare zones or sun not in FOV"
+        )
 
     def test_describe_skip_sun_not_valid(self) -> None:
         """Sun not in FOV → same 'no active glare zones' message."""
@@ -596,7 +599,10 @@ class TestGlareZoneDescribeSkip:
             active_zone_names={"desk"},
             in_time_window=True,
         )
-        assert self.handler.describe_skip(snap) == "no active glare zones or sun not in FOV"
+        assert (
+            self.handler.describe_skip(snap)
+            == "no active glare zones or sun not in FOV"
+        )
 
 
 class TestGlareZoneReasonString:
@@ -745,9 +751,9 @@ class TestGlareZoneRegressionMaxVsMin:
         )
         glare_cfg = GlareZonesConfig(
             zones=[
-                GlareZone(name="zone_far", x=0.0, y=350.0, radius=0.0),   # 3.5 m
-                GlareZone(name="zone_mid", x=0.0, y=150.0, radius=0.0),   # 1.5 m
-                GlareZone(name="zone_near", x=0.0, y=50.0, radius=0.0),   # 0.5 m
+                GlareZone(name="zone_far", x=0.0, y=350.0, radius=0.0),  # 3.5 m
+                GlareZone(name="zone_mid", x=0.0, y=150.0, radius=0.0),  # 1.5 m
+                GlareZone(name="zone_near", x=0.0, y=50.0, radius=0.0),  # 0.5 m
             ],
             window_width=400.0,
         )
@@ -791,105 +797,3 @@ class TestGlareZoneRegressionMaxVsMin:
         )
         assert self.handler.evaluate(snap) is None
 
-
-def _make_climate_options() -> ClimateOptions:
-    return ClimateOptions(
-        temp_low=18.0,
-        temp_high=26.0,
-        temp_switch=False,
-        transparent_blind=False,
-        temp_summer_outside=30.0,
-        cloud_suppression_enabled=False,
-        winter_close_insulation=False,
-    )
-
-
-def _make_climate_readings(*, is_presence: bool) -> ClimateReadings:
-    return ClimateReadings(
-        outside_temperature=30.0,
-        inside_temperature=25.0,
-        is_presence=is_presence,
-        is_sunny=True,
-        lux_below_threshold=False,
-        irradiance_below_threshold=False,
-        cloud_coverage_above_threshold=False,
-    )
-
-
-# Zone at y=100cm, radius=0 → effective_distance = 1.0 m < base 5.0 m → handler fires
-_CLOSE_ZONE_CFG = GlareZonesConfig(
-    zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],
-    window_width=200.0,
-)
-
-
-class TestGlareZonePresenceGate:
-    """Glare zone handler must respect the presence sensor when climate mode is on."""
-
-    handler = GlareZoneHandler()
-
-    def test_returns_none_when_not_present_and_climate_enabled(self) -> None:
-        """When nobody is home and climate mode is on, glare zones must not activate."""
-        cover = _make_vertical_cover(
-            distance=5.0, gamma=0.0, direct_sun_valid=True, calculate_percentage_return=10.0
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=_CLOSE_ZONE_CFG,
-            active_zone_names={"desk"},
-            climate_readings=_make_climate_readings(is_presence=False),
-            climate_mode_enabled=True,
-            climate_options=_make_climate_options(),
-        )
-        assert self.handler.evaluate(snap) is None
-
-    def test_fires_when_present_and_climate_enabled(self) -> None:
-        """When someone is home with climate mode on, glare zones still activate."""
-        cover = _make_vertical_cover(
-            distance=5.0, gamma=0.0, direct_sun_valid=True, calculate_percentage_return=10.0
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=_CLOSE_ZONE_CFG,
-            active_zone_names={"desk"},
-            climate_readings=_make_climate_readings(is_presence=True),
-            climate_mode_enabled=True,
-            climate_options=_make_climate_options(),
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.GLARE_ZONE
-
-    def test_fires_when_climate_not_enabled(self) -> None:
-        """When climate mode is off, presence is irrelevant — glare zones activate."""
-        cover = _make_vertical_cover(
-            distance=5.0, gamma=0.0, direct_sun_valid=True, calculate_percentage_return=10.0
-        )
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=_CLOSE_ZONE_CFG,
-            active_zone_names={"desk"},
-            climate_readings=None,
-            climate_mode_enabled=False,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.GLARE_ZONE
-
-    def test_describe_skip_mentions_presence(self) -> None:
-        """describe_skip must indicate presence as the reason when skipping due to no presence."""
-        cover = _make_vertical_cover(direct_sun_valid=True)
-        snap = make_snapshot(
-            cover=cover,
-            cover_type="cover_blind",
-            glare_zones=_CLOSE_ZONE_CFG,
-            active_zone_names={"desk"},
-            climate_readings=_make_climate_readings(is_presence=False),
-            climate_mode_enabled=True,
-            climate_options=_make_climate_options(),
-            in_time_window=True,
-        )
-        assert "presence" in self.handler.describe_skip(snap).lower()

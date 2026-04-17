@@ -15,7 +15,9 @@ from custom_components.adaptive_cover_pro.helpers import (
     get_open_close_state,
     get_safe_state,
     get_timedelta_str,
+    should_use_tilt,
 )
+from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
 
 
 @pytest.mark.unit
@@ -327,7 +329,7 @@ def test_check_cover_features_returns_none_when_unknown(mock_hass):
     """Test check_cover_features returns None when entity unknown."""
     state_obj = MagicMock()
     state_obj.state = "unknown"
-    state_obj.attributes = {"supported_features": 15}
+    state_obj.attributes = {}
     mock_hass.states.get.return_value = state_obj
 
     result = check_cover_features(mock_hass, "cover.test")
@@ -403,3 +405,82 @@ def test_get_open_close_state_returns_none_for_other_states(mock_hass):
     result = get_open_close_state(mock_hass, "cover.test")
 
     assert result is None
+
+
+# --- should_use_tilt ---
+
+
+@pytest.mark.unit
+def test_should_use_tilt_true_when_is_tilt_cover():
+    """should_use_tilt returns True when is_tilt_cover is True, regardless of caps."""
+    caps = {"has_set_position": True, "has_set_tilt_position": False}
+    assert should_use_tilt(True, caps) is True
+
+
+@pytest.mark.unit
+def test_should_use_tilt_true_when_is_tilt_cover_empty_caps():
+    """should_use_tilt returns True when is_tilt_cover is True, even with empty caps."""
+    assert should_use_tilt(True, {}) is True
+
+
+@pytest.mark.unit
+def test_should_use_tilt_tilt_only_fallback_dict():
+    """should_use_tilt returns True for tilt-only entity under non-tilt config (dict caps)."""
+    caps = {"has_set_position": False, "has_set_tilt_position": True}
+    assert should_use_tilt(False, caps) is True
+
+
+@pytest.mark.unit
+def test_should_use_tilt_false_when_has_set_position_dict():
+    """should_use_tilt returns False when entity supports position (dict caps)."""
+    caps = {"has_set_position": True, "has_set_tilt_position": True}
+    assert should_use_tilt(False, caps) is False
+
+
+@pytest.mark.unit
+def test_should_use_tilt_false_open_close_only_dict():
+    """should_use_tilt returns False for open/close-only entity (dict caps)."""
+    caps = {"has_set_position": False, "has_set_tilt_position": False}
+    assert should_use_tilt(False, caps) is False
+
+
+@pytest.mark.unit
+def test_should_use_tilt_false_empty_dict_defaults():
+    """should_use_tilt returns False with empty dict (safe defaults)."""
+    assert should_use_tilt(False, {}) is False
+
+
+@pytest.mark.unit
+def test_should_use_tilt_tilt_only_fallback_dataclass():
+    """should_use_tilt returns True for tilt-only entity (CoverCapabilities dataclass)."""
+    caps = CoverCapabilities(
+        has_set_position=False,
+        has_set_tilt_position=True,
+        has_open=True,
+        has_close=True,
+    )
+    assert should_use_tilt(False, caps) is True
+
+
+@pytest.mark.unit
+def test_should_use_tilt_false_when_has_set_position_dataclass():
+    """should_use_tilt returns False when entity supports position (CoverCapabilities)."""
+    caps = CoverCapabilities(
+        has_set_position=True,
+        has_set_tilt_position=True,
+        has_open=True,
+        has_close=True,
+    )
+    assert should_use_tilt(False, caps) is False
+
+
+@pytest.mark.unit
+def test_should_use_tilt_false_open_close_only_dataclass():
+    """should_use_tilt returns False for open/close-only entity (CoverCapabilities)."""
+    caps = CoverCapabilities(
+        has_set_position=False,
+        has_set_tilt_position=False,
+        has_open=True,
+        has_close=True,
+    )
+    assert should_use_tilt(False, caps) is False

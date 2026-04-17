@@ -82,10 +82,23 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
         _LOGGER.debug("Cover %s state not available yet", entity_id)
         return None
 
-    # Check if entity is ready
-    if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-        _LOGGER.debug("Cover %s not ready (state: %s)", entity_id, state.state)
+    # STATE_UNAVAILABLE means the entity has no data at all — skip it.
+    # STATE_UNKNOWN is safe to proceed: Z-Wave covers often report unknown
+    # positional state permanently but still populate supported_features.
+    if state.state == STATE_UNAVAILABLE:
+        _LOGGER.debug("Cover %s unavailable, skipping capability check", entity_id)
         return None
+
+    if state.state == STATE_UNKNOWN and "supported_features" not in state.attributes:
+        _LOGGER.debug("Cover %s unknown state with no features, skipping", entity_id)
+        return None
+
+    if state.state == STATE_UNKNOWN and "supported_features" in state.attributes:
+        _LOGGER.debug(
+            "Cover %s: unknown state but supported_features=%s present — proceeding with capability check",
+            entity_id,
+            state.attributes.get("supported_features"),
+        )
 
     # Check if supported_features attribute exists
     if "supported_features" not in state.attributes:
@@ -166,6 +179,29 @@ def compute_effective_default(
 
     effective = int(sunset_pos) if is_sunset_active else int(h_def)
     return effective, is_sunset_active
+
+
+def should_use_tilt(is_tilt_cover: bool, caps) -> bool:
+    """Return True if tilt services/attributes should be used for this cover.
+
+    Activates when the cover is configured as tilt OR when the entity only
+    supports tilt operations (has SET_TILT_POSITION but not SET_POSITION),
+    regardless of config-level sensor_type.
+
+    Args:
+        is_tilt_cover: Whether the cover is configured as ``cover_tilt``.
+        caps: Capability source — either a ``dict`` (from ``check_cover_features``)
+              or a ``CoverCapabilities`` dataclass.
+
+    """
+    if is_tilt_cover:
+        return True
+    if isinstance(caps, dict):
+        return not caps.get("has_set_position", True) and caps.get(
+            "has_set_tilt_position", False
+        )
+    # CoverCapabilities dataclass
+    return not caps.has_set_position and caps.has_set_tilt_position
 
 
 def get_open_close_state(hass: HomeAssistant, entity_id: str) -> int | None:
