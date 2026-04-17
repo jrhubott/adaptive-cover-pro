@@ -131,16 +131,20 @@ class ClimateCoverState:
         """Effective default position from the snapshot."""
         return self.snapshot.default_position
 
-    def get_state(self) -> int:
-        """Calculate climate-aware position, applying position limits."""
+    def get_state(self) -> int | None:
+        """Calculate climate-aware position, applying position limits.
+
+        Returns None when the strategy is GLARE_CONTROL for normal covers,
+        signalling that the pipeline should fall through to GlareZone/Solar.
+        """
         is_tilt = (
             self.climate_data.blind_type == CoverType.TILT
             or self.climate_data.blind_type == CoverType.TILT.value
         )
         result = self.tilt_state() if is_tilt else self.normal_type_cover()
-        return apply_snapshot_limits(
-            self.snapshot, result, sun_valid=False
-        )
+        if result is None:
+            return None
+        return apply_snapshot_limits(self.snapshot, result, sun_valid=False)
 
     def _solar_position(self) -> int:
         """Compute solar-tracked position with limits applied."""
@@ -148,14 +152,18 @@ class ClimateCoverState:
             return compute_solar_position(self.snapshot)
         return self.default_position
 
-    def normal_type_cover(self) -> int:
+    def normal_type_cover(self) -> int | None:
         """Route horizontal/vertical covers based on presence."""
         if self.climate_data.is_presence:
             return self.normal_with_presence()
         return self.normal_without_presence()
 
-    def normal_with_presence(self) -> int:
-        """Climate strategy for normal covers with occupants present."""
+    def normal_with_presence(self) -> int | None:
+        """Climate strategy for normal covers with occupants present.
+
+        Returns None for the GLARE_CONTROL case — the pipeline falls through
+        to GlareZoneHandler (priority 45) then SolarHandler (priority 40).
+        """
         is_summer = self.climate_data.is_summer
         if self.climate_data.is_winter and self.cover.valid:
             self.climate_strategy = ClimateStrategy.WINTER_HEATING
@@ -177,7 +185,7 @@ class ClimateCoverState:
             self.climate_strategy = ClimateStrategy.SUMMER_COOLING
             return 0
         self.climate_strategy = ClimateStrategy.GLARE_CONTROL
-        return self._solar_position()
+        return None
 
     def normal_without_presence(self) -> int:
         """Climate strategy for normal covers without occupants."""
@@ -325,7 +333,12 @@ class ClimateHandler(OverrideHandler):
         )
 
         climate_cover_state = ClimateCoverState(snapshot, climate_data)
-        position = round(climate_cover_state.get_state())
+        raw_position = climate_cover_state.get_state()
+
+        if raw_position is None:
+            return None
+
+        position = round(raw_position)
 
         if climate_data.is_summer:
             method = ControlMethod.SUMMER
@@ -353,4 +366,6 @@ class ClimateHandler(OverrideHandler):
             return "outside time window"
         if not snapshot.climate_mode_enabled:
             return "climate mode not enabled"
-        return "climate readings or options unavailable"
+        if snapshot.climate_readings is None or snapshot.climate_options is None:
+            return "climate readings or options unavailable"
+        return "deferred glare-control to solar/glare handlers"

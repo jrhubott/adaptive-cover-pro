@@ -1336,7 +1336,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
         lines.append(f"🌡️ Climate mode: adjusts strategy for heating/cooling{cl_str}.")
 
-    # Glare zones — vertical only (55)
+    # Glare zones — vertical only (45, below climate)
     if has_glare:
         zone_names = [
             config.get(f"glare_zone_{i}_name")
@@ -1351,7 +1351,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             gz_parts.append(f"{width}cm window")
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
         lines.append(
-            f"🔆 Glare zones: lowers blind to protect floor areas from direct sun{gz_str}."
+            f"🔆 Glare zones: when climate mode defers sun-tracking, lowers blind further to protect floor areas{gz_str}."
         )
 
     # Solar tracking — baseline calculation (40)
@@ -1546,7 +1546,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     if (
         sensor_type == SensorType.BLIND or sensor_type is None
     ) and sun_tracking_enabled:
-        _chain_entries.append((55, "Glare", has_glare))
+        _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
     for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
         _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))

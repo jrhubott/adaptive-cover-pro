@@ -86,7 +86,7 @@ def _climate_options_summer() -> ClimateOptions:
         temp_low=18.0,
         temp_high=26.0,
         temp_switch=False,
-        transparent_blind=False,
+        transparent_blind=True,
         temp_summer_outside=None,
         cloud_suppression_enabled=False,
         winter_close_insulation=False,

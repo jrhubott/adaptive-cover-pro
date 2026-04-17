@@ -23,11 +23,16 @@ from ..types import PipelineResult, PipelineSnapshot
 class GlareZoneHandler(OverrideHandler):
     """Lower the blind further when active glare zones need more protection than SolarHandler.
 
-    Priority 55 — above ClimateHandler (50), below CloudSuppressionHandler (60).
+    Priority 45 — below ClimateHandler (50), above SolarHandler (40).
     Only applies to vertical covers (cover_blind). Computes effective distances
     for all active glare zones using pure geometry, then returns a position
     based on the minimum (closest) zone distance when it is less than the
     cover's base distance.
+
+    ClimateHandler defers its GLARE_CONTROL case (returns None), so this
+    handler fires naturally when climate mode is on and the sun is tracking.
+    When climate mode is off, this handler fires directly after time-window
+    and cover-type gates.
 
     Geometry: smaller effective distance → lower position% → more blind deployed.
     A zone closer to the window than the base distance is in the illuminated area
@@ -38,7 +43,7 @@ class GlareZoneHandler(OverrideHandler):
     """
 
     name = "glare_zone"
-    priority = 55
+    priority = 45
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return glare-zone-adjusted position when a zone requires deeper coverage."""
@@ -49,14 +54,6 @@ class GlareZoneHandler(OverrideHandler):
         if not snapshot.glare_zones or not snapshot.active_zone_names:
             return None
         if not snapshot.cover.direct_sun_valid:
-            return None
-        # Respect presence sensor when climate mode is enabled — nobody home means
-        # no glare protection needed (consistent with ClimateHandler behavior).
-        if (
-            snapshot.climate_mode_enabled
-            and snapshot.climate_readings is not None
-            and not snapshot.climate_readings.is_presence
-        ):
             return None
 
         cover = cast(AdaptiveVerticalCover, snapshot.cover)
@@ -111,10 +108,4 @@ class GlareZoneHandler(OverrideHandler):
         """Reason when glare zone handler does not match."""
         if not snapshot.in_time_window:
             return "outside time window"
-        if (
-            snapshot.climate_mode_enabled
-            and snapshot.climate_readings is not None
-            and not snapshot.climate_readings.is_presence
-        ):
-            return "no presence detected (climate mode)"
         return "no active glare zones or sun not in FOV"

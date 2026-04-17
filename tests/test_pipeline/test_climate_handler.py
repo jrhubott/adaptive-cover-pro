@@ -108,18 +108,30 @@ class TestClimateHandlerSummerStrategy:
 
     handler = ClimateHandler()
 
-    def test_summer_uses_summer_control_method(self) -> None:
-        """High inside temperature → SUMMER control method."""
+    def test_summer_transparent_blind_uses_summer_control_method(self) -> None:
+        """Summer + transparent blind + presence → SUMMER_COOLING (close to 0%)."""
         cover = _make_blind_cover()
         snap = make_snapshot(
             cover=cover,
             climate_mode_enabled=True,
             climate_readings=_make_readings(inside_temperature=30.0),
-            climate_options=_make_options(temp_high=26.0),
+            climate_options=_make_options(temp_high=26.0, transparent_blind=True),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.SUMMER
+
+    def test_summer_non_transparent_blind_defers(self) -> None:
+        """Summer + non-transparent blind + presence → GLARE_CONTROL → climate defers."""
+        cover = _make_blind_cover()
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0),
+            climate_options=_make_options(temp_high=26.0, transparent_blind=False),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is None
 
     def test_summer_sets_climate_state_on_result(self) -> None:
         """climate_state is populated on PipelineResult when ClimateHandler fires."""
@@ -128,7 +140,7 @@ class TestClimateHandlerSummerStrategy:
             cover=cover,
             climate_mode_enabled=True,
             climate_readings=_make_readings(inside_temperature=30.0),
-            climate_options=_make_options(temp_high=26.0),
+            climate_options=_make_options(temp_high=26.0, transparent_blind=True),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
@@ -156,22 +168,56 @@ class TestClimateHandlerWinterStrategy:
 
 
 class TestClimateHandlerGlareControl:
-    """Intermediate: glare control (neither summer nor winter)."""
+    """Intermediate season: climate defers to GlareZone/Solar handlers."""
 
     handler = ClimateHandler()
 
-    def test_intermediate_uses_solar_method(self) -> None:
-        """Comfortable temperature → SOLAR method (glare control)."""
+    def test_glare_control_defers_to_pipeline(self) -> None:
+        """Comfortable temperature + presence + sun valid → climate returns None (defers)."""
         cover = _make_blind_cover(direct_sun_valid=True)
         snap = make_snapshot(
             cover=cover,
             climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=22.0),
+            climate_readings=_make_readings(inside_temperature=22.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is None
+
+    def test_no_presence_intermediate_returns_default(self) -> None:
+        """Comfortable temperature + no presence → climate still wins (returns default, not None)."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0, is_presence=False),
             climate_options=_make_options(temp_low=18.0, temp_high=26.0),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
-        assert result.control_method == ControlMethod.SOLAR
+
+    def test_low_light_does_not_defer(self) -> None:
+        """Presence + intermediate + no sun → LOW_LIGHT strategy, climate wins (not None)."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0, is_presence=True, is_sunny=False),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+
+    def test_describe_skip_defer_reason(self) -> None:
+        """describe_skip returns defer message when climate mode is on and deferred."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+        )
+        assert "deferred" in self.handler.describe_skip(snap).lower()
 
 
 class TestClimateHandlerMetadata:
@@ -180,13 +226,13 @@ class TestClimateHandlerMetadata:
     handler = ClimateHandler()
 
     def test_result_includes_climate_strategy(self) -> None:
-        """PipelineResult.climate_strategy is populated."""
+        """PipelineResult.climate_strategy is populated when climate wins."""
         cover = _make_blind_cover(direct_sun_valid=True)
         snap = make_snapshot(
             cover=cover,
             climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=30.0),
-            climate_options=_make_options(temp_high=26.0),
+            climate_readings=_make_readings(inside_temperature=15.0),
+            climate_options=_make_options(temp_low=18.0),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
@@ -206,8 +252,8 @@ class TestClimateHandlerMetadata:
         snap = make_snapshot(
             cover=cover,
             climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=30.0),
-            climate_options=_make_options(temp_high=26.0),
+            climate_readings=_make_readings(inside_temperature=15.0),
+            climate_options=_make_options(temp_low=18.0),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
@@ -225,7 +271,7 @@ class TestClimateHandlerMetadata:
                 is_presence=True,
                 is_sunny=True,
             ),
-            climate_options=_make_options(temp_high=26.0),
+            climate_options=_make_options(temp_high=26.0, transparent_blind=True),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
@@ -270,8 +316,8 @@ class TestWinterInsulation:
         assert result is not None
         assert result.position == 0
 
-    def test_insulation_disabled_uses_default_with_presence(self) -> None:
-        """Winter + no sun in FOV + insulation DISABLED + presence → glare/default strategy."""
+    def test_insulation_disabled_defers_with_presence(self) -> None:
+        """Winter + no sun in FOV + insulation DISABLED + presence → climate defers."""
         cover = _make_blind_cover(direct_sun_valid=False)
         cover.valid = False
         snap = make_snapshot(
@@ -281,11 +327,8 @@ class TestWinterInsulation:
             climate_options=_make_options(temp_low=18.0, winter_close_insulation=False),
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        # Insulation is off → strategy is GLARE_CONTROL (not WINTER_INSULATION)
-        from custom_components.adaptive_cover_pro.enums import ClimateStrategy
-
-        assert result.climate_strategy != ClimateStrategy.WINTER_INSULATION
+        # Winter + no sun + insulation off + presence → GLARE_CONTROL → climate defers
+        assert result is None
 
     def test_winter_heating_takes_priority_over_insulation_with_presence(self) -> None:
         """Winter + sun in FOV → open (100%), not closed for insulation."""
@@ -355,7 +398,7 @@ class TestWinterInsulation:
     # ------------------------------------------------------------------
 
     def test_insulation_no_effect_in_summer(self) -> None:
-        """Summer + insulation enabled → summer cooling logic, not insulation."""
+        """Summer + insulation enabled → climate defers (GLARE_CONTROL), not insulation close."""
         cover = _make_blind_cover(direct_sun_valid=False)
         cover.valid = False
         snap = make_snapshot(
@@ -365,12 +408,12 @@ class TestWinterInsulation:
             climate_options=_make_options(temp_high=26.0, winter_close_insulation=True),
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        # Summer cooling with transparent_blind=False → solar position, not 0
-        assert result.control_method == ControlMethod.SUMMER
+        # Summer + non-transparent + presence → GLARE_CONTROL → climate defers
+        # (winter_close_insulation has no effect in summer)
+        assert result is None
 
     def test_insulation_no_effect_in_intermediate_season(self) -> None:
-        """Intermediate temp + insulation enabled → glare/default, not closed."""
+        """Intermediate temp + insulation enabled → climate defers, not insulation close."""
         cover = _make_blind_cover(direct_sun_valid=False)
         cover.valid = False
         snap = make_snapshot(
@@ -382,8 +425,9 @@ class TestWinterInsulation:
             ),
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.SOLAR
+        # Intermediate + presence → GLARE_CONTROL → climate defers
+        # (winter_close_insulation has no effect in non-winter)
+        assert result is None
 
     # ------------------------------------------------------------------
     # climate mode off: insulation has no effect
