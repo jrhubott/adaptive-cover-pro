@@ -37,7 +37,7 @@ Data Coordinator Pattern with layered architecture:
 
 **`pipeline/`** — Override priority chain
 - `registry.py` evaluates handlers in priority order, builds decision trace
-- Handlers: `force_override`(100) > `weather`(90) > `manual_override`(80) > `custom_position_N`(1–99, default 77) > `motion_timeout`(75) > `cloud_suppression`(60) > `climate`(50) > `glare_zone`(45) > `solar`(40) > `default`(0)
+- Handlers: `force_override`(100) > `weather`(90) > `manual_override`(80) > `custom_position_N`(1–99, default 77) > `motion_timeout`(75) > `cloud_suppression`(60) > `glare_zone`(55) > `climate`(50) > `solar`(40) > `default`(0)
 - Up to 4 custom position handlers per instance; `_build_pipeline()` in coordinator creates them at startup; `PipelineRegistry` sorts by priority
 
 **`managers/`** — Extracted coordinator responsibilities

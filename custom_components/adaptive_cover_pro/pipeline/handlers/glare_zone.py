@@ -23,7 +23,7 @@ from ..types import PipelineResult, PipelineSnapshot
 class GlareZoneHandler(OverrideHandler):
     """Lower the blind further when active glare zones need more protection than SolarHandler.
 
-    Priority 45 — between ClimateHandler (50) and SolarHandler (40).
+    Priority 55 — above ClimateHandler (50), below CloudSuppressionHandler (60).
     Only applies to vertical covers (cover_blind). Computes effective distances
     for all active glare zones using pure geometry, then returns a position
     based on the minimum (closest) zone distance when it is less than the
@@ -38,7 +38,7 @@ class GlareZoneHandler(OverrideHandler):
     """
 
     name = "glare_zone"
-    priority = 45
+    priority = 55
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return glare-zone-adjusted position when a zone requires deeper coverage."""
@@ -49,6 +49,14 @@ class GlareZoneHandler(OverrideHandler):
         if not snapshot.glare_zones or not snapshot.active_zone_names:
             return None
         if not snapshot.cover.direct_sun_valid:
+            return None
+        # Respect presence sensor when climate mode is enabled — nobody home means
+        # no glare protection needed (consistent with ClimateHandler behavior).
+        if (
+            snapshot.climate_mode_enabled
+            and snapshot.climate_readings is not None
+            and not snapshot.climate_readings.is_presence
+        ):
             return None
 
         cover = cast(AdaptiveVerticalCover, snapshot.cover)
@@ -103,4 +111,10 @@ class GlareZoneHandler(OverrideHandler):
         """Reason when glare zone handler does not match."""
         if not snapshot.in_time_window:
             return "outside time window"
+        if (
+            snapshot.climate_mode_enabled
+            and snapshot.climate_readings is not None
+            and not snapshot.climate_readings.is_presence
+        ):
+            return "no presence detected (climate mode)"
         return "no active glare zones or sun not in FOV"
