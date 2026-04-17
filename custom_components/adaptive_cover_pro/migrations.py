@@ -23,7 +23,7 @@ _PRUNE_V1_FLAG = "_orphan_prune_v1"
 # Format: suffix appended to entry_id (i.e. the part after the first underscore).
 _LEGACY_BINARY_SENSOR_SUFFIXES = frozenset(
     [
-        "_Sun Infront",   # superseded by _sun_motion
+        "_Sun Infront",  # superseded by _sun_motion
         "_Manual Override",  # superseded by _manual_override
     ]
 )

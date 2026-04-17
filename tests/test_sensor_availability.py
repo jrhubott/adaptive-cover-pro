@@ -339,7 +339,10 @@ def test_all_entity_subclasses_have_availability_factories():
     assert not missing, (
         "New AdaptiveCoverBaseEntity subclass(es) found without a factory in "
         "ENTITY_FACTORIES (test_sensor_availability.py):\n"
-        + "\n".join(f"  - {cls.__module__}.{cls.__name__}" for cls in sorted(missing, key=lambda c: c.__name__))
+        + "\n".join(
+            f"  - {cls.__module__}.{cls.__name__}"
+            for cls in sorted(missing, key=lambda c: c.__name__)
+        )
         + "\n\nAdd a factory lambda for each class so the startup-race availability "
         "test covers it automatically."
     )

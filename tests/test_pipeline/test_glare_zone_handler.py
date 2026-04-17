@@ -579,7 +579,10 @@ class TestGlareZoneDescribeSkip:
             active_zone_names=set(),
             in_time_window=True,
         )
-        assert self.handler.describe_skip(snap) == "no active glare zones or sun not in FOV"
+        assert (
+            self.handler.describe_skip(snap)
+            == "no active glare zones or sun not in FOV"
+        )
 
     def test_describe_skip_sun_not_valid(self) -> None:
         """Sun not in FOV → same 'no active glare zones' message."""
@@ -594,7 +597,10 @@ class TestGlareZoneDescribeSkip:
             active_zone_names={"desk"},
             in_time_window=True,
         )
-        assert self.handler.describe_skip(snap) == "no active glare zones or sun not in FOV"
+        assert (
+            self.handler.describe_skip(snap)
+            == "no active glare zones or sun not in FOV"
+        )
 
 
 class TestGlareZoneReasonString:
@@ -743,9 +749,9 @@ class TestGlareZoneRegressionMaxVsMin:
         )
         glare_cfg = GlareZonesConfig(
             zones=[
-                GlareZone(name="zone_far", x=0.0, y=350.0, radius=0.0),   # 3.5 m
-                GlareZone(name="zone_mid", x=0.0, y=150.0, radius=0.0),   # 1.5 m
-                GlareZone(name="zone_near", x=0.0, y=50.0, radius=0.0),   # 0.5 m
+                GlareZone(name="zone_far", x=0.0, y=350.0, radius=0.0),  # 3.5 m
+                GlareZone(name="zone_mid", x=0.0, y=150.0, radius=0.0),  # 1.5 m
+                GlareZone(name="zone_near", x=0.0, y=50.0, radius=0.0),  # 0.5 m
             ],
             window_width=400.0,
         )

@@ -1104,7 +1104,11 @@ def test_capability_listing_not_in_summary():
     """Full capability listing (entity: set position, open...) is not in _build_config_summary."""
     from homeassistant.components.cover import CoverEntityFeature
 
-    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    feats = (
+        CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+    )
     hass = _make_hass({"cover.living_room": {"supported_features": feats}})
     cfg = {CONF_ENTITIES: ["cover.living_room"]}
     summary = _build_config_summary(cfg, SensorType.BLIND, hass)
@@ -1176,7 +1180,9 @@ def test_capabilities_section_warns_on_open_close_only():
 
 def test_capabilities_section_unavailable_entity():
     """Unavailable entity renders ⚠️ not-ready warning."""
-    hass = _make_hass({"cover.blind": {"state": "unavailable", "supported_features": 0}})
+    hass = _make_hass(
+        {"cover.blind": {"state": "unavailable", "supported_features": 0}}
+    )
     # check_cover_features returns None for unavailable state
     cfg = {CONF_ENTITIES: ["cover.blind"]}
     result = _build_cover_capabilities_text(cfg, SensorType.BLIND, hass)
@@ -1187,7 +1193,11 @@ def test_capabilities_section_assumed_state_warning():
     """Cover with assumed_state attribute renders ⚠️ assumed-state warning."""
     from homeassistant.components.cover import CoverEntityFeature
 
-    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    feats = (
+        CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+    )
     hass = _make_hass(
         {"cover.blind": {"supported_features": feats, "assumed_state": True}}
     )
@@ -1223,7 +1233,11 @@ def test_capabilities_section_tilt_type_mismatch():
     """Tilt sensor_type with no set_tilt_position cover renders mismatch warning."""
     from homeassistant.components.cover import CoverEntityFeature
 
-    feats = CoverEntityFeature.SET_POSITION | CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    feats = (
+        CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+    )
     hass = _make_hass({"cover.blind": {"supported_features": feats}})
     cfg = {CONF_ENTITIES: ["cover.blind"]}
     result = _build_cover_capabilities_text(cfg, SensorType.TILT, hass)

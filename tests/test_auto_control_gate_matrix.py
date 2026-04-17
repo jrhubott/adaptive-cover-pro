@@ -301,7 +301,7 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
     ),
     MatrixCase(
         id="state_change_force_override_released",
-        is_safety_bypass=True,   # force=True bypasses auto_control gate
+        is_safety_bypass=True,  # force=True bypasses auto_control gate
         is_safety_target=False,  # but is NOT a persistent safety target (#223)
         setup=lambda _: None,
         trigger=_trigger_force_override_released,

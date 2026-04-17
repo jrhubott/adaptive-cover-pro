@@ -55,6 +55,14 @@ def _make_hass(coordinators: dict) -> MagicMock:
     return hass
 
 
+def _get_handler(hass: MagicMock, service_name: str):
+    """Return the registered handler for a service by name (not by position)."""
+    for call in hass.services.async_register.call_args_list:
+        if call[0][1] == service_name:
+            return call[0][2]
+    raise ValueError(f"Service {service_name!r} was never registered")
+
+
 def _make_call(entity_id=None, device_id=None, area_id=None) -> MagicMock:
     call = MagicMock()
     call.data = {}
@@ -181,9 +189,7 @@ async def test_integration_enable_no_target_enables_all():
     hass = _make_hass({"entry_a": coord_a, "entry_b": coord_b})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-3][0][
-        2
-    ]  # 3rd-from-last = enable
+    handler = _get_handler(hass, "integration_enable")
 
     call = _make_call()
     await handler(call)
@@ -199,7 +205,7 @@ async def test_integration_enable_sends_no_commands():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-3][0][2]
+    handler = _get_handler(hass, "integration_enable")
 
     call = _make_call()
     await handler(call)
@@ -220,9 +226,7 @@ async def test_integration_disable_calls_stop_in_flight():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-2][0][
-        2
-    ]  # 2nd-from-last = disable
+    handler = _get_handler(hass, "integration_disable")
 
     call = _make_call()
     await handler(call)
@@ -238,7 +242,7 @@ async def test_integration_disable_sets_enabled_false():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-2][0][2]
+    handler = _get_handler(hass, "integration_disable")
 
     call = _make_call()
     await handler(call)
@@ -253,7 +257,7 @@ async def test_integration_disable_cancels_timers_and_clears_state():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-2][0][2]
+    handler = _get_handler(hass, "integration_disable")
 
     call = _make_call()
     await handler(call)
@@ -275,9 +279,7 @@ async def test_emergency_stop_calls_stop_all():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-1][0][
-        2
-    ]  # last = emergency_stop
+    handler = _get_handler(hass, "emergency_stop")
 
     call = _make_call()
     await handler(call)
@@ -293,7 +295,7 @@ async def test_emergency_stop_also_disables_integration():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-1][0][2]
+    handler = _get_handler(hass, "emergency_stop")
 
     call = _make_call()
     await handler(call)
@@ -308,7 +310,7 @@ async def test_emergency_stop_with_entity_filter_narrows_stop():
     hass = _make_hass({"entry_a": coord_a})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-1][0][2]
+    handler = _get_handler(hass, "emergency_stop")
 
     call = _make_call(entity_id="cover.a")
     await handler(call)
@@ -324,7 +326,7 @@ async def test_emergency_stop_no_target_hits_all_instances():
     hass = _make_hass({"entry_a": coord_a, "entry_b": coord_b})
 
     await async_setup_services(hass)
-    handler = hass.services.async_register.call_args_list[-1][0][2]
+    handler = _get_handler(hass, "emergency_stop")
 
     call = _make_call()
     await handler(call)

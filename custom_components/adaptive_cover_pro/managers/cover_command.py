@@ -50,7 +50,9 @@ class PositionContext:
     special_positions: list[int]
     inverse_state: bool = False
     force: bool = False  # Skip all gate checks when True
-    is_safety: bool = False  # Safety-critical target (persists across window boundaries)
+    is_safety: bool = (
+        False  # Safety-critical target (persists across window boundaries)
+    )
     use_my_position: bool = (
         False  # Route through send_my_position() on non-position-capable covers
     )
