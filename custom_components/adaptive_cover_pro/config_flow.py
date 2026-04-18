@@ -1129,7 +1129,6 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     has_glare = (
         bool(config.get(CONF_ENABLE_GLARE_ZONES))
         and sensor_type == SensorType.BLIND
-        and sun_tracking_enabled
     )
 
     def _pos_label(raw_pct: int, use_my: bool) -> str:
@@ -1546,9 +1545,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         (40, "Solar", sun_tracking_enabled),
         (0, "Default", True),
     ]
-    if (
-        sensor_type == SensorType.BLIND or sensor_type is None
-    ) and sun_tracking_enabled:
+    if sensor_type == SensorType.BLIND or sensor_type is None:
         _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
     for _slot, _eid, _pos, _pri, _use_my in _custom_slots:

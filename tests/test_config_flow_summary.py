@@ -991,18 +991,31 @@ def test_sun_tracking_default_enabled_shows_tracking_message():
     assert "Sun tracking disabled" not in summary
 
 
-def test_sun_tracking_disabled_hides_glare_zones():
-    """Glare zone entry is omitted when sun tracking is disabled."""
-    cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_ENABLE_GLARE_ZONES: True}
+def test_glare_zones_shown_when_sun_tracking_disabled():
+    """Glare zones remain in summary when sun tracking is off (issue #238)."""
+    cfg = {
+        CONF_ENABLE_SUN_TRACKING: False,
+        CONF_ENABLE_GLARE_ZONES: True,
+        "glare_zone_1_name": "Desk",
+    }
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Glare" not in summary
+    assert "Glare" in summary
+    assert "Desk" in summary
 
 
 def test_sun_tracking_disabled_priority_chain_shows_solar_inactive():
-    """Priority chain marks Solar (and Glare) as inactive when sun tracking is off."""
+    """Priority chain marks Solar as inactive when sun tracking is off."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_ENABLE_GLARE_ZONES: False}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "❌Solar" in summary
+
+
+def test_priority_chain_glare_independent_of_sun_tracking():
+    """Priority chain shows Glare as active even with sun tracking off, when glare zones enabled."""
     cfg = {CONF_ENABLE_SUN_TRACKING: False, CONF_ENABLE_GLARE_ZONES: True}
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "❌Solar" in summary or "Solar" not in summary or "✅Solar" not in summary
+    assert "✅Glare" in summary
+    assert "❌Solar" in summary
 
 
 # ---------------------------------------------------------------------------

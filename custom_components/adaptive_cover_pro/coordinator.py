@@ -1502,9 +1502,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
 
         sun_tracking_enabled = options.get(CONF_ENABLE_SUN_TRACKING, True)
-        sun_handlers = (
-            [GlareZoneHandler(), SolarHandler()] if sun_tracking_enabled else []
-        )
+        solar_handlers = [SolarHandler()] if sun_tracking_enabled else []
         handlers = [
             ForceOverrideHandler(),
             WeatherOverrideHandler(),
@@ -1513,7 +1511,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             MotionTimeoutHandler(),
             CloudSuppressionHandler(),
             ClimateHandler(),
-            *sun_handlers,
+            GlareZoneHandler(),
+            *solar_handlers,
             DefaultHandler(),
         ]
         self.logger.debug(
