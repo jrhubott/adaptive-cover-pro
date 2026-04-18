@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from dateutil import parser
 from homeassistant.core import HomeAssistant, split_entity_id
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from .sun import SunData
@@ -37,9 +38,19 @@ def get_timedelta_str(string: str):
 
 
 def get_datetime_from_str(string: str):
-    """Convert datetime string to datetime."""
-    if string is not None:
-        return parser.parse(string, ignoretz=True)
+    """Convert a datetime string to a naive-local datetime.
+
+    Tz-aware inputs (e.g., sun-sensor UTC values like "2026-04-18T04:46:00+00:00")
+    are converted to HA's configured local timezone and then stripped of tzinfo so
+    downstream naive comparisons work correctly in non-UTC installs.
+    Tz-naive inputs (e.g., static "06:30") are returned unchanged.
+    """
+    if string is None:
+        return None
+    parsed = parser.parse(string)
+    if parsed.tzinfo is not None:
+        parsed = dt_util.as_local(parsed).replace(tzinfo=None)
+    return parsed
 
 
 def get_last_updated(entity_id: str, hass: HomeAssistant):
