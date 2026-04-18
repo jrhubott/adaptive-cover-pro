@@ -26,3 +26,11 @@ repos:
     hooks:
       - id: prettier
         name: 🎨 Format using prettier
+  - repo: local
+    hooks:
+      - id: validate-translations
+        name: Validate translations match en.json
+        entry: scripts/validate_translations.py --ci
+        language: system
+        pass_filenames: false
+        files: ^custom_components/adaptive_cover_pro/translations/.*\.json$
