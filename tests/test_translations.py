@@ -1,7 +1,9 @@
-"""Tests for translation files — key consistency, content validation, and HA contract.
+"""Tests for translation files — structural parity with en.json + content hygiene.
 
-Verifies all 13 language files have valid structure and no regressions
-(emoji removal #146, strings.json sync, etc.).
+The integration ships English, German, and French. `en.json` is the single
+source of truth. The `services` section is intentionally English-only (HA
+falls back to English for locales missing it), so DE/FR must match en.json
+exactly for every section *except* `services`.
 """
 
 from __future__ import annotations
@@ -19,12 +21,12 @@ TRANSLATIONS_DIR = (
     / "adaptive_cover_pro"
     / "translations"
 )
-STRINGS_JSON = (
-    Path(__file__).parent.parent
-    / "custom_components"
-    / "adaptive_cover_pro"
-    / "strings.json"
-)
+
+SHIPPED_LANGUAGES = {"en", "de", "fr"}
+
+# Top-level sections in en.json that are intentionally *not* carried by other
+# languages. HA falls back to English for any locale missing these.
+EN_ONLY_SECTIONS = ("services",)
 
 TRANSLATION_FILES = sorted(TRANSLATIONS_DIR.glob("*.json"))
 LANGUAGE_CODES = [f.stem for f in TRANSLATION_FILES]
@@ -41,23 +43,22 @@ def _load(path: Path) -> dict:
         return json.load(fh)
 
 
-def _flatten(d: dict, prefix: str = "") -> set[str]:
-    """Recursively flatten a nested dict to a set of dot-delimited key paths."""
-    keys = set()
-    for k, v in d.items():
-        full_key = f"{prefix}.{k}" if prefix else k
-        if isinstance(v, dict):
-            keys |= _flatten(v, full_key)
-        elif isinstance(v, list):
-            keys.add(full_key)
-        else:
-            keys.add(full_key)
+def _flatten(d: object, prefix: str = "") -> set[str]:
+    """Recursively flatten a nested dict to a set of dot-delimited leaf key paths."""
+    keys: set[str] = set()
+    if isinstance(d, dict):
+        for k, v in d.items():
+            full_key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                keys |= _flatten(v, full_key)
+            else:
+                keys.add(full_key)
     return keys
 
 
 def _all_leaf_values(d: object) -> list[str]:
     """Recursively collect all string leaf values from a nested dict."""
-    values = []
+    values: list[str] = []
     if isinstance(d, dict):
         for v in d.values():
             values.extend(_all_leaf_values(v))
@@ -69,157 +70,139 @@ def _all_leaf_values(d: object) -> list[str]:
     return values
 
 
+def _strip_en_only(keys: set[str]) -> set[str]:
+    """Drop any dotpath that belongs to an EN_ONLY_SECTIONS subtree."""
+    return {
+        k
+        for k in keys
+        if not any(
+            k == section or k.startswith(f"{section}.") for section in EN_ONLY_SECTIONS
+        )
+    }
+
 
 # ---------------------------------------------------------------------------
-# 8a: All files are valid JSON
+# File set
+# ---------------------------------------------------------------------------
+
+
+def test_shipped_translation_files_exist() -> None:
+    """Exactly en, de, fr are present in translations/."""
+    actual = {f.stem for f in TRANSLATION_FILES}
+    assert actual == SHIPPED_LANGUAGES, (
+        f"Translation file mismatch. "
+        f"Missing: {SHIPPED_LANGUAGES - actual}, "
+        f"Extra: {actual - SHIPPED_LANGUAGES}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# All files are valid JSON
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_translation_file_valid_json(lang_file: Path) -> None:
     """Each translation file must be valid JSON."""
-    data = _load(lang_file)  # Raises if invalid
+    data = _load(lang_file)
     assert isinstance(data, dict)
 
 
 # ---------------------------------------------------------------------------
-# 8b: English is the reference — all languages must have same top-level keys
+# Top-level shape
 # ---------------------------------------------------------------------------
 
 
-def test_all_translations_have_title_key() -> None:
-    """All translation files must have a 'title' key."""
-    for lang_file in TRANSLATION_FILES:
-        data = _load(lang_file)
-        assert "title" in data, f"{lang_file.name} missing 'title' key"
-
-
-def test_all_translations_have_config_key() -> None:
-    """All translation files must have a 'config' key."""
-    for lang_file in TRANSLATION_FILES:
-        data = _load(lang_file)
-        assert "config" in data, f"{lang_file.name} missing 'config' key"
-
-
 def test_en_json_has_expected_top_level_sections() -> None:
-    """English translation must contain the standard HA sections."""
+    """English must contain the standard HA sections plus services."""
     en_data = _load(TRANSLATIONS_DIR / "en.json")
-    for section in ("title", "config", "options"):
+    for section in ("title", "config", "options", "selector", "entity", "services"):
         assert section in en_data, f"en.json missing '{section}' section"
 
+
+@pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
+def test_all_translations_have_title_and_config(lang_file: Path) -> None:
+    """Every file must have at minimum `title` and `config`."""
+    data = _load(lang_file)
+    assert "title" in data, f"{lang_file.name} missing 'title'"
+    assert "config" in data, f"{lang_file.name} missing 'config'"
+
+
+def test_non_en_files_omit_services_section() -> None:
+    """DE/FR must not carry a `services` section — HA falls back to English."""
+    for lang_file in TRANSLATION_FILES:
+        if lang_file.stem == "en":
+            continue
+        data = _load(lang_file)
+        assert (
+            "services" not in data
+        ), f"{lang_file.name} carries a `services` section — it must be English-only"
+
+
+# ---------------------------------------------------------------------------
+# Structural parity — every non-en file has the same keys as en.json minus services.*
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "lang_file",
+    [f for f in TRANSLATION_FILES if f.stem != "en"],
+    ids=[f.stem for f in TRANSLATION_FILES if f.stem != "en"],
+)
+def test_key_structure_matches_en(lang_file: Path) -> None:
+    """Non-en files must have exactly the same leaf keys as en.json minus EN_ONLY_SECTIONS."""
+    en_keys = _strip_en_only(_flatten(_load(TRANSLATIONS_DIR / "en.json")))
+    target_keys = _flatten(_load(lang_file))
+
+    missing = en_keys - target_keys
+    extra = target_keys - en_keys
+
+    assert not missing and not extra, (
+        f"{lang_file.name} key-set differs from en.json (minus {EN_ONLY_SECTIONS}):\n"
+        f"  Missing ({len(missing)}): {sorted(missing)[:10]}{'...' if len(missing) > 10 else ''}\n"
+        f"  Extra   ({len(extra)}): {sorted(extra)[:10]}{'...' if len(extra) > 10 else ''}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Content hygiene
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_no_icon_mdi_prefix_in_values(lang_file: Path) -> None:
-    """Translation values must not contain 'mdi:' icon references."""
-    data = _load(lang_file)
-    values = _all_leaf_values(data)
+    """Translation values must not contain `mdi:` icon references."""
+    values = _all_leaf_values(_load(lang_file))
     for value in values:
-        assert "mdi:" not in value, (
-            f"{lang_file.name}: 'mdi:' icon reference found in value: {value!r}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 8d: No empty string values
-# ---------------------------------------------------------------------------
+        assert (
+            "mdi:" not in value
+        ), f"{lang_file.name}: 'mdi:' icon reference found in value: {value!r}"
 
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_no_empty_string_values(lang_file: Path) -> None:
     """No translation value should be an empty string."""
-    data = _load(lang_file)
-    values = _all_leaf_values(data)
+    values = _all_leaf_values(_load(lang_file))
     for value in values:
-        assert value != "", (
-            f"{lang_file.name}: empty string found among translation values"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 8e: No zero-width or invisible unicode characters
-# ---------------------------------------------------------------------------
+        assert (
+            value != ""
+        ), f"{lang_file.name}: empty string found among translation values"
 
 
 @pytest.mark.parametrize("lang_file", TRANSLATION_FILES, ids=LANGUAGE_CODES)
 def test_no_invisible_unicode_chars(lang_file: Path) -> None:
     """Translation values must not contain zero-width joiners or similar invisible chars."""
-    INVISIBLE = {
+    invisible = {
         "\u200b",  # zero-width space
         "\u200c",  # zero-width non-joiner
         "\u200d",  # zero-width joiner
         "\ufeff",  # BOM
         "\u00ad",  # soft hyphen
     }
-    data = _load(lang_file)
-    values = _all_leaf_values(data)
+    values = _all_leaf_values(_load(lang_file))
     for value in values:
-        for char in INVISIBLE:
+        for char in invisible:
             assert char not in value, (
                 f"{lang_file.name}: invisible Unicode char U+{ord(char):04X} "
                 f"found in value: {value!r}"
             )
-
-
-# ---------------------------------------------------------------------------
-# 8f: strings.json must match en.json (HA contract)
-# ---------------------------------------------------------------------------
-
-
-def test_strings_json_is_valid_json() -> None:
-    """strings.json must exist and be valid JSON.
-
-    In HA custom components, translations/en.json is the primary source;
-    strings.json is used by the frontend dev toolchain. They may diverge
-    as en.json is evolved first. This test verifies strings.json is at
-    least valid JSON so the frontend toolchain does not break.
-    """
-    assert STRINGS_JSON.exists(), f"strings.json not found at {STRINGS_JSON}"
-    data = _load(STRINGS_JSON)
-    assert isinstance(data, dict), "strings.json must be a JSON object"
-    assert "config" in data, "strings.json must have a 'config' section"
-
-
-# ---------------------------------------------------------------------------
-# 8g: All files have consistent structure (keys not missing from any language)
-# ---------------------------------------------------------------------------
-
-
-def test_all_languages_have_options_section() -> None:
-    """All translation files that have options in en.json should have it too."""
-    en_data = _load(TRANSLATIONS_DIR / "en.json")
-    if "options" not in en_data:
-        pytest.skip("en.json has no options section")
-
-    for lang_file in TRANSLATION_FILES:
-        if lang_file.stem == "en":
-            continue
-        data = _load(lang_file)
-        assert "options" in data, (
-            f"{lang_file.name} is missing 'options' section present in en.json"
-        )
-
-
-def test_thirteen_translation_files_exist() -> None:
-    """Exactly 13 language files exist in the translations directory."""
-    expected_languages = {
-        "cs",
-        "de",
-        "en",
-        "es",
-        "fr",
-        "hu",
-        "it",
-        "nl",
-        "pl",
-        "pt-BR",
-        "sk",
-        "sl",
-        "uk",
-    }
-    actual_languages = {f.stem for f in TRANSLATION_FILES}
-    assert actual_languages == expected_languages, (
-        f"Translation file mismatch. "
-        f"Missing: {expected_languages - actual_languages}, "
-        f"Extra: {actual_languages - expected_languages}"
-    )

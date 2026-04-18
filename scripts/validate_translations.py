@@ -6,13 +6,14 @@ Usage:
     ./scripts/validate_translations.py de         # Show detailed report for one language
     ./scripts/validate_translations.py --ci       # CI mode: exit 1 if any language has missing/extra keys
 
-Cross-session translation tracker: run this at the start of any session to see
-which languages still need retranslation and which are complete.
+Shipped languages: en (source), de, fr. The `services` section in en.json is
+intentionally English-only — HA falls back to English for locales missing it —
+so DE/FR files omit that section entirely.
 
 STATUS LEGEND:
-  ✅ Complete     — key structure matches en.json, no untranslated strings
-  🔄 In Progress  — key structure matches en.json, but some values still match English
-  ❌ Needs Work   — key structure does not match en.json (missing or extra keys)
+  ✅ Complete     — key structure matches en.json (minus services), no untranslated strings
+  🔄 In Progress  — key structure matches, but some values still match English
+  ❌ Needs Work   — key structure does not match (missing or extra keys)
 """
 
 from __future__ import annotations
@@ -34,29 +35,26 @@ TRANSLATIONS_DIR = (
 )
 EN_FILE = TRANSLATIONS_DIR / "en.json"
 
-LANGUAGES = [
-    "cs",
-    "de",
-    "es",
-    "fr",
-    "hu",
-    "it",
-    "nl",
-    "pl",
-    "pt-BR",
-    "sk",
-    "sl",
-    "uk",
-]
+LANGUAGES = ["de", "fr"]
+
+# The `services` section is intentionally English-only. HA falls back to English
+# for locales missing a `services` block, so DE/FR omit it to minimise maintenance.
+EN_ONLY_SECTIONS = ("services",)
 
 # Values that are intentionally identical in all languages (technical identifiers,
 # placeholders, format strings, etc.)
 PLACEHOLDER_PATTERN = re.compile(r"^\{[^}]+\}$")  # pure placeholder e.g. {summary}
 
-# Leaf values that should never be translated (technical option keys, etc.)
-NEVER_TRANSLATE = {
-    # selector option keys — these are machine values, not display text
-    # (They appear as values in the JSON but are actually keys used by HA selectors)
+# "Word N" labels (e.g. "Sensor 1", "Zone 2") are technical labels, not prose.
+WORD_NUMBER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z\s]* \d+$")
+
+# Dotpath keys whose values are deliberately language-universal (proper nouns,
+# single words that are identical in all shipped languages, etc.).
+UNIVERSAL_KEYS: set[str] = {
+    "title",                                    # product name "Adaptive Cover Pro"
+    "config.step.create_new.data.name",         # "Name" — same in DE/FR
+    "config.step.duplicate_configure.data.name",  # "Name" — same in DE/FR
+    "entity.sensor.decision_trace.state.winter",  # "Winter" — same in DE/FR
 }
 
 
@@ -88,7 +86,7 @@ def get_keys(obj: dict, prefix: str = "") -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def is_likely_untranslated(en_value: str, target_value: str) -> bool:
+def is_likely_untranslated(key: str, en_value: str, target_value: str) -> bool:
     """Return True if target_value appears to be the same as English (not yet translated).
 
     We consider a string 'untranslated' if it is byte-for-byte identical to the
@@ -99,8 +97,16 @@ def is_likely_untranslated(en_value: str, target_value: str) -> bool:
     if en_value != target_value:
         return False  # Already different — translated
 
+    # Keys explicitly declared as language-universal (proper nouns, etc.)
+    if key in UNIVERSAL_KEYS:
+        return False
+
     # Pure placeholders are intentionally identical
     if PLACEHOLDER_PATTERN.match(target_value.strip()):
+        return False
+
+    # "Word N" labels (e.g. "Sensor 1") are technical identifiers, not prose
+    if WORD_NUMBER_PATTERN.match(target_value.strip()):
         return False
 
     # Very short strings (≤3 chars) may legitimately be the same across languages
@@ -119,8 +125,25 @@ def is_likely_untranslated(en_value: str, target_value: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def analyse_language(lang: str, en_flat: dict[str, str]) -> dict:
-    """Return analysis dict for a single language."""
+def _strip_en_only_sections(en_flat: dict[str, str]) -> dict[str, str]:
+    """Return en_flat with top-level sections that DE/FR intentionally omit removed."""
+    return {
+        k: v
+        for k, v in en_flat.items()
+        if not any(
+            k == section or k.startswith(f"{section}.") for section in EN_ONLY_SECTIONS
+        )
+    }
+
+
+def analyse_language(lang: str, en_flat_full: dict[str, str]) -> dict:
+    """Return analysis dict for a single language.
+
+    `en_flat_full` is the entire flattened en.json. Non-en files are not expected
+    to carry EN_ONLY_SECTIONS (e.g. `services`), so we compare against en_flat
+    with those sections stripped.
+    """
+    en_flat = _strip_en_only_sections(en_flat_full)
     lang_file = TRANSLATIONS_DIR / f"{lang}.json"
 
     if not lang_file.exists():
@@ -159,7 +182,7 @@ def analyse_language(lang: str, en_flat: dict[str, str]) -> dict:
 
     untranslated = []
     for key in en_keys & target_keys:
-        if is_likely_untranslated(en_flat[key], target_flat[key]):
+        if is_likely_untranslated(key, en_flat[key], target_flat[key]):
             untranslated.append(key)
     untranslated.sort()
 
@@ -315,10 +338,7 @@ def main() -> int:
     en_flat = flatten(en_data)
 
     if args.language:
-        lang = args.language.lower()
-        # Normalise pt-br
-        if lang == "pt-br":
-            lang = "pt-BR"
+        lang = args.language
         if lang not in LANGUAGES:
             print(
                 f"ERROR: Unknown language '{lang}'. Valid: {', '.join(LANGUAGES)}",
@@ -333,7 +353,8 @@ def main() -> int:
 
     # Dashboard mode
     analyses = [analyse_language(lang, en_flat) for lang in LANGUAGES]
-    print_dashboard(analyses, len(en_flat))
+    # Total reported in dashboard is the translatable-key count (excluding EN_ONLY_SECTIONS)
+    print_dashboard(analyses, len(_strip_en_only_sections(en_flat)))
 
     if args.ci:
         has_errors = any(a["missing_keys"] or a["extra_keys"] for a in analyses)

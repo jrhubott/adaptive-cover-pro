@@ -1759,9 +1759,9 @@ The integration provides a comprehensive multi-step configuration UI (`config_fl
 - **Technical Term Explanations:** Complex concepts like azimuth, FOV (field of view), and elevation are explained in user-friendly language
 
 **Translation Support:**
-- English descriptions are in `strings.json` (base file) and `translations/en.json`
-- Additional languages supported: German (de), Spanish (es), French (fr), Dutch (nl), Slovak (sk)
-- Translations can be added by copying `strings.json` structure and translating the `data_description` values
+- English is the single source of truth: `translations/en.json`
+- Shipped languages: English (en), German (de), French (fr)
+- Additional languages are added via the `acp-translate` skill on maintainer request — see the Translations section in `CLAUDE.md`
 
 **Configuration Steps:**
 1. Initial setup: Choose cover type (vertical/horizontal/tilt)
@@ -1773,7 +1773,7 @@ The integration provides a comprehensive multi-step configuration UI (`config_fl
 7. Interpolation (optional): Custom position mapping for non-standard covers
 
 **Best Practices for Config Flow Changes:**
-- Always add `data_description` for new fields in `strings.json`
+- Always add `data_description` for new fields in `translations/en.json`, then run the `acp-translate` skill to propagate to DE/FR
 - Use `NumberSelector` with `unit_of_measurement` for all numeric inputs
 - Provide practical examples and typical values in descriptions
 - Test configuration flow on mobile and desktop interfaces

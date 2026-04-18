@@ -4,838 +4,952 @@
     "step": {
       "user": {
         "menu_options": {
-          "create_new": "Neue Abdeckung erstellen",
-          "duplicate_existing": "Von bestehender Abdeckung duplizieren"
+          "create_new": "Neue Beschattung erstellen",
+          "duplicate_existing": "Von vorhandener Beschattung duplizieren"
         }
       },
       "create_new": {
-        "title": "Neue Abdeckung erstellen",
+        "title": "Neue Beschattung erstellen",
         "data": {
           "name": "Name",
-          "mode": "Typ der Abdeckung"
+          "mode": "Art der Jalousie"
         }
       },
       "cover_entities": {
-        "title": "Abdeckungen & Gerät",
-        "description": "Wählen Sie die Abdeckungs-Entitäten aus, die diese Instanz steuern soll.",
+        "title": "Beschattungen & Gerät",
+        "description": "Wählen Sie die Beschattungsentitäten, die diese Instanz steuern wird.",
         "data": {
-          "group": "Abdeckungs-Entitäten",
+          "group": "Beschattungsentitäten",
           "linked_device_id": "An Gerät anhängen"
         },
         "data_description": {
-          "group": "Wählen Sie die Abdeckungs-Entitäten aus, die über diese Integrationsinstanz gesteuert werden sollen. Sie können mehrere Abdeckungen als Gruppe auswählen (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Abdeckungen für dieses Fenster – erstellen Sie für andere Fenster separate Integrationsinstanzen.",
-          "linked_device_id": "Physisches Gerät auswählen, in das die Entitäten zusammengeführt werden. Sensoren, Schalter und Schaltflächen erscheinen dann direkt unter diesem Gerät. 'Kein (eigenständiges Gerät)' wählen, um ein separates virtuelles Adaptive Cover-Gerät zu behalten."
+          "group": "Wählen Sie die Beschattungsentitäten, die diese Integrationsinstanz steuern soll. Sie können mehrere Beschattungen auswählen, um sie als Gruppe zu steuern (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Beschattungen aus, die diesem bestimmten Fenster dienen – erstellen Sie separate Integrationsinstanzen für verschiedene Fenster.",
+          "linked_device_id": "Wählen Sie ein physisches Gerät, in das die Entitäten dieser Integration zusammengeführt werden. Die Sensoren, Schalter und Schaltflächen der Integration werden direkt unter diesem Gerät in Home Assistant angezeigt. Wählen Sie „Keine (eigenständiges Gerät)“, um zu einem separaten virtuellen Adaptive Cover-Gerät zurückzukehren. Es werden nur Geräte angezeigt, die die ausgewählten Beschattungsentitäten besitzen."
         }
       },
       "geometry": {
-        "title": "Abdeckungsgeometrie",
-        "description": "Konfigurieren Sie die Abmessungen der Abdeckung. Diese Maße dienen zur Berechnung der Sonnenschutzposition.",
+        "title": "Beschattungsgeometrie",
+        "description": "Konfigurieren Sie die Beschattungsabmessungen. Diese Messungen werden verwendet, um die Sonnenschutzposition zu berechnen.",
         "data": {
           "window_height": "Fensterhöhe",
-          "distance_shaded_area": "Beschattungstiefe",
+          "distance_shaded_area": "Beschatteter Bereich",
           "window_depth": "Fenstertiefe (Laibung)",
-          "sill_height": "Brüstungshöhe",
+          "sill_height": "Fensterbretthöhe",
           "window_width": "Fensterbreite",
-          "length_awning": "Markisenausladung",
+          "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
-          "slat_depth": "Lamellenbreite",
+          "slat_depth": "Lamellentiefe",
           "slat_distance": "Lamellenabstand"
         },
         "data_description": {
-          "window_height": "Höhe des Fensters in Metern (Unterkante bis Oberkante der Glasfläche). Beispiele: Standardtür = 2,0 m, kleines Fenster = 1,5 m, Bodentieffenster = 2,5 m. Messen Sie von der Startposition der Abdeckung bis zu ihrem vollständig ausgefahrenen Ende. Hinweis: 1 Meter ≈ 3,3 Fuß.",
-          "distance_shaded_area": "Wie weit direktes Sonnenlicht in den Raum eindringen darf (in Metern). Definiert Ihre akzeptable Blendzone. Kleine Zone (0,3–0,5 m): maximaler Schatten, nahe am Fenster. Mittlere Zone (0,5–1,0 m): ausgewogen, für Wohnbereiche empfohlen. Große Zone (2,0–3,0 m): viel Licht im Raum, gut für dunkle Räume. GRÖSSERER Wert = mehr Sonnenlicht = Abdeckung HÖHER/OFFENER; KLEINERER Wert = weniger Sonnenlicht = Abdeckung TIEFER/GESCHLOSSENER. Messen Sie von der Fensterinnenkante bis zur gewünschten Sonnengrenze.",
-          "window_depth": "Tiefe der Fensterlaibung ab Wandoberfläche (Meter). Optionaler Parameter für höhere Genauigkeit. Standard: 0 (deaktiviert). Typische Werte: Bündig = 0,05 m (2 Zoll), Standardrahmen = 0,10 m (4 Zoll), Tiefe Laibung = 0,15 m (6 Zoll). Beeinflusst die Berechnung nur bei Winkeln > 10°.",
-          "sill_height": "Höhe vom Boden bis zur Unterkante des Fensters (Meter). Standard: 0 für bodennahe Fenster. Beispiel: Fenster mit Unterkante 1 m über dem Boden → 1,0 eintragen. Verbessert die Berechnungsgenauigkeit für erhöhte Fenster. Bereich: 0,0–3,0 m.",
-          "window_width": "Breite der Fensteröffnung in cm. Wird von Blendzonen genutzt, um festzustellen, welche Bodenbereiche bei einem bestimmten Sonnenwinkel direktes Licht empfangen. Messen Sie die innere Glasbreite.",
-          "length_awning": "Maximale Ausladung der Markise in Metern (vollständig ausgefahren). Messen Sie vom Befestigungspunkt bis zum Tuchende. Beispiele: Terrassenmarkise = 2,0–3,0 m, Fenstermarkise = 1,0–1,5 m.",
-          "angle": "Neigungswinkel der Markise im ausgefahrenen Zustand (0–45°). 0° = waagerecht (maximale Abdeckung), 15° = leichte Neigung (Wasserablauf), 30° = steile Neigung. Prüfen Sie die Herstellerangaben. Die meisten Markisen: 0–15°.",
-          "slat_depth": "Breite einer einzelnen Lamelle (von vorne nach hinten). Übliche Maße: Mini-Jalousien (1 Zoll) = 2,5 cm, Standard (2 Zoll) = 5 cm, breite Lamellen (2,5–3 Zoll) = 6,5–7,5 cm.",
-          "slat_distance": "Vertikaler Abstand zwischen Lamellenmittelpunkten. Von der Mitte einer Lamelle zur Mitte der nächsten messen. Üblicherweise etwas mehr als die Lamellenbreite. Typisch: 3–8 cm je nach Jalousietype."
+          "window_height": "Höhe Ihres Fensters in Metern (von unten bis oben des Glasbereichs). Beispiele: Standard-Tür = 2,0m, Kleines Fenster = 1,5m, Vom Boden bis zur Decke = 2,5m. Messen Sie von dort, wo die Beschattung beginnt, bis zu der Stelle, wo sie endet, wenn vollständig ausgefahren. Wird verwendet, um optimale Beschattungsposition zum Blockieren direkter Sonneneinstrahlung zu berechnen. Hinweis: 1 Meter ≈ 3,3 Fuß.",
+          "distance_shaded_area": "Wie weit Sie möchten, dass direkte Sonnenstrahlen in den Raum eindringen (in Metern). Dies definiert Ihre akzeptable „Blendungszone“ – der Bereich, in dem Sonnenlicht auf den Boden fallen kann. Die Beschattungsposition passt sich an, um diese Grenze zu halten, wenn sich die Sonne über den Himmel bewegt. Häufige Konfigurationen: Kleine Blendungszone (0,3–0,5m) hält Sonnenlicht sehr nah am Fenster (nutzen Sie, wenn Sie maximale Schatten wünschen); Mittlere Blendungszone (0,5–1,0m) erlaubt Sonne auf Schreibtisch oder Sitzbereich zu erreichen (ausgewogen, am häufigsten für Wohnräume); Große Blendungszone (2,0–3,0m) erlaubt Sonnenlicht tief in den Raum (gut für dunkle Räume oder passive Solarheizung). SCHLÜSSELKONZEPT: GRÖSSERER Wert = MEHR Sonnenlicht erlaubt tiefer in Raum = Beschattung bleibt HÖHER/MEHR OFFEN; KLEINERER Wert = WENIGER Sonnenlicht in Raum = Beschattung sinkt TIEFER/MEHR GESCHLOSSEN. Messen Sie vom Inneren Ihres Fensters zu dem Ort, wo Sie die Sonnengrenze haben möchten.",
+          "window_depth": "Tiefe der Fensterlaibung/des Rahmens von der Wandoberfläche (Meter). Optionaler Parameter für erweiterte Genauigkeit. Auf 0 (Standard) setzen zum Deaktivieren. Typische Werte: Bündige Montage = 0,05m (2 Zoll), Standard-Rahmen = 0,10m (4 Zoll), Tiefe Laibung = 0,15m (6 Zoll). Fenstertiefe bietet zusätzliche Sonnenblockerung bei schrägem Sonnenwinkel. Messen Sie von der äußeren Wandoberfläche zur Innenkante des Fensterrahmens. Beeinflusst Berechnung nur bei Winkeln >10°.",
+          "sill_height": "Höhe vom Boden zur Unterkante Ihres Fensters (in Metern). Auf 0 (Standard) setzen für bodengleiche Fenster oder wenn unbekannt. Für ein Fenster mit seiner Unterkante 1 Meter über dem Boden auf 1,0 setzen. Dies verbessert die Berechnungsgenauigkeit für erhöhte Fenster – ohne sie schließt sich die Jalousie geringfügig mehr als nötig. Bereich: 0,0–3,0m. Messen Sie vom Boden zur unteren Glaskante (der Brüstung). Hinweis: h_win (Fensterhöhe) wird immer noch von unten bis oben des Glases gemessen – dies sind unabhängige Messungen.",
+          "window_width": "Breite der Fensteröffnung in cm. Wird von Blendungszonen verwendet, um zu bestimmen, welche Bodenzonen direkte Sonneneinstrahlung erhalten können, basierend auf dem horizontalen Sonnenwinkel. Messen Sie die Innenbreite des Glasbereichs. Beispiele: Standard-Fenster = 90–120cm, Doppelfenster = 150–180cm, Terrassentür = 200–300cm. Relevant nur, wenn Blendungszonen aktiviert sind.",
+          "length_awning": "Maximale Ausfahrlänge Ihrer Markise in Metern (vollständig ausgefahren). Messen Sie von der Befestigungsstelle bis zum Ende des Stoffes, wenn vollständig ausgefahren. Beispiele: Standard-Terrassenmarkise = 2,0–3,0m, Kleine Fenstermarkise = 1,0–1,5m, Große kommerzielle = 4,0m+. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
+          "angle": "Winkel der Markise, wenn ausgefahren (0–45°). 0° = Waagerecht/flach (maximale Abdeckung), 15° = Leichte Neigung (typisch für Drainage), 30° = Steile Neigung (starker Sonnenwinkel), 45° = Sehr steil (selten verwendet). Überprüfen Sie die Herstellerspezifikationen Ihrer Markise. Die meisten Markisen sind 0–15°. Beeinflusst Schattenberechnung zur korrekten Sonnenblockerung.",
+          "slat_depth": "Breite jeder Lamelle (von vorne nach hinten einer Lamelle messen). Häufige Größen: Mini-Jalousien (1 Zoll) = 2,5cm, Standard-Jalousien (2 Zoll) = 5cm, Breite Lamellen (2,5–3 Zoll) = 6,5–7,5cm. Messen Sie eine einzelne Lamelle mit einem Lineal zur genauen Sonnenblockierungs-Berechnung.",
+          "slat_distance": "Vertikaler Abstand zwischen Lamellenmittellinien. Messen Sie von der Mitte einer Lamelle zur Mitte der nächsten Lamelle (vertikal). Normalerweise etwas mehr als Lamellentiefe, um Überlappung beim Schließen zu ermöglichen. Häufig: 3–8cm je nach Jalousietyp. Wird zur Berechnung des optimalen Neigungswinkels verwendet."
         }
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Konfigurieren Sie die Fensterausrichtung und Sonnenverfolgungswinkel.",
+        "description": "Konfigurieren Sie die Fensterorientierung und Sonnenverfolgungswinkel.",
         "data": {
-          "set_azimuth": "Fensterazimut",
+          "enable_sun_tracking": "Sonnenverfolgung aktivieren",
+          "set_azimuth": "Fenster-Azimut",
           "fov_left": "Sichtfeld links",
           "fov_right": "Sichtfeld rechts",
           "min_elevation": "Minimale Sonnenhöhe",
           "max_elevation": "Maximale Sonnenhöhe",
-          "blind_spot": "Toter Winkel einrichten",
-          "enable_glare_zones": "Blendzonen aktivieren",
-          "distance_shaded_area": "Beschattungstiefe"
+          "blind_spot": "Blindfleck einrichten",
+          "enable_glare_zones": "Blendungszonen aktivieren",
+          "distance_shaded_area": "Beschatteter Bereich"
         },
         "data_description": {
-          "set_azimuth": "Richtung, in die das Fenster zeigt (0–359°). Nord=0°, Ost=90°, Süd=180°, West=270°. Beispiel: Südfenster = 180°. Verwenden Sie eine Kompass-App oder beobachten Sie die Mittagssonne.",
-          "fov_left": "Breite des Sonnenverfolgungsbereichs auf der LINKEN Seite des Fensters (Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster/Glastüren: 60–75°, schmale Fenster: 30°.",
-          "fov_right": "Breite des Sonnenverfolgungsbereichs auf der RECHTEN Seite des Fensters (Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster/Glastüren: 60–75°, schmale Fenster: 30°.",
-          "min_elevation": "Sonnenverfolgung nur, wenn die Elevation ÜBER diesem Winkel liegt (Grad über Horizont). 0°=Horizont, 45°=Mitte, 90°=Zenit. Beispiel: 15° einstellen, um tiefstehende Morgen-/Abendsonne zu ignorieren. Leer lassen für alle Elevationen.",
-          "max_elevation": "Sonnenverfolgung nur, wenn die Elevation UNTER diesem Winkel liegt (Grad über Horizont). Beispiel: 60° einstellen, um hohe Mittagssonne zu ignorieren. Leer lassen für alle Elevationen.",
-          "blind_spot": "Aktivieren, wenn Hindernisse (Bäume, Gebäude, Dachvorsprung, Balkon) die Sonne in einem Teil des Sichtfelds blockieren. Wenn aktiviert, definieren Sie Azimut- und Elevationsbereich des toten Winkels. Deaktiviert lassen, wenn Sie freie Sicht auf die Sonne haben.",
-          "enable_glare_zones": "Bestimmte Bodenbereiche vor direkter Sonnenblendung schützen (nur für vertikale Abdeckungen)",
-          "distance_shaded_area": "Wie weit direktes Sonnenlicht in den Raum eindringen darf (in Metern). GRÖSSERER Wert = mehr Licht = Abdeckung OFFENER; KLEINERER Wert = weniger Licht = Abdeckung GESCHLOSSENER."
+          "enable_sun_tracking": "Wenn aktiviert, verfolgen Beschattungen die Sonne innerhalb der konfigurierten Sichtfeld- und Höhengrenzen (Solarpositionierung). Deaktivieren Sie, um die distanzbasierte Solarpositionierung zu überspringen und dabei Blendungszonen (durch ihren eigenen Schalter gesteuert), Klima-, Bewegungs-, manuelle Übersteuerung, benutzerdefinierte Positionen und andere Übersteuerungen zu behalten. Standard: aktiviert.",
+          "set_azimuth": "Richtung, in die Ihr Fenster zeigt (0-359°). Nord=0°, Ost=90°, Süd=180°, West=270°. Beispiel: Ein nach Süden ausgerichtetes Fenster = 180°. Verwenden Sie eine Kompass-App oder überprüfen Sie die Sonne zu Mittag. Dies teilt der Integration mit, wohin Ihr Fenster zeigt, damit es Sonnenwinkel genau berechnen kann.",
+          "fov_left": "Wie breit der Sonnenverfolgungsbereich auf der LINKEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), Breite Fenster oder Glastüren: 60-75°, Schmale Fenster: 30°. Stellen Sie sich dies als peripheres Sehen vor – wie weit links sollten wir der Sonne folgen? Zusammen mit fov_right definiert dies die horizontale Verfolgungszone.",
+          "fov_right": "Wie breit der Sonnenverfolgungsbereich auf der RECHTEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), Breite Fenster oder Glastüren: 60-75°, Schmale Fenster: 30°. Stellen Sie sich dies als peripheres Sehen vor – wie weit rechts sollten wir der Sonne folgen? Zusammen mit fov_left definiert dies die horizontale Verfolgungszone.",
+          "min_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe ÜBER diesem Winkel liegt (Grad über Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt oben. Verwenden Sie dies, um Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 15° setzen, um frühe Morgen-/Abendsonne zu ignorieren. Leer lassen, um Sonne auf allen Höhen zu verfolgen.",
+          "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt oben. Verwenden Sie dies, um Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° setzen, um hohe Mittag-Sonne zu ignorieren. Leer lassen, um Sonne auf allen Höhen zu verfolgen.",
+          "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die Sonne in Teil des Verfolgungsbereichs blockieren (Bäume, nahe Gebäude, Dachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem die Sonne blockiert ist. Beschattung ignoriert die Sonnenposition, wenn sie in diesem ‚blinden Fleck' ist. Deaktiviert lassen, wenn Sie den ganzen Tag über freie Sicht zur Sonne haben.",
+          "enable_glare_zones": "Schützen Sie bestimmte Bodenbereiche vor direkter Sonnenblendung (nur vertikale Beschattungen)",
+          "distance_shaded_area": "Wie weit Sie ZULASSEN, dass direktes Sonnenlicht in den Raum gelangt (in Metern). Dies definiert Ihre akzeptable ‚Blendungszone' – den Bereich, in dem Sonnenlicht den Boden erreichen kann. Die Beschattungsposition passt sich an, um diese Grenze zu erhalten, während sich die Sonne über den Himmel bewegt. Häufige Konfigurationen: Kleine Blendungszone (0,3-0,5 m) hält Sonnenlicht sehr nah am Fenster (verwenden, wenn Sie maximale Beschattung mögen); Mittlere Blendungszone (0,5-1,0 m) ermöglicht Sonne auf Schreibtisch oder Sitzbereich (ausgewogen, am häufigsten für Wohnräume); Große Blendungszone (2,0-3,0 m) ermöglicht Sonnenlicht tief in den Raum (gut für dunkle Räume oder passive Solarheizung). SCHLÜSSELKONZEPT: GRÖSSER Wert = MEHR Sonnenlicht tief in Raum = Beschattung bleibt HÖHER/OFFENER; KLEINER Wert = WENIGER Sonnenlicht in Raum = Beschattung sinkt TIEFER/GESCHLOSSENER. Messen Sie vom Innenrand Ihres Fensters bis zu der Stelle, wo Sie die Sonnengrenze haben möchten."
         }
       },
       "position": {
         "title": "Positionseinstellungen",
-        "description": "Konfigurieren Sie Positionsgrenzen, Standardwerte und Sonnenuntergangsverhalten.",
+        "description": "Konfigurieren Sie Beschattungspositionsgrenzen, Standardwerte und Sonnenuntergangsverhalten.",
         "data": {
           "default_percentage": "Standardposition",
           "max_position": "Maximale Position",
-          "enable_max_position": "Maximum nur während der Sonnenverfolgung anwenden",
+          "enable_max_position": "Max nur während Sonnenverfolgung anwenden",
           "min_position": "Minimale Position",
-          "enable_min_position": "Minimum nur während der Sonnenverfolgung anwenden",
+          "enable_min_position": "Min nur während Sonnenverfolgung anwenden",
           "sunset_position": "Sonnenuntergangsposition",
-          "sunset_offset": "Sonnenuntergangs-Versatz",
-          "sunrise_offset": "Sonnenaufgangs-Versatz",
-          "open_close_threshold": "Öffnen/Schließen-Schwellenwert",
-          "inverse_state": "Zustand invertieren (für Abdeckungen, die nicht den HA-Richtlinien entsprechen)",
-          "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Positions-Zuordnung)"
+          "my_position_value": "Mein Positionswert",
+          "sunset_use_my": "Meine Position bei Sonnenuntergang verwenden",
+          "sunset_offset": "Sonnenuntergang-Versatz",
+          "sunrise_offset": "Sonnenaufgang-Versatz",
+          "open_close_threshold": "Öffnen/Schließen-Schwellwert",
+          "inverse_state": "Zustand umkehren (erforderlich für Beschattungen, die nicht HA-Richtlinien folgen)",
+          "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Öffnungs-/Schließungspositionszuordnung)"
         },
         "data_description": {
-          "default_percentage": "Position der Abdeckung ohne aktive Sonnenverfolgung (0–100%). 0% = geschlossen (Jalousie unten / Markise eingezogen), 50% = halb geöffnet, 100% = geöffnet (Jalousie oben / Markise ausgefahren). Dies ist die Ruheposition, wenn keine Sonne vor dem Fenster steht.",
-          "max_position": "Maximale Positionsgrenze (0–100%). 100% = geöffnet. Die Abdeckung überschreitet diesen Wert nie. Nutzung: vollständiges Öffnen verhindern (80%), dauerhaft etwas Schatten behalten (60–70%), Klemmschutz oben (95%).",
-          "enable_max_position": "Steuert, WANN die Obergrenze gilt. DEAKTIVIERT (Standard, empfohlen): Obergrenze gilt IMMER – bei Sonnenverfolgung, Standardposition, Klimamodus usw. AKTIVIERT (erweitert): Obergrenze gilt NUR bei direkter Sonneneinstrahlung. Meiste Nutzer sollten dies DEAKTIVIERT lassen.",
-          "min_position": "Minimale Positionsgrenze (0–99%). 0% = geschlossen. Die Abdeckung unterschreitet diesen Wert nie. Nutzung: vollständiges Schließen verhindern (20%), Mindestlicht sicherstellen (30–40%), Klemmschutz unten (5%).",
-          "enable_min_position": "Steuert, WANN die Untergrenze gilt. DEAKTIVIERT (Standard, empfohlen): Untergrenze gilt IMMER. AKTIVIERT (erweitert): Untergrenze gilt NUR bei direkter Sonneneinstrahlung.",
-          "sunset_position": "Position nach Sonnenuntergang. Regler leer lassen, um die Standardposition zu verwenden. 0% = geschlossen, 100% = geöffnet. Typisch: Privatsphäre (0%), Nachtluft (100%), teilweise Privatsphäre (30–50%).",
-          "sunset_offset": "Versatz der Sonnenuntergangszeit (± Minuten). Positiv: Sonnenuntergangsposition X Minuten NACH Sonnenuntergang. Negativ: X Minuten VOR Sonnenuntergang. Null: genau bei Sonnenuntergang.",
-          "sunrise_offset": "Versatz der Sonnenaufgangszeit (± Minuten). Positiv: automatische Steuerung X Minuten NACH Sonnenaufgang. Negativ: X Minuten VOR Sonnenaufgang. Wird mit Startzeit kombiniert (der spätere Zeitpunkt gilt).",
-          "open_close_threshold": "Positionsschwelle für Abdeckungen ohne Positionssteuerung. Ab diesem Wert öffnet die Abdeckung, darunter schließt sie. Standard: 50%. Höhere Werte (60–70%) = häufiger geschlossen; niedrigere Werte (30–40%) = häufiger geöffnet.",
-          "inverse_state": "Für Abdeckungen aktivieren, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen, 100 = geöffnet. Invertiert: 0 = geöffnet, 100 = geschlossen. Nur aktivieren, wenn Ihre Abdeckung umgekehrtes Verhalten zeigt.",
-          "interp": "Benutzerdefinierte Positions-Zuordnung aktivieren, um Abdeckungen zu kalibrieren, die nicht linear auf 0–100%-Befehle reagieren. Bei Aktivierung erscheint ein Abschnitt 'Positionskalibrierung' im Optionsmenü."
+          "default_percentage": "Beschattungsposition, wenn die Sonne nicht vor dem Fenster steht (0-100 %). 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen), 50 % = halb offen (ausgewogenes Licht und Datenschutz), 100 % = offen (Jalousien angehoben / Markise ausgefahren). Dies ist die ‚Ruheposition', die verwendet wird, wenn die Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, blockiert durch Hindernisse oder außerhalb der Verfolgungszeiten).",
+          "max_position": "Maximale Beschattungspositionslimit (0-100 %). 100 % = offen (Jalousien angehoben / Markise ausgefahren). Beschattung geht niemals über diesen Wert hinaus. Verwenden Sie dies, um: Zu verhindern, dass sich die Beschattung vollständig öffnet (auf 80 % setzen), Etwas Schatten jederzeit zu behalten (auf 60-70 % setzen), Blockieren an der Oberseite zu schützen (auf 95 % setzen). Dies schafft eine Obergrenze für alle automatischen Positionen.",
+          "enable_max_position": "Kontrolliert, WANN die maximale Positionslimit gilt. NICHT AKTIVIERT (Standard, empfohlen): Maximale Position gilt JEDERZEIT – während Sonnenverfolgung, Standardposition, Klimamodi usw. Beschattung geht niemals über den Maximalwert hinaus. AKTIVIERT (erweitert): Maximale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann die Beschattung über den Maximalwert hinausgehen. Die meisten Benutzer sollten dies NICHT AKTIVIERT lassen für konsistenten Schutz.",
+          "min_position": "Minimale Beschattungspositionslimit (0-99 %). 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen). Beschattung geht niemals unter diesen Wert hinaus. Verwenden Sie dies, um: Zu verhindern, dass sich die Beschattung vollständig schließt (auf 20 % setzen), Etwas Licht zu behalten (auf 30-40 % setzen), Blockieren an der Unterseite zu schützen (auf 5 % setzen). Dies schafft eine Untergrenze für alle automatischen Positionen. Funktioniert mit dem Schalter ‚Min nur während Sonnenverfolgung anwenden' unten.",
+          "enable_min_position": "Kontrolliert, WANN die minimale Positionslimit gilt. NICHT AKTIVIERT (Standard, empfohlen): Minimale Position gilt JEDERZEIT – während Sonnenverfolgung, Standardposition, Klimamodi usw. Beschattung geht niemals unter den Mindestwert hinaus. AKTIVIERT (erweitert): Minimale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann die Beschattung unter den Mindestwert hinausgehen. Die meisten Benutzer sollten dies NICHT AKTIVIERT lassen für konsistenten Schutz.",
+          "sunset_position": "Beschattungsposition nach Sonnenuntergang. Löschen Sie den Schieberegler (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangsverhalten. 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen), 100 % = offen (Jalousien angehoben / Markise ausgefahren). Häufige Verwendungen: Datenschutz (0 %), Für Nachtluft offen (100 %), Teilweise Datenschutz (30-50 %). Wenn gesetzt, überschreibt dies die Standardposition nach Sonnenuntergang.",
+          "my_position_value": "Die Position (1–99 %), die Sie auf der Fernbedienung des Motors programmiert haben (Mein/Favorit-Voreinstellung). Leer lassen, um die Auslösung von Mein-Position für diese Beschattung zu deaktivieren.",
+          "sunset_use_my": "Wenn das Fenster Sonnenuntergang/Endzeit aktiviert wird, lösen Sie stattdessen die Mein-Voreinstellung der Beschattung aus (über Stop-Beschattung), anstatt die normale Öffnungs-/Schließrückfalloption zu verwenden. Erfordert, dass der Wert für Mein Position gesetzt ist. Beeinträchtigt nur Beschattungen ohne Positionsunterstützung (z. B. Somfy RTS).",
+          "sunset_offset": "Minuten zum Verschieben der Sonnenuntergangszeit (± Anpassung). Positiver Wert: Wenden Sie die Sonnenuntergangsposition X Minuten NACH Sonnenuntergang an. Negativer Wert: Wenden Sie die Sonnenuntergangsposition X Minuten VOR Sonnenuntergang an. Null: Genau bei Sonnenuntergang. Verwenden Sie einen positiven Wert (z. B. 30), wenn Sie die Beschattung etwas über den Sonnenuntergang hinaus offen halten möchten. Verwenden Sie einen negativen Wert (z. B. -30), um früh zu schließen, während die Sonne noch tief ist.",
+          "sunrise_offset": "Minuten zum Verschieben der Sonnenaufgangszeit (± Anpassung). Positiver Wert: Starten Sie die automatische Kontrolle X Minuten NACH Sonnenaufgang. Negativer Wert: Starten Sie die automatische Kontrolle X Minuten VOR Sonnenaufgang. Null: Genau bei Sonnenaufgang. Verwenden Sie einen positiven Wert (z. B. 60), wenn Sie über den Sonnenaufgang hinaus schlafen möchten. Kombiniert mit der Einstellung Startzeit (verwendet je nachdem, was später ist).",
+          "open_close_threshold": "Positionsschwelle für Beschattungen, die nur Öffnungs-/Schließbefehle unterstützen (keine Positionskontrolle). Wenn die berechnete Position größer oder gleich dieser Schwelle ist, öffnet sich die Beschattung; wenn darunter, schließt sie sich. Standard: 50 % (öffnet sich bei Halbpunkt oder oben). Höhere Werte (60-70 %) halten die Beschattung häufiger geschlossen, niedrigere Werte (30-40 %) öffnen häufiger. Beeinträchtigt nur Beschattungen ohne Positionsunterstützung – Beschattungen mit Positionskontrolle ignorieren diese Einstellung und verwenden exakte berechnete Positionen.",
+          "inverse_state": "Aktivieren Sie für Beschattungen, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen/gesenkt, 100 = offen/angehoben. Invertiert: 0 = offen/angehoben, 100 = geschlossen/gesenkt. Aktivieren Sie dies NUR, wenn Ihre Beschattung das entgegengesetzte Verhalten zeigt, 100 % schließt anstatt zu öffnen, oder die Dokumentation sagt ‚invertiert' oder ‚umgekehrt'. Testen Sie Ihre Beschattung zunächst manuell. Die meisten Beschattungen benötigen dies nicht.",
+          "interp": "Aktivieren Sie die benutzerdefinierte Positionszuordnung zur Kalibrierung von Beschattungen, die nicht linear auf 0–100 %-Befehle reagieren. Wenn aktiviert, wird ein Abschnitt ‚Positionskalibrierung' im Optionsmenü angezeigt (unter Positionseinstellungen), in dem Sie die Zuordnungswerte konfigurieren können. Anwendungsfälle: Beschattung bewegt sich nicht linear, bevorzugte Bereiche (mehr geschlossen oder mehr offen), Kalibrierung für ungewöhnliches Beschattungsverhalten. Deaktiviert für Normalbetrieb lassen."
         }
       },
       "automation": {
-        "title": "Zeitplan & Timing",
-        "description": "Konfigurieren Sie Automatisierungszeiten, Positionsänderungsschwellen und aktive Betriebsstunden.",
+        "title": "Zeitplan und Timing",
+        "description": "Konfigurieren Sie Automatisierungstiming, Positionsänderungsschwellen und aktive Stunden für automatische Steuerung.",
         "data": {
-          "delta_position": "Minimale Positionsänderung",
-          "delta_time": "Mindestintervall zwischen Positionsänderungen",
+          "delta_position": "Minimale Positionsanpassung",
+          "delta_time": "Minimales Intervall zwischen Positionsänderungen",
           "start_time": "Startzeit",
-          "start_entity": "Entität für die Startzeit",
+          "start_entity": "Entität, die die Startzeit angibt",
           "end_time": "Endzeit",
-          "end_entity": "Entität für die Endzeit",
-          "return_sunset": "Abdeckungen bei Erreichen der Endzeit in die aktuelle Standardposition fahren"
+          "end_entity": "Entität, die die Endzeit angibt",
+          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
         },
         "data_description": {
-          "delta_position": "Minimale Positionsänderung (%), bevor die Abdeckung angepasst wird. Verhindert häufige Kleinstanpassungen. Typische Werte: 1–2% (sehr reaktiv), 5% (ausgewogen, empfohlen), 10% (seltener, größere Schritte). Reduziert Motorverschleiß.",
-          "delta_time": "Mindestzeit (Minuten) zwischen Anpassungen. Verhindert schnelle Positionswechsel. Typische Werte: 2–3 Min. (sehr reaktiv), 5–10 Min. (ausgewogen, empfohlen), 15–20 Min. (ruhig). Minimum: 2 Minuten.",
-          "start_time": "Automatische Steuerung nicht vor dieser Zeit (24-Stunden-Format). Leer lassen für Start bei Sonnenaufgang. Manuelle Steuerung ist jederzeit möglich.",
-          "start_entity": "Entität, deren Zustand die Startzeit angibt und die obige feste Zeit überschreibt.",
-          "end_time": "Automatische Steuerung nach dieser Zeit stoppen (24-Stunden-Format). Leer lassen für Betrieb bis Sonnenuntergang. Manuelle Steuerung bleibt weiterhin aktiv.",
-          "end_entity": "Entität, deren Zustand die Endzeit angibt und die obige feste Zeit überschreibt.",
-          "return_sunset": "Wenn die operative Endzeit erreicht wird, Abdeckungen in die aktuelle effektive Standardposition fahren (Sonnenuntergangsposition, falls astronomischer Sonnenuntergang bereits eingetreten ist, sonst normale Standardposition)."
+          "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert winzige Anpassungen bei langsamer Sonnenbewegung. Typische Werte: 1–2% (sehr responsiv, häufige Anpassungen), 5% (ausgewogen, für die meisten empfohlen), 10% (seltener, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30% ist und die Sonne sich leicht bewegt, nur anpassen, wenn die neue Position 35% oder mehr beträgt (mit 5%-Schwellwert). Reduziert Verschleiß und Geräusche durch ständige winzige Anpassungen.",
+          "delta_time": "Minimale Zeit (Minuten) zwischen Beschattungsanpassungen. Verhindert schnelle Positionswechsel. Typische Werte: 2–3 Min. (sehr responsiv, möglicherweise laut), 5–10 Min. (ausgewogen, empfohlen), 15–20 Min. (langsam, sanfte Anpassungen). Bei schnellen Sonnenveränderungen (Wolken, Schatten) wartet die Integration diese Zeit, bevor sie erneut anpasst. Reduziert Verschleiß und bietet sanftere Bedienung. Minimum 2 Minuten.",
+          "start_time": "Automatische Steuerung nicht vor dieser Uhrzeit starten (24-Stunden-Format). Nutzen Sie dies, um morgens länger zu schlafen ohne Jalousien (auf 08:00 oder später einstellen), Ihre Routine abzugleichen (auf Ihre Aufwachzeit einstellen) oder lassen Sie es leer, um bei Sonnenaufgang zu starten. Beispiel: „07:30“ bedeutet, dass die automatische Steuerung um 07:30 Uhr beginnt. Manuelle Steuerung funktioniert davor weiterhin.",
+          "start_entity": "Entität, die den Startzeitpunkt darstellt und die oben eingestellte feste Startzeit außer Kraft setzt. Nützlich zur Automatisierung der Startzeit mit einer Entität (z. B. Sensor, der die Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
+          "end_time": "Automatische Steuerung nach dieser Uhrzeit beenden (24-Stunden-Format). Nutzen Sie dies für Abendprivatsphäre (auf 18:00 oder 19:00 einstellen), Rückkehr zum Standard vor dem Schlafengehen oder lassen Sie es leer, um bis zum Sonnenuntergang weiterzumachen. Beispiel: „20:00“ bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
+          "end_entity": "Entität, die den Endzeitpunkt darstellt und die oben eingestellte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
+          "return_sunset": "Wenn der Betriebsendzeitpunkt erreicht ist, verschieben Sie die Beschattung auf die aktuelle wirksame Standardposition (die bei bereits eingetretenem astronomischem Sonnenuntergang die Sonnenuntergangsposition ist, andernfalls die normale Standardposition). Nützlich, wenn Ihr Endzeitpunkt vor Sonnenuntergang liegt und Sie die Beschattung korrekt für den Abend positionieren möchten. Diese Bewegung erfolgt nur, wenn die automatische Steuerung AN ist – wenn die automatische Steuerung deaktiviert ist, bleibt die Beschattung dort, wo sie sich zum Endzeitpunkt befindet."
         }
       },
       "manual_override": {
         "title": "Manuelle Übersteuerung",
-        "description": "Konfigurieren Sie, wie manuelle Positionsänderungen mit der automatischen Steuerung interagieren.",
+        "description": "Konfigurieren Sie, wie manuelle Positionsänderungen mit automatischer Steuerung interagieren.",
         "data": {
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
-          "manual_override_reset": "Timer der manuellen Übersteuerung zurücksetzen",
-          "manual_threshold": "Schwellenwert für manuelle Übersteuerung",
-          "manual_ignore_intermediate": "Zwischenpositionen während der manuellen Übersteuerung ignorieren"
+          "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
+          "manual_threshold": "Schwellwert der manuellen Übersteuerung",
+          "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)"
         },
         "data_description": {
-          "manual_override_duration": "Wie lange (Minuten) die automatische Steuerung nach einer manuellen Anpassung pausiert. Typische Werte: 10–15 Min. (kurze Pause), 30 Min. (mittel), 60–120 Min. (lang), 0 (deaktiviert – nicht empfohlen).",
-          "manual_override_reset": "Timer nach jeder manuellen Anpassung zurücksetzen. Aktiviert: jede Änderung startet den Timer neu. Deaktiviert: Timer gilt nur für die erste Anpassung.",
-          "manual_threshold": "Positionsunterschied (%), der als manuelle Übersteuerung gilt (Standard: 1%). Typisch: 1–2% (empfindlich), 5% (empfohlen), 10% (nur große Änderungen). Verhindert Fehlerkennung durch kleine Motorabweichungen.",
-          "manual_ignore_intermediate": "Zwischenpositionen während Öffnungs- und Schließvorgängen ignorieren. Verhindert Übersteuerungserkennung durch Übergangspositionen während der Fahrt."
+          "manual_override_duration": "Wie lange (in Minuten) die automatische Kontrolle nach manueller Anpassung pausiert. Wenn Sie die Beschattung manuell bewegen, pausiert die automatische Kontrolle. Typische Werte: 10-15 Min. (kurze Pause, Verfolgung wird bald fortgesetzt), 30 Min. (mittlere Pause, ausgewogen), 60-120 Min. (lange Pause, manuelle Position länger behalten), 0 (deaktiviert, Verfolgung wird sofort fortgesetzt – nicht empfohlen). Gibt Ihnen Kontrolle, wenn Sie sie möchten, setzt die Automatisierung später fort.",
+          "manual_override_reset": "Setzen Sie den Timer für die manuelle Übersteuerung nach jeder manuellen Anpassung zurück. Wenn aktiviert, startet jede manuelle Änderung die Übersteuerungsdauer neu. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie dies, wenn Sie möchten, dass der Übersteuerungszeitraum bei jeder manuellen Anpassung ‚erneuert' wird.",
+          "manual_threshold": "Positionsdifferenz (%), die als ‚manuelle Übersteuerung' zählt (Standardwert: 1 %). Wenn Sie die Beschattung manuell um diesen Betrag bewegen, wird die Erkennungsüberschreibung ausgelöst. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Erkennungsüberschreibung durch kleine Motorabweichungen oder Positionsabweichungen.",
+          "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Erkennungsüberschreibung bei Übergangspositionen ausgelöst wird, während sich die Beschattung zu Ihrer Zielposition bewegt. Nützlich, wenn Ihre Beschattung viele Zwischenwerte während der Bewegung meldet."
         }
       },
       "force_override": {
         "title": "Zwangsübersteuerung",
-        "description": "Konfigurieren Sie Binärsensoren, die die automatische Steuerung bedingungslos übersteuern und Abdeckungen in eine feste Position fahren. Die Zwangsübersteuerung bleibt auch bei deaktiviertem Schalter 'Automatische Steuerung' aktiv.",
+        "description": "Konfigurieren Sie Binärsensoren, die automatische Steuerung bedingungslos überschreiben und Beschattungen in eine feste Position verschieben. Die Zwangsübersteuerung bleibt aktiv, auch wenn der Schalter Automatische Steuerung aus ist - Beschattungen werden immer noch in die konfigurierte Position verschoben, wenn ein Sensor ausgelöst wird.",
         "data": {
-          "force_override_sensors": "Sensoren für Zwangsübersteuerung",
-          "force_override_position": "Position bei Zwangsübersteuerung"
+          "force_override_sensors": "Zwangsübersteuerungssensoren",
+          "force_override_position": "Position der Zwangsübersteuerung",
+          "force_override_min_mode": "Minimale Positionsmodus"
         },
         "data_description": {
-          "force_override_sensors": "Binärsensoren, die bei Aktivierung alle Abdeckungen in die konfigurierte Position fahren, unabhängig von allen anderen Einstellungen einschließlich des Schalters 'Automatische Steuerung'. Manuelle Steuerung bleibt möglich. Leer lassen, um diese Funktion zu deaktivieren.",
-          "force_override_position": "Position (0–100%), in die Abdeckungen bei aktiver Zwangsübersteuerung fahren. 0% = geschlossen (Jalousie unten / Markise eingezogen), 100% = geöffnet (Jalousie oben / Markise ausgefahren). Standard: 0%."
+          "force_override_sensors": "Binäre Sensoren, die automatische Steuerung überschreiben und Beschattungen in die konfigurierte Position bewegen, wenn aktiv. Wenn JEDER ausgewählte Sensor „ein“ ist, bewegen sich ALLE Beschattungen in die konfigurierte Position unabhängig von anderen Einstellungen, einschließlich des Automatische Steuerung-Schalters. Manuelle Steuerung funktioniert trotzdem. Lassen Sie leer, um diese Funktion zu deaktivieren.",
+          "force_override_position": "Position (0–100%), in die sich die Beschattung bewegt, wenn Zwangsübersteuerungs-Sensoren aktiv sind. 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Standard: 0%.",
+          "force_override_min_mode": "Wenn aktiviert, fungiert die Übersteuerungsposition als Mindestgrenze – die Beschattung wird nicht unter diese Position geschlossen, aber höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakt Übersteuerungsposition eingestellt."
         }
       },
       "custom_position": {
         "title": "Benutzerdefinierte Positionen",
-        "description": "Konfigurieren Sie Binärsensoren, die die Abdeckung bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, Zielposition und Pipeline-Priorität. Der aktive Slot mit der höchsten Priorität gewinnt.",
+        "description": "Konfigurieren Sie Binärsensoren, die die Beschattung bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, Zielposition und Pipeline-Priorität. Jeder aktive Slot wird unabhängig ausgewertet - der höchstpriorisierte aktive Slot gewinnt. Verwenden Sie Home Assistant-Automatisierungen, um diese Sensoren für szenariobasierte oder zeitplanbasierte Beschattungssteuerung umzuschalten.",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position für Sensor 1",
           "custom_position_priority_1": "Priorität für Slot 1",
+          "custom_position_min_mode_1": "Minimaler Modus für Slot 1",
+          "custom_position_use_my_1": "Slot 1: Meine Position verwenden",
           "custom_position_sensor_2": "Sensor 2",
           "custom_position_2": "Position für Sensor 2",
           "custom_position_priority_2": "Priorität für Slot 2",
+          "custom_position_min_mode_2": "Minimaler Modus für Slot 2",
+          "custom_position_use_my_2": "Slot 2: Meine Position verwenden",
           "custom_position_sensor_3": "Sensor 3",
           "custom_position_3": "Position für Sensor 3",
           "custom_position_priority_3": "Priorität für Slot 3",
+          "custom_position_min_mode_3": "Minimaler Modus für Slot 3",
+          "custom_position_use_my_3": "Slot 3: Meine Position verwenden",
           "custom_position_sensor_4": "Sensor 4",
           "custom_position_4": "Position für Sensor 4",
-          "custom_position_priority_4": "Priorität für Slot 4"
+          "custom_position_priority_4": "Priorität für Slot 4",
+          "custom_position_min_mode_4": "Minimaler Modus für Slot 4",
+          "custom_position_use_my_4": "Slot 4: Meine Position verwenden"
         },
         "data_description": {
-          "custom_position_sensor_1": "Binärsensor, der bei 'Ein' die Abdeckung in die konfigurierte Position fährt. Leer lassen, um diesen Slot zu überspringen.",
-          "custom_position_1": "Position (0–100%) bei aktivem Sensor 1. 0% = geschlossen, 100% = geöffnet.",
-          "custom_position_priority_1": "Pipeline-Priorität (1–99). Höher = wird zuerst ausgewertet. Standard 77 liegt zwischen Manueller Übersteuerung (80) und Bewegungs-Timeout (75). Über 80 für Vorrang vor manuellen Bewegungen; unter 40 nur bei inaktiver Sonnenverfolgung.",
-          "custom_position_sensor_2": "Binärsensor für Slot 2. Leer lassen, um zu überspringen.",
-          "custom_position_2": "Position (0–100%) bei aktivem Sensor 2.",
+          "custom_position_sensor_1": "Binärer Sensor, der bei „ein“ die Beschattung in ihre konfigurierte Position bewegt. Lassen Sie leer, um diesen Slot zu überspringen.",
+          "custom_position_1": "Position (0–100%), in die sich die Beschattung bewegt, wenn Sensor 1 aktiv ist. 0% = geschlossen, 100% = offen.",
+          "custom_position_priority_1": "Pipeline-Priorität (1–99). Höher = wird vor niedrigeren Prioritäten ausgewertet. Standard 77 liegt zwischen Manuelle Übersteuerung (80) und Bewegungs-Timeout (75). Auf über 80 einstellen, um manuelle Bewegungen zu übersteuern; auf unter 40 einstellen, um nur anzuwenden, wenn Sonnenverfolgung inaktiv ist.",
+          "custom_position_min_mode_1": "Wenn aktiviert, fungiert die Position als Mindestgrenze – höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakt konfigurierte Position eingestellt.",
+          "custom_position_use_my_1": "Wenn der Sensor von Slot 1 aktiv ist, lösen Sie die „Meine“-Voreinstellung der Beschattung aus anstelle der numerischen Position des Slots. Erfordert, dass der „Meine“-Positionswert eingestellt ist.",
+          "custom_position_sensor_2": "Binärer Sensor für Slot 2. Lassen Sie leer zum Überspringen.",
+          "custom_position_2": "Position (0–100%), in die sich die Beschattung bewegt, wenn Sensor 2 aktiv ist.",
           "custom_position_priority_2": "Pipeline-Priorität für Slot 2 (1–99, Standard 77).",
-          "custom_position_sensor_3": "Binärsensor für Slot 3. Leer lassen, um zu überspringen.",
-          "custom_position_3": "Position (0–100%) bei aktivem Sensor 3.",
+          "custom_position_min_mode_2": "Wenn aktiviert, fungiert die Position als Mindestgrenze – höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakt konfigurierte Position eingestellt.",
+          "custom_position_use_my_2": "Wenn der Sensor von Slot 2 aktiv ist, lösen Sie die „Meine“-Voreinstellung der Beschattung aus anstelle der numerischen Position des Slots. Erfordert, dass der „Meine“-Positionswert eingestellt ist.",
+          "custom_position_sensor_3": "Binärer Sensor für Slot 3. Lassen Sie leer zum Überspringen.",
+          "custom_position_3": "Position (0–100%), in die sich die Beschattung bewegt, wenn Sensor 3 aktiv ist.",
           "custom_position_priority_3": "Pipeline-Priorität für Slot 3 (1–99, Standard 77).",
-          "custom_position_sensor_4": "Binärsensor für Slot 4. Leer lassen, um zu überspringen.",
-          "custom_position_4": "Position (0–100%) bei aktivem Sensor 4.",
-          "custom_position_priority_4": "Pipeline-Priorität für Slot 4 (1–99, Standard 77)."
+          "custom_position_min_mode_3": "Wenn aktiviert, fungiert die Position als Mindestgrenze – höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakt konfigurierte Position eingestellt.",
+          "custom_position_use_my_3": "Wenn der Sensor von Slot 3 aktiv ist, lösen Sie die „Meine“-Voreinstellung der Beschattung aus anstelle der numerischen Position des Slots. Erfordert, dass der „Meine“-Positionswert eingestellt ist.",
+          "custom_position_sensor_4": "Binärer Sensor für Slot 4. Lassen Sie leer zum Überspringen.",
+          "custom_position_4": "Position (0–100%), in die sich die Beschattung bewegt, wenn Sensor 4 aktiv ist.",
+          "custom_position_priority_4": "Pipeline-Priorität für Slot 4 (1–99, Standard 77).",
+          "custom_position_min_mode_4": "Wenn aktiviert, fungiert die Position als Mindestgrenze – höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakt konfigurierte Position eingestellt.",
+          "custom_position_use_my_4": "Wenn der Sensor von Slot 4 aktiv ist, lösen Sie die „Meine“-Voreinstellung der Beschattung aus anstelle der numerischen Position des Slots. Erfordert, dass der „Meine“-Positionswert eingestellt ist."
         }
       },
       "motion_override": {
         "title": "Bewegungsübersteuerung",
-        "description": "Konfigurieren Sie Bewegungs- und Belegungssensoren für anwesenheitsbasierte automatische Steuerung.",
+        "description": "Konfigurieren Sie Bewegungs- und Belegungssensoren für präsenzbasierte automatische Steuerung.",
         "data": {
-          "motion_sensors": "Bewegungs-/Belegungssensoren",
+          "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
           "motion_timeout": "Bewegungs-Timeout-Dauer"
         },
         "data_description": {
-          "motion_sensors": "Binärsensoren, die die automatische Sonnenverfolgung je nach Raumnutzung aktivieren/deaktivieren. Wenn EIN beliebiger Sensor Bewegung erkennt, wird die automatische Positionierung verwendet. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung melden, kehren Abdeckungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
-          "motion_timeout": "Wartezeit (Sekunden) nach der letzten Bewegung vor Rückkehr zur Standardposition. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten)."
+          "motion_sensors": "Binärsensoren, die die automatische Sonnenposititionierung aktivieren/deaktivieren, basierend auf Belegung. Wenn EIN Sensor Bewegung erkennt, verwenden Beschattungen automatische sonnenbasierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung anzeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
+          "motion_timeout": "Dauer (in Sekunden), die gewartet werden soll, nachdem die letzte Bewegung erkannt wurde, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig wechseln. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standardwert: 300 Sekunden (5 Minuten)."
         }
       },
       "weather_override": {
-        "title": "Wetterübersteuerung",
-        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jede konfigurierte Bedingung löst das Einfahren der Abdeckung aus. Nicht konfigurierte Eingaben werden ignoriert.",
+        "title": "Wetter-Übersteuerung",
+        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jeder konfigurierte Zustand löst die Beschattungseinziehung aus. Nicht konfigurierte Eingaben werden ignoriert.",
         "data": {
-          "weather_bypass_auto_control": "Aktiv, wenn Automatische Steuerung deaktiviert ist",
+          "weather_bypass_auto_control": "Aktiv, wenn automatische Steuerung aus ist",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
-          "weather_wind_speed_threshold": "Windgeschwindigkeitsschwelle",
+          "weather_wind_speed_threshold": "Windgeschwindigkeits-Schwellwert",
           "weather_wind_direction_tolerance": "Windrichtungstoleranz",
-          "weather_rain_sensor": "Regenmengensensor",
-          "weather_rain_threshold": "Regenmengen-Schwellenwert",
-          "weather_is_raining_sensor": "Regen-Binärsensor",
-          "weather_is_windy_sensor": "Wind-Binärsensor",
-          "weather_severe_sensors": "Unwettersensoren (Hagel, Frost, Sturm usw.)",
+          "weather_rain_sensor": "Regenrate-Sensor",
+          "weather_rain_threshold": "Regenrate-Schwellwert",
+          "weather_is_raining_sensor": "Regnet Binärsensor",
+          "weather_is_windy_sensor": "Ist windig Binärsensor",
+          "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
           "weather_override_position": "Übersteuerungsposition",
-          "weather_timeout": "Verzögerung beim Löschen"
+          "weather_override_min_mode": "Minimale Positionsmodus",
+          "weather_timeout": "Verzögerung löschen"
         },
         "data_description": {
-          "weather_bypass_auto_control": "Wenn aktiviert, fährt die Wetterübersteuerung Abdeckungen auch bei deaktivierter automatischer Steuerung in die konfigurierte Position. Stellt sicher, dass Wind-, Regen- und Unwetterschutz immer aktiv ist. Nur deaktivieren, wenn die Wetterübersteuerung dem Schalter 'Automatische Steuerung' folgen soll.",
-          "weather_wind_speed_sensor": "Numerischer Sensor für Windgeschwindigkeit. Übersteuerung aktiviert sich, wenn der Wert den Schwellenwert erreicht oder überschreitet. Leer lassen, um Windgeschwindigkeit zu ignorieren.",
-          "weather_wind_direction_sensor": "Optional: Windübersteuerung nur auslösen, wenn der Wind in Richtung des Fensterazimuts weht (innerhalb der Richtungstoleranz). Leer lassen, um unabhängig von der Windrichtung zu reagieren.",
-          "weather_wind_speed_threshold": "Windgeschwindigkeitsschwelle für die Übersteuerung. Wert wird direkt mit dem Sensor verglichen – keine Einheitenumrechnung.",
-          "weather_wind_direction_tolerance": "Toleranz in Grad vom Fensterazimut. Beispiel: Fenster nach Süden (180°), Toleranz 45° → Wind aus 135°–225° löst Übersteuerung aus.",
-          "weather_rain_sensor": "Numerischer Sensor für Regenmenge. Übersteuerung aktiviert sich ab dem Schwellenwert. Leer lassen, um zu ignorieren.",
-          "weather_rain_threshold": "Regenmengen-Schwellenwert. Einheit muss mit dem Sensor übereinstimmen – keine Umrechnung.",
-          "weather_is_raining_sensor": "Binärsensor zur Regenerkennung. Übersteuerung aktiviert sich bei 'Ein'. Leer lassen, um zu ignorieren.",
-          "weather_is_windy_sensor": "Binärsensor zur Winderkennung. Übersteuerung aktiviert sich bei 'Ein'. Leer lassen, um zu ignorieren.",
-          "weather_severe_sensors": "Binärsensoren für Unwetter (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor 'Ein' ist. Leer lassen, um zu ignorieren.",
-          "weather_override_position": "Position (0–100%) bei aktiver Wetterübersteuerung. 0% = geschlossen (Jalousie unten / Markise eingezogen), 100% = geöffnet (Jalousie oben / Markise ausgefahren). Standard: 0%.",
-          "weather_timeout": "Sekunden nach dem Löschen ALLER Bedingungen vor Wiederherstellung der normalen Steuerung. Verhindert schnelles Umschalten bei böigem Wetter. 0 für sofortige Wiederherstellung."
+          "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetterübersteuerung die Beschattungen immer noch in die konfigurierte Position bewegen, auch wenn der Schalter ‚Automatische Kontrolle' ausgeschaltet ist. Dies gewährleistet, dass Wind-, Regen- und Starkwetterschutz immer aktiv ist, unabhängig vom Automatisierungszustand. Deaktivieren Sie dies nur, wenn die Wetterübersteuerung dem Schalter ‚Automatische Kontrolle' folgen soll.",
+          "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
+          "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
+          "weather_wind_speed_threshold": "Windgeschwindigkeitsschwellwert, der die Übersteuerung aktiviert. Der Wert wird direkt mit Ihrem Sensor verglichen – keine Einheitenumwandlung wird angewendet.",
+          "weather_wind_direction_tolerance": "Wie viele Grad von Ihrem Fenster-Azimut entfernt, um Wind als ‚trifft' dieses Fenster zu betrachten. Beispiel: Fenster zeigt nach Süden (180°), Toleranz 45° → Wind aus 135°-225° triggeert Übersteuerung.",
+          "weather_rain_sensor": "Numerischer Sensor, der Niederschlagsrate meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
+          "weather_rain_threshold": "Niederschlagsschwellwert, der die Übersteuerung aktiviert. Die Einheit muss Ihrem Sensor entsprechen – keine Umwandlung wird angewendet.",
+          "weather_is_raining_sensor": "Binärsensor zur Regenerkennung. Übersteuerung aktiviert sich, wenn dieser Sensor ‚an' ist. Leer lassen zum Ignorieren.",
+          "weather_is_windy_sensor": "Binärsensor zur Windelkennung. Übersteuerung aktiviert sich, wenn dieser Sensor ‚an' ist. Leer lassen zum Ignorieren.",
+          "weather_severe_sensors": "Binärsensoren für schwere Bedingungen (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor ‚an' ist. Leer lassen zum Ignorieren.",
+          "weather_override_position": "Position (0-100 %), um Beschattungen zu bewegen, wenn die Wetterübersteuerung aktiv ist. 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen), 100 % = offen (Jalousien angehoben / Markise ausgefahren). Standard: 0 %.",
+          "weather_override_min_mode": "Wenn aktiviert, fungiert die Übersteuerungsposition als Mindeststopp – die Beschattung wird nicht unter diese Position schließen, aber höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind zulässig. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakte Übersteuerungsposition gesetzt.",
+          "weather_timeout": "Sekunden zu warten, nachdem ALLE Bedingungen geklärt sind, bevor normale Kontrolle fortgesetzt wird. Verhindert schnelles Umschalten bei böigem oder unterbrochenem Wetter. Auf 0 setzen für sofortige Fortsetzung."
         }
       },
       "climate": {
-        "title": "Klimakonfiguration",
-        "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen es der Integration, das Abdeckungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
         "data": {
-          "weather_entity": "Wetterentität (optional)",
+          "weather_entity": "Wetter-Entität (optional)",
           "lux_entity": "Luxsensor (optional)",
-          "lux_threshold": "Lux-Schwellenwert",
-          "irradiance_entity": "Einstrahlungssensor (optional)",
-          "irradiance_threshold": "Einstrahlungs-Schwellenwert",
-          "cloud_coverage_entity": "Bewölkungssensor (optional)",
-          "cloud_coverage_threshold": "Bewölkungs-Schwellenwert",
-          "cloud_suppression": "Blendschutz bei wenig Licht unterdrücken",
+          "lux_threshold": "Luxschwellwert",
+          "irradiance_entity": "Strahlungssensor (optional)",
+          "irradiance_threshold": "Strahlungsschwellwert",
+          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
+          "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
+          "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
           "climate_mode": "Klimamodus aktivieren",
-          "temp_entity": "Innentemperatursensor",
-          "temp_low": "Untere Temperaturschwelle",
-          "temp_high": "Obere Temperaturschwelle",
+          "temp_entity": "Innere Temperaturentität",
+          "temp_low": "Unterer Temperaturschwellwert",
+          "temp_high": "Oberer Temperaturschwellwert",
           "outside_temp": "Außentemperatursensor (optional)",
           "presence_entity": "Anwesenheitsentität (optional)",
           "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winter-Isoliermodus"
+          "winter_close_insulation": "Winterisolationsmodus"
         },
         "data_description": {
-          "weather_entity": "Optionale Wetterintegration für wolkenbewusste Steuerung. Bei bewölktem/regnerischem Wetter: kein Wintersolargewinn, Rückkehr zur Standardposition. Bei sonnigem/klarem Wetter: volle Klimastrategien. Leer lassen, um immer sonnig anzunehmen.",
-          "lux_entity": "Optionaler Lichtstärkesensor (innen oder außen). Misst sichtbares Licht in Lux. Typisch: 5000–10000 Lux für direkte Sonne. Leer lassen, wenn kein solcher Sensor vorhanden.",
-          "lux_threshold": "Lux-Schwellenwert für 'sonnig'. Oberhalb: Sonne vorhanden, Klimastrategien anwenden. Unterhalb: als bewölkt behandeln. Typisch: 5000–10000 Lux für direkte Sonne, 2000–3000 Lux für helles indirektes Licht.",
-          "irradiance_entity": "Optionaler Solarstrahlungssensor (außen, W/m²). Leer lassen, wenn nicht vorhanden.",
-          "irradiance_threshold": "Einstrahlungs-Schwellenwert für 'sonnig' (W/m²). Typisch: 300–500 W/m² für direkte Sonne, 100–200 W/m² für bedeckten Himmel.",
-          "cloud_coverage_entity": "Optionaler Bewölkungssensor (0–100%). Ab dem Schwellenwert wird der Blendschutz unterdrückt. Leer lassen, wenn nicht vorhanden.",
-          "cloud_coverage_threshold": "Bewölkungsgrad (%), ab dem der Blendschutz unterdrückt wird. Beispiel: 75 = 75% Bewölkung = bedeckt. Standard: 75%.",
-          "cloud_suppression": "Blendschutz unterdrücken, wenn Wetter, Lux, Einstrahlung oder Bewölkung keinen direkten Sonneneinfall anzeigen – Abdeckungen kehren zur Standardposition zurück. Benötigt keinen Klimamodus: Konfigurieren Sie einfach einen Wettersensor, Luxsensor, Einstrahlungssensor oder Bewölkungssensor.",
-          "climate_mode": "Temperaturbasierte Strategien aktivieren. EIN: Verhalten passt sich der Innentemperatur an – im Winter vollständig öffnen für Solarwärme, im Sommer vollständig schließen gegen Überhitzung. Benötigt einen Innentemperatursensor.",
-          "temp_entity": "Temperatursensor für Klimamodus (innen oder außen). Innen empfohlen. Einheiten müssen mit dem HA-System übereinstimmen (°C oder °F).",
-          "temp_low": "Temperaturschwelle für WINTERMODUS. Wenn Temperatur < diesem Wert: bei sonnigem Wetter vollständig öffnen. Empfohlen: 18–20°C (65–68°F).",
-          "temp_high": "Temperaturschwelle für SOMMERMODUS. Wenn Temperatur > diesem Wert: vollständig schließen. Empfohlen: 23–25°C (73–77°F).",
-          "outside_temp": "Optionaler Außentemperatursensor für verbesserte Sommererkennung. Sommermodus erfordert dann BEIDE: Innentemperatur > obere Schwelle UND Außentemperatur > Außenschwelle. Leer lassen für nur Innentemperatur.",
-          "presence_entity": "Optionaler Anwesenheitssensor. Typen: device_tracker, person, zone, binary_sensor. Abwesend: Sommer vollständig schließen, Winter bei Sonne öffnen. Leer lassen, um immer Anwesenheit anzunehmen.",
-          "transparent_blind": "Aktivieren für transparente Jalousien (Voile/leichter Stoff). Im Sommer auf 0% schließen. Deaktiviert für undurchsichtige/Verdunkelungsjalousien.",
-          "winter_close_insulation": "Im Winter schließen, wenn keine Sonne auf das Fenster scheint. Isoliert durch Fernhalten von Kaltluft. Wenn Sonne ins Sichtfeld eintritt, öffnet die Abdeckung normal für Solarwärme."
-        }
+          "weather_entity": "Optionale Wetter-Integration für wolkenkalibrierte Steuerung. Wenn Wetter = bewölkt/regnerisch: Überspringt Winterwärmeerwerb (keine Sonne zum Erfassen), Kehrt zur Standardposition zurück (keine Überhitzungsgefahr). Wenn Wetter = sonnig/klar: Wendet vollständige Klimastrategien an. Lassen Sie leer, um immer sonnig anzunehmen (einfacher). Empfohlen, wenn Sie Wetter-Integration haben – vermeidet unnötige Schließungen.",
+          "lux_entity": "Optionaler Lichtsensor zur präzisen Sonnenerkennung (innen oder außen). Misst sichtbares Licht in Lux-Einheiten. Legen Sie Schwellwert für „sonnig“-Bedingung fest. Typisch: 5000–10000 Lux für direkte Sonne. Wenn unter Schwellwert: Behandeln Sie als bewölkt, überspringen Sie Klimastrategien. Lassen Sie leer, wenn Sie diesen Sensor nicht haben. Fortgeschrittenes Feature – die meisten Benutzer benötigen dies nicht.",
+          "lux_threshold": "Lux-Schwellwert (wann als „sonnig“ betrachten). Wenn Sensor über diesem Wert abliest: Sonne ist vorhanden, wenden Sie Klimastrategien an. Wenn darunter: Behandeln Sie als bewölkt, verwenden Sie Standardposition. Typische Werte: 5000–10000 Lux für direkte Sonneneinstrahlung, 2000–3000 Lux für helles indirektes Licht. Passen Sie basierend auf Sensorplatzierung und Empfindlichkeit an.",
+          "irradiance_entity": "Optionaler Solarstrahlungssensor für präzise Sonnenerkennung (außen). Misst Sonnenleistung in W/m²-Einheiten. Legen Sie Schwellwert für „sonnig“-Bedingung fest. Typisch: 300–500 W/m² für direkte Sonne. Wenn unter Schwellwert: Behandeln Sie als bewölkt, überspringen Sie Klimastrategien. Lassen Sie leer, wenn Sie diesen Sensor nicht haben. Fortgeschrittenes Feature – die meisten Benutzer benötigen dies nicht.",
+          "irradiance_threshold": "Bestrahlungs-Schwellwert (wann als „sonnig“ betrachten). Wenn Sensor über diesem Wert abliest (W/m²): Sonne ist vorhanden, wenden Sie Klimastrategien an. Wenn darunter: Behandeln Sie als bewölkt, verwenden Sie Standardposition. Typische Werte: 300–500 W/m² für direkte Sonneneinstrahlung, 100–200 W/m² für bewölkten Tag. Passen Sie basierend auf Ihrem Klima und Vorlieben an.",
+          "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100% meldet. Verfügbar von Integrationen wie Google Wetter. Wenn auf oder über dem Schwellwert: Blendungsschutz wird unterdrückt und die Beschattung kehrt zur Standardposition zurück. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
+          "cloud_coverage_threshold": "Wolkenbedeckungsprozentsatz, bei dem oder darüber der Blendungsschutz unterdrückt wird (z. B. 75 bedeutet 75% Wolkenbedeckung = bedeckt). Standard: 75%.",
+          "cloud_suppression": "Wenn aktiviert, unterdrückt Blendungsschutz, wenn Wetter, Lux-, Bestrahlungs- oder Wolkenbedeckungsbedingungen anzeigen, dass keine echte direkte Sonne vorhanden ist – die Beschattung kehrt stattdessen zur Standardposition zurück anstatt der Sonne zu folgen. Erfordert NICHT, dass der Klimamodus aktiviert ist: Konfigurieren Sie eine Wetherentität, einen Luxsensor, einen Bestrahlungssensor oder einen Wolkenbedeckungssensor oben und diese Schaltfläche funktioniert eigenständig. Nützlich, wenn Sie lichtkalibriertes Blendungsunterdrückung ohne vollständige temperaturgesteuerte Klimakontrolle möchten.",
+          "climate_mode": "Temperaturbasierte Beschattungsstrategien aktivieren. Wenn AN: Beschattungsverhalten passt sich basierend auf Raumtemperatur an – öffnet sich vollständig im Winter zur Erfassung von Sonnenwärme, schließt sich vollständig im Sommer um Überhitzung zu verhindern. Erfordert einen Raumtemperatursensor. Lassen Sie AUS wenn Sie nur Blendungsschutz (Sonnenverfolgung) ohne temperaturgesteuerte Verhalten möchten.",
+          "temp_entity": "Temperatursensor für den Klimamodus (innen oder außen). Wird zur Bestimmung von Winter-/Sommerstrategien verwendet. Raumtemperatursensor empfohlen (misst Raumkomfort). Außentemperatursensor als Alternative (verfolgt Außenwetter). Thermostat: Kann current_temperature-Attribut verwenden. Stellen Sie sicher, dass Sensoreinheiten Ihrem Home Assistant-Einheitensystem entsprechen (°C oder °F).",
+          "temp_low": "Temperaturschwellwert für WINTERMODUS (in Ihren Systemeinheiten). Wenn Temperatur < dieser Wert: Beschattung öffnet sich vollständig an sonnigen Tagen um Wärme zu gewinnen. Empfohlene Werte: °C: 18–20°C (65–68°F), °F: 65–68°F. Passen Sie basierend auf Ihrer Komfortvorliebe an. Niedrigerer Wert = Wintermodus seltener (nur wenn sehr kalt). Höherer Wert = Wintermodus häufiger (priorisieren Sie Solarertrag).",
+          "temp_high": "Temperaturschwellwert für SOMMERMODUS (in Ihren Systemeinheiten). Wenn Temperatur > dieser Wert: Beschattung schließt sich vollständig, um Überhitzung zu verhindern. Empfohlene Werte: °C: 23–25°C (73–77°F), °F: 73–77°F. Passen Sie basierend auf Ihrer Kühlungsvorliebe an. Niedrigerer Wert = Sommermodus früher (aggressive Kühlung). Höherer Wert = Sommermodus später (tolerate mehr Wärme).",
+          "outside_temp": "Optionaler Außentemperatursensor für bessere Sommererkennung. Wenn eingestellt, erfordert der Sommermodus BEIDE: Raumtemperatur > hoher Schwellwert UND Außentemperatur > Außenschwellwert. Verhindert Schließen der Beschattung, wenn es draußen kühl ist (offen für Brise). Lassen Sie leer, um nur Raumtemperatur zu verwenden. Empfohlen, wenn Sie Außensensor haben – verbessert den Komfort.",
+          "presence_entity": "Optionaler Anwesenheitssensor (Home/Away-Erkennung). Unterstützte Typen: device_tracker, person, zone, binary_sensor. Wenn WEG: Sommer schließt vollständig (sparen auf AC), Winter öffnet sich an sonnigen Tagen (passive Solarheizung). Wenn ZUHAUSE: Verwenden Sie normale Klimastrategien mit Wetterkennung. Lassen Sie leer, um immer anzunehmen, dass jemand zuhause ist. Spart Energie wenn weg, behält Komfort bei wenn zuhause.",
+          "transparent_blind": "Aktivieren Sie dies, wenn Ihre Jalousie lichtdurchlässig ist (Voile/leichter Stoff). Ändert Sommerverhalten: Transparent AN schließt auf 0% im Sommer (blockiere Wärme, behalte Licht). Transparent AUS nutzt berechnete Position. Lichtdurchlässige Jalousien reduzieren Wärme, lassen aber Licht durch. Lassen Sie deaktiviert für undurchsichtige/Verdunkelungs-Jalousien.",
+          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne nicht das Fenster trifft. Bietet Isolierung durch Abhalten kalter Luft und Bewahrung von Wärme. Wenn die Sonne in das Sichtfeld des Fensters eintritt, öffnet sich die Beschattung wie normal zur Solarheizung."
+        },
+        "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen der Integration, das Beschattungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
+        "title": "Klimakonfiguration"
       },
       "weather": {
-        "title": "Wetterbedingungen",
         "data": {
           "weather_state": "Wetterbedingungen"
         },
         "data_description": {
-          "weather_state": "Wählen Sie Wetterzustände, die 'Sonne scheint' für den Klimamodus bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sunny (direkte Sonne), ☑ partlycloudy (etwas Sonne), ☐ cloudy (keine direkte Sonne), ☐ clear (meist nachts). Wenn der aktuelle Zustand übereinstimmt: Klimastrategien anwenden. Sonst: Standardposition verwenden. Standardwerte für die meisten Nutzer beibehalten."
-        }
+          "weather_state": "Wählen Sie Wetterzustände, die ‚Sonne scheint' für den Klimamodus bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sonnig (direktes Licht), ☑ teilweise bewölkt (etwas Sonne), ☐ bewölkt (kein direktes Licht), ☐ klar (normalerweise nachts). Wenn aktuelles Wetter der Auswahl entspricht: Wenden Sie Klimastrategien an. Wenn keine Übereinstimmung: Verwenden Sie die Standardposition (keine Sonne angenommen). Die meisten Benutzer sollten die Standardwerte behalten."
+        },
+        "title": "Wetterbedingungen"
       },
       "blind_spot": {
-        "title": "Toter Winkel",
-        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachvorsprünge). Winkelwerte sind relative Grad innerhalb des Sichtfelds, wobei 0 die linke Sichtfeldgrenze ist.",
         "data": {
-          "blind_spot_left": "Linker Anfang des toten Winkels",
-          "blind_spot_right": "Rechtes Ende des toten Winkels",
-          "blind_spot_elevation": "Elevation des toten Winkels"
+          "blind_spot_left": "Blindfleck-Start links",
+          "blind_spot_right": "Blindfleck-Ende rechts",
+          "blind_spot_elevation": "Blindfleck-Höhe"
         },
         "data_description": {
-          "blind_spot_left": "Linke Kante des toten Winkelbereichs (Grad von der linken FOV-Grenze). 0 = ganz links. Beispiel: FOV links = 45°, Baum blockiert 10–20° relativ → 10 eingeben. Zeigt, wo die Blockierung beginnt.",
-          "blind_spot_right": "Rechte Kante des toten Winkelbereichs (Grad von der linken FOV-Grenze, muss > linke Kante sein). Beispiel: FOV links = 45°, Baum blockiert 10–20° → 20 eingeben. Definiert den Bereich ohne Sonnenverfolgung.",
-          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad), bei der der tote Winkel gilt. Beispiel: Dachvorsprung blockiert Sonne nur bei < 30° → 30 eingeben. Höhere Sonne überwindet das Hindernis. Hohes Gebäude → 90 eintragen."
-        }
+          "blind_spot_left": "Linke Kante der blinden Fleck-Zone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze). Wobei 0 = an der äußersten linken FOV-Kante liegt. Beispiel: Wenn Ihre FOV-Links 45° beträgt und ein Baum die Sonne von 10–20° relativ zu dieser Kante blockiert, auf 10 einstellen. Dies markiert, wo die Verdeckung horizontal beginnt. Nutzen Sie Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu finden.",
+          "blind_spot_right": "Rechte Kante der blinden Fleck-Zone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze, muss > linke Kante sein). Beispiel: Wenn Ihre FOV-Links 45° beträgt und ein Baum die Sonne von 10–20° relativ zu dieser Kante blockiert, auf 20 einstellen. Dies markiert, wo die Verdeckung horizontal endet. Erstellt eine „Sonne hier nicht verfolgen“-Zone zwischen linken und rechten Kanten.",
+          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über dem Horizont), bei der der blinde Fleck gilt. Beispiel: Ein Dachüberstand blockiert die Sonne nur wenn diese niedrig ist (< 30°), also auf 30 einstellen. Sonnenhöhen über dieser Elevation durchqueren das Hindernis, daher gilt der blinde Fleck nicht. Falls das Hindernis alle Elevationen blockiert (hohes Gebäude), auf 90 einstellen oder höher lassen. Sonnenhöhe: 0°=Horizont, 45°=halbe Höhe, 90°=direkt oben. Messen oder schätzen Sie basierend auf Hindernishöhe und Entfernung."
+        },
+        "title": "Blindfleck",
+        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstände). Diese Winkelwerte sind relative Grad innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeldgrenze ist. Die Beschattung ignoriert die Sonnenposition, wenn sie in diese Blindfleckzone fällt."
       },
       "glare_zones": {
-        "title": "Blendzonen",
-        "description": "Definieren Sie bis zu 4 Bodenbereiche zum Schutz vor direktem Sonnenlicht. Lassen Sie den Zonennamen leer, um eine Zone zu überspringen. Koordinaten relativ zum Fenstermittelpunkt, projiziert auf den Boden.",
+        "title": "Blendungszonen",
+        "description": "Definieren Sie bis zu 4 Bodenbereiche zum Schutz vor direkter Sonneneinstrahlung. Lassen Sie einen Zonennamen blank, um ihn zu überspringen. Koordinaten sind relativ zur Fensterposition auf den Boden projiziert.",
         "data": {
-          "enable_glare_zones": "Blendzonen aktivieren",
+          "enable_glare_zones": "Blendungszonen aktivieren",
           "glare_zone_1_name": "Name Zone 1",
           "glare_zone_1_x": "Zone 1 X-Position",
           "glare_zone_1_y": "Zone 1 Y-Position",
-          "glare_zone_1_radius": "Zone 1 Radius",
+          "glare_zone_1_radius": "Radius Zone 1",
           "glare_zone_2_name": "Name Zone 2",
           "glare_zone_2_x": "Zone 2 X-Position",
           "glare_zone_2_y": "Zone 2 Y-Position",
-          "glare_zone_2_radius": "Zone 2 Radius",
+          "glare_zone_2_radius": "Radius Zone 2",
           "glare_zone_3_name": "Name Zone 3",
           "glare_zone_3_x": "Zone 3 X-Position",
           "glare_zone_3_y": "Zone 3 Y-Position",
-          "glare_zone_3_radius": "Zone 3 Radius",
+          "glare_zone_3_radius": "Radius Zone 3",
           "glare_zone_4_name": "Name Zone 4",
           "glare_zone_4_x": "Zone 4 X-Position",
           "glare_zone_4_y": "Zone 4 Y-Position",
-          "glare_zone_4_radius": "Zone 4 Radius"
+          "glare_zone_4_radius": "Radius Zone 4"
         },
         "data_description": {
-          "enable_glare_zones": "Wenn aktiviert, fährt die Jalousie herunter, um alle aktiven Bodenzonen zu beschatten.",
-          "glare_zone_1_name": "Name der Zone (z. B. 'Schreibtisch'). Leer lassen zum Überspringen.",
-          "glare_zone_1_x": "Links-/Rechts-Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_1_y": "Raumtiefe in cm (senkrecht zum Fenster).",
-          "glare_zone_1_radius": "Schutzradius um den Zonenmittelpunkt in cm.",
-          "glare_zone_2_name": "Name der Zone (z. B. 'Sofa'). Leer lassen zum Überspringen.",
-          "glare_zone_2_x": "Links-/Rechts-Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_2_y": "Raumtiefe in cm (senkrecht zum Fenster).",
-          "glare_zone_2_radius": "Schutzradius um den Zonenmittelpunkt in cm.",
-          "glare_zone_3_name": "Name der Zone (z. B. 'Esstisch'). Leer lassen zum Überspringen.",
-          "glare_zone_3_x": "Links-/Rechts-Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_3_y": "Raumtiefe in cm (senkrecht zum Fenster).",
-          "glare_zone_3_radius": "Schutzradius um den Zonenmittelpunkt in cm.",
-          "glare_zone_4_name": "Name der Zone (z. B. 'Bett'). Leer lassen zum Überspringen.",
-          "glare_zone_4_x": "Links-/Rechts-Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_4_y": "Raumtiefe in cm (senkrecht zum Fenster).",
-          "glare_zone_4_radius": "Schutzradius um den Zonenmittelpunkt in cm."
+          "enable_glare_zones": "Wenn aktiviert, senkt sich die Jalousie, um alle aktiven Bodenzonen zu beschatten.",
+          "glare_zone_1_name": "Name für diese Zone (z. B. „Schreibtisch“). Lassen Sie leer zum Überspringen.",
+          "glare_zone_1_x": "Links/Rechts-Versatz von Fenster-Mitte in cm. Positiv = rechts.",
+          "glare_zone_1_y": "Entfernung in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_1_radius": "Schutzradius um das ZentrUM der Zone in cm.",
+          "glare_zone_2_name": "Name für diese Zone (z. B. „Sofa“). Lassen Sie leer zum Überspringen.",
+          "glare_zone_2_x": "Links/Rechts-Versatz von Fenster-Mitte in cm. Positiv = rechts.",
+          "glare_zone_2_y": "Entfernung in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_2_radius": "Schutzradius um das Zentrum der Zone in cm.",
+          "glare_zone_3_name": "Name für diese Zone (z. B. „Esstisch“). Lassen Sie leer zum Überspringen.",
+          "glare_zone_3_x": "Links/Rechts-Versatz von Fenster-Mitte in cm. Positiv = rechts.",
+          "glare_zone_3_y": "Entfernung in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_3_radius": "Schutzradius um das Zentrum der Zone in cm.",
+          "glare_zone_4_name": "Name für diese Zone (z. B. „Bett“). Lassen Sie leer zum Überspringen.",
+          "glare_zone_4_x": "Links/Rechts-Versatz von Fenster-Mitte in cm. Positiv = rechts.",
+          "glare_zone_4_y": "Entfernung in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_4_radius": "Schutzradius um das Zentrum der Zone in cm."
         }
       },
       "interp": {
-        "title": "Positionskalibrierung",
-        "description": "Positionszuordnung für nicht standardmäßiges Verhalten anpassen. Einfache 2-Punkt-Kalibrierung (interp_start/end) für Abdeckungen mit begrenztem Bereich (z. B. 10–90%). Erweiterte Listen-Interpolation für nichtlineare Abdeckungen. Für die meisten Abdeckungen nicht erforderlich.",
         "data": {
-          "interp_start": "Wert, ab dem die Abdeckung beginnt zu öffnen",
-          "interp_end": "Wert, ab dem die Abdeckung vollständig geöffnet ist",
-          "interp_list": "Interpolationsliste",
+          "interp_start": "Wert, wo das Öffnen beginnt",
+          "interp_end": "Wert, wo das Schließen beginnt",
+          "interp_list": "Liste der Interpolation",
           "interp_list_new": "Benutzerdefinierte Interpolationsliste"
         },
         "data_description": {
-          "interp_start": "Physischer Positionswert, ab dem die Abdeckung tatsächlich zu öffnen beginnt (einfache 2-Punkt-Kalibrierung). Beispiel: Bewegt sich die Abdeckung erst ab 10%, diesen Wert auf 10 setzen.",
-          "interp_end": "Physischer Positionswert, bei dem die Abdeckung vollständig geöffnet ist (einfache 2-Punkt-Kalibrierung). Beispiel: Vollständig geöffnet bei 90% → 90 eintragen.",
-          "interp_list": "Eingangsposition für benutzerdefinierte Interpolationszuordnung (berechnete Positionen). Gleichmäßig verteilte Werte eingeben, z. B.: 0, 25, 50, 75, 100. Mindestens 2 Werte, gleiche Länge wie benutzerdefinierte Liste.",
-          "interp_list_new": "Ausgangspositionen für benutzerdefinierte Interpolationszuordnung (tatsächlich gesendete Werte). Entsprechende echte Positionen eingeben, z. B.: 0, 20, 40, 65, 100. Gleiche Länge wie Interpolationsliste."
-        }
+          "interp_start": "Physischer Positionswert, an dem Ihre Beschattung tatsächlich zu öffnen beginnt (einfache 2-Punkt-Kalibrierung). Beispiel: Wenn Ihre Beschattung erst bei 10 % zu bewegen beginnt, stellen Sie diesen Wert auf 10 ein. Wird zusammen mit interp_end für einfache lineare Zuordnung verwendet. Die meisten Beschattungen benötigen dies nicht – behalten Sie den Standardwert bei, es sei denn, Ihre Beschattung hat einen begrenzten Bereich.",
+          "interp_end": "Physischer Positionswert, bei dem Ihre Beschattung tatsächlich vollständig offen ist (einfache 2-Punkt-Kalibrierung). Beispiel: Wenn Ihre Beschattung bei 90% vollständig offen ist, auf 90 einstellen. Wird mit interp_start für grundlegende lineare Zuordnung verwendet. Die meisten Beschattungen benötigen dies nicht – auf Standard lassen, es sei denn, Ihre Beschattung hat begrenzten Bereich.",
+          "interp_list": "Eingabepositionen für die benutzerdefinierte Interpolationszuordnung (berechnete Positionen aus der Integration). Geben Sie gleichmäßig verteilte Werte wie folgt ein: 0, 25, 50, 75, 100. Dies sind die theoretischen Positionen, die die Integration berechnet. Muss 2+ Werte enthalten und die gleiche Länge wie die Liste für benutzerdefinierte Interpolation haben. Wird für erweiterte nichtlineare Kalibrierung verwendet. Leer lassen für Normalbetrieb.",
+          "interp_list_new": "Ausgabepositionen für die benutzerdefinierte Interpolationszuordnung (tatsächliche Positionen, die an die Beschattung gesendet werden). Geben Sie entsprechende Positionen wie folgt ein: 0, 20, 40, 65, 100. Dies sind die Werte, die tatsächlich an Ihre Beschattungsentität gesendet werden. Muss die gleiche Länge wie die Interpolationsliste haben. Beispielverwendung: Machen Sie die Beschattung aggressiver beim Schließen, indem Sie 50 % Berechnung auf 40 % Ist-Wert zuordnen. Die Integration interpoliert zwischen Ihren Punkten. Leer lassen für Normalbetrieb."
+        },
+        "title": "Positionskalibrierung",
+        "description": "Passen Sie die Beschattungspositionszuordnung für nicht standardmäßiges Verhalten an. Verwenden Sie eine einfache 2-Punkt-Anpassung (interp_start/end) für Beschattungen mit begrenztem Bereich (z. B. bewegt sich nur zwischen 10-90%). Verwenden Sie erweiterte Listeninterpolation für nicht lineare Beschattungen oder um das Verhalten zu mehr offenen/geschlossenen Positionen zu neigen. Die meisten Beschattungen benötigen dies nicht - aktivieren Sie nur, wenn Ihre Beschattung nicht richtig auf Standard 0-100% Befehle reagiert."
       },
       "duplicate_select": {
-        "title": "Abdeckung duplizieren — Quelle auswählen",
-        "description": "Wählen Sie, von welcher vorhandenen Abdeckung die Einstellungen dupliziert werden sollen.",
+        "title": "Beschattung duplizieren - Quelle auswählen",
+        "description": "Wählen Sie, von welcher vorhandenen Beschattung Sie Einstellungen duplizieren möchten.",
         "data": {
-          "source_entry": "Quellabdeckung"
+          "source_entry": "Quellbeschattung"
         }
       },
       "duplicate_configure": {
-        "title": "Abdeckung duplizieren — Konfigurieren",
-        "description": "Geben Sie die eindeutigen Einstellungen für die neue Abdeckung ein. Alle anderen Einstellungen werden von der Quelle kopiert.",
+        "title": "Beschattung duplizieren - Konfigurieren",
+        "description": "Geben Sie die eindeutigen Einstellungen für die neue Beschattung ein. Alle anderen Einstellungen werden aus der Quelle kopiert.",
         "data": {
           "name": "Name",
-          "entities": "Abdeckungs-Entitäten",
-          "azimuth": "Fensterazimut"
+          "entities": "Beschattungsentitäten",
+          "azimuth": "Fenster-Azimut"
         }
       },
       "summary": {
-        "title": "Konfigurationsübersicht",
+        "title": "Konfigurationszusammenfassung",
         "description": "{summary}"
       },
       "setup_mode": {
-        "title": "Einrichtungsmodus",
-        "description": "Wählen Sie, wie viel jetzt konfiguriert werden soll. Alle Einstellungen können später im Optionsmenü angepasst werden.",
+        "title": "Setup-Modus",
+        "description": "Wählen Sie, wie viel Sie jetzt konfigurieren möchten. Sie können alle Einstellungen später über das Optionsmenü anpassen.",
         "menu_options": {
-          "quick_setup": "Schnelleinrichtung — Nur Fensterbasiswerte und Sonnenverfolgung (empfohlen für die Ersteinrichtung)",
-          "full_setup": "Vollständige Einrichtung — Alle Optionen einschließlich Klima, Übersteuerungen und Automatisierung"
+          "quick_setup": "Schnelles Setup - Fenstergrundlagen + Sonnenverfolgung (empfohlen für erstmalige Einrichtung)",
+          "full_setup": "Vollständiges Setup - Alle Optionen einschließlich Klima, Übersteuerungen und Automatisierung"
         }
       },
       "light_cloud": {
-        "title": "Lichtsensoren & Wolkenunterdrückung",
-        "description": "Konfigurieren Sie Licht- und Wettersensoren, um zu erkennen, wenn Wolken direktes Sonnenlicht blockieren. Diese Funktion arbeitet unabhängig vom Klimamodus.",
+        "title": "Lichtsensoren und Wolkenunterdrückung",
+        "description": "Konfigurieren Sie Licht- und Wettersensoren, um zu erkennen, wenn Wolken die direkte Sonne blockieren. Diese funktionieren unabhängig vom Klimamodus.",
         "data": {
-          "weather_entity": "Wetterentität (optional)",
+          "weather_entity": "Wetter-Entität (optional)",
           "lux_entity": "Luxsensor (optional)",
-          "lux_threshold": "Lux-Schwellenwert",
-          "irradiance_entity": "Einstrahlungssensor (optional)",
-          "irradiance_threshold": "Einstrahlungs-Schwellenwert",
-          "cloud_coverage_entity": "Bewölkungssensor (optional)",
-          "cloud_coverage_threshold": "Bewölkungs-Schwellenwert",
-          "cloud_suppression": "Blendschutz bei wenig Licht unterdrücken",
+          "lux_threshold": "Luxschwellwert",
+          "irradiance_entity": "Strahlungssensor (optional)",
+          "irradiance_threshold": "Strahlungsschwellwert",
+          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
+          "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
+          "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
           "weather_state": "Wetterbedingungen"
+        },
+        "data_description": {
+          "weather_entity": "Optionale Wetterintegrationen zur Erkennung von Wolkenbedeckung. Wenn der aktuelle Wetterzustand nicht in der unten ausgewählten Liste enthalten ist, wird angenommen, dass direktes Sonnenlicht nicht vorhanden ist, und die Blendungskontrolle wird unterdrückt. Leer lassen, um den Wetterzustand zu ignorieren.",
+          "weather_state": "Die Wetterzustände, die als ‚Sonne scheint' gelten. Wenn der aktuelle Wetterzustand mit einem dieser Zustände übereinstimmt, läuft die Sonnenverfolgung normal. Wenn nicht, kehrt die Beschattung zu ihrer Standardposition zurück. Behalten Sie die Standardwerte (sonnig, teilweise bewölkt, klar) bei, es sei denn, Ihre Wetterintegrationen verwendet andere Zustandsnamen.",
+          "lux_entity": "Optionaler Lichtsensor (innen oder außen) zur genauen Sonnenerkennung. Wenn der Sensor unter dem Schwellwert liegt, ist kein direktes Sonnenlicht vorhanden und die Blendungskontrolle wird unterdrückt. Typische Direktsonnenwerte: 5.000–10.000 Lux. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "lux_threshold": "Lichtniveau, über dem die Sonne als vorhanden gilt. Darunter kehrt die Beschattung zur Verfolgung der Sonne statt zu ihrer Standardposition zurück. Typische Werte: 5.000–10.000 Lux für direktes Sonnenlicht, 2.000–3.000 Lux für helles indirektes Licht. Passen Sie je nach Sensorposition an.",
+          "irradiance_entity": "Optionaler Solarbestrahlungssensor (außen) zur genauen Sonnenerkennung. Misst Sonnenenergie in W/m². Wenn der Sensor unter dem Schwellwert liegt, ist kein direktes Sonnenlicht vorhanden und die Blendungskontrolle wird unterdrückt. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "irradiance_threshold": "Sonnenbestrahlungsniveau, über dem die Sonne als vorhanden gilt. Darunter kehrt die Beschattung zu ihrer Standardposition zurück. Typische Werte: 300–500 W/m² für direktes Sonnenlicht, 100–200 W/m² für einen bewölkten Tag. Passen Sie je nach Klima und Vorlieben an.",
+          "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100 % meldet (z. B. von einer Wetterintegrationen). Wenn der Wert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "cloud_coverage_threshold": "Wolkenbedeckungsprozentsatz, bei dem oder über dem die Blendungskontrolle unterdrückt wird. Beispiel: 75 bedeutet, dass die Beschattung die Sonnenverfolgung stoppt, wenn der Himmel zu 75 % oder stärker bewölkt ist.",
+          "cloud_suppression": "Wenn aktiviert, können alle konfigurierten Licht- oder Wolkensensoren (Wetterzustand, Lux, Bestrahlung oder Wolkenbedeckung) die Blendungskontrolle unterdrücken. Wenn einer der Sensoren anzeigt, dass kein direktes Sonnenlicht vorhanden ist, kehrt die Beschattung zu ihrer Standardposition zurück, anstatt der Sonne zu folgen. Erfordert keinen Klimamodus – dies funktioniert als eigenständige lichtkontrollierte Blendungskontrolle."
         }
       },
       "temperature_climate": {
-        "title": "Temperatur & Klimamodus",
-        "description": "Klimamodus aktivieren, um Abdeckungspositionen basierend auf Innen-/Außentemperatur, Anwesenheitserkennung und saisonalen Strategien anzupassen.",
+        "title": "Temperatur und Klimamodus",
+        "description": "Der Klimamodus passt die Beschattungsposition basierend auf Innen-/Außentemperatur, Anwesenheit und an, ob die Sonne das Fenster trifft. Wenn deaktiviert, folgt die Beschattung normaler Sonne/Blendungsverfolgung.\n\n**Wie die Jahreszeit ausgewählt wird** – Die aktuelle Temperatur ist der Außensensor, falls bereitgestellt, ansonsten der Innensensor.\n- **Winter** – aktuelle Temperatur liegt unter dem niedriger Schwellwert.\n- **Sommer** – aktuelle Temperatur liegt über dem hoher Schwellwert **und** Außentemperatur liegt über der Außenschwelle (verhindert Sommerverhalten an einem kalten Tag).\n- **Zwischenstufe** – beides oben nicht erfüllt; normale Solar-/Blendungsverfolgung läuft.\n\n**Was jeder Modus tut**\n- **Winter + Sonne auf Fenster** → vollständig öffnen (100 %), um Solarwärme zu erfassen.\n- **Winter, Sonne nicht auf Fenster**, *Winter-Isolationsmodus* aktiviert → vollständig schließen (0 %), um Wärme zu halten.\n- **Sommer** → vollständig schließen (0 %), um Wärmezunahme zu blockieren. Für Jalousien geschieht dies nur mit Anwesenheit, wenn *Transparente Jalousie* aktiviert ist; ohne Anwesenheit schließt sich immer.\n- **Schwaches Licht** (bewölkt / dunkel / nicht sonnig) → kehrt zur Standardposition zurück und überschreibt Sommer-Schließung, sodass Beschattungen nicht unnötig schließen.\n- **Zwischenstufe / Sonne gültig mit Anwesenheit** → normale Blendungskontrolle-Verfolgung.\n\n**Anwesenheit** kontrolliert das Verhalten: Wenn niemand zu Hause ist, gilt eine einfachere Sommergeschlossen-/Winteroffen-Regel; mit Anwesenden läuft die Blendungskontrolle-Verfolgung unter Zwischenbedingungen und transparente Jalousien schließen sich immer noch im Sommer.\n\n**Neigungsbeschattungen** folgen der gleichen saisonalen Logik, verwenden aber Lamellenwinkel anstelle von offenen/geschlossenen Positionen.\n\nLassen Sie *Außentemperatursensor* und *Anwesenheitsentität* leer, um diese Prüfungen zu überspringen. Der Klimamodus läuft nach Zwangs-/Wetter-/Manual-/Benutzer-Übersteuerungen, aber vor normaler Sonnenverfolgung.",
         "data": {
           "climate_mode": "Klimamodus aktivieren",
-          "temp_entity": "Innentemperatursensor",
-          "temp_low": "Untere Temperaturschwelle",
-          "temp_high": "Obere Temperaturschwelle",
+          "temp_entity": "Innere Temperaturentität",
+          "temp_low": "Unterer Temperaturschwellwert",
+          "temp_high": "Oberer Temperaturschwellwert",
           "outside_temp": "Außentemperatursensor (optional)",
+          "outside_threshold": "Außentemperaturschwellwert",
           "presence_entity": "Anwesenheitsentität (optional)",
           "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winter-Isoliermodus"
+          "winter_close_insulation": "Winterisolationsmodus"
+        },
+        "data_description": {
+          "climate_mode": "Aktivieren Sie, um alle klimagestützten Beschattungssteuerungen zu aktivieren. Wenn ausgeschaltet, werden alle Einstellungen auf diesem Bildschirm ignoriert und die Beschattung folgt normaler Sonne/Blendungsverfolgung.",
+          "temp_entity": "Ein Thermostat oder Temperatursensor, der die Innentemperatur misst, die verwendet wird, um die aktuelle Jahreszeit zu bestimmen (Winter/Sommer/Zwischenstufe). Erforderlich, wenn der Klimamodus aktiviert ist.",
+          "temp_low": "Innentemperatur (oder Außentemperatur, wenn ein Außensensor konfiguriert ist), unter der die Jahreszeit als Winter behandelt wird. Im Winter öffnet sich die Beschattung vollständig, wenn die Sonne auf das Fenster trifft, um Solarwärme zu erfassen.",
+          "temp_high": "Innentemperatur (oder Außentemperatur, wenn ein Außensensor konfiguriert ist), über der die Jahreszeit als Sommer behandelt wird – vorausgesetzt, die Außenschwelle wird auch überschritten. Im Sommer schließt sich die Beschattung, um die Wärmezunahme zu blockieren.",
+          "outside_temp": "Optionaler Außentemperatursensor. Wenn bereitgestellt, bestimmt dieser Wert (anstelle des Innensensors) die aktuelle Jahreszeit, und die Außenschwelle-Schutzmaßnahme wird angewendet, um Sommerverhalten bei kalten Außentagen zu verhindern.",
+          "outside_threshold": "Minimale Außentemperatur erforderlich, bevor der Sommermodus aktiviert wird. Schützt davor, Beschattungen an einem heißen Innentag zu schließen, wenn es draußen tatsächlich kalt ist. Wird nur verwendet, wenn ein Außentemperatursensor konfiguriert ist.",
+          "presence_entity": "Optionaler Anwesenheitssensor, Geräteverfolgung oder Zone. Wenn jemand zu Hause ist, verwendet die Beschattung die Blendungskontrolle-Verfolgung unter Zwischenbedingungen; wenn niemand zu Hause ist, gilt eine einfachere Sommergeschlossen-/Winteroffen-Regel. Leer lassen, um den Raum immer als belegt zu behandeln.",
+          "transparent_blind": "Aktivieren Sie, wenn das Blindmaterial sheer oder durchsichtig ist. Im Sommer mit Anwesenden wird sich eine transparente Jalousie immer noch vollständig schließen, um die Wärmezunahme zu reduzieren, während eine undurchsichtige Jalousie stattdessen der Blendungskontrolle-Verfolgung folgen würde.",
+          "winter_close_insulation": "Wenn aktiviert, schließt sich die Beschattung vollständig (0 %), während der Winter, wenn die Sonne nicht direkt auf das Fenster trifft, um Wärmeverluste nach innen zu verringern. Hat keine Auswirkung, wenn die Sonne auf dem Fenster ist (die Beschattung öffnet sich, um Solarwärme zu erfassen)."
         }
       }
     },
     "abort": {
       "user_cancelled": "Aktion vom Benutzer abgebrochen",
-      "source_not_found": "Die Quellabdeckung existiert nicht mehr."
+      "source_not_found": "Die Quellbeschattung existiert nicht mehr."
     }
   },
   "options": {
     "step": {
       "init": {
         "menu_options": {
-          "cover_entities": "🪟 Abdeckungen & Gerät",
+          "cover_entities": "🪟 Beschattungen & Gerät",
           "geometry": "📐 Fenstergeometrie",
           "sun_tracking": "☀️ Sonnenverfolgung",
           "position": "📊 Positionseinstellungen",
-          "blind_spot": "🌳 Toter Winkel",
-          "glare_zones": "🔆 Blendzonen",
+          "blind_spot": "🌳 Blindfleck",
+          "glare_zones": "🔆 Blendungszonen",
           "interp": "📊 Positionskalibrierung",
-          "automation": "⏱️ Zeitplan & Timing",
+          "automation": "⏱️ Zeitplan und Timing",
           "climate": "Klimakonfiguration",
           "weather": "Wetterbedingungen",
           "manual_override": "✋ Manuelle Übersteuerung",
           "force_override": "🚨 Zwangsübersteuerung",
           "custom_position": "🎯 Benutzerdefinierte Positionen",
           "motion_override": "🚶 Bewegungsübersteuerung",
-          "weather_override": "🌧️ Wetterübersteuerung",
-          "summary": "📋 Konfigurationsübersicht",
-          "sync": "🔄 Einstellungen auf andere Abdeckungen kopieren",
-          "done": "✅ Speichern & Schließen",
-          "light_cloud": "☁️ Lichtsensoren & Wolken",
-          "temperature_climate": "🌡️ Temperatur & Klima",
-          "debug": "🔍 Debug & Diagnostics"
+          "weather_override": "🌧️ Wetter-Übersteuerung",
+          "summary": "📋 Konfigurationszusammenfassung",
+          "sync": "🔄 In andere Beschattungen kopieren",
+          "debug": "🔍 Debug und Diagnose",
+          "done": "✅ Speichern und schließen",
+          "light_cloud": "☁️ Lichtsensoren und Wolken",
+          "temperature_climate": "🌡️ Temperatur und Klima"
         }
       },
       "automation": {
-        "title": "Zeitplan & Timing",
-        "description": "Konfigurieren Sie Automatisierungszeiten, Positionsänderungsschwellen und aktive Betriebsstunden.",
+        "title": "Zeitplan und Timing",
+        "description": "Konfigurieren Sie Automatisierungstiming, Positionsänderungsschwellen und aktive Stunden für automatische Steuerung.",
         "data": {
-          "delta_position": "Minimale Positionsänderung",
-          "delta_time": "Mindestintervall zwischen Positionsänderungen",
+          "delta_position": "Minimale Positionsanpassung",
+          "delta_time": "Minimales Intervall zwischen Positionsänderungen",
           "start_time": "Startzeit",
-          "start_entity": "Entität für die Startzeit",
+          "start_entity": "Entität, die die Startzeit angibt",
           "end_time": "Endzeit",
-          "end_entity": "Entität für die Endzeit",
-          "return_sunset": "Abdeckungen bei Erreichen der Endzeit in die aktuelle Standardposition fahren"
+          "end_entity": "Entität, die die Endzeit angibt",
+          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
         },
         "data_description": {
-          "delta_position": "Minimale Positionsänderung (%) vor Anpassung. Typisch: 1–2% (sehr reaktiv), 5% (ausgewogen, empfohlen), 10% (seltener). Reduziert Motorverschleiß.",
-          "delta_time": "Mindestzeit (Minuten) zwischen Anpassungen. Typisch: 2–3 Min. (sehr reaktiv), 5–10 Min. (ausgewogen, empfohlen), 15–20 Min. (ruhig). Minimum: 2 Minuten.",
-          "start_time": "Automatische Steuerung nicht vor dieser Zeit (24-Stunden-Format). Leer lassen für Start bei Sonnenaufgang.",
-          "start_entity": "Entität, die die Startzeit überschreibt.",
-          "end_time": "Automatische Steuerung nach dieser Zeit stoppen (24-Stunden-Format). Leer lassen für Betrieb bis Sonnenuntergang.",
-          "end_entity": "Entität, die die Endzeit überschreibt.",
-          "return_sunset": "Bei Erreichen der Endzeit Abdeckungen in die aktuelle effektive Standardposition fahren."
+          "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert kleine Anpassungen, während sich die Sonne langsam bewegt. Typische Werte: 1-2 % (sehr reaktiv, kann häufig anpassen), 5 % (ausgewogen, empfohlen für die meisten), 10 % (weniger häufig, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30 % ist und die Sonne sich leicht bewegt, passen Sie nur an, wenn die neue Position 35 % oder höher ist (mit 5 % Schwelle). Reduziert Motorverschleiß und Lärm von konstanten kleinen Anpassungen.",
+          "delta_time": "Minimale Zeit (in Minuten) zwischen Beschattungsanpassungen. Verhindert schnelle Positionsänderungen. Typische Werte: 2-3 Min. (sehr reaktiv, kann laut sein), 5-10 Min. (ausgewogen, empfohlen), 15-20 Min. (langsam, sanfte Anpassungen). Wenn die Sonne schnell wechselt (Wolken, Schatten), wartet die Integration diese Zeit, bevor sie erneut anpasst. Reduziert Motorverschleiß und bietet sanftere Bedienung. Minimum sind 2 Minuten.",
+          "start_time": "Starten Sie nicht die automatische Kontrolle vor dieser Zeit (24-Stunden-Format). Verwenden Sie dies, um länger zu schlafen ohne Morgenblindheit (auf 08:00 oder später setzen), Ihrer Routine zu entsprechen (auf Aufwachzeit setzen), oder leer lassen, um bei Sonnenaufgang zu starten. Beispiel: ‚07:30' bedeutet, dass die automatische Kontrolle um 07:30 Uhr beginnt. Manuelle Kontrolle funktioniert vor dieser Zeit immer noch.",
+          "start_entity": "Entität, die den Startzeitstatus darstellt und die oben festgelegte feste Startzeit überschreibt. Nützlich zur Automatisierung der Startzeit mit einer Entität (z. B. Sensor, der Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
+          "end_time": "Beenden Sie die automatische Kontrolle nach dieser Zeit (24-Stunden-Format). Verwenden Sie dies, um Abendprivatsphäre zu behalten (auf 18:00 oder 19:00 setzen), zur Standardposition vor dem Schlafengehen zurückzukehren, oder leer lassen, um bis zum Sonnenuntergang zu fahren. Beispiel: ‚20:00' bedeutet, dass die automatische Kontrolle um 20:00 Uhr endet. Manuelle Kontrolle funktioniert nach dieser Zeit immer noch.",
+          "end_entity": "Entität, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit überschreibt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
+          "return_sunset": "Wenn die betriebliche Endzeit erreicht ist, senden Sie Beschattungen in die aktuelle effektive Standardposition (die die Sonnenuntergangsposition ist, wenn der astronomische Sonnenuntergang bereits aufgetreten ist, ansonsten die normale Standardposition). Nützlich, wenn Ihre Endzeit vor Sonnenuntergang liegt und Sie die Beschattungen korrekt für den Abend positionieren möchten. Diese Bewegung tritt nur auf, wenn die Automatische Kontrolle AKTIVIERT ist – wenn die Automatische Kontrolle deaktiviert ist, bleibt die Beschattung dort, wo sie zur Endzeit ist."
         }
       },
       "cover_entities": {
-        "title": "Abdeckungen & Gerät",
-        "description": "Wählen Sie die Abdeckungs-Entitäten aus, die diese Instanz steuern soll.",
+        "title": "Beschattungen & Gerät",
+        "description": "Wählen Sie die Cover-Entitäten aus, die diese Instanz steuern wird.",
         "data": {
-          "group": "Abdeckungs-Entitäten",
+          "group": "Beschattungsentitäten",
           "linked_device_id": "An Gerät anhängen"
         },
         "data_description": {
-          "group": "Wählen Sie die Abdeckungs-Entitäten aus. Mehrere Abdeckungen als Gruppe auswählen möglich. Nur Abdeckungen für dieses Fenster – separate Instanzen für andere Fenster erstellen.",
-          "linked_device_id": "Physisches Gerät auswählen für Zusammenführung. 'Kein (eigenständiges Gerät)' für separates Gerät."
+          "group": "Wählen Sie die Cover-Entitäten aus, die von dieser Integrationsinstanz gesteuert werden sollen. Sie können mehrere Abdeckungen auswählen, um sie als Gruppe zu steuern (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Abdeckungen aus, die diesem bestimmten Fenster dienen - erstellen Sie separate Integrationsinstanzen für verschiedene Fenster.",
+          "linked_device_id": "Wählen Sie ein physisches Gerät aus, um die Entitäten dieser Integration zusammenzuführen. Die Sensoren, Schalter und Schaltflächen der Integration werden direkt unter diesem Gerät in Home Assistant angezeigt. Wählen Sie „Keine (eigenständiges Gerät)“, um auf ein separates virtuelles Adaptive Cover-Gerät zurückzukehren. Nur Geräte, die die ausgewählten Cover-Entitäten besitzen, werden angezeigt."
         }
       },
       "geometry": {
-        "title": "Abdeckungsgeometrie",
-        "description": "Konfigurieren Sie die Abmessungen der Abdeckung.",
+        "title": "Beschattungsgeometrie",
+        "description": "Konfigurieren Sie die Abdeckungsabmessungen.",
         "data": {
           "window_height": "Fensterhöhe",
-          "distance_shaded_area": "Beschattungstiefe",
+          "distance_shaded_area": "Beschatteter Bereich",
           "window_depth": "Fenstertiefe (Laibung)",
-          "sill_height": "Brüstungshöhe",
+          "sill_height": "Fensterbretthöhe",
           "window_width": "Fensterbreite",
-          "length_awning": "Markisenausladung",
+          "length_awning": "Markisenlänge",
           "angle": "Markisenwinkel",
-          "slat_depth": "Lamellenbreite",
+          "slat_depth": "Lamellentiefe",
           "slat_distance": "Lamellenabstand"
         },
         "data_description": {
-          "window_height": "Höhe des Fensters in Metern. Hinweis: 1 Meter ≈ 3,3 Fuß.",
-          "distance_shaded_area": "Erlaubte Sonneneindringtiefe in Metern. GRÖSSER = Abdeckung OFFENER; KLEINER = Abdeckung GESCHLOSSENER.",
-          "window_depth": "Laibungstiefe ab Wandoberfläche (Meter). Standard: 0. Wirkt bei Winkeln > 10°.",
-          "sill_height": "Brüstungshöhe (Abstand Boden bis Fensterunterkante) in Metern. Standard: 0. Bereich: 0,0–3,0 m.",
-          "window_width": "Fensterbreite in cm. Wird von Blendzonen genutzt.",
-          "length_awning": "Maximale Ausladung der Markise in Metern.",
-          "angle": "Neigungswinkel der Markise (0–45°). Die meisten Markisen: 0–15°.",
-          "slat_depth": "Lamellenbreite von vorne nach hinten gemessen.",
-          "slat_distance": "Abstand zwischen Lamellenmittelpunkten. Typisch: 3–8 cm."
+          "window_height": "Höhe Ihres Fensters in Metern (von unten bis oben des Glasbereichs). Beispiele: Standard-Tür = 2,0m, Kleines Fenster = 1,5m, Vom Boden bis Decke = 2,5m. Messen Sie von wo die Abdeckung beginnt bis wo sie endet, wenn vollständig ausgefahren. Wird verwendet, um die optimale Abdeckungsposition zu berechnen, um direkte Sonneneinstrahlung zu blockieren. Hinweis: 1 Meter ≈ 3,3 Fuß.",
+          "distance_shaded_area": "Wie weit Sie direkte Sonneneinstrahlung in den Raum eindringen lassen möchten (in Metern). Dies definiert Ihre akzeptable „Blendungszone“ - der Bereich, in den Sonnenlicht den Boden erreichen kann. Die Abdeckungsposition passt sich an, um diese Grenze zu erhalten, wenn sich die Sonne über den Himmel bewegt. Übliche Konfigurationen: Kleine Blendungszone (0,3-0,5m) hält Sonnenlicht sehr nah am Fenster (verwenden Sie, wenn Sie maximalen Schatten möchten); Mittlere Blendungszone (0,5-1,0m) ermöglicht der Sonne, Schreibtisch oder Sitzbereich zu erreichen (ausgewogen, am häufigsten für Wohnräume); Große Blendungszone (2,0-3,0m) ermöglicht Sonnenlicht tief in den Raum (gut für dunkle Räume oder passive Solarheizung). SCHLÜSSELKONZEPT: GRÖSSERER Wert = MEHR Sonnenlicht erlaubt tiefer in den Raum = Abdeckung bleibt HÖHER/MEHR OFFEN; KLEINERER Wert = WENIGER Sonnenlicht in den Raum = Abdeckung fällt TIEFER/MEHR GESCHLOSSEN. Messen Sie von der Innenseite Ihres Fensters zu dem Punkt, an dem Sie die Sonnengrenze haben möchten.",
+          "window_depth": "Tiefe der Fensterlaibung/des Rahmens von der Wandoberfläche (Meter). Optionaler Parameter für erweiterte Genauigkeit. Stellen Sie auf 0 (Standard) ein, um zu deaktivieren. Typische Werte: Flächenbündige Montage = 0,05m (2in), Standard-Rahmen = 0,10m (4in), Tiefe Laibung = 0,15m (6in). Fenstertiefe bietet zusätzliche Sonnenblockerung bei schrägen Sonnenpositionen. Messen Sie von der äußeren Wandoberfläche zur inneren Kante des Fensterrahmens. Beeinflusst die Berechnung nur bei Winkeln >10°.",
+          "sill_height": "Höhe von Boden zur Unterseite Ihres Fensters (in Metern). Stellen Sie auf 0 (Standard) für bodenebene Fenster oder wenn unbekannt ein. Für ein Fenster mit seiner unteren Kante 1 Meter über dem Boden, stellen Sie dies auf 1,0 ein. Dies verbessert die Berechnungsgenauigkeit für erhöhte Fenster — ohne sie schließt sich die Jalousie leicht mehr als nötig. Bereich: 0,0–3,0m. Messen Sie von Boden zur unteren Kante des Glasbereichs (die Brüstung). Hinweis: h_win (Fensterhöhe) wird immer noch vom unteren zum oberen Glasbereich gemessen — diese sind unabhängige Messungen.",
+          "window_width": "Breite der Fensteröffnung in cm. Wird von Blendungszonen verwendet, um zu bestimmen, welche Bodenzonen basierend auf dem horizontalen Sonnenwinkel direkte Sonneneinstrahlung erhalten können. Messen Sie die Innenbreite des Glasbereichs. Beispiele: Standard-Fenster = 90-120cm, Doppelfenster = 150-180cm, Terrassentür = 200-300cm. Relevant nur, wenn Blendungszonen aktiviert sind.",
+          "length_awning": "Maximale Ausfahrlänge Ihrer Markise in Metern (vollständig ausgefahren). Messen Sie vom Montagepunkt bis zum Ende des Stoffes, wenn vollständig offen. Beispiele: Standard-Terrasse-Markise = 2,0-3,0m, Kleine Fenster-Markise = 1,0-1,5m, Große Gewerbe = 4,0m+. Wird verwendet, um zu berechnen, wie weit die Markise ausfahren muss, um die Sonne zu blockieren.",
+          "angle": "Neigungswinkel der Markise bei Ausfuhr (0-45°). 0° = Horizontal/flach (maximale Abdeckung), 15° = Leichte Neigung (typisch für Drainage), 30° = Steile Neigung (starker Sonnenwinkel), 45° = Sehr steil (selten verwendet). Überprüfen Sie die Spezifikationen des Markisenherstellers. Die meisten Markisen sind 0-15°. Beeinflusst die Schattenberechnung für ordnungsgemäße Sonnensperrung.",
+          "slat_depth": "Breite jeder Lamelle (Messung eine Lamelle von vorne nach hinten). Übliche Größen: Mini-Jalousien (1 Zoll) = 2,5cm, Standard-Jalousien (2 Zoll) = 5cm, Breite Lamellen (2,5-3 Zoll) = 6,5-7,5cm. Messen Sie eine einzelne Lamelle mit einem Lineal für genaue Sonnenblockerberechnung.",
+          "slat_distance": "Vertikaler Abstand zwischen Lamellenmitten. Messen Sie von der Mitte einer Lamelle zur Mitte der nächsten Lamelle (vertikal). Normalerweise etwas mehr als Lamellenbreite, um Überlappung zu ermöglichen, wenn geschlossen. Üblich: 3-8cm je nach Jalousientyp. Wird verwendet, um den optimalen Neigungswinkel zu berechnen."
         }
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Konfigurieren Sie die Fensterausrichtung und Sonnenverfolgungswinkel.",
+        "description": "Konfigurieren Sie die Fensterorientierung und Sonnenverfolgungswinkel.",
         "data": {
-          "set_azimuth": "Fensterazimut",
+          "enable_sun_tracking": "Sonnenverfolgung aktivieren",
+          "set_azimuth": "Fenster-Azimut",
           "fov_left": "Sichtfeld links",
           "fov_right": "Sichtfeld rechts",
           "min_elevation": "Minimale Sonnenhöhe",
           "max_elevation": "Maximale Sonnenhöhe",
-          "blind_spot": "Toter Winkel einrichten",
-          "enable_glare_zones": "Blendzonen aktivieren",
-          "distance_shaded_area": "Beschattungstiefe"
+          "blind_spot": "Blindfleck einrichten",
+          "enable_glare_zones": "Blendungszonen aktivieren",
+          "distance_shaded_area": "Beschatteter Bereich"
         },
         "data_description": {
-          "set_azimuth": "Fensterausrichtung (0–359°). Nord=0°, Ost=90°, Süd=180°, West=270°.",
-          "fov_left": "Sonnenverfolgungsbereich links (Grad). Standardfenster: 45°.",
-          "fov_right": "Sonnenverfolgungsbereich rechts (Grad). Standardfenster: 45°.",
-          "min_elevation": "Nur verfolgen wenn Elevation ÜBER diesem Winkel liegt. Leer = alle Elevationen.",
-          "max_elevation": "Nur verfolgen wenn Elevation UNTER diesem Winkel liegt. Leer = alle Elevationen.",
-          "blind_spot": "Aktivieren bei Hindernissen im Sichtfeld (Bäume, Gebäude, Dachvorsprung).",
-          "enable_glare_zones": "Bodenbereiche vor Sonnenblendung schützen (nur vertikale Abdeckungen)",
-          "distance_shaded_area": "Erlaubte Sonneneindringtiefe in Metern. GRÖSSER = Abdeckung OFFENER; KLEINER = Abdeckung GESCHLOSSENER."
+          "enable_sun_tracking": "Wenn aktiviert, verfolgen Behänge die Sonne innerhalb der konfigurierten Sichtweite und Höhenlimits (Solarpositionierung). Deaktivieren Sie, um distanzbasierte Solarpositionierung zu überspringen, während Blendungszonen beibehalten werden (kontrolliert durch ihren eigenen Schalter), Klimamodi, Bewegung, manuelle Übersteuerung, benutzerdefinierte Positionen und andere Übersteuerungen aktiv bleiben. Standard: aktiviert.",
+          "set_azimuth": "Richtung, zu der Ihr Fenster schaut (0–359°). Nord=0°, Osten=90°, Süden=180°, Westen=270°. Beispiel: Ein südausgerichtetes Fenster = 180°. Verwenden Sie eine Kompass-App oder prüfen Sie die Sonne am Mittag, um die Richtung zu bestimmen. Dies teilt der Integration mit, wohin Ihr Fenster zeigt, damit sie Sonnenwinkel genau berechnen kann.",
+          "fov_left": "Wie breit der Sonnenverfolgungsbereich auf der LINKEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster oder Glastüren: 60–75°, schmale Fenster: 30°. Stellen Sie sich dies als peripheres Sehen vor – wie weit nach links sollten wir die Sonne verfolgen? Kombiniert mit fov_right definiert dies die horizontale Verfolgungszone.",
+          "fov_right": "Wie breit der Sonnenverfolgungsbereich auf der RECHTEN Seite des Fensters ist (in Grad). Standardfenster: 45° (90° Gesamtabdeckung mit beiden Seiten), breite Fenster oder Glastüren: 60–75°, schmale Fenster: 30°. Stellen Sie sich dies als peripheres Sehen vor – wie weit nach rechts sollten wir die Sonne verfolgen? Kombiniert mit fov_left definiert dies die horizontale Verfolgungszone.",
+          "min_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe ÜBER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halb zum Zenit, 90°=direkt oben. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 15° setzen, um morgendliche und abendliche Sonne zu ignorieren. Leer lassen, um Sonne bei allen Höhen zu verfolgen.",
+          "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halb zum Zenit, 90°=direkt oben. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° setzen, um hohe Mittagssonne zu ignorieren. Leer lassen, um Sonne bei allen Höhen zu verfolgen.",
+          "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die die Sonne in einem Teil des Verfolgungsbereichs blockieren (Bäume, Nachbargebäude, Dachdachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem die Sonne blockiert ist. Der Behang ignoriert die Sonnenposition, wenn sie in dieser 'Totwinkelsone' ist. Deaktiviert lassen, wenn Sie klare Sicht zur Sonne den ganzen Tag haben.",
+          "enable_glare_zones": "Schützen Sie bestimmte Bodenbereiche vor direkter Sonnenblendung (nur vertikale Behänge)",
+          "distance_shaded_area": "Wie weit Sie ZULASSEN möchten, dass direkte Sonnenstrahlung in den Raum eindringt (in Metern). Dies definiert Ihre akzeptable 'Blendungszone' – der Bereich, in dem Sonnenlicht den Boden erreichen kann. Die Behangposition passt sich an, um diese Grenze zu halten, während die Sonne über den Himmel wandert. Häufige Konfigurationen: Kleine Blendungszone (0,3–0,5 m) hält Sonnenlicht sehr nahe am Fenster (verwenden, wenn Sie maximalen Schatten wollen); mittlere Blendungszone (0,5–1,0 m) ermöglicht Sonne, Schreibtisch oder Sitzbereich zu erreichen (ausgewogen, am häufigsten für Wohnräume); große Blendungszone (2,0–3,0 m) ermöglicht Sonnenlicht tief in den Raum (gut für dunkle Räume oder passive Solarheizung). SCHLÜSSELKONZEPT: HÖHERER Wert = MEHR Sonnenlicht tief in Raum erlaubt = Behang bleibt HÖHER/MEHR OFFEN; NIEDRIGERER Wert = WENIGER Sonnenlicht in Raum = Behang senkt sich TIEFER/MEHR GESCHLOSSEN. Messen Sie von der Innenseite Ihres Fensters bis zu dem Punkt, wo Sie die Sonnengrenze haben möchten."
         }
       },
       "position": {
         "title": "Positionseinstellungen",
-        "description": "Konfigurieren Sie Positionsgrenzen, Standardwerte und Sonnenuntergangsverhalten.",
+        "description": "Konfigurieren Sie Beschattungspositionsgrenzen, Standardwerte und Sonnenuntergangsverhalten.",
         "data": {
           "default_percentage": "Standardposition",
           "max_position": "Maximale Position",
-          "enable_max_position": "Maximum nur während der Sonnenverfolgung anwenden",
+          "enable_max_position": "Max nur während Sonnenverfolgung anwenden",
           "min_position": "Minimale Position",
-          "enable_min_position": "Minimum nur während der Sonnenverfolgung anwenden",
+          "enable_min_position": "Min nur während Sonnenverfolgung anwenden",
           "sunset_position": "Sonnenuntergangsposition",
-          "sunset_offset": "Sonnenuntergangs-Versatz",
-          "sunrise_offset": "Sonnenaufgangs-Versatz",
-          "open_close_threshold": "Öffnen/Schließen-Schwellenwert",
-          "inverse_state": "Zustand invertieren (für Abdeckungen, die nicht den HA-Richtlinien entsprechen)",
-          "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Positions-Zuordnung)"
+          "my_position_value": "Mein Positionswert",
+          "sunset_use_my": "Meine Position bei Sonnenuntergang verwenden",
+          "sunset_offset": "Sonnenuntergang-Versatz",
+          "sunrise_offset": "Sonnenaufgang-Versatz",
+          "open_close_threshold": "Öffnen/Schließen-Schwellwert",
+          "inverse_state": "Zustand umkehren (erforderlich für Beschattungen, die nicht HA-Richtlinien folgen)",
+          "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Öffnungs-/Schließungspositionszuordnung)"
         },
         "data_description": {
-          "default_percentage": "Ruheposition ohne aktive Sonnenverfolgung (0–100%). 0% = geschlossen, 100% = geöffnet.",
-          "max_position": "Maximale Positionsgrenze (0–100%). Die Abdeckung überschreitet diesen Wert nie.",
-          "enable_max_position": "DEAKTIVIERT (Standard): Maximum gilt immer. AKTIVIERT: Maximum nur bei direkter Sonneneinstrahlung.",
-          "min_position": "Minimale Positionsgrenze (0–99%). Die Abdeckung unterschreitet diesen Wert nie.",
-          "enable_min_position": "DEAKTIVIERT (Standard): Minimum gilt immer. AKTIVIERT: Minimum nur bei direkter Sonneneinstrahlung.",
-          "sunset_position": "Position nach Sonnenuntergang. Leer lassen für Standardposition. 0% = geschlossen, 100% = geöffnet.",
-          "sunset_offset": "Versatz der Sonnenuntergangszeit (± Minuten). Positiv = nach, Negativ = vor Sonnenuntergang.",
-          "sunrise_offset": "Versatz der Sonnenaufgangszeit (± Minuten). Positiv = nach, Negativ = vor Sonnenaufgang.",
-          "open_close_threshold": "Schwelle für Abdeckungen ohne Positionssteuerung. Ab diesem Wert öffnen, darunter schließen. Standard: 50%.",
-          "inverse_state": "Für Abdeckungen mit umgekehrter Positionslogik aktivieren. Nur wenn 100% schließt statt öffnet.",
-          "interp": "Benutzerdefinierte Positions-Zuordnung aktivieren. Abschnitt 'Positionskalibrierung' erscheint im Optionsmenü."
+          "default_percentage": "Behangposition, wenn die Sonne nicht vor dem Fenster steht (0–100%). 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen), 50% = halb offen (ausgewogenes Licht und Datenschutz), 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Dies ist die 'Ruheposition', die verwendet wird, wenn Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, wird durch Hindernisse blockiert oder liegt außerhalb der Verfolgungszeiten).",
+          "max_position": "Maximale Behangpositionsbegrenzung (0–100%). 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Behang geht nie über diesen Wert hinaus. Verwenden Sie dies, um: zu verhindern, dass sich der Behang vollständig öffnet (auf 80% setzen), etwas Schatten jederzeit zu halten (auf 60–70% setzen), vor Klemmen an der Oberseite zu schützen (auf 95% setzen). Dies erzeugt eine Obergrenze für alle automatischen Positionen.",
+          "enable_max_position": "Kontrolliert WANN die maximale Positionsbegrenzung gilt. UNCHECKED (Standard, empfohlen): Maximale Position gilt IMMER – während Sonnenverfolgung, Standardposition, Klimamodi usw. Behang geht nie über Maximalwert hinaus. CHECKED (fortgeschritten): Maximale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann der Behang über Maximalwert hinausgehen. Die meisten Benutzer sollten dies UNCHECKED lassen für konsistenten Schutz.",
+          "min_position": "Minimale Behangpositionsbegrenzung (0–99%). 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen). Behang geht nie unter diesen Wert. Verwenden Sie dies, um: zu verhindern, dass sich der Behang vollständig schließt (auf 20% setzen), etwas Licht zu halten (auf 30–40% setzen), vor Klemmen an der Unterseite zu schützen (auf 5% setzen). Dies erzeugt eine Untergrenze für alle automatischen Positionen. Funktioniert mit dem Umschalter 'Minimum nur während Sonnenverfolgung anwenden' unten.",
+          "enable_min_position": "Kontrolliert WANN die minimale Positionsbegrenzung gilt. UNCHECKED (Standard, empfohlen): Minimale Position gilt IMMER – während Sonnenverfolgung, Standardposition, Klimamodi usw. Behang geht nie unter Minimalwert. CHECKED (fortgeschritten): Minimale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann der Behang unter Minimalwert gehen. Die meisten Benutzer sollten dies UNCHECKED lassen für konsistenten Schutz.",
+          "sunset_position": "Behangposition nach Sonnenuntergang. Löschen Sie den Schieber (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangverhalten. 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen), 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Häufige Verwendungen: Datenschutz (0%), Offen für Nachtluft (100%), Teilweiser Datenschutz (30–50%). Wenn gesetzt, überschreibt dies die Standardposition nach Sonnenuntergang.",
+          "my_position_value": "Die Position (1–99%), die Sie auf der Motorsteuerung programmiert haben (Favorit). Leer lassen, um die Auslösung der Lieblingsposition für diesen Behang zu deaktivieren.",
+          "sunset_use_my": "Wenn das Fenster zum Sonnenuntergang/Endzeit aktiviert wird, lösen Sie das Lieblingsprogramm des Behangs aus (über stop_cover) anstelle der normalen Öffnen/Schließen-Rückfalloption. Erfordert, dass der Wert für die Lieblingsposition gesetzt ist. Betrifft nur nicht-positionsfähige Behänge (z. B. Somfy RTS).",
+          "sunset_offset": "Minuten zum Verschieben der Sonnenuntergangzeit (± Anpassung). Positiver Wert: Sonnenuntergangposition X Minuten NACH Sonnenuntergang anwenden. Negativer Wert: Sonnenuntergangposition X Minuten VOR Sonnenuntergang anwenden. Null: Genau beim Sonnenuntergang. Verwenden Sie einen positiven Wert (z. B. 30), wenn Sie Behänge etwas nach dem Sonnenuntergang offen halten möchten. Verwenden Sie einen negativen Wert (z. B. -30), um früh zu schließen, während die Sonne noch niedrig ist.",
+          "sunrise_offset": "Minuten zum Verschieben der Sonnenaufgangszeit (± Anpassung). Positiver Wert: Automatische Steuerung X Minuten NACH Sonnenaufgang starten. Negativer Wert: Automatische Steuerung X Minuten VOR Sonnenaufgang starten. Null: Genau beim Sonnenaufgang. Verwenden Sie einen positiven Wert (z. B. 60), wenn Sie über den Sonnenaufgang hinaus schlafen möchten. Kombiniert sich mit der Einstellung Startzeit (verwendet, welcher Wert später ist).",
+          "open_close_threshold": "Positionsschwellwert für Behänge, die nur Öffnen/Schließen-Befehle unterstützen (keine Positionssteuerung). Wenn die berechnete Position größer als oder gleich diesem Schwellwert ist, öffnet sich der Behang; wenn darunter, schließt er sich. Standard: 50% (öffnet sich in der Mitte oder darüber). Höhere Werte (60–70%) halten den Behang öfter geschlossen, niedrigere Werte (30–40%) öffnen öfter. Betrifft nur Behänge ohne Positionsunterstützung – Behänge mit Positionssteuerung ignorieren diese Einstellung und verwenden genaue berechnete Positionen.",
+          "inverse_state": "Aktivieren Sie dies für Behänge, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen/heruntergelassen, 100 = offen/hochgezogen. Invertiert: 0 = offen/hochgezogen, 100 = geschlossen/heruntergelassen. Markieren Sie dies NUR, wenn Ihr Behang entgegengesetztes Verhalten zeigt, 100% schließt statt öffnet, oder die Dokumentation sagt 'invertiert' oder 'umgekehrt'. Testen Sie Ihren Behang zunächst manuell, um sicherzustellen. Die meisten Behänge benötigen dies nicht.",
+          "interp": "Aktivieren Sie benutzerdefinierte Positionszuordnung zur Kalibrierung von Behängen, die nicht linear auf 0–100 %-Befehle reagieren. Wenn aktiviert, wird ein Abschnitt 'Positionskalibrierung' im Optionsmenü angezeigt (unter Positionseinstellungen), wo Sie die Zuordnungswerte konfigurieren können. Anwendungsfälle: Behang bewegt sich nicht linear, bevorzugt bestimmte Bereiche (mehr geschlossen oder mehr offen), Kalibrierung für ungewöhnliches Behangverhalten. Deaktiviert lassen für normalen Betrieb."
         }
       },
       "manual_override": {
         "title": "Manuelle Übersteuerung",
-        "description": "Konfigurieren Sie, wie manuelle Positionsänderungen mit der automatischen Steuerung interagieren.",
+        "description": "Konfigurieren Sie, wie manuelle Positionsänderungen mit automatischer Steuerung interagieren.",
         "data": {
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
-          "manual_override_reset": "Timer der manuellen Übersteuerung zurücksetzen",
-          "manual_threshold": "Schwellenwert für manuelle Übersteuerung",
-          "manual_ignore_intermediate": "Zwischenpositionen während der manuellen Übersteuerung ignorieren"
+          "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
+          "manual_threshold": "Schwellwert der manuellen Übersteuerung",
+          "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)"
         },
         "data_description": {
-          "manual_override_duration": "Pausedauer (Minuten) nach manueller Anpassung. Typisch: 10–15 Min. (kurz), 30 Min. (mittel), 60–120 Min. (lang), 0 (deaktiviert).",
-          "manual_override_reset": "Timer bei jeder manuellen Anpassung neu starten. Aktiviert: Jede Änderung verlängert die Pause. Deaktiviert: Nur erste Anpassung startet den Timer.",
-          "manual_threshold": "Positionsunterschied (%) für manuelle Übersteuerung (Standard: 1%). Typisch: 1–2% (empfindlich), 5% (empfohlen), 10% (nur große Änderungen).",
-          "manual_ignore_intermediate": "Zwischenpositionen während Fahrten ignorieren. Verhindert Fehlerkennung durch Übergangspositionen."
+          "manual_override_duration": "Wie lange (Minuten) die automatische Steuerung nach manueller Anpassung pausiert. Wenn Sie den Behang manuell bewegen, pausiert die automatische Steuerung. Typische Werte: 10–15 Min (kurze Pause, Verfolgung bald fortgesetzt), 30 Min (mittlere Pause, ausgewogen), 60–120 Min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort automatische Steuerung fortsetzen – nicht empfohlen). Gibt Ihnen Kontrolle, wenn Sie sie wollen, setzt Automatisierung später fort.",
+          "manual_override_reset": "Setzen Sie den Übersteuerungstimer nach jeder manuellen Anpassung zurück. Wenn aktiviert, startet jede manuelle Änderung die Übersteuerungsdauer neu. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie dies, wenn Sie möchten, dass die Übersteuerungsperiode mit jedem manuellen Eingriff 'erneuert' wird.",
+          "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' gilt (Standard: 1%). Wenn Sie den Behang manuell um diesen Betrag bewegen, wird die Übersteuerungserkennung ausgelöst. Typische Werte: 1–2% (empfindlich, erkennt kleine Anpassungen), 5% (weniger empfindlich, empfohlen), 10% (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
+          "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Übersteuerungserkennung von Übergangspositionen während der Bewegung des Behangs zu Ihrer Zielposition ausgelöst wird. Nützlich, wenn Ihr Behang viele Zwischenwerte während der Bewegung meldet."
         }
       },
       "force_override": {
         "title": "Zwangsübersteuerung",
-        "description": "Binärsensoren konfigurieren, die die automatische Steuerung bedingungslos übersteuern. Bleibt auch bei deaktivierter automatischer Steuerung aktiv.",
+        "description": "Konfigurieren Sie Binärsensoren, die automatische Steuerung bedingungslos überschreiben und Beschattungen in eine feste Position verschieben. Die Zwangsübersteuerung bleibt aktiv, auch wenn der Schalter Automatische Steuerung aus ist - Beschattungen werden immer noch in die konfigurierte Position verschoben, wenn ein Sensor ausgelöst wird.",
         "data": {
-          "force_override_sensors": "Sensoren für Zwangsübersteuerung",
-          "force_override_position": "Position bei Zwangsübersteuerung"
+          "force_override_sensors": "Zwangsübersteuerungssensoren",
+          "force_override_position": "Position der Zwangsübersteuerung",
+          "force_override_min_mode": "Minimale Positionsmodus"
         },
         "data_description": {
-          "force_override_sensors": "Bei Aktivierung fahren alle Abdeckungen in die konfigurierte Position, unabhängig von allen anderen Einstellungen. Leer lassen, um diese Funktion zu deaktivieren.",
-          "force_override_position": "Position (0–100%) bei aktiver Zwangsübersteuerung. 0% = geschlossen (Jalousie unten / Markise eingezogen), 100% = geöffnet. Standard: 0%."
+          "force_override_sensors": "Binärsensoren, die die automatische Steuerung übersteuern und die Abdeckung zur konfigurierten Position verschieben, wenn diese aktiv sind. Wenn EIN BELIEBIGER ausgewählter Sensor „An“ ist, verschieben sich ALLE Abdeckungen zur konfigurierten Position, ungeachtet aller anderen Einstellungen, einschließlich des Schalters „Automatische Steuerung“. Die manuelle Kontrolle funktioniert weiterhin. Lassen Sie leer, um diese Funktion zu deaktivieren.",
+          "force_override_position": "Position (0-100%), um die Abdeckung zu verschieben, wenn Zwangsübersteuerungssensoren aktiv sind. 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgehoben / Markise ausgefahren). Standard: 0%.",
+          "force_override_min_mode": "Bei Aktivierung fungiert die Übersteuerungsposition als Mindestgrenze — die Abdeckung wird nicht unter diese Position geschlossen, aber höhere Positionen von Sonnenverfolgung oder anderen Berechnungen können hindurchgelassen werden. Bei Deaktivierung (Standard) wird die Abdeckung immer auf die genaue Übersteuerungsposition eingestellt."
         }
       },
       "custom_position": {
         "title": "Benutzerdefinierte Positionen",
-        "description": "Binärsensoren konfigurieren, die bei Aktivierung bestimmte Positionen setzen. Der aktive Slot mit der höchsten Priorität gewinnt.",
+        "description": "Konfigurieren Sie Binärsensoren, die die Beschattung bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, Zielposition und Pipeline-Priorität. Jeder aktive Slot wird unabhängig ausgewertet - der höchstpriorisierte aktive Slot gewinnt. Verwenden Sie Home Assistant-Automatisierungen, um diese Sensoren für szenariobasierte oder zeitplanbasierte Beschattungssteuerung umzuschalten.",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position für Sensor 1",
           "custom_position_priority_1": "Priorität für Slot 1",
+          "custom_position_min_mode_1": "Minimaler Modus für Slot 1",
+          "custom_position_use_my_1": "Slot 1: Meine Position verwenden",
           "custom_position_sensor_2": "Sensor 2",
           "custom_position_2": "Position für Sensor 2",
           "custom_position_priority_2": "Priorität für Slot 2",
+          "custom_position_min_mode_2": "Minimaler Modus für Slot 2",
+          "custom_position_use_my_2": "Slot 2: Meine Position verwenden",
           "custom_position_sensor_3": "Sensor 3",
           "custom_position_3": "Position für Sensor 3",
           "custom_position_priority_3": "Priorität für Slot 3",
+          "custom_position_min_mode_3": "Minimaler Modus für Slot 3",
+          "custom_position_use_my_3": "Slot 3: Meine Position verwenden",
           "custom_position_sensor_4": "Sensor 4",
           "custom_position_4": "Position für Sensor 4",
-          "custom_position_priority_4": "Priorität für Slot 4"
+          "custom_position_priority_4": "Priorität für Slot 4",
+          "custom_position_min_mode_4": "Minimaler Modus für Slot 4",
+          "custom_position_use_my_4": "Slot 4: Meine Position verwenden"
         },
         "data_description": {
-          "custom_position_sensor_1": "Binärsensor, der bei 'Ein' die konfigurierte Position anfahren lässt. Leer = überspringen.",
-          "custom_position_1": "Position (0–100%) für Sensor 1. 0% = geschlossen, 100% = geöffnet.",
-          "custom_position_priority_1": "Pipeline-Priorität (1–99, Standard 77). Zwischen Manueller Übersteuerung (80) und Bewegungs-Timeout (75).",
-          "custom_position_sensor_2": "Binärsensor für Slot 2. Leer = überspringen.",
-          "custom_position_2": "Position (0–100%) für Sensor 2.",
-          "custom_position_priority_2": "Pipeline-Priorität für Slot 2 (1–99, Standard 77).",
-          "custom_position_sensor_3": "Binärsensor für Slot 3. Leer = überspringen.",
-          "custom_position_3": "Position (0–100%) für Sensor 3.",
-          "custom_position_priority_3": "Pipeline-Priorität für Slot 3 (1–99, Standard 77).",
-          "custom_position_sensor_4": "Binärsensor für Slot 4. Leer = überspringen.",
-          "custom_position_4": "Position (0–100%) für Sensor 4.",
-          "custom_position_priority_4": "Pipeline-Priorität für Slot 4 (1–99, Standard 77)."
+          "custom_position_sensor_1": "Binärsensor, der die Abdeckung bei Aktivierung (An) zu ihrer konfigurierten Position verschiebt. Lassen Sie leer, um diesen Slot zu überspringen.",
+          "custom_position_1": "Position (0-100%), um die Abdeckung zu verschieben, wenn Sensor 1 aktiv ist. 0% = geschlossen, 100% = offen.",
+          "custom_position_priority_1": "Pipeline-Priorität (1-99). Höher = wird vor niedrigeren Prioritätshandlern ausgewertet. Standard 77 sitzt zwischen Manuelle Übersteuerung (80) und Bewegungs-Timeout (75). Stellen Sie über 80 ein, um manuelle Bewegungen zu übersteuern; Stellen Sie unter 40 ein, um nur angewendet zu werden, wenn Sonnenverfolgung inaktiv ist.",
+          "custom_position_min_mode_1": "Bei Aktivierung fungiert die Position als Mindestgrenze — höhere Positionen von Sonnenverfolgung oder anderen Berechnungen können hindurchgelassen werden. Bei Deaktivierung (Standard) wird die Abdeckung immer auf die genaue konfigurierte Position eingestellt.",
+          "custom_position_use_my_1": "Wenn der Sensor von Slot 1 aktiv ist, triggern Sie die Meine-Voreinstellung der Abdeckung anstelle der numerischen Position des Slots. Erfordert, dass der Wert Meine Position gesetzt wird.",
+          "custom_position_sensor_2": "Binärsensor für Slot 2. Lassen Sie leer, um zu überspringen.",
+          "custom_position_2": "Position (0-100%), um die Abdeckung zu verschieben, wenn Sensor 2 aktiv ist.",
+          "custom_position_priority_2": "Pipeline-Priorität für Slot 2 (1-99, Standard 77).",
+          "custom_position_min_mode_2": "Bei Aktivierung fungiert die Position als Mindestgrenze — höhere Positionen von Sonnenverfolgung oder anderen Berechnungen können hindurchgelassen werden. Bei Deaktivierung (Standard) wird die Abdeckung immer auf die genaue konfigurierte Position eingestellt.",
+          "custom_position_use_my_2": "Wenn der Sensor von Slot 2 aktiv ist, triggern Sie die Meine-Voreinstellung der Abdeckung anstelle der numerischen Position des Slots. Erfordert, dass der Wert Meine Position gesetzt wird.",
+          "custom_position_sensor_3": "Binärsensor für Slot 3. Lassen Sie leer, um zu überspringen.",
+          "custom_position_3": "Position (0-100%), um die Abdeckung zu verschieben, wenn Sensor 3 aktiv ist.",
+          "custom_position_priority_3": "Pipeline-Priorität für Slot 3 (1-99, Standard 77).",
+          "custom_position_min_mode_3": "Bei Aktivierung fungiert die Position als Mindestgrenze — höhere Positionen von Sonnenverfolgung oder anderen Berechnungen können hindurchgelassen werden. Bei Deaktivierung (Standard) wird die Abdeckung immer auf die genaue konfigurierte Position eingestellt.",
+          "custom_position_use_my_3": "Wenn der Sensor von Slot 3 aktiv ist, triggern Sie die Meine-Voreinstellung der Abdeckung anstelle der numerischen Position des Slots. Erfordert, dass der Wert Meine Position gesetzt wird.",
+          "custom_position_sensor_4": "Binärsensor für Slot 4. Lassen Sie leer, um zu überspringen.",
+          "custom_position_4": "Position (0-100%), um die Abdeckung zu verschieben, wenn Sensor 4 aktiv ist.",
+          "custom_position_priority_4": "Pipeline-Priorität für Slot 4 (1-99, Standard 77).",
+          "custom_position_min_mode_4": "Bei Aktivierung fungiert die Position als Mindestgrenze — höhere Positionen von Sonnenverfolgung oder anderen Berechnungen können hindurchgelassen werden. Bei Deaktivierung (Standard) wird die Abdeckung immer auf die genaue konfigurierte Position eingestellt.",
+          "custom_position_use_my_4": "Wenn der Sensor von Slot 4 aktiv ist, triggern Sie die Meine-Voreinstellung der Abdeckung anstelle der numerischen Position des Slots. Erfordert, dass der Wert Meine Position gesetzt wird."
         }
       },
       "motion_override": {
         "title": "Bewegungsübersteuerung",
-        "description": "Bewegungs- und Belegungssensoren für anwesenheitsbasierte automatische Steuerung konfigurieren.",
+        "description": "Konfigurieren Sie Bewegungs- und Belegungssensoren für präsenzbasierte automatische Steuerung.",
         "data": {
-          "motion_sensors": "Bewegungs-/Belegungssensoren",
+          "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
           "motion_timeout": "Bewegungs-Timeout-Dauer"
         },
         "data_description": {
-          "motion_sensors": "Binärsensoren für anwesenheitsbasierte Steuerung. Leer lassen, um diese Funktion zu deaktivieren.",
-          "motion_timeout": "Wartezeit (Sekunden) nach letzter Bewegung. Bereich: 30–3600 Sekunden. Standard: 300 Sekunden (5 Minuten)."
+          "motion_sensors": "Binärsensoren, die die automatische Sonnenverfolgung basierend auf Anwesenheit aktivieren/deaktivieren. Wenn EIN Sensor Bewegung erkennt, verwenden Behänge automatische sonnengesteuerte Positionierung. Wenn ALLE Sensoren zeigen, dass keine Bewegung für die Timeout-Dauer vorhanden ist, kehren Behänge zu Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
+          "motion_timeout": "Dauer (in Sekunden), um nach der letzten Bewegung zu warten, bevor Behänge zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten)."
         }
       },
       "weather_override": {
-        "title": "Wetterübersteuerung",
-        "description": "Wetterbasierte Sicherheitsübersteuerungen konfigurieren. Jede Bedingung löst das Einfahren aus.",
+        "title": "Wetter-Übersteuerung",
+        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jeder konfigurierte Zustand löst die Beschattungseinziehung aus. Nicht konfigurierte Eingaben werden ignoriert.",
         "data": {
-          "weather_bypass_auto_control": "Aktiv, wenn Automatische Steuerung deaktiviert ist",
+          "weather_bypass_auto_control": "Aktiv, wenn automatische Steuerung aus ist",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
-          "weather_wind_speed_threshold": "Windgeschwindigkeitsschwelle",
+          "weather_wind_speed_threshold": "Windgeschwindigkeits-Schwellwert",
           "weather_wind_direction_tolerance": "Windrichtungstoleranz",
-          "weather_rain_sensor": "Regenmengensensor",
-          "weather_rain_threshold": "Regenmengen-Schwellenwert",
-          "weather_is_raining_sensor": "Regen-Binärsensor",
-          "weather_is_windy_sensor": "Wind-Binärsensor",
-          "weather_severe_sensors": "Unwettersensoren (Hagel, Frost, Sturm usw.)",
+          "weather_rain_sensor": "Regenrate-Sensor",
+          "weather_rain_threshold": "Regenrate-Schwellwert",
+          "weather_is_raining_sensor": "Regnet Binärsensor",
+          "weather_is_windy_sensor": "Ist windig Binärsensor",
+          "weather_severe_sensors": "Schwerwetter-Sensoren (Hagel, Frost, Sturm, usw.)",
           "weather_override_position": "Übersteuerungsposition",
-          "weather_timeout": "Verzögerung beim Löschen"
+          "weather_override_min_mode": "Minimale Positionsmodus",
+          "weather_timeout": "Verzögerung löschen"
         },
         "data_description": {
-          "weather_bypass_auto_control": "Auch bei deaktivierter automatischer Steuerung aktiv bleiben.",
-          "weather_wind_speed_sensor": "Numerischer Windgeschwindigkeitssensor. Leer = ignorieren.",
-          "weather_wind_direction_sensor": "Optional: Nur bei Wind in Richtung des Fensters auslösen. Leer = nur nach Geschwindigkeit.",
-          "weather_wind_speed_threshold": "Windgeschwindigkeitsschwelle. Kein Einheitenumrechnung.",
-          "weather_wind_direction_tolerance": "Toleranz in Grad vom Fensterazimut. Beispiel: 180° Fenster, 45° → Wind 135°–225° löst aus.",
-          "weather_rain_sensor": "Numerischer Regenmengensensor. Leer = ignorieren.",
-          "weather_rain_threshold": "Regenmengen-Schwellenwert. Einheit muss mit Sensor übereinstimmen.",
-          "weather_is_raining_sensor": "Binärsensor für Regen. Leer = ignorieren.",
-          "weather_is_windy_sensor": "Binärsensor für Wind. Leer = ignorieren.",
-          "weather_severe_sensors": "Binärsensoren für Unwetter. Leer = ignorieren.",
-          "weather_override_position": "Position (0–100%) bei aktiver Wetterübersteuerung. 0% = geschlossen, 100% = geöffnet. Standard: 0%.",
-          "weather_timeout": "Sekunden nach Löschen aller Bedingungen. 0 für sofortige Wiederherstellung."
+          "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetter-Übersteuerung Behänge immer noch zur konfigurierten Position bewegen, auch wenn der Schalter 'Automatische Steuerung' deaktiviert ist. Dies stellt sicher, dass Wind-, Regen- und Extremwetterschutz immer aktiv ist, unabhängig vom Automatisierungsstatus. Deaktivieren Sie dies nur, wenn Sie möchten, dass die Wetter-Übersteuerung dem Schalter 'Automatische Steuerung' folgt.",
+          "weather_wind_speed_sensor": "Numerischer Sensor, der die Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erreicht oder übersteigt. Leer lassen, um zu ignorieren.",
+          "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind zu dieser Fensterrазимuth weht (innerhalb der Richtungstoleranz). Leer lassen, um bei Windgeschwindigkeit allein auszulösen, unabhängig von Richtung.",
+          "weather_wind_speed_threshold": "Windgeschwindigkeitsschwellwert, der die Übersteuerung aktiviert. Der Wert wird direkt mit Ihrem Sensor verglichen – keine Einheitenumrechnung wird angewendet.",
+          "weather_wind_direction_tolerance": "Wie viele Grad vom Fensterazimuth entfernt, um Wind als 'trifft' dieses Fenster zu betrachten. Beispiel: Fenster nach Süden ausgerichtet (180°), Toleranz 45° → Wind von 135°–225° aktiviert Übersteuerung.",
+          "weather_rain_sensor": "Numerischer Sensor, der die Regenrate meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erreicht oder übersteigt. Leer lassen, um zu ignorieren.",
+          "weather_rain_threshold": "Regenschwellwert, der die Übersteuerung aktiviert. Die Einheit muss Ihrem Sensor entsprechen – keine Umrechnung wird angewendet.",
+          "weather_is_raining_sensor": "Binärsensor für Regenerkennung. Übersteuerung aktiviert sich, wenn dieser Sensor 'an' ist. Leer lassen, um zu ignorieren.",
+          "weather_is_windy_sensor": "Binärsensor für Windelkennung. Übersteuerung aktiviert sich, wenn dieser Sensor 'an' ist. Leer lassen, um zu ignorieren.",
+          "weather_severe_sensors": "Binärsensoren für Extremzustände (Hagel, Frost, Gewitter usw.). Übersteuerung aktiviert sich, wenn EIN Sensor 'an' ist. Leer lassen, um zu ignorieren.",
+          "weather_override_position": "Position (0–100%), zu der Behänge bei aktiver Wetter-Übersteuerung bewegt werden. 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen), 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Standard: 0%.",
+          "weather_override_min_mode": "Wenn aktiviert, fungiert die Übersteuerungsposition als Mindestgrenze – der Behang wird nicht unter diese Position schließen, aber höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird der Behang auf die genaue Übersteuerungsposition gesetzt.",
+          "weather_timeout": "Sekunden zu warten, nachdem ALLE Bedingungen gelöst sind, bevor normale Steuerung fortgesetzt wird. Verhindert schnelles Umschalten bei böigen oder zeitweiligen Bedingungen. Auf 0 setzen für sofortige Fortführung."
         }
       },
       "climate": {
-        "title": "Klimakonfiguration",
-        "description": "Klimabewusste Steuerung für Energieeffizienz und Komfort konfigurieren.",
         "data": {
-          "weather_entity": "Wetterentität (optional)",
+          "weather_entity": "Wetter-Entität (optional)",
           "lux_entity": "Luxsensor (optional)",
-          "lux_threshold": "Lux-Schwellenwert",
-          "irradiance_entity": "Einstrahlungssensor (optional)",
-          "irradiance_threshold": "Einstrahlungs-Schwellenwert",
-          "cloud_coverage_entity": "Bewölkungssensor (optional)",
-          "cloud_coverage_threshold": "Bewölkungs-Schwellenwert",
-          "cloud_suppression": "Blendschutz bei wenig Licht unterdrücken",
+          "lux_threshold": "Luxschwellwert",
+          "irradiance_entity": "Strahlungssensor (optional)",
+          "irradiance_threshold": "Strahlungsschwellwert",
+          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
+          "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
+          "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
           "climate_mode": "Klimamodus aktivieren",
-          "temp_entity": "Innentemperatursensor",
-          "temp_low": "Untere Temperaturschwelle",
-          "temp_high": "Obere Temperaturschwelle",
+          "temp_entity": "Innere Temperaturentität",
+          "temp_low": "Unterer Temperaturschwellwert",
+          "temp_high": "Oberer Temperaturschwellwert",
           "outside_temp": "Außentemperatursensor (optional)",
           "presence_entity": "Anwesenheitsentität (optional)",
           "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winter-Isoliermodus"
+          "winter_close_insulation": "Winterisolationsmodus"
         },
         "data_description": {
-          "weather_entity": "Optionale Wetterintegration. Leer = immer sonnig annehmen.",
-          "lux_entity": "Optionaler Luxsensor. Leer = nicht vorhanden.",
-          "lux_threshold": "Lux-Schwellenwert für 'sonnig'. Typisch: 5000–10000 Lux.",
-          "irradiance_entity": "Optionaler Einstrahlungssensor (W/m²). Leer = nicht vorhanden.",
-          "irradiance_threshold": "Einstrahlungs-Schwellenwert. Typisch: 300–500 W/m².",
-          "cloud_coverage_entity": "Optionaler Bewölkungssensor (0–100%). Leer = nicht vorhanden.",
-          "cloud_coverage_threshold": "Bewölkungsgrad für Blendschutzunterdrückung. Standard: 75%.",
-          "cloud_suppression": "Blendschutz bei erkanntem Bewölkung unterdrücken. Funktioniert ohne Klimamodus.",
-          "climate_mode": "Temperaturbasierte Strategien aktivieren. Benötigt Innentemperatursensor.",
-          "temp_entity": "Temperatursensor für Klimamodus (innen empfohlen).",
-          "temp_low": "WINTERMODUS-Schwelle. Darunter: bei Sonne vollständig öffnen. Empfohlen: 18–20°C.",
-          "temp_high": "SOMMERMODUS-Schwelle. Darüber: vollständig schließen. Empfohlen: 23–25°C.",
-          "outside_temp": "Optionaler Außentemperatursensor. Sommermodus benötigt dann beide Schwellen.",
-          "presence_entity": "Optionaler Anwesenheitssensor. Typen: device_tracker, person, zone, binary_sensor.",
-          "transparent_blind": "Für transparente Jalousien (Voile). Im Sommer auf 0% schließen.",
-          "winter_close_insulation": "Im Winter schließen wenn keine Sonne einstrahlt – für Isolierung."
-        }
+          "weather_entity": "Optionale Wetter-Integration für bewölkungsbewusste Kontrolle. Wenn Wetter = bewölkt/regnerisch: Überspringt Wintersolareintrag (keine Sonne zum Nutzen), Kehrt zur Standardposition zurück (keine Überhitzungsgefahr). Wenn Wetter = sonnig/klar: Wendet vollständige Klimastrategien an. Lassen Sie leer, um immer sonnig anzunehmen (einfacher). Empfohlen, wenn Sie eine Wetter-Integration haben - vermeidet unnötige Schließvorgänge.",
+          "lux_entity": "Optionaler Lichtstärkensensor zur genauen Sonnenerfassung (innen oder außen). Misst das sichtbare Licht in Luxeinheiten. Legen Sie den Schwellwert für die Bedingung „sonnig“ fest. Typisch: 5000-10000 Lux für direkte Sonne. Wenn unter Schwellwert: Als bewölkt behandeln, Klimastrategien überspringen. Lassen Sie leer, wenn Sie nicht über diesen Sensor verfügen. Fortgeschrittene Funktion - die meisten Benutzer brauchen dies nicht.",
+          "lux_threshold": "Luxschwellwert (wann als „sonnig“ zu betrachten). Wenn der Sensor über diesem Wert liest: Sonne ist vorhanden, Klimastrategien anwenden. Wenn darunter: Als bewölkt behandeln, Standardposition verwenden. Typische Werte: 5000-10000 Lux für direkte Sonneneinstrahlung, 2000-3000 Lux für helles indirektes Licht. Passen Sie basierend auf Platzierung und Empfindlichkeit des Sensors an.",
+          "irradiance_entity": "Optionaler Solarstrahlungssensor zur genauen Sonnenerfassung (außen). Misst die Solarleistung in W/m²-Einheiten. Legen Sie den Schwellwert für die Bedingung „sonnig“ fest. Typisch: 300-500 W/m² für direkte Sonne. Wenn unter Schwellwert: Als bewölkt behandeln, Klimastrategien überspringen. Lassen Sie leer, wenn Sie nicht über diesen Sensor verfügen. Fortgeschrittene Funktion - die meisten Benutzer brauchen dies nicht.",
+          "irradiance_threshold": "Bestrahlungsschwellwert (wann als „sonnig“ zu betrachten). Wenn der Sensor über diesem Wert (W/m²) liest: Sonne ist vorhanden, Klimastrategien anwenden. Wenn darunter: Als bewölkt behandeln, Standardposition verwenden. Typische Werte: 300-500 W/m² für direkte Sonneneinstrahlung, 100-200 W/m² für bewölkten Tag. Passen Sie basierend auf Ihrem Klima und Ihren Vorlieben an.",
+          "cloud_coverage_entity": "Optionaler Bewölkungssensor, der 0-100% anzeigt. Verfügbar aus Integrationen wie Google Weather. Bei oder über dem Schwellwert wird die Blendkontrolle unterdrückt und die Beschattung kehrt zur Standardposition zurück. Lassen Sie leer, wenn Sie nicht über diesen Sensor verfügen.",
+          "cloud_coverage_threshold": "Bewölkungsprozentsatz bei oder über dem die Blendkontrolle unterdrückt wird (z.B. 75 bedeutet 75% Bewölkung = bedeckt). Standard: 75%.",
+          "cloud_suppression": "Bei Aktivierung wird die Blendkontrolle unterdrückt, wenn Wetter-, Lux-, Bestrahlungs- oder Bewölkungsbedingungen anzeigen, dass keine echte direkte Sonne vorhanden ist — die Beschattung kehrt stattdessen zur Standardposition zurück. Erfordert NICHT, dass der Klimamodus aktiviert ist: Konfigurieren Sie eine Wetterentität, einen Luxsensor, einen Bestrahlungssensor oder einen Bewölkungssensor oben, und dieser Umschalter funktioniert alleine. Nützlich, wenn Sie lichtalergie Blendkontrolle ohne vollständige temperaturgesteuerte Klimatisierung möchten.",
+          "climate_mode": "Temperaturbasierte Cover-Strategien aktivieren. Bei AN: Das Verhalten der Beschattung passt sich der Innentemperatur an — öffnet sich im Winter vollständig, um Sonnenwärme zu nutzen, schließt sich im Sommer vollständig, um Überhitzung zu vermeiden. Erfordert einen Raumtemperatursensor. Lassen Sie AUS, wenn Sie nur Blendkontrolle (Sonnenverfolgung) ohne temperaturgesteuerte Verhaltensweise möchten.",
+          "temp_entity": "Temperatursensor für den Klimamodus (innen oder außen). Wird zur Bestimmung von Winter-/Sommersstrategien verwendet. Raumtemperatursensor empfohlen (misst Raumkomfort). Außentemperatursensor als Alternative (verfolgt das Außenwetter). Thermostat: Kann das current_temperature-Attribut verwenden. Stellen Sie sicher, dass die Sensoreinheiten Ihrem Home Assistant-Einheitensystem entsprechen (°C oder °F).",
+          "temp_low": "Temperaturschwellwert für WINTERMODUS (in Ihren Systemeinheiten). Wenn Temperatur < dieser Wert: Die Beschattung öffnet sich an sonnigen Tagen, um Wärme zu gewinnen. Empfohlene Werte: °C: 18-20°C (65-68°F), °F: 65-68°F. Passen Sie basierend auf Ihren Komfortvorlieben an. Niedrigerer Wert = Wintermodus weniger häufig (nur bei sehr kaltem Wetter). Höherer Wert = Wintermodus häufiger (priorisieren Sie Solargewinne).",
+          "temp_high": "Temperaturschwellwert für SOMMERMODUS (in Ihren Systemeinheiten). Wenn Temperatur > dieser Wert: Die Beschattung schließt sich vollständig, um Überhitzung zu vermeiden. Empfohlene Werte: °C: 23-25°C (73-77°F), °F: 73-77°F. Passen Sie basierend auf Ihren Kühlungsvorlieben an. Niedrigerer Wert = Sommermodus früher (aggressive Kühlung). Höherer Wert = Sommermodus später (toleriere mehr Wärme).",
+          "outside_temp": "Optionaler Außentemperatursensor für bessere Sommererkennung. Bei Einstellung erfordert der Sommermodus BEIDES: Innentemperatur > hoher Schwellwert UND Außentemperatur > außerer Schwellwert. Verhindert das Schließen von Beschattung, wenn es außen kühl ist (öffnen Sie für Luftzug). Lassen Sie leer, um nur die Innentemperatur zu verwenden. Empfohlen, wenn Sie einen Außensensor haben - verbessert Komfort.",
+          "presence_entity": "Optionaler Anwesenheitssensor (Zuhause/Weg-Erkennung). Unterstützte Typen: device_tracker, person, zone, binary_sensor. Bei WEG: Sommer schließt vollständig (Klimaanlage sparen), Winter öffnet an sonnigen Tagen (passive Solarheizung). Bei ZUHAUSE: Verwenden Sie normale Klimastrategien mit Wetteralertness. Lassen Sie leer, um immer davon auszugehen, dass jemand zuhause ist. Spart Energie, wenn weg, erhält Komfort, wenn zuhause.",
+          "transparent_blind": "Aktivieren Sie dies, wenn Ihre Jalousie durchsichtig ist (Seidenstoff/Leichtgewebe). Ändert das Sommerverhalten: Transparent AN schließt im Sommer auf 0% (Wärme blockieren, Licht bewahren). Transparent AUS verwendet berechnete Position. Durchsichtige Jalousien reduzieren Wärme, aber lassen Licht durch. Lassen Sie deaktiviert für undurchsichtige/Verdunkelungsjaloussen.",
+          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne das Fenster nicht trifft. Bietet Isolierung, indem kalte Luft draußen und Wärme drinnen bleibt. Wenn die Sonne das Sichtfeld des Fensters erreicht, öffnet sich die Beschattung für Solarheizung wie gewohnt."
+        },
+        "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen der Integration, das Beschattungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
+        "title": "Klimakonfiguration"
       },
       "weather": {
-        "title": "Wetterbedingungen",
         "data": {
           "weather_state": "Wetterbedingungen"
         },
         "data_description": {
-          "weather_state": "Wetterzustände für 'Sonne scheint' auswählen. Empfohlen: ☑ sunny, ☑ partlycloudy, ☐ cloudy, ☐ clear."
-        }
+          "weather_state": "Wählen Sie Wetterzustände, die für den Klimamodus 'Sonne scheint' bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sonnig (direkte Sonne), ☑ teilweise bewölkt (etwas Sonne), ☐ bewölkt (keine direkte Sonne), ☐ klar (normalerweise Nacht). Wenn aktuelles Wetter der Auswahl entspricht: Wenden Sie Klimastrategien an. Wenn nicht: Verwenden Sie Standardposition (keine Sonne angenommen). Die meisten Benutzer sollten die Standardwerte behalten."
+        },
+        "title": "Wetterbedingungen"
       },
       "blind_spot": {
-        "title": "Toter Winkel",
-        "description": "Bereiche definieren, in denen Hindernisse die Sonne blockieren. Winkelwerte sind relative Grad innerhalb des Sichtfelds.",
         "data": {
-          "blind_spot_left": "Linker Anfang des toten Winkels",
-          "blind_spot_right": "Rechtes Ende des toten Winkels",
-          "blind_spot_elevation": "Elevation des toten Winkels"
+          "blind_spot_left": "Blindfleck-Start links",
+          "blind_spot_right": "Blindfleck-Ende rechts",
+          "blind_spot_elevation": "Blindfleck-Höhe"
         },
         "data_description": {
-          "blind_spot_left": "Linke Kante (Grad von der linken FOV-Grenze). Beispiel: FOV links = 45°, Baum 10–20° → 10 eingeben.",
-          "blind_spot_right": "Rechte Kante (Grad von der linken FOV-Grenze, > linke Kante). Beispiel: 20 eingeben.",
-          "blind_spot_elevation": "Maximale Sonnenhöhe für toten Winkel. Beispiel: 30° für Dachvorsprung bei niedrigem Sonnenstand."
-        }
+          "blind_spot_left": "Linke Kante der Zone des blinden Flecks (horizontaler Winkel in Grad von Ihrer linken FOV-Grenze). Wobei 0 = an der am weitesten links liegenden FOV-Grenze. Beispiel: Wenn Ihre FOV links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Grenze blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wenn die Sonne blockiert ist, um diesen Wert zu finden.",
+          "blind_spot_right": "Rechte Kante der Blindfleckzone (horizontaler Winkel in Grad von Ihrer FOV-Linken Grenze, muss > linke Kante sein). Beispiel: Wenn Ihre FOV-Linke 45° beträgt und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, stellen Sie diesen Wert auf 20 ein. Dies markiert, wo die Verdeckung horizontal endet. Erstellt eine Zone „Sonne nicht hier verfolgbar“ zwischen linker und rechter Kante.",
+          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über Horizont), bei der der blinde Fleck gilt. Beispiel: Dachüberstand blockiert Sonne nur, wenn niedrig (< 30°), also auf 30 setzen. Sonne mit höherer Höhe schiebt das Hindernis, daher gilt der blinde Fleck nicht. Wenn das Hindernis alle Höhen blockiert (hohes Gebäude), auf 90 setzen oder hoch lassen. Sonnenhöhe: 0°=Horizont, 45°=halber Weg oben, 90°=direkt oben. Messen oder schätzen basierend auf Hindernishöhe und Entfernung."
+        },
+        "title": "Blindfleck",
+        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstände). Diese Winkelwerte sind relative Grad innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeldgrenze ist. Die Beschattung ignoriert die Sonnenposition, wenn sie in diese Blindfleckzone fällt."
       },
       "interp": {
-        "title": "Positionskalibrierung",
-        "description": "Positionszuordnung für nicht standardmäßiges Verhalten anpassen. Für die meisten Abdeckungen nicht erforderlich.",
         "data": {
-          "interp_start": "Wert, ab dem die Abdeckung beginnt zu öffnen",
-          "interp_end": "Wert, ab dem die Abdeckung vollständig geöffnet ist",
-          "interp_list": "Interpolationsliste",
+          "interp_start": "Wert, wo das Öffnen beginnt",
+          "interp_end": "Wert, wo das Schließen beginnt",
+          "interp_list": "Liste der Interpolation",
           "interp_list_new": "Benutzerdefinierte Interpolationsliste"
         },
         "data_description": {
-          "interp_start": "Wert, ab dem die Abdeckung tatsächlich öffnet. Beispiel: Bewegung erst ab 10% → 10 eingeben.",
-          "interp_end": "Wert, bei dem die Abdeckung vollständig geöffnet ist. Beispiel: 90% vollständig → 90 eingeben.",
-          "interp_list": "Eingangsposition (berechnete Werte, z. B.: 0, 25, 50, 75, 100). Gleiche Länge wie benutzerdefinierte Liste.",
-          "interp_list_new": "Ausgangspositionen (tatsächliche Werte, z. B.: 0, 20, 40, 65, 100). Gleiche Länge wie Interpolationsliste."
-        }
+          "interp_start": "Physikalische Positionswert, bei dem Ihr Behang tatsächlich anfängt zu öffnen (einfache 2-Punkt-Kalibrierung). Beispiel: Wenn Ihr Behang nur bei 10 % anfängt zu bewegen, setzen Sie diesen Wert auf 10. Wird zusammen mit interp_end für einfache lineare Zuordnung verwendet. Die meisten Behänge benötigen dies nicht – belassen Sie es bei der Standardeinstellung, es sei denn, Ihr Behang hat einen begrenzten Bewegungsbereich.",
+          "interp_end": "Physikalische Positionswert, bei dem Ihr Behang vollständig offen ist (einfache 2-Punkt-Kalibrierung). Beispiel: Wenn Ihr Behang bei 90 % vollständig offen ist, setzen Sie diesen Wert auf 90. Wird zusammen mit interp_start für einfache lineare Zuordnung verwendet. Die meisten Behänge benötigen dies nicht – belassen Sie es bei der Standardeinstellung, es sei denn, Ihr Behang hat einen begrenzten Bewegungsbereich.",
+          "interp_list": "Eingabepositionen für benutzerdefinierte Interpolationszuordnung (berechnete Positionen der Integration). Geben Sie gleichmäßig verteilte Werte ein wie: 0, 25, 50, 75, 100. Dies sind die theoretischen Positionen, die die Integration berechnet. Müssen 2 oder mehr Werte haben und die gleiche Länge wie die Liste für benutzerdefinierte Interpolation haben. Wird für erweiterte nichtlineare Kalibrierung verwendet. Leer lassen für normalen Betrieb.",
+          "interp_list_new": "Ausgabepositionen für benutzerdefinierte Interpolationszuordnung (tatsächliche Positionen, die an den Behang gesendet werden). Geben Sie entsprechende tatsächliche Positionen ein wie: 0, 20, 40, 65, 100. Dies sind die Werte, die tatsächlich an Ihre Behang-Entität gesendet werden. Müssen die gleiche Länge wie die Interpolationsliste haben. Beispiel: Behang aggressiver beim Schließen machen, indem 50 % berechnet auf 40 % tatsächlich abgebildet werden. Die Integration interpoliert zwischen Ihren Punkten. Leer lassen für normalen Betrieb."
+        },
+        "title": "Positionskalibrierung",
+        "description": "Passen Sie die Beschattungspositionszuordnung für nicht standardmäßiges Verhalten an. Verwenden Sie eine einfache 2-Punkt-Anpassung (interp_start/end) für Beschattungen mit begrenztem Bereich (z. B. bewegt sich nur zwischen 10-90%). Verwenden Sie erweiterte Listeninterpolation für nicht lineare Beschattungen oder um das Verhalten zu mehr offenen/geschlossenen Positionen zu neigen. Die meisten Beschattungen benötigen dies nicht - aktivieren Sie nur, wenn Ihre Beschattung nicht richtig auf Standard 0-100% Befehle reagiert."
       },
       "glare_zones": {
-        "title": "Blendzonen",
-        "description": "Bis zu 4 Bodenbereiche zum Schutz vor direktem Sonnenlicht definieren. Koordinaten relativ zum Fenstermittelpunkt.",
+        "title": "Blendungszonen",
+        "description": "Definieren Sie bis zu 4 Bodenbereiche zum Schutz vor direkter Sonneneinstrahlung. Lassen Sie einen Zonennamen blank, um ihn zu überspringen. Koordinaten sind relativ zur Fensterposition auf den Boden projiziert.",
         "data": {
-          "enable_glare_zones": "Blendzonen aktivieren",
-          "glare_zone_1_name": "Name Zone 1",
-          "glare_zone_1_x": "Zone 1 X-Position",
-          "glare_zone_1_y": "Zone 1 Y-Position",
-          "glare_zone_1_radius": "Zone 1 Radius",
-          "glare_zone_2_name": "Name Zone 2",
-          "glare_zone_2_x": "Zone 2 X-Position",
-          "glare_zone_2_y": "Zone 2 Y-Position",
-          "glare_zone_2_radius": "Zone 2 Radius",
-          "glare_zone_3_name": "Name Zone 3",
-          "glare_zone_3_x": "Zone 3 X-Position",
-          "glare_zone_3_y": "Zone 3 Y-Position",
-          "glare_zone_3_radius": "Zone 3 Radius",
-          "glare_zone_4_name": "Name Zone 4",
-          "glare_zone_4_x": "Zone 4 X-Position",
-          "glare_zone_4_y": "Zone 4 Y-Position",
-          "glare_zone_4_radius": "Zone 4 Radius"
+          "enable_glare_zones": "Blendungszonen aktivieren",
+          "glare_zone_1_name": "Zone-1-Name",
+          "glare_zone_1_x": "Zone-1-X-Position",
+          "glare_zone_1_y": "Zone-1-Y-Position",
+          "glare_zone_1_radius": "Zone-1-Radius",
+          "glare_zone_2_name": "Zone-2-Name",
+          "glare_zone_2_x": "Zone-2-X-Position",
+          "glare_zone_2_y": "Zone-2-Y-Position",
+          "glare_zone_2_radius": "Zone-2-Radius",
+          "glare_zone_3_name": "Zone-3-Name",
+          "glare_zone_3_x": "Zone-3-X-Position",
+          "glare_zone_3_y": "Zone-3-Y-Position",
+          "glare_zone_3_radius": "Zone-3-Radius",
+          "glare_zone_4_name": "Zone-4-Name",
+          "glare_zone_4_x": "Zone-4-X-Position",
+          "glare_zone_4_y": "Zone-4-Y-Position",
+          "glare_zone_4_radius": "Zone-4-Radius"
         },
         "data_description": {
-          "enable_glare_zones": "Jalousie zum Beschatten aller aktiven Zonen herunterfahren.",
-          "glare_zone_1_name": "Zonenname (z. B. 'Schreibtisch'). Leer = überspringen.",
-          "glare_zone_1_x": "Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_1_y": "Raumtiefe in cm (senkrecht zum Fenster).",
-          "glare_zone_1_radius": "Schutzradius in cm.",
-          "glare_zone_2_name": "Zonenname (z. B. 'Sofa'). Leer = überspringen.",
-          "glare_zone_2_x": "Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_2_y": "Raumtiefe in cm.",
-          "glare_zone_2_radius": "Schutzradius in cm.",
-          "glare_zone_3_name": "Zonenname (z. B. 'Esstisch'). Leer = überspringen.",
-          "glare_zone_3_x": "Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_3_y": "Raumtiefe in cm.",
-          "glare_zone_3_radius": "Schutzradius in cm.",
-          "glare_zone_4_name": "Zonenname (z. B. 'Bett'). Leer = überspringen.",
-          "glare_zone_4_x": "Versatz vom Fenstermittelpunkt in cm. Positiv = rechts.",
-          "glare_zone_4_y": "Raumtiefe in cm.",
-          "glare_zone_4_radius": "Schutzradius in cm."
+          "enable_glare_zones": "Bei Aktivierung senkt sich die Jalousie, um alle aktiven Bodenzonen zu beschatten.",
+          "glare_zone_1_name": "Name für diese Zone (z.B. „Schreibtisch“). Lassen Sie leer, um zu überspringen.",
+          "glare_zone_1_x": "Links-/Rechtsversatz von der Fenstermitte in cm. Positiv = rechts.",
+          "glare_zone_1_y": "Abstand in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_1_radius": "Schutzradius um die Zonenmitte in cm.",
+          "glare_zone_2_name": "Name für diese Zone (z.B. „Sofa“). Lassen Sie leer, um zu überspringen.",
+          "glare_zone_2_x": "Links-/Rechtsversatz von der Fenstermitte in cm. Positiv = rechts.",
+          "glare_zone_2_y": "Abstand in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_2_radius": "Schutzradius um die Zonenmitte in cm.",
+          "glare_zone_3_name": "Name für diese Zone (z.B. „Esstisch“). Lassen Sie leer, um zu überspringen.",
+          "glare_zone_3_x": "Links-/Rechtsversatz von der Fenstermitte in cm. Positiv = rechts.",
+          "glare_zone_3_y": "Abstand in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_3_radius": "Schutzradius um die Zonenmitte in cm.",
+          "glare_zone_4_name": "Name für diese Zone (z.B. „Bett“). Lassen Sie leer, um zu überspringen.",
+          "glare_zone_4_x": "Links-/Rechtsversatz von der Fenstermitte in cm. Positiv = rechts.",
+          "glare_zone_4_y": "Abstand in den Raum in cm (senkrecht zum Fenster).",
+          "glare_zone_4_radius": "Schutzradius um die Zonenmitte in cm."
         }
       },
       "sync": {
-        "title": "Einstellungen auf andere Abdeckungen kopieren",
-        "description": "Wählen Sie Zielabdeckungen und zu synchronisierende Kategorien. Nur ausgewählte Kategorien werden überschrieben.\n\n⚠️ **Azimut ist immer ausgeschlossen** — jede Abdeckung behält ihre eigene Fensterausrichtung.",
+        "title": "Einstellungen auf andere Behänge kopieren",
+        "description": "Wählen Sie, auf welche Behänge Sie Einstellungen kopieren möchten, und welche Kategorien synchronisiert werden sollen. Nur ausgewählte Kategorien werden auf Zielbehängen überschrieben.\n\n⚠️ **Azimut ist immer ausgeschlossen** – jeder Behang behält seine eigene Fensterorientierung.",
         "data": {
-          "target_entries": "Zielabdeckungen",
+          "target_entries": "Zielleuchten",
           "sync_categories": "Zu synchronisierende Kategorien"
         }
       },
       "summary": {
-        "title": "Konfigurationsübersicht",
+        "title": "Konfigurationszusammenfassung",
         "description": "{summary}"
       },
+      "debug": {
+        "title": "Debug & Diagnose",
+        "description": "Aktivieren Sie den Debug-Modus, um detaillierte Fehlerbehebungsdaten zu sammeln, ohne configuration.yaml zu bearbeiten. Bei Aktivierung werden ausgewählte Kategorien auf INFO-Ebene protokolliert und ein Ringpuffer mit manuellen Übersteuerungsentscheidungen wird im Speicher beibehalten und im HA-Diagnosedownload verfügbar gemacht.\n\n{cover_capabilities}",
+        "data": {
+          "dry_run": "Testlauf (keine Abdeckungsbewegung)",
+          "debug_mode": "Debug-Modus aktivieren",
+          "debug_categories": "Log-Kategorien (auf INFO befördert, wenn Debug-Modus aktiviert ist)",
+          "debug_event_buffer_size": "Puffergröße für manuelle Übersteuerungsereignisse"
+        },
+        "data_description": {
+          "dry_run": "Bei Aktivierung führt die Integration den vollständigen Update-Zyklus aus (Pipeline, Diagnose, Sensoren), sendet ABER KEINE Bewegungsbefehle an Ihre Abdeckungen. Verwenden Sie zum Debuggen und Validieren von Automatisierungseinstellungen ohne Störung Ihres Hauses. Standard: aus.",
+          "debug_mode": "Bei Aktivierung werden Protokollmeldungen für die unten ausgewählten Kategorien von DEBUG zu INFO befördert. Das bedeutet, dass sie ohne „custom_components.adaptive_cover_pro: debug“ in configuration.yaml im Home Assistant-Protokoll erscheinen. Schalten Sie aus, wenn Sie mit der Problembehandlung fertig sind.",
+          "debug_categories": "Wählen Sie aus, welche Bereiche zu verfolgen sind. „Manuelle Übersteuerung“ umfasst Entscheidungen zur Übersteuerungserkennung (am nützlichsten für Probleme „Abdeckung wird manuelle Kontrolle nicht stoppen“). „Abgleich“ umfasst die 1-Minuten-Position-Wiederholungsschleife. „Pipeline“ umfasst die Prioritäts-Handler-Kette. „Bewegung“ umfasst Bewegungssensor- und Timeout-Entscheidungen.",
+          "debug_event_buffer_size": "Anzahl der manuellen Übersteuerungsentscheidungsereignisse, die im rollierenden Ringpuffer beibehalten werden. Jedes Ereignis ist ein kleines dict (~200 Bytes). Erhöhen Sie für intermittierende Probleme, die längere Beobachtungsfenster erfordern. Der Puffer wird beim Neuladen der Integration zurückgesetzt."
+        }
+      },
       "sync_confirm": {
-        "title": "Einstellungen kopieren — Bestätigen",
-        "description": "Einstellungen von **{source_name}** kopieren. Aktuelle Einstellungen werden vor dem Kopieren gespeichert.\n\nDie folgenden Kategorien werden überschrieben:\n\n{categories_summary}\n\nAuf diesen Abdeckungen:\n\n{entries_summary}\n\nJede Abdeckung behält Namen, Entitäten, Azimut und Gerätezuordnung.",
+        "title": "Einstellungen kopieren – Bestätigung",
+        "description": "Einstellungen von **{source_name}** kopieren. Ihre aktuellen Einstellungen werden vor dem Kopieren gespeichert.\n\nDie folgenden Kategorien werden überschrieben:\n\n{categories_summary}\n\nAuf diesen Behängen:\n\n{entries_summary}\n\nJeder Behang behält seinen eigenen Namen, Entitäten, Azimut und Gerätezuordnung.",
         "data": {
           "confirm": "Synchronisierung bestätigen"
         }
       },
       "light_cloud": {
-        "title": "Lichtsensoren & Wolkenunterdrückung",
-        "description": "Licht- und Wettersensoren konfigurieren, um Bewölkung zu erkennen.",
+        "title": "Lichtsensoren und Wolkenunterdrückung",
+        "description": "Konfigurieren Sie Licht- und Wettersensoren, um zu erkennen, wenn Wolken die direkte Sonnenstrahlung blockieren.",
         "data": {
-          "weather_entity": "Wetterentität (optional)",
+          "weather_entity": "Wetter-Entität (optional)",
           "lux_entity": "Luxsensor (optional)",
-          "lux_threshold": "Lux-Schwellenwert",
-          "irradiance_entity": "Einstrahlungssensor (optional)",
-          "irradiance_threshold": "Einstrahlungs-Schwellenwert",
-          "cloud_coverage_entity": "Bewölkungssensor (optional)",
-          "cloud_coverage_threshold": "Bewölkungs-Schwellenwert",
-          "cloud_suppression": "Blendschutz bei wenig Licht unterdrücken",
+          "lux_threshold": "Luxschwellwert",
+          "irradiance_entity": "Strahlungssensor (optional)",
+          "irradiance_threshold": "Strahlungsschwellwert",
+          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
+          "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
+          "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
           "weather_state": "Wetterbedingungen"
+        },
+        "data_description": {
+          "weather_entity": "Optionale Wetter-Integration, um Wolkendeckung zu erkennen. Wenn der aktuelle Wetterzustand nicht in der unten ausgewählten Liste enthalten ist, wird davon ausgegangen, dass direkte Sonne abwesend ist und die Blendungskontrolle wird unterdrückt. Leer lassen, um den Wetterzustand zu ignorieren.",
+          "weather_state": "Die Wetterzustände, die als 'Sonne scheint' zählen. Wenn der aktuelle Wetterzustand einem dieser Zustände entspricht, läuft die Blendungsverfolgung normal. Wenn er nicht übereinstimmt, kehrt der Behang zu seiner Standardposition zurück. Behalten Sie die Standardwerte bei (sonnig, teilweise bewölkt, klar), es sei denn, Ihre Wetter-Integration verwendet unterschiedliche Statusnamen.",
+          "lux_entity": "Optionaler Beleuchtungsstärkensensor (innen oder außen) für präzise Sonnenerkennung. Wenn der Sensor unter dem Schwellwert liest, ist direkte Sonne abwesend und die Blendungskontrolle wird unterdrückt. Typische Werte bei direkter Sonne: 5.000–10.000 Lux. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "lux_threshold": "Beleuchtungsstärkenpegel, über dem die Sonne als vorhanden gilt. Unterhalb dieses Wertes kehrt der Behang zu seiner Standardposition zurück, anstatt die Sonne zu verfolgen. Typische Werte: 5.000–10.000 Lux für direkte Sonnenstrahlung, 2.000–3.000 Lux für helles indirektes Licht. Passen Sie je nach Sensorplatzierung an.",
+          "irradiance_entity": "Optionaler Sonnenbestrahlungssensor (außen) für präzise Sonnenerkennung. Misst Solarleistung in W/m². Wenn der Sensor unter dem Schwellwert liest, ist direkte Sonne abwesend und die Blendungskontrolle wird unterdrückt. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "irradiance_threshold": "Sonnenbestrahlungsstärke, über der die Sonne als vorhanden gilt. Unterhalb dieses Wertes kehrt der Behang zu seiner Standardposition zurück. Typische Werte: 300–500 W/m² für direkte Sonnenstrahlung, 100–200 W/m² für einen bewölkten Tag. Passen Sie je nach Klima und Vorlieben an.",
+          "cloud_coverage_entity": "Optionaler Wolkendeckungssensor, der 0–100 % meldet (z. B. von einer Wetter-Integration). Wenn der Messwert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und der Behang kehrt zu seiner Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
+          "cloud_coverage_threshold": "Wolkendeckungsprozentsatz bei oder über dem die Blendungskontrolle unterdrückt wird. Zum Beispiel bedeutet 75, dass der Behang die Sonnenverfolgung stoppt, wenn der Himmel zu 75 % oder mehr bewölkt ist.",
+          "cloud_suppression": "Wenn aktiviert, können alle konfigurierten Licht- oder Wolkensensoren (Wetterzustand, Lux, Bestrahlungsstärke oder Wolkendeckung) die Blendungskontrolle unterdrücken. Wenn ein Sensor anzeigt, dass keine echte direkte Sonnenstrahlung vorhanden ist, kehrt der Behang zu seiner Standardposition zurück, anstatt die Sonne zu verfolgen. Erfordert keinen Klimamodus – dies funktioniert als eigenständige lichtgesteuerte Blendungskontrolle."
         }
       },
       "temperature_climate": {
-        "title": "Temperatur & Klimamodus",
-        "description": "Abdeckungspositionen basierend auf Temperatur, Anwesenheit und saisonalen Strategien anpassen.",
+        "title": "Temperatur und Klimamodus",
+        "description": "Der Klimamodus passt die Behangposition je nach Innen-/Außentemperatur, Anwesenheit und ob die Sonne tatsächlich auf das Fenster scheint an. Wenn deaktiviert, folgt der Behang normaler Sonne-/Blendungsverfolgung.\n\n**Wie die Jahreszeit gewählt wird** – Die aktuelle Temperatur ist der Außensensor, wenn bereitgestellt, ansonsten der Innensensor.\n- **Winter** – aktuelle Temperatur liegt unter dem niedrigen Schwellwert.\n- **Sommer** – aktuelle Temperatur liegt über dem hohen Schwellwert **und** Außentemperatur liegt über dem Außenschwellwert (verhindert Sommerverhalten an einem kalten Tag).\n- **Zwischenstufe** – keiner der obigen; normale Sonne-/Blendungsverfolgung läuft.\n\n**Was jeder Modus tut**\n- **Winter + Sonne auf Fenster** → vollständig öffnen (100%), um kostenlose Solarwärme zu nutzen.\n- **Winter, Sonne nicht auf Fenster**, *Winterisolationsmodus* an → vollständig schließen (0%), um Wärme einzufangen.\n- **Sommer** → vollständig schließen (0%), um Wärmeeintrag zu blockieren. Für Jalousien geschieht dies nur mit Anwesenheit, wenn *Durchscheinende Jalousie* an ist; ohne Anwesenheit schließt es sich immer.\n- **Schwaches Licht** (bewölkt/dunkel/nicht sonnig) → kehrt zur Standardposition zurück, überschreibt Sommer-Schließen, damit Behänge sich nicht unnötig schließen.\n- **Zwischenstufe/Sonne gültig mit Anwesenheit** → normale Blendungsverfolgung.\n\n**Anwesenheit** begrenzt das Verhalten: wenn niemand zu Hause ist, gilt eine einfachere sommerlich-geschlossen/winterlich-offen Regel; mit Anwesenden läuft Blendungsverfolgung in Zwischenstufen und durchscheinende Jalousien schließen sich dennoch im Sommer.\n\n**Dreh-Behänge** folgen der gleichen saisonalen Logik, aber verwenden Lattenwinkel anstelle von Öffnen/Geschlossen-Positionen.\n\nLassen Sie *Außentemperatursensor* und *Anwesenheitsentität* leer, um diese Überprüfungen zu überspringen. Der Klimamodus läuft nach Zwangs-/Wetter-/Manuell-/Benutzerdefinierten Übersteuerungen, aber vor normaler Sonnenverfolgung.",
         "data": {
           "climate_mode": "Klimamodus aktivieren",
-          "temp_entity": "Innentemperatursensor",
-          "temp_low": "Untere Temperaturschwelle",
-          "temp_high": "Obere Temperaturschwelle",
+          "temp_entity": "Innere Temperaturentität",
+          "temp_low": "Unterer Temperaturschwellwert",
+          "temp_high": "Oberer Temperaturschwellwert",
           "outside_temp": "Außentemperatursensor (optional)",
+          "outside_threshold": "Außentemperaturschwellwert",
           "presence_entity": "Anwesenheitsentität (optional)",
           "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winter-Isoliermodus"
+          "winter_close_insulation": "Winterisolationsmodus"
+        },
+        "data_description": {
+          "climate_mode": "Aktivieren Sie, um die gesamte klimabasierte Behangkontrolle zu ermöglichen. Wenn aus, werden alle Einstellungen auf diesem Bildschirm ignoriert und der Behang folgt normaler Sonne-/Blendungsverfolgung.",
+          "temp_entity": "Ein Klimathermostat oder Temperatursenor, der die Innentemperatur misst, die zur Bestimmung der aktuellen Jahreszeit (Winter/Sommer/Zwischenstufe) verwendet wird. Erforderlich, wenn der Klimamodus aktiviert ist.",
+          "temp_low": "Innen- (oder Außen-, wenn ein Außensensor konfiguriert ist) Temperatur unter der die Jahreszeit als Winter behandelt wird. Im Winter öffnet sich der Behang vollständig, wenn die Sonne auf das Fenster scheint, um Solarwärme zu nutzen.",
+          "temp_high": "Innen- (oder Außen-, wenn ein Außensensor konfiguriert ist) Temperatur über der die Jahreszeit als Sommer behandelt wird – vorausgesetzt, der Außenschwellwert wird ebenfalls überschritten. Im Sommer schließt sich der Behang, um Wärmeeintrag zu blockieren.",
+          "outside_temp": "Optionaler Außentemperatursensor. Wenn bereitgestellt, bestimmt diese Messung (anstelle des Innensensors) die aktuelle Jahreszeit, und der Schutz des Außenschwellwerts wird angewendet, um sommerliches Schließverhalten an kalten Tagen zu verhindern.",
+          "outside_threshold": "Minimale Außentemperatur erforderlich, bevor der Sommermodus aktiviert wird. Schützt davor, Behänge an einem heißen Innentag zu schließen, wenn es tatsächlich draußen kalt ist. Wird nur verwendet, wenn ein Außentemperatursensor konfiguriert ist.",
+          "presence_entity": "Optionaler Anwesenheitssensor, Geräte-Tracker oder Zone. Wenn jemand zu Hause ist, nutzt der Behang Blendungssteuerungsverfolgung in Zwischenzustände; wenn niemand zu Hause ist, gilt eine einfachere sommerlich-geschlossen/winterlich-offen Regel. Leer lassen, um den Raum immer als besetzt zu behandeln.",
+          "transparent_blind": "Aktivieren Sie, wenn das Behangmaterial schier oder durchscheinend ist. Im Sommer mit Anwesenden wird sich eine durchscheinende Jalousie dennoch vollständig schließen, um Wärmeeintrag zu reduzieren, während eine undurchsichtige Jalousie stattdessen Blendungsverfolgung folgen würde.",
+          "winter_close_insulation": "Wenn aktiviert, schließt sich der Behang vollständig (0%), während des Winters wenn die Sonne nicht direkt auf das Fenster scheint, um Wärme drinnen zu halten. Hat keine Auswirkung, wenn die Sonne auf das Fenster scheint (der Behang öffnet sich, um Solarwärme zu nutzen)."
         }
       }
     },
     "abort": {
-      "no_covers_to_sync": "Keine anderen Abdeckungen desselben Typs zum Synchronisieren vorhanden.",
-      "no_targets_selected": "Keine Abdeckungen für die Synchronisierung ausgewählt.",
-      "no_categories_selected": "Keine Kategorien für die Synchronisierung ausgewählt.",
+      "no_covers_to_sync": "Es existieren keine anderen Beschattungen des gleichen Typs zum Synchronisieren.",
+      "no_targets_selected": "Es wurden keine Beschattungen zum Synchronisieren ausgewählt.",
+      "no_categories_selected": "Es wurden keine Kategorien zum Synchronisieren ausgewählt.",
       "user_cancelled": "Synchronisierung abgebrochen.",
       "sync_complete": "Einstellungen erfolgreich synchronisiert."
     }
@@ -845,7 +959,7 @@
       "control_status": {
         "state": {
           "force_override_active": "Zwangsübersteuerung aktiv",
-          "motion_timeout": "Keine Bewegung – Standardposition wird verwendet"
+          "motion_timeout": "Keine Bewegung – verwende Standardposition"
         }
       },
       "motion_status": {
@@ -854,14 +968,14 @@
           "motion_detected": "Bewegung erkannt",
           "timeout_pending": "Timeout ausstehend",
           "no_motion": "Keine Bewegung",
-          "waiting_for_data": "Warte auf Daten"
+          "waiting_for_data": "Warten auf Daten"
         }
       },
       "decision_trace": {
-        "name": "Entscheidungsprotokoll",
+        "name": "Entscheidungsverfolgung",
         "state": {
           "unknown": "Unbekannt",
-          "solar": "Solar",
+          "solar": "Solarenergie",
           "summer": "Sommer",
           "winter": "Winter",
           "default": "Standard",
@@ -869,43 +983,43 @@
           "motion_timeout": "Bewegungs-Timeout",
           "force_override": "Zwangsübersteuerung",
           "custom_position": "Benutzerdefinierte Position",
-          "weather_override": "Wetterübersteuerung",
+          "weather_override": "Wetter-Übersteuerung",
           "cloud_suppression": "Wolkenunterdrückung"
         }
       }
     },
     "switch": {
       "glare_zone_0": {
-        "name": "Blendzone 1"
+        "name": "Blendungszone 1"
       },
       "glare_zone_1": {
-        "name": "Blendzone 2"
+        "name": "Blendungszone 2"
       },
       "glare_zone_2": {
-        "name": "Blendzone 3"
+        "name": "Blendungszone 3"
       },
       "glare_zone_3": {
-        "name": "Blendzone 4"
+        "name": "Blendungszone 4"
       },
       "enabled_toggle": {
         "name": "Integration aktiviert",
         "state": {
-          "on": "Ein",
-          "off": "Aus"
+          "on": "On",
+          "off": "Off"
         }
       },
       "automatic_control": {
-        "name": "Automatische Steuerung",
+        "name": "Automatische Kontrolle",
         "state": {
-          "on": "Ein",
-          "off": "Aus"
+          "on": "On",
+          "off": "Off"
         }
       },
       "motion_control": {
         "name": "Bewegungssteuerung",
         "state": {
-          "on": "Ein",
-          "off": "Aus"
+          "on": "On",
+          "off": "Off"
         }
       }
     }
@@ -915,45 +1029,53 @@
       "options": {
         "cover_blind": "Vertikale Jalousie",
         "cover_awning": "Horizontale Markise",
-        "cover_tilt": "Lamellenjalousie"
+        "cover_tilt": "Dreh-Jalousie"
       }
     },
     "tilt_mode": {
       "options": {
-        "mode1": "Einrichtung (0% = geschlossen / 100% = geöffnet)",
-        "mode2": "Bidirektional (0% = geschlossen / 50% = geöffnet / 100% = geschlossen)"
+        "mode1": "einzelne Richtung (0% = geschlossen / 100% = offen)",
+        "mode2": "bidirektional (0% = geschlossen / 50% = offen / 100% = geschlossen)"
+      }
+    },
+    "debug_categories": {
+      "options": {
+        "manual_override": "Manuelle Übersteuerung (Erkennungsentscheidungen, Gnadenfrist, Warten-auf-Ziel)",
+        "reconciliation": "Abstimmung (1-Minuten-Positionswiederholungsschleife)",
+        "pipeline": "Pipeline (Prioritäts-Handler-Kette-Entscheidungen)",
+        "motion": "Bewegung (Sensorzustände, Timeout-Status)"
       }
     },
     "sync_categories": {
       "options": {
-        "geometry": "Abdeckungsgeometrie (Abmessungen, Laibungstiefe, Brüstungshöhe)",
-        "sun_tracking": "Sonnenverfolgung (Sichtfeld, Elevationsgrenzen)",
-        "blind_spot": "Konfiguration des toten Winkels",
-        "position": "Positionseinstellungen (Standardwerte, Sonnenuntergang, Versätze)",
+        "geometry": "Behang-Geometrie (Abmessungen, Tiefe, Brüstungshöhe)",
+        "sun_tracking": "Sonnenverfolgung (Sichtweite, Höhenlimits)",
+        "blind_spot": "Totwinkelpunkt-Konfiguration",
+        "position": "Positionseinstellungen (Defaults, Sonnenuntergang, Offsets)",
         "interp": "Positionskalibrierung",
-        "automation": "Zeitplan & Timing (Schwellen, Start-/Endzeiten)",
+        "automation": "Zeitplan & Timing (Deltas, Start-/Endzeiten)",
         "manual_override": "Manuelle Übersteuerung",
+        "force_override_values": "Zwangsübersteuerung – Schwellwerte & Position",
+        "force_override_sensors": "Zwangsübersteuerung – Auslösersensoren",
+        "custom_position_values": "Benutzerdefinierte Positionen – Werte & Prioritäten",
+        "custom_position_sensors": "Benutzerdefinierte Positionen – Auslösersensoren",
+        "motion_override_values": "Bewegungsübersteuerung – Timeout",
+        "motion_override_sensors": "Bewegungsübersteuerung – Sensoren",
+        "weather_override_values": "Wetter-Übersteuerung – Schwellwerte & Position",
+        "weather_override_sensors": "Wetter-Übersteuerung – Sensoren",
+        "light_cloud_values": "Licht & Wolken – Schwellwerte",
+        "light_cloud_sensors": "Licht & Wolken – Sensoren",
+        "temperature_climate_values": "Klimamodus – Schwellwerte & Einstellungen",
+        "temperature_climate_sensors": "Klimamodus – Raumsensoren",
+        "glare_zones": "Blendungszonen",
+        "climate": "Klimakonfiguration (Temperatur, Anwesenheit, Lux)",
+        "weather": "Wetterbedingungen",
+        "light_cloud": "Lichtsensoren und Wolkenunterdrückung",
+        "temperature_climate": "Temperatur und Klimamodus",
         "force_override": "Zwangsübersteuerung",
         "custom_position": "Benutzerdefinierte Positionen",
         "motion_override": "Bewegungsübersteuerung",
-        "weather_override": "Wetterübersteuerung",
-        "glare_zones": "Blendzonen",
-        "climate": "Klimakonfiguration (Temperatur, Anwesenheit, Lux)",
-        "weather": "Wetterbedingungen",
-        "light_cloud": "Lichtsensoren & Wolkenunterdrückung",
-        "temperature_climate": "Temperatur & Klimamodus",
-        "force_override_values": "Force Override — Thresholds & Position",
-        "force_override_sensors": "Force Override — Trigger Sensors",
-        "custom_position_values": "Custom Positions — Values & Priorities",
-        "custom_position_sensors": "Custom Positions — Trigger Sensors",
-        "motion_override_values": "Motion Override — Timeout",
-        "motion_override_sensors": "Motion Override — Sensors",
-        "weather_override_values": "Weather Override — Thresholds & Position",
-        "weather_override_sensors": "Weather Override — Sensors",
-        "light_cloud_values": "Light & Cloud — Thresholds",
-        "light_cloud_sensors": "Light & Cloud — Sensors",
-        "temperature_climate_values": "Climate Mode — Thresholds & Settings",
-        "temperature_climate_sensors": "Climate Mode — Room Sensors"
+        "weather_override": "Wetter-Übersteuerung"
       }
     }
   }
