@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import zoneinfo
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -586,3 +587,51 @@ async def test_check_transition_no_on_window_open_no_error():
         await mgr.check_transition(track_end_time=True, refresh_callback=close_cb)
 
     close_cb.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# UTC→local timezone conversion for sun entity strings (#226)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_after_start_time_with_utc_iso_sun_sensor_string():
+    """Entity state is a real UTC ISO string — is converted through to local wall-clock.
+
+    Regression: before the fix, "04:46 UTC" was compared as naive 04:46 in a
+    non-UTC zone, causing the window to activate hours early.
+
+    Setup: local timezone America/New_York (UTC-4 DST). Sunrise UTC is 04:46,
+    which is 00:46 local. Freeze "now" at 01:00 local (after 00:46 local sunrise)
+    so after_start_time should be True.
+    """
+
+    mgr = _make_manager()
+    mgr.update_config(
+        start_time=None,
+        start_time_entity="sensor.sun_next_rising",
+        end_time=None,
+        end_time_entity=None,
+    )
+
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    # "now" is 01:00 local NY — after 00:46 local sunrise
+    frozen_now = dt.datetime(2026, 4, 18, 1, 0, 0)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
+            return_value="2026-04-18T04:46:00+00:00",
+        ),
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt"
+        ) as mock_dt,
+    ):
+        # "now" is 01:00 local NY — after 00:46 local sunrise (04:46 UTC converted)
+        mock_dt.datetime.now.return_value = frozen_now
+        mock_dt.date.today.return_value = dt.date(2026, 4, 18)
+        mock_dt.timedelta = dt.timedelta
+        result = mgr.after_start_time
+
+    assert result is True

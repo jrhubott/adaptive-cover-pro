@@ -1,7 +1,8 @@
 """Tests for helper functions."""
 
 import datetime as dt
-from unittest.mock import MagicMock
+import zoneinfo
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -119,6 +120,53 @@ def test_get_datetime_from_str_parses_datetime():
 def test_get_datetime_from_str_returns_none_for_none():
     """Test get_datetime_from_str returns None when input is None."""
     assert get_datetime_from_str(None) is None
+
+
+@pytest.mark.unit
+def test_get_datetime_from_str_converts_utc_iso_to_local_wallclock():
+    """ISO 8601 UTC string is converted to local-time wall clock.
+
+    A sun sensor value "2026-04-18T04:46:00+00:00" read in America/New_York
+    (UTC-4 DST) must become 00:46 local naive, not 04:46.
+    """
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    with patch(
+        "homeassistant.util.dt.DEFAULT_TIME_ZONE", ny
+    ):
+        result = get_datetime_from_str("2026-04-18T04:46:00+00:00")
+
+    # In April NY is UTC-4, so 04:46 UTC == 00:46 local
+    assert result.hour == 0
+    assert result.minute == 46
+    assert result.day == 18
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
+def test_get_datetime_from_str_preserves_naive_static_time():
+    """Static "06:30" has no tzinfo — parsed as-is, naive, wall-clock preserved."""
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    with patch(
+        "homeassistant.util.dt.DEFAULT_TIME_ZONE", ny
+    ):
+        result = get_datetime_from_str("06:30")
+
+    assert result.hour == 6
+    assert result.minute == 30
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
+def test_get_datetime_from_str_preserves_naive_iso_datetime():
+    """ISO string without tzinfo is treated as naive-local, not shifted."""
+    ny = zoneinfo.ZoneInfo("America/New_York")
+    with patch(
+        "homeassistant.util.dt.DEFAULT_TIME_ZONE", ny
+    ):
+        result = get_datetime_from_str("2024-06-21T20:00:00")
+
+    assert result == dt.datetime(2024, 6, 21, 20, 0, 0)
+    assert result.tzinfo is None
 
 
 @pytest.mark.unit
