@@ -3,15 +3,37 @@ name: "Close Issue on User Confirmation"
 on:
   issue_comment:
     types: [created]
+  issues:
+    types: [closed]
 
 permissions:
   issues: write
 
 jobs:
+  clear-label-on-close:
+    name: "Remove waiting-for-confirmation on Manual Close"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'closed' &&
+      contains(github.event.issue.labels.*.name, 'waiting-for-confirmation')
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              name: 'waiting-for-confirmation',
+            }).catch(() => {});
+            console.log(`Removed waiting-for-confirmation from #${context.payload.issue.number}`);
+
   close-on-confirmation:
     name: "Close if Reporter Confirms Fix"
     runs-on: ubuntu-latest
     if: |
+      github.event_name == 'issue_comment' &&
       github.event.issue.state == 'open' &&
       contains(github.event.issue.labels.*.name, 'waiting-for-confirmation')
 
