@@ -8,7 +8,7 @@ climate strategy self-contained in one plugin handler file.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
@@ -303,8 +303,12 @@ class ClimateHandler(OverrideHandler):
     name = "climate"
     priority = 50
 
-    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
-        """Run climate strategy and return position when climate mode is active."""
+    def _build_climate_data(self, snapshot: PipelineSnapshot) -> ClimateCoverData | None:
+        """Build ClimateCoverData from the snapshot, or None when not applicable.
+
+        Single source of truth — both evaluate() and contribute() delegate here
+        so ClimateCoverData is constructed in exactly one place.
+        """
         if not snapshot.in_time_window:
             return None
         if not snapshot.climate_mode_enabled:
@@ -314,8 +318,7 @@ class ClimateHandler(OverrideHandler):
 
         opts = snapshot.climate_options
         r = snapshot.climate_readings
-
-        climate_data = ClimateCoverData(
+        return ClimateCoverData(
             temp_low=opts.temp_low,
             temp_high=opts.temp_high,
             temp_switch=opts.temp_switch,
@@ -331,6 +334,12 @@ class ClimateHandler(OverrideHandler):
             winter_close_insulation=opts.winter_close_insulation,
             cloud_coverage_above_threshold=r.cloud_coverage_above_threshold,
         )
+
+    def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
+        """Run climate strategy and return position when climate mode is active."""
+        climate_data = self._build_climate_data(snapshot)
+        if climate_data is None:
+            return None
 
         climate_cover_state = ClimateCoverState(snapshot, climate_data)
         raw_position = climate_cover_state.get_state()
@@ -359,6 +368,18 @@ class ClimateHandler(OverrideHandler):
             climate_data=climate_data,
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )
+
+    def contribute(self, snapshot: PipelineSnapshot) -> dict[str, Any]:
+        """Surface climate_data on the winner's result even when evaluate() deferred.
+
+        Called by the registry after evaluation so that GLARE_CONTROL defers
+        (evaluate() returns None) still populate climate diagnostics on the
+        winning SolarHandler/GlareZoneHandler result.
+        """
+        climate_data = self._build_climate_data(snapshot)
+        if climate_data is None:
+            return {}
+        return {"climate_data": climate_data}
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:
         """Reason when climate handler does not match."""

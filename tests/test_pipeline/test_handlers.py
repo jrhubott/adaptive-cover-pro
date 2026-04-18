@@ -416,3 +416,41 @@ class TestDefaultHandler:
 # Handler result structure
 # (Parametrized integration tests removed — will be replaced in Task 16)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# contribute() default contract
+# ---------------------------------------------------------------------------
+
+
+class TestOverrideHandlerContributeDefault:
+    """Every OverrideHandler exposes contribute(); default returns {}."""
+
+    def test_default_contribute_is_empty_dict(self) -> None:
+        """OverrideHandler.contribute() default returns {} — handlers opt in by overriding."""
+        from custom_components.adaptive_cover_pro.pipeline.handler import OverrideHandler
+        from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+
+        class _Dummy(OverrideHandler):
+            name = "dummy"
+            priority = 0
+
+            def evaluate(self, snapshot):
+                return None
+
+        snap = make_snapshot()
+        assert _Dummy().contribute(snap) == {}
+
+    def test_non_climate_handlers_return_empty_by_default(self) -> None:
+        """Unmodified handlers return {} from contribute() — no accidental merges."""
+        snap = make_snapshot()
+        for handler in [
+            ForceOverrideHandler(),
+            ManualOverrideHandler(),
+            MotionTimeoutHandler(),
+            SolarHandler(),
+            DefaultHandler(),
+        ]:
+            assert handler.contribute(snap) == {}, (
+                f"{handler.__class__.__name__}.contribute() should return {{}}"
+            )
