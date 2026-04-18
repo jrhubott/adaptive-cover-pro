@@ -298,7 +298,7 @@ class TestPositionMapInSummary:
         config = self._base_config(**{CONF_DEFAULT_HEIGHT: 60})
         result = _build_config_summary(config, SensorType.BLIND)
         assert "60%" in result
-        assert "No sun / default" in result
+        assert "🌙 Default" in result
 
     def test_position_map_shows_sunset(self):
         """Position map shows sunset position when configured."""

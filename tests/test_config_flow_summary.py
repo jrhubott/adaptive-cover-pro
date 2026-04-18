@@ -1328,7 +1328,7 @@ def test_capabilities_section_position_limits_ignored_warning():
 
 
 # ---------------------------------------------------------------------------
-# Section: Today's Sun
+# Section: Position Map sun-time annotations
 # ---------------------------------------------------------------------------
 
 
@@ -1361,72 +1361,60 @@ def _sun_times(
     }
 
 
-def test_todays_sun_absent_when_sun_times_none():
-    """Without sun_times the Today's Sun block must not render."""
+def test_position_map_no_times_without_sun_times():
+    """Without sun_times no time annotations appear in position map rows."""
     cfg = _full_vertical()
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    assert "Today's sun" not in summary
-    assert "Solar control window" not in summary
+    assert "today" not in summary
 
 
-def test_todays_sun_raw_only_when_offsets_zero():
-    """Zero offsets → raw times with no (effective …) annotation."""
-    cfg = {
-        CONF_SUNRISE_OFFSET: 0,
-        CONF_SUNSET_OFFSET: 0,
-    }
-    sun_times = _sun_times()
-    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
-    assert "🌞 Today's sun:" in summary
-    assert "🌅 Sunrise: 06:30" in summary
-    assert "🌇 Sunset: 19:45" in summary
-    assert "effective" not in summary
-    assert "🕶️ Solar control window: 07:14 → 18:30" in summary
+def test_position_map_tracking_row_shows_solar_window():
+    """Tracking sun row includes today's solar control window when sun_times provided."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=_sun_times())
+    assert "☀️ Tracking sun (today 07:14 → 18:30) → calculated position" in summary
 
 
-def test_todays_sun_positive_offset_renders_effective_plus():
-    """Positive sunrise offset → shows effective time with + sign."""
-    cfg = {
-        CONF_SUNRISE_OFFSET: 12,
-        CONF_SUNSET_OFFSET: 0,
-    }
-    sun_times = _sun_times(sunrise_eff=(6, 42))
-    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
-    assert "🌅 Sunrise: 06:30 (effective 06:42, +12 min)" in summary
-    # sunset offset is 0 → no (effective) annotation on sunset line
-    assert "🌇 Sunset: 19:45" in summary
-    assert "Sunset: 19:45 (effective" not in summary
-
-
-def test_todays_sun_negative_offset_renders_effective_minus():
-    """Negative sunset offset → shows effective time with Unicode minus sign."""
-    cfg = {
-        CONF_SUNRISE_OFFSET: 0,
-        CONF_SUNSET_OFFSET: -12,
-    }
-    sun_times = _sun_times(sunset_eff=(19, 33))
-    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
-    assert "🌇 Sunset: 19:45 (effective 19:33, −12 min)" in summary
-
-
-def test_todays_sun_window_missing_renders_fallback():
-    """solar_start/solar_end both None → fallback message."""
-    cfg = {CONF_SUNRISE_OFFSET: 0, CONF_SUNSET_OFFSET: 0}
-    sun_times = _sun_times(solar_start=None, solar_end=None)
-    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
-    assert (
-        "🕶️ Solar control window: sun does not enter window today"
-        in summary
+def test_position_map_tracking_row_no_window_when_solar_times_none():
+    """Tracking sun row shows no annotation when solar_start/solar_end are None."""
+    cfg = {CONF_ENABLE_SUN_TRACKING: True}
+    summary = _build_config_summary(
+        cfg, SensorType.BLIND, sun_times=_sun_times(solar_start=None, solar_end=None)
     )
+    assert "☀️ Tracking sun → calculated position" in summary
+    assert "today" not in summary
 
 
-def test_todays_sun_renders_even_without_timing_config():
-    """Today's Sun block shows even when user has no start/end/sunset_pos configured."""
-    cfg = {}  # no timing_parts, no sunset_pos → timing block is skipped
-    sun_times = _sun_times()
-    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
-    assert "🌞 Today's sun:" in summary
-    assert "🌅 Sunrise: 06:30" in summary
+def test_position_map_after_sunset_row_shows_effective_sunset():
+    """After sunset row includes effective sunset time when sunset_pos configured."""
+    cfg = {CONF_SUNSET_POS: 30}
+    summary = _build_config_summary(
+        cfg, SensorType.BLIND, sun_times=_sun_times(sunset_eff=(19, 45))
+    )
+    assert "🌅 After sunset (today ~19:45) → 30%" in summary
+
+
+def test_position_map_after_sunrise_row_shows_when_sunset_pos_configured():
+    """After sunrise row appears with time annotation when sunset_pos is configured."""
+    cfg = {CONF_SUNSET_POS: 30}
+    summary = _build_config_summary(
+        cfg, SensorType.BLIND, sun_times=_sun_times(sunrise_eff=(6, 42))
+    )
+    assert "🌄 After sunrise (today ~06:42) → 0%" in summary
+
+
+def test_position_map_after_sunrise_row_absent_without_sunset_pos():
+    """After sunrise row does not appear when sunset_pos is not configured."""
+    cfg = {}
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=_sun_times())
+    assert "🌄 After sunrise" not in summary
+
+
+def test_position_map_default_row_always_present():
+    """Default row always appears as plain 🌙 Default label."""
+    for cfg in [{}, {CONF_SUNSET_POS: 30}, {CONF_ENABLE_SUN_TRACKING: False}]:
+        summary = _build_config_summary(cfg, SensorType.BLIND)
+        assert "🌙 Default → 0%" in summary
 
 
 async def test_compute_todays_sun_times_returns_expected_shape():

@@ -1499,50 +1499,6 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 f"{indent}🌄 After sunrise{sunrise_off_str} → {default_pos}% (tracking resumes)."
             )
 
-    # Today's Sun — raw sunrise/sunset, effective (with offsets), and solar-control window
-    if sun_times is not None:
-        indent = "\u00a0" * 4
-        sub_indent = "\u00a0" * 8
-
-        def _fmt_dt(value) -> str | None:
-            if value is None:
-                return None
-            return value.strftime("%H:%M")
-
-        def _eff_suffix(raw, eff, offset_min: int) -> str:
-            if offset_min == 0 or raw is None or eff is None:
-                return ""
-            sign = "+" if offset_min > 0 else "−"
-            return f" (effective {_fmt_dt(eff)}, {sign}{abs(int(offset_min))} min)"
-
-        sunrise_raw = sun_times.get("sunrise_raw")
-        sunset_raw = sun_times.get("sunset_raw")
-        sunrise_eff = sun_times.get("sunrise_eff")
-        sunset_eff = sun_times.get("sunset_eff")
-        solar_start = sun_times.get("solar_start")
-        solar_end = sun_times.get("solar_end")
-
-        lines.append(f"{indent}🌞 Today's sun:")
-        if sunrise_raw is not None:
-            lines.append(
-                f"{sub_indent}🌅 Sunrise: {_fmt_dt(sunrise_raw)}"
-                f"{_eff_suffix(sunrise_raw, sunrise_eff, int(sunrise_off))}"
-            )
-        if sunset_raw is not None:
-            lines.append(
-                f"{sub_indent}🌇 Sunset: {_fmt_dt(sunset_raw)}"
-                f"{_eff_suffix(sunset_raw, sunset_eff, int(sunset_off))}"
-            )
-        if solar_start is not None and solar_end is not None:
-            lines.append(
-                f"{sub_indent}🕶️ Solar control window: "
-                f"{_fmt_dt(solar_start)} → {_fmt_dt(solar_end)}"
-            )
-        else:
-            lines.append(
-                f"{sub_indent}🕶️ Solar control window: sun does not enter window today"
-            )
-
     # Blind spot
     if config.get(CONF_ENABLE_BLIND_SPOT):
         bs_l = config.get(CONF_BLIND_SPOT_LEFT)
@@ -1618,18 +1574,38 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             pos_map.append(
                 f"🎯 Custom #{_slot} on → {_pos_label(_pos, _use_my)} (priority {_pri})"
             )
+    def _fmt_sun_dt(value) -> str | None:
+        return value.strftime("%H:%M") if value is not None else None
+
+    _solar_start = sun_times.get("solar_start") if sun_times else None
+    _solar_end = sun_times.get("solar_end") if sun_times else None
+    _sunset_eff = sun_times.get("sunset_eff") if sun_times else None
+    _sunrise_eff = sun_times.get("sunrise_eff") if sun_times else None
+
+    sunset_pos = config.get(CONF_SUNSET_POS)
+    if sunset_pos is not None:
+        _sunset_today = (
+            f" (today ~{_fmt_sun_dt(_sunset_eff)})" if _sunset_eff is not None else ""
+        )
+        pos_map.append(
+            f"🌅 After sunset{_sunset_today} → "
+            f"{_pos_label(int(sunset_pos), bool(config.get(CONF_SUNSET_USE_MY)))}"
+        )
+        _sunrise_today = (
+            f" (today ~{_fmt_sun_dt(_sunrise_eff)})" if _sunrise_eff is not None else ""
+        )
+        pos_map.append(f"🌄 After sunrise{_sunrise_today} → {default_pos}%")
     if sun_tracking_enabled:
-        pos_map.append("☀️ Tracking sun → calculated position")
+        if _solar_start is not None and _solar_end is not None:
+            _window = f" (today {_fmt_sun_dt(_solar_start)} → {_fmt_sun_dt(_solar_end)})"
+        else:
+            _window = ""
+        pos_map.append(f"☀️ Tracking sun{_window} → calculated position")
     min_p = config.get(CONF_MIN_POSITION, 0)
     max_p = config.get(CONF_MAX_POSITION, 100)
     if min_p != 0 or max_p != 100:
         pos_map.append(f"   (clamped to {min_p}%–{max_p}%)")
-    sunset_pos = config.get(CONF_SUNSET_POS)
-    if sunset_pos is not None:
-        pos_map.append(
-            f"🌅 After sunset → {_pos_label(int(sunset_pos), bool(config.get(CONF_SUNSET_USE_MY)))}"
-        )
-    pos_map.append(f"🌙 No sun / default → {default_pos}%")
+    pos_map.append(f"🌙 Default → {default_pos}%")
     for line in pos_map:
         lines.append(line)
 
