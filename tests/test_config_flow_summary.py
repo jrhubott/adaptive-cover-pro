@@ -1328,7 +1328,8 @@ def test_capabilities_section_position_limits_ignored_warning():
 
 
 # ---------------------------------------------------------------------------
-# Section: Position Map sun-time annotations
+# Section: How It Decides — sun-time annotations (Position Map removed, all
+# trigger→target content now lives under How It Decides)
 # ---------------------------------------------------------------------------
 
 
@@ -1361,32 +1362,33 @@ def _sun_times(
     }
 
 
-def test_position_map_no_times_without_sun_times():
-    """Without sun_times no time annotations appear in position map rows."""
+def test_no_times_without_sun_times():
+    """Without sun_times no time annotations appear anywhere."""
     cfg = _full_vertical()
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "today" not in summary
 
 
-def test_position_map_tracking_row_shows_solar_window():
-    """Tracking sun row includes today's solar control window when sun_times provided."""
+def test_sun_tracking_row_shows_solar_window():
+    """Sun tracking line includes today's solar control window when sun_times provided."""
     cfg = {CONF_ENABLE_SUN_TRACKING: True}
     summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=_sun_times())
-    assert "☀️ Tracking sun (today 07:14 → 18:30) → calculated position" in summary
+    assert "(today: sun in window 07:14 → 18:30)" in summary
+    # Sun tracking rule line still carries its existing "Tracks the sun" phrasing
+    assert "Tracks the sun" in summary
 
 
-def test_position_map_tracking_row_no_window_when_solar_times_none():
-    """Tracking sun row shows no annotation when solar_start/solar_end are None."""
+def test_sun_tracking_row_no_window_when_solar_times_none():
+    """Sun tracking line shows 'does not enter window' when solar_start/solar_end are None."""
     cfg = {CONF_ENABLE_SUN_TRACKING: True}
     summary = _build_config_summary(
         cfg, SensorType.BLIND, sun_times=_sun_times(solar_start=None, solar_end=None)
     )
-    assert "☀️ Tracking sun → calculated position" in summary
-    assert "today" not in summary
+    assert "(today: sun does not enter window)" in summary
 
 
-def test_position_map_after_sunset_row_shows_effective_sunset():
-    """After sunset row includes effective sunset time when sunset_pos configured."""
+def test_after_sunset_row_shows_effective_sunset():
+    """After sunset sub-bullet includes effective sunset time when sunset_pos configured."""
     cfg = {CONF_SUNSET_POS: 30}
     summary = _build_config_summary(
         cfg, SensorType.BLIND, sun_times=_sun_times(sunset_eff=(19, 45))
@@ -1394,8 +1396,8 @@ def test_position_map_after_sunset_row_shows_effective_sunset():
     assert "🌅 After sunset (today ~19:45) → 30%" in summary
 
 
-def test_position_map_after_sunrise_row_shows_when_sunset_pos_configured():
-    """After sunrise row appears with time annotation when sunset_pos is configured."""
+def test_after_sunrise_row_shows_when_sunset_pos_configured():
+    """After sunrise sub-bullet shows today's effective sunrise time when sunset_pos configured."""
     cfg = {CONF_SUNSET_POS: 30}
     summary = _build_config_summary(
         cfg, SensorType.BLIND, sun_times=_sun_times(sunrise_eff=(6, 42))
@@ -1403,18 +1405,282 @@ def test_position_map_after_sunrise_row_shows_when_sunset_pos_configured():
     assert "🌄 After sunrise (today ~06:42) → 0%" in summary
 
 
-def test_position_map_after_sunrise_row_absent_without_sunset_pos():
-    """After sunrise row does not appear when sunset_pos is not configured."""
+def test_after_sunrise_row_absent_without_sunset_pos():
+    """After sunrise sub-bullet does not appear when sunset_pos is not configured."""
     cfg = {}
     summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=_sun_times())
     assert "🌄 After sunrise" not in summary
 
 
-def test_position_map_default_row_always_present():
-    """Default row always appears as plain 🌙 Default label."""
+def test_default_row_always_present():
+    """Default fallback line always renders under How It Decides."""
     for cfg in [{}, {CONF_SUNSET_POS: 30}, {CONF_ENABLE_SUN_TRACKING: False}]:
         summary = _build_config_summary(cfg, SensorType.BLIND)
-        assert "🌙 Default → 0%" in summary
+        assert "🌙 Default (no rule matches) → 0%" in summary
+
+
+def test_sunset_today_and_offset_merged_in_one_parenthetical():
+    """When both today's time and an offset are present, they share one parenthetical."""
+    cfg = {CONF_SUNSET_POS: 30, CONF_SUNSET_OFFSET: 30}
+    summary = _build_config_summary(
+        cfg, SensorType.BLIND, sun_times=_sun_times(sunset_eff=(20, 15))
+    )
+    assert "🌅 After sunset (today ~20:15, +30 min) → 30%" in summary
+
+
+# ---------------------------------------------------------------------------
+# Position Map section is gone — every place it lived is now the HID chain
+# ---------------------------------------------------------------------------
+
+
+def test_position_map_section_absent():
+    """Position Map header never renders — its content moved to How It Decides."""
+    cfg = _full_vertical()
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=_sun_times())
+    assert "**Position Map**" not in summary
+    assert "Position Map" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Priority badges — each rule in How It Decides ends with [N]
+# ---------------------------------------------------------------------------
+
+
+def test_priority_badges_on_every_rule():
+    """Each HID rule line carries a [N] priority badge; badges match the chain."""
+    cfg = _full_vertical()
+    cfg["custom_position_sensor_1"] = "binary_sensor.movie"
+    cfg["custom_position_1"] = 40
+    cfg["custom_position_priority_1"] = 77
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    for badge in ("[100]", "[90]", "[80]", "[77]", "[75]", "[60]", "[50]", "[45]", "[40]", "[0]"):
+        assert badge in summary, f"expected {badge} badge on some rule"
+
+
+def test_priority_badge_default_zero():
+    """Default fallback line shows the [0] badge."""
+    summary = _build_config_summary({}, SensorType.BLIND)
+    assert "🌙 Default (no rule matches) → 0%" in summary
+    # [0] appears on the same line as the default fallback
+    for line in summary.splitlines():
+        if "🌙 Default" in line:
+            assert "[0]" in line
+            break
+    else:
+        raise AssertionError("No default fallback line found")
+
+
+# ---------------------------------------------------------------------------
+# Newly rendered behavior-affecting options
+# ---------------------------------------------------------------------------
+
+
+def test_return_sunset_line_rendered():
+    """CONF_RETURN_SUNSET toggles a '🔚 Return to sunset position at end time: on' line."""
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    cfg = {CONF_SUNSET_POS: 30, CONF_RETURN_SUNSET: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Return to sunset position at end time: on" in summary
+
+
+def test_return_sunset_line_absent_when_false():
+    """CONF_RETURN_SUNSET=False omits the 🔚 line."""
+    from custom_components.adaptive_cover_pro.const import CONF_RETURN_SUNSET
+
+    cfg = {CONF_SUNSET_POS: 30, CONF_RETURN_SUNSET: False}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Return to sunset position at end time" not in summary
+
+
+def test_manual_ignore_intermediate_shown():
+    """CONF_MANUAL_IGNORE_INTERMEDIATE adds 'ignores intermediate positions' annotation."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_IGNORE_INTERMEDIATE,
+    )
+
+    cfg = {CONF_MANUAL_IGNORE_INTERMEDIATE: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "ignores intermediate positions" in summary
+
+
+def test_weather_wind_direction_shown():
+    """Wind direction sensor + tolerance render on the weather safety line."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_WIND_DIRECTION_SENSOR,
+        CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+    )
+
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: 60,
+        CONF_WEATHER_WIND_DIRECTION_SENSOR: "sensor.wind_dir",
+        CONF_WEATHER_WIND_DIRECTION_TOLERANCE: 45,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "from window ±45°" in summary
+
+
+def test_weather_bypass_auto_control_warning():
+    """CONF_WEATHER_BYPASS_AUTO_CONTROL renders a ⚠️ halt-annotation."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_BYPASS_AUTO_CONTROL,
+    )
+
+    cfg = {
+        CONF_WEATHER_IS_RAINING_SENSOR: "binary_sensor.rain",
+        CONF_WEATHER_BYPASS_AUTO_CONTROL: True,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "halts all automation while triggered" in summary
+
+
+def test_weather_override_min_mode_shown():
+    """CONF_WEATHER_OVERRIDE_MIN_MODE renders '(as minimum)' on the weather line."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WEATHER_OVERRIDE_MIN_MODE,
+    )
+
+    cfg = {
+        CONF_WEATHER_IS_RAINING_SENSOR: "binary_sensor.rain",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+        CONF_WEATHER_OVERRIDE_MIN_MODE: True,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    # "(as minimum)" belongs on the weather safety line, not the force line
+    wx_line = next(ln for ln in summary.splitlines() if "Weather safety" in ln)
+    assert "(as minimum)" in wx_line
+
+
+def test_force_override_min_mode_shown():
+    """CONF_FORCE_OVERRIDE_MIN_MODE renders '(as minimum)' on the force line."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_FORCE_OVERRIDE_MIN_MODE,
+    )
+
+    cfg = {
+        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.safety"],
+        CONF_FORCE_OVERRIDE_POSITION: 100,
+        CONF_FORCE_OVERRIDE_MIN_MODE: True,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    force_line = next(ln for ln in summary.splitlines() if "Force override" in ln)
+    assert "(as minimum)" in force_line
+
+
+def test_custom_position_min_mode_shown():
+    """custom_position_min_mode_N renders '(as minimum)' on the custom slot line."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.movie",
+        "custom_position_1": 40,
+        "custom_position_priority_1": 77,
+        "custom_position_min_mode_1": True,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "(as minimum)" in custom_line
+
+
+def test_weather_state_list_in_cloud_line():
+    """CONF_WEATHER_STATE list renders as 'weather in {state, state}' on the cloud line."""
+    from custom_components.adaptive_cover_pro.const import CONF_WEATHER_STATE
+
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_WEATHER_ENTITY: "weather.home",
+        CONF_WEATHER_STATE: ["cloudy", "rainy"],
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "weather in {cloudy, rainy}" in summary
+
+
+def test_outside_threshold_shown_on_climate_line():
+    """CONF_OUTSIDE_THRESHOLD annotates the outside temp entity on the climate line."""
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_OUTSIDETEMP_ENTITY: "sensor.outdoor",
+        CONF_OUTSIDE_THRESHOLD: 28,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "sensor.outdoor > 28°C" in summary
+
+
+def test_transparent_blind_note_on_climate_line():
+    """CONF_TRANSPARENT_BLIND adds a 'transparent blind' note on climate line."""
+    from custom_components.adaptive_cover_pro.const import CONF_TRANSPARENT_BLIND
+
+    cfg = {CONF_CLIMATE_MODE: True, CONF_TRANSPARENT_BLIND: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    climate_line = next(ln for ln in summary.splitlines() if "Climate mode" in ln)
+    assert "transparent blind" in climate_line
+
+
+def test_winter_close_insulation_note_on_climate_line():
+    """CONF_WINTER_CLOSE_INSULATION adds a 'closes fully in winter' note."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_WINTER_CLOSE_INSULATION,
+    )
+
+    cfg = {CONF_CLIMATE_MODE: True, CONF_WINTER_CLOSE_INSULATION: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "closes fully in winter for insulation" in summary
+
+
+def test_open_close_threshold_in_position_limits():
+    """CONF_OPEN_CLOSE_THRESHOLD renders under Position Limits."""
+    from custom_components.adaptive_cover_pro.const import CONF_OPEN_CLOSE_THRESHOLD
+
+    cfg = {CONF_MIN_POSITION: 0, CONF_OPEN_CLOSE_THRESHOLD: 50}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Open/close threshold: 50%" in summary
+
+
+def test_interp_start_end_in_position_limits():
+    """CONF_INTERP_START and CONF_INTERP_END render as 'Calibration N→M' when set."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_INTERP_END,
+        CONF_INTERP_START,
+    )
+
+    cfg = {
+        CONF_MIN_POSITION: 0,
+        CONF_INTERP: True,
+        CONF_INTERP_START: 10,
+        CONF_INTERP_END: 90,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Calibration 10→90" in summary
+
+
+def test_interp_without_start_end_falls_back():
+    """CONF_INTERP=True without start/end falls back to the plain 'on' note."""
+    cfg = {CONF_MIN_POSITION: 0, CONF_INTERP: True}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Position calibration on" in summary
+
+
+def test_min_only_qualifier_is_min_specific():
+    """When only enable_min_position is True, qualifier reads 'min during sun tracking only'."""
+    cfg = {
+        CONF_MIN_POSITION: 10,
+        CONF_MAX_POSITION: 90,
+        CONF_ENABLE_MIN_POSITION: True,
+        CONF_ENABLE_MAX_POSITION: False,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "(min during sun tracking only)" in summary
+
+
+def test_max_only_qualifier_is_max_specific():
+    """When only enable_max_position is True, qualifier reads 'max during sun tracking only'."""
+    cfg = {
+        CONF_MIN_POSITION: 10,
+        CONF_MAX_POSITION: 90,
+        CONF_ENABLE_MIN_POSITION: False,
+        CONF_ENABLE_MAX_POSITION: True,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "(max during sun tracking only)" in summary
 
 
 async def test_compute_todays_sun_times_returns_expected_shape():

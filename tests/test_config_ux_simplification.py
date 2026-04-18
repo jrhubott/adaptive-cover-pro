@@ -273,7 +273,7 @@ class TestSyncCategoriesSplit:
 
 
 class TestPositionMapInSummary:
-    """Test the Position Map section in config summary."""
+    """Rule targets and positions now live under How It Decides (Position Map removed)."""
 
     def _base_config(self, **overrides):
         """Create a base config for summary testing."""
@@ -288,26 +288,27 @@ class TestPositionMapInSummary:
         return config
 
     def test_position_map_section_present(self):
-        """Summary includes Position Map section."""
+        """Position Map section removed; How It Decides now carries per-rule targets."""
         config = self._base_config()
         result = _build_config_summary(config, SensorType.BLIND)
-        assert "**Position Map**" in result
+        assert "**Position Map**" not in result
+        assert "**How It Decides**" in result
 
     def test_position_map_shows_default(self):
-        """Position map shows the default position."""
+        """Default-fallback line renders under How It Decides."""
         config = self._base_config(**{CONF_DEFAULT_HEIGHT: 60})
         result = _build_config_summary(config, SensorType.BLIND)
         assert "60%" in result
         assert "🌙 Default" in result
 
     def test_position_map_shows_sunset(self):
-        """Position map shows sunset position when configured."""
+        """Sunset row renders under How It Decides when configured."""
         config = self._base_config(**{CONF_SUNSET_POS: 0})
         result = _build_config_summary(config, SensorType.BLIND)
         assert "After sunset" in result
 
     def test_position_map_shows_force_override(self):
-        """Position map shows force override position when configured."""
+        """Force override row renders under How It Decides."""
         config = self._base_config(
             **{
                 CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.rain"],
@@ -315,11 +316,11 @@ class TestPositionMapInSummary:
             }
         )
         result = _build_config_summary(config, SensorType.BLIND)
-        assert "Safety override" in result
+        assert "Force override" in result
         assert "100%" in result
 
     def test_position_map_shows_weather_override(self):
-        """Position map shows weather override position when configured."""
+        """Weather safety row renders under How It Decides."""
         config = self._base_config(
             **{
                 CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
@@ -327,23 +328,23 @@ class TestPositionMapInSummary:
             }
         )
         result = _build_config_summary(config, SensorType.BLIND)
-        assert "Weather danger" in result
+        assert "Weather safety" in result
 
     def test_position_map_shows_sun_tracking(self):
-        """Position map always shows sun tracking line."""
+        """Sun tracking row renders under How It Decides."""
         config = self._base_config()
         result = _build_config_summary(config, SensorType.BLIND)
-        assert "Tracking sun" in result
+        assert "Tracks the sun" in result
 
     def test_position_map_shows_clamp_range(self):
-        """Position map shows clamp range when min/max differ from defaults."""
+        """Position Limits section shows the clamp range when min/max differ from defaults."""
         config = self._base_config(**{CONF_MIN_POSITION: 10, CONF_MAX_POSITION: 90})
         result = _build_config_summary(config, SensorType.BLIND)
         assert "10%" in result
         assert "90%" in result
 
     def test_position_map_no_clamp_at_defaults(self):
-        """Position map omits clamp line when min=0 and max=100."""
+        """Position Limits omits clamp qualifier when min=0 and max=100."""
         config = self._base_config(**{CONF_MIN_POSITION: 0, CONF_MAX_POSITION: 100})
         result = _build_config_summary(config, SensorType.BLIND)
         assert "clamped" not in result
