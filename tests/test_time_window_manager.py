@@ -346,8 +346,9 @@ def test_after_start_time_entity_normalizes_tomorrow_to_today():
         end_time_entity=None,
     )
 
-    today = dt.date.today()
+    today = dt.date(2024, 6, 15)
     tomorrow = today + dt.timedelta(days=1)
+    now = dt.datetime(2024, 6, 15, 12, 0, 0)
     # Simulate the sensor reporting tomorrow's sunrise (06:30 tomorrow)
     tomorrow_sunrise = dt.datetime(tomorrow.year, tomorrow.month, tomorrow.day, 6, 30)
 
@@ -360,10 +361,16 @@ def test_after_start_time_entity_normalizes_tomorrow_to_today():
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=tomorrow_sunrise,
         ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt"
+        ) as mock_dt,
     ):
+        mock_dt.date.today.return_value = today
+        mock_dt.datetime.now.return_value = now
+        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
-    # Normalized to today at 06:30 — which is in the past during any normal test run
+    # Normalized to 2024-06-15 06:30 — which is before noon (now), so True
     assert result is True
 
 
@@ -378,7 +385,8 @@ def test_after_start_time_entity_no_normalize_when_today():
         end_time_entity=None,
     )
 
-    today = dt.date.today()
+    today = dt.date(2024, 6, 15)
+    now = dt.datetime(2024, 6, 15, 12, 0, 0)
     # Sunrise already passed today — entity still shows today's date
     past_today = dt.datetime(today.year, today.month, today.day, 6, 30)
 
@@ -391,7 +399,13 @@ def test_after_start_time_entity_no_normalize_when_today():
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=past_today,
         ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt"
+        ) as mock_dt,
     ):
+        mock_dt.date.today.return_value = today
+        mock_dt.datetime.now.return_value = now
+        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is True
