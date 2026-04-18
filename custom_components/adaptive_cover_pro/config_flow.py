@@ -1394,14 +1394,14 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
     sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     timing_parts = []
-    if start_time:
-        timing_parts.append(f"from {start_time}")
-    elif start_entity:
+    if start_entity:
         timing_parts.append(f"from {start_entity}")
-    if end_time:
-        timing_parts.append(f"until {end_time}")
-    elif end_entity:
+    elif start_time:
+        timing_parts.append(f"from {start_time}")
+    if end_entity:
         timing_parts.append(f"until {end_entity}")
+    elif end_time:
+        timing_parts.append(f"until {end_time}")
     if timing_parts or sunset_pos is not None:
         timing_str = (
             " ".join(timing_parts) if timing_parts else "Active during daylight"

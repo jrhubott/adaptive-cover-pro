@@ -57,6 +57,8 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_PRESENCE_ENTITY,
     CONF_SILL_HEIGHT,
     CONF_START_TIME,
+    CONF_START_ENTITY,
+    CONF_END_ENTITY,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
@@ -314,6 +316,56 @@ def test_automation_times_shown():
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "07:00" in summary
     assert "21:00" in summary
+
+
+def test_start_entity_preferred_over_default_start_time():
+    """Entity wins when CONF_START_TIME is the schema default '00:00:00'."""
+    cfg = {
+        CONF_START_TIME: "00:00:00",
+        CONF_START_ENTITY: "sensor.sunrise_time",
+        CONF_END_TIME: "00:00:00",
+        CONF_END_ENTITY: "sensor.sunset_time",
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "sensor.sunrise_time" in summary
+    assert "sensor.sunset_time" in summary
+    assert "from 00:00:00" not in summary
+    assert "until 00:00:00" not in summary
+
+
+def test_explicit_start_time_used_when_no_entity():
+    """Static time is used when no entity is configured."""
+    cfg = {CONF_START_TIME: "07:00", CONF_END_TIME: "21:00"}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "from 07:00" in summary
+    assert "until 21:00" in summary
+
+
+def test_start_entity_preferred_even_with_non_default_start_time():
+    """Entity always wins over a non-default static time — mirrors time_window.py precedence."""
+    cfg = {
+        CONF_START_TIME: "06:30",
+        CONF_START_ENTITY: "sensor.dynamic_start",
+        CONF_END_TIME: "22:00",
+        CONF_END_ENTITY: "sensor.dynamic_end",
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "sensor.dynamic_start" in summary
+    assert "sensor.dynamic_end" in summary
+    assert "06:30" not in summary
+    assert "22:00" not in summary
+
+
+def test_mixed_start_entity_with_static_end_time():
+    """Start entity + static end time — each branch resolved independently."""
+    cfg = {
+        CONF_START_TIME: "00:00:00",
+        CONF_START_ENTITY: "sensor.sunrise_time",
+        CONF_END_TIME: "21:30",
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "sensor.sunrise_time" in summary
+    assert "until 21:30" in summary
 
 
 def test_sunset_position_shown():
