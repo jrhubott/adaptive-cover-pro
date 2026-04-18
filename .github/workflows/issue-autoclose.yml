@@ -4,8 +4,6 @@ on:
   schedule:
     # Run daily at noon UTC
     - cron: '0 12 * * *'
-  issues:
-    types: [labeled]
 
 permissions:
   issues: write
@@ -21,14 +19,14 @@ jobs:
           # Only process issues carrying this label
           only-issue-labels: 'waiting-for-confirmation'
 
-          # Days of inactivity before acting (reset by any new comment or activity)
+          # Days of inactivity before marking stale
           days-before-issue-stale: 14
 
-          # Close immediately once the stale period elapses (no separate stale warning step)
+          # Close immediately once marked stale (no separate warning step)
           days-before-issue-close: 0
 
-          # Keep the same label rather than replacing it with a "Stale" label
-          stale-issue-label: 'waiting-for-confirmation'
+          # Separate stale label so issues aren't treated as already-stale on first run
+          stale-issue-label: 'stale'
 
           close-issue-message: >
             Closing this issue as we haven't heard back to confirm the fix.
