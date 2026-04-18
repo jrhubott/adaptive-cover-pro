@@ -81,22 +81,17 @@ jobs:
 
             console.log(`Processing: #${numbers.join(', #')}`);
 
-            // Ensure the waiting-for-confirmation label exists
-            try {
-              await github.rest.issues.getLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: 'waiting-for-confirmation',
-              });
-            } catch {
-              await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: 'waiting-for-confirmation',
-                color: '0075CA',
-                description: 'Shipped in a release — awaiting reporter verification',
-              });
-              console.log('Created waiting-for-confirmation label.');
+            // Ensure required labels exist
+            for (const [name, color, description] of [
+              ['waiting-for-confirmation', '0075CA', 'Shipped in a release — awaiting reporter verification'],
+              ['released', '0E8A16', 'Fix has shipped in a stable production release'],
+            ]) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch {
+                await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                console.log(`Created ${name} label.`);
+              }
             }
 
             for (const num of numbers) {
@@ -152,7 +147,7 @@ jobs:
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: num,
-                    labels: ['waiting-for-confirmation'],
+                    labels: ['waiting-for-confirmation', 'released'],
                   });
 
                   await github.rest.issues.createComment({
@@ -161,7 +156,7 @@ jobs:
                     issue_number: num,
                     body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf we don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
                   });
-                  console.log(`Labeled issue #${num} as waiting-for-confirmation.`);
+                  console.log(`Labeled issue #${num} as waiting-for-confirmation + released.`);
                 } else {
                   console.log(`Issue #${num} is already closed, skipping.`);
                 }
