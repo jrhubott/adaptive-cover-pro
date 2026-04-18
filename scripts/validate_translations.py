@@ -45,10 +45,16 @@ EN_ONLY_SECTIONS = ("services",)
 # placeholders, format strings, etc.)
 PLACEHOLDER_PATTERN = re.compile(r"^\{[^}]+\}$")  # pure placeholder e.g. {summary}
 
-# Leaf values that should never be translated (technical option keys, etc.)
-NEVER_TRANSLATE = {
-    # selector option keys — these are machine values, not display text
-    # (They appear as values in the JSON but are actually keys used by HA selectors)
+# "Word N" labels (e.g. "Sensor 1", "Zone 2") are technical labels, not prose.
+WORD_NUMBER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z\s]* \d+$")
+
+# Dotpath keys whose values are deliberately language-universal (proper nouns,
+# single words that are identical in all shipped languages, etc.).
+UNIVERSAL_KEYS: set[str] = {
+    "title",                                    # product name "Adaptive Cover Pro"
+    "config.step.create_new.data.name",         # "Name" — same in DE/FR
+    "config.step.duplicate_configure.data.name",  # "Name" — same in DE/FR
+    "entity.sensor.decision_trace.state.winter",  # "Winter" — same in DE/FR
 }
 
 
@@ -80,7 +86,7 @@ def get_keys(obj: dict, prefix: str = "") -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def is_likely_untranslated(en_value: str, target_value: str) -> bool:
+def is_likely_untranslated(key: str, en_value: str, target_value: str) -> bool:
     """Return True if target_value appears to be the same as English (not yet translated).
 
     We consider a string 'untranslated' if it is byte-for-byte identical to the
@@ -91,8 +97,16 @@ def is_likely_untranslated(en_value: str, target_value: str) -> bool:
     if en_value != target_value:
         return False  # Already different — translated
 
+    # Keys explicitly declared as language-universal (proper nouns, etc.)
+    if key in UNIVERSAL_KEYS:
+        return False
+
     # Pure placeholders are intentionally identical
     if PLACEHOLDER_PATTERN.match(target_value.strip()):
+        return False
+
+    # "Word N" labels (e.g. "Sensor 1") are technical identifiers, not prose
+    if WORD_NUMBER_PATTERN.match(target_value.strip()):
         return False
 
     # Very short strings (≤3 chars) may legitimately be the same across languages
@@ -168,7 +182,7 @@ def analyse_language(lang: str, en_flat_full: dict[str, str]) -> dict:
 
     untranslated = []
     for key in en_keys & target_keys:
-        if is_likely_untranslated(en_flat[key], target_flat[key]):
+        if is_likely_untranslated(key, en_flat[key], target_flat[key]):
             untranslated.append(key)
     untranslated.sort()
 
