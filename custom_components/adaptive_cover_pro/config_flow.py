@@ -1070,10 +1070,73 @@ def _build_cover_capabilities_text(
     return "\n".join(lines)
 
 
+async def _compute_todays_sun_times(
+    hass: HomeAssistant, config: dict
+) -> dict | None:
+    """Compute today's raw/effective sunrise/sunset + solar-control window.
+
+    Runs the pandas/astral-heavy work in an executor. Returns ``None`` on any
+    failure so the summary renders gracefully when location/astral data is
+    unavailable. All returned datetimes are naive local (HA-configured TZ).
+    """
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    from .config_types import CoverConfig
+    from .engine.sun_geometry import SunGeometry
+    from .state.sun_provider import SunProvider
+
+    def _to_local(value):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=dt_util.UTC)
+        return dt_util.as_local(value).replace(tzinfo=None)
+
+    def _compute() -> dict | None:
+        try:
+            sun_data = SunProvider(hass).create_sun_data(hass.config.time_zone)
+            sunrise_raw_utc = sun_data.sunrise()
+            sunset_raw_utc = sun_data.sunset()
+
+            cfg = CoverConfig.from_options(config)
+            geometry = SunGeometry(0.0, 0.0, sun_data, cfg, _LOGGER)
+            solar_start_utc, solar_end_utc = geometry.solar_times()
+
+            sunrise_local = _to_local(sunrise_raw_utc)
+            sunset_local = _to_local(sunset_raw_utc)
+            sunrise_eff = (
+                sunrise_local + timedelta(minutes=int(cfg.sunrise_off))
+                if sunrise_local is not None
+                else None
+            )
+            sunset_eff = (
+                sunset_local + timedelta(minutes=int(cfg.sunset_off))
+                if sunset_local is not None
+                else None
+            )
+
+            return {
+                "sunrise_raw": sunrise_local,
+                "sunset_raw": sunset_local,
+                "sunrise_eff": sunrise_eff,
+                "sunset_eff": sunset_eff,
+                "solar_start": _to_local(solar_start_utc),
+                "solar_end": _to_local(solar_end_utc),
+            }
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to compute today's sun times", exc_info=True)
+            return None
+
+    return await hass.async_add_executor_job(_compute)
+
+
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     config: dict,
     sensor_type: str | None,
     hass: HomeAssistant | None = None,
+    sun_times: dict | None = None,
 ) -> str:
     """Build a narrative summary of the current configuration.
 
@@ -1434,6 +1497,50 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 )
             lines.append(
                 f"{indent}🌄 After sunrise{sunrise_off_str} → {default_pos}% (tracking resumes)."
+            )
+
+    # Today's Sun — raw sunrise/sunset, effective (with offsets), and solar-control window
+    if sun_times is not None:
+        indent = "\u00a0" * 4
+        sub_indent = "\u00a0" * 8
+
+        def _fmt_dt(value) -> str | None:
+            if value is None:
+                return None
+            return value.strftime("%H:%M")
+
+        def _eff_suffix(raw, eff, offset_min: int) -> str:
+            if offset_min == 0 or raw is None or eff is None:
+                return ""
+            sign = "+" if offset_min > 0 else "−"
+            return f" (effective {_fmt_dt(eff)}, {sign}{abs(int(offset_min))} min)"
+
+        sunrise_raw = sun_times.get("sunrise_raw")
+        sunset_raw = sun_times.get("sunset_raw")
+        sunrise_eff = sun_times.get("sunrise_eff")
+        sunset_eff = sun_times.get("sunset_eff")
+        solar_start = sun_times.get("solar_start")
+        solar_end = sun_times.get("solar_end")
+
+        lines.append(f"{indent}🌞 Today's sun:")
+        if sunrise_raw is not None:
+            lines.append(
+                f"{sub_indent}🌅 Sunrise: {_fmt_dt(sunrise_raw)}"
+                f"{_eff_suffix(sunrise_raw, sunrise_eff, int(sunrise_off))}"
+            )
+        if sunset_raw is not None:
+            lines.append(
+                f"{sub_indent}🌇 Sunset: {_fmt_dt(sunset_raw)}"
+                f"{_eff_suffix(sunset_raw, sunset_eff, int(sunset_off))}"
+            )
+        if solar_start is not None and solar_end is not None:
+            lines.append(
+                f"{sub_indent}🕶️ Solar control window: "
+                f"{_fmt_dt(solar_start)} → {_fmt_dt(solar_end)}"
+            )
+        else:
+            lines.append(
+                f"{sub_indent}🕶️ Solar control window: sun does not enter window today"
             )
 
     # Blind spot
@@ -2462,7 +2569,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Show a read-only summary of all collected configuration before creating the entry."""
         if user_input is not None:
             return await self.async_step_update()
-        summary_text = _build_config_summary(self.config, self.type_blind, self.hass)
+        sun_times = await _compute_todays_sun_times(self.hass, self.config)
+        summary_text = _build_config_summary(
+            self.config, self.type_blind, self.hass, sun_times
+        )
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),
@@ -3272,7 +3382,10 @@ class OptionsFlowHandler(OptionsFlow):
         """Show a read-only summary of the current configuration."""
         if user_input is not None:
             return await self.async_step_init()
-        summary_text = _build_config_summary(self.options, self.sensor_type, self.hass)
+        sun_times = await _compute_todays_sun_times(self.hass, self.options)
+        summary_text = _build_config_summary(
+            self.options, self.sensor_type, self.hass, sun_times
+        )
         return self.async_show_form(
             step_id="summary",
             data_schema=vol.Schema({}),

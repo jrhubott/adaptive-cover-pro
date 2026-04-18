@@ -1325,3 +1325,193 @@ def test_capabilities_section_position_limits_ignored_warning():
     assert "Position limits" in result
     assert "limits will be ignored" in result
     assert "cover.blind" in result
+
+
+# ---------------------------------------------------------------------------
+# Section: Today's Sun
+# ---------------------------------------------------------------------------
+
+
+def _sun_times(
+    *,
+    sunrise_raw=(6, 30),
+    sunset_raw=(19, 45),
+    sunrise_eff=None,
+    sunset_eff=None,
+    solar_start=(7, 14),
+    solar_end=(18, 30),
+):
+    """Build a sun_times dict with HH:MM tuples; None entries pass through."""
+    import datetime as dt
+
+    today = dt.date(2026, 4, 18)
+
+    def _dt(hm):
+        if hm is None:
+            return None
+        return dt.datetime(today.year, today.month, today.day, hm[0], hm[1])
+
+    return {
+        "sunrise_raw": _dt(sunrise_raw),
+        "sunset_raw": _dt(sunset_raw),
+        "sunrise_eff": _dt(sunrise_eff) if sunrise_eff else _dt(sunrise_raw),
+        "sunset_eff": _dt(sunset_eff) if sunset_eff else _dt(sunset_raw),
+        "solar_start": _dt(solar_start),
+        "solar_end": _dt(solar_end),
+    }
+
+
+def test_todays_sun_absent_when_sun_times_none():
+    """Without sun_times the Today's Sun block must not render."""
+    cfg = _full_vertical()
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Today's sun" not in summary
+    assert "Solar control window" not in summary
+
+
+def test_todays_sun_raw_only_when_offsets_zero():
+    """Zero offsets → raw times with no (effective …) annotation."""
+    cfg = {
+        CONF_SUNRISE_OFFSET: 0,
+        CONF_SUNSET_OFFSET: 0,
+    }
+    sun_times = _sun_times()
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
+    assert "🌞 Today's sun:" in summary
+    assert "🌅 Sunrise: 06:30" in summary
+    assert "🌇 Sunset: 19:45" in summary
+    assert "effective" not in summary
+    assert "🕶️ Solar control window: 07:14 → 18:30" in summary
+
+
+def test_todays_sun_positive_offset_renders_effective_plus():
+    """Positive sunrise offset → shows effective time with + sign."""
+    cfg = {
+        CONF_SUNRISE_OFFSET: 12,
+        CONF_SUNSET_OFFSET: 0,
+    }
+    sun_times = _sun_times(sunrise_eff=(6, 42))
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
+    assert "🌅 Sunrise: 06:30 (effective 06:42, +12 min)" in summary
+    # sunset offset is 0 → no (effective) annotation on sunset line
+    assert "🌇 Sunset: 19:45" in summary
+    assert "Sunset: 19:45 (effective" not in summary
+
+
+def test_todays_sun_negative_offset_renders_effective_minus():
+    """Negative sunset offset → shows effective time with Unicode minus sign."""
+    cfg = {
+        CONF_SUNRISE_OFFSET: 0,
+        CONF_SUNSET_OFFSET: -12,
+    }
+    sun_times = _sun_times(sunset_eff=(19, 33))
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
+    assert "🌇 Sunset: 19:45 (effective 19:33, −12 min)" in summary
+
+
+def test_todays_sun_window_missing_renders_fallback():
+    """solar_start/solar_end both None → fallback message."""
+    cfg = {CONF_SUNRISE_OFFSET: 0, CONF_SUNSET_OFFSET: 0}
+    sun_times = _sun_times(solar_start=None, solar_end=None)
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
+    assert (
+        "🕶️ Solar control window: sun does not enter window today"
+        in summary
+    )
+
+
+def test_todays_sun_renders_even_without_timing_config():
+    """Today's Sun block shows even when user has no start/end/sunset_pos configured."""
+    cfg = {}  # no timing_parts, no sunset_pos → timing block is skipped
+    sun_times = _sun_times()
+    summary = _build_config_summary(cfg, SensorType.BLIND, sun_times=sun_times)
+    assert "🌞 Today's sun:" in summary
+    assert "🌅 Sunrise: 06:30" in summary
+
+
+async def test_compute_todays_sun_times_returns_expected_shape():
+    """_compute_todays_sun_times returns a dict with all expected keys in local TZ."""
+    import datetime as dt
+    from unittest.mock import MagicMock, patch
+
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _compute_todays_sun_times,
+    )
+
+    fake_sunrise_utc = dt.datetime(2026, 4, 18, 10, 30, tzinfo=dt.UTC)
+    fake_sunset_utc = dt.datetime(2026, 4, 18, 23, 45, tzinfo=dt.UTC)
+    fake_solar_start_utc = dt.datetime(2026, 4, 18, 11, 14, tzinfo=dt.UTC)
+    fake_solar_end_utc = dt.datetime(2026, 4, 18, 22, 30, tzinfo=dt.UTC)
+
+    sun_data_stub = MagicMock()
+    sun_data_stub.sunrise.return_value = fake_sunrise_utc
+    sun_data_stub.sunset.return_value = fake_sunset_utc
+
+    geom_stub = MagicMock()
+    geom_stub.solar_times.return_value = (fake_solar_start_utc, fake_solar_end_utc)
+
+    hass = MagicMock()
+    hass.config.time_zone = "UTC"
+
+    async def _run_executor(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    hass.async_add_executor_job = _run_executor
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.state.sun_provider."
+            "SunProvider.create_sun_data",
+            return_value=sun_data_stub,
+        ),
+        patch(
+            "custom_components.adaptive_cover_pro.engine.sun_geometry.SunGeometry",
+            return_value=geom_stub,
+        ),
+    ):
+        result = await _compute_todays_sun_times(
+            hass, {CONF_SUNRISE_OFFSET: 12, CONF_SUNSET_OFFSET: -12}
+        )
+
+    assert result is not None
+    assert set(result.keys()) == {
+        "sunrise_raw",
+        "sunset_raw",
+        "sunrise_eff",
+        "sunset_eff",
+        "solar_start",
+        "solar_end",
+    }
+    # All datetimes returned as naive (tz-stripped after local conversion)
+    for value in result.values():
+        if value is not None:
+            assert value.tzinfo is None
+    # Effective = raw + offset
+    assert result["sunrise_eff"] - result["sunrise_raw"] == dt.timedelta(minutes=12)
+    assert result["sunset_eff"] - result["sunset_raw"] == dt.timedelta(minutes=-12)
+
+
+async def test_compute_todays_sun_times_returns_none_on_failure():
+    """_compute_todays_sun_times returns None when SunProvider raises."""
+    from unittest.mock import MagicMock, patch
+
+    from custom_components.adaptive_cover_pro.config_flow import (
+        _compute_todays_sun_times,
+    )
+
+    hass = MagicMock()
+    hass.config.time_zone = "UTC"
+
+    async def _run_executor(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    hass.async_add_executor_job = _run_executor
+
+    with patch(
+        "custom_components.adaptive_cover_pro.state.sun_provider."
+        "SunProvider.create_sun_data",
+        side_effect=RuntimeError("no location"),
+    ):
+        result = await _compute_todays_sun_times(hass, {})
+
+    assert result is None
