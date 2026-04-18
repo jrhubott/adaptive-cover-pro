@@ -52,11 +52,10 @@ jobs:
             LOG=$(git log --pretty=format:"%s%n%b" "${PREV_TAG}..${CURRENT_TAG}")
           fi
 
-          # Extract unique issue/PR numbers from standard GitHub reference keywords
+          # Extract unique issue/PR numbers — keyword refs and bare (#NNN) parentheticals
           NUMBERS=$(echo "$LOG" \
-            | grep -ioE '(refs?|closes?|fixes?|resolves?)[[:space:]]+#[0-9]+' \
-            | grep -oE '#[0-9]+' \
-            | tr -d '#' \
+            | grep -ioE '(refs?|closes?|fixes?|resolves?)[[:space:]]+#[0-9]+|\(#[0-9]+\)' \
+            | grep -oE '[0-9]+' \
             | sort -u \
             | tr '\n' ' ')
 
