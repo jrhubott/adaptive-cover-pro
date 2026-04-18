@@ -125,6 +125,37 @@ jobs:
                 });
                 console.log(`Labeled issue #${num} as awaiting-release.`);
               } else {
-                console.log(`#${num} is closed, skipping.`);
+                // Issue is closed. If GitHub auto-closed it via a Fixes/Closes keyword in
+                // this PR (state_reason: "completed"), reopen it so the normal release
+                // lifecycle can continue. Issues closed as "not_planned" are intentional —
+                // leave them alone.
+                const stateReason = item.state_reason;
+                if (stateReason === 'completed') {
+                  console.log(`Issue #${num} was auto-closed (state_reason: completed). Reopening for awaiting-release lifecycle.`);
+
+                  await github.rest.issues.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    state: 'open',
+                  });
+
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    labels: ['awaiting-release'],
+                  });
+
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    body: `A fix for this issue has been merged in #${prNumber} and will ship in the next stable release.\n\n_(This issue was briefly auto-closed by a PR keyword and has been reopened to follow the normal release confirmation lifecycle.)_`,
+                  });
+                  console.log(`Reopened and labeled issue #${num} as awaiting-release.`);
+                } else {
+                  console.log(`Issue #${num} is closed (state_reason: ${stateReason}), skipping.`);
+                }
               }
             }
