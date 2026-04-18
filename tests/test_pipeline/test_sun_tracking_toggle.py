@@ -1,7 +1,8 @@
 """Tests for the enable_sun_tracking config toggle.
 
-When CONF_ENABLE_SUN_TRACKING is False, both SolarHandler and GlareZoneHandler
-must be absent from the pipeline.  When True (or unset), both must be present.
+When CONF_ENABLE_SUN_TRACKING is False, only SolarHandler must be absent.
+GlareZoneHandler is governed by its own CONF_ENABLE_GLARE_ZONES switch and
+must remain in the pipeline regardless of the sun-tracking flag.
 """
 
 from __future__ import annotations
@@ -61,15 +62,6 @@ def test_sun_tracking_disabled_removes_solar_handler():
 
 
 @pytest.mark.unit
-def test_sun_tracking_disabled_removes_glare_zone_handler():
-    """GlareZoneHandler absent when CONF_ENABLE_SUN_TRACKING is False."""
-    coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
-    registry = coord._build_pipeline()
-    handler_types = {type(h) for h in registry._handlers}
-    assert GlareZoneHandler not in handler_types
-
-
-@pytest.mark.unit
 def test_sun_tracking_disabled_preserves_other_handlers():
     """Other handlers (ForceOverride, Climate, Default, etc.) remain when flag is False."""
     from custom_components.adaptive_cover_pro.pipeline.handlers import (
@@ -89,6 +81,33 @@ def test_sun_tracking_disabled_preserves_other_handlers():
 
 
 @pytest.mark.unit
+def test_sun_tracking_disabled_preserves_glare_zone_handler():
+    """GlareZoneHandler stays in the pipeline when sun tracking is off.
+
+    Regression test for issue #238: CONF_ENABLE_SUN_TRACKING must gate only
+    SolarHandler. GlareZoneHandler is governed by CONF_ENABLE_GLARE_ZONES
+    and self-gates on cover type / time window / zone presence.
+    """
+    coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
+    registry = coord._build_pipeline()
+    handler_types = {type(h) for h in registry._handlers}
+    assert GlareZoneHandler in handler_types
+    assert SolarHandler not in handler_types
+
+
+@pytest.mark.unit
+def test_glare_zone_handler_present_regardless_of_sun_tracking():
+    """GlareZoneHandler presence is independent of CONF_ENABLE_SUN_TRACKING."""
+    for flag in (True, False):
+        coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: flag})
+        registry = coord._build_pipeline()
+        handler_types = {type(h) for h in registry._handlers}
+        assert GlareZoneHandler in handler_types, (
+            f"GlareZoneHandler missing when CONF_ENABLE_SUN_TRACKING={flag}"
+        )
+
+
+@pytest.mark.unit
 def test_sun_tracking_disabled_pipeline_falls_through_to_default():
     """With sun tracking off and sun in FOV, pipeline result comes from DefaultHandler."""
     from custom_components.adaptive_cover_pro.enums import ControlMethod
@@ -97,7 +116,9 @@ def test_sun_tracking_disabled_pipeline_falls_through_to_default():
     coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
     registry = coord._build_pipeline()
 
-    # Sun is valid — would normally trigger SolarHandler
+    # Sun is valid — would normally trigger SolarHandler. GlareZoneHandler is
+    # still present (issue #238) but self-gates on glare-zone config, so with
+    # none configured it returns None and control falls through to DefaultHandler.
     snap = make_snapshot(direct_sun_valid=True, calculate_percentage_return=60.0)
     result = registry.evaluate(snap)
 
