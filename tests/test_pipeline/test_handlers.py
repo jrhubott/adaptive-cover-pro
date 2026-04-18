@@ -429,7 +429,6 @@ class TestOverrideHandlerContributeDefault:
     def test_default_contribute_is_empty_dict(self) -> None:
         """OverrideHandler.contribute() default returns {} — handlers opt in by overriding."""
         from custom_components.adaptive_cover_pro.pipeline.handler import OverrideHandler
-        from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
         class _Dummy(OverrideHandler):
             name = "dummy"
