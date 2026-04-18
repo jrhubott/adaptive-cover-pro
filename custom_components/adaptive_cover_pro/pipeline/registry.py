@@ -79,11 +79,15 @@ class PipelineRegistry:
                     )
                 )
 
-        # Field-level merge: fill None optional fields on the winner's result
-        # from lower-priority handlers.  This allows sensor-populating data
-        # (e.g. climate_data) to surface even when the climate handler doesn't
-        # win the position.  Winner's values always take precedence.
+        # Field-level merge: fill None optional fields on the winner's result.
+        # Two sources, tried in order:
+        #   1. Lower-priority handlers that also matched (existing behaviour).
+        #   2. Every handler's contribute() output — handlers that returned None
+        #      from evaluate() (e.g. ClimateHandler deferring GLARE_CONTROL) can
+        #      still surface metadata this way (Issue #240).
+        # Winner's non-None values are never overwritten.
         _MERGEABLE = ("climate_state", "climate_strategy", "climate_data", "tilt")
+        contributions: list[dict[str, object]] = [h.contribute(snapshot) for h, _ in evaluated]
         merged: dict[str, object] = {}
         for field_name in _MERGEABLE:
             if getattr(winner, field_name) is None:
@@ -92,6 +96,12 @@ class PipelineRegistry:
                     if val is not None:
                         merged[field_name] = val
                         break
+                else:
+                    for contrib in contributions:
+                        val = contrib.get(field_name)
+                        if val is not None:
+                            merged[field_name] = val
+                            break
 
         return PipelineResult(
             position=winner.position,

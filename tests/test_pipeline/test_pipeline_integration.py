@@ -271,6 +271,50 @@ class TestClimateDataPropagation:
         assert result.climate_data is not None
         assert result.climate_data.is_summer is True
 
+    def test_registry_climate_data_populated_when_climate_defers_glare_control(
+        self,
+    ) -> None:
+        """climate_data must be present when ClimateHandler returns None for GLARE_CONTROL.
+
+        Regression for Issue #240: intermediate temp + presence + sunny causes ClimateHandler
+        to defer (returns None) so SolarHandler wins.  Before the fix, climate_data was lost
+        because the merge loop only iterated matching results.  After the fix,
+        ClimateHandler.contribute() surfaces climate_data regardless.
+        """
+        from unittest.mock import MagicMock
+
+        cover = MagicMock()
+        cover.direct_sun_valid = True
+        cover.valid = True
+        cover.calculate_percentage = MagicMock(return_value=55.0)
+        cover.logger = MagicMock()
+        config = MagicMock()
+        config.min_pos = None
+        config.max_pos = None
+        config.min_pos_sun_only = False
+        config.max_pos_sun_only = False
+        cover.config = config
+
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_climate_readings_intermediate(),
+            climate_options=_climate_options_intermediate(),
+            direct_sun_valid=True,
+            calculate_percentage_return=55.0,
+        )
+        result = self.registry.evaluate(snap)
+        assert result.control_method == ControlMethod.SOLAR, (
+            "ClimateHandler should defer (GLARE_CONTROL) so SolarHandler wins"
+        )
+        assert result.climate_data is not None, (
+            "REGRESSION (Issue #240): climate_data was dropped when ClimateHandler "
+            "returned None for the GLARE_CONTROL defer path"
+        )
+        assert isinstance(result.climate_data, ClimateCoverData)
+        assert result.climate_data.is_presence is True
+        assert result.climate_data.is_sunny is True
+
     def test_registry_copies_tilt_from_winning_handler(self) -> None:
         """Registry result copies tilt field from the winning handler's result."""
         from unittest.mock import patch

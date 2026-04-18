@@ -559,3 +559,90 @@ class TestClimateHandlerPositionLimits:
             f"Expected winter heating position 100 but got {result.position}. "
             "Sun-only max limit must not clamp climate handler output."
         )
+
+
+# ---------------------------------------------------------------------------
+# ClimateHandler.contribute() — surfaces climate_data when evaluate() defers
+# ---------------------------------------------------------------------------
+
+
+class TestClimateHandlerContribute:
+    """ClimateHandler.contribute() must expose climate_data even when evaluate() returns None.
+
+    Issue #240: The GLARE_CONTROL defer path returns None from evaluate() so the
+    pipeline falls through to GlareZone/Solar.  contribute() is the hook the
+    registry uses to harvest climate_data regardless of the evaluate() outcome.
+    """
+
+    handler = ClimateHandler()
+
+    def test_contribute_returns_climate_data_when_deferring(self) -> None:
+        """Intermediate temp + presence + sunny → evaluate() is None but contribute() yields climate_data."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                inside_temperature=22.0,
+                is_presence=True,
+                is_sunny=True,
+            ),
+            climate_options=_make_options(temp_low=18.0, temp_high=26.0),
+        )
+        assert self.handler.evaluate(snap) is None, "sanity: should defer on GLARE_CONTROL"
+        contrib = self.handler.contribute(snap)
+        assert "climate_data" in contrib
+        assert isinstance(contrib["climate_data"], ClimateCoverData)
+        assert contrib["climate_data"].is_presence is True
+        assert contrib["climate_data"].is_sunny is True
+
+    def test_contribute_returns_empty_when_climate_mode_off(self) -> None:
+        """Climate mode disabled → contribute() returns {}."""
+        snap = make_snapshot(climate_mode_enabled=False)
+        assert self.handler.contribute(snap) == {}
+
+    def test_contribute_returns_empty_when_readings_none(self) -> None:
+        """Missing readings → contribute() returns {}."""
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=None,
+            climate_options=_make_options(),
+        )
+        assert self.handler.contribute(snap) == {}
+
+    def test_contribute_returns_empty_when_options_none(self) -> None:
+        """Missing options → contribute() returns {}."""
+        snap = make_snapshot(
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(),
+            climate_options=None,
+        )
+        assert self.handler.contribute(snap) == {}
+
+    def test_contribute_returns_empty_outside_time_window(self) -> None:
+        """Outside the time window → contribute() returns {}."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=22.0),
+            climate_options=_make_options(),
+            in_time_window=False,
+        )
+        assert self.handler.contribute(snap) == {}
+
+    def test_contribute_climate_data_consistent_with_evaluate_when_handler_wins(self) -> None:
+        """When evaluate() wins, contribute() returns the same climate_data (single source of truth)."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0),
+            climate_options=_make_options(temp_low=18.0),
+        )
+        result = self.handler.evaluate(snap)
+        contrib = self.handler.contribute(snap)
+        assert result is not None, "winter should win"
+        assert "climate_data" in contrib
+        assert contrib["climate_data"].inside_temperature == result.climate_data.inside_temperature
+        assert contrib["climate_data"].is_winter == result.climate_data.is_winter
