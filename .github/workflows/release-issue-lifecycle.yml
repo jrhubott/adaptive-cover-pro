@@ -3,6 +3,14 @@ name: "Release Issue Lifecycle"
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (e.g. v2.18.1)"
+        required: true
+      release_url:
+        description: "Release URL"
+        required: true
 
 permissions:
   issues: write
@@ -13,8 +21,8 @@ jobs:
   release-lifecycle:
     name: "Process Issues on Stable Release"
     runs-on: ubuntu-latest
-    # Only run for stable releases; skip betas/pre-releases
-    if: github.event.release.prerelease == false && !contains(github.event.release.tag_name, '-beta') && !contains(github.event.release.tag_name, '-alpha') && !contains(github.event.release.tag_name, '-rc')
+    # Only run for stable releases; skip betas/pre-releases (release event only)
+    if: github.event_name == 'workflow_dispatch' || (github.event.release.prerelease == false && !contains(github.event.release.tag_name, '-beta') && !contains(github.event.release.tag_name, '-alpha') && !contains(github.event.release.tag_name, '-rc'))
 
     steps:
       - name: "Checkout repository"
@@ -25,7 +33,7 @@ jobs:
       - name: "Find previous stable tag and extract issue references"
         id: refs
         run: |
-          CURRENT_TAG="${{ github.event.release.tag_name }}"
+          CURRENT_TAG="${{ github.event.release.tag_name || inputs.tag_name }}"
 
           # Find the previous stable tag (exclude pre-release tags)
           PREV_TAG=$(git tag --sort=-version:refname \
@@ -60,7 +68,7 @@ jobs:
         env:
           NUMBERS: ${{ steps.refs.outputs.numbers }}
           CURRENT_TAG: ${{ steps.refs.outputs.current_tag }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_URL: ${{ github.event.release.html_url || inputs.release_url }}
         with:
           script: |
             const numbers = process.env.NUMBERS.trim().split(/\s+/).filter(Boolean).map(Number);
