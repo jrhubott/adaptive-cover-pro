@@ -1,4 +1,7 @@
-"""Tests for GlareZoneHandler."""
+"""Tests for GlareZoneHandler.
+
+Units: all glare zone coordinates (x, y, radius) and window_width are metres.
+"""
 
 from __future__ import annotations
 
@@ -44,10 +47,10 @@ def _make_vertical_cover(
 
 def _make_glare_config(
     zones=None,
-    window_width: float = 120.0,
+    window_width: float = 1.2,
 ) -> GlareZonesConfig:
     if zones is None:
-        zones = [GlareZone(name="desk", x=0.0, y=400.0, radius=30.0)]
+        zones = [GlareZone(name="desk", x=0.0, y=4.0, radius=0.3)]
     return GlareZonesConfig(zones=zones, window_width=window_width)
 
 
@@ -145,7 +148,7 @@ class TestGlareZoneHandlerLogic:
     def test_returns_glare_zone_control_method_when_active(self) -> None:
         """When zone is closer than base distance, return GLARE_ZONE method.
 
-        Zone at 0.9m is closer than base_distance=10m, so it's in the
+        Zone at 0.9 m is closer than base_distance=10 m, so it's in the
         illuminated area and needs extra protection from GlareZoneHandler.
         """
         cover = _make_vertical_cover(
@@ -154,10 +157,10 @@ class TestGlareZoneHandlerLogic:
             direct_sun_valid=True,
             calculate_percentage_return=5.0,
         )
-        # Zone at y=100cm, radius=10cm → nearest_y = 90cm = 0.9m < base 10m
+        # Zone at y=1.0 m, radius=0.1 m → nearest_y = 0.9 m < base 10 m
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=10.0)],
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.1)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -172,17 +175,17 @@ class TestGlareZoneHandlerLogic:
     def test_falls_through_when_zone_farther_than_base(self) -> None:
         """Returns None when all zones are farther than base distance (in shadow).
 
-        Zone at ~3.7m is beyond base_distance=1m. SolarHandler already blocks
-        sun beyond 1m, so the zone is in shadow — no override needed.
+        Zone at ~3.7 m is beyond base_distance=1 m. SolarHandler already blocks
+        sun beyond 1 m, so the zone is in shadow — no override needed.
         """
         cover = _make_vertical_cover(
-            distance=1.0,  # base distance 1m — blocks sun beyond 1m
+            distance=1.0,  # base distance 1 m — blocks sun beyond 1 m
             gamma=0.0,
             direct_sun_valid=True,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=400.0, radius=30.0)],  # ~3.7m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=4.0, radius=0.3)],  # ~3.7 m
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -210,16 +213,16 @@ class TestGlareZoneHandlerLogic:
     def test_two_zones_with_equal_min_distance_both_in_reason(self) -> None:
         """Both zones appear in the reason string when they share the minimum distance."""
         # Two zones with the same nearest_y (gamma=0):
-        # For zone_a: nearest_y = 100 - 0 = 100 → effective_distance = 1.0m
-        # For zone_b: nearest_y = 130 - 30 = 100 → effective_distance = 1.0m
-        zone_a = GlareZone(name="desk_left", x=0.0, y=100.0, radius=0.0)
-        zone_b = GlareZone(name="desk_right", x=0.0, y=130.0, radius=30.0)
+        # For zone_a: nearest_y = 1.0 - 0 = 1.0 → effective_distance = 1.0 m
+        # For zone_b: nearest_y = 1.3 - 0.3 = 1.0 → effective_distance = 1.0 m
+        zone_a = GlareZone(name="desk_left", x=0.0, y=1.0, radius=0.0)
+        zone_b = GlareZone(name="desk_right", x=0.0, y=1.3, radius=0.3)
         glare_cfg = GlareZonesConfig(
             zones=[zone_a, zone_b],
-            window_width=400.0,
+            window_width=4.0,
         )
         cover = _make_vertical_cover(
-            distance=5.0,  # base distance 5m > 1m zone distance
+            distance=5.0,  # base distance 5 m > 1 m zone distance
             gamma=0.0,
             direct_sun_valid=True,
             calculate_percentage_return=8.0,
@@ -240,16 +243,16 @@ class TestGlareZoneHandlerLogic:
         """Handler uses the valid zone's distance when one zone is naturally blocked."""
         # zone_blocked: x far outside the window half-width → returns None
         # x_at_window = x + y * tan(gamma). At gamma=0, x_at_window = x.
-        # window_half_width = 100.0cm, so any |x| > 100 is blocked.
-        zone_blocked = GlareZone(name="blocked", x=500.0, y=300.0, radius=0.0)
-        # zone_valid at 1.5m, closer than base_distance of 5m → needs protection
-        zone_valid = GlareZone(name="valid", x=0.0, y=150.0, radius=0.0)
+        # window_half_width = 1.0 m, so any |x| > 1.0 is blocked.
+        zone_blocked = GlareZone(name="blocked", x=5.0, y=3.0, radius=0.0)
+        # zone_valid at 1.5 m, closer than base_distance of 5 m → needs protection
+        zone_valid = GlareZone(name="valid", x=0.0, y=1.5, radius=0.0)
         glare_cfg = GlareZonesConfig(
             zones=[zone_blocked, zone_valid],
-            window_width=200.0,  # half-width = 100cm
+            window_width=2.0,  # half-width = 1.0 m
         )
         cover = _make_vertical_cover(
-            distance=5.0,  # 5m > 1.5m zone_valid distance → zone needs protection
+            distance=5.0,  # 5 m > 1.5 m zone_valid distance → zone needs protection
             gamma=0.0,
             direct_sun_valid=True,
             calculate_percentage_return=12.0,
@@ -288,13 +291,13 @@ class TestGlareZoneBoundaryAtBaseDistance:
     def test_zone_at_exact_base_distance_falls_through(self) -> None:
         """Zone at exactly base_distance is already in shadow — returns None.
 
-        nearest_y = 200cm → effective_distance = 2.0m = base_distance exactly.
+        nearest_y = 2.0 m → effective_distance = 2.0 m = base_distance exactly.
         The >= check means min_distance >= base_distance → handler falls through.
         """
         cover = _make_vertical_cover(distance=2.0, gamma=0.0, direct_sun_valid=True)
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=200.0, radius=0.0)],
-            window_width=400.0,
+            zones=[GlareZone(name="desk", x=0.0, y=2.0, radius=0.0)],
+            window_width=4.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -313,8 +316,8 @@ class TestGlareZoneBoundaryAtBaseDistance:
             calculate_percentage_return=20.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=199.0, radius=0.0)],  # 1.99 m
-            window_width=400.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.99, radius=0.0)],  # 1.99 m
+            window_width=4.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -330,8 +333,8 @@ class TestGlareZoneBoundaryAtBaseDistance:
         """Zone 1 cm farther than base (2.01 m > 2.0 m) — already in shadow."""
         cover = _make_vertical_cover(distance=2.0, gamma=0.0, direct_sun_valid=True)
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=201.0, radius=0.0)],  # 2.01 m
-            window_width=400.0,
+            zones=[GlareZone(name="desk", x=0.0, y=2.01, radius=0.0)],  # 2.01 m
+            window_width=4.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -356,8 +359,8 @@ class TestGlareZonePositionFloor:
             calculate_percentage_return=0.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=50.0, radius=0.0)],  # 0.5 m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=0.5, radius=0.0)],  # 0.5 m
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -378,8 +381,8 @@ class TestGlareZonePositionFloor:
             calculate_percentage_return=-5.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=50.0, radius=0.0)],
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=0.5, radius=0.0)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -399,8 +402,8 @@ class TestGlareZonePositionLimits:
 
     def _closer_zone_snap(self, cover) -> object:
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=50.0, radius=0.0)],  # 0.5 m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=0.5, radius=0.0)],  # 0.5 m
+            window_width=2.0,
         )
         return make_snapshot(
             cover=cover,
@@ -448,7 +451,7 @@ class TestGlareZoneWithGamma:
     def test_positive_gamma_zone_reachable_through_wide_window(self) -> None:
         """At gamma=30°, a centred zone at 2 m depth is still reachable.
 
-        x_at_window = 0 + 200 * tan(30°) ≈ 115 cm < 200 cm (half-width) → reachable.
+        x_at_window = 0 + 2.0 * tan(30°) ≈ 1.15 m < 2.0 m (half-width) → reachable.
         Effective distance 2.0 m < base 5.0 m → handler fires.
         """
         cover = _make_vertical_cover(
@@ -458,8 +461,8 @@ class TestGlareZoneWithGamma:
             calculate_percentage_return=25.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=200.0, radius=0.0)],
-            window_width=400.0,  # half-width = 200 cm
+            zones=[GlareZone(name="desk", x=0.0, y=2.0, radius=0.0)],
+            window_width=4.0,  # half-width = 2.0 m
         )
         snap = make_snapshot(
             cover=cover,
@@ -474,7 +477,7 @@ class TestGlareZoneWithGamma:
     def test_gamma_blocks_zone_outside_narrow_window(self) -> None:
         """At gamma=-60°, a zone's entry point falls outside the window — blocked.
 
-        x_at_window = 0 + 100 * tan(-60°) ≈ -173 cm; half-width = 100 cm → blocked.
+        x_at_window = 0 + 1.0 * tan(-60°) ≈ -1.73 m; half-width = 1.0 m → blocked.
         All zones return None → handler returns None.
         """
         cover = _make_vertical_cover(
@@ -483,8 +486,8 @@ class TestGlareZoneWithGamma:
             direct_sun_valid=True,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],
-            window_width=200.0,  # half-width = 100 cm
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,  # half-width = 1.0 m
         )
         snap = make_snapshot(
             cover=cover,
@@ -501,14 +504,14 @@ class TestGlareZoneAllGeometryBlocked:
     handler = GlareZoneHandler()
 
     def test_all_zones_outside_window_returns_none(self) -> None:
-        """Zones far off-centre (x=500) are blocked by the narrow window."""
+        """Zones far off-centre (x=5) are blocked by the narrow window."""
         cover = _make_vertical_cover(distance=5.0, gamma=0.0, direct_sun_valid=True)
         glare_cfg = GlareZonesConfig(
             zones=[
-                GlareZone(name="zone_a", x=500.0, y=200.0, radius=0.0),
-                GlareZone(name="zone_b", x=600.0, y=150.0, radius=0.0),
+                GlareZone(name="zone_a", x=5.0, y=2.0, radius=0.0),
+                GlareZone(name="zone_b", x=6.0, y=1.5, radius=0.0),
             ],
-            window_width=100.0,  # half-width = 50 cm; both x > 50
+            window_width=1.0,  # half-width = 0.5 m; both |x| > 0.5
         )
         snap = make_snapshot(
             cover=cover,
@@ -522,9 +525,9 @@ class TestGlareZoneAllGeometryBlocked:
         """Zone with radius > y (nearest_y <= 0) is behind the window wall."""
         cover = _make_vertical_cover(distance=5.0, gamma=0.0, direct_sun_valid=True)
         glare_cfg = GlareZonesConfig(
-            # y=50, radius=60 → nearest_y = 50 - 60 = -10 ≤ 0 → blocked
-            zones=[GlareZone(name="desk", x=0.0, y=50.0, radius=60.0)],
-            window_width=200.0,
+            # y=0.5, radius=0.6 → nearest_y = 0.5 - 0.6 = -0.1 ≤ 0 → blocked
+            zones=[GlareZone(name="desk", x=0.0, y=0.5, radius=0.6)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -549,8 +552,8 @@ class TestGlareZoneRawCalculatedPosition:
             calculate_percentage_return=40.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],  # 1 m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],  # 1 m
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -573,8 +576,8 @@ class TestGlareZoneDescribeSkip:
         snap = make_snapshot(
             cover_type="cover_blind",
             glare_zones=GlareZonesConfig(
-                zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],
-                window_width=200.0,
+                zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+                window_width=2.0,
             ),
             active_zone_names=set(),
             in_time_window=True,
@@ -591,8 +594,8 @@ class TestGlareZoneDescribeSkip:
             cover=cover,
             cover_type="cover_blind",
             glare_zones=GlareZonesConfig(
-                zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],
-                window_width=200.0,
+                zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+                window_width=2.0,
             ),
             active_zone_names={"desk"},
             in_time_window=True,
@@ -616,10 +619,10 @@ class TestGlareZoneReasonString:
             direct_sun_valid=True,
             calculate_percentage_return=30.0,
         )
-        # y=100, radius=0 → nearest_y=100 cm → 1.00 m effective distance
+        # y=1.0, radius=0.0 → nearest_y=1.0 m → 1.00 m effective distance
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -640,8 +643,8 @@ class TestGlareZoneReasonString:
             calculate_percentage_return=30.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="my_monitor", x=0.0, y=100.0, radius=0.0)],
-            window_width=200.0,
+            zones=[GlareZone(name="my_monitor", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -662,8 +665,8 @@ class TestGlareZoneReasonString:
             calculate_percentage_return=25.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -685,7 +688,7 @@ class TestGlareZoneLargeRadius:
     def test_large_radius_brings_zone_very_close_to_window(self) -> None:
         """A large radius makes nearest_y very small → very small effective distance.
 
-        y=200, radius=190 → nearest_y = 200 - 190 = 10 cm = 0.10 m.
+        y=2.0, radius=1.9 → nearest_y = 2.0 - 1.9 = 0.10 m.
         0.10 m << base 5.0 m → handler fires with override 0.10.
         """
         cover = _make_vertical_cover(
@@ -695,8 +698,8 @@ class TestGlareZoneLargeRadius:
             calculate_percentage_return=5.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=200.0, radius=190.0)],
-            window_width=400.0,
+            zones=[GlareZone(name="desk", x=0.0, y=2.0, radius=1.9)],
+            window_width=4.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -714,12 +717,12 @@ class TestGlareZoneLargeRadius:
     def test_radius_larger_than_y_is_behind_wall(self) -> None:
         """Zone with radius > y extends behind the window wall — returns None.
 
-        y=50, radius=60 → nearest_y = 50 - 60 = -10 ≤ 0 → geometry blocks it.
+        y=0.5, radius=0.6 → nearest_y = 0.5 - 0.6 = -0.1 ≤ 0 → geometry blocks it.
         """
         cover = _make_vertical_cover(distance=5.0, gamma=0.0, direct_sun_valid=True)
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=50.0, radius=60.0)],
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=0.5, radius=0.6)],
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -749,11 +752,11 @@ class TestGlareZoneRegressionMaxVsMin:
         )
         glare_cfg = GlareZonesConfig(
             zones=[
-                GlareZone(name="zone_far", x=0.0, y=350.0, radius=0.0),  # 3.5 m
-                GlareZone(name="zone_mid", x=0.0, y=150.0, radius=0.0),  # 1.5 m
-                GlareZone(name="zone_near", x=0.0, y=50.0, radius=0.0),  # 0.5 m
+                GlareZone(name="zone_far", x=0.0, y=3.5, radius=0.0),  # 3.5 m
+                GlareZone(name="zone_mid", x=0.0, y=1.5, radius=0.0),  # 1.5 m
+                GlareZone(name="zone_near", x=0.0, y=0.5, radius=0.0),  # 0.5 m
             ],
-            window_width=400.0,
+            window_width=4.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -784,8 +787,8 @@ class TestGlareZoneRegressionMaxVsMin:
             calculate_percentage_return=80.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="couch", x=0.0, y=600.0, radius=0.0)],  # 6 m
-            window_width=400.0,
+            zones=[GlareZone(name="couch", x=0.0, y=6.0, radius=0.0)],  # 6 m
+            window_width=4.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -794,4 +797,3 @@ class TestGlareZoneRegressionMaxVsMin:
             active_zone_names={"couch"},
         )
         assert self.handler.evaluate(snap) is None
-

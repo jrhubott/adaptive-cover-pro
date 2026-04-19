@@ -12,8 +12,9 @@ class GlareZone:
     """A single glare protection zone on the floor.
 
     Coordinates are relative to the window centre projected onto the floor:
-      x = along the wall (positive = right when facing window from inside), cm
-      y = into the room (perpendicular to window), cm — must be positive
+      x = along the wall (positive = right when facing window from inside), metres
+      y = into the room (perpendicular to window), metres — must be positive
+      radius = zone radius, metres
     """
 
     name: str
@@ -27,7 +28,7 @@ class GlareZonesConfig:
     """All glare zone configuration for a vertical cover."""
 
     zones: list[GlareZone]
-    window_width: float  # cm — used to check if a sun ray can reach a zone
+    window_width: float  # metres — used to check if a sun ray can reach a zone
 
 
 @dataclass

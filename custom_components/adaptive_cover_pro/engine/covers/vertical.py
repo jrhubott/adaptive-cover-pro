@@ -31,9 +31,9 @@ def glare_zone_effective_distance(
     uses min() across zones to select the most restrictive (closest) zone.
 
     Args:
-        zone: The glare zone definition (x, y in cm, radius in cm).
+        zone: The glare zone definition (x, y, radius — all in metres).
         gamma: Surface solar azimuth in degrees (positive = sun to the right).
-        window_half_width: Half the window width in cm.
+        window_half_width: Half the window width in metres.
 
     """
     gamma_rad = rad(gamma)
@@ -54,7 +54,7 @@ def glare_zone_effective_distance(
     if abs(x_at_window) > window_half_width:
         return None  # Ray enters outside the window opening — zone is naturally blocked
 
-    return nearest_y / 100.0  # cm → metres
+    return nearest_y
 
 
 @dataclass

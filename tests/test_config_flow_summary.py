@@ -160,7 +160,7 @@ def _full_vertical() -> dict:
             CONF_CLOUD_COVERAGE_THRESHOLD: 50,
             CONF_CLOUD_SUPPRESSION: True,
             CONF_ENABLE_GLARE_ZONES: True,
-            CONF_WINDOW_WIDTH: 150,
+            CONF_WINDOW_WIDTH: 1.5,
         }
     )
     return cfg
@@ -512,7 +512,7 @@ def test_blind_spot_shown_when_enabled():
 
 def test_glare_zones_hidden_when_disabled():
     """Glare zone bullet absent when not enabled."""
-    cfg = {CONF_ENABLE_GLARE_ZONES: False, CONF_WINDOW_WIDTH: 150}
+    cfg = {CONF_ENABLE_GLARE_ZONES: False, CONF_WINDOW_WIDTH: 1.5}
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "Glare zones" not in summary
 
@@ -521,19 +521,19 @@ def test_glare_zones_shown_when_enabled():
     """Glare zone bullet appears with zone names and window width."""
     cfg = {
         CONF_ENABLE_GLARE_ZONES: True,
-        CONF_WINDOW_WIDTH: 150,
+        CONF_WINDOW_WIDTH: 1.5,
         "glare_zone_1_name": "Desk",
         "glare_zone_2_name": "",
     }
     summary = _build_config_summary(cfg, SensorType.BLIND)
     assert "Glare zones" in summary
-    assert "150cm" in summary
+    assert "1.50m" in summary
     assert "Desk" in summary
 
 
 def test_glare_zones_not_shown_for_awning():
     """Glare zone bullet absent for awning type."""
-    cfg = {CONF_ENABLE_GLARE_ZONES: True, CONF_WINDOW_WIDTH: 100}
+    cfg = {CONF_ENABLE_GLARE_ZONES: True, CONF_WINDOW_WIDTH: 1.0}
     summary = _build_config_summary(cfg, SensorType.AWNING)
     assert "Glare zones" not in summary
 

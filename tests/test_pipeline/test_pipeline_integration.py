@@ -1070,8 +1070,8 @@ class TestGlareZoneVsClimatePriority:
         to fire naturally at priority 45 (below ClimateHandler at 50).
         """
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="tv", x=0.0, y=150.0, radius=30.0)],
-            window_width=120.0,
+            zones=[GlareZone(name="tv", x=0.0, y=1.5, radius=0.3)],
+            window_width=1.2,
         )
         snap = make_snapshot(
             cover=_make_glare_climate_cover(),
@@ -1113,8 +1113,8 @@ class TestGlareZoneVsClimatePriority:
     def test_solar_wins_when_zone_beyond_base_distance(self) -> None:
         """Solar wins when climate defers and the glare zone is already shaded."""
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="tv", x=0.0, y=150.0, radius=30.0)],
-            window_width=120.0,
+            zones=[GlareZone(name="tv", x=0.0, y=1.5, radius=0.3)],
+            window_width=1.2,
         )
         snap = make_snapshot(
             cover=_make_glare_climate_cover(),

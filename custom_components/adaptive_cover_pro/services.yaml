@@ -826,14 +826,14 @@ set_geometry:
           unit_of_measurement: m
     window_width:
       name: Window width
-      description: "Window width in centimetres (10–500 cm). Vertical blind only."
+      description: "Window width in metres (0.1–5 m). Vertical blind only."
       selector:
         number:
-          min: 10
-          max: 500
-          step: 1
+          min: 0.1
+          max: 5
+          step: 0.01
           mode: slider
-          unit_of_measurement: cm
+          unit_of_measurement: m
     window_depth:
       name: Window depth
       description: "Window reveal depth in metres (0–0.5 m). Vertical blind only."

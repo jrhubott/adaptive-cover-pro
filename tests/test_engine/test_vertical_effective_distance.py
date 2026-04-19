@@ -80,8 +80,8 @@ def test_glare_zone_loop_removed_from_calculate_position() -> None:
     )
 
     cover = _make_cover(distance=3.0)
-    zone = GlareZone(name="desk", x=0.0, y=400.0, radius=30.0)
-    glare_cfg = GlareZonesConfig(zones=[zone], window_width=120.0)
+    zone = GlareZone(name="desk", x=0.0, y=4.0, radius=0.3)
+    glare_cfg = GlareZonesConfig(zones=[zone], window_width=1.2)
     cover.vert_config = dataclasses.replace(cover.vert_config, glare_zones=glare_cfg)
     cover.active_zone_names = {"desk"}
     result_with_zone = cover.calculate_percentage()

@@ -179,13 +179,13 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
                 unit_of_measurement="m",
             )
         ),
-        vol.Optional(CONF_WINDOW_WIDTH, default=100): selector.NumberSelector(
+        vol.Optional(CONF_WINDOW_WIDTH, default=1.0): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=10,
-                max=500,
-                step=1,
+                min=0.1,
+                max=5.0,
+                step=0.01,
                 mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
+                unit_of_measurement="m",
             )
         ),
         vol.Optional(CONF_WINDOW_DEPTH, default=0.0): selector.NumberSelector(
@@ -1479,7 +1479,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if zone_names:
             gz_parts.append(f"zones: {', '.join(zone_names)}")
         if width:
-            gz_parts.append(f"{width}cm window")
+            gz_parts.append(f"{float(width):.2f}m window")
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
         lines.append(
             f"🔆 Glare zones: lowers blind further to protect floor areas from glare"
@@ -2164,37 +2164,37 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
         schema_dict[
             vol.Optional(f"{prefix}_name", default=opts.get(f"{prefix}_name", ""))
         ] = selector.TextSelector()
-        schema_dict[vol.Optional(f"{prefix}_x", default=opts.get(f"{prefix}_x", 0))] = (
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=-500,
-                    max=500,
-                    step=10,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="cm",
-                )
+        schema_dict[
+            vol.Optional(f"{prefix}_x", default=opts.get(f"{prefix}_x", 0.0))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-5.0,
+                max=5.0,
+                step=0.05,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="m",
             )
         )
         schema_dict[
-            vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 100))
+            vol.Optional(f"{prefix}_y", default=opts.get(f"{prefix}_y", 1.0))
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=0,
-                max=1000,
-                step=10,
+                min=0.0,
+                max=10.0,
+                step=0.05,
                 mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
+                unit_of_measurement="m",
             )
         )
         schema_dict[
-            vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 30))
+            vol.Optional(f"{prefix}_radius", default=opts.get(f"{prefix}_radius", 0.3))
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=10,
-                max=200,
-                step=5,
+                min=0.1,
+                max=2.0,
+                step=0.05,
                 mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
+                unit_of_measurement="m",
             )
         )
     return vol.Schema(schema_dict)
@@ -2202,6 +2202,8 @@ def _build_glare_zones_schema(options: dict | None = None) -> vol.Schema:
 
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
+
+    VERSION = 2
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

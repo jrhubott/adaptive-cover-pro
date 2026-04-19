@@ -590,7 +590,7 @@ def test_build_glare_zones_schema_with_existing_options():
     )
     import voluptuous as vol
 
-    options = {"glare_zone_1_name": "My Zone", "glare_zone_1_x": 100}
+    options = {"glare_zone_1_name": "My Zone", "glare_zone_1_x": 1.0}
     schema = _build_glare_zones_schema(options=options)
     assert isinstance(schema, vol.Schema)
     assert len(schema.schema) == 16
@@ -940,21 +940,21 @@ async def test_options_flow_glare_zones_step_saves(hass: HomeAssistant) -> None:
         result["flow_id"],
         {
             "glare_zone_1_name": "East Window",
-            "glare_zone_1_x": 0,
-            "glare_zone_1_y": 100,
-            "glare_zone_1_radius": 30,
+            "glare_zone_1_x": 0.0,
+            "glare_zone_1_y": 1.0,
+            "glare_zone_1_radius": 0.3,
             "glare_zone_2_name": "",
-            "glare_zone_2_x": 0,
-            "glare_zone_2_y": 100,
-            "glare_zone_2_radius": 30,
+            "glare_zone_2_x": 0.0,
+            "glare_zone_2_y": 1.0,
+            "glare_zone_2_radius": 0.3,
             "glare_zone_3_name": "",
-            "glare_zone_3_x": 0,
-            "glare_zone_3_y": 100,
-            "glare_zone_3_radius": 30,
+            "glare_zone_3_x": 0.0,
+            "glare_zone_3_y": 1.0,
+            "glare_zone_3_radius": 0.3,
             "glare_zone_4_name": "",
-            "glare_zone_4_x": 0,
-            "glare_zone_4_y": 100,
-            "glare_zone_4_radius": 30,
+            "glare_zone_4_x": 0.0,
+            "glare_zone_4_y": 1.0,
+            "glare_zone_4_radius": 0.3,
         },
     )
     assert result["type"] in ("form", "menu", "create_entry")
