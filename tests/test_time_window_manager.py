@@ -87,18 +87,26 @@ def test_after_start_time_entity_returns_false_when_future():
         end_time_entity=None,
     )
 
-    future_time = dt.datetime.now() + dt.timedelta(hours=2)
+    today = dt.date(2024, 6, 15)
+    now = dt.datetime(2024, 6, 15, 10, 0, 0)
+    future_time = dt.datetime(2024, 6, 15, 12, 0, 0)
 
     with (
         patch(
             "custom_components.adaptive_cover_pro.managers.time_window.get_safe_state",
-            return_value="2099-01-01T22:00:00",
+            return_value="2024-06-15T12:00:00",
         ),
         patch(
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=future_time,
         ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt"
+        ) as mock_dt,
     ):
+        mock_dt.date.today.return_value = today
+        mock_dt.datetime.now.return_value = now
+        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is False
@@ -423,8 +431,9 @@ def test_after_start_time_entity_future_today_returns_false():
         end_time_entity=None,
     )
 
-    # Entity reports today's date but 1 hour in the future — small enough to never cross midnight
-    future_today = dt.datetime.now() + dt.timedelta(hours=1)
+    today = dt.date(2024, 6, 15)
+    now = dt.datetime(2024, 6, 15, 10, 0, 0)
+    future_today = dt.datetime(2024, 6, 15, 11, 0, 0)
 
     with (
         patch(
@@ -435,7 +444,13 @@ def test_after_start_time_entity_future_today_returns_false():
             "custom_components.adaptive_cover_pro.managers.time_window.get_datetime_from_str",
             return_value=future_today,
         ),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.time_window.dt"
+        ) as mock_dt,
     ):
+        mock_dt.date.today.return_value = today
+        mock_dt.datetime.now.return_value = now
+        mock_dt.timedelta = dt.timedelta
         result = mgr.after_start_time
 
     assert result is False
