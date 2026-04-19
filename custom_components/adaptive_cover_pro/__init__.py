@@ -34,6 +34,7 @@ from .const import (
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
+    CONF_WINDOW_WIDTH,
     DOMAIN,
     _LOGGER,
 )
@@ -227,6 +228,60 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await async_unload_services(hass)
 
     return unload_ok
+
+
+# Fields that moved from centimetres to metres in config-entry version 2.
+# Every legitimate cm value in the v1 UI was ≥ 10, so a stored value > 5
+# is treated as cm and divided by 100. Values ≤ 5 are assumed to already be
+# metres (hand-edited or re-migrated) and are left as-is — this keeps the
+# migration idempotent.
+_CM_TO_M_SENTINEL = 5.0
+_GLARE_ZONE_DIMENSION_KEYS = tuple(
+    f"glare_zone_{i}_{suffix}"
+    for i in range(1, 5)
+    for suffix in ("x", "y", "radius")
+)
+
+
+def _migrate_cm_to_m(value: float | int | None) -> float | None:
+    """Convert a cm value to metres if it's large enough to be cm; else pass through."""
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return value  # type: ignore[return-value]
+    if abs(numeric) <= _CM_TO_M_SENTINEL:
+        return numeric  # already metres (or effectively zero) — leave alone
+    return round(numeric / 100.0, 2)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entries to the current schema version."""
+    if entry.version >= 2:
+        return True
+
+    new_options = dict(entry.options)
+    changed: list[str] = []
+
+    for key in (CONF_WINDOW_WIDTH, *_GLARE_ZONE_DIMENSION_KEYS):
+        if key not in new_options:
+            continue
+        original = new_options[key]
+        migrated = _migrate_cm_to_m(original)
+        if migrated != original:
+            new_options[key] = migrated
+            changed.append(key)
+
+    if changed:
+        _LOGGER.info(
+            "Migrated %s from cm to metres (%s)",
+            entry.data.get("name", entry.entry_id),
+            ", ".join(changed),
+        )
+
+    hass.config_entries.async_update_entry(entry, options=new_options, version=2)
+    return True
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

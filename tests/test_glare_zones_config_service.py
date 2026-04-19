@@ -1,4 +1,7 @@
-"""Tests for GlareZonesConfig building from config entry options."""
+"""Tests for GlareZonesConfig building from config entry options.
+
+Units: window_width and glare zone coordinates are metres.
+"""
 
 from unittest.mock import MagicMock
 
@@ -51,7 +54,7 @@ class TestGetGlareZonesConfig:
         svc = _make_service()
         options = {
             CONF_ENABLE_GLARE_ZONES: True,
-            CONF_WINDOW_WIDTH: 200.0,
+            CONF_WINDOW_WIDTH: 2.0,
             "glare_zone_1_name": "",
         }
         result = svc.get_glare_zones_config(options)
@@ -62,37 +65,37 @@ class TestGetGlareZonesConfig:
         svc = _make_service()
         options = {
             CONF_ENABLE_GLARE_ZONES: True,
-            CONF_WINDOW_WIDTH: 150.0,
+            CONF_WINDOW_WIDTH: 1.5,
             "glare_zone_1_name": "Desk",
-            "glare_zone_1_x": 50.0,
-            "glare_zone_1_y": 200.0,
-            "glare_zone_1_radius": 30.0,
+            "glare_zone_1_x": 0.5,
+            "glare_zone_1_y": 2.0,
+            "glare_zone_1_radius": 0.3,
         }
         result = svc.get_glare_zones_config(options)
         assert result is not None
         assert isinstance(result, GlareZonesConfig)
-        assert result.window_width == 150.0
+        assert result.window_width == 1.5
         assert len(result.zones) == 1
         assert result.zones[0].name == "Desk"
-        assert result.zones[0].x == 50.0
-        assert result.zones[0].y == 200.0
-        assert result.zones[0].radius == 30.0
+        assert result.zones[0].x == 0.5
+        assert result.zones[0].y == 2.0
+        assert result.zones[0].radius == 0.3
 
     def test_skips_blank_zone_names(self):
         """Zones with blank names are skipped; named ones are included."""
         svc = _make_service()
         options = {
             CONF_ENABLE_GLARE_ZONES: True,
-            CONF_WINDOW_WIDTH: 200.0,
+            CONF_WINDOW_WIDTH: 2.0,
             "glare_zone_1_name": "Table",
             "glare_zone_1_x": 0.0,
-            "glare_zone_1_y": 150.0,
-            "glare_zone_1_radius": 60.0,
+            "glare_zone_1_y": 1.5,
+            "glare_zone_1_radius": 0.6,
             "glare_zone_2_name": "",
             "glare_zone_3_name": "Bed",
-            "glare_zone_3_x": -80.0,
-            "glare_zone_3_y": 300.0,
-            "glare_zone_3_radius": 50.0,
+            "glare_zone_3_x": -0.8,
+            "glare_zone_3_y": 3.0,
+            "glare_zone_3_radius": 0.5,
         }
         result = svc.get_glare_zones_config(options)
         assert result is not None
@@ -101,19 +104,19 @@ class TestGetGlareZonesConfig:
         assert "Table" in names
         assert "Bed" in names
 
-    def test_window_width_defaults_to_100(self):
-        """window_width defaults to 100cm when not set."""
+    def test_window_width_defaults_to_one_metre(self):
+        """window_width defaults to 1.0 m when not set."""
         svc = _make_service()
         options = {
             CONF_ENABLE_GLARE_ZONES: True,
             "glare_zone_1_name": "Desk",
             "glare_zone_1_x": 0.0,
-            "glare_zone_1_y": 100.0,
-            "glare_zone_1_radius": 20.0,
+            "glare_zone_1_y": 1.0,
+            "glare_zone_1_radius": 0.2,
         }
         result = svc.get_glare_zones_config(options)
         assert result is not None
-        assert result.window_width == 100.0
+        assert result.window_width == 1.0
 
 
 class TestGetVerticalData:

@@ -151,9 +151,9 @@ class ConfigurationService:
             zones.append(
                 GlareZone(
                     name=name,
-                    x=float(options.get(f"glare_zone_{i}_x", 0)),
-                    y=float(options.get(f"glare_zone_{i}_y", 100)),
-                    radius=float(options.get(f"glare_zone_{i}_radius", 30)),
+                    x=float(options.get(f"glare_zone_{i}_x", 0.0)),
+                    y=float(options.get(f"glare_zone_{i}_y", 1.0)),
+                    radius=float(options.get(f"glare_zone_{i}_radius", 0.3)),
                 )
             )
 
@@ -162,5 +162,5 @@ class ConfigurationService:
 
         return GlareZonesConfig(
             zones=zones,
-            window_width=float(options.get(CONF_WINDOW_WIDTH, 100)),
+            window_width=float(options.get(CONF_WINDOW_WIDTH, 1.0)),
         )

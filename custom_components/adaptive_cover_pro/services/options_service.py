@@ -185,7 +185,7 @@ def _select_v(*options: str):
 FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — vertical blind
     CONF_HEIGHT_WIN: _num(0.1, 6),
-    CONF_WINDOW_WIDTH: _num(10, 500),
+    CONF_WINDOW_WIDTH: _num(0.1, 5),
     CONF_WINDOW_DEPTH: _num(0.0, 0.5),
     CONF_SILL_HEIGHT: _num(0.0, 3.0),
     # Geometry — awning

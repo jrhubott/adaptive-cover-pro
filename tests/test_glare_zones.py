@@ -1,4 +1,7 @@
-"""Tests for glare zone data model and geometry."""
+"""Tests for glare zone data model and geometry.
+
+Units: all glare zone coordinates (x, y, radius) and window_width are metres.
+"""
 
 import pytest
 from unittest.mock import MagicMock
@@ -19,18 +22,18 @@ class TestGlareZoneDataModel:
 
     def test_glare_zone_fields(self):
         """GlareZone stores name, x, y, radius."""
-        zone = GlareZone(name="Desk", x=50.0, y=200.0, radius=30.0)
+        zone = GlareZone(name="Desk", x=0.5, y=2.0, radius=0.3)
         assert zone.name == "Desk"
-        assert zone.x == 50.0
-        assert zone.y == 200.0
-        assert zone.radius == 30.0
+        assert zone.x == 0.5
+        assert zone.y == 2.0
+        assert zone.radius == 0.3
 
     def test_glare_zones_config_fields(self):
         """GlareZonesConfig stores zones list and window_width."""
-        zone = GlareZone(name="Table", x=0.0, y=150.0, radius=60.0)
-        cfg = GlareZonesConfig(zones=[zone], window_width=120.0)
+        zone = GlareZone(name="Table", x=0.0, y=1.5, radius=0.6)
+        cfg = GlareZonesConfig(zones=[zone], window_width=1.2)
         assert len(cfg.zones) == 1
-        assert cfg.window_width == 120.0
+        assert cfg.window_width == 1.2
 
     def test_vertical_config_glare_zones_defaults_none(self):
         """VerticalConfig.glare_zones defaults to None."""
@@ -39,8 +42,8 @@ class TestGlareZoneDataModel:
 
     def test_vertical_config_accepts_glare_zones(self):
         """VerticalConfig.glare_zones accepts a GlareZonesConfig."""
-        zone = GlareZone(name="Couch", x=-80.0, y=300.0, radius=50.0)
-        zones_cfg = GlareZonesConfig(zones=[zone], window_width=200.0)
+        zone = GlareZone(name="Couch", x=-0.8, y=3.0, radius=0.5)
+        zones_cfg = GlareZonesConfig(zones=[zone], window_width=2.0)
         vc = VerticalConfig(distance=0.5, h_win=2.0, glare_zones=zones_cfg)
         assert vc.glare_zones is zones_cfg
 
@@ -50,66 +53,66 @@ class TestGlareZoneGeometry:
 
     def test_zone_directly_in_front_gamma_zero(self):
         """Zone centred on window normal, gamma=0 → nearest_y = y - radius."""
-        zone = GlareZone(name="Z", x=0.0, y=200.0, radius=30.0)
-        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=150.0)
-        # nearest_y = 200 - 30*cos(0) = 170 cm → 1.70 m
+        zone = GlareZone(name="Z", x=0.0, y=2.0, radius=0.3)
+        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=1.5)
+        # nearest_y = 2.0 - 0.3*cos(0) = 1.70 m
         assert dist == pytest.approx(1.70, abs=1e-6)
 
     def test_zone_on_right_side_gamma_zero(self):
         """Zone offset to the right, gamma=0, centred ray still passes through window."""
-        zone = GlareZone(name="Z", x=50.0, y=100.0, radius=0.0)
-        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=150.0)
-        # x_at_window = 50 + 100*tan(0) = 50 < 150 → reachable; nearest_y = 100
+        zone = GlareZone(name="Z", x=0.5, y=1.0, radius=0.0)
+        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=1.5)
+        # x_at_window = 0.5 + 1.0*tan(0) = 0.5 < 1.5 → reachable; nearest_y = 1.0
         assert dist == pytest.approx(1.00, abs=1e-6)
 
     def test_zone_behind_window_wall_returns_none(self):
         """Zone with y ≤ radius (nearest_y ≤ 0) is behind the wall."""
-        zone = GlareZone(name="Z", x=0.0, y=20.0, radius=30.0)
-        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=150.0)
-        # nearest_y = 20 - 30 = -10 → None
+        zone = GlareZone(name="Z", x=0.0, y=0.2, radius=0.3)
+        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=1.5)
+        # nearest_y = 0.2 - 0.3 = -0.1 → None
         assert dist is None
 
     def test_zone_outside_window_width_returns_none(self):
         """Zone whose sun ray enters outside the window frame → None."""
-        zone2 = GlareZone(name="Z2", x=200.0, y=100.0, radius=0.0)
-        # x_at_window = 200 + 100*tan(0) = 200; window_half_width=50 → outside
-        dist = _glare_zone_effective_distance(zone2, gamma=0.0, window_half_width=50.0)
+        zone2 = GlareZone(name="Z2", x=2.0, y=1.0, radius=0.0)
+        # x_at_window = 2.0 + 1.0*tan(0) = 2.0; window_half_width=0.5 → outside
+        dist = _glare_zone_effective_distance(zone2, gamma=0.0, window_half_width=0.5)
         assert dist is None
 
     def test_zone_angled_sun_reachable(self):
         """Zone at centre, moderate gamma: check the nearest_y is correct."""
-        zone = GlareZone(name="Z", x=0.0, y=200.0, radius=0.0)
+        zone = GlareZone(name="Z", x=0.0, y=2.0, radius=0.0)
         gamma = 30.0
-        # nearest_x = 0; nearest_y = 200
-        # x_at_window = 0 + 200*tan(30) ≈ 115.47; window_half_width=150 → reachable
+        # nearest_x = 0; nearest_y = 2.0
+        # x_at_window = 0 + 2.0*tan(30) ≈ 1.1547; window_half_width=1.5 → reachable
         dist = _glare_zone_effective_distance(
-            zone, gamma=gamma, window_half_width=150.0
+            zone, gamma=gamma, window_half_width=1.5
         )
         assert dist == pytest.approx(2.00, abs=1e-6)
 
     def test_zone_outside_window_angle_returns_none(self):
-        """Zone at (0, 200), gamma=30°, narrow window (half=50cm) → None."""
-        zone = GlareZone(name="Z", x=0.0, y=200.0, radius=0.0)
-        # x_at_window ≈ 115.47 > 50 → outside window
-        dist = _glare_zone_effective_distance(zone, gamma=30.0, window_half_width=50.0)
+        """Zone at (0, 2.0), gamma=30°, narrow window (half=0.5m) → None."""
+        zone = GlareZone(name="Z", x=0.0, y=2.0, radius=0.0)
+        # x_at_window ≈ 1.1547 > 0.5 → outside window
+        dist = _glare_zone_effective_distance(zone, gamma=30.0, window_half_width=0.5)
         assert dist is None
 
-    def test_returns_metres_not_cm(self):
-        """Result is in metres (nearest_y / 100)."""
-        zone = GlareZone(name="Z", x=0.0, y=300.0, radius=0.0)
-        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=200.0)
+    def test_returns_metres(self):
+        """Result is in metres (no unit conversion)."""
+        zone = GlareZone(name="Z", x=0.0, y=3.0, radius=0.0)
+        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=2.0)
         assert dist == pytest.approx(3.00, abs=1e-6)
 
     def test_zone_offset_negative_gamma(self):
         """Zone offset left, sun from right (negative gamma): ray misses narrow window."""
-        # Zone at x=-100, y=200, r=0; gamma=-30 (sun from right)
-        # nearest_x = -100 + 0*sin(-30) = -100
-        # nearest_y = 200 - 0*cos(-30) = 200
-        # x_at_window = -100 + 200*tan(-30) ≈ -100 - 115.47 = -215.47
-        # abs(-215.47) > 150 → None (ray exits left of window)
-        zone = GlareZone(name="Z", x=-100.0, y=200.0, radius=0.0)
+        # Zone at x=-1.0, y=2.0, r=0; gamma=-30 (sun from right)
+        # nearest_x = -1.0 + 0*sin(-30) = -1.0
+        # nearest_y = 2.0 - 0*cos(-30) = 2.0
+        # x_at_window = -1.0 + 2.0*tan(-30) ≈ -1.0 - 1.1547 = -2.1547
+        # abs(-2.1547) > 1.5 → None (ray exits left of window)
+        zone = GlareZone(name="Z", x=-1.0, y=2.0, radius=0.0)
         dist = _glare_zone_effective_distance(
-            zone, gamma=-30.0, window_half_width=150.0
+            zone, gamma=-30.0, window_half_width=1.5
         )
         assert dist is None
 
@@ -140,7 +143,7 @@ class TestGlareZoneCalculation:
         baseline = cover_no_zones.calculate_position()
 
         cover_empty = self._make_cover(
-            glare_zones=GlareZonesConfig(zones=[], window_width=200.0)
+            glare_zones=GlareZonesConfig(zones=[], window_width=2.0)
         )
         result = cover_empty.calculate_position()
         assert result == pytest.approx(baseline, rel=1e-6)
@@ -182,8 +185,8 @@ class TestGlareZoneCalculation:
 
     def test_glare_zone_loop_no_longer_in_calculate_position(self):
         """active_zone_names no longer affects calculate_position() output."""
-        zone = GlareZone(name="Desk", x=0.0, y=200.0, radius=30.0)
-        zones_cfg = GlareZonesConfig(zones=[zone], window_width=200.0)
+        zone = GlareZone(name="Desk", x=0.0, y=2.0, radius=0.3)
+        zones_cfg = GlareZonesConfig(zones=[zone], window_width=2.0)
         cover_with = self._make_cover(glare_zones=zones_cfg, active_zone_names={"Desk"})
         cover_without = self._make_cover(glare_zones=None)
         assert cover_with.calculate_position() == pytest.approx(
@@ -192,6 +195,6 @@ class TestGlareZoneCalculation:
 
     def test_zone_geometry_function_returns_correct_distance(self):
         """glare_zone_effective_distance returns metres for a reachable zone."""
-        zone = GlareZone(name="Desk", x=0.0, y=200.0, radius=0.0)
-        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=200.0)
-        assert dist == pytest.approx(2.0, rel=1e-6)  # 200 cm → 2.0 m
+        zone = GlareZone(name="Desk", x=0.0, y=2.0, radius=0.0)
+        dist = _glare_zone_effective_distance(zone, gamma=0.0, window_half_width=2.0)
+        assert dist == pytest.approx(2.0, rel=1e-6)

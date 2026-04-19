@@ -156,7 +156,7 @@ class TestValidateOptionsPatch:
     def test_geometry_wrong_cover_type_rejected(self):
         with pytest.raises(ServiceValidationError, match="only valid for"):
             validate_options_patch(
-                {"window_width": 100},
+                {"window_width": 1.0},
                 {},
                 sensor_type=SensorType.AWNING,
             )

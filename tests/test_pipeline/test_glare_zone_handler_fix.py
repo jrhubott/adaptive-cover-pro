@@ -6,6 +6,8 @@ The GlareZoneHandler logic is backwards:
 
 These tests describe the CORRECT behavior.
 
+Units: all glare zone coordinates and window_width are metres.
+
 Geometry refresher:
 - calculate_position returns blind height = (distance/cos(gamma)) * tan(elev)
 - Larger distance → higher position% → LESS blind deployed → LESS protection
@@ -70,8 +72,8 @@ class TestZoneCloserThanBaseShouldOverride:
             calculate_percentage_return=5.0,  # glare zone position would be very closed
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=10.0)],  # 0.9m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.1)],  # 0.9m
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -97,8 +99,8 @@ class TestZoneCloserThanBaseShouldOverride:
             calculate_percentage_return=15.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=100.0, radius=0.0)],  # 1.0m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],  # 1.0m
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -115,12 +117,12 @@ class TestZoneFartherThanBaseShouldFallThrough:
     """Zone farther than base_distance is already in shadow — handler should NOT fire."""
 
     def test_zone_farther_than_base_falls_through(self) -> None:
-        """Zone at 4m with base_distance=1m: zone is already in shadow.
+        """Zone at ~3.7m with base_distance=1m: zone is already in shadow.
 
         SolarHandler with base=1m computes a very closed position (low %).
-        Sun cannot penetrate beyond ~1m. Zone at 4m is safely in shadow.
+        Sun cannot penetrate beyond ~1m. Zone at 3.7m is safely in shadow.
         GlareZoneHandler should NOT override — it would make things WORSE
-        (computing a higher position for the 4m distance = less blind).
+        (computing a higher position for the 3.7m distance = less blind).
         """
         cover = _make_vertical_cover(
             distance=1.0,  # base distance 1m — SolarHandler blocks beyond 1m
@@ -129,8 +131,8 @@ class TestZoneFartherThanBaseShouldFallThrough:
             calculate_percentage_return=80.0,
         )
         glare_cfg = GlareZonesConfig(
-            zones=[GlareZone(name="desk", x=0.0, y=400.0, radius=30.0)],  # ~3.7m
-            window_width=200.0,
+            zones=[GlareZone(name="desk", x=0.0, y=4.0, radius=0.3)],  # 3.7m
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -159,11 +161,11 @@ class TestMinDistanceUsedNotMax:
             direct_sun_valid=True,
             calculate_percentage_return=10.0,
         )
-        zone_near = GlareZone(name="monitor", x=0.0, y=50.0, radius=0.0)  # 0.5m
-        zone_far = GlareZone(name="desk", x=0.0, y=200.0, radius=0.0)  # 2.0m
+        zone_near = GlareZone(name="monitor", x=0.0, y=0.5, radius=0.0)  # 0.5m
+        zone_far = GlareZone(name="desk", x=0.0, y=2.0, radius=0.0)  # 2.0m
         glare_cfg = GlareZonesConfig(
             zones=[zone_near, zone_far],
-            window_width=200.0,
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -192,11 +194,11 @@ class TestMinDistanceUsedNotMax:
             direct_sun_valid=True,
             calculate_percentage_return=8.0,
         )
-        zone_near = GlareZone(name="monitor", x=0.0, y=80.0, radius=0.0)  # 0.8m
-        zone_far = GlareZone(name="desk", x=0.0, y=300.0, radius=0.0)  # 3.0m
+        zone_near = GlareZone(name="monitor", x=0.0, y=0.8, radius=0.0)  # 0.8m
+        zone_far = GlareZone(name="desk", x=0.0, y=3.0, radius=0.0)  # 3.0m
         glare_cfg = GlareZonesConfig(
             zones=[zone_near, zone_far],
-            window_width=200.0,
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
@@ -224,11 +226,11 @@ class TestMixedZonesAboveAndBelowBase:
             direct_sun_valid=True,
             calculate_percentage_return=5.0,
         )
-        zone_needs_protection = GlareZone(name="monitor", x=0.0, y=50.0, radius=0.0)
-        zone_in_shadow = GlareZone(name="couch", x=0.0, y=800.0, radius=0.0)
+        zone_needs_protection = GlareZone(name="monitor", x=0.0, y=0.5, radius=0.0)
+        zone_in_shadow = GlareZone(name="couch", x=0.0, y=8.0, radius=0.0)
         glare_cfg = GlareZonesConfig(
             zones=[zone_needs_protection, zone_in_shadow],
-            window_width=200.0,
+            window_width=2.0,
         )
         snap = make_snapshot(
             cover=cover,
