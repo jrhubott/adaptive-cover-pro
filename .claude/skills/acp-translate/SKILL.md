@@ -24,26 +24,23 @@ If ambiguous, ask the user one clarifying question before proceeding.
 
 ---
 
-## Model Strategy (applies to Sync and Add)
+## Model Strategy
 
-Each language gets **two passes** inside its own subagent:
+| Operation | Model | Scope |
+|-----------|-------|-------|
+| **Sync** (incremental) | Haiku only | All changed/added keys — no Sonnet review |
+| **Add language** (full rebuild) | Haiku bulk → Sonnet review | Haiku: all 766 keys; Sonnet: only `data_description` keys (see below) |
 
-1. **Bulk draft** — `model: "haiku"` over every key being (re)translated.
-2. **Targeted review** — `model: "sonnet"` over only the user-facing config/error copy that is sensitive to tone and register.
+**Why Haiku-only for Sync:** Incremental changes are small and build on an existing high-quality baseline. Placeholder preservation is verified by tests. Sonnet review is not cost-justified for small diffs.
 
-**Review-pass key prefixes** (the *only* dotpaths that go through Sonnet):
-- `config.step.*.description`
-- `config.step.*.data_description.*`
-- `config.error.*`
-- `config.abort.*`
-- `options.step.*.description`
-- `options.step.*.data_description.*`
-- `options.error.*`
-- `options.abort.*`
+**Why Sonnet for Add language data_descriptions:** Full rebuilds produce ~286 long help-text strings with domain concepts (azimuth, elevation, glare zones, climate modes). These benefit from a register/accuracy pass. Step descriptions, labels, and error/abort messages are simple enough for Haiku alone.
 
-Everything else (labels, titles, selector labels, entity names, menu options) stays with Haiku's output.
+**Sonnet review-pass key pattern** (Add language only):
+- Any dotpath containing `.data_description.` — these are the long help text strings
 
-**Cost budget:** ~$0.45 per full-language rebuild; ~$0.02 per incremental sync. If a run seems headed above $1 for one language, stop and ask the user.
+Everything else stays with Haiku output.
+
+**Cost budget:** ~$0.03 per 2-language sync; ~$0.25 per 2-language full rebuild. If a run seems headed above $0.50 for one language, stop and ask the user.
 
 ---
 
@@ -65,13 +62,11 @@ Use when `translations/en.json` has changed and DE/FR need to catch up.
    - The list of `added` + `changed` dotpaths to translate
    - The list of `removed` dotpaths to strip from the target
    - The language name and ISO code
-   - The review-pass prefix list above
 
-   The subagent's job:
-   - Extract the values at the requested dotpaths from en.json using Bash+Python (see **Reading Translation Files** below — do NOT use the Read tool directly on these files).
-   - Run Haiku bulk translation on all of them.
-   - If any translated dotpath matches a review-pass prefix, run Sonnet review on just those.
-   - Load the target file, merge in the new values, delete `removed` keys, and write it back using Bash+Python (see **Reading Translation Files** below).
+   The subagent's job (Haiku only — no Sonnet review for Sync):
+   - Extract the values at the requested dotpaths from en.json via Bash+Python (see **Reading Translation Files** — do NOT use the Read tool directly on these files).
+   - Run the Haiku translation prompt (see **Subagent Prompt Templates**) on all of them.
+   - Load the target file, merge in the new values, delete `removed` keys, and write it back via Bash+Python.
    - Return a one-paragraph summary: counts added/changed/removed, any placeholder-preservation warnings, cost estimate.
 
 4. **Verify.** Run `./scripts/validate_translations.py --ci` and `venv/bin/python -m pytest tests/test_translations.py -q`. If either fails, report the failure verbatim and stop. Do not attempt a second auto-sync round.
@@ -94,21 +89,20 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
    - Absolute path to `translations/en.json`
    - Absolute path to the target file it must write
    - Language name + ISO code
-   - The review-pass prefix list
    - The domain-term glossary (see below) — customized per language
 
    The subagent's job:
-   - Load en.json via Bash+Python and flatten the full tree, **excluding `services.*`** (see **Reading Translation Files** below — do NOT use the Read tool directly on these files).
-   - Haiku bulk: translate every remaining leaf.
-   - Sonnet review: re-read the review-pass subset, correct tone/register.
-   - Write `translations/<lang>.json` via Bash+Python with the same nested structure as en.json (minus the `services` subtree). 2-space indent, `ensure_ascii=False`, trailing newline.
-   - Return a summary: key count written, cost estimate, placeholder warnings.
+   - Load the full en.json tree excluding `services.*` via Bash+Python (see **Reading Translation Files**).
+   - **Pass 1 — Haiku bulk:** Run the Haiku translation prompt on all keys. Capture output as a JSON object.
+   - **Pass 2 — Sonnet review (data_descriptions only):** Filter the Haiku output to include ONLY keys containing `.data_description.` — do not send any other keys to Sonnet. Run the Sonnet review prompt on this filtered subset. Merge corrected values back into the Haiku output.
+   - Write `translations/<lang>.json` via Bash+Python: same nested structure as en.json (minus `services`), 2-space indent, `ensure_ascii=False`, trailing newline.
+   - Return a summary: key count written, how many data_description keys were reviewed by Sonnet, placeholder warnings, cost estimate.
 
 4. **Update tooling.** After subagents return:
    - Add the language code to the `LANGUAGES` constant in `scripts/validate_translations.py` (unless already present).
    - Update any per-language lists in `tests/test_translations.py`.
 
-5. **Verify.** Run `./scripts/validate_translations.py --ci` and `pytest tests/test_translations.py -q`. Do not proceed to commit if either fails.
+5. **Verify.** Run `./scripts/validate_translations.py --ci` and `venv/bin/python -m pytest tests/test_translations.py -q`. Do not proceed to commit if either fails.
 
 6. **Report.** If the language is new (not in the previously-shipped set), remind the user to update README's supported-languages list and add a release-notes line.
 
@@ -120,7 +114,7 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
 2. Delete `translations/<lang>.json`.
 3. Remove the code from `scripts/validate_translations.py` `LANGUAGES` list.
 4. Remove any language-specific expectations from `tests/test_translations.py`.
-5. Run `pytest tests/test_translations.py -q` to confirm.
+5. Run `venv/bin/python -m pytest tests/test_translations.py -q` to confirm.
 6. Report what was removed.
 
 ---
@@ -159,7 +153,6 @@ python3 -c "
 import json
 with open('/path/to/en.json') as f:
     d = json.load(f)
-# Remove services section before translating
 d.pop('services', None)
 print(json.dumps(d, ensure_ascii=False))
 "
@@ -188,14 +181,14 @@ EOF
 
 Use these verbatim when dispatching. Substitute `<...>` placeholders before sending.
 
-### Haiku bulk prompt
+### Haiku translation prompt (used for ALL operations)
 
 ```
 You are translating Home Assistant integration UI strings from English to <LANGUAGE_NAME> (<LANG_CODE>).
 
 Source file: <ABSOLUTE_PATH_TO_EN_JSON>
 ⚠️ Do NOT use the Read tool on this file — it exceeds the token limit and will error.
-Use the Bash tool with Python to extract the values you need (see examples below).
+Use the Bash tool with Python to extract the values you need.
 
 Translate ONLY these dotpath keys (flattened form):
 <LIST_OF_DOTPATHS>
@@ -220,40 +213,53 @@ To update the target file, use the Bash tool:
       json.dump(t, f, ensure_ascii=False, indent=2); f.write('\n')
   "
 
-Rules — non-negotiable:
+Translation rules — non-negotiable:
 1. Preserve every placeholder exactly as-is: {summary}, {entity}, {position}, {hours}, {minutes}, {name}, {version}, etc.
 2. Preserve markdown and formatting: **bold**, newlines (\n), bullet markers (-), numbered lists, backticks.
 3. Preserve HTML/XML-style tags if present (<br>, <b>, etc.).
 4. Preserve unit symbols (%, °, m, cm, K) and numeric values verbatim.
-5. Use Home Assistant standard domain terms where applicable:
+5. Use these domain terms consistently — do NOT invent alternatives:
 <DOMAIN_GLOSSARY_FOR_LANGUAGE>
-6. Keep the register close to Home Assistant's UI voice: clear, concise, second-person imperative for instructions ("Select…", "Enter…").
-7. Do NOT add commentary, headers, or markdown fences around your output.
+6. Keep the register close to Home Assistant's UI voice: clear, concise, second-person imperative for instructions ("Select…", "Enter…", "Configure…").
+7. Do NOT translate proper names, entity IDs, integration names, or mdi: icon references.
 
-Output format: a single JSON object mapping each input dotpath to its translation. Nothing else.
+Self-review — before outputting, check each translation for:
+- ✅ All {placeholders} present and unchanged
+- ✅ Domain terms match the glossary above
+- ✅ No English words left in output (except proper names and technical terms from the glossary)
+- ✅ Register is natural for a technical UI (not overly formal or casual)
+
+Output format: a single JSON object mapping each input dotpath to its translation. Nothing else. No commentary, no markdown fences.
 
 Example output:
 {"config.step.geometry.title": "Géométrie du cache", "config.step.geometry.description": "Configurez les dimensions..."}
 ```
 
-### Sonnet review prompt
+### Sonnet review prompt (Add language only — data_description keys only)
 
 ```
-Review these <LANGUAGE_NAME> translations of Home Assistant config-flow step descriptions, data descriptions, error messages, and abort reasons. Fix any that:
+Review these <LANGUAGE_NAME> translations of Home Assistant config-flow help text (data_description fields). These are long strings explaining configuration options to end users — they require accurate domain terminology and natural register.
+
+Fix translations that:
 - Sound stiff, machine-translated, or overly literal
-- Misrepresent a technical concept (azimuth, elevation, tilt, glare zone, cover pipeline)
+- Misrepresent a technical concept (azimuth, elevation, tilt, glare zone, cover pipeline, FOV)
 - Use inconsistent register with HA's UI voice
-- Drop or alter a placeholder (flag this as an error, do not silently fix)
+- Drop or alter a placeholder — if a placeholder is missing, flag it as ERROR: do not silently fix
 
-Do NOT change anything that is already correct and natural.
+Domain terms that must be used consistently:
+<DOMAIN_GLOSSARY_FOR_LANGUAGE>
 
-Return the SAME JSON shape with the same keys, with corrected values where needed. Output JSON only, no commentary.
+Do NOT change translations that are already correct and natural.
+
+Return the SAME JSON shape with the same keys, corrected values only where needed. Output JSON only, no commentary.
+
+⚠️ Input contains ONLY data_description keys. Do not add, remove, or rename any keys.
 
 Input:
-<HAIKU_OUTPUT_JSON>
+<FILTERED_HAIKU_OUTPUT — DATA_DESCRIPTION_KEYS_ONLY>
 ```
 
-### Domain glossary (append to Haiku prompt per language)
+### Domain glossary (append to both Haiku and Sonnet prompts per language)
 
 **German (de):**
 - azimuth → Azimut
@@ -271,6 +277,7 @@ Input:
 - force override → Zwangsübersteuerung
 - motion sensor → Bewegungssensor
 - presence → Anwesenheit
+- field of view / FOV → Sichtfeld / FOV
 
 **French (fr):**
 - azimuth → azimut
@@ -288,6 +295,7 @@ Input:
 - force override → dérogation forcée
 - motion sensor → détecteur de mouvement
 - presence → présence
+- field of view / FOV → champ de vision / FOV
 
 For other languages, tell the subagent to "use the HA community standard translation of these terms for <language>; when in doubt prefer the shortest unambiguous term."
 
@@ -311,7 +319,7 @@ Non-EN translation files must:
 - **Never write a translation file without running the validator and tests afterwards.**
 - **Never silently drop keys from a target file.** If a key was removed from en.json, the Sync operation must list it under "removed" in the report.
 - **If Haiku output fails JSON parse**, retry once; if still failing, dispatch Sonnet for that batch as a fallback. Do not return partial results.
-- **Respect the cost budget.** If a projected run exceeds $1 for one language, stop and ask the user.
+- **Respect the cost budget.** If a projected run exceeds $0.50 for one language, stop and ask the user.
 
 ---
 
@@ -327,7 +335,7 @@ de.json: +<A> added, ~<C> changed, -<R> removed → <T> keys
 fr.json: +<A> added, ~<C> changed, -<R> removed → <T> keys
 
 Validator: ✅  Tests: ✅ (<N> passed)
-Cost estimate: ~$<X> (Haiku bulk + Sonnet review of <N> config/error keys)
+Cost estimate: ~$<X> (Haiku: <N> keys; Sonnet review: <N> data_description keys or "none — Sync")
 
 Warnings:
 - <any placeholder preservation issues, or "none">
