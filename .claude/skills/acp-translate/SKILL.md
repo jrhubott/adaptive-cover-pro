@@ -53,7 +53,7 @@ Use when `translations/en.json` has changed and DE/FR need to catch up.
 
 ### Steps
 
-1. **Diff.** Read `translations/en.json`, `translations/de.json`, `translations/fr.json`. Flatten each to dot-path keys (skip any `services.*` paths in all three). For each non-en file compute:
+1. **Diff.** Load all three translation files via Bash+Python (see **Reading Translation Files** — do NOT use the Read tool). Flatten each to dot-path keys (skip any `services.*` paths in all three). For each non-en file compute:
    - `added`: keys in en but not in target
    - `removed`: keys in target but not in en
    - `changed`: keys where the en value text changed since the target was last generated. Detect by heuristic: if `target[k]` looks like an obvious placeholder (equals `en[k]` verbatim, or is a short English phrase when the rest of the file is clearly in the target language), treat it as changed. When unsure, retranslate — cost of a re-translation is negligible.
@@ -68,11 +68,10 @@ Use when `translations/en.json` has changed and DE/FR need to catch up.
    - The review-pass prefix list above
 
    The subagent's job:
-   - Read en.json from disk (do not pass contents in the prompt).
-   - Extract just the values at the requested dotpaths.
+   - Extract the values at the requested dotpaths from en.json using Bash+Python (see **Reading Translation Files** below — do NOT use the Read tool directly on these files).
    - Run Haiku bulk translation on all of them.
    - If any translated dotpath matches a review-pass prefix, run Sonnet review on just those.
-   - Read the target file from disk, merge in the new values, delete `removed` keys, write it back with the same formatting (see **File Format** below).
+   - Load the target file, merge in the new values, delete `removed` keys, and write it back using Bash+Python (see **Reading Translation Files** below).
    - Return a one-paragraph summary: counts added/changed/removed, any placeholder-preservation warnings, cost estimate.
 
 4. **Verify.** Run `./scripts/validate_translations.py --ci` and `venv/bin/python -m pytest tests/test_translations.py -q`. If either fails, report the failure verbatim and stop. Do not attempt a second auto-sync round.
@@ -99,11 +98,10 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
    - The domain-term glossary (see below) — customized per language
 
    The subagent's job:
-   - Read en.json from disk.
-   - Flatten the full tree, **excluding `services.*`**.
+   - Load en.json via Bash+Python and flatten the full tree, **excluding `services.*`** (see **Reading Translation Files** below — do NOT use the Read tool directly on these files).
    - Haiku bulk: translate every remaining leaf.
    - Sonnet review: re-read the review-pass subset, correct tone/register.
-   - Write `translations/<lang>.json` with the same nested structure as en.json (minus the `services` subtree). 2-space indent, `ensure_ascii=False`, no trailing newline beyond one.
+   - Write `translations/<lang>.json` via Bash+Python with the same nested structure as en.json (minus the `services` subtree). 2-space indent, `ensure_ascii=False`, trailing newline.
    - Return a summary: key count written, cost estimate, placeholder warnings.
 
 4. **Update tooling.** After subagents return:
@@ -135,6 +133,57 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
 
 ---
 
+## Reading Translation Files
+
+⚠️ **The translation JSON files exceed the Read tool's 25,000-token limit. Never use the Read tool directly on `en.json`, `de.json`, or `fr.json`.** Use Bash+Python instead.
+
+**Extract specific dotpath values from en.json (Sync):**
+```bash
+python3 << 'EOF'
+import json, functools
+
+def get_path(d, dotpath):
+    return functools.reduce(lambda x, k: x[k], dotpath.split('.'), d)
+
+with open('/path/to/en.json') as f:
+    en = json.load(f)
+
+dotpaths = ['config.step.blind_spot.data.blind_spot_left', ...]
+print(json.dumps({p: get_path(en, p) for p in dotpaths}, ensure_ascii=False, indent=2))
+EOF
+```
+
+**Load full en.json tree (Add language):**
+```bash
+python3 -c "
+import json
+with open('/path/to/en.json') as f:
+    d = json.load(f)
+# Remove services section before translating
+d.pop('services', None)
+print(json.dumps(d, ensure_ascii=False))
+"
+```
+
+**Load, update, and write back a target file:**
+```bash
+python3 << 'EOF'
+import json
+
+with open('/path/to/de.json') as f:
+    target = json.load(f)
+
+# Apply changes (set dotpath values, remove keys, etc.)
+# target['config']['step']['blind_spot']['data']['blind_spot_left'] = 'Neuer Wert'
+
+with open('/path/to/de.json', 'w') as f:
+    json.dump(target, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+EOF
+```
+
+---
+
 ## Subagent Prompt Templates
 
 Use these verbatim when dispatching. Substitute `<...>` placeholders before sending.
@@ -144,11 +193,32 @@ Use these verbatim when dispatching. Substitute `<...>` placeholders before send
 ```
 You are translating Home Assistant integration UI strings from English to <LANGUAGE_NAME> (<LANG_CODE>).
 
-Source file on disk: <ABSOLUTE_PATH_TO_EN_JSON>
-Read it yourself using the Read tool. Do NOT ask the user for the content.
+Source file: <ABSOLUTE_PATH_TO_EN_JSON>
+⚠️ Do NOT use the Read tool on this file — it exceeds the token limit and will error.
+Use the Bash tool with Python to extract the values you need (see examples below).
 
 Translate ONLY these dotpath keys (flattened form):
 <LIST_OF_DOTPATHS>
+
+To extract source values, use the Bash tool:
+  python3 -c "
+  import json, functools
+  def get(d, p): return functools.reduce(lambda x,k: x[k], p.split('.'), d)
+  en = json.load(open('<ABSOLUTE_PATH_TO_EN_JSON>'))
+  paths = [<COMMA_SEPARATED_QUOTED_DOTPATHS>]
+  print(json.dumps({p: get(en, p) for p in paths}, ensure_ascii=False, indent=2))
+  "
+
+To update the target file, use the Bash tool:
+  python3 -c "
+  import json, functools
+  def set_path(d, p, v):
+      keys = p.split('.'); functools.reduce(lambda x,k: x[k], keys[:-1], d)[keys[-1]] = v
+  with open('<ABSOLUTE_PATH_TO_TARGET_JSON>') as f: t = json.load(f)
+  # set_path(t, 'config.step.blind_spot.data.blind_spot_left', 'translated value')
+  with open('<ABSOLUTE_PATH_TO_TARGET_JSON>', 'w') as f:
+      json.dump(t, f, ensure_ascii=False, indent=2); f.write('\n')
+  "
 
 Rules — non-negotiable:
 1. Preserve every placeholder exactly as-is: {summary}, {entity}, {position}, {hours}, {minutes}, {name}, {version}, etc.
