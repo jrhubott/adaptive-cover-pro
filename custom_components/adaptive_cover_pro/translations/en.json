@@ -310,8 +310,8 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Start blindspot left",
-          "blind_spot_right": "End blindspot right",
+          "blind_spot_left": "Blind spot left edge (from FOV left)",
+          "blind_spot_right": "Blind spot right edge (from FOV left)",
           "blind_spot_elevation": "Blindspot elevation"
         },
         "data_description": {
@@ -788,8 +788,8 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Start blindspot left",
-          "blind_spot_right": "End blindspot right",
+          "blind_spot_left": "Blind spot left edge (from FOV left)",
+          "blind_spot_right": "Blind spot right edge (from FOV left)",
           "blind_spot_elevation": "Blindspot elevation"
         },
         "data_description": {
@@ -1245,8 +1245,8 @@
       "description": "Update blind spot zone angles. blind_spot_right must be greater than blind_spot_left.",
       "fields": {
         "blind_spot": { "name": "Enable blind spot", "description": "If true, the blind spot zone is active." },
-        "blind_spot_left": { "name": "Left edge", "description": "Left edge of the blind spot zone in degrees from window azimuth (0–359°)." },
-        "blind_spot_right": { "name": "Right edge", "description": "Right edge of the blind spot zone (1–360°). Must be greater than left edge." },
+        "blind_spot_left": { "name": "Left edge (from FOV left)", "description": "Left edge of the blind spot zone in degrees inward from your FOV left boundary (0 = at the FOV left edge, range 0–359°)." },
+        "blind_spot_right": { "name": "Right edge (from FOV left)", "description": "Right edge of the blind spot zone in degrees inward from your FOV left boundary. Must be greater than left edge (range 1–360°)." },
         "blind_spot_elevation": { "name": "Elevation limit", "description": "Maximum sun elevation (°) for the blind spot to apply. Null = always apply." }
       }
     },

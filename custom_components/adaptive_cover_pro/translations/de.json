@@ -310,8 +310,8 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Blindfleck-Start links",
-          "blind_spot_right": "Blindfleck-Ende rechts",
+          "blind_spot_left": "Blindfleck linke Kante (von FOV-Links)",
+          "blind_spot_right": "Blindfleck rechte Kante (von FOV-Links)",
           "blind_spot_elevation": "Blindfleck-Höhe"
         },
         "data_description": {
@@ -788,8 +788,8 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Blindfleck-Start links",
-          "blind_spot_right": "Blindfleck-Ende rechts",
+          "blind_spot_left": "Blindfleck linke Kante (von FOV-Links)",
+          "blind_spot_right": "Blindfleck rechte Kante (von FOV-Links)",
           "blind_spot_elevation": "Blindfleck-Höhe"
         },
         "data_description": {

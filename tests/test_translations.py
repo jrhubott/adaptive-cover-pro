@@ -206,3 +206,33 @@ def test_no_invisible_unicode_chars(lang_file: Path) -> None:
                 f"{lang_file.name}: invisible Unicode char U+{ord(char):04X} "
                 f"found in value: {value!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Issue #211 Option 2 — blind_spot labels are FOV-relative, not azimuth-relative
+# ---------------------------------------------------------------------------
+
+
+def test_en_blind_spot_labels_name_fov_frame() -> None:
+    """EN labels for blind_spot_left/right must name the FOV reference frame."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    for step_key in ("options", "config"):
+        bs = en[step_key]["step"]["blind_spot"]["data"]
+        assert "FOV" in bs["blind_spot_left"], (
+            f"{step_key}.blind_spot.data.blind_spot_left label must mention 'FOV'"
+        )
+        assert "FOV" in bs["blind_spot_right"], (
+            f"{step_key}.blind_spot.data.blind_spot_right label must mention 'FOV'"
+        )
+
+
+def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
+    """Helper text must not contradict services.yaml by saying 'from window azimuth'."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    for step_key in ("options", "config"):
+        dd = en[step_key]["step"]["blind_spot"]["data_description"]
+        for key in ("blind_spot_left", "blind_spot_right"):
+            assert "window azimuth" not in dd[key].lower(), (
+                f"{step_key}.blind_spot.data_description.{key} still references "
+                f"'window azimuth' — Option 2 requires FOV-left-edge framing"
+            )

@@ -720,8 +720,9 @@ set_sun_tracking:
 set_blind_spot:
   name: Set blind spot
   description: >-
-    Update blind spot zone angles. blind_spot_right must be greater than
-    blind_spot_left. Enforced at validation time.
+    Update blind spot zone angles. Angles are measured inward from your FOV
+    left boundary (not from window azimuth). blind_spot_right must be greater
+    than blind_spot_left. Enforced at validation time.
   target:
     entity:
       integration: adaptive_cover_pro
@@ -733,7 +734,7 @@ set_blind_spot:
         boolean:
     blind_spot_left:
       name: Blind spot left edge
-      description: "Left edge of the blind spot zone in degrees from window azimuth (0–359°)."
+      description: "Left edge of the blind spot zone in degrees inward from your FOV left boundary (0 = at the FOV left edge, range 0–359°)."
       selector:
         number:
           min: 0
@@ -742,7 +743,7 @@ set_blind_spot:
           unit_of_measurement: "°"
     blind_spot_right:
       name: Blind spot right edge
-      description: "Right edge of the blind spot zone in degrees from window azimuth (1–360°). Must be greater than left edge."
+      description: "Right edge of the blind spot zone in degrees inward from your FOV left boundary. Must be greater than left edge (range 1–360°)."
       selector:
         number:
           min: 0
