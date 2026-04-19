@@ -463,7 +463,7 @@ class TestHorizontalDivisionByZeroGuard:
             awn_angle=45.0,
         )
         result = cover.calculate_position()
-        assert 0.0 <= result <= 6.0  # clipped to 2×awn_length
+        assert 0.0 <= result <= 3.0  # clipped to awn_length
 
     @pytest.mark.unit
     def test_percentage_always_bounded(self, mock_sun_data, mock_logger):
