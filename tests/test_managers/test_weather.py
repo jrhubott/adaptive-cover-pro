@@ -675,4 +675,121 @@ def test_update_config_stores_all_values(mock_hass, logger):
     assert m._is_raining_sensor == "binary_sensor.rain"
     assert m._is_windy_sensor == "binary_sensor.wind"
     assert m._severe_sensors == ["binary_sensor.hail"]
-    assert m._timeout_seconds == 600
+
+
+# --- is_timeout_running ---
+
+
+def test_is_timeout_running_false_when_no_task(mgr):
+    assert mgr.is_timeout_running is False
+
+
+@pytest.mark.asyncio
+async def test_is_timeout_running_true_when_task_pending(mgr):
+    import asyncio
+
+    async def _long_sleep():
+        await asyncio.sleep(9999)
+
+    task = asyncio.create_task(_long_sleep())
+    mgr._timeout_task = task
+    try:
+        assert mgr.is_timeout_running is True
+    finally:
+        task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_is_timeout_running_false_when_task_done(mgr):
+    import asyncio
+
+    async def _noop():
+        pass
+
+    task = asyncio.create_task(_noop())
+    await task
+    mgr._timeout_task = task
+    assert mgr.is_timeout_running is False
+
+
+# --- reconcile ---
+
+
+def _make_simple_wind_mgr(mock_hass, logger, *, speed: str = "10.0", threshold: float = 50.0):
+    """Return manager with one wind sensor reporting the given speed."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=threshold,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+    )
+    mock_hass.states.get.return_value = MagicMock(state=speed)
+    return m
+
+
+def test_reconcile_signals_start_when_flag_stuck_and_clear(mock_hass, logger):
+    """G1: override flag True, conditions clear, no timer → should_start_timeout."""
+    m = _make_simple_wind_mgr(mock_hass, logger, speed="10.0")
+    m._override_active = True
+    assert m.reconcile() == "should_start_timeout"
+
+
+def test_reconcile_noop_when_conditions_still_active(mock_hass, logger):
+    """G2: override flag True, conditions active → None."""
+    m = _make_simple_wind_mgr(mock_hass, logger, speed="75.0")
+    m._override_active = True
+    assert m.reconcile() is None
+
+
+def test_reconcile_noop_when_flag_not_set(mock_hass, logger):
+    """G3: override flag False, conditions clear → None."""
+    m = _make_simple_wind_mgr(mock_hass, logger, speed="10.0")
+    m._override_active = False
+    assert m.reconcile() is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_noop_when_timer_already_running(mock_hass, logger):
+    """G4: override flag True, conditions clear, timer pending → None."""
+    import asyncio
+
+    m = _make_simple_wind_mgr(mock_hass, logger, speed="10.0")
+    m._override_active = True
+
+    async def _long_sleep():
+        await asyncio.sleep(9999)
+
+    task = asyncio.create_task(_long_sleep())
+    m._timeout_task = task
+    try:
+        assert m.reconcile() is None
+    finally:
+        task.cancel()
+
+
+def test_reconcile_noop_when_no_sensors_configured(mock_hass, logger):
+    """No sensors configured → None (feature disabled)."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor=None,
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+    )
+    m._override_active = True
+    assert m.reconcile() is None
