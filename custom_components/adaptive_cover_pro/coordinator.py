@@ -1105,6 +1105,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # pipeline sees the cleared state and computes the correct position.
         auto_expired = await self.manager.reset_if_needed()
 
+        # On first refresh after HA restart, restore the weather override flag BEFORE
+        # the pipeline runs so the weather handler sees the correct state on cycle 1.
+        # Without this, covers briefly dispatch to the sun-tracked position while
+        # conditions are still active (flag was reset to False on coordinator init).
+        if self.first_refresh:
+            self._recover_weather_override_on_restart()
+
         # Self-heal stuck weather override (issue #255: missed state-change events)
         self._reconcile_weather_override()
 
@@ -1432,9 +1439,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
-        # Restore weather override state if conditions are still active after restart
-        self._recover_weather_override_on_restart()
-
         is_safety = self._pipeline_bypasses_auto_control
 
         # Outside the time window, only safety handlers (force override, weather)
