@@ -42,8 +42,9 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
            length = gap × sin(sun_angle) / sin(awning_closure_angle)
 
         Returns:
-            Awning extension length in meters (may exceed awn_length if full
-            extension insufficient to block sun).
+            Awning extension length in meters, saturated at awn_length.
+            When the geometric solution exceeds full extension, the awning
+            is reported fully extended (100%) rather than overflowing.
 
         """
         awn_angle = 90 - self.awn_angle
@@ -73,9 +74,7 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
             vertical_position,
             length,
         )
-        return float(
-            np.clip(length, 0, self.awn_length * 2)
-        )  # Clip to 2× max as sanity bound
+        return float(np.clip(length, 0, self.awn_length))
 
     def calculate_percentage(self) -> float:
         """Convert awning extension to percentage for Home Assistant.
