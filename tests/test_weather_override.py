@@ -393,3 +393,96 @@ async def test_weather_state_change_cleared_does_not_restart_running_timer():
         coordinator._start_weather_timeout.assert_not_called()
     finally:
         task.cancel()
+
+
+# --- first-refresh ordering: recovery before pipeline ---
+
+
+@pytest.mark.asyncio
+async def test_recover_on_restart_called_before_calculate_on_first_refresh():
+    """Regression: on first_refresh, _recover_weather_override_on_restart must be
+    called from within _async_update_data BEFORE _calculate_cover_state so the
+    pipeline snapshot sees weather_override_active=True on the very first cycle.
+    Without the fix, recovery only ran inside async_handle_first_refresh (too late).
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, hass = _make_coordinator_with_weather_mgr(
+        wind_speed_sensor="sensor.wind", wind_speed_threshold=50.0
+    )
+    hass.states.get.return_value = None  # state_attr returns None → azimuth/elevation 0.0
+    coordinator.first_refresh = True
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.options = {}
+    coordinator.state_change = False
+    coordinator.cover_state_change = False
+    coordinator.manager.manual_controlled = []
+    coordinator.manager.reset_if_needed = AsyncMock(return_value=False)
+    coordinator.async_handle_first_refresh = AsyncMock()
+    coordinator._update_solar_times_if_needed = AsyncMock(return_value=(None, None))
+    coordinator._pipeline_result = MagicMock()
+
+    call_order: list[str] = []
+    original_recover = AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart
+
+    def spy_recover():
+        call_order.append("recover")
+        original_recover(coordinator)
+
+    def spy_calculate(cover_data, options):
+        call_order.append("calculate")
+        return 50
+
+    coordinator._recover_weather_override_on_restart = spy_recover
+    coordinator._calculate_cover_state = spy_calculate
+
+    await AdaptiveDataUpdateCoordinator._async_update_data(coordinator)
+
+    assert "recover" in call_order, (
+        "_recover_weather_override_on_restart must be called from _async_update_data"
+    )
+    assert call_order.index("recover") < call_order.index("calculate"), (
+        "Recovery must run before _calculate_cover_state so pipeline sees restored flag"
+    )
+
+
+@pytest.mark.asyncio
+async def test_recover_on_restart_not_called_on_subsequent_refresh():
+    """Recovery is gated on first_refresh=True; must not run on non-first updates."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, hass = _make_coordinator_with_weather_mgr(
+        wind_speed_sensor="sensor.wind", wind_speed_threshold=50.0
+    )
+    hass.states.get.return_value = None
+    coordinator.first_refresh = False
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.options = {}
+    coordinator.state_change = False
+    coordinator.cover_state_change = False
+    coordinator.manager.manual_controlled = []
+    coordinator.manager.reset_if_needed = AsyncMock(return_value=False)
+    coordinator._update_solar_times_if_needed = AsyncMock(return_value=(None, None))
+    coordinator._pipeline_result = MagicMock()
+
+    call_order: list[str] = []
+
+    def spy_recover():
+        call_order.append("recover")
+
+    def spy_calculate(cover_data, options):
+        call_order.append("calculate")
+        return 50
+
+    coordinator._recover_weather_override_on_restart = spy_recover
+    coordinator._calculate_cover_state = spy_calculate
+
+    await AdaptiveDataUpdateCoordinator._async_update_data(coordinator)
+
+    assert "recover" not in call_order, (
+        "_recover_weather_override_on_restart must NOT run when first_refresh=False"
+    )
