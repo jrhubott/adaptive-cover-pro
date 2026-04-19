@@ -1595,7 +1595,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             bs_parts.append(f"up to {bs_e}° elevation")
         bs_str = " ".join(bs_parts)
         lines.append(
-            f"🟥 Blind spot: ignores sun at {bs_str} (e.g. tree or roof overhang)."
+            f"🟥 Blind spot: ignores sun at {bs_str} inward from FOV left (e.g. tree or roof overhang)."
         )
 
     # Default fallback (priority 0) — shown as the final row of the chain

@@ -310,8 +310,8 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Début zone cachée à gauche",
-          "blind_spot_right": "Fin zone cachée à droite",
+          "blind_spot_left": "Bord gauche de la zone cachée (depuis FOV gauche)",
+          "blind_spot_right": "Bord droit de la zone cachée (depuis FOV gauche)",
           "blind_spot_elevation": "Élévation zone cachée"
         },
         "data_description": {
@@ -788,8 +788,8 @@
       },
       "blind_spot": {
         "data": {
-          "blind_spot_left": "Début zone cachée à gauche",
-          "blind_spot_right": "Fin zone cachée à droite",
+          "blind_spot_left": "Bord gauche de la zone cachée (depuis FOV gauche)",
+          "blind_spot_right": "Bord droit de la zone cachée (depuis FOV gauche)",
           "blind_spot_elevation": "Élévation zone cachée"
         },
         "data_description": {

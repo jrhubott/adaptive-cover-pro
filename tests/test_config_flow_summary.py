@@ -502,6 +502,7 @@ def test_blind_spot_shown_when_enabled():
     assert "10°" in summary
     assert "20°" in summary
     assert "40°" in summary
+    assert "FOV left" in summary
 
 
 # ---------------------------------------------------------------------------
