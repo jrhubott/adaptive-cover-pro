@@ -226,6 +226,8 @@ async def _trigger_first_refresh_safety(coord):
     coord.first_refresh = True
     coord._is_reload = False
     coord._check_sun_validity_transition = MagicMock(return_value=False)
+    coord._weather_mgr = MagicMock()
+    coord._weather_mgr.configured_sensors = []  # disabled — no recovery needed
     await coord.async_handle_first_refresh(50, {})
 
 

@@ -142,6 +142,11 @@ class WeatherManager:
             return False
         return self._override_active
 
+    @property
+    def is_timeout_running(self) -> bool:
+        """Return True when a clear-delay timeout task is pending."""
+        return self._timeout_task is not None and not self._timeout_task.done()
+
     # --- Condition evaluation helpers ---
 
     def _is_wind_active(self) -> bool:
@@ -210,6 +215,25 @@ class WeatherManager:
         """
         self.cancel_weather_timeout()
         self._override_active = True
+
+    def reconcile(self) -> str | None:
+        """Self-healing check against live sensor state.
+
+        Called every coordinator update tick. Returns "should_start_timeout"
+        when the override flag is stuck True but conditions have cleared and
+        no clear-delay timer is running. Returns None when no action is needed.
+        The caller owns timer creation because that requires a refresh callback
+        the manager intentionally doesn't hold.
+        """
+        if not self.configured_sensors:
+            return None
+        if not self._override_active:
+            return None
+        if self.is_any_condition_active:
+            return None
+        if self.is_timeout_running:
+            return None
+        return "should_start_timeout"
 
     # --- Timeout management ---
 

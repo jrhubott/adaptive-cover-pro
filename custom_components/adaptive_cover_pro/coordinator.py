@@ -587,13 +587,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.state_change = True
                 await self.async_refresh()
         else:
-            if self._weather_mgr._override_active:
-                self.logger.info(
-                    "Weather conditions cleared (%s) — starting clear-delay timeout",
-                    entity_id,
-                )
-                self._weather_mgr.cancel_weather_timeout()
-                self._start_weather_timeout()
+            self._reconcile_weather_override()
 
     async def async_check_motion_state_change(
         self, event: Event[EventStateChangedData]
@@ -901,6 +895,37 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Cancel weather clear-delay timeout task."""
         self._weather_mgr.cancel_weather_timeout()
 
+    def _recover_weather_override_on_restart(self) -> None:
+        """Restore weather override state after HA restart.
+
+        On restart, WeatherManager._override_active resets to False. If conditions
+        are still active, no state-change event fires, so async_check_weather_state_change
+        never sees the active→clear transition and never starts the clear-delay timer.
+        Restoring the flag here ensures the normal clear-delay path runs correctly.
+        """
+        if not self._weather_mgr.configured_sensors:
+            return
+        if self._weather_mgr.is_any_condition_active:
+            self.logger.info(
+                "Startup: weather conditions active — restoring override state "
+                "so clear-delay timeout will fire when conditions end"
+            )
+            self._weather_mgr.record_conditions_active()
+
+    def _reconcile_weather_override(self) -> None:
+        """Self-heal a stuck weather override flag.
+
+        If the override flag is True but no condition is currently active and
+        no clear-delay timer is running, start the clear-delay timer. This
+        covers missed state-change events (e.g. HA restart race, event bus drop).
+        """
+        if self._weather_mgr.reconcile() == "should_start_timeout":
+            self.logger.info(
+                "Weather reconciliation: override active but conditions clear "
+                "and no timer running — starting clear-delay timeout"
+            )
+            self._start_weather_timeout()
+
     def _calculate_cover_state(self, cover_data, options) -> int:
         """Calculate cover state via pipeline and return final position.
 
@@ -1079,6 +1104,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Reset expired manual overrides BEFORE running the pipeline so the
         # pipeline sees the cleared state and computes the correct position.
         auto_expired = await self.manager.reset_if_needed()
+
+        # Self-heal stuck weather override (issue #255: missed state-change events)
+        self._reconcile_weather_override()
 
         # Calculate cover state (pipeline runs with up-to-date override state)
         state = self._calculate_cover_state(cover_data, options)
@@ -1404,6 +1432,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
+        # Restore weather override state if conditions are still active after restart
+        self._recover_weather_override_on_restart()
+
         is_safety = self._pipeline_bypasses_auto_control
 
         # Outside the time window, only safety handlers (force override, weather)
