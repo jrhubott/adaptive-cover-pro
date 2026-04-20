@@ -75,7 +75,7 @@ Full documentation, configuration guide, and examples available in the repositor
 
 ## 🙏 Credits
 
-This integration is a fork of the excellent [Adaptive Cover](https://github.com/basbruss/adaptive-cover) by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**. The core functionality and architecture are based on his outstanding work.
+Inspired by and originally forked from [Adaptive Cover](https://github.com/basbruss/adaptive-cover) by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**, whose ideation and base implementation sparked this project. Adaptive Cover Pro has since grown into a substantially different codebase with a new architecture and feature set, but the original vision deserves real credit.
 
 ## 💬 Support & Discussion
 

@@ -47,7 +47,7 @@ Full steps: **[Installation](https://github.com/jrhubott/adaptive-cover-pro/wiki
 
 ## Credits
 
-Fork of the original **[Adaptive Cover](https://github.com/basbruss/adaptive-cover)** by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**. The core functionality and architecture are his excellent work — please visit the upstream project and consider supporting him.
+Inspired by and originally forked from **[Adaptive Cover](https://github.com/basbruss/adaptive-cover)** by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**, whose ideation and base implementation sparked this project. Adaptive Cover Pro has since grown into a substantially different codebase with a new architecture and feature set, but the original vision deserves real credit.
 
 Original forum post that inspired both projects: [Automatic Blinds](https://community.home-assistant.io/t/automatic-blinds-sunscreen-control-based-on-sun-platform/).
 
