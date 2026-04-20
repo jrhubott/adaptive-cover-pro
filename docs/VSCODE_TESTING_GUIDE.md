@@ -598,7 +598,7 @@ Once testing is complete:
 4. **Run tasks regularly** - Lint before commits, check coverage periodically
 5. **Customize as needed** - Add your own debug configs, tasks, or settings
 
-Refer to **[DEVELOPMENT.md](DEVELOPMENT.md)** (lines 1082+) for comprehensive debugging documentation, advanced tips, and troubleshooting.
+Refer to the **[Developer Debugging](https://github.com/jrhubott/adaptive-cover-pro/wiki/Developer-Debugging)** wiki page for comprehensive debugging documentation, advanced tips, and troubleshooting.
 
 ---
 

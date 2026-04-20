@@ -53,4 +53,4 @@ Original forum post that inspired both projects: [Automatic Blinds](https://comm
 
 ## For developers
 
-See the **[Development Guide](docs/DEVELOPMENT.md)** for setup, architecture, workflow, testing strategies, code standards, and the automated release process.
+See the **[For Developers](https://github.com/jrhubott/adaptive-cover-pro/wiki/For-Developers)** wiki hub for setup, architecture, workflow, testing strategies, code standards, and the automated release process.

@@ -338,6 +338,6 @@ custom_components/adaptive_cover_pro/
 ---
 
 For more information, see:
-- [DEVELOPMENT.md](DEVELOPMENT.md) — Developer guide
+- [For Developers](https://github.com/jrhubott/adaptive-cover-pro/wiki/For-Developers) — Developer guide (wiki)
 - [UNIT_TESTS.md](UNIT_TESTS.md) — Testing documentation
 - [README.md](../README.md) — User documentation
