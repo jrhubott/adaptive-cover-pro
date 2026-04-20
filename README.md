@@ -49,7 +49,7 @@ Full steps: **[Installation](https://github.com/jrhubott/adaptive-cover-pro/wiki
 
 If Adaptive Cover Pro has saved you time or made your home a little smarter, you can fuel the next commit:
 
-<a href="https://www.buymeacoffee.com/jrhubott" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=jrhubott&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee"></a>
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/jrhubott)
 
 ## Credits
 
