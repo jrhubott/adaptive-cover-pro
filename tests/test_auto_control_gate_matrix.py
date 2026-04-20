@@ -42,6 +42,7 @@ Decision table (all rows assume ``automatic_control=False``)
 | state_change_weather_bypass      | async_handle_…   | True             | True            |
 | first_refresh_safety             | async_handle_…   | True             | True            |
 | window_close_return_sunset       | _check_time_…    | False (gated)    | False           |
+| sunset_window_opened             | _check_sunset_…  | False (gated)    | False           |
 | state_change_force_override_rls  | async_handle_…   | True (force=True)| False (no tag)  |
 +----------------------------------+------------------+------------------+-----------------+
 
@@ -242,6 +243,23 @@ async def _trigger_window_close_return_sunset(coord):
     await coord._check_time_window_transition(dt.datetime.now(dt.UTC))
 
 
+async def _trigger_sunset_window_opened(coord):
+    """Trigger: astronomical sunset window opens after end_time (issue #266).
+
+    _check_sunset_window_transition is called directly with the coordinator
+    gated by automatic_control=False.  The method must return early without
+    dispatching (non-bypass, gated path).
+    """
+    coord._track_end_time = True
+    coord._prev_sunset_active = False
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {"sunset_position": 0}
+    coord._inverse_state = False
+    coord._compute_current_effective_default = MagicMock(return_value=(0, True))
+    coord.async_refresh = AsyncMock()
+    await coord._check_sunset_window_transition()
+
+
 async def _trigger_force_override_released(coord):
     """Trigger: force override just transitioned on → off.
 
@@ -300,6 +318,13 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         is_safety_target=False,
         setup=lambda _: None,
         trigger=_trigger_window_close_return_sunset,
+    ),
+    MatrixCase(
+        id="sunset_window_opened",
+        is_safety_bypass=False,
+        is_safety_target=False,
+        setup=lambda _: None,
+        trigger=_trigger_sunset_window_opened,
     ),
     MatrixCase(
         id="state_change_force_override_released",

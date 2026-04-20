@@ -342,6 +342,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
 
+        # Track sunset-window transitions so covers reposition when the
+        # astronomical sunset window opens after the user's end_time (issue #266).
+        self._prev_sunset_active: bool | None = None
+
         # Time of the last successful _async_update_data() completion.
         # HA's DataUpdateCoordinator only exposes last_update_success (bool);
         # we track the timestamp ourselves so diagnostics can report it.
@@ -2107,21 +2111,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 return
             options = self.config_entry.options
-            # Compute the current effective default (may already be sunset_pos)
-            h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
-            sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-            sunrise_off = int(
-                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
-            )
-            cover_data = self.get_blind_data(options=options)
-            effective_pos, is_sunset = compute_effective_default(
-                h_def=h_def,
-                sunset_pos=sunset_pos_cfg,
-                sun_data=cover_data.sun_data,
-                sunset_off=sunset_off,
-                sunrise_off=sunrise_off,
-            )
+            effective_pos, is_sunset = self._compute_current_effective_default(options)
             pos_to_send = (
                 inverse_state(effective_pos) if self._inverse_state else effective_pos
             )
@@ -2155,6 +2145,81 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             refresh_callback=_on_window_closed,
             on_window_open=_on_window_open,
         )
+        await self._check_sunset_window_transition()
+
+    def _compute_current_effective_default(self, options: dict) -> tuple[int, bool]:
+        """Return (effective_pos, is_sunset_active) for the current moment.
+
+        Shared by _on_window_closed and _check_sunset_window_transition so the
+        same options-reading and compute_effective_default call is not duplicated.
+        """
+        h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
+        sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+        sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
+        sunrise_off = int(
+            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
+        )
+        cover_data = self.get_blind_data(options=options)
+        return compute_effective_default(
+            h_def=h_def,
+            sunset_pos=sunset_pos_cfg,
+            sun_data=cover_data.sun_data,
+            sunset_off=sunset_off,
+            sunrise_off=sunrise_off,
+        )
+
+    async def _check_sunset_window_transition(self) -> None:
+        """Dispatch sunset_pos when the astronomical sunset window opens after end_time.
+
+        Handles the case where end_time fires before sunset+offset: _on_window_closed
+        sends the daytime default (is_sunset_active=False at that moment). When the
+        sunset window later opens, this detects the False→True transition and sends
+        the sunset position (issue #266).
+
+        Mirrors the _last_sun_validity_state pattern: _prev_sunset_active=None on
+        startup prevents spurious dispatch when HA restarts mid-sunset.
+        """
+        if not self._track_end_time:
+            return
+        if not self.automatic_control:
+            self.logger.debug(
+                "Sunset window opened but automatic control is OFF — skipping reposition"
+            )
+            return
+        options = self.config_entry.options
+        sunset_pos_cfg = options.get(CONF_SUNSET_POS)
+        if sunset_pos_cfg is None:
+            return
+
+        _effective_pos, is_sunset = self._compute_current_effective_default(options)
+
+        if self._prev_sunset_active is None:
+            self._prev_sunset_active = is_sunset
+            return
+
+        just_opened = (not self._prev_sunset_active) and is_sunset
+        self._prev_sunset_active = is_sunset
+
+        if not just_opened:
+            return
+
+        pos_to_send = (
+            inverse_state(int(sunset_pos_cfg)) if self._inverse_state else int(sunset_pos_cfg)
+        )
+        self.logger.info(
+            "Sunset window opened after end_time — dispatching sunset position %s%% "
+            "to %s cover(s) (issue #266)",
+            pos_to_send,
+            len(self.entities),
+        )
+        for cover_entity in self.entities:
+            if self.manager.is_cover_manual(cover_entity):
+                continue
+            ctx = self._build_position_context(cover_entity, options, force=False)
+            await self._cmd_svc.apply_position(
+                cover_entity, pos_to_send, "sunset_window_opened", context=ctx
+            )
+        await self.async_refresh()
 
     def _check_sun_validity_transition(self) -> bool:
         """Check if sun validity state has changed from False to True.
