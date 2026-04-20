@@ -1,9 +1,8 @@
 """Tests for translation files — structural parity with en.json + content hygiene.
 
 The integration ships English, German, and French. `en.json` is the single
-source of truth. The `services` section is intentionally English-only (HA
-falls back to English for locales missing it), so DE/FR must match en.json
-exactly for every section *except* `services`.
+source of truth. DE/FR must match en.json exactly for every section including
+`services`.
 """
 
 from __future__ import annotations
@@ -24,9 +23,7 @@ TRANSLATIONS_DIR = (
 
 SHIPPED_LANGUAGES = {"en", "de", "fr"}
 
-# Top-level sections in en.json that are intentionally *not* carried by other
-# languages. HA falls back to English for any locale missing these.
-EN_ONLY_SECTIONS = ("services",)
+EN_ONLY_SECTIONS: tuple[str, ...] = ()
 
 TRANSLATION_FILES = sorted(TRANSLATIONS_DIR.glob("*.json"))
 LANGUAGE_CODES = [f.stem for f in TRANSLATION_FILES]
@@ -128,19 +125,8 @@ def test_all_translations_have_title_and_config(lang_file: Path) -> None:
     assert "config" in data, f"{lang_file.name} missing 'config'"
 
 
-def test_non_en_files_omit_services_section() -> None:
-    """DE/FR must not carry a `services` section — HA falls back to English."""
-    for lang_file in TRANSLATION_FILES:
-        if lang_file.stem == "en":
-            continue
-        data = _load(lang_file)
-        assert (
-            "services" not in data
-        ), f"{lang_file.name} carries a `services` section — it must be English-only"
-
-
 # ---------------------------------------------------------------------------
-# Structural parity — every non-en file has the same keys as en.json minus services.*
+# Structural parity — every non-en file has the same keys as en.json
 # ---------------------------------------------------------------------------
 
 
@@ -158,7 +144,7 @@ def test_key_structure_matches_en(lang_file: Path) -> None:
     extra = target_keys - en_keys
 
     assert not missing and not extra, (
-        f"{lang_file.name} key-set differs from en.json (minus {EN_ONLY_SECTIONS}):\n"
+        f"{lang_file.name} key-set differs from en.json:\n"
         f"  Missing ({len(missing)}): {sorted(missing)[:10]}{'...' if len(missing) > 10 else ''}\n"
         f"  Extra   ({len(extra)}): {sorted(extra)[:10]}{'...' if len(extra) > 10 else ''}"
     )

@@ -1078,5 +1078,487 @@
         "weather_override": "Dérogation météo"
       }
     }
+  },
+  "services": {
+    "emergency_stop": {
+      "description": "Bouton de panique — envoie stop_cover à chaque protection configurée sur les instances ciblées (vérification des capacités), puis désactive l'intégration. Sans cible, agit sur toutes les instances ACP.",
+      "name": "Arrêt d'urgence"
+    },
+    "export_config": {
+      "description": "Retourne la configuration de la protection au format JSON pour utilisation dans le notebook de simulation.",
+      "fields": {
+        "config_entry_id": {
+          "description": "Entrée de configuration Adaptive Cover Pro à exporter.",
+          "name": "Configuration de la protection"
+        }
+      },
+      "name": "Exporter la configuration"
+    },
+    "integration_disable": {
+      "description": "Désactive Adaptive Cover Pro sur les instances ciblées. Les mouvements en cours des protections ACP sont arrêtés immédiatement, les minuteries différées annulées, et l'état de réconciliation effacé.",
+      "name": "Désactiver l'intégration"
+    },
+    "integration_enable": {
+      "description": "Réactive Adaptive Cover Pro sur les instances ciblées. Les protections restent où elles sont ; le positionnement reprend au prochain cycle de mise à jour naturel.",
+      "name": "Activer l'intégration"
+    },
+    "set_automation_timing": {
+      "description": "Mettre à jour les seuils de delta, la fenêtre de temps début/fin, et return_sunset.",
+      "fields": {
+        "delta_position": {
+          "description": "Changement de position minimum (%) avant l'envoi d'une commande de protection (1–90).",
+          "name": "Seuil de delta de position"
+        },
+        "delta_time": {
+          "description": "Temps minimum (minutes) entre les commandes de protection (2–60).",
+          "name": "Seuil de delta de temps"
+        },
+        "end_entity": {
+          "description": "Entité dont l'état fournit l'heure de fin. Mutuellement exclusif avec end_time.",
+          "name": "Entité de fin"
+        },
+        "end_time": {
+          "description": "Heure fixe pour terminer la fenêtre de suivi (HH:MM:SS). Mutuellement exclusif avec end_entity.",
+          "name": "Heure de fin"
+        },
+        "return_sunset": {
+          "description": "Si vrai, force l'envoi de sunset_position lorsque la fenêtre de temps se termine.",
+          "name": "Retourner à la position du coucher au moment de la fin"
+        },
+        "start_entity": {
+          "description": "Entité dont l'état fournit l'heure de début. Mutuellement exclusif avec start_time.",
+          "name": "Entité de début"
+        },
+        "start_time": {
+          "description": "Heure fixe pour commencer la fenêtre de suivi (HH:MM:SS). Mutuellement exclusif avec start_entity.",
+          "name": "Heure de début"
+        }
+      },
+      "name": "Définir le minutage de l'automatisation"
+    },
+    "set_blind_spot": {
+      "description": "Mettre à jour les angles de la zone d'éblouissement. blind_spot_right doit être supérieur à blind_spot_left.",
+      "fields": {
+        "blind_spot": {
+          "description": "Si vrai, la zone d'éblouissement est active.",
+          "name": "Activer la zone d'éblouissement"
+        },
+        "blind_spot_elevation": {
+          "description": "Élévation solaire maximale (°) pour que la zone d'éblouissement s'applique. Null = toujours appliquer.",
+          "name": "Limite d'élévation"
+        },
+        "blind_spot_left": {
+          "description": "Bord gauche de la zone d'éblouissement en degrés vers l'intérieur de la limite gauche de votre FOV (0 = au bord gauche du FOV, plage 0–359°).",
+          "name": "Bord gauche (du FOV gauche)"
+        },
+        "blind_spot_right": {
+          "description": "Bord droit de la zone d'éblouissement en degrés vers l'intérieur de la limite gauche de votre FOV. Doit être supérieur au bord gauche (plage 1–360°).",
+          "name": "Bord droit (du FOV gauche)"
+        }
+      },
+      "name": "Définir la zone d'éblouissement"
+    },
+    "set_climate": {
+      "description": "Mettre à jour le mode climatique et les options de température/présence. Force temp_low < temp_high.",
+      "fields": {
+        "climate_mode": {
+          "description": "Interrupteur principal pour le positionnement conscient de la température.",
+          "name": "Activer le mode climatique"
+        },
+        "outside_temp": {
+          "description": "Entité capteur pour la température extérieure. Null = aucun.",
+          "name": "Entité de température extérieure"
+        },
+        "outside_threshold": {
+          "description": "Température extérieure (°) au-dessus de laquelle la stratégie estivale est forcée (0–100).",
+          "name": "Seuil de température extérieure"
+        },
+        "presence_entity": {
+          "description": "Entité indiquant l'occupation. Null = aucun.",
+          "name": "Entité de présence"
+        },
+        "temp_entity": {
+          "description": "Entité climatique ou capteur pour la température intérieure. Null = aucun.",
+          "name": "Entité de température intérieure"
+        },
+        "temp_high": {
+          "description": "Au-dessus de cette température (°), la stratégie estivale s'applique (0–90).",
+          "name": "Seuil de haute température"
+        },
+        "temp_low": {
+          "description": "En dessous de cette température (°), la stratégie hivernale s'applique (0–90).",
+          "name": "Seuil de basse température"
+        },
+        "transparent_blind": {
+          "description": "Si vrai, traiter le store comme semi-transparent pour les calculs climatiques.",
+          "name": "Store transparent"
+        },
+        "winter_close_insulation": {
+          "description": "Si vrai, fermer complètement la protection les jours froids pour améliorer l'isolation.",
+          "name": "Fermer pour l'isolation hivernale"
+        }
+      },
+      "name": "Définir les paramètres climatiques"
+    },
+    "set_custom_position": {
+      "description": "Mettre à jour un emplacement de position personnalisée (1–4). Passer null pour le capteur et la position pour effacer l'emplacement.",
+      "fields": {
+        "min_mode": {
+          "description": "Si vrai, traiter la position comme un plancher minimum.",
+          "name": "Mode de position minimale"
+        },
+        "position": {
+          "description": "Position cible (0–100%) lorsque le capteur est actif. Null = effacer l'emplacement.",
+          "name": "Position"
+        },
+        "priority": {
+          "description": "Priorité du pipeline (1–99, par défaut 77).",
+          "name": "Priorité"
+        },
+        "sensor": {
+          "description": "Capteur binaire qui active cette position personnalisée. Null = effacer l'emplacement.",
+          "name": "Capteur de déclenchement"
+        },
+        "slot": {
+          "description": "Quel emplacement de position personnalisée mettre à jour (1–4).",
+          "name": "Emplacement"
+        },
+        "use_my": {
+          "description": "Si vrai, utiliser my_position_value au lieu de position.",
+          "name": "Utiliser Somfy My"
+        }
+      },
+      "name": "Définir l'emplacement de la position personnalisée"
+    },
+    "set_force_override": {
+      "description": "Mettre à jour les capteurs de dérogation forcée, la position, et le mode minimum.",
+      "fields": {
+        "force_override_min_mode": {
+          "description": "Si vrai, traiter force_override_position comme un plancher minimum.",
+          "name": "Mode de position minimale"
+        },
+        "force_override_position": {
+          "description": "Position vers laquelle se déplacer lorsqu'un capteur de dérogation forcée est actif (0–100%).",
+          "name": "Position de dérogation forcée"
+        },
+        "force_override_sensors": {
+          "description": "Capteurs binaires qui déclenchent la dérogation forcée. Liste vide = désactiver.",
+          "name": "Capteurs de dérogation forcée"
+        }
+      },
+      "name": "Définir la dérogation forcée"
+    },
+    "set_geometry": {
+      "description": "Mettre à jour les dimensions de la géométrie de la protection. Fournir uniquement les champs applicables à votre type de protection.",
+      "fields": {
+        "angle": {
+          "description": "Angle d'inclinaison du store banne en degrés (0–45°). Stores bannes uniquement.",
+          "name": "Angle du store banne"
+        },
+        "length_awning": {
+          "description": "Longueur de projection du store banne en mètres (0,3–6 m). Stores bannes uniquement.",
+          "name": "Longueur du store banne"
+        },
+        "sill_height": {
+          "description": "Hauteur de l'appui de fenêtre depuis le sol en mètres (0–3 m). Stores verticaux uniquement.",
+          "name": "Hauteur de l'appui"
+        },
+        "slat_depth": {
+          "description": "Profondeur de la lamelle vénitienne en centimètres (0,1–15 cm). Inclinaison uniquement.",
+          "name": "Profondeur de la lamelle"
+        },
+        "slat_distance": {
+          "description": "Distance entre les lamelles en centimètres (0,1–15 cm). Inclinaison uniquement.",
+          "name": "Distance entre les lamelles"
+        },
+        "tilt_mode": {
+          "description": "Mode de calcul de l'angle de la lamelle (mode1 ou mode2). Inclinaison uniquement.",
+          "name": "Mode d'inclinaison"
+        },
+        "window_depth": {
+          "description": "Profondeur du rejingot de la fenêtre en mètres (0–0,5 m). Stores verticaux uniquement.",
+          "name": "Profondeur de la fenêtre"
+        },
+        "window_height": {
+          "description": "Hauteur de la fenêtre en mètres (0,1–6 m). Stores verticaux et stores bannes uniquement.",
+          "name": "Hauteur de la fenêtre"
+        },
+        "window_width": {
+          "description": "Largeur de la fenêtre en mètres (0,1–5 m). Stores verticaux uniquement.",
+          "name": "Largeur de la fenêtre"
+        }
+      },
+      "name": "Définir la géométrie"
+    },
+    "set_interpolation": {
+      "description": "Activer l'interpolation de position et configurer la plage de début/fin et la table de consultation.",
+      "fields": {
+        "interp": {
+          "description": "Si vrai, appliquer le mappage d'interpolation à la position calculée.",
+          "name": "Activer l'interpolation"
+        },
+        "interp_end": {
+          "description": "Position calculée (%) à laquelle l'interpolation se termine. Null = aucun.",
+          "name": "Fin d'interpolation"
+        },
+        "interp_list": {
+          "description": "Positions d'entrée pour la table de consultation d'interpolation.",
+          "name": "Liste d'entrée"
+        },
+        "interp_list_new": {
+          "description": "Positions de sortie mappées depuis interp_list.",
+          "name": "Liste de sortie"
+        },
+        "interp_start": {
+          "description": "Position calculée (%) à laquelle l'interpolation commence. Null = aucun.",
+          "name": "Début d'interpolation"
+        }
+      },
+      "name": "Définir l'interpolation"
+    },
+    "set_light_cloud": {
+      "description": "Mettre à jour l'entité météo, le filtre d'état ensoleillé, les seuils de lux/irradiance/couverture nuageuse, et la suppression des nuages.",
+      "fields": {
+        "cloud_coverage_entity": {
+          "description": "Capteur signalant le pourcentage de couverture nuageuse. Null = aucun.",
+          "name": "Capteur de couverture nuageuse"
+        },
+        "cloud_coverage_threshold": {
+          "description": "Pourcentage de couverture nuageuse au-dessus duquel le ciel est considéré comme couvert.",
+          "name": "Seuil de couverture nuageuse"
+        },
+        "cloud_suppression": {
+          "description": "Supprimer le positionnement solaire lorsque la couverture nuageuse dépasse le seuil.",
+          "name": "Activer la suppression des nuages"
+        },
+        "irradiance_entity": {
+          "description": "Entité capteur d'irradiance solaire. Null = aucun.",
+          "name": "Capteur d'irradiance"
+        },
+        "irradiance_threshold": {
+          "description": "W/m² au-dessus duquel la protection est en lumière directe.",
+          "name": "Seuil d'irradiance"
+        },
+        "lux_entity": {
+          "description": "Entité capteur d'illuminance. Null = aucun.",
+          "name": "Capteur de lux"
+        },
+        "lux_threshold": {
+          "description": "Valeur de lux au-dessus de laquelle la protection est en lumière directe.",
+          "name": "Seuil de lux"
+        },
+        "weather_entity": {
+          "description": "Entité météo pour les lectures de condition. Null = aucun.",
+          "name": "Entité météo"
+        },
+        "weather_state": {
+          "description": "États des conditions météorologiques considérés comme ensoleillés pour le suivi solaire.",
+          "name": "États météorologiques ensoleillés"
+        }
+      },
+      "name": "Définir les paramètres de lumière et de nuages"
+    },
+    "set_manual_override": {
+      "description": "Mettre à jour la durée de la dérogation manuelle, le comportement de réinitialisation, et le seuil de détection.",
+      "fields": {
+        "manual_ignore_intermediate": {
+          "description": "Si vrai, ignorer les états d'ouverture/fermeture pour la détection de la dérogation manuelle.",
+          "name": "Ignorer les états intermédiaires"
+        },
+        "manual_override_duration": {
+          "description": "Durée pendant laquelle une dérogation manuelle dure avant que le contrôle automatique reprenne.",
+          "name": "Durée de la dérogation"
+        },
+        "manual_override_reset": {
+          "description": "Si vrai, effacer toute dérogation manuelle active lorsque la fenêtre de temps commence.",
+          "name": "Réinitialiser au démarrage de la fenêtre"
+        },
+        "manual_threshold": {
+          "description": "Changement de position (%) qui déclenche la détection de la dérogation manuelle (0–99).",
+          "name": "Seuil de détection"
+        }
+      },
+      "name": "Définir les paramètres de la dérogation manuelle"
+    },
+    "set_motion": {
+      "description": "Mettre à jour les capteurs de mouvement et le délai d'inactivité.",
+      "fields": {
+        "motion_sensors": {
+          "description": "Capteurs binaires indiquant l'occupation. Liste vide = désactiver le contrôle de mouvement.",
+          "name": "Capteurs de mouvement"
+        },
+        "motion_timeout": {
+          "description": "Secondes à attendre après le dernier mouvement avant d'appliquer la position de timeout de mouvement (30–3600).",
+          "name": "Délai d'inactivité"
+        }
+      },
+      "name": "Définir les paramètres de mouvement"
+    },
+    "set_option": {
+      "description": "Échappatoire générique — mettre à jour n'importe quelle option unique supportée par clé de nom. Les clés d'identité sont rejetées.",
+      "fields": {
+        "option": {
+          "description": "Clé d'option interne à mettre à jour (p. ex. 'default_percentage', 'sunset_position').",
+          "name": "Clé d'option"
+        },
+        "value": {
+          "description": "Nouvelle valeur pour l'option. Passer null pour effacer un champ optionnel.",
+          "name": "Valeur"
+        }
+      },
+      "name": "Définir l'option (générique)"
+    },
+    "set_position_limits": {
+      "description": "Mettre à jour la hauteur par défaut, la position min/max, le seuil d'ouverture/fermeture, et l'état inverse.",
+      "fields": {
+        "default_height": {
+          "description": "Position de protection par défaut lorsque le soleil n'est pas visible (0–100%).",
+          "name": "Hauteur par défaut"
+        },
+        "enable_max_position": {
+          "description": "Si vrai, max_position s'applique uniquement lors du suivi du soleil.",
+          "name": "Activer la position max uniquement pendant le suivi"
+        },
+        "enable_min_position": {
+          "description": "Si vrai, min_position s'applique uniquement lors du suivi du soleil.",
+          "name": "Activer la position min uniquement pendant le suivi"
+        },
+        "inverse_state": {
+          "description": "Inverser la position pour les protections qui signalent l'état de manière inverse.",
+          "name": "État inverse"
+        },
+        "max_position": {
+          "description": "Position maximale vers laquelle la protection peut se déplacer (1–100%).",
+          "name": "Position maximale"
+        },
+        "min_position": {
+          "description": "Position minimale vers laquelle la protection peut se déplacer (0–99%).",
+          "name": "Position minimale"
+        },
+        "open_close_threshold": {
+          "description": "Position en dessous de laquelle les protections ouvertes/fermées uniquement sont fermées (1–99%).",
+          "name": "Seuil d'ouverture/fermeture"
+        }
+      },
+      "name": "Définir les limites de position"
+    },
+    "set_sun_tracking": {
+      "description": "Mettre à jour l'azimut, le champ de vision, les limites d'élévation, et l'interrupteur de suivi solaire.",
+      "fields": {
+        "distance_shaded_area": {
+          "description": "Distance (m) de la fenêtre au bord de la zone ombragée (0,1–5 m).",
+          "name": "Distance vers la zone ombragée"
+        },
+        "enable_sun_tracking": {
+          "description": "Interrupteur principal pour le contrôle des protections basé sur la position solaire.",
+          "name": "Activer le suivi solaire"
+        },
+        "fov_left": {
+          "description": "Degrés à gauche de l'azimut dans lesquels le soleil affecte cette protection (0–180°).",
+          "name": "Champ de vision gauche"
+        },
+        "fov_right": {
+          "description": "Degrés à droite de l'azimut dans lesquels le soleil affecte cette protection (0–180°).",
+          "name": "Champ de vision droit"
+        },
+        "max_elevation": {
+          "description": "Élévation solaire (°) au-dessus de laquelle la protection est complètement ouverte. Null = pas de maximum.",
+          "name": "Élévation solaire maximale"
+        },
+        "min_elevation": {
+          "description": "Élévation solaire (°) en dessous de laquelle la protection n'est pas déplacée. Null = pas de minimum.",
+          "name": "Élévation solaire minimale"
+        },
+        "set_azimuth": {
+          "description": "Direction cardinale vers laquelle la fenêtre fait face (0–359°).",
+          "name": "Azimut de la fenêtre"
+        }
+      },
+      "name": "Définir les paramètres de suivi solaire"
+    },
+    "set_sunset_sunrise": {
+      "description": "Mettre à jour les paramètres de position et de décalage du coucher/lever de soleil. Passer null pour effacer un champ optionnel.",
+      "fields": {
+        "my_position_value": {
+          "description": "La position du préréglage 'My' (1–99%).",
+          "name": "Position Somfy My"
+        },
+        "sunrise_offset": {
+          "description": "Minutes pour décaler le déclenchement du début de la fenêtre par rapport au lever de soleil (-120–120).",
+          "name": "Décalage du lever de soleil"
+        },
+        "sunset_offset": {
+          "description": "Minutes pour décaler le déclenchement de la fin de la fenêtre par rapport au coucher de soleil (-120–120).",
+          "name": "Décalage du coucher de soleil"
+        },
+        "sunset_position": {
+          "description": "Position vers laquelle se déplacer à la fin de la fenêtre de temps. Null = utiliser default_height.",
+          "name": "Position du coucher de soleil"
+        },
+        "sunset_use_my": {
+          "description": "Si vrai, utiliser my_position_value au lieu de sunset_position à la fin de la fenêtre.",
+          "name": "Utiliser Somfy My au coucher de soleil"
+        }
+      },
+      "name": "Définir les positions du coucher/lever de soleil"
+    },
+    "set_weather_safety": {
+      "description": "Mettre à jour les paramètres de dérogation pour le vent, la pluie et les conditions météorologiques graves.",
+      "fields": {
+        "weather_bypass_auto_control": {
+          "description": "Si vrai, la dérogation météorologiquement ignore le bouton Contrôle automatique.",
+          "name": "Contourner le contrôle automatique"
+        },
+        "weather_is_raining_sensor": {
+          "description": "Capteur binaire indiquant une pluie active. Null = aucun.",
+          "name": "Capteur de pluie active"
+        },
+        "weather_is_windy_sensor": {
+          "description": "Capteur binaire indiquant un vent dangereux. Null = aucun.",
+          "name": "Capteur de vent dangereux"
+        },
+        "weather_override_min_mode": {
+          "description": "Si vrai, traiter weather_override_position comme un plancher minimum.",
+          "name": "Mode de position minimale"
+        },
+        "weather_override_position": {
+          "description": "Position vers laquelle se déplacer lorsque la dérogation météorologique est déclenchée (0–100%).",
+          "name": "Position de dérogation météorologique"
+        },
+        "weather_rain_sensor": {
+          "description": "Entité capteur pour l'accumulation de pluie. Null = aucun.",
+          "name": "Capteur de pluie"
+        },
+        "weather_rain_threshold": {
+          "description": "Accumulation de pluie au-dessus de laquelle la protection est rétractée.",
+          "name": "Seuil de pluie"
+        },
+        "weather_severe_sensors": {
+          "description": "Capteurs binaires pour conditions météorologiques graves (logique OR). Liste vide = aucun.",
+          "name": "Capteurs de conditions graves"
+        },
+        "weather_timeout": {
+          "description": "Secondes à attendre après l'amélioration des conditions avant de reprendre le contrôle automatique (0–3600).",
+          "name": "Délai d'amélioration météorologique"
+        },
+        "weather_wind_direction_sensor": {
+          "description": "Entité capteur pour la direction du vent. Null = aucun.",
+          "name": "Capteur de direction du vent"
+        },
+        "weather_wind_direction_tolerance": {
+          "description": "Degrés de part et d'autre de l'azimut de la fenêtre considérés comme une menace de vent (5–180°).",
+          "name": "Tolérance de direction du vent"
+        },
+        "weather_wind_speed_sensor": {
+          "description": "Entité capteur pour la vitesse du vent. Null = aucun.",
+          "name": "Capteur de vitesse du vent"
+        },
+        "weather_wind_speed_threshold": {
+          "description": "Vitesse du vent au-dessus de laquelle la protection est rétractée.",
+          "name": "Seuil de vitesse du vent"
+        }
+      },
+      "name": "Définir les paramètres de sécurité météorologique"
+    }
   }
 }
