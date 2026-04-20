@@ -2438,7 +2438,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     step_id="interp",
                     data_schema=INTERPOLATION_OPTIONS,
                     errors={
-                        CONF_INTERP_LIST_NEW: "Must have same length as 'Interpolation' list"
+                        CONF_INTERP_LIST_NEW: "Must have same length as 'Calculated positions (input)' list"
                     },
                 )
             self.config.update(user_input)
@@ -3248,7 +3248,7 @@ class OptionsFlowHandler(OptionsFlow):
                         INTERPOLATION_OPTIONS, user_input
                     ),
                     errors={
-                        CONF_INTERP_LIST_NEW: "Must have same length as 'Interpolation' list"
+                        CONF_INTERP_LIST_NEW: "Must have same length as 'Calculated positions (input)' list"
                     },
                 )
             self.options.update(user_input)

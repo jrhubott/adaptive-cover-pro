@@ -366,19 +366,19 @@
       },
       "interp": {
         "data": {
-          "interp_start": "Valeur où l'ouverture commence",
-          "interp_end": "Valeur où la fermeture commence",
-          "interp_list": "Liste d'interpolation",
-          "interp_list_new": "Liste d'interpolation personnalisée"
+          "interp_start": "Entrée de calibration 0 % correspond à (sortie %)",
+          "interp_end": "Entrée de calibration 100 % correspond à (sortie %)",
+          "interp_list": "Positions calculées (entrée)",
+          "interp_list_new": "Positions réelles à envoyer (sortie)"
         },
         "data_description": {
-          "interp_start": "Valeur de position physique où votre store commence réellement à s'ouvrir (étalonnage simple à 2 points). Exemple : Si votre store commence à se déplacer uniquement à 10%, réglez sur 10. Utilisé avec interp_end pour un mappage linéaire basique. La plupart des stores n'en ont pas besoin - laissez par défaut sauf si votre store a une plage limitée.",
-          "interp_end": "Valeur de position physique où votre store atteint réellement l'ouverture complète (étalonnage simple à 2 points). Exemple : Si votre store est complètement ouvert à 90%, réglez sur 90. Utilisé avec interp_start pour un mappage linéaire basique. La plupart des stores n'en ont pas besoin - laissez par défaut sauf si votre store a une plage limitée.",
-          "interp_list": "Positions d'entrée pour le mappage d'interpolation personnalisé (positions calculées de l'intégration). Entrez des valeurs espacées régulièrement comme : 0, 25, 50, 75, 100. Ce sont les positions théoriques que l'intégration calcule. Doit avoir 2+ valeurs et même longueur que la liste d'interpolation personnalisée. Utilisé pour l'étalonnage non linéaire avancé. Laissez vide pour un fonctionnement normal.",
-          "interp_list_new": "Positions de sortie pour le mappage d'interpolation personnalisé (positions réelles envoyées au store). Entrez les positions réelles correspondantes comme : 0, 20, 40, 65, 100. C'est ce qui est réellement envoyé à votre entité de store. Doit avoir la même longueur que la liste d'interpolation. Exemple d'utilisation : Rendez le store plus agressif dans la fermeture en mappant 50% calculé à 40% réel. L'intégration interpole entre vos points. Laissez vide pour un fonctionnement normal."
+          "interp_start": "Position de sortie envoyée au store quand l'intégration calcule 0 % (complètement fermé). Exemple : si votre store a besoin de 10 % pour être enregistré comme fermé, réglez ceci à 10. Calibration linéaire simple à 2 points — utilisée avec le mappage 100 % ci-dessous. Conservez la valeur par défaut sauf si votre store a une plage limitée.",
+          "interp_end": "Position de sortie envoyée au store quand l'intégration calcule 100 % (complètement ouvert). Exemple : si votre store est complètement ouvert à 90 %, réglez ceci à 90. Calibration linéaire simple à 2 points — utilisée avec le mappage 0 % ci-dessus. Conservez la valeur par défaut sauf si votre store a une plage limitée.",
+          "interp_list": "Positions d'entrée pour le mappage personnalisé d'interpolation (positions calculées par l'intégration). Entrez des valeurs espacées régulièrement comme : 0, 25, 50, 75, 100. Ce sont les positions théoriques que l'intégration calcule. Doit avoir 2+ valeurs et la même longueur que « Positions réelles à envoyer (sortie) ». Utilisé pour la calibration avancée non-linéaire. Laissez vide pour un fonctionnement normal.",
+          "interp_list_new": "Positions de sortie pour le mappage personnalisé d'interpolation (positions réelles envoyées au store). Entrez les positions réelles correspondantes comme : 0, 20, 40, 65, 100. C'est ce qui est réellement envoyé à votre entité store. Doit avoir la même longueur que « Positions calculées (entrée) ». Exemple d'utilisation : Rendez le store plus agressif en fermant en mappant 50 % calculé à 40 % réel. L'intégration interpole entre vos points. Laissez vide pour un fonctionnement normal."
         },
         "title": "Étalonnage de position",
-        "description": "Ajustez le mappage de position du store pour un comportement non standard. Utilisez un ajustement simple à 2 points (interp_start/end) pour les stores avec une plage limitée (par exemple, se déplace uniquement entre 10-90%). Utilisez l'interpolation de liste avancée pour les stores non linéaires ou pour biaiser le comportement vers des positions plus ouvertes/fermées. La plupart des stores n'en ont pas besoin - n'activez que si votre store ne répond pas correctement aux commandes 0-100% standard."
+        "description": "Ajustez le mappage de position du store pour les stores non-standard en mappant une position calculée (entrée) à une position réelle envoyée au store (sortie). Utilisez une calibration simple à 2 points (mappez 0 % et 100 %) pour les stores avec plage limitée (par exemple, ne bouge qu'entre 10–90 %). Utilisez le mappage de liste avancée pour les stores non-linéaires ou pour biaiser le comportement plus ouvert/fermé. La plupart des stores n'en ont pas besoin — activez uniquement si votre store ne répond pas correctement aux commandes 0–100 % standard."
       },
       "duplicate_select": {
         "title": "Dupliquer un store — Sélectionner la source",
@@ -802,19 +802,19 @@
       },
       "interp": {
         "data": {
-          "interp_start": "Valeur où l'ouverture commence",
-          "interp_end": "Valeur où la fermeture commence",
-          "interp_list": "Liste d'interpolation",
-          "interp_list_new": "Liste d'interpolation personnalisée"
+          "interp_start": "Entrée de calibration 0 % correspond à (sortie %)",
+          "interp_end": "Entrée de calibration 100 % correspond à (sortie %)",
+          "interp_list": "Positions calculées (entrée)",
+          "interp_list_new": "Positions réelles à envoyer (sortie)"
         },
         "data_description": {
-          "interp_start": "Valeur de position physique où votre store commence réellement à s'ouvrir (étalonnage simple à 2 points). Exemple : Si votre store commence à se déplacer uniquement à 10%, réglez sur 10. Utilisé avec interp_end pour un mappage linéaire basique. La plupart des stores n'en ont pas besoin - laissez par défaut sauf si votre store a une plage limitée.",
-          "interp_end": "Valeur de position physique où votre store atteint réellement l'ouverture complète (étalonnage simple à 2 points). Exemple : Si votre store est complètement ouvert à 90%, réglez sur 90. Utilisé avec interp_start pour un mappage linéaire basique. La plupart des stores n'en ont pas besoin - laissez par défaut sauf si votre store a une plage limitée.",
-          "interp_list": "Positions d'entrée pour le mappage d'interpolation personnalisé (positions calculées de l'intégration). Entrez des valeurs espacées régulièrement comme : 0, 25, 50, 75, 100. Ce sont les positions théoriques que l'intégration calcule. Doit avoir 2+ valeurs et même longueur que la liste d'interpolation personnalisée. Utilisé pour l'étalonnage non linéaire avancé. Laissez vide pour un fonctionnement normal.",
-          "interp_list_new": "Positions de sortie pour le mappage d'interpolation personnalisé (positions réelles envoyées au store). Entrez les positions réelles correspondantes comme : 0, 20, 40, 65, 100. C'est ce qui est réellement envoyé à votre entité de store. Doit avoir la même longueur que la liste d'interpolation. Exemple d'utilisation : Rendez le store plus agressif dans la fermeture en mappant 50% calculé à 40% réel. L'intégration interpole entre vos points. Laissez vide pour un fonctionnement normal."
+          "interp_start": "Position de sortie envoyée au store quand l'intégration calcule 0 % (complètement fermé). Exemple : si votre store a besoin de 10 % pour être enregistré comme fermé, réglez ceci à 10. Calibration linéaire simple à 2 points — utilisée avec le mappage 100 % ci-dessous. Conservez la valeur par défaut sauf si votre store a une plage limitée.",
+          "interp_end": "Position de sortie envoyée au store quand l'intégration calcule 100 % (complètement ouvert). Exemple : si votre store est complètement ouvert à 90 %, réglez ceci à 90. Calibration linéaire simple à 2 points — utilisée avec le mappage 0 % ci-dessus. Conservez la valeur par défaut sauf si votre store a une plage limitée.",
+          "interp_list": "Positions d'entrée pour le mappage personnalisé d'interpolation (positions calculées par l'intégration). Entrez des valeurs espacées régulièrement comme : 0, 25, 50, 75, 100. Ce sont les positions théoriques que l'intégration calcule. Doit avoir 2+ valeurs et la même longueur que « Positions réelles à envoyer (sortie) ». Utilisé pour la calibration avancée non-linéaire. Laissez vide pour un fonctionnement normal.",
+          "interp_list_new": "Positions de sortie pour le mappage personnalisé d'interpolation (positions réelles envoyées au store). Entrez les positions réelles correspondantes comme : 0, 20, 40, 65, 100. C'est ce qui est réellement envoyé à votre entité store. Doit avoir la même longueur que « Positions calculées (entrée) ». Exemple d'utilisation : Rendez le store plus agressif en fermant en mappant 50 % calculé à 40 % réel. L'intégration interpole entre vos points. Laissez vide pour un fonctionnement normal."
         },
         "title": "Étalonnage de position",
-        "description": "Ajustez le mappage de position du store pour un comportement non standard. Utilisez un ajustement simple à 2 points (interp_start/end) pour les stores avec une plage limitée (par exemple, se déplace uniquement entre 10-90%). Utilisez l'interpolation de liste avancée pour les stores non linéaires ou pour biaiser le comportement vers des positions plus ouvertes/fermées. La plupart des stores n'en ont pas besoin - n'activez que si votre store ne répond pas correctement aux commandes 0-100% standard."
+        "description": "Ajustez le mappage de position du store pour les stores non-standard en mappant une position calculée (entrée) à une position réelle envoyée au store (sortie). Utilisez une calibration simple à 2 points (mappez 0 % et 100 %) pour les stores avec plage limitée (par exemple, ne bouge qu'entre 10–90 %). Utilisez le mappage de liste avancée pour les stores non-linéaires ou pour biaiser le comportement plus ouvert/fermé. La plupart des stores n'en ont pas besoin — activez uniquement si votre store ne répond pas correctement aux commandes 0–100 % standard."
       },
       "glare_zones": {
         "title": "Zones d'éblouissement",

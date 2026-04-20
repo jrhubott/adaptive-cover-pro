@@ -366,19 +366,19 @@
       },
       "interp": {
         "data": {
-          "interp_start": "Value where opening starts",
-          "interp_end": "Value where closing starts",
-          "interp_list": "List of interpolation",
-          "interp_list_new": "Custom interpolation list"
+          "interp_start": "Calibration input 0% maps to (output %)",
+          "interp_end": "Calibration input 100% maps to (output %)",
+          "interp_list": "Calculated positions (input)",
+          "interp_list_new": "Actual positions to send (output)"
         },
         "data_description": {
-          "interp_start": "Physical position value where your cover actually starts to open (simple 2-point calibration). Example: If your cover only starts moving at 10%, set this to 10. Used with interp_end for basic linear mapping. Most covers don't need this - leave at default unless your cover has limited range.",
-          "interp_end": "Physical position value where your cover actually reaches fully open (simple 2-point calibration). Example: If your cover is fully open at 90%, set this to 90. Used with interp_start for basic linear mapping. Most covers don't need this - leave at default unless your cover has limited range.",
-          "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as Custom interpolation list. Used for advanced non-linear calibration. Leave empty for normal operation.",
-          "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as List of interpolation. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
+          "interp_start": "Output position sent to the cover when the integration calculates 0% (fully closed). Example: if your cover needs 10% to register as closed, set this to 10. Simple 2-point linear calibration — used together with the 100% mapping below. Leave at default unless your cover has limited range.",
+          "interp_end": "Output position sent to the cover when the integration calculates 100% (fully open). Example: if your cover is fully open at 90%, set this to 90. Simple 2-point linear calibration — used together with the 0% mapping above. Leave at default unless your cover has limited range.",
+          "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as 'Actual positions to send (output)'. Used for advanced non-linear calibration. Leave empty for normal operation.",
+          "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as 'Calculated positions (input)'. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
         "title": "Position Calibration",
-        "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
+        "description": "Adjust cover position mapping for non-standard covers by mapping a calculated position (input) to an actual position sent to the cover (output). Use simple 2-point calibration (map 0% and 100%) for covers with limited range (e.g., only moves between 10–90%). Use advanced list mapping for non-linear covers or to bias behavior more open/closed. Most covers don't need this — only enable if your cover doesn't respond correctly to standard 0–100% commands."
       },
       "duplicate_select": {
         "title": "Duplicate Cover — Select Source",
@@ -802,19 +802,19 @@
       },
       "interp": {
         "data": {
-          "interp_start": "Value where opening starts",
-          "interp_end": "Value where closing starts",
-          "interp_list": "List of interpolation",
-          "interp_list_new": "Custom interpolation list"
+          "interp_start": "Calibration input 0% maps to (output %)",
+          "interp_end": "Calibration input 100% maps to (output %)",
+          "interp_list": "Calculated positions (input)",
+          "interp_list_new": "Actual positions to send (output)"
         },
         "data_description": {
-          "interp_start": "Physical position value where your cover actually starts to open (simple 2-point calibration). Example: If your cover only starts moving at 10%, set this to 10. Used with interp_end for basic linear mapping. Most covers don't need this - leave at default unless your cover has limited range.",
-          "interp_end": "Physical position value where your cover actually reaches fully open (simple 2-point calibration). Example: If your cover is fully open at 90%, set this to 90. Used with interp_start for basic linear mapping. Most covers don't need this - leave at default unless your cover has limited range.",
-          "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as Custom interpolation list. Used for advanced non-linear calibration. Leave empty for normal operation.",
-          "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as List of interpolation. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
+          "interp_start": "Output position sent to the cover when the integration calculates 0% (fully closed). Example: if your cover needs 10% to register as closed, set this to 10. Simple 2-point linear calibration — used together with the 100% mapping below. Leave at default unless your cover has limited range.",
+          "interp_end": "Output position sent to the cover when the integration calculates 100% (fully open). Example: if your cover is fully open at 90%, set this to 90. Simple 2-point linear calibration — used together with the 0% mapping above. Leave at default unless your cover has limited range.",
+          "interp_list": "Input positions for custom interpolation mapping (calculated positions from integration). Enter evenly-spaced values like: 0, 25, 50, 75, 100. These are the theoretical positions the integration calculates. Must have 2+ values and same length as 'Actual positions to send (output)'. Used for advanced non-linear calibration. Leave empty for normal operation.",
+          "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as 'Calculated positions (input)'. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
         "title": "Position Calibration",
-        "description": "Adjust cover position mapping for non-standard behavior. Use simple 2-point adjustment (interp_start/end) for covers with limited range (e.g., only moves between 10-90%). Use advanced list interpolation for non-linear covers or to bias behavior toward more open/closed positions. Most covers don't need this - only enable if your cover doesn't respond correctly to standard 0-100% commands."
+        "description": "Adjust cover position mapping for non-standard covers by mapping a calculated position (input) to an actual position sent to the cover (output). Use simple 2-point calibration (map 0% and 100%) for covers with limited range (e.g., only moves between 10–90%). Use advanced list mapping for non-linear covers or to bias behavior more open/closed. Most covers don't need this — only enable if your cover doesn't respond correctly to standard 0–100% commands."
       },
       "glare_zones": {
         "title": "Glare Zones",
