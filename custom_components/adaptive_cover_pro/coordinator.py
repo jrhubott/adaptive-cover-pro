@@ -1015,6 +1015,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             custom_position_sensors=self._read_custom_position_sensor_states(options),
             my_position_value=options.get(CONF_MY_POSITION_VALUE),
             sunset_use_my=bool(options.get(CONF_SUNSET_USE_MY, False)),
+            enable_sun_tracking=bool(options.get(CONF_ENABLE_SUN_TRACKING, True)),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 

@@ -83,7 +83,7 @@ def compute_raw_calculated_position(snapshot: PipelineSnapshot) -> int:
         Solar-tracked position (1–100) when sun is valid, else effective default.
 
     """
-    if snapshot.cover.direct_sun_valid:
+    if snapshot.cover.direct_sun_valid and snapshot.enable_sun_tracking:
         return compute_solar_position(snapshot)
     if snapshot.is_sunset_active:
         return snapshot.default_position

@@ -91,6 +91,13 @@ class PipelineSnapshot:
     # Users can disable this if they want weather override to respect the auto-control toggle.
     weather_bypass_auto_control: bool = True
 
+    # When False, sun-tracking is disabled (CONF_ENABLE_SUN_TRACKING=False).
+    # compute_raw_calculated_position() must skip the solar branch so that
+    # min-mode floors are measured against what the pipeline would actually
+    # command (the default position), not a solar geometry result that will
+    # never be applied.  Defaults to True for backward compatibility (#264).
+    enable_sun_tracking: bool = True
+
     # Minimum position mode: when True, the configured position acts as a floor —
     # the handler returns max(configured, raw_calculated) instead of always returning configured.
     force_override_min_mode: bool = False
