@@ -5,7 +5,7 @@ description: Sync DE/FR translations with en.json, add a new language, drop a la
 
 # ACP Translate
 
-Maintains the `custom_components/adaptive_cover_pro/translations/` directory. `en.json` is the single source of truth; every other language file must match its structure exactly, **except** the `services` section which is intentionally English-only (HA falls back to English for locales missing that section).
+Maintains the `custom_components/adaptive_cover_pro/translations/` directory. `en.json` is the single source of truth; every other language file must match its structure exactly, including the `services` section.
 
 Officially shipped languages: **en, de, fr**. Any new language is added only on explicit maintainer request via this skill.
 
@@ -50,7 +50,7 @@ Use when `translations/en.json` has changed and DE/FR need to catch up.
 
 ### Steps
 
-1. **Diff.** Load all three translation files via Bash+Python (see **Reading Translation Files** — do NOT use the Read tool). Flatten each to dot-path keys (skip any `services.*` paths in all three). For each non-en file compute:
+1. **Diff.** Load all three translation files via Bash+Python (see **Reading Translation Files** — do NOT use the Read tool). Flatten each to dot-path keys. For each non-en file compute:
    - `added`: keys in en but not in target
    - `removed`: keys in target but not in en
    - `changed`: keys where the en value text changed since the target was last generated. Detect by heuristic: if `target[k]` looks like an obvious placeholder (equals `en[k]` verbatim, or is a short English phrase when the rest of the file is clearly in the target language), treat it as changed. When unsure, retranslate — cost of a re-translation is negligible.
@@ -92,10 +92,10 @@ Use to rebuild DE/FR from scratch **or** to add a brand-new language.
    - The domain-term glossary (see below) — customized per language
 
    The subagent's job:
-   - Load the full en.json tree excluding `services.*` via Bash+Python (see **Reading Translation Files**).
+   - Load the full en.json tree via Bash+Python (see **Reading Translation Files**).
    - **Pass 1 — Haiku bulk:** Run the Haiku translation prompt on all keys. Capture output as a JSON object.
    - **Pass 2 — Sonnet review (data_descriptions only):** Filter the Haiku output to include ONLY keys containing `.data_description.` — do not send any other keys to Sonnet. Run the Sonnet review prompt on this filtered subset. Merge corrected values back into the Haiku output.
-   - Write `translations/<lang>.json` via Bash+Python: same nested structure as en.json (minus `services`), 2-space indent, `ensure_ascii=False`, trailing newline.
+   - Write `translations/<lang>.json` via Bash+Python: same nested structure as en.json, 2-space indent, `ensure_ascii=False`, trailing newline.
    - Return a summary: key count written, how many data_description keys were reviewed by Sonnet, placeholder warnings, cost estimate.
 
 4. **Update tooling.** After subagents return:
@@ -153,7 +153,6 @@ python3 -c "
 import json
 with open('/path/to/en.json') as f:
     d = json.load(f)
-d.pop('services', None)
 print(json.dumps(d, ensure_ascii=False))
 "
 ```
@@ -307,7 +306,7 @@ Non-EN translation files must:
 - Be valid JSON, 2-space indent.
 - Use `ensure_ascii=False` (keep accented characters as-is, not `\uXXXX`).
 - End with exactly one trailing newline.
-- Preserve en.json's nested structure for every top-level section **except** `services`, which is omitted entirely.
+- Preserve en.json's nested structure for every top-level section, including `services`.
 - Contain no `mdi:` icon references, no zero-width characters, no empty string values.
 
 ---
@@ -315,7 +314,6 @@ Non-EN translation files must:
 ## Safety Rules
 
 - **Never delete `en.json`.**
-- **Never translate the `services` section into any non-EN file.**
 - **Never write a translation file without running the validator and tests afterwards.**
 - **Never silently drop keys from a target file.** If a key was removed from en.json, the Sync operation must list it under "removed" in the report.
 - **If Haiku output fails JSON parse**, retry once; if still failing, dispatch Sonnet for that batch as a fallback. Do not return partial results.

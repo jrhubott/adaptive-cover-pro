@@ -1078,5 +1078,487 @@
         "weather_override": "Wetter-Übersteuerung"
       }
     }
+  },
+  "services": {
+    "emergency_stop": {
+      "description": "Panik-Button — sendet stop_cover an alle konfigurierten Beschattungen auf den Zielinstanzen (Fähigkeitsprüfung), dann deaktiviert die Integration. Ohne Ziel wirkt auf alle ACP-Instanzen.",
+      "name": "Notfallstopp"
+    },
+    "export_config": {
+      "description": "Gibt die Beschattungskonfiguration als JSON zur Verwendung im Simulationsnotebook zurück.",
+      "fields": {
+        "config_entry_id": {
+          "description": "Der Adaptive Cover Pro Konfigurationseintrag zum Exportieren.",
+          "name": "Beschattungskonfiguration"
+        }
+      },
+      "name": "Konfiguration exportieren"
+    },
+    "integration_disable": {
+      "description": "Deaktiviert Adaptive Cover Pro auf den Zielinstanzen. Laufende Beschattungsbewegungen werden sofort gestoppt, aufgeschobene Timer abgebrochen und Abgleichstatus gelöscht.",
+      "name": "Integration deaktivieren"
+    },
+    "integration_enable": {
+      "description": "Reaktiviert Adaptive Cover Pro auf den Zielinstanzen. Beschattungen bleiben wo sie sind; die Positionierung setzt sich beim nächsten natürlichen Update-Zyklus fort.",
+      "name": "Integration aktivieren"
+    },
+    "set_automation_timing": {
+      "description": "Aktualisiert Positions- und Zeitschwellen, Zeitfenster Start/Ende und return_sunset.",
+      "fields": {
+        "delta_position": {
+          "description": "Minimale Positionsänderung (%) vor dem Versenden eines Beschattungsbefehls (1–90).",
+          "name": "Positionsänderungsschwelle"
+        },
+        "delta_time": {
+          "description": "Minimale Zeit (Minuten) zwischen Beschattungsbefehlen (2–60).",
+          "name": "Zeitschwelle"
+        },
+        "end_entity": {
+          "description": "Entity, deren Status die Endzeit bereitstellt. Schließt sich gegenseitig mit end_time aus.",
+          "name": "End-Entity"
+        },
+        "end_time": {
+          "description": "Feste Zeit zum Beenden des Tracking-Fensters (HH:MM:SS). Schließt sich gegenseitig mit end_entity aus.",
+          "name": "Endzeit"
+        },
+        "return_sunset": {
+          "description": "Wenn wahr, Sunset-Position beim Fenster-Ende erzwingen.",
+          "name": "Rückkehr zur Sonnenuntergangsposition am Ende"
+        },
+        "start_entity": {
+          "description": "Entity, deren Status die Startzeit bereitstellt. Schließt sich gegenseitig mit start_time aus.",
+          "name": "Start-Entity"
+        },
+        "start_time": {
+          "description": "Feste Zeit zum Starten des Tracking-Fensters (HH:MM:SS). Schließt sich gegenseitig mit start_entity aus.",
+          "name": "Startzeit"
+        }
+      },
+      "name": "Automatisierungs-Timing einstellen"
+    },
+    "set_blind_spot": {
+      "description": "Aktualisiert Blendungszonenwinkelbereiche. blind_spot_right muss größer als blind_spot_left sein.",
+      "fields": {
+        "blind_spot": {
+          "description": "Wenn wahr, ist die Blendungszone aktiv.",
+          "name": "Blendungszone aktivieren"
+        },
+        "blind_spot_elevation": {
+          "description": "Maximale Sonnenhöhe (°) für die Blendungszone. Null = immer aktiv.",
+          "name": "Höhenlimit"
+        },
+        "blind_spot_left": {
+          "description": "Linke Kante der Blendungszone in Grad nach innen von der linken FOV-Grenze (0 = an der FOV-Kante, Bereich 0–359°).",
+          "name": "Linke Kante (von FOV-Links)"
+        },
+        "blind_spot_right": {
+          "description": "Rechte Kante der Blendungszone in Grad nach innen von der linken FOV-Grenze. Muss größer als linke Kante sein (Bereich 1–360°).",
+          "name": "Rechte Kante (von FOV-Links)"
+        }
+      },
+      "name": "Blendungszone einstellen"
+    },
+    "set_climate": {
+      "description": "Aktualisiert Klimamodus und Temperatur-/Anwesenheitsoptionen. Erzwingt temp_low < temp_high.",
+      "fields": {
+        "climate_mode": {
+          "description": "Hauptschalter für temperaturgesteuerte Positionierung.",
+          "name": "Klimamodus aktivieren"
+        },
+        "outside_temp": {
+          "description": "Sensor-Entity für Außentemperatur. Null = kein.",
+          "name": "Außentemperatur-Entity"
+        },
+        "outside_threshold": {
+          "description": "Außentemperatur (°), über der Sommerstrategie erzwungen wird (0–100).",
+          "name": "Außentemperatur-Schwellwert"
+        },
+        "presence_entity": {
+          "description": "Entity, die Anwesenheit anzeigt. Null = kein.",
+          "name": "Anwesenheits-Entity"
+        },
+        "temp_entity": {
+          "description": "Klima- oder Sensor-Entity für Innentemperatur. Null = kein.",
+          "name": "Innentemperatur-Entity"
+        },
+        "temp_high": {
+          "description": "Oberhalb dieser Temperatur (°) wird die Sommerstrategie angewendet (0–90).",
+          "name": "Schwellwert hohe Temperatur"
+        },
+        "temp_low": {
+          "description": "Unterhalb dieser Temperatur (°) wird die Winterstrategie angewendet (0–90).",
+          "name": "Schwellwert niedrige Temperatur"
+        },
+        "transparent_blind": {
+          "description": "Wenn wahr, wird die Jalousie für Klimaberechnungen als halbtransparent behandelt.",
+          "name": "Transparente Jalousie"
+        },
+        "winter_close_insulation": {
+          "description": "Wenn wahr, wird die Beschattung an kalten Tagen vollständig geschlossen, um die Wärmeisolation zu verbessern.",
+          "name": "Für Winterisolation schließen"
+        }
+      },
+      "name": "Klimaeinstellungen festlegen"
+    },
+    "set_custom_position": {
+      "description": "Aktualisiert einen Custom-Position-Slot (1–4). Null für Sensor und Position zum Löschen des Slots.",
+      "fields": {
+        "min_mode": {
+          "description": "Wenn wahr, wird die Position als minimale Untergrenze behandelt.",
+          "name": "Minimum-Position-Modus"
+        },
+        "position": {
+          "description": "Zielposition (0–100%) wenn der Sensor aktiv ist. Null = Slot löschen.",
+          "name": "Position"
+        },
+        "priority": {
+          "description": "Pipeline-Priorität (1–99, Standard 77).",
+          "name": "Priorität"
+        },
+        "sensor": {
+          "description": "Binärsensor, der diese Custom-Position aktiviert. Null = Slot löschen.",
+          "name": "Auslöse-Sensor"
+        },
+        "slot": {
+          "description": "Welcher Custom-Position-Slot aktualisiert wird (1–4).",
+          "name": "Slot"
+        },
+        "use_my": {
+          "description": "Wenn wahr, wird my_position_value statt Position verwendet.",
+          "name": "Somfy My verwenden"
+        }
+      },
+      "name": "Custom-Position-Slot einstellen"
+    },
+    "set_force_override": {
+      "description": "Aktualisiert Zwangsübersteuerungs-Sensoren, Position und Minimum-Modus.",
+      "fields": {
+        "force_override_min_mode": {
+          "description": "Wenn wahr, wird force_override_position als minimale Untergrenze behandelt.",
+          "name": "Minimum-Position-Modus"
+        },
+        "force_override_position": {
+          "description": "Position zum Bewegen wenn ein Zwangsübersteuerungs-Sensor aktiv ist (0–100%).",
+          "name": "Zwangsübersteuerungs-Position"
+        },
+        "force_override_sensors": {
+          "description": "Binärsensoren, die die Zwangsübersteuerung auslösen. Leere Liste = deaktivieren.",
+          "name": "Zwangsübersteuerungs-Sensoren"
+        }
+      },
+      "name": "Zwangsübersteuerung einstellen"
+    },
+    "set_geometry": {
+      "description": "Aktualisiert Beschattungsgeometrie-Abmessungen. Geben Sie nur anwendbare Felder für Ihren Beschattungstyp an.",
+      "fields": {
+        "angle": {
+          "description": "Markisen-Neigungswinkel in Grad (0–45°). Nur Markise.",
+          "name": "Markisen-Winkel"
+        },
+        "length_awning": {
+          "description": "Markisen-Ausfahrlänge in Metern (0,3–6 m). Nur Markise.",
+          "name": "Markisenlänge"
+        },
+        "sill_height": {
+          "description": "Fensterbrett-Höhe vom Boden in Metern (0–3 m). Nur Vertikaljalousie.",
+          "name": "Fensterbrett-Höhe"
+        },
+        "slat_depth": {
+          "description": "Tiefe der Venezianischer-Lamellen in Zentimetern (0,1–15 cm). Nur Neigung.",
+          "name": "Lamellen-Tiefe"
+        },
+        "slat_distance": {
+          "description": "Abstand zwischen Lamellen in Zentimetern (0,1–15 cm). Nur Neigung.",
+          "name": "Lamellen-Abstand"
+        },
+        "tilt_mode": {
+          "description": "Berechnungsmodus für Neigungswinkel (mode1 oder mode2). Nur Neigung.",
+          "name": "Neigungs-Modus"
+        },
+        "window_depth": {
+          "description": "Fensterrahmen-Tiefe in Metern (0–0,5 m). Nur Vertikaljalousie.",
+          "name": "Fenstertiefe"
+        },
+        "window_height": {
+          "description": "Fensterhöhe in Metern (0,1–6 m). Nur Vertikaljalousie und Markise.",
+          "name": "Fensterhöhe"
+        },
+        "window_width": {
+          "description": "Fensterbreite in Metern (0,1–5 m). Nur Vertikaljalousie.",
+          "name": "Fensterbreite"
+        }
+      },
+      "name": "Geometrie einstellen"
+    },
+    "set_interpolation": {
+      "description": "Aktiviert Positions-Interpolation und konfiguriert Start-/Endbereich und Nachschlagetabelle.",
+      "fields": {
+        "interp": {
+          "description": "Wenn wahr, wird Interpolationszuordnung auf die berechnete Position angewendet.",
+          "name": "Interpolation aktivieren"
+        },
+        "interp_end": {
+          "description": "Berechnete Position (%) bei der die Interpolation endet. Null = kein.",
+          "name": "Interpolation-Ende"
+        },
+        "interp_list": {
+          "description": "Eingabepositionen für die Interpolations-Nachschlagetabelle.",
+          "name": "Eingabeliste"
+        },
+        "interp_list_new": {
+          "description": "Ausgabepositionen zugeordnet von interp_list.",
+          "name": "Ausgabeliste"
+        },
+        "interp_start": {
+          "description": "Berechnete Position (%) bei der die Interpolation beginnt. Null = kein.",
+          "name": "Interpolation-Start"
+        }
+      },
+      "name": "Interpolation einstellen"
+    },
+    "set_light_cloud": {
+      "description": "Aktualisiert Wetter-Entity, Sonnig-Status-Filter, Lux-/Bestrahlungs-/Bewölkungs-Schwellwerte und Bewölkungs-Suppression.",
+      "fields": {
+        "cloud_coverage_entity": {
+          "description": "Sensor meldet Bewölkungsprozentsatz. Null = kein.",
+          "name": "Bewölkungssensor"
+        },
+        "cloud_coverage_threshold": {
+          "description": "Bewölkungsprozentsatz über dem der Himmel als bedeckt gilt.",
+          "name": "Bewölkungs-Schwellwert"
+        },
+        "cloud_suppression": {
+          "description": "Sonnenpositionierung unterdrücken wenn Bewölkung Schwellwert überschreitet.",
+          "name": "Bewölkungs-Suppression aktivieren"
+        },
+        "irradiance_entity": {
+          "description": "Solar-Bestrahlungssensor-Entity. Null = kein.",
+          "name": "Bestrahlungssensor"
+        },
+        "irradiance_threshold": {
+          "description": "W/m² oberhalb dessen die Beschattung in direktem Sonnenlicht ist.",
+          "name": "Bestrahlung-Schwellwert"
+        },
+        "lux_entity": {
+          "description": "Lichtsensor-Entity. Null = kein.",
+          "name": "Lux-Sensor"
+        },
+        "lux_threshold": {
+          "description": "Lux-Wert oberhalb dessen die Beschattung in direktem Sonnenlicht ist.",
+          "name": "Lux-Schwellwert"
+        },
+        "weather_entity": {
+          "description": "Wetter-Entity für Bedingungslesestoff. Null = kein.",
+          "name": "Wetter-Entity"
+        },
+        "weather_state": {
+          "description": "Wetterbedingungszustände als sonnig für Sonnenverfolgung betrachtet.",
+          "name": "Sonnige Wetterzustände"
+        }
+      },
+      "name": "Licht- & Bewölkungseinstellungen festlegen"
+    },
+    "set_manual_override": {
+      "description": "Aktualisiert Dauer der manuellen Übersteuerung, Rücksetzverhalten und Erkennungsschwelle.",
+      "fields": {
+        "manual_ignore_intermediate": {
+          "description": "Wenn wahr, werden Öffnungs-/Schließungszustände für Erkennung ignoriert.",
+          "name": "Zwischenzustände ignorieren"
+        },
+        "manual_override_duration": {
+          "description": "Wie lange eine manuelle Übersteuerung andauert vor Wiederaufnahme der automatischen Kontrolle.",
+          "name": "Übersteuerungs-Dauer"
+        },
+        "manual_override_reset": {
+          "description": "Wenn wahr, wird jede aktive manuelle Übersteuerung beim Fenster-Start gelöscht.",
+          "name": "Rücksetzung bei Fenster-Start"
+        },
+        "manual_threshold": {
+          "description": "Positionsänderung (%) die manuelle Übersteuerung auslöst (0–99).",
+          "name": "Erkennungsschwelle"
+        }
+      },
+      "name": "Einstellungen für manuelle Übersteuerung festlegen"
+    },
+    "set_motion": {
+      "description": "Aktualisiert Bewegungssensoren und Keine-Bewegungs-Timeout.",
+      "fields": {
+        "motion_sensors": {
+          "description": "Binärsensoren zeigen Anwesenheit an. Leere Liste = Bewegungssteuerung deaktivieren.",
+          "name": "Bewegungssensoren"
+        },
+        "motion_timeout": {
+          "description": "Sekunden zu warten nach letzter Bewegung vor Anwendung der Keine-Bewegungs-Position (30–3600).",
+          "name": "Keine-Bewegungs-Timeout"
+        }
+      },
+      "name": "Bewegungseinstellungen festlegen"
+    },
+    "set_option": {
+      "description": "Generischer Ausweg — aktualisiert jede unterstützte Option nach Schlüsselnamen. Identitätsschlüssel werden abgelehnt.",
+      "fields": {
+        "option": {
+          "description": "Der interne Optionsschlüssel zum Aktualisieren (z. B. 'default_percentage', 'sunset_position').",
+          "name": "Optionsschlüssel"
+        },
+        "value": {
+          "description": "Neuer Wert für die Option. Null zum Löschen eines optionalen Feldes.",
+          "name": "Wert"
+        }
+      },
+      "name": "Option einstellen (allgemein)"
+    },
+    "set_position_limits": {
+      "description": "Aktualisiert Standardhöhe, Min/Max-Position, Öffnungs-/Schließungsschwelle und inversen Status.",
+      "fields": {
+        "default_height": {
+          "description": "Standardposition der Beschattung wenn Sonne nicht sichtbar ist (0–100%).",
+          "name": "Standardhöhe"
+        },
+        "enable_max_position": {
+          "description": "Wenn wahr, wird max_position nur während Sonnenverfolgung angewendet.",
+          "name": "Maximum-Position nur während Verfolgung aktivieren"
+        },
+        "enable_min_position": {
+          "description": "Wenn wahr, wird min_position nur während Sonnenverfolgung angewendet.",
+          "name": "Minimum-Position nur während Verfolgung aktivieren"
+        },
+        "inverse_state": {
+          "description": "Position für Beschattungen invertieren, die Status invers melden.",
+          "name": "Inverser Status"
+        },
+        "max_position": {
+          "description": "Maximale Position, zu der sich die Beschattung bewegen kann (1–100%).",
+          "name": "Maximale Position"
+        },
+        "min_position": {
+          "description": "Minimale Position, zu der sich die Beschattung bewegen kann (0–99%).",
+          "name": "Minimale Position"
+        },
+        "open_close_threshold": {
+          "description": "Position unterhalb derer Öffnungs-/Schließungs-Beschattungen geschlossen sind (1–99%).",
+          "name": "Öffnungs-/Schließungs-Schwellwert"
+        }
+      },
+      "name": "Positionslimits einstellen"
+    },
+    "set_sun_tracking": {
+      "description": "Aktualisiert Azimut, Sichtfeld, Höhenlimits und Sonnenverfolgungsschalter.",
+      "fields": {
+        "distance_shaded_area": {
+          "description": "Entfernung (m) von Fenster zu Schattenbereichskante (0,1–5 m).",
+          "name": "Entfernung zum Schattenbereich"
+        },
+        "enable_sun_tracking": {
+          "description": "Hauptschalter für sonnenpositions-basierte Beschattungssteuerung.",
+          "name": "Sonnenverfolgung aktivieren"
+        },
+        "fov_left": {
+          "description": "Grad links vom Azimut innerhalb derer die Sonne diese Beschattung beeinflußt (0–180°).",
+          "name": "Sichtfeld links"
+        },
+        "fov_right": {
+          "description": "Grad rechts vom Azimut innerhalb derer die Sonne diese Beschattung beeinflußt (0–180°).",
+          "name": "Sichtfeld rechts"
+        },
+        "max_elevation": {
+          "description": "Sonnenhöhe (°) oberhalb derer die Beschattung vollständig geöffnet wird. Null = kein Maximum.",
+          "name": "Maximale Sonnenhöhe"
+        },
+        "min_elevation": {
+          "description": "Sonnenhöhe (°) unterhalb derer die Beschattung nicht bewegt wird. Null = kein Minimum.",
+          "name": "Minimale Sonnenhöhe"
+        },
+        "set_azimuth": {
+          "description": "Kompassrichtung dem Fenster zugewandt (0–359°).",
+          "name": "Fenster-Azimut"
+        }
+      },
+      "name": "Sonnenverfolgungseinstellungen einstellen"
+    },
+    "set_sunset_sunrise": {
+      "description": "Aktualisiert Sonnenuntergangsposition und Offset-Einstellungen. Null zum Löschen eines optionalen Feldes.",
+      "fields": {
+        "my_position_value": {
+          "description": "Die 'Mein'-Preset-Position (1–99%).",
+          "name": "Somfy Mein Position"
+        },
+        "sunrise_offset": {
+          "description": "Minuten zum Verschieben von Fenster-Start relativ zu Sonnenaufgang (-120–120).",
+          "name": "Sonnenaufgangs-Offset"
+        },
+        "sunset_offset": {
+          "description": "Minuten zum Verschieben von Fenster-Ende relativ zu Sonnenuntergang (-120–120).",
+          "name": "Sonnenuntergangs-Offset"
+        },
+        "sunset_position": {
+          "description": "Position zum Bewegen beim Fenster-Ende. Null = default_height verwenden.",
+          "name": "Sonnenuntergangsposition"
+        },
+        "sunset_use_my": {
+          "description": "Wenn wahr, wird my_position_value statt sunset_position am Fenster-Ende verwendet.",
+          "name": "Somfy Mein beim Sonnenuntergang verwenden"
+        }
+      },
+      "name": "Sonnenuntergangs-/Sonnenaufgangspositionen einstellen"
+    },
+    "set_weather_safety": {
+      "description": "Aktualisiert Wind-, Regen- und Extremwetter-Übersteuerungs-Einstellungen.",
+      "fields": {
+        "weather_bypass_auto_control": {
+          "description": "Wenn wahr, ignoriert Wetter-Übersteuerung den Schalter Automatische Kontrolle.",
+          "name": "Automatische Kontrolle umgehen"
+        },
+        "weather_is_raining_sensor": {
+          "description": "Binärsensor zeigt aktiven Regen an. Null = kein.",
+          "name": "Es regnet Sensor"
+        },
+        "weather_is_windy_sensor": {
+          "description": "Binärsensor zeigt gefährlichen Wind an. Null = kein.",
+          "name": "Es ist windig Sensor"
+        },
+        "weather_override_min_mode": {
+          "description": "Wenn wahr, wird weather_override_position als minimale Untergrenze behandelt.",
+          "name": "Minimum-Position-Modus"
+        },
+        "weather_override_position": {
+          "description": "Position zum Bewegen wenn Wetter-Übersteuerung ausgelöst wird (0–100%).",
+          "name": "Wetter-Übersteuerungs-Position"
+        },
+        "weather_rain_sensor": {
+          "description": "Sensor-Entity für Regenmenge. Null = kein.",
+          "name": "Regensensor"
+        },
+        "weather_rain_threshold": {
+          "description": "Regenmenge oberhalb derer die Beschattung eingezogen wird.",
+          "name": "Regen-Schwellwert"
+        },
+        "weather_severe_sensors": {
+          "description": "Binärsensoren für Extremwetter (ODER-Logik). Leere Liste = kein.",
+          "name": "Extremwetter-Sensoren"
+        },
+        "weather_timeout": {
+          "description": "Sekunden zu warten nach Auflösung der Bedingungen vor Wiederaufnahme der automatischen Kontrolle (0–3600).",
+          "name": "Wetter-Klaren-Timeout"
+        },
+        "weather_wind_direction_sensor": {
+          "description": "Sensor-Entity für Windrichtung. Null = kein.",
+          "name": "Windrichtungs-Sensor"
+        },
+        "weather_wind_direction_tolerance": {
+          "description": "Grad links/rechts vom Fenster-Azimut als Windbedrohung (5–180°).",
+          "name": "Windrichtungs-Toleranz"
+        },
+        "weather_wind_speed_sensor": {
+          "description": "Sensor-Entity für Windgeschwindigkeit. Null = kein.",
+          "name": "Windgeschwindigkeits-Sensor"
+        },
+        "weather_wind_speed_threshold": {
+          "description": "Windgeschwindigkeit oberhalb derer die Beschattung eingezogen wird.",
+          "name": "Windgeschwindigkeits-Schwellwert"
+        }
+      },
+      "name": "Wetter-Sicherheitseinstellungen einstellen"
+    }
   }
 }

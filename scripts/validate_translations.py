@@ -6,12 +6,11 @@ Usage:
     ./scripts/validate_translations.py de         # Show detailed report for one language
     ./scripts/validate_translations.py --ci       # CI mode: exit 1 if any language has missing/extra keys
 
-Shipped languages: en (source), de, fr. The `services` section in en.json is
-intentionally English-only — HA falls back to English for locales missing it —
-so DE/FR files omit that section entirely.
+Shipped languages: en (source), de, fr. All sections including `services` must be
+present in every language file.
 
 STATUS LEGEND:
-  ✅ Complete     — key structure matches en.json (minus services), no untranslated strings
+  ✅ Complete     — key structure matches en.json, no untranslated strings
   🔄 In Progress  — key structure matches, but some values still match English
   ❌ Needs Work   — key structure does not match (missing or extra keys)
 """
@@ -37,9 +36,7 @@ EN_FILE = TRANSLATIONS_DIR / "en.json"
 
 LANGUAGES = ["de", "fr"]
 
-# The `services` section is intentionally English-only. HA falls back to English
-# for locales missing a `services` block, so DE/FR omit it to minimise maintenance.
-EN_ONLY_SECTIONS = ("services",)
+EN_ONLY_SECTIONS: tuple[str, ...] = ()
 
 # Values that are intentionally identical in all languages (technical identifiers,
 # placeholders, format strings, etc.)
@@ -137,12 +134,7 @@ def _strip_en_only_sections(en_flat: dict[str, str]) -> dict[str, str]:
 
 
 def analyse_language(lang: str, en_flat_full: dict[str, str]) -> dict:
-    """Return analysis dict for a single language.
-
-    `en_flat_full` is the entire flattened en.json. Non-en files are not expected
-    to carry EN_ONLY_SECTIONS (e.g. `services`), so we compare against en_flat
-    with those sections stripped.
-    """
+    """Return analysis dict for a single language."""
     en_flat = _strip_en_only_sections(en_flat_full)
     lang_file = TRANSLATIONS_DIR / f"{lang}.json"
 
@@ -353,7 +345,6 @@ def main() -> int:
 
     # Dashboard mode
     analyses = [analyse_language(lang, en_flat) for lang in LANGUAGES]
-    # Total reported in dashboard is the translatable-key count (excluding EN_ONLY_SECTIONS)
     print_dashboard(analyses, len(_strip_en_only_sections(en_flat)))
 
     if args.ci:
