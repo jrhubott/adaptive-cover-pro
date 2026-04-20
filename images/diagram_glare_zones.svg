@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 440" width="620" height="440" font-family="sans-serif">
+  <!-- Background -->
+  <rect width="620" height="440" fill="white"/>
+
+  <!-- Title -->
+  <text x="310" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Glare Zones — Top-Down Floor Plan</text>
+
+  <!-- ===== ROOM FLOOR ===== -->
+  <rect x="60" y="66" width="500" height="314" fill="#fafaf7"/>
+
+  <!-- Light grid at 1 m intervals (scale: 65 px = 1 m) -->
+  <line x1="60" y1="131" x2="560" y2="131" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="196" x2="560" y2="196" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="261" x2="560" y2="261" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="326" x2="560" y2="326" stroke="#ebebea" stroke-width="1"/>
+
+  <!-- Room border -->
+  <rect x="60" y="66" width="500" height="314" fill="none" stroke="#aaa" stroke-width="1.5"/>
+
+  <!-- ===== WALL ===== -->
+  <rect x="60" y="44" width="500" height="22" fill="#888" rx="2"/>
+
+  <!-- Window opening -->
+  <rect x="255" y="44" width="110" height="22" fill="#add8e6" rx="1"/>
+  <text x="310" y="59" text-anchor="middle" font-size="11" fill="#333">Window</text>
+
+  <!-- Window width annotation -->
+  <line x1="255" y1="39" x2="365" y2="39" stroke="#666" stroke-width="1"/>
+  <line x1="255" y1="36" x2="255" y2="42" stroke="#666" stroke-width="1"/>
+  <line x1="365" y1="36" x2="365" y2="42" stroke="#666" stroke-width="1"/>
+  <text x="310" y="36" text-anchor="middle" font-size="10" fill="#555">Window Width</text>
+
+  <!-- ===== COORDINATE SYSTEM ===== -->
+  <!-- Origin at window centre -->
+  <circle cx="310" cy="66" r="3.5" fill="#444"/>
+  <text x="315" y="79" font-size="10" fill="#444" font-style="italic">origin (0, 0)</text>
+
+  <!-- X = 0 dashed vertical guide -->
+  <line x1="310" y1="66" x2="310" y2="380" stroke="#ccc" stroke-width="1" stroke-dasharray="5,4"/>
+
+  <!-- Y axis (depth into room), left edge -->
+  <line x1="52" y1="70" x2="52" y2="378" stroke="#888" stroke-width="1.5"/>
+  <polygon points="52,378 48,366 56,366" fill="#888"/>
+
+  <!-- Y scale ticks and labels -->
+  <line x1="49" y1="131" x2="55" y2="131" stroke="#888" stroke-width="1"/>
+  <text x="45" y="135" text-anchor="end" font-size="10" fill="#888">1 m</text>
+  <line x1="49" y1="196" x2="55" y2="196" stroke="#888" stroke-width="1"/>
+  <text x="45" y="200" text-anchor="end" font-size="10" fill="#888">2 m</text>
+  <line x1="49" y1="261" x2="55" y2="261" stroke="#888" stroke-width="1"/>
+  <text x="45" y="265" text-anchor="end" font-size="10" fill="#888">3 m</text>
+  <line x1="49" y1="326" x2="55" y2="326" stroke="#888" stroke-width="1"/>
+  <text x="45" y="330" text-anchor="end" font-size="10" fill="#888">4 m</text>
+
+  <!-- Y axis label (rotated) -->
+  <text x="22" y="222" text-anchor="middle" font-size="11" fill="#666" transform="rotate(-90,22,222)">Y — depth into room</text>
+
+  <!-- X axis (along wall direction) -->
+  <line x1="63" y1="393" x2="557" y2="393" stroke="#888" stroke-width="1.5"/>
+  <polygon points="557,393 545,389 545,397" fill="#888"/>
+  <polygon points="63,393 75,389 75,397" fill="#888"/>
+  <text x="564" y="397" font-size="11" fill="#666">+X</text>
+  <text x="56" y="397" text-anchor="end" font-size="11" fill="#666">−X</text>
+  <text x="310" y="412" text-anchor="middle" font-size="10" fill="#666">X — horizontal along wall (positive = right when facing window from inside)</text>
+
+  <!-- ===== SUN RAYS (gamma ≈ 20°, sun to the right; slope dx/dy = −0.364) ===== -->
+  <g stroke="#ffcc44" stroke-width="1.5" stroke-dasharray="10,5" opacity="0.8">
+    <line x1="265" y1="66" x2="151" y2="380"/>
+    <line x1="285" y1="66" x2="171" y2="380"/>
+    <line x1="305" y1="66" x2="191" y2="380"/>
+    <line x1="325" y1="66" x2="211" y2="380"/>
+    <line x1="345" y1="66" x2="231" y2="380"/>
+    <line x1="362" y1="66" x2="248" y2="380"/>
+  </g>
+
+  <!-- ===== SUN INDICATOR (upper right) ===== -->
+  <circle cx="544" cy="30" r="14" fill="#FFD700" stroke="#cc9900" stroke-width="1.5"/>
+  <g stroke="#cc9900" stroke-width="1.5">
+    <line x1="544" y1="12" x2="544" y2="7"/>
+    <line x1="544" y1="48" x2="544" y2="53"/>
+    <line x1="526" y1="30" x2="521" y2="30"/>
+    <line x1="562" y1="30" x2="567" y2="30"/>
+    <line x1="532" y1="18" x2="528" y2="14"/>
+    <line x1="556" y1="18" x2="560" y2="14"/>
+    <line x1="532" y1="42" x2="528" y2="46"/>
+    <line x1="556" y1="42" x2="560" y2="46"/>
+  </g>
+  <text x="544" y="33" text-anchor="middle" font-size="9" fill="#664400">☀</text>
+  <!-- Arrow from sun toward window -->
+  <line x1="530" y1="44" x2="375" y2="62" stroke="#cc9900" stroke-width="1.5"/>
+  <polygon points="375,62 384,56 385,66" fill="#cc9900"/>
+  <text x="468" y="58" text-anchor="middle" font-size="10" fill="#886600">sun direction</text>
+
+  <!-- ===== ZONE 1: SOFA ===== -->
+  <!-- X=−1.0 m, Y=2.5 m, R=0.6 m → cx=245, cy=229, r=39 -->
+  <circle cx="245" cy="229" r="39" fill="#d4edda" stroke="#28a745" stroke-width="2" opacity="0.9"/>
+  <circle cx="245" cy="229" r="3" fill="#28a745"/>
+  <text x="245" y="225" text-anchor="middle" font-size="11" font-weight="bold" fill="#155724">Zone 1</text>
+  <text x="245" y="238" text-anchor="middle" font-size="10" fill="#155724">"Sofa"</text>
+
+  <!-- Zone 1: X annotation (horizontal arrow from origin x=310 to zone x=245, at y=88) -->
+  <line x1="245" y1="88" x2="310" y2="88" stroke="#28a745" stroke-width="1.5"/>
+  <polygon points="245,88 254,84 254,92" fill="#28a745"/>
+  <polygon points="310,88 301,84 301,92" fill="#28a745"/>
+  <text x="278" y="84" text-anchor="middle" font-size="10" fill="#28a745">X = −1.0 m</text>
+
+  <!-- Zone 1: Y annotation (vertical arrow from wall y=66 to zone cy=229, at x=216) -->
+  <line x1="216" y1="66" x2="216" y2="229" stroke="#28a745" stroke-width="1.5"/>
+  <polygon points="216,229 212,218 220,218" fill="#28a745"/>
+  <polygon points="216,66 212,77 220,77" fill="#28a745"/>
+  <text x="208" y="153" text-anchor="end" font-size="10" fill="#28a745">Y = 2.5 m</text>
+
+  <!-- Zone 1: R annotation (dashed line from centre to right edge) -->
+  <line x1="245" y1="229" x2="284" y2="229" stroke="#28a745" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="273" y="244" text-anchor="middle" font-size="10" fill="#28a745">R = 0.6 m</text>
+
+  <!-- ===== ZONE 2: DESK ===== -->
+  <!-- X=0.3 m, Y=1.4 m, R=0.5 m → cx=330, cy=157, r=33 -->
+  <circle cx="330" cy="157" r="33" fill="#ddeeff" stroke="#2255aa" stroke-width="2" opacity="0.9"/>
+  <circle cx="330" cy="157" r="3" fill="#2255aa"/>
+  <text x="330" y="152" text-anchor="middle" font-size="11" font-weight="bold" fill="#003380">Zone 2</text>
+  <text x="330" y="165" text-anchor="middle" font-size="10" fill="#003380">"Desk"</text>
+
+  <!-- Zone 2 coordinate labels (to the right) -->
+  <line x1="363" y1="157" x2="372" y2="157" stroke="#2255aa" stroke-width="1"/>
+  <text x="376" y="145" font-size="10" fill="#2255aa">X = 0.3 m</text>
+  <text x="376" y="157" font-size="10" fill="#2255aa">Y = 1.4 m</text>
+  <text x="376" y="169" font-size="10" fill="#2255aa">R = 0.5 m</text>
+
+  <!-- ===== LEGEND ===== -->
+  <rect x="60" y="422" width="500" height="14" rx="3" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
+  <circle cx="80" cy="429" r="6" fill="#d4edda" stroke="#28a745" stroke-width="1.5"/>
+  <text x="93" y="433" font-size="10" fill="#333">Named zone (protected circle on floor)</text>
+  <circle cx="258" cy="429" r="3" fill="#444"/>
+  <text x="267" y="433" font-size="10" fill="#333">Zone centre at (X, Y)</text>
+  <line x1="368" y1="424" x2="386" y2="424" stroke="#ffcc44" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="391" y="433" font-size="10" fill="#333">Sun rays</text>
+  <line x1="443" y1="424" x2="458" y2="424" stroke="#ccc" stroke-width="1" stroke-dasharray="5,4"/>
+  <text x="463" y="433" font-size="10" fill="#333">Window centre (X = 0)</text>
+</svg>
