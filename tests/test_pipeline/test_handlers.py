@@ -11,6 +11,12 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     MotionTimeoutHandler,
     SolarHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
+    WeatherOverrideHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+    CustomPositionHandler,
+)
 
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -182,6 +188,137 @@ class TestForceOverrideHandlerMinMode:
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.FORCE
+
+
+# ---------------------------------------------------------------------------
+# Min-mode with sun tracking disabled — regression tests for issue #264
+# ---------------------------------------------------------------------------
+
+
+class TestForceOverrideHandlerMinModeWithSunTrackingOff:
+    """Force override min-mode floors correctly when sun tracking is disabled.
+
+    Regression tests for #264: with tracking off and default=100, a
+    configured floor of 80 must yield max(80, 100)=100, not max(80, 29)=80.
+    """
+
+    handler = ForceOverrideHandler()
+
+    def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
+        """Min-mode floor measured against default position, not solar, when tracking off."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=80,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=100,
+            enable_sun_tracking=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    def test_min_mode_floor_still_enforced_when_default_below_floor(self) -> None:
+        """Floor is enforced when default position is below the configured floor."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=80,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=50,
+            enable_sun_tracking=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 80
+
+    def test_min_mode_sun_tracking_enabled_unchanged_regression(self) -> None:
+        """Regression guard: solar floor semantics unchanged when tracking is on."""
+        snap = make_snapshot(
+            force_override_sensors={"binary_sensor.s": True},
+            force_override_position=80,
+            force_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=100,
+            enable_sun_tracking=True,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 80  # max(80, 29) = 80 — solar floor applies
+
+
+class TestWeatherOverrideHandlerMinModeWithSunTrackingOff:
+    """Weather override min-mode floors correctly when sun tracking is disabled."""
+
+    handler = WeatherOverrideHandler()
+
+    def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
+        """Min-mode floor measured against default position, not solar, when tracking off."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=80,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=100,
+            enable_sun_tracking=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    def test_min_mode_sun_tracking_enabled_unchanged_regression(self) -> None:
+        """Regression guard: solar floor semantics unchanged when tracking is on."""
+        snap = make_snapshot(
+            weather_override_active=True,
+            weather_override_position=80,
+            weather_override_min_mode=True,
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=100,
+            enable_sun_tracking=True,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 80  # max(80, 29) = 80 — solar floor applies
+
+
+class TestCustomPositionHandlerMinModeWithSunTrackingOff:
+    """Custom position min-mode floors correctly when sun tracking is disabled."""
+
+    def _make_handler(self) -> CustomPositionHandler:
+        return CustomPositionHandler(slot=1, entity_id="binary_sensor.cp1", position=80, priority=77)
+
+    def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
+        """Min-mode floor measured against default position, not solar, when tracking off."""
+        handler = self._make_handler()
+        snap = make_snapshot(
+            custom_position_sensors=[("binary_sensor.cp1", True, 80, 77, True, False)],
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=100,
+            enable_sun_tracking=False,
+        )
+        result = handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 100
+
+    def test_min_mode_sun_tracking_enabled_unchanged_regression(self) -> None:
+        """Regression guard: solar floor semantics unchanged when tracking is on."""
+        handler = self._make_handler()
+        snap = make_snapshot(
+            custom_position_sensors=[("binary_sensor.cp1", True, 80, 77, True, False)],
+            direct_sun_valid=True,
+            calculate_percentage_return=29.0,
+            default_position=100,
+            enable_sun_tracking=True,
+        )
+        result = handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 80  # max(80, 29) = 80 — solar floor applies
 
 
 # ---------------------------------------------------------------------------

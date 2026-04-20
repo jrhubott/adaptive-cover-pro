@@ -80,6 +80,7 @@ def make_snapshot(
     custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] | None = None,
     my_position_value: int | None = None,
     sunset_use_my: bool = False,
+    enable_sun_tracking: bool = True,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -121,4 +122,5 @@ def make_snapshot(
         else [],
         my_position_value=my_position_value,
         sunset_use_my=sunset_use_my,
+        enable_sun_tracking=enable_sun_tracking,
     )

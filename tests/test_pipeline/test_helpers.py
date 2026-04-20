@@ -51,6 +51,7 @@ def _make_snapshot(
     min_pos_sun_only=False,
     max_pos_sun_only=False,
     is_sunset_active=False,
+    enable_sun_tracking=True,
 ):
     return SimpleNamespace(
         cover=_make_cover(direct_sun_valid=direct_sun_valid, calc_pct=calc_pct),
@@ -62,6 +63,7 @@ def _make_snapshot(
         ),
         default_position=default_position,
         is_sunset_active=is_sunset_active,
+        enable_sun_tracking=enable_sun_tracking,
     )
 
 
@@ -295,3 +297,53 @@ class TestComputeRawCalculatedPosition:
             is_sunset_active=True,
         )
         assert compute_raw_calculated_position(snap) == 0
+
+    def test_returns_default_when_sun_valid_but_tracking_disabled(self):
+        """Returns default when direct_sun_valid=True but enable_sun_tracking=False.
+
+        Regression test for #264: the raw baseline must reflect what the
+        pipeline would actually command, not the solar geometry result.
+        """
+        snap = _make_snapshot(
+            calc_pct=70,
+            default_position=30,
+            direct_sun_valid=True,
+            enable_sun_tracking=False,
+        )
+        assert compute_raw_calculated_position(snap) == 30
+
+    def test_min_mode_floor_uses_default_when_tracking_disabled(self):
+        """Min-mode floor is measured against default, not solar, when tracking is off.
+
+        Regression test for #264 core scenario: default=100, sun geometrically
+        valid (solar=29), tracking off.  max(80, raw) must be max(80, 100)=100,
+        not max(80, 29)=80.
+        """
+        snap = _make_snapshot(
+            calc_pct=29,
+            default_position=100,
+            direct_sun_valid=True,
+            enable_sun_tracking=False,
+        )
+        assert compute_raw_calculated_position(snap) == 100
+
+    def test_tracking_enabled_still_returns_solar_when_sun_valid(self):
+        """Regression guard: solar result unchanged when enable_sun_tracking=True."""
+        snap = _make_snapshot(
+            calc_pct=70,
+            default_position=30,
+            direct_sun_valid=True,
+            enable_sun_tracking=True,
+        )
+        assert compute_raw_calculated_position(snap) == 70
+
+    def test_tracking_disabled_default_path_applies_limits(self):
+        """Default path applies max_pos when tracking is disabled."""
+        snap = _make_snapshot(
+            calc_pct=90,
+            default_position=90,
+            direct_sun_valid=True,
+            enable_sun_tracking=False,
+            max_pos=80,
+        )
+        assert compute_raw_calculated_position(snap) == 80
