@@ -45,6 +45,12 @@ Full steps: **[Installation](https://github.com/jrhubott/adaptive-cover-pro/wiki
 | 🛠️ **Operations** | [Troubleshooting](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) · [Known Limitations](https://github.com/jrhubott/adaptive-cover-pro/wiki/Known-Limitations) |
 | 🧪 **Testing** | [Testing the Algorithms](https://github.com/jrhubott/adaptive-cover-pro/wiki/Testing-the-Algorithms) · [Simulation Notebook](https://github.com/jrhubott/adaptive-cover-pro/wiki/Simulation-Notebook) |
 
+## Support
+
+If Adaptive Cover Pro has saved you time or made your home a little smarter, you can fuel the next commit:
+
+<a href="https://www.buymeacoffee.com/jrhubott" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=jrhubott&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee"></a>
+
 ## Credits
 
 Inspired by and originally forked from **[Adaptive Cover](https://github.com/basbruss/adaptive-cover)** by **[Bas Brussee (@basbruss)](https://github.com/basbruss)**, whose ideation and base implementation sparked this project. Adaptive Cover Pro has since grown into a substantially different codebase with a new architecture and feature set, but the original vision deserves real credit.
