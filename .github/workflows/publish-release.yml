@@ -47,7 +47,8 @@ jobs:
           zip adaptive_cover_pro.zip -r ./
 
       - name: "Upload the ZIP file to the release"
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          files: ${{ github.workspace }}/custom_components/adaptive_cover_pro/adaptive_cover_pro.zip
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "${{ github.workspace }}/custom_components/adaptive_cover_pro/adaptive_cover_pro.zip"
