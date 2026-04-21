@@ -1726,17 +1726,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         wiring test (test_coordinator_climate_wiring.py) will catch any mismatch.
         """
         cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
+        lux_entity = options.get(CONF_LUX_ENTITY)
+        irradiance_entity = options.get(CONF_IRRADIANCE_ENTITY)
+        # Cloud suppression is documented as independent of Climate Mode, so let
+        # it read lux/irradiance even when the climate-mode toggles are off.
+        use_lux = bool(self._toggles.lux_toggle) or (
+            cloud_suppression_enabled and lux_entity is not None
+        )
+        use_irradiance = bool(self._toggles.irradiance_toggle) or (
+            cloud_suppression_enabled and irradiance_entity is not None
+        )
         self._weather_readings = self._climate_provider.read(
             temp_entity=options.get(CONF_TEMP_ENTITY),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
             weather_entity=options.get(CONF_WEATHER_ENTITY),
             weather_condition=options.get(CONF_WEATHER_STATE),
-            use_lux=bool(self._toggles.lux_toggle),
-            lux_entity=options.get(CONF_LUX_ENTITY),
+            use_lux=use_lux,
+            lux_entity=lux_entity,
             lux_threshold=options.get(CONF_LUX_THRESHOLD),
-            use_irradiance=bool(self._toggles.irradiance_toggle),
-            irradiance_entity=options.get(CONF_IRRADIANCE_ENTITY),
+            use_irradiance=use_irradiance,
+            irradiance_entity=irradiance_entity,
             irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
             use_cloud_coverage=cloud_suppression_enabled,
             cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),

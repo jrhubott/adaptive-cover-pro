@@ -333,3 +333,106 @@ class TestClimateProviderApiCoverage:
                 f"Options key {opt_key!r} should map to read() kwarg "
                 f"{read_kwarg!r}={expected!r}, but got {kwargs.get(read_kwarg)!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Cloud suppression lux/irradiance wiring (Issue #268)
+# ---------------------------------------------------------------------------
+
+
+class TestCloudSuppressionWiring:
+    """Guard that cloud suppression can read lux/irradiance without Climate Mode.
+
+    Cloud suppression is documented as independent of climate mode. These tests
+    enforce that use_lux/use_irradiance are True whenever cloud_suppression is
+    enabled and the matching entity is configured — regardless of the legacy
+    lux/irradiance toggle switches (which only exist in Climate Mode).
+    """
+
+    @pytest.mark.unit
+    def test_cloud_suppression_forces_use_lux_when_lux_entity_configured(self):
+        """use_lux must be True when cloud_suppression=True and lux_entity is set,
+        even when lux_toggle is None (climate mode off).
+        """
+        coord = _make_coordinator()
+        coord._toggles.lux_toggle = None
+        options = {
+            CONF_CLOUD_SUPPRESSION: True,
+            CONF_LUX_ENTITY: "sensor.lux",
+            CONF_LUX_THRESHOLD: 1000,
+        }
+        coord._read_climate_state(options)
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("use_lux") is True, (
+            "REGRESSION (Issue #268): use_lux must be True when cloud_suppression "
+            "is enabled with a lux entity — cloud suppression does not require "
+            "Climate Mode."
+        )
+
+    @pytest.mark.unit
+    def test_cloud_suppression_forces_use_irradiance_when_irradiance_entity_configured(self):
+        """use_irradiance must be True when cloud_suppression=True and irradiance_entity
+        is set, even when irradiance_toggle is None (climate mode off).
+        """
+        coord = _make_coordinator()
+        coord._toggles.irradiance_toggle = None
+        options = {
+            CONF_CLOUD_SUPPRESSION: True,
+            CONF_IRRADIANCE_ENTITY: "sensor.solar",
+            CONF_IRRADIANCE_THRESHOLD: 150,
+        }
+        coord._read_climate_state(options)
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("use_irradiance") is True, (
+            "REGRESSION (Issue #268): use_irradiance must be True when cloud_suppression "
+            "is enabled with an irradiance entity — cloud suppression does not require "
+            "Climate Mode."
+        )
+
+    @pytest.mark.unit
+    def test_cloud_suppression_without_lux_entity_keeps_use_lux_false(self):
+        """use_lux stays False when cloud_suppression=True but no lux_entity is
+        configured — nothing to read.
+        """
+        coord = _make_coordinator()
+        coord._toggles.lux_toggle = None
+        options = {CONF_CLOUD_SUPPRESSION: True}
+        coord._read_climate_state(options)
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("use_lux") is False
+
+    @pytest.mark.unit
+    def test_cloud_suppression_off_with_lux_entity_keeps_use_lux_false(self):
+        """When cloud_suppression=False and lux_toggle=False, use_lux is False —
+        existing toggle gating is preserved.
+        """
+        coord = _make_coordinator()
+        coord._toggles.lux_toggle = False
+        options = {
+            CONF_CLOUD_SUPPRESSION: False,
+            CONF_LUX_ENTITY: "sensor.lux",
+        }
+        coord._read_climate_state(options)
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("use_lux") is False
+
+    @pytest.mark.unit
+    def test_cloud_suppression_on_overrides_lux_toggle_false(self):
+        """use_lux must be True when cloud_suppression=True + lux_entity configured,
+        even when lux_toggle=False (user disabled lux for Climate handler).
+        Cloud suppression is independent; the Climate handler gates itself via
+        climate_mode_enabled, not via use_lux.
+        """
+        coord = _make_coordinator()
+        coord._toggles.lux_toggle = False
+        options = {
+            CONF_CLOUD_SUPPRESSION: True,
+            CONF_LUX_ENTITY: "sensor.lux",
+            CONF_LUX_THRESHOLD: 1000,
+        }
+        coord._read_climate_state(options)
+        _, kwargs = coord._climate_provider.read.call_args
+        assert kwargs.get("use_lux") is True, (
+            "REGRESSION (Issue #268): cloud suppression must be able to read lux "
+            "even when the climate-mode lux toggle is off."
+        )
