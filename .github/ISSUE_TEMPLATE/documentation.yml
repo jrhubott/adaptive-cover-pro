@@ -5,21 +5,31 @@ labels: ["documentation"]
 body:
   - type: markdown
     attributes:
-      value: Use this template to report problems with documentation — missing steps, outdated info, unclear descriptions, or broken links.
+      value: >
+        Use this template to report problems with documentation — missing steps, outdated info, unclear descriptions, or broken links.
 
   - type: checkboxes
     attributes:
       label: Checklist
       options:
-        - label: I have searched existing issues to check this hasn't already been reported.
+        - label: I have searched [existing documentation issues](https://github.com/jrhubott/adaptive-cover-pro/issues?q=is%3Aissue+label%3Adocumentation) and this hasn't already been reported.
           required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Adaptive Cover Pro version
+      description: "Relevant if the documentation issue is version-specific."
+      placeholder: "e.g. 2.18.1"
+    validations:
+      required: false
 
   - type: input
     id: location
     attributes:
       label: Where is the documentation issue?
-      description: "Link to the page, section, or file (e.g. README, CLAUDE.md, a config flow label)."
-      placeholder: "e.g. README.md — Climate Mode section"
+      description: "Link to the page, section, or file (e.g. a wiki page URL, README section, or config flow label)."
+      placeholder: "e.g. https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting — Step 3"
     validations:
       required: true
 

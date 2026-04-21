@@ -6,27 +6,29 @@ body:
   - type: markdown
     attributes:
       value: >
-        Use this template to ask a question about how the integration works, how to configure it, or why it behaves a certain way.
+        Before asking, check the [wiki](https://github.com/jrhubott/adaptive-cover-pro/wiki) — most configuration and setup questions are answered there.
         For bugs, use the **Bug report** template instead.
 
   - type: checkboxes
     attributes:
       label: Checklist
       options:
-        - label: I have searched existing issues and the README for an answer.
+        - label: I have checked the [wiki](https://github.com/jrhubott/adaptive-cover-pro/wiki) and [existing questions](https://github.com/jrhubott/adaptive-cover-pro/issues?q=is%3Aissue+label%3Aquestion) and didn't find an answer.
           required: true
 
   - type: input
     id: version
     attributes:
-      label: What version of Adaptive Cover Pro are you using?
+      label: Adaptive Cover Pro version
+      description: "Found under Settings → Devices & Services → Adaptive Cover Pro."
+      placeholder: "e.g. 2.18.1"
     validations:
       required: true
 
   - type: input
     id: cover_type
     attributes:
-      label: What cover type are you using?
+      label: Cover type
       description: "Vertical blind, horizontal awning, or venetian/tilt."
       placeholder: "e.g. Vertical blind"
     validations:
