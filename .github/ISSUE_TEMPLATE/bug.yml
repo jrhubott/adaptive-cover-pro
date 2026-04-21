@@ -17,7 +17,7 @@ body:
           required: true
         - label: I have confirmed I am running the [latest release](https://github.com/jrhubott/adaptive-cover-pro/releases/latest).
           required: true
-        - label: I have searched [existing bug reports](https://github.com/jrhubott/adaptive-cover-pro/issues?q=is%3Aissue+label%3ABug) and this is not a duplicate.
+        - label: I have searched [existing bug reports](https://github.com/jrhubott/adaptive-cover-pro/issues?q=is%3Aissue+label%3Abug) and this is not a duplicate.
           required: true
         - label: This report covers a single bug (open a separate issue for each additional bug).
           required: true
