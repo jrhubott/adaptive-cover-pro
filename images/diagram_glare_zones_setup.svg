@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 480" width="620" height="480" font-family="sans-serif">
+  <!-- Background -->
+  <rect width="620" height="480" fill="white"/>
+
+  <!-- Title -->
+  <text x="310" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Glare Zones — Measurement Guide</text>
+
+  <!-- ===== ROOM FLOOR ===== -->
+  <rect x="60" y="66" width="500" height="334" fill="#fafaf7"/>
+
+  <!-- Light grid at 1 m intervals (scale: 65 px = 1 m) -->
+  <line x1="60" y1="131" x2="560" y2="131" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="196" x2="560" y2="196" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="261" x2="560" y2="261" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="326" x2="560" y2="326" stroke="#ebebea" stroke-width="1"/>
+  <line x1="60" y1="391" x2="560" y2="391" stroke="#ebebea" stroke-width="1"/>
+
+  <!-- Room border -->
+  <rect x="60" y="66" width="500" height="334" fill="none" stroke="#aaa" stroke-width="1.5"/>
+
+  <!-- ===== WALL ===== -->
+  <rect x="60" y="44" width="500" height="22" fill="#888" rx="2"/>
+
+  <!-- Window opening -->
+  <rect x="255" y="44" width="110" height="22" fill="#add8e6" rx="1"/>
+  <text x="310" y="59" text-anchor="middle" font-size="11" fill="#333">Window</text>
+
+  <!-- Window width annotation -->
+  <line x1="255" y1="39" x2="365" y2="39" stroke="#666" stroke-width="1"/>
+  <line x1="255" y1="36" x2="255" y2="42" stroke="#666" stroke-width="1"/>
+  <line x1="365" y1="36" x2="365" y2="42" stroke="#666" stroke-width="1"/>
+  <text x="310" y="36" text-anchor="middle" font-size="10" fill="#555">Window Width</text>
+
+  <!-- ===== Y axis (depth into room), left edge ===== -->
+  <line x1="52" y1="70" x2="52" y2="398" stroke="#888" stroke-width="1.5"/>
+  <polygon points="52,398 48,386 56,386" fill="#888"/>
+  <!-- Y scale ticks and labels -->
+  <line x1="49" y1="131" x2="55" y2="131" stroke="#888" stroke-width="1"/>
+  <text x="45" y="135" text-anchor="end" font-size="10" fill="#888">1 m</text>
+  <line x1="49" y1="196" x2="55" y2="196" stroke="#888" stroke-width="1"/>
+  <text x="45" y="200" text-anchor="end" font-size="10" fill="#888">2 m</text>
+  <line x1="49" y1="261" x2="55" y2="261" stroke="#888" stroke-width="1"/>
+  <text x="45" y="265" text-anchor="end" font-size="10" fill="#888">3 m</text>
+  <line x1="49" y1="326" x2="55" y2="326" stroke="#888" stroke-width="1"/>
+  <text x="45" y="330" text-anchor="end" font-size="10" fill="#888">4 m</text>
+  <!-- Y axis label (rotated) -->
+  <text x="22" y="230" text-anchor="middle" font-size="11" fill="#666" transform="rotate(-90,22,230)">Y — depth into room</text>
+
+  <!-- X axis (along wall direction) -->
+  <line x1="63" y1="413" x2="557" y2="413" stroke="#888" stroke-width="1.5"/>
+  <polygon points="557,413 545,409 545,417" fill="#888"/>
+  <polygon points="63,413 75,409 75,417" fill="#888"/>
+  <text x="564" y="417" font-size="11" fill="#666">+X</text>
+  <text x="56" y="417" text-anchor="end" font-size="11" fill="#666">−X</text>
+  <text x="310" y="432" text-anchor="middle" font-size="10" fill="#666">X — horizontal along wall (positive = right when facing window from inside)</text>
+
+  <!-- X = 0 dashed vertical guide -->
+  <line x1="310" y1="66" x2="310" y2="400" stroke="#ccc" stroke-width="1" stroke-dasharray="5,4"/>
+
+  <!-- ===== FURNITURE: SOFA (X=−0.8 m, Y=2.0 m) cx=258, cy=196 ===== -->
+  <!-- Sofa body: 80px wide (~1.2m) × 40px tall (~0.6m) centred at (258, 196) -->
+  <rect x="218" y="176" width="80" height="40" rx="6" fill="#e8d5b0" stroke="#b8956a" stroke-width="1.5"/>
+  <!-- Sofa back (top edge) -->
+  <rect x="218" y="176" width="80" height="10" rx="4" fill="#c8a87a" stroke="#b8956a" stroke-width="1"/>
+  <!-- Sofa cushions -->
+  <rect x="221" y="188" width="35" height="25" rx="3" fill="#d4b98a" stroke="#b8956a" stroke-width="0.8"/>
+  <rect x="260" y="188" width="35" height="25" rx="3" fill="#d4b98a" stroke="#b8956a" stroke-width="0.8"/>
+  <!-- Sofa label -->
+  <text x="258" y="222" text-anchor="middle" font-size="10" fill="#7a5c30" font-style="italic">sofa</text>
+
+  <!-- Sofa centre dot -->
+  <circle cx="258" cy="196" r="2.5" fill="#7a5c30"/>
+
+  <!-- ===== STEP 1: WINDOW CENTRE ===== -->
+  <!-- Origin dot at window centre (310, 66) -->
+  <circle cx="310" cy="66" r="4" fill="#e07b00"/>
+
+  <!-- Step 1 callout bubble -->
+  <rect x="315" y="70" width="162" height="22" rx="5" fill="#fff3cd" stroke="#e07b00" stroke-width="1.5"/>
+  <text x="396" y="85" text-anchor="middle" font-size="10" fill="#7a4400" font-weight="bold">① Window centre — origin (0, 0)</text>
+
+  <!-- ===== STEP 2: MEASURE X ===== -->
+  <!-- X annotation arrow from sofa centre (258) to window centre (310) at y=88 -->
+  <!-- Double-headed arrow -->
+  <line x1="260" y1="88" x2="308" y2="88" stroke="#e07b00" stroke-width="2"/>
+  <polygon points="260,88 270,84 270,92" fill="#e07b00"/>
+  <polygon points="308,88 298,84 298,92" fill="#e07b00"/>
+
+  <!-- Step 2 callout -->
+  <rect x="60" y="96" width="200" height="22" rx="5" fill="#fff3cd" stroke="#e07b00" stroke-width="1.5"/>
+  <text x="160" y="111" text-anchor="middle" font-size="10" fill="#7a4400" font-weight="bold">② X = −0.8 m (left of centre)</text>
+
+  <!-- Dashed vertical guide through sofa centre -->
+  <line x1="258" y1="66" x2="258" y2="400" stroke="#e07b00" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+
+  <!-- ===== STEP 3: MEASURE Y ===== -->
+  <!-- Y annotation arrow from wall (66) to sofa centre (196) at x=232 -->
+  <line x1="232" y1="68" x2="232" y2="194" stroke="#e07b00" stroke-width="2"/>
+  <polygon points="232,68 228,80 236,80" fill="#e07b00"/>
+  <polygon points="232,194 228,182 236,182" fill="#e07b00"/>
+
+  <!-- Step 3 callout (to the left) -->
+  <rect x="60" y="122" width="164" height="22" rx="5" fill="#fff3cd" stroke="#e07b00" stroke-width="1.5"/>
+  <text x="142" y="137" text-anchor="middle" font-size="10" fill="#7a4400" font-weight="bold">③ Y = 2.0 m (from wall)</text>
+
+  <!-- ===== STEP 4: RADIUS ===== -->
+  <!-- Dashed zone circle around sofa: r = 0.6 m → 39 px -->
+  <circle cx="258" cy="196" r="39" fill="none" stroke="#e07b00" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.85"/>
+
+  <!-- Radius line from centre to right edge -->
+  <line x1="258" y1="196" x2="297" y2="196" stroke="#e07b00" stroke-width="1.5" stroke-dasharray="3,2"/>
+
+  <!-- Step 4 callout (to the right) -->
+  <rect x="305" y="185" width="192" height="22" rx="5" fill="#fff3cd" stroke="#e07b00" stroke-width="1.5"/>
+  <text x="401" y="200" text-anchor="middle" font-size="10" fill="#7a4400" font-weight="bold">④ Radius ≈ half item width (0.6 m)</text>
+
+  <!-- ===== LEGEND ===== -->
+  <rect x="60" y="448" width="500" height="18" rx="3" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
+  <!-- Step circle sample -->
+  <circle cx="80" cy="457" r="6" fill="#fff3cd" stroke="#e07b00" stroke-width="1.5"/>
+  <text x="79" y="461" text-anchor="middle" font-size="9" fill="#e07b00" font-weight="bold">①</text>
+  <text x="95" y="461" font-size="10" fill="#333">Measurement step</text>
+  <!-- Dashed circle sample -->
+  <circle cx="265" cy="457" r="7" fill="none" stroke="#e07b00" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="278" y="461" font-size="10" fill="#333">Resulting zone (enter X, Y, Radius in config)</text>
+</svg>
