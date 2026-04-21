@@ -134,9 +134,11 @@ async def test_start_startup_grace_period_sets_timestamp():
     before = dt.datetime.now().timestamp()
 
     # Mock asyncio.create_task to avoid creating actual task
-    with patch("asyncio.create_task") as mock_create_task:
-        mock_create_task.return_value = MagicMock()
+    def _close_coro(coro):
+        coro.close()
+        return MagicMock()
 
+    with patch("asyncio.create_task", side_effect=_close_coro):
         # Call the method
         AdaptiveDataUpdateCoordinator._start_startup_grace_period(coordinator)
 
@@ -180,9 +182,11 @@ async def test_start_startup_grace_period_cancels_existing_task():
     )
 
     # Mock asyncio.create_task to avoid creating actual task
-    with patch("asyncio.create_task") as mock_create_task:
-        mock_create_task.return_value = MagicMock()
+    def _close_coro(coro):
+        coro.close()
+        return MagicMock()
 
+    with patch("asyncio.create_task", side_effect=_close_coro):
         # Call the method
         AdaptiveDataUpdateCoordinator._start_startup_grace_period(coordinator)
 
