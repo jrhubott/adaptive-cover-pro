@@ -26,6 +26,12 @@ Home Assistant custom integration that controls vertical blinds, horizontal awni
 
 Dive deeper: **[How It Decides](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)** · **[Climate Mode](https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode)** · **[Enhanced Geometric Accuracy](https://github.com/jrhubott/adaptive-cover-pro/wiki/Enhanced-Geometric-Accuracy)**
 
+## Companion Lovelace card
+
+Pair with the **[Adaptive Cover Pro Card](https://github.com/jrhubott/adaptive-cover-pro-card)** — a custom Lovelace card that visualizes sun vs. window geometry, the full pipeline decision trace, and live cover positions, with inline override controls. HACS-installable as a Lovelace plugin. Requires no integration changes — it reads existing entities and calls existing services.
+
+See the **[Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card)** wiki page for install and usage.
+
 ## Quick install
 
 **HACS (recommended):** Add `https://github.com/jrhubott/adaptive-cover-pro` as a custom repository → search **Adaptive Cover Pro** → download → restart Home Assistant → add the integration.
@@ -42,6 +48,7 @@ Full steps: **[Installation](https://github.com/jrhubott/adaptive-cover-pro/wiki
 | 🧠 **How it works** | [How It Decides](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides) · [Basic Mode](https://github.com/jrhubott/adaptive-cover-pro/wiki/Basic-Mode) · [Climate Mode](https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode) · [Enhanced Geometric Accuracy](https://github.com/jrhubott/adaptive-cover-pro/wiki/Enhanced-Geometric-Accuracy) |
 | ⚙️ **Configuration** | [Common](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Common) · [Glare Zones](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones) · [Weather Safety](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety) · [Climate](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate) · [Summary Screen](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Summary-Screen) |
 | 🔌 **Entities & services** | [Entities](https://github.com/jrhubott/adaptive-cover-pro/wiki/Entities) · [Runtime Configuration Services](https://github.com/jrhubott/adaptive-cover-pro/wiki/Runtime-Configuration-Services) · [Position Verification](https://github.com/jrhubott/adaptive-cover-pro/wiki/Position-Verification) · [Somfy RTS (My Position)](https://github.com/jrhubott/adaptive-cover-pro/wiki/My-Position-Support-Somfy-RTS) |
+| 🎨 **Dashboard** | [Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card) — companion card in a separate [repo](https://github.com/jrhubott/adaptive-cover-pro-card) |
 | 🛠️ **Operations** | [Troubleshooting](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) · [Known Limitations](https://github.com/jrhubott/adaptive-cover-pro/wiki/Known-Limitations) |
 | 🧪 **Testing** | [Testing the Algorithms](https://github.com/jrhubott/adaptive-cover-pro/wiki/Testing-the-Algorithms) · [Simulation Notebook](https://github.com/jrhubott/adaptive-cover-pro/wiki/Simulation-Notebook) |
 
