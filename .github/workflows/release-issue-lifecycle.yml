@@ -94,16 +94,68 @@ jobs:
               }
             }
 
-            for (const num of numbers) {
-              let item;
+            // Cache fetched items to avoid redundant API calls
+            const itemCache = new Map();
+
+            async function fetchItem(num) {
+              if (itemCache.has(num)) return itemCache.get(num);
               try {
                 const response = await github.rest.issues.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: num,
                 });
-                item = response.data;
+                itemCache.set(num, response.data);
+                return response.data;
               } catch {
+                itemCache.set(num, null);
+                return null;
+              }
+            }
+
+            async function processIssue(num) {
+              const item = await fetchItem(num);
+              if (!item) {
+                console.log(`#${num} not found, skipping.`);
+                return;
+              }
+              const currentLabels = item.labels.map(l => l.name);
+              if (currentLabels.includes('awaiting-release')) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  name: 'awaiting-release',
+                }).catch(() => {});
+              }
+              if (item.state === 'open') {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  labels: ['waiting-for-confirmation', 'released'],
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf I don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
+                });
+                console.log(`Labeled issue #${num} as waiting-for-confirmation + released.`);
+              } else {
+                console.log(`Issue #${num} is already closed, skipping.`);
+              }
+            }
+
+            // Numbers from commit log — used for deduplication
+            const seenNumbers = new Set(numbers);
+
+            // Linked issues found in PR bodies — processed after the main loop
+            const linkedIssueQueue = new Set();
+
+            for (const num of numbers) {
+              const item = await fetchItem(num);
+              if (!item) {
                 console.log(`#${num} not found, skipping.`);
                 continue;
               }
@@ -130,6 +182,26 @@ jobs:
                 });
                 console.log(`Notified PR #${num} of release ${tag}.`);
 
+                // Scan PR body for linked issue references (e.g. "Fixes #260")
+                try {
+                  const prData = await github.rest.pulls.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: num,
+                  });
+                  const prBody = prData.data.body || '';
+                  const bodyPattern = /(?:refs?|closes?|fixes?|resolves?)\s+#(\d+)/gi;
+                  let bodyMatch;
+                  while ((bodyMatch = bodyPattern.exec(prBody)) !== null) {
+                    const linkedNum = parseInt(bodyMatch[1], 10);
+                    if (linkedNum !== num && !seenNumbers.has(linkedNum)) {
+                      linkedIssueQueue.add(linkedNum);
+                    }
+                  }
+                } catch {
+                  console.log(`Could not fetch PR body for #${num}, skipping body scan.`);
+                }
+
               } else {
                 // Issue — swap to waiting-for-confirmation and comment
                 if (currentLabels.includes('awaiting-release')) {
@@ -141,7 +213,6 @@ jobs:
                   }).catch(() => {});
                 }
 
-                // Only open issues get the confirmation label
                 if (item.state === 'open') {
                   await github.rest.issues.addLabels({
                     owner: context.repo.owner,
@@ -154,11 +225,19 @@ jobs:
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: num,
-                    body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf we don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
+                    body: `This fix has shipped in [**${tag}**](${releaseUrl}). Please confirm whether this resolves your issue by leaving a comment below.\n\nIf I don't hear back in 14 days, this issue will be automatically closed — feel free to reopen if the problem persists.`,
                   });
                   console.log(`Labeled issue #${num} as waiting-for-confirmation + released.`);
                 } else {
                   console.log(`Issue #${num} is already closed, skipping.`);
                 }
+              }
+            }
+
+            // Process issues discovered from PR bodies
+            if (linkedIssueQueue.size > 0) {
+              console.log(`Processing ${linkedIssueQueue.size} issue(s) linked from PR bodies: #${[...linkedIssueQueue].join(', #')}`);
+              for (const num of linkedIssueQueue) {
+                await processIssue(num);
               }
             }
