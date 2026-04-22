@@ -30,7 +30,7 @@ Dive deeper: **[How It Decides](https://github.com/jrhubott/adaptive-cover-pro/w
 
 Pair with the **[Adaptive Cover Pro Card](https://github.com/jrhubott/adaptive-cover-pro-card)** — a custom Lovelace card that visualizes sun vs. window geometry, the full pipeline decision trace, and live cover positions, with inline override controls. HACS-installable as a Lovelace plugin. Requires no integration changes — it reads existing entities and calls existing services.
 
-See the **[Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card)** wiki page for install and usage.
+See the **[Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card)** wiki page for install, configuration, and usage. All card documentation — including developer setup — is maintained here in the integration wiki.
 
 ## Quick install
 
