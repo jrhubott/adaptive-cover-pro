@@ -24,6 +24,7 @@ from ..const import (
     CONF_DEFAULT_HEIGHT,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_POS,
+    DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     MAX_POSITION_RETRIES,
     POSITION_CHECK_INTERVAL_MINUTES,
     POSITION_TOLERANCE_PERCENT,
@@ -78,10 +79,6 @@ class CoverCommandService:
 
     """
 
-    # How long to wait before force-clearing wait_for_target (seconds).
-    # Covers that never report final position won't be stuck indefinitely.
-    _WAIT_FOR_TARGET_TIMEOUT_SECONDS = 30
-
     # Default capabilities for covers when entity not ready
     _DEFAULT_CAPABILITIES = {
         "has_set_position": True,
@@ -100,6 +97,7 @@ class CoverCommandService:
         check_interval_minutes: int = POSITION_CHECK_INTERVAL_MINUTES,
         position_tolerance: int = POSITION_TOLERANCE_PERCENT,
         max_retries: int = MAX_POSITION_RETRIES,
+        transit_timeout_seconds: int = DEFAULT_TRANSIT_TIMEOUT_SECONDS,
         on_tick=None,
     ) -> None:
         """Initialize the CoverCommandService.
@@ -113,6 +111,9 @@ class CoverCommandService:
             check_interval_minutes: How often reconciliation runs (minutes)
             position_tolerance: Allowed deviation between target and actual (%)
             max_retries: Max reconciliation attempts per target before giving up
+            transit_timeout_seconds: Seconds without forward progress before the
+                wait_for_target backstop fires.  Defaults to DEFAULT_TRANSIT_TIMEOUT_SECONDS
+                (45s).  Set higher for slow covers that take longer to complete a traverse.
             on_tick: Optional async callable(now) invoked at the start of each
                 reconciliation tick. Use for coordinator-level periodic work
                 (e.g. time window transition checks) that must run on the same
@@ -127,17 +128,20 @@ class CoverCommandService:
         self._check_interval_minutes = check_interval_minutes
         self._position_tolerance = position_tolerance
         self._max_retries = max_retries
+        self._wait_for_target_timeout_seconds = transit_timeout_seconds
         self._on_tick = on_tick
 
         # Per-entity positioning state
         # target_call: last position we decided to send (the "desired" position)
         # _sent_at: when we last executed a service call for this entity
         # wait_for_target: True while cover is expected to still be moving
+        # _last_progress_at: last time the cover reported forward progress toward target
         # _retry_counts: how many reconciliation retries for the current target
         # _gave_up: entities that have hit max_retries (cleared on new target)
         self.target_call: dict[str, int] = {}
         self._sent_at: dict[str, dt.datetime] = {}
         self.wait_for_target: dict[str, bool] = {}
+        self._last_progress_at: dict[str, dt.datetime] = {}
         self._retry_counts: dict[str, int] = {}
         self._gave_up: set[str] = set()
 
@@ -388,6 +392,7 @@ class CoverCommandService:
         self.target_call.pop(entity_id, None)
         self.wait_for_target.pop(entity_id, None)
         self._sent_at.pop(entity_id, None)
+        self._last_progress_at.pop(entity_id, None)
         self._retry_counts.pop(entity_id, None)
         self._gave_up.discard(entity_id)
         self._safety_targets.discard(entity_id)
@@ -396,6 +401,38 @@ class CoverCommandService:
                 "Discarded stale target for %s on manual override start",
                 entity_id,
             )
+
+    # ------------------------------------------------------------------ #
+    # Progress-aware transit tracking
+    # ------------------------------------------------------------------ #
+
+    def record_progress(self, entity_id: str, now: dt.datetime) -> None:
+        """Record that the cover made forward progress toward its target at `now`.
+
+        Called by the coordinator whenever a state-change event shows the cover
+        moving closer to the commanded target (new_distance < old_distance).
+        Resets the transit-timeout clock so slow-but-moving covers are not
+        prematurely cleared by the backstop.
+        """
+        self._last_progress_at[entity_id] = now
+
+    def _transit_elapsed_without_progress(
+        self, entity_id: str, now: dt.datetime
+    ) -> float | None:
+        """Seconds since the cover last made forward progress (or since sent_at).
+
+        Returns the elapsed time the transit backstop should compare against the
+        configured timeout. Uses `_last_progress_at` as the reference when
+        forward progress has been recorded; falls back to `_sent_at` when no
+        progress has been observed yet (covers that don't report intermediate
+        positions, or the very first position event).
+
+        Returns None if no sent_at is recorded for this entity (no command sent).
+        """
+        reference = self._last_progress_at.get(entity_id) or self._sent_at.get(entity_id)
+        if reference is None:
+            return None
+        return (now - reference).total_seconds()
 
     # ------------------------------------------------------------------ #
     # Stop helpers — bypass _enabled gate (shutdown / emergency paths)
@@ -559,6 +596,7 @@ class CoverCommandService:
         self.target_call[entity_id] = target
         self.wait_for_target[entity_id] = True
         self._sent_at[entity_id] = now
+        self._last_progress_at.pop(entity_id, None)
         self._retry_counts.pop(entity_id, None)
         self._gave_up.discard(entity_id)
         self._logger.debug(
@@ -971,15 +1009,14 @@ class CoverCommandService:
 
             # 1. Timeout: clear stuck wait_for_target
             if self.wait_for_target.get(entity_id, False):
-                sent_at = self._sent_at.get(entity_id)
-                if sent_at is not None:
-                    elapsed = (now - sent_at).total_seconds()
-                    if elapsed > self._WAIT_FOR_TARGET_TIMEOUT_SECONDS:
+                elapsed = self._transit_elapsed_without_progress(entity_id, now)
+                if elapsed is not None:
+                    if elapsed > self._wait_for_target_timeout_seconds:
                         self._logger.debug(
                             "wait_for_target timeout for %s (elapsed %.0fs > %ds) — clearing",
                             entity_id,
                             elapsed,
-                            self._WAIT_FOR_TARGET_TIMEOUT_SECONDS,
+                            self._wait_for_target_timeout_seconds,
                         )
                         self.wait_for_target[entity_id] = False
                     else:
@@ -1270,6 +1307,7 @@ class CoverCommandService:
             self.target_call[entity] = state
             self.wait_for_target[entity] = True
             self._sent_at[entity] = now
+            self._last_progress_at.pop(entity, None)
             if reset_retries:
                 self._retry_counts.pop(entity, None)  # New target resets retry count
                 self._gave_up.discard(entity)  # Allow warnings again for new target
@@ -1293,6 +1331,7 @@ class CoverCommandService:
             self.target_call[entity] = state
             self.wait_for_target[entity] = True
             self._sent_at[entity] = now
+            self._last_progress_at.pop(entity, None)
             if reset_retries:
                 self._retry_counts.pop(entity, None)
                 self._gave_up.discard(entity)
@@ -1322,6 +1361,7 @@ class CoverCommandService:
         service_data = {ATTR_ENTITY_ID: entity}
         self.wait_for_target[entity] = True
         self._sent_at[entity] = now
+        self._last_progress_at.pop(entity, None)
         if reset_retries:
             self._retry_counts.pop(entity, None)
             self._gave_up.discard(entity)

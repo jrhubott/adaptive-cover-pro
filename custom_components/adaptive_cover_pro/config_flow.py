@@ -138,9 +138,13 @@ from .const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
     CONF_DRY_RUN,
+    CONF_TRANSIT_TIMEOUT,
     DEBUG_CATEGORIES_ALL,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+    DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     MAX_DEBUG_EVENT_BUFFER_SIZE,
+    MAX_TRANSIT_TIMEOUT,
+    MIN_TRANSIT_TIMEOUT,
     DOMAIN,
     SensorType,
 )
@@ -611,6 +615,18 @@ DEBUG_SCHEMA = vol.Schema(
                 max=MAX_DEBUG_EVENT_BUFFER_SIZE,
                 step=10,
                 mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+        vol.Optional(
+            CONF_TRANSIT_TIMEOUT,
+            default=DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=MIN_TRANSIT_TIMEOUT,
+                max=MAX_TRANSIT_TIMEOUT,
+                step=5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="seconds",
             )
         ),
     }
@@ -1630,6 +1646,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         limit_parts.append(f"Min change: {delta_pos}%")
     if delta_time is not None:
         limit_parts.append(f"Min interval: {delta_time} min")
+    transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
+    if transit_timeout is not None and int(transit_timeout) != DEFAULT_TRANSIT_TIMEOUT_SECONDS:
+        limit_parts.append(f"Transit timeout: {int(transit_timeout)}s")
     if config.get(CONF_INVERSE_STATE):
         limit_parts.append("Inverse state")
     oc_thresh = config.get(CONF_OPEN_CLOSE_THRESHOLD)

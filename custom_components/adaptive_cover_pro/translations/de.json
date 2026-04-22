@@ -877,13 +877,15 @@
           "dry_run": "Testlauf (keine Abdeckungsbewegung)",
           "debug_mode": "Debug-Modus aktivieren",
           "debug_categories": "Log-Kategorien (auf INFO befördert, wenn Debug-Modus aktiviert ist)",
-          "debug_event_buffer_size": "Puffergröße für manuelle Übersteuerungsereignisse"
+          "debug_event_buffer_size": "Puffergröße für manuelle Übersteuerungsereignisse",
+          "transit_timeout": "Transit-Timeout (Sekunden)"
         },
         "data_description": {
           "dry_run": "Bei Aktivierung führt die Integration den vollständigen Update-Zyklus aus (Pipeline, Diagnose, Sensoren), sendet ABER KEINE Bewegungsbefehle an Ihre Abdeckungen. Verwenden Sie zum Debuggen und Validieren von Automatisierungseinstellungen ohne Störung Ihres Hauses. Standard: aus.",
           "debug_mode": "Bei Aktivierung werden Protokollmeldungen für die unten ausgewählten Kategorien von DEBUG zu INFO befördert. Das bedeutet, dass sie ohne „custom_components.adaptive_cover_pro: debug“ in configuration.yaml im Home Assistant-Protokoll erscheinen. Schalten Sie aus, wenn Sie mit der Problembehandlung fertig sind.",
           "debug_categories": "Wählen Sie aus, welche Bereiche zu verfolgen sind. „Manuelle Übersteuerung“ umfasst Entscheidungen zur Übersteuerungserkennung (am nützlichsten für Probleme „Abdeckung wird manuelle Kontrolle nicht stoppen“). „Abgleich“ umfasst die 1-Minuten-Position-Wiederholungsschleife. „Pipeline“ umfasst die Prioritäts-Handler-Kette. „Bewegung“ umfasst Bewegungssensor- und Timeout-Entscheidungen.",
-          "debug_event_buffer_size": "Anzahl der manuellen Übersteuerungsentscheidungsereignisse, die im rollierenden Ringpuffer beibehalten werden. Jedes Ereignis ist ein kleines dict (~200 Bytes). Erhöhen Sie für intermittierende Probleme, die längere Beobachtungsfenster erfordern. Der Puffer wird beim Neuladen der Integration zurückgesetzt."
+          "debug_event_buffer_size": "Anzahl der manuellen Übersteuerungsentscheidungsereignisse, die im rollierenden Ringpuffer beibehalten werden. Jedes Ereignis ist ein kleines dict (~200 Bytes). Erhöhen Sie für intermittierende Probleme, die längere Beobachtungsfenster erfordern. Der Puffer wird beim Neuladen der Integration zurückgesetzt.",
+          "transit_timeout": "Wie lange ACP wartet, nachdem eine Beschattung keine Fortschritte mehr meldet, bevor der nächste Positionsbericht als manuelle Übersteuerung behandelt wird. Der Timer wird jedes Mal zurückgesetzt, wenn sich die Beschattung näher an das angestrebte Ziel bewegt, sodass langsame, sich bewegende Beschattungen über die gesamte Transitzeit geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für eine vollständige Bewegung benötigen. Standard: 45 Sekunden."
         }
       },
       "sync_confirm": {
