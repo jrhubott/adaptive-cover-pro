@@ -94,9 +94,27 @@ def _make_coordinator(
     cmd_svc._position_tolerance = 5
 
     # Record when the command was "sent"
+    now = dt.datetime.now(dt.UTC)
     cmd_svc._sent_at = {
-        entity_id: dt.datetime.now(dt.UTC) - dt.timedelta(seconds=sent_seconds_ago)
+        entity_id: now - dt.timedelta(seconds=sent_seconds_ago)
     }
+
+    # Wire up the progress-aware timeout helpers used by process_entity_state_change.
+    # These tests don't pre-populate last_progress_at, so elapsed falls back to sent_at.
+    from custom_components.adaptive_cover_pro.const import DEFAULT_TRANSIT_TIMEOUT_SECONDS
+
+    cmd_svc._wait_for_target_timeout_seconds = DEFAULT_TRANSIT_TIMEOUT_SECONDS
+    _progress_at: dict[str, dt.datetime] = {}
+
+    def _transit_elapsed(eid: str, now_arg: dt.datetime) -> float | None:
+        reference = _progress_at.get(eid) or cmd_svc._sent_at.get(eid)
+        return (now_arg - reference).total_seconds() if reference else None
+
+    def _record_progress(eid: str, now_arg: dt.datetime) -> None:
+        _progress_at[eid] = now_arg
+
+    cmd_svc._transit_elapsed_without_progress = MagicMock(side_effect=_transit_elapsed)
+    cmd_svc.record_progress = MagicMock(side_effect=_record_progress)
 
     def _check_target_reached(eid, pos):
         if pos is None:
@@ -542,8 +560,13 @@ class TestTransitTimeout:
     TRANSIT_TIMEOUT_SECONDS, wait_for_target is cleared regardless of direction.
     """
 
-    def test_transit_timeout_clears_wait_for_target(self) -> None:
-        """Command older than 45s clears wait_for_target even if cover moves toward target."""
+    def test_transit_timeout_clears_wait_for_target_when_stalled(self) -> None:
+        """Command older than 45s clears wait_for_target when the cover has stalled.
+
+        With the progress-aware backstop, 'timeout' means 'no progress for N seconds'.
+        A stalled cover (same position, no record_progress calls) still gets cleared
+        after TRANSIT_TIMEOUT_SECONDS because elapsed falls back to sent_at.
+        """
         from custom_components.adaptive_cover_pro.const import TRANSIT_TIMEOUT_SECONDS
 
         entity_id = "cover.blind"
@@ -551,7 +574,7 @@ class TestTransitTimeout:
             entity_id,
             target_position=75,
             current_position=45,
-            old_position=35,  # distance decreasing — would normally keep wait_for_target
+            old_position=45,  # same position — stalled, no progress
             new_state_str="opening",
             sent_seconds_ago=TRANSIT_TIMEOUT_SECONDS + 1,
         )
@@ -573,10 +596,10 @@ class TestTransitTimeout:
         assert coord._cmd_svc.wait_for_target[entity_id] is True
 
     def test_transit_timeout_constant_is_documented(self) -> None:
-        """TRANSIT_TIMEOUT_SECONDS must be defined in const.py and be 45."""
-        from custom_components.adaptive_cover_pro.const import TRANSIT_TIMEOUT_SECONDS
+        """DEFAULT_TRANSIT_TIMEOUT_SECONDS must be defined in const.py and be 45."""
+        from custom_components.adaptive_cover_pro.const import DEFAULT_TRANSIT_TIMEOUT_SECONDS
 
-        assert TRANSIT_TIMEOUT_SECONDS == 45
+        assert DEFAULT_TRANSIT_TIMEOUT_SECONDS == 45
 
 
 # ===========================================================================

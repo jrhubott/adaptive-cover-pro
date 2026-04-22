@@ -167,8 +167,16 @@ STARTUP_GRACE_PERIOD_SECONDS = (
 # otherwise keep wait_for_target=True indefinitely, preventing manual override
 # detection until the reconciliation timer fired.  This constant caps that
 # window at a value that accommodates most motorized blinds and awnings, which
-# typically complete a full traverse in 20–40 seconds.
-TRANSIT_TIMEOUT_SECONDS = 45
+# typically complete a full traverse in 20–40 seconds.  The timeout resets
+# whenever the cover makes forward progress toward target, so slow-but-moving
+# covers get an extended window proportional to when they last moved.
+DEFAULT_TRANSIT_TIMEOUT_SECONDS = 45
+TRANSIT_TIMEOUT_SECONDS = DEFAULT_TRANSIT_TIMEOUT_SECONDS  # backward-compat alias
+
+# User-configurable transit timeout (exposed in the debug/advanced config step)
+CONF_TRANSIT_TIMEOUT = "transit_timeout"
+MIN_TRANSIT_TIMEOUT = 15
+MAX_TRANSIT_TIMEOUT = 600
 
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection

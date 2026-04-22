@@ -129,11 +129,12 @@ from .const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
     CONF_DRY_RUN,
+    CONF_TRANSIT_TIMEOUT,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+    DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     DOMAIN,
     LOGGER,
     STARTUP_GRACE_PERIOD_SECONDS,
-    TRANSIT_TIMEOUT_SECONDS,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -333,6 +334,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
+            transit_timeout_seconds=self.config_entry.options.get(
+                CONF_TRANSIT_TIMEOUT
+            ) or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
         )
 
@@ -686,22 +690,29 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
 
                 if cover_is_transitioning:
-                    # Hard backstop: if the command is older than
-                    # TRANSIT_TIMEOUT_SECONDS the cover should have arrived.
-                    # Clear wait_for_target so covers cannot block manual override
-                    # detection indefinitely when stuck or stalled.
-                    sent_at = self._cmd_svc._sent_at.get(entity_id)  # noqa: SLF001
-                    if sent_at is not None:
-                        elapsed = (dt.datetime.now(dt.UTC) - sent_at).total_seconds()
-                        if elapsed > TRANSIT_TIMEOUT_SECONDS:
+                    # Progress-aware backstop: if no forward progress has been
+                    # observed for longer than the configured transit timeout,
+                    # the cover is stuck or stalled — clear wait_for_target so
+                    # manual override detection can run.  The clock resets each
+                    # time record_progress() is called (when new_distance <
+                    # old_distance below), so slow-but-moving covers are not
+                    # prematurely cleared.  Covers that never report intermediate
+                    # positions fall back to measuring from _sent_at.
+                    now = dt.datetime.now(dt.UTC)
+                    elapsed = self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
+                        entity_id, now
+                    )
+                    if elapsed is not None:
+                        timeout = self._cmd_svc._wait_for_target_timeout_seconds  # noqa: SLF001
+                        if elapsed > timeout:
                             self._cmd_svc.wait_for_target[entity_id] = False
                             self._debug_log(
                                 "manual_override",
-                                "Transit timeout for %s (%.0fs > %ds) "
+                                "Transit timeout for %s (%.0fs > %ds without progress) "
                                 "— clearing wait_for_target",
                                 entity_id,
                                 elapsed,
-                                TRANSIT_TIMEOUT_SECONDS,
+                                timeout,
                             )
                             self.logger.debug(
                                 "Wait for target: %s", self.wait_for_target
@@ -740,6 +751,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
                         if new_distance < old_distance:
                             # Unambiguously moving toward target — still in transit.
+                            # Reset the progress clock so the backstop window extends.
+                            self._cmd_svc.record_progress(entity_id, dt.datetime.now(dt.UTC))  # noqa: SLF001
                             self._debug_log(
                                 "manual_override",
                                 "Grace expired but %s still in transit toward "

@@ -617,7 +617,7 @@ class TestIssue215EuropeParisSunsetConfig:
         svc._on_tick = None
         svc._get_current_position = MagicMock(return_value=0)
         svc._last_reconcile_time = {}
-        svc._WAIT_FOR_TARGET_TIMEOUT_SECONDS = 30
+        svc._wait_for_target_timeout_seconds = 45
 
         # Verify the gate condition that reconcile checks
         entity_id = "cover.smart_plug_in_unit"

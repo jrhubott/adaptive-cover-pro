@@ -877,13 +877,15 @@
           "dry_run": "Exécution à sec (aucun mouvement du store)",
           "debug_mode": "Activer le mode débogage",
           "debug_categories": "Catégories de journal (promues en INFO quand le mode débogage est actif)",
-          "debug_event_buffer_size": "Taille du tampon d'événements de dérogation manuelle"
+          "debug_event_buffer_size": "Taille du tampon d'événements de dérogation manuelle",
+          "transit_timeout": "Délai de transit (secondes)"
         },
         "data_description": {
           "dry_run": "Quand activé, l'intégration exécute le cycle de mise à jour complet (pipeline, diagnostics, capteurs) mais N'ENVOIE PAS de commandes de mouvement à vos stores. Utilisez cette option pour déboguer et valider les paramètres d'automatisation sans perturber votre domicile. Par défaut : désactivé.",
           "debug_mode": "Quand activé, les messages de journal pour les catégories sélectionnées ci-dessous sont promus de DEBUG à INFO. Ils apparaissent ainsi dans le journal de Home Assistant sans nécessiter l'ajout de « custom_components.adaptive_cover_pro: debug » dans configuration.yaml. Désactivez quand vous avez terminé le débogage.",
           "debug_categories": "Sélectionnez les domaines à tracer. « Dérogation manuelle » couvre les décisions de détection de dérogation (le plus utile pour les problèmes « le store n'arrête pas le contrôle manuel »). « Réconciliation » couvre la boucle de nouvelle tentative de position toutes les minutes. « Pipeline » couvre les décisions de la chaîne de gestionnaires prioritaires. « Mouvement » couvre les événements des capteurs de mouvement et l'état du délai d'inactivité.",
-          "debug_event_buffer_size": "Nombre d'événements de décision de dérogation manuelle à conserver dans le tampon circulaire. Chaque événement est un petit dictionnaire (~200 octets). Augmentez cette valeur pour les problèmes intermittents nécessitant des fenêtres d'observation plus longues. Le tampon est réinitialisé lors du rechargement de l'intégration."
+          "debug_event_buffer_size": "Nombre d'événements de décision de dérogation manuelle à conserver dans le tampon circulaire. Chaque événement est un petit dictionnaire (~200 octets). Augmentez cette valeur pour les problèmes intermittents nécessitant des fenêtres d'observation plus longues. Le tampon est réinitialisé lors du rechargement de l'intégration.",
+          "transit_timeout": "Durée pendant laquelle ACP attend après qu'une protection solaire cesse de signaler une progression avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection solaire se rapproche de sa position cible commandée, de sorte que les protections solaires qui bougent lentement mais régulièrement sont protégées pour la durée complète du transit. Augmentez cette valeur pour les protections solaires qui prennent plus de 45 secondes pour parcourir toute leur course. Par défaut : 45 secondes."
         }
       },
       "sync_confirm": {
