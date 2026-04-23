@@ -1278,7 +1278,7 @@
           "name": "Mode d'inclinaison"
         },
         "window_depth": {
-          "description": "Profondeur du rejingot de la fenêtre en mètres (0–0,5 m). Stores verticaux uniquement.",
+          "description": "Profondeur du rejingot de la fenêtre en mètres (0–5 m). Stores verticaux uniquement.",
           "name": "Profondeur de la fenêtre"
         },
         "window_height": {

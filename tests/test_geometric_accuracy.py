@@ -567,6 +567,15 @@ class TestWindowDepth:
         position = cover.calculate_position()
         assert 0 <= position <= cover.h_win
 
+    def test_window_depth_large_value_clipped(self, base_cover_params):
+        """window_depth=5.0m (new max) must produce a finite position clipped to [0, h_win]."""
+        params = dict(base_cover_params)
+        params["window_depth"] = 5.0
+        cover = build_vertical_cover(**params)
+        position = cover.calculate_position()
+        assert 0 <= position <= cover.h_win
+        assert not (position != position)  # not NaN
+
 
 class TestSmoothTransitions:
     """Test that transitions are smooth across angle ranges."""

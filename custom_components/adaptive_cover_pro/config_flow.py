@@ -195,7 +195,7 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
         vol.Optional(CONF_WINDOW_DEPTH, default=0.0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
-                max=0.5,
+                max=5.0,
                 step=0.01,
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="m",

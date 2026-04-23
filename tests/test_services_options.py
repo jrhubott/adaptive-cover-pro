@@ -44,6 +44,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MAX_POSITION,
     CONF_MIN_POSITION,
     CONF_MOTION_SENSORS,
+    CONF_WINDOW_DEPTH,
     CONF_MOTION_TIMEOUT,
     CONF_MY_POSITION_VALUE,
     CONF_RETURN_SUNSET,
@@ -239,6 +240,19 @@ class TestFieldValidators:
     def test_tilt_mode_rejects_invalid(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_mode"]("mode3")
+
+    def test_window_depth_bounds(self):
+        FIELD_VALIDATORS[CONF_WINDOW_DEPTH](0.0)
+        FIELD_VALIDATORS[CONF_WINDOW_DEPTH](0.5)
+        FIELD_VALIDATORS[CONF_WINDOW_DEPTH](5.0)
+
+    def test_window_depth_above_max_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_WINDOW_DEPTH](5.01)
+
+    def test_window_depth_negative_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_WINDOW_DEPTH](-0.01)
 
 
 class TestCrossFieldValidate:
