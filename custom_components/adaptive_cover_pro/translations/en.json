@@ -1269,7 +1269,7 @@
       "fields": {
         "window_height": { "name": "Window height", "description": "Window height in metres (0.1–6 m). Vertical blind and awning only." },
         "window_width": { "name": "Window width", "description": "Window width in metres (0.1–5 m). Vertical blind only." },
-        "window_depth": { "name": "Window depth", "description": "Window reveal depth in metres (0–0.5 m). Vertical blind only." },
+        "window_depth": { "name": "Window depth", "description": "Window reveal depth in metres (0–5 m). Vertical blind only." },
         "sill_height": { "name": "Sill height", "description": "Window sill height from floor in metres (0–3 m). Vertical blind only." },
         "length_awning": { "name": "Awning length", "description": "Awning projection length in metres (0.3–6 m). Awning only." },
         "angle": { "name": "Awning angle", "description": "Awning tilt angle in degrees (0–45°). Awning only." },

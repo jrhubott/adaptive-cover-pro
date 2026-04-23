@@ -1278,7 +1278,7 @@
           "name": "Neigungs-Modus"
         },
         "window_depth": {
-          "description": "Fensterrahmen-Tiefe in Metern (0–0,5 m). Nur Vertikaljalousie.",
+          "description": "Fensterrahmen-Tiefe in Metern (0–5 m). Nur Vertikaljalousie.",
           "name": "Fenstertiefe"
         },
         "window_height": {

@@ -836,11 +836,11 @@ set_geometry:
           unit_of_measurement: m
     window_depth:
       name: Window depth
-      description: "Window reveal depth in metres (0–0.5 m). Vertical blind only."
+      description: "Window reveal depth in metres (0–5 m). Vertical blind only."
       selector:
         number:
           min: 0
-          max: 0.5
+          max: 5.0
           step: 0.01
           mode: slider
           unit_of_measurement: m

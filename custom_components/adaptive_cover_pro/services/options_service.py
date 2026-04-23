@@ -186,7 +186,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — vertical blind
     CONF_HEIGHT_WIN: _num(0.1, 6),
     CONF_WINDOW_WIDTH: _num(0.1, 5),
-    CONF_WINDOW_DEPTH: _num(0.0, 0.5),
+    CONF_WINDOW_DEPTH: _num(0.0, 5.0),
     CONF_SILL_HEIGHT: _num(0.0, 3.0),
     # Geometry — awning
     CONF_LENGTH_AWNING: _num(0.3, 6),
