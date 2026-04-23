@@ -733,9 +733,15 @@ get_release_notes() {
     elif [[ $USE_EDITOR == true ]]; then
         open_editor_for_notes "$version" "$release_type"
     else
-        # Default: auto-generate
-        log_info "Using auto-generated release notes (use --editor to customize)"
-        generate_template "$version" "$release_type"
+        # Auto-detect: look for pre-committed release notes file
+        local auto_notes_file="release_notes/v${version}.md"
+        if [[ -f $auto_notes_file ]]; then
+            log_info "Using release notes from: $auto_notes_file"
+            filter_coauthored_lines "$(cat "$auto_notes_file")"
+        else
+            log_info "Using auto-generated release notes (use --editor to customize)"
+            generate_template "$version" "$release_type"
+        fi
     fi
 }
 
