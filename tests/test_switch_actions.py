@@ -182,6 +182,47 @@ async def test_turn_off_non_automatic_control_key_no_special_logic():
 
 
 # ---------------------------------------------------------------------------
+# Switch display name — manual_toggle uses "Manual Override Detection"
+# ---------------------------------------------------------------------------
+
+
+def test_manual_toggle_switch_display_name():
+    """manual_toggle switch displays 'Manual Override Detection' but unique_id preserves 'Manual Override'."""
+    coord = _make_coordinator()
+    entry = _make_config_entry()
+    switch = AdaptiveCoverSwitch(
+        entry_id="entry_abc",
+        hass=coord.hass,
+        config_entry=entry,
+        coordinator=coord,
+        switch_name="Manual Override",
+        initial_state=True,
+        key="manual_toggle",
+        display_name="Manual Override Detection",
+    )
+    assert switch.name == "Manual Override Detection"
+    assert switch._attr_unique_id == "entry_abc_Manual Override"
+    assert switch._attr_translation_key == "manual_toggle"
+
+
+def test_switch_without_display_name_uses_switch_name():
+    """A switch without display_name falls back to switch_name for the name property."""
+    coord = _make_coordinator()
+    entry = _make_config_entry()
+    switch = AdaptiveCoverSwitch(
+        entry_id="entry_abc",
+        hass=coord.hass,
+        config_entry=entry,
+        coordinator=coord,
+        switch_name="Automatic Control",
+        initial_state=True,
+        key="automatic_control",
+    )
+    assert switch.name == "Automatic Control"
+    assert switch._attr_unique_id == "entry_abc_Automatic Control"
+
+
+# ---------------------------------------------------------------------------
 # Conditional switch creation — integration
 # ---------------------------------------------------------------------------
 

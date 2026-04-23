@@ -531,6 +531,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         if not self.manual_toggle or not self.automatic_control:
+            self._manual_gate_closed_log("service_call", list(tracked))
             return
 
         my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
@@ -877,6 +878,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _cancel_motion_timeout(self) -> None:
         """Cancel motion timeout task."""
         self._motion_mgr.cancel_motion_timeout()
+
+    def _manual_gate_closed_log(
+        self, where: str, entity_ids: list[str] | None = None
+    ) -> None:
+        """Emit a single debug line when the manual-override detection gate is closed."""
+        self.logger.debug(
+            "manual override detection gate closed at %s "
+            "(manual_toggle=%s, automatic_control=%s) — skipping %s",
+            where,
+            self.manual_toggle,
+            self.automatic_control,
+            entity_ids if entity_ids is not None else "<no entities>",
+        )
 
     def _check_initial_motion_state(self) -> None:
         """Initialize motion state from current sensor readings at startup/reload.
@@ -1401,56 +1415,63 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         events = self._pending_cover_events[:]
         self._pending_cover_events.clear()
 
-        if self.manual_toggle and self.automatic_control:
-            # Check startup grace period FIRST; suppress all events during
-            # HA restart when covers respond slowly.
-            if self._is_in_startup_grace_period():
-                entity_ids = [e.entity_id for e in events]
+        if not (self.manual_toggle and self.automatic_control):
+            self._manual_gate_closed_log(
+                "state_change", [e.entity_id for e in events]
+            )
+            self.cover_state_change = False
+            self.logger.debug("Cover state change handled")
+            return
+
+        # Check startup grace period FIRST; suppress all events during
+        # HA restart when covers respond slowly.
+        if self._is_in_startup_grace_period():
+            entity_ids = [e.entity_id for e in events]
+            self.logger.debug(
+                "Position changes for %s ignored (in startup grace period)",
+                entity_ids,
+            )
+            self.cover_state_change = False
+            return
+
+        for event_data in events:
+            entity_id = event_data.entity_id
+
+            # Skip manual override detection when the cover just reached its
+            # commanded target in this same event.  process_entity_state_change()
+            # adds the entity to _target_just_reached when check_target_reached()
+            # clears wait_for_target; without this guard the small positional
+            # difference allowed by POSITION_TOLERANCE_PERCENT would be
+            # misidentified as a user-initiated manual override.
+            if entity_id in self._target_just_reached:
+                self._target_just_reached.discard(entity_id)
                 self.logger.debug(
-                    "Position changes for %s ignored (in startup grace period)",
-                    entity_ids,
+                    "Skipping manual override check for %s — cover just reached commanded target",
+                    entity_id,
                 )
-                self.cover_state_change = False
-                return
+                continue
 
-            for event_data in events:
-                entity_id = event_data.entity_id
+            # Use target_call if available (contains actual sent position),
+            # otherwise fall back to calculated state.
+            # This is critical for open/close-only covers where the calculated
+            # state gets transformed (via threshold) to 0 or 100 before sending.
+            expected_position = self.target_call.get(entity_id, state)
 
-                # Skip manual override detection when the cover just reached its
-                # commanded target in this same event.  process_entity_state_change()
-                # adds the entity to _target_just_reached when check_target_reached()
-                # clears wait_for_target; without this guard the small positional
-                # difference allowed by POSITION_TOLERANCE_PERCENT would be
-                # misidentified as a user-initiated manual override.
-                if entity_id in self._target_just_reached:
-                    self._target_just_reached.discard(entity_id)
-                    self.logger.debug(
-                        "Skipping manual override check for %s — cover just reached commanded target",
-                        entity_id,
-                    )
-                    continue
-
-                # Use target_call if available (contains actual sent position),
-                # otherwise fall back to calculated state.
-                # This is critical for open/close-only covers where the calculated
-                # state gets transformed (via threshold) to 0 or 100 before sending.
-                expected_position = self.target_call.get(entity_id, state)
-
-                was_manual = self.manager.is_cover_manual(entity_id)
-                self.manager.handle_state_change(
-                    event_data,
-                    expected_position,
-                    self._cover_type,
-                    self.manual_reset,
-                    self.wait_for_target,
-                    self.manual_threshold,
-                )
-                # When a cover transitions into manual override, discard any
-                # pre-existing integration target (including safety-tagged
-                # end-time defaults) so reconciliation cannot resurrect it
-                # later (issue #215/#216).
-                if not was_manual and self.manager.is_cover_manual(entity_id):
-                    self._cmd_svc.discard_target(entity_id)
+            was_manual = self.manager.is_cover_manual(entity_id)
+            self.manager.handle_state_change(
+                event_data,
+                expected_position,
+                self._cover_type,
+                self.manual_reset,
+                self.wait_for_target,
+                self.manual_threshold,
+            )
+            # When a cover transitions into manual override, discard any
+            # pre-existing integration target (including safety-tagged
+            # end-time defaults) so reconciliation cannot resurrect it
+            # later (issue #215/#216).
+            if not was_manual and self.manager.is_cover_manual(entity_id):
+                self._cmd_svc.discard_target(entity_id)
 
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
@@ -1954,6 +1975,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             covers=_covers,
             manual_override_state=_manual_override_state,
+            manual_toggle=self.manual_toggle,
+            enabled_toggle=self.enabled_toggle if self.enabled_toggle is not None else True,
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)

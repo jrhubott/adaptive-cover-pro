@@ -1023,6 +1023,13 @@
           "on": "On",
           "off": "Off"
         }
+      },
+      "manual_toggle": {
+        "name": "Manuelle Übersteuerungserkennung",
+        "state": {
+          "on": "An",
+          "off": "Aus"
+        }
       }
     }
   },
