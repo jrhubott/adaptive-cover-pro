@@ -333,3 +333,69 @@ class TestMinimumPositionMode:
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert result.control_method == ControlMethod.CUSTOM_POSITION
+
+
+# ---------------------------------------------------------------------------
+# bypass_auto_control — custom positions always bypass delta gates
+# ---------------------------------------------------------------------------
+
+
+class TestBypassAutoControl:
+    """CustomPositionHandler must set bypass_auto_control=True on every active result."""
+
+    def test_bypass_flag_set_normal_path(self) -> None:
+        """Normal position path sets bypass_auto_control=True."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_ENTITY, True, 50, 77, False, False)]
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.bypass_auto_control is True
+
+    def test_bypass_flag_set_min_mode_path(self) -> None:
+        """Min-mode path sets bypass_auto_control=True."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_ENTITY, True, 30, 77, True, False)],
+            calculate_percentage_return=50.0,
+        )
+        result = _handler(entity_id=_ENTITY, position=30).evaluate(snapshot)
+        assert result is not None
+        assert result.bypass_auto_control is True
+
+    def test_bypass_flag_set_use_my_path(self) -> None:
+        """Use-My path sets bypass_auto_control=True."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_ENTITY, True, 50, 77, False, True)],
+            my_position_value=30,
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.use_my_position is True
+        assert result.bypass_auto_control is True
+
+    def test_reason_includes_bypass_text_normal_path(self) -> None:
+        """Reason string includes '[bypasses automatic control]' on normal path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_ENTITY, True, 50, 77, False, False)]
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is not None
+        assert "[bypasses automatic control]" in result.reason
+
+    def test_reason_includes_bypass_text_use_my_path(self) -> None:
+        """Reason string includes '[bypasses automatic control]' on use-My path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_ENTITY, True, 50, 77, False, True)],
+            my_position_value=30,
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is not None
+        assert "[bypasses automatic control]" in result.reason
+
+    def test_no_bypass_when_sensor_off(self) -> None:
+        """Handler returns None (not a bypass result) when sensor is off."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_ENTITY, False, 50, 77, False, False)]
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is None

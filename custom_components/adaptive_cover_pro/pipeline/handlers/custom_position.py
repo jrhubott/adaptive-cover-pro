@@ -72,10 +72,12 @@ class CustomPositionHandler(OverrideHandler):
                         return PipelineResult(
                             position=pos,
                             use_my_position=True,
+                            bypass_auto_control=True,
                             control_method=ControlMethod.CUSTOM_POSITION,
                             reason=(
                                 f"custom position #{self._slot} active ({self._entity_id})"
                                 f" — use My position ({pos}%)"
+                                " [bypasses automatic control]"
                             ),
                             raw_calculated_position=raw,
                         )
@@ -87,10 +89,12 @@ class CustomPositionHandler(OverrideHandler):
                         mode_note = ""
                     return PipelineResult(
                         position=pos,
+                        bypass_auto_control=True,
                         control_method=ControlMethod.CUSTOM_POSITION,
                         reason=(
                             f"custom position #{self._slot} active ({self._entity_id})"
                             f" — position {pos}%{mode_note}"
+                            " [bypasses automatic control]"
                         ),
                         raw_calculated_position=raw,
                     )

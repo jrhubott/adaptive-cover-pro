@@ -1454,7 +1454,18 @@ def test_priority_badges_on_every_rule():
     cfg["custom_position_1"] = 40
     cfg["custom_position_priority_1"] = 77
     summary = _build_config_summary(cfg, SensorType.BLIND)
-    for badge in ("[100]", "[90]", "[80]", "[77]", "[75]", "[60]", "[50]", "[45]", "[40]", "[0]"):
+    for badge in (
+        "[100]",
+        "[90]",
+        "[80]",
+        "[77]",
+        "[75]",
+        "[60]",
+        "[50]",
+        "[45]",
+        "[40]",
+        "[0]",
+    ):
         assert badge in summary, f"expected {badge} badge on some rule"
 
 
@@ -1580,6 +1591,18 @@ def test_custom_position_min_mode_shown():
     summary = _build_config_summary(cfg, SensorType.BLIND)
     custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
     assert "(as minimum)" in custom_line
+
+
+def test_custom_position_bypass_annotation_shown():
+    """Custom slot line notes that it bypasses delta gates and auto-control."""
+    cfg = {
+        "custom_position_sensor_1": "binary_sensor.movie",
+        "custom_position_1": 40,
+        "custom_position_priority_1": 77,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    custom_line = next(ln for ln in summary.splitlines() if "Custom #1" in ln)
+    assert "bypasses delta" in custom_line
 
 
 def test_weather_state_list_in_cloud_line():

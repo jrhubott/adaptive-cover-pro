@@ -156,7 +156,6 @@ SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 _STANDALONE_SENTINEL = "__standalone__"
 
 
-
 CONFIG_SCHEMA = vol.Schema(
     {
         vol.Required("name"): selector.TextSelector(),
@@ -1086,9 +1085,7 @@ def _build_cover_capabilities_text(
     return "\n".join(lines)
 
 
-async def _compute_todays_sun_times(
-    hass: HomeAssistant, config: dict
-) -> dict | None:
+async def _compute_todays_sun_times(hass: HomeAssistant, config: dict) -> dict | None:
     """Compute today's raw/effective sunrise/sunset + solar-control window.
 
     Runs the pandas/astral-heavy work in an executor. Returns ``None`` on any
@@ -1207,8 +1204,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     has_climate = bool(config.get(CONF_CLIMATE_MODE))
     sun_tracking_enabled = config.get(CONF_ENABLE_SUN_TRACKING, True)
     has_glare = (
-        bool(config.get(CONF_ENABLE_GLARE_ZONES))
-        and sensor_type == SensorType.BLIND
+        bool(config.get(CONF_ENABLE_GLARE_ZONES)) and sensor_type == SensorType.BLIND
     )
 
     def _pos_label(raw_pct: int, use_my: bool) -> str:
@@ -1396,6 +1392,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
             lines.append(
                 f"🎯 Custom #{_slot}: if {_eid} is on → {target}{cp_min}"
+                f" — bypasses delta gates and auto-control"
                 f"{_badge(_pri)}"
             )
 
@@ -1479,8 +1476,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             cl_parts.append("closes fully in winter for insulation")
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
         lines.append(
-            f"🌡️ Climate mode: adjusts strategy for heating/cooling"
-            f"{cl_str}{_badge(50)}"
+            f"🌡️ Climate mode: adjusts strategy for heating/cooling{cl_str}{_badge(50)}"
         )
 
     # Glare zones — vertical only (45, below climate)
@@ -1583,9 +1579,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             _sunset_target = _pos_label(int(sunset_pos), _sunset_use_my)
             if has_end_time and int(sunset_pos) != int(default_pos):
                 lines.append(f"{indent}🔚 After end time → {default_pos}%.")
-                lines.append(
-                    f"{indent}🌅 After sunset{sunset_ann} → {_sunset_target}."
-                )
+                lines.append(f"{indent}🌅 After sunset{sunset_ann} → {_sunset_target}.")
             else:
                 label = "end time/sunset" if has_end_time else "sunset"
                 lines.append(
@@ -1595,9 +1589,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 f"{indent}🌄 After sunrise{sunrise_ann} → {default_pos}% (tracking resumes)."
             )
             if config.get(CONF_RETURN_SUNSET):
-                lines.append(
-                    f"{indent}🔚 Return to sunset position at end time: on"
-                )
+                lines.append(f"{indent}🔚 Return to sunset position at end time: on")
 
     # Blind spot (sub-bullet / informational, no priority of its own)
     if config.get(CONF_ENABLE_BLIND_SPOT):
@@ -1647,7 +1639,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     if delta_time is not None:
         limit_parts.append(f"Min interval: {delta_time} min")
     transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
-    if transit_timeout is not None and int(transit_timeout) != DEFAULT_TRANSIT_TIMEOUT_SECONDS:
+    if (
+        transit_timeout is not None
+        and int(transit_timeout) != DEFAULT_TRANSIT_TIMEOUT_SECONDS
+    ):
         limit_parts.append(f"Transit timeout: {int(transit_timeout)}s")
     if config.get(CONF_INVERSE_STATE):
         limit_parts.append("Inverse state")
