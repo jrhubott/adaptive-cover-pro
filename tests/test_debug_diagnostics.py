@@ -340,6 +340,37 @@ class TestResizeEventBuffer:
 
 
 # ---------------------------------------------------------------------------
+# DiagnosticsBuilder — configuration section toggle fields
+# ---------------------------------------------------------------------------
+
+
+class TestConfigurationToggleFields:
+    """Verify manual_toggle and enabled_toggle appear in configuration output."""
+
+    def test_manual_toggle_false_appears_in_configuration(self):
+        """manual_toggle=False is reflected in configuration diagnostics."""
+        builder = DiagnosticsBuilder()
+        ctx = _base_ctx(manual_toggle=False, enabled_toggle=True)
+        result, _ = builder.build(ctx)
+        assert result["configuration"]["manual_toggle"] is False
+
+    def test_enabled_toggle_false_appears_in_configuration(self):
+        """enabled_toggle=False is reflected in configuration diagnostics."""
+        builder = DiagnosticsBuilder()
+        ctx = _base_ctx(manual_toggle=True, enabled_toggle=False)
+        result, _ = builder.build(ctx)
+        assert result["configuration"]["enabled_toggle"] is False
+
+    def test_both_toggles_true_by_default(self):
+        """When both toggles are True, both appear in configuration as True."""
+        builder = DiagnosticsBuilder()
+        ctx = _base_ctx(manual_toggle=True, enabled_toggle=True)
+        result, _ = builder.build(ctx)
+        assert result["configuration"]["manual_toggle"] is True
+        assert result["configuration"]["enabled_toggle"] is True
+
+
+# ---------------------------------------------------------------------------
 # DiagnosticsBuilder — debug info section
 # ---------------------------------------------------------------------------
 

@@ -88,6 +88,10 @@ class DiagnosticContext:
     # Manual override live state (per-entity map)
     manual_override_state: dict | None = None
 
+    # Manual override detection toggles
+    manual_toggle: bool = True
+    enabled_toggle: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -521,5 +525,7 @@ class DiagnosticsBuilder:
                 ),
                 "motion_detected": ctx.motion_detected,
                 "motion_timeout_active": ctx.motion_timeout_active,
+                "manual_toggle": ctx.manual_toggle,
+                "enabled_toggle": ctx.enabled_toggle,
             }
         }

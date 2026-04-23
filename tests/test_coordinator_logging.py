@@ -239,3 +239,123 @@ class TestCancelMotionTimeoutLogging:
         coord._cancel_motion_timeout()
 
         mock_task.cancel.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Manual override detection gate — debug log emitted when gate is closed
+# ---------------------------------------------------------------------------
+
+
+class TestManualGateClosedLogging:
+    """Both coordinator gate sites emit a debug log when manual_toggle or automatic_control is off."""
+
+    def _make_state_change_coordinator(self, *, manual_toggle, automatic_control):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock()
+        coord.manual_toggle = manual_toggle
+        coord.automatic_control = automatic_control
+        coord.logger = MagicMock()
+        coord.cover_state_change = True
+        coord._pending_cover_events = []
+        coord._is_in_startup_grace_period = MagicMock(return_value=False)
+        coord._manual_gate_closed_log = (
+            AdaptiveDataUpdateCoordinator._manual_gate_closed_log.__get__(coord)
+        )
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_state_change_logs_when_manual_toggle_off(self):
+        """async_handle_cover_state_change emits debug log when manual_toggle is False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = self._make_state_change_coordinator(
+            manual_toggle=False, automatic_control=True
+        )
+        await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
+            coord, state=50
+        )
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert any("manual override detection gate closed" in c for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_state_change_logs_when_auto_control_off(self):
+        """async_handle_cover_state_change emits debug log when automatic_control is False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = self._make_state_change_coordinator(
+            manual_toggle=True, automatic_control=False
+        )
+        await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
+            coord, state=50
+        )
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert any("manual override detection gate closed" in c for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_service_call_logs_when_manual_toggle_off(self):
+        """async_check_cover_service_call emits debug log when manual_toggle is False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        event = MagicMock()
+        event.data = {
+            "domain": "cover",
+            "service": "stop_cover",
+            "service_data": {"entity_id": "cover.test"},
+        }
+        event.context = MagicMock()
+        event.context.id = "ctx-001"
+
+        coord = MagicMock()
+        coord.entities = ["cover.test"]
+        coord.manual_toggle = False
+        coord.automatic_control = True
+        coord.logger = MagicMock()
+        coord._cmd_svc._acp_stop_contexts = []
+        coord._manual_gate_closed_log = (
+            AdaptiveDataUpdateCoordinator._manual_gate_closed_log.__get__(coord)
+        )
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert any("manual override detection gate closed" in c for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_service_call_logs_when_auto_control_off(self):
+        """async_check_cover_service_call emits debug log when automatic_control is False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        event = MagicMock()
+        event.data = {
+            "domain": "cover",
+            "service": "stop_cover",
+            "service_data": {"entity_id": "cover.test"},
+        }
+        event.context = MagicMock()
+        event.context.id = "ctx-001"
+
+        coord = MagicMock()
+        coord.entities = ["cover.test"]
+        coord.manual_toggle = True
+        coord.automatic_control = False
+        coord.logger = MagicMock()
+        coord._cmd_svc._acp_stop_contexts = []
+        coord._manual_gate_closed_log = (
+            AdaptiveDataUpdateCoordinator._manual_gate_closed_log.__get__(coord)
+        )
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_service_call(coord, event)
+
+        calls = [str(c) for c in coord.logger.debug.call_args_list]
+        assert any("manual override detection gate closed" in c for c in calls)

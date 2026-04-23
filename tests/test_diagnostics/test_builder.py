@@ -714,6 +714,8 @@ class TestConfigurationDiagnostics:
             "motion_timeout",
             "motion_detected",
             "motion_timeout_active",
+            "manual_toggle",
+            "enabled_toggle",
         }
         assert expected_keys == set(config.keys())
 

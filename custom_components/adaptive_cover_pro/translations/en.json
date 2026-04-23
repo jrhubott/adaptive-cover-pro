@@ -1023,6 +1023,13 @@
           "on": "On",
           "off": "Off"
         }
+      },
+      "manual_toggle": {
+        "name": "Manual Override Detection",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
       }
     }
   },

@@ -1023,6 +1023,13 @@
           "on": "On",
           "off": "Off"
         }
+      },
+      "manual_toggle": {
+        "name": "Détection de Dérogation Manuelle",
+        "state": {
+          "on": "Activé",
+          "off": "Désactivé"
+        }
       }
     }
   },

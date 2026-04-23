@@ -54,6 +54,7 @@ async def async_setup_entry(
         "Manual Override",
         True,
         "manual_toggle",
+        display_name="Manual Override Detection",
     )
     control_switch = AdaptiveCoverSwitch(
         config_entry.entry_id,
@@ -197,13 +198,14 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         device_class: SwitchDeviceClass | None = None,
         *,
         enabled_default: bool = True,
+        display_name: str | None = None,
     ) -> None:
         """Initialize the switch."""
         super().__init__(entry_id, hass, config_entry, coordinator)
         self._state: bool | None = None
         self._key = key
         self._attr_translation_key = key
-        self._switch_name = switch_name
+        self._switch_name = display_name or switch_name
         self._attr_device_class = device_class
         self._initial_state = initial_state
         self._attr_unique_id = f"{entry_id}_{switch_name}"
