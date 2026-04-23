@@ -24,6 +24,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     SolarHandler,
     WeatherOverrideHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+    CustomPositionHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
@@ -431,3 +434,58 @@ class TestDecisionTraceContent:
         matched_steps = [s for s in result.decision_trace if s.matched]
         assert len(matched_steps) == 1
         assert "[bypasses automatic control]" not in matched_steps[0].reason
+
+
+# ---------------------------------------------------------------------------
+# CustomPositionHandler — bypass_auto_control
+# ---------------------------------------------------------------------------
+
+_CP_ENTITY = "binary_sensor.cp_scene"
+
+
+class TestCustomPositionBypass:
+    """CustomPositionHandler must set bypass_auto_control=True unconditionally."""
+
+    def _handler(self, position: int = 50) -> CustomPositionHandler:
+        return CustomPositionHandler(
+            slot=1, entity_id=_CP_ENTITY, position=position, priority=77
+        )
+
+    def _snapshot_on(self, position: int = 50) -> object:
+        return make_snapshot(
+            custom_position_sensors=[(_CP_ENTITY, True, position, 77, False, False)]
+        )
+
+    def test_bypass_flag_set(self) -> None:
+        """Handler result has bypass_auto_control=True when sensor is on."""
+        result = self._handler().evaluate(self._snapshot_on())
+        assert result is not None
+        assert result.bypass_auto_control is True
+
+    def test_reason_includes_bypass_text(self) -> None:
+        """Reason string includes '[bypasses automatic control]' when sensor is on."""
+        result = self._handler().evaluate(self._snapshot_on())
+        assert result is not None
+        assert "[bypasses automatic control]" in result.reason
+
+    def test_sensor_off_returns_none(self) -> None:
+        """No result when sensor is off — bypass flag irrelevant."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[(_CP_ENTITY, False, 50, 77, False, False)]
+        )
+        result = self._handler().evaluate(snapshot)
+        assert result is None
+
+    def test_bypass_propagated_through_registry(self) -> None:
+        """Registry result carries bypass_auto_control=True when custom position wins."""
+        registry = PipelineRegistry([self._handler(), DefaultHandler()])
+        result = registry.evaluate(self._snapshot_on())
+        assert result.bypass_auto_control is True
+
+    def test_trace_has_bypass_reason(self) -> None:
+        """Winning decision-trace step reason includes '[bypasses automatic control]'."""
+        registry = PipelineRegistry([self._handler(), DefaultHandler()])
+        result = registry.evaluate(self._snapshot_on())
+        matched_steps = [s for s in result.decision_trace if s.matched]
+        assert len(matched_steps) == 1
+        assert "[bypasses automatic control]" in matched_steps[0].reason
