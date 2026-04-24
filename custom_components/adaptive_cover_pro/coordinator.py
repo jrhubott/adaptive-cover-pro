@@ -685,18 +685,91 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # If ignore_intermediate_states is True, those transitional events
                 # are already filtered out above, so we only reach here with final
                 # states and always clear wait_for_target.
+                #
+                # However, some covers (French volet-roulant, some Zigbee rolling
+                # shutters) never emit transitional states at all — they stay "open"
+                # or "closed" throughout transit and simply update current_position.
+                # The direction/progress check therefore runs for ALL covers based
+                # on position delta, regardless of the HA state string (Issue #285).
                 cover_is_transitioning = event.new_state.state in (
                     "opening",
                     "closing",
                 )
 
-                if cover_is_transitioning:
+                old_position = self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
+                    entity_id, caps, event.old_state
+                )
+                target = self._cmd_svc.target_call.get(entity_id)
+
+                # Step-motor pause (Issue #186) takes highest priority: some covers
+                # briefly report "open"/"closed" at an intermediate position between
+                # motor pulses before resuming transit.  If the *new* state is
+                # non-transitional and the *old* state was transitional, the cover
+                # just paused mid-transit — restart grace period to let the motor
+                # resume.  This must be checked before the direction/progress block
+                # so that forward-progress detection (Issue #285) does not short-
+                # circuit the grace-period restart.
+                was_transitioning = (
+                    event.old_state is not None
+                    and event.old_state.state in ("opening", "closing")
+                )
+                if (
+                    not cover_is_transitioning
+                    and was_transitioning
+                    and target is not None
+                    and position is not None
+                    and position != target
+                ):
+                    self._start_grace_period(entity_id)
+                    self._debug_log(
+                        "manual_override",
+                        "Cover %s paused mid-transit at %s (target %s) "
+                        "— restarting grace period",
+                        entity_id,
+                        position,
+                        target,
+                    )
+                    self.logger.debug("Wait for target: %s", self.wait_for_target)
+                    return
+
+                # Direction/progress check: runs for all covers where positions and
+                # target are known, EXCEPT when HA explicitly reports "stopped" (an
+                # unambiguous halt signal).  This extends the progress-aware backstop
+                # from Issue #271 to covers that never emit "opening"/"closing".
+                if (
+                    old_position is not None
+                    and position is not None
+                    and target is not None
+                    and event.new_state.state != "stopped"
+                ):
+                    old_distance = abs(old_position - target)
+                    new_distance = abs(position - target)
+
+                    if new_distance < old_distance:
+                        # Unambiguously moving toward target — still in transit.
+                        # Reset the progress clock so the backstop window extends.
+                        now = dt.datetime.now(dt.UTC)
+                        self._cmd_svc.record_progress(entity_id, now)  # noqa: SLF001
+                        self._debug_log(
+                            "manual_override",
+                            "Grace expired but %s still in transit toward "
+                            "target %s (was %s, now %s, state=%s) "
+                            "— keeping wait_for_target",
+                            entity_id,
+                            target,
+                            old_position,
+                            position,
+                            event.new_state.state,
+                        )
+                        self.logger.debug("Wait for target: %s", self.wait_for_target)
+                        return
+
                     # Progress-aware backstop: if no forward progress has been
                     # observed for longer than the configured transit timeout,
                     # the cover is stuck or stalled — clear wait_for_target so
                     # manual override detection can run.  The clock resets each
                     # time record_progress() is called (when new_distance <
-                    # old_distance below), so slow-but-moving covers are not
+                    # old_distance above), so slow-but-moving covers are not
                     # prematurely cleared.  Covers that never report intermediate
                     # positions fall back to measuring from _sent_at.
                     now = dt.datetime.now(dt.UTC)
@@ -720,114 +793,35 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                             )
                             return
 
-                    # Cover is within the transit window — check direction.
-                    # If the cover is moving closer to the target it is still
-                    # responding to our command; keep wait_for_target=True.
-                    # If it moved away or stalled at the same position, clear
-                    # it so manual override detection can run (Issue #147).
-                    #
-                    # Special case — hardware startup delay (Issue #147 v2):
-                    # Some covers have a 10–30+ second delay before the motor
-                    # physically starts.  The first state event fires while the
-                    # cover is still at the pre-command position (old_pos ==
-                    # new_pos == 0 when commanding to 100%).  The state
-                    # transitions from a non-moving state (e.g. "closed") to
-                    # "opening", signalling that the command was received.
-                    # Distinguish this from a mid-transit stall (cover was
-                    # already "opening" but position hasn't changed) by checking
-                    # whether old_state was itself transitional: if not, the
-                    # cover just started and we should keep wait_for_target=True.
-                    old_position = self._cmd_svc.read_position_with_capabilities(
-                        entity_id, caps, event.old_state
-                    )
-                    target = self._cmd_svc.target_call.get(entity_id)
-
-                    if (
-                        old_position is not None
-                        and position is not None
-                        and target is not None
-                    ):
-                        old_distance = abs(old_position - target)
-                        new_distance = abs(position - target)
-
-                        if new_distance < old_distance:
-                            # Unambiguously moving toward target — still in transit.
-                            # Reset the progress clock so the backstop window extends.
-                            self._cmd_svc.record_progress(entity_id, dt.datetime.now(dt.UTC))  # noqa: SLF001
+                    if new_distance == old_distance:
+                        # Positions equal — could be startup delay or stall.
+                        # Startup delay: motor just engaged; state transitions from
+                        # non-transitional (e.g. "closed") to something else.
+                        # Stall: state didn't change and cover was already in transit;
+                        # fall through to clear (e.g. opening→opening same position).
+                        # open→open same position with no state change is also a
+                        # genuine stop — fall through (Issue #172 regression guard).
+                        old_state_str = (
+                            event.old_state.state
+                            if event.old_state is not None
+                            else None
+                        )
+                        new_state_str = event.new_state.state
+                        state_changed = old_state_str != new_state_str
+                        if old_state_str not in ("opening", "closing") and state_changed:
                             self._debug_log(
                                 "manual_override",
-                                "Grace expired but %s still in transit toward "
-                                "target %s (was %s, now %s) — keeping wait_for_target",
+                                "Grace expired but %s position unchanged at %s "
+                                "(startup delay — old state was %s) "
+                                "— keeping wait_for_target",
                                 entity_id,
-                                target,
-                                old_position,
                                 position,
+                                old_state_str,
                             )
                             self.logger.debug(
                                 "Wait for target: %s", self.wait_for_target
                             )
                             return
-
-                        if new_distance == old_distance:
-                            # Positions equal — could be startup delay or stall.
-                            # If old_state was not transitional the motor just
-                            # engaged; keep wait_for_target (startup delay).
-                            # If old_state was already opening/closing, the cover
-                            # stalled mid-transit; fall through to clear.
-                            old_state_str = (
-                                event.old_state.state
-                                if event.old_state is not None
-                                else None
-                            )
-                            if old_state_str not in ("opening", "closing"):
-                                self._debug_log(
-                                    "manual_override",
-                                    "Grace expired but %s position unchanged at %s "
-                                    "(startup delay — old state was %s) "
-                                    "— keeping wait_for_target",
-                                    entity_id,
-                                    position,
-                                    old_state_str,
-                                )
-                                self.logger.debug(
-                                    "Wait for target: %s", self.wait_for_target
-                                )
-                                return
-
-                # Non-transitional state, cover stalled, or moved away from target.
-                #
-                # Special case — step-motor shades (Issue #186): some covers
-                # briefly report "open" at an intermediate position between
-                # motor pulses before resuming transit.  If the *new* state is
-                # non-transitional ("open"/"closed") and the *old* state was
-                # transitional ("opening"/"closing"), the cover just paused
-                # mid-transit.  Restart the grace period to allow the motor to
-                # resume without triggering a false manual override.
-                # This does NOT apply to stalls (opening→opening still at same
-                # position), which fall through here with cover_is_transitioning=True.
-                was_transitioning = (
-                    event.old_state is not None
-                    and event.old_state.state in ("opening", "closing")
-                )
-                target = self._cmd_svc.target_call.get(entity_id)
-                if (
-                    not cover_is_transitioning
-                    and was_transitioning
-                    and target is not None
-                    and position is not None
-                    and position != target
-                ):
-                    self._start_grace_period(entity_id)
-                    self._debug_log(
-                        "manual_override",
-                        "Cover %s paused mid-transit at %s (target %s) "
-                        "— restarting grace period",
-                        entity_id,
-                        position,
-                        target,
-                    )
-                    self.logger.debug("Wait for target: %s", self.wait_for_target)
-                    return
 
                 # Clear wait_for_target to allow manual override detection.
                 self._cmd_svc.wait_for_target[entity_id] = False
