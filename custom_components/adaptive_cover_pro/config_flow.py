@@ -474,7 +474,7 @@ FORCE_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_FORCE_OVERRIDE_SENSORS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
-                domain=["binary_sensor"],
+                domain=["binary_sensor", "input_boolean"],
                 multiple=True,
             )
         ),
@@ -508,9 +508,11 @@ def _position_slider() -> selector.NumberSelector:
 
 
 def _binary_sensor_selector() -> selector.EntitySelector:
-    """Return a single binary_sensor entity selector."""
+    """Return a single binary_sensor / input_boolean entity selector."""
     return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=["binary_sensor"], multiple=False)
+        selector.EntitySelectorConfig(
+            domain=["binary_sensor", "input_boolean"], multiple=False
+        )
     )
 
 
@@ -571,9 +573,8 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MOTION_SENSORS, default=[]): selector.EntitySelector(
             selector.EntitySelectorConfig(
-                domain=["binary_sensor"],
+                domain=["binary_sensor", "input_boolean"],
                 multiple=True,
-                device_class=["motion", "occupancy", "presence"],
             )
         ),
         vol.Optional(
@@ -681,15 +682,17 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
         ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["binary_sensor"])
+            selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
         ),
         vol.Optional(
             CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
         ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["binary_sensor"])
+            selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
         ),
         vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["binary_sensor"], multiple=True)
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean"], multiple=True
+            )
         ),
         vol.Optional(
             CONF_WEATHER_OVERRIDE_POSITION, default=0
@@ -833,7 +836,7 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
             CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(
-                domain=["device_tracker", "zone", "binary_sensor", "input_boolean"]
+                domain=["binary_sensor", "input_boolean"]
             )
         ),
         vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
