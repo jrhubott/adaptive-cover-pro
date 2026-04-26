@@ -271,8 +271,13 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
                 )
                 options = self.coordinator.config_entry.options
                 for entity in self.coordinator.entities:
+                    # Sanctioned one-shot transition: auto_control was just
+                    # toggled OFF; honor the user's "return to default" choice
+                    # by bypassing the auto_control gate exactly once.  Without
+                    # bypass_auto_control=True the gate (issue #293) would
+                    # correctly skip this command.
                     ctx = self.coordinator._build_position_context(
-                        entity, options, force=True
+                        entity, options, force=True, bypass_auto_control=True
                     )
                     await self.coordinator._cmd_svc.apply_position(
                         entity, default_position, "auto_control_off", context=ctx

@@ -158,17 +158,32 @@ async def test_apply_sends_when_all_gates_pass(svc, mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_apply_force_bypasses_all_gates(svc, mock_hass):
-    """force=True sends command even when all gates would fail."""
+async def test_apply_force_bypasses_delta_and_manual_override_gates(svc, mock_hass):
+    """force=True bypasses delta/time/manual_override but NOT auto_control (issue #293)."""
     with _patch_caps():
         outcome, _ = await svc.apply_position(
             "cover.test",
             0,
             "sunset",
-            context=_ctx(auto_control=False, manual_override=True, force=True),
+            context=_ctx(auto_control=True, manual_override=True, force=True),
         )
     assert outcome == "sent"
     mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_force_does_NOT_bypass_auto_control(svc, mock_hass):
+    """Issue #293: force=True alone must not bypass auto_control_off."""
+    with _patch_caps():
+        outcome, detail = await svc.apply_position(
+            "cover.test",
+            0,
+            "sunset",
+            context=_ctx(auto_control=False, manual_override=True, force=True),
+        )
+    assert outcome == "skipped"
+    assert detail == "auto_control_off"
+    mock_hass.services.async_call.assert_not_called()
 
 
 @pytest.mark.asyncio

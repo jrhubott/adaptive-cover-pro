@@ -104,7 +104,8 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     # _build_position_context: preserve force and is_safety kwargs in the returned
     # PositionContext so callers can inspect which values the coordinator passed.
     def _fake_build_ctx(
-        entity, options, *, force=False, is_safety=False, sun_just_appeared=False
+        entity, options, *, force=False, is_safety=False,
+        bypass_auto_control=False, sun_just_appeared=False,
     ):
         return PositionContext(
             auto_control=False,  # reflects automatic_control=False
@@ -115,6 +116,7 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
             special_positions=[0, 100],
             force=force,
             is_safety=is_safety,
+            bypass_auto_control=bypass_auto_control,
         )
 
     coord._build_position_context = _fake_build_ctx
@@ -283,6 +285,31 @@ async def _trigger_force_override_released(coord):
         await coord.async_handle_state_change(50, {}, prev_force_override=True)
 
 
+async def _trigger_switch_auto_control_off_return(coord):
+    """Trigger: AdaptiveCoverSwitch.async_turn_off with return_to_default_toggle on.
+
+    Issue #293: this is the only sanctioned caller that bypasses the
+    auto_control gate via bypass_auto_control=True (rather than is_safety=True).
+    """
+    from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
+
+    coord.return_to_default_toggle = True
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {"default_height": 60}
+    coord.manager.manual_controlled = []
+    coord.async_refresh = AsyncMock()
+
+    switch = object.__new__(AdaptiveCoverSwitch)
+    switch.coordinator = coord
+    switch._key = "automatic_control"
+    switch._name = "automatic_control"
+    switch._initial_state = True
+    switch._attr_is_on = True
+    switch.schedule_update_ha_state = MagicMock()
+
+    await switch.async_turn_off()
+
+
 CONTROL_GATE_MATRIX: list[MatrixCase] = [
     MatrixCase(
         id="manual_override_expiry",
@@ -332,6 +359,19 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         is_safety_target=False,  # but is NOT a persistent safety target (#223)
         setup=lambda _: None,
         trigger=_trigger_force_override_released,
+    ),
+    MatrixCase(
+        # Issue #293: switch toggles auto_control off → return-to-default fires
+        # one-shot via the new bypass_auto_control=True channel.  Calls with
+        # force=True (so the matrix invariant 1 marks it as a bypass row), but
+        # is_safety=False — the target should NOT persist across window
+        # boundaries.  The bypass_auto_control flag is what actually lets the
+        # command through the auto_control gate after the issue #293 fix.
+        id="switch_auto_control_off_return_to_default",
+        is_safety_bypass=True,
+        is_safety_target=False,
+        setup=lambda _: None,
+        trigger=_trigger_switch_auto_control_off_return,
     ),
 ]
 

@@ -51,9 +51,12 @@ class PositionContext:
     time_threshold: int
     special_positions: list[int]
     inverse_state: bool = False
-    force: bool = False  # Skip all gate checks when True
+    force: bool = False  # Skip delta/time/manual_override gates (NOT auto_control)
     is_safety: bool = (
-        False  # Safety-critical target (persists across window boundaries)
+        False  # Safety-critical target (persists across window boundaries; bypasses auto_control)
+    )
+    bypass_auto_control: bool = (
+        False  # Sanctioned one-shot bypass of auto_control gate (e.g. switch return-to-default)
     )
     use_my_position: bool = (
         False  # Route through send_my_position() on non-position-capable covers
@@ -784,13 +787,19 @@ class CoverCommandService:
             and detail is the service name or skip reason.
 
         """
-        # ----- gate checks (bypassed when context.force is True) -----
+        # ----- gate checks -----
+        # Three bypass channels (in order of priority):
+        #   - is_safety=True: genuine safety override (force_override, weather)
+        #   - bypass_auto_control=True: sanctioned one-shot transition (switch
+        #     return-to-default at the moment auto_control toggles off)
+        #   - force=True alone: bypasses delta/time/manual_override BUT NOT
+        #     auto_control (issue #293)
         _trigger = reason
         _inverse = context.inverse_state
         _current = self._get_current_position(entity_id)
 
         # Hard kill switch — blocks ALL commands, including safety overrides and
-        # force=True calls.  Must be checked before the context.force branch.
+        # force=True calls.  Must be checked before any bypass branch.
         if not self._enabled:
             return self._skip(
                 entity_id,
@@ -801,17 +810,23 @@ class CoverCommandService:
                 current_position=_current,
             )
 
-        if not context.force:
-            if not context.auto_control:
-                return self._skip(
-                    entity_id,
-                    "auto_control_off",
-                    position,
-                    trigger=_trigger,
-                    inverse_state=_inverse,
-                    current_position=_current,
-                )
+        # auto_control gate — bypassed only by is_safety or bypass_auto_control,
+        # NOT by plain force=True (issue #293).
+        if (
+            not context.is_safety
+            and not context.bypass_auto_control
+            and not context.auto_control
+        ):
+            return self._skip(
+                entity_id,
+                "auto_control_off",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
 
+        if not context.force:
             if not self._check_position_delta(
                 entity_id,
                 position,
