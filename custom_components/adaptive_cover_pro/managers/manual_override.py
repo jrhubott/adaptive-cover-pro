@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import datetime as dt
-from collections import deque
 
 from homeassistant.core import HomeAssistant
 
 from ..const import DEFAULT_DEBUG_EVENT_BUFFER_SIZE, POSITION_TOLERANCE_PERCENT
+from ..diagnostics.event_buffer import EventBuffer
 from ..helpers import check_cover_features, get_open_close_state, should_use_tilt
 
 
@@ -22,7 +22,12 @@ class AdaptiveCoverManager:
     """
 
     def __init__(
-        self, hass: HomeAssistant, reset_duration: dict[str:int], logger
+        self,
+        hass: HomeAssistant,
+        reset_duration: dict[str:int],
+        logger,
+        *,
+        event_buffer: EventBuffer | None = None,
     ) -> None:
         """Initialize the AdaptiveCoverManager.
 
@@ -30,6 +35,8 @@ class AdaptiveCoverManager:
             hass: Home Assistant instance
             reset_duration: Duration dict (e.g., {"minutes": 15}) for auto-reset
             logger: Logger instance for debug output
+            event_buffer: Shared ring buffer owned by the coordinator. When None
+                a private buffer is created (useful for unit tests).
 
         """
         self.hass = hass
@@ -39,24 +46,28 @@ class AdaptiveCoverManager:
         self.manual_control_time: dict[str, dt.datetime] = {}
         self.reset_duration = dt.timedelta(**reset_duration)
         self.logger = logger
-        self._event_buffer: deque[dict] = deque(maxlen=DEFAULT_DEBUG_EVENT_BUFFER_SIZE)
+        self._event_buffer: EventBuffer = (
+            event_buffer
+            if event_buffer is not None
+            else EventBuffer(maxlen=DEFAULT_DEBUG_EVENT_BUFFER_SIZE)
+        )
 
     def _record_event(
         self,
         entity_id: str,
-        action: str,
+        event_name: str,
         *,
         our_state,
         new_position,
         effective_threshold=None,
         reason: str = "",
     ) -> None:
-        """Append a manual-override decision event to the ring buffer."""
-        self._event_buffer.append(
+        """Append a manual-override decision event to the shared ring buffer."""
+        self._event_buffer.record(
             {
                 "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": event_name,
                 "entity_id": entity_id,
-                "action": action,
                 "our_state": our_state,
                 "new_position": new_position,
                 "effective_threshold": effective_threshold,
@@ -65,14 +76,12 @@ class AdaptiveCoverManager:
         )
 
     def get_event_buffer(self) -> list[dict]:
-        """Return a snapshot of the manual-override decision ring buffer."""
-        return list(self._event_buffer)
+        """Return a snapshot of the ring buffer (backward-compat wrapper)."""
+        return self._event_buffer.snapshot()
 
     def resize_event_buffer(self, size: int) -> None:
-        """Resize the ring buffer, preserving the most-recent events."""
-        new_buf: deque[dict] = deque(maxlen=size)
-        new_buf.extend(self._event_buffer)
-        self._event_buffer = new_buf
+        """Resize the ring buffer, preserving the most-recent events (backward-compat wrapper)."""
+        self._event_buffer.resize(size)
 
     def add_covers(self, entity):
         """Add covers to tracking.
@@ -120,7 +129,7 @@ class AdaptiveCoverManager:
         if wait_target_call.get(entity_id):
             self._record_event(
                 entity_id,
-                "rejected_wait_for_target",
+                "manual_override_rejected_wait_for_target",
                 our_state=our_state,
                 new_position=None,
                 reason="wait_for_target active",
@@ -148,7 +157,7 @@ class AdaptiveCoverManager:
             )
             self._record_event(
                 entity_id,
-                "rejected_position_unavailable",
+                "manual_override_rejected_position_unavailable",
                 our_state=our_state,
                 new_position=None,
                 reason="position unavailable (transient state)",
@@ -176,7 +185,7 @@ class AdaptiveCoverManager:
                 )
                 self._record_event(
                     entity_id,
-                    "rejected_within_threshold",
+                    "manual_override_rejected_within_threshold",
                     our_state=our_state,
                     new_position=new_position,
                     effective_threshold=effective_threshold,
@@ -197,7 +206,7 @@ class AdaptiveCoverManager:
             )
             self._record_event(
                 entity_id,
-                "set",
+                "manual_override_set",
                 our_state=our_state,
                 new_position=new_position,
                 effective_threshold=effective_threshold,
@@ -243,7 +252,7 @@ class AdaptiveCoverManager:
         )
         self._record_event(
             entity_id,
-            "set",
+            "manual_override_set",
             our_state=my_position_value,
             new_position=my_position_value,
             reason="user stop_cover to My position",
@@ -336,7 +345,7 @@ class AdaptiveCoverManager:
         self.logger.debug("Reset manual override for %s", entity_id)
         self._record_event(
             entity_id,
-            "reset",
+            "manual_override_reset",
             our_state=None,
             new_position=None,
             reason="manual override cleared",

@@ -34,16 +34,18 @@ class WeatherManager:
     retract covers on sensor failure).
     """
 
-    def __init__(self, hass: HomeAssistant, logger) -> None:
+    def __init__(self, hass: HomeAssistant, logger, *, event_buffer=None) -> None:
         """Initialize the WeatherManager.
 
         Args:
             hass: Home Assistant instance used to read sensor states
             logger: Logger instance for debug/info output
+            event_buffer: Shared diagnostic ring buffer (optional).
 
         """
         self._hass = hass
         self._logger = logger
+        self._event_buffer = event_buffer
 
         # Config (updated via update_config)
         self._wind_speed_sensor: str | None = None
@@ -214,7 +216,17 @@ class WeatherManager:
         The caller is responsible for triggering a coordinator refresh.
         """
         self.cancel_weather_timeout()
+        previous = self._override_active
         self._override_active = True
+        if not previous and self._event_buffer is not None:
+            import datetime as dt
+            self._event_buffer.record({
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "weather_override_changed",
+                "entity_id": "",
+                "previous": False,
+                "current": True,
+            })
 
     def reconcile(self) -> str | None:
         """Self-healing check against live sensor state.
@@ -285,6 +297,16 @@ class WeatherManager:
             return
 
         self._override_active = False
+        if self._event_buffer is not None:
+            import datetime as dt
+            self._event_buffer.record({
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "weather_override_changed",
+                "entity_id": "",
+                "previous": True,
+                "current": False,
+                "reason": f"clear-delay expired ({timeout_seconds}s)",
+            })
         self._logger.info(
             "Weather clear-delay expired (%s seconds) — resuming normal control",
             timeout_seconds,

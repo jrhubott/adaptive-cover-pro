@@ -578,12 +578,16 @@ class TestHandleStopServiceCall:
 
     @pytest.fixture
     def mgr(self, mock_hass):
+        from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
+        event_buffer = EventBuffer(maxlen=50)
         m = AdaptiveCoverManager(
             hass=mock_hass,
             reset_duration={"minutes": 15},
             logger=MagicMock(),
+            event_buffer=event_buffer,
         )
         m.add_covers(["cover.somfy"])
+        m._test_event_buffer = event_buffer
         return m
 
     def test_marks_manual_control(self, mgr):
@@ -592,11 +596,11 @@ class TestHandleStopServiceCall:
         assert mgr.manual_control.get("cover.somfy") is True
 
     def test_records_event(self, mgr):
-        """handle_stop_service_call appends a 'set' event to the ring buffer."""
+        """handle_stop_service_call appends a 'manual_override_set' event to the ring buffer."""
         mgr.handle_stop_service_call("cover.somfy", 50, {})
-        events = mgr.get_event_buffer()
+        events = mgr._test_event_buffer.snapshot()
         assert len(events) == 1
-        assert events[0]["action"] == "set"
+        assert events[0]["event"] == "manual_override_set"
         assert "My position" in events[0]["reason"]
 
     def test_noop_when_entity_not_tracked(self, mgr):

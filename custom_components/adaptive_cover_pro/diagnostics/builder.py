@@ -70,7 +70,8 @@ class DiagnosticContext:
     force_override_position: int = 0
 
     # Debug & diagnostics (optional — only populated when debug_mode is on or buffer has entries)
-    manual_override_events: list[dict] | None = None
+    event_timeline: list[dict] | None = None
+    manual_override_events: list[dict] | None = None  # deprecated alias; use event_timeline
     cover_command_state: dict[str, dict] | None = None
     debug_config: dict | None = None
 
@@ -413,8 +414,14 @@ class DiagnosticsBuilder:
         if ctx.debug_config is not None:
             diagnostics["debug_config"] = ctx.debug_config
 
-        if ctx.manual_override_events:
-            diagnostics["manual_override_history"] = ctx.manual_override_events
+        # Unified event timeline from the shared ring buffer
+        timeline = ctx.event_timeline or ctx.manual_override_events
+        if timeline:
+            diagnostics["event_timeline"] = timeline
+            # Backward-compat filtered alias for consumers that read manual_override_history
+            mo_events = [e for e in timeline if e.get("event", "").startswith("manual_override_")]
+            if mo_events:
+                diagnostics["manual_override_history"] = mo_events
 
         # Always emit cover_commands (empty dict when nothing active)
         diagnostics["cover_commands"] = ctx.cover_command_state or {}
