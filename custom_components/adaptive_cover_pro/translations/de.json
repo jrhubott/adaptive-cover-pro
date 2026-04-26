@@ -471,7 +471,7 @@
       "init": {
         "menu_options": {
           "cover_entities": "🪟 Beschattungen & Gerät",
-          "geometry": "📐 Fenstergeometrie",
+          "geometry": "📐 Beschattungsgeometrie",
           "sun_tracking": "☀️ Sonnenverfolgung",
           "position": "📊 Positionseinstellungen",
           "blind_spot": "🌳 Blindfleck",

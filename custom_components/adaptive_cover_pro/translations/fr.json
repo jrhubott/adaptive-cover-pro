@@ -471,7 +471,7 @@
       "init": {
         "menu_options": {
           "cover_entities": "🪟 Stores et appareil",
-          "geometry": "📐 Géométrie de la fenêtre",
+          "geometry": "📐 Géométrie du store",
           "sun_tracking": "☀️ Suivi du soleil",
           "position": "📊 Paramètres de position",
           "blind_spot": "🌳 Zone cachée",
