@@ -17,9 +17,11 @@ class EventBuffer:
 
         Args:
             maxlen: Maximum number of events to retain (oldest are evicted).
+                Coerced to int — HA's NumberSelector(SLIDER) returns floats
+                (e.g. 50.0) and ``deque(maxlen=<float>)`` raises TypeError.
 
         """
-        self._buf: deque[dict] = deque(maxlen=maxlen)
+        self._buf: deque[dict] = deque(maxlen=int(maxlen))
 
     def record(self, event: dict) -> None:
         """Append an event dict to the buffer, evicting the oldest if full."""
@@ -31,7 +33,7 @@ class EventBuffer:
 
     def resize(self, maxlen: int) -> None:
         """Resize the buffer, preserving the most-recent events."""
-        self._buf = deque(self._buf, maxlen=maxlen)
+        self._buf = deque(self._buf, maxlen=int(maxlen))
 
     @property
     def maxlen(self) -> int | None:

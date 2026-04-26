@@ -68,3 +68,15 @@ def test_resize_then_record():
 def test_empty_snapshot():
     buf = EventBuffer(maxlen=10)
     assert buf.snapshot() == []
+
+
+def test_float_maxlen_is_coerced_to_int():
+    """HA's NumberSelector(SLIDER) returns floats — must not raise TypeError."""
+    buf = EventBuffer(maxlen=50.0)
+    assert buf.maxlen == 50
+
+
+def test_resize_with_float_is_coerced_to_int():
+    buf = EventBuffer(maxlen=10)
+    buf.resize(20.0)
+    assert buf.maxlen == 20
