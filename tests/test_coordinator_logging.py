@@ -142,17 +142,16 @@ class TestApplyPositionGateLogging:
         assert svc.target_call["cover.test"] == 60
 
     @pytest.mark.asyncio
-    async def test_force_bypasses_all_gates(self):
-        """force=True skips all gate checks and sends command."""
+    async def test_force_bypasses_delta_and_manual_override_gates(self):
+        """force=True bypasses delta/time/manual_override but NOT auto_control (issue #293)."""
         svc = _make_cmd_svc()
 
         with patch(
             "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
             return_value={"has_set_position": True, "has_set_tilt_position": False},
         ):
-            # All gates would fail — but force=True bypasses them
             ctx = _make_context(
-                auto_control=False,
+                auto_control=True,
                 manual_override=True,
                 force=True,
             )
@@ -283,8 +282,13 @@ class TestManualGateClosedLogging:
         assert any("manual override detection gate closed" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_state_change_logs_when_auto_control_off(self):
-        """async_handle_cover_state_change emits debug log when automatic_control is False."""
+    async def test_state_change_does_NOT_log_gate_closed_when_only_auto_control_off(self):
+        """Issue #293: auto_control off no longer closes the manual-override gate.
+
+        Only manual_toggle=False emits the "gate closed" log line; with
+        automatic_control=False the handler now observes events and records
+        manual overrides (observation is not action).
+        """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
@@ -296,7 +300,7 @@ class TestManualGateClosedLogging:
             coord, state=50
         )
         calls = [str(c) for c in coord.logger.debug.call_args_list]
-        assert any("manual override detection gate closed" in c for c in calls)
+        assert not any("manual override detection gate closed" in c for c in calls)
 
     @pytest.mark.asyncio
     async def test_service_call_logs_when_manual_toggle_off(self):

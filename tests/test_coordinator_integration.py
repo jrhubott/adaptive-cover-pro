@@ -707,8 +707,13 @@ class TestCoverStateChangeTriggerManualOverride:
         coordinator.manager.handle_state_change.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_manual_override_detection_skipped_when_auto_control_off(self):
-        """handle_state_change NOT called when automatic_control is False."""
+    async def test_manual_override_detection_runs_when_auto_control_off(self):
+        """Issue #293: handle_state_change IS called even when automatic_control=False.
+
+        Observation is not action — recording manual overrides when the user
+        toggles auto control off lets reconciliation back off and surfaces the
+        user's intent in diagnostics.  Only manual_toggle=False short-circuits.
+        """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
@@ -724,7 +729,7 @@ class TestCoverStateChangeTriggerManualOverride:
             coordinator, state=50
         )
 
-        coordinator.manager.handle_state_change.assert_not_called()
+        coordinator.manager.handle_state_change.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cover_state_change_flag_cleared(self):

@@ -1238,6 +1238,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         *,
         force: bool = False,
         is_safety: bool = False,
+        bypass_auto_control: bool = False,
         sun_just_appeared: bool = False,
     ) -> PositionContext:
         """Build a PositionContext for the given cover entity.
@@ -1248,8 +1249,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         Args:
             entity: Cover entity ID
             options: Config entry options dict
-            force: If True, all gate checks are bypassed (delta, time, manual
-                override).  Use for any intentional non-solar reposition.
+            force: If True, delta/time/manual_override gate checks are bypassed.
+                Use for any intentional non-solar reposition.  NOTE: force=True
+                does NOT bypass auto_control_off — pass bypass_auto_control=True
+                or is_safety=True for that.
             is_safety: If True, the target is classified as safety-critical
                 (force override, weather) and will persist across window
                 boundaries — reconciliation will resend it even when outside
@@ -1257,6 +1260,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 kept independent of ``force``: override-clear and toggle
                 actions need ``force=True`` (bypass gates) but
                 ``is_safety=False`` (don't persist past the window).
+            bypass_auto_control: If True, the auto_control_off gate is bypassed
+                for this one-shot call without classifying the target as a
+                safety target.  Use only for sanctioned transition actions
+                (e.g. switch return-to-default at the moment auto_control
+                toggles off).  Not used by the regular update loop.
             sun_just_appeared: Pre-computed sun transition flag. Call
                 ``_check_sun_validity_transition()`` once before a multi-entity
                 loop and pass the result here so the stateful transition check
@@ -1273,6 +1281,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             inverse_state=self._inverse_state,
             force=force,
             is_safety=is_safety,
+            bypass_auto_control=bypass_auto_control,
             use_my_position=self._pipeline_result.use_my_position
             if self._pipeline_result
             else False,
@@ -1426,7 +1435,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         events = self._pending_cover_events[:]
         self._pending_cover_events.clear()
 
-        if not (self.manual_toggle and self.automatic_control):
+        # NB (issue #293): observation is not action.  When automatic_control
+        # is OFF we still drain events so the user's manual response is recorded
+        # and any latched target gets discarded via the existing
+        # discard_target() call below.  Only manual_toggle=False (the user has
+        # globally disabled manual override detection) short-circuits the loop.
+        if not self.manual_toggle:
             self._manual_gate_closed_log(
                 "state_change", [e.entity_id for e in events]
             )
