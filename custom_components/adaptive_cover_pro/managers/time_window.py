@@ -20,16 +20,20 @@ class TimeWindowManager:
     start/end time window for automatic cover control.
     """
 
-    def __init__(self, hass: HomeAssistant, logger: ConfigContextAdapter) -> None:
+    def __init__(
+        self, hass: HomeAssistant, logger: ConfigContextAdapter, *, event_buffer=None
+    ) -> None:
         """Initialize time window manager.
 
         Args:
             hass: Home Assistant instance
             logger: Context-aware logger
+            event_buffer: Shared diagnostic ring buffer (optional).
 
         """
         self._hass = hass
         self.logger = logger
+        self._event_buffer = event_buffer
         self._last_time_window_state: bool | None = None
 
         # Config values — set via update_config()
@@ -224,6 +228,15 @@ class TimeWindowManager:
                 "active" if self._last_time_window_state else "inactive",
                 "active" if current_state else "inactive",
             )
+            if self._event_buffer is not None:
+                import datetime as dt
+                self._event_buffer.record({
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "time_window_changed",
+                    "entity_id": "",
+                    "previous": self._last_time_window_state,
+                    "current": current_state,
+                })
             self._last_time_window_state = current_state
 
             if current_state and on_window_open is not None:

@@ -25,16 +25,18 @@ class MotionManager:
 
     """
 
-    def __init__(self, hass: HomeAssistant, logger) -> None:
+    def __init__(self, hass: HomeAssistant, logger, *, event_buffer=None) -> None:
         """Initialize the MotionManager.
 
         Args:
             hass: Home Assistant instance used to read sensor states
             logger: Logger instance for debug/info output
+            event_buffer: Shared diagnostic ring buffer (optional, reserved for future events).
 
         """
         self._hass = hass
         self._logger = logger
+        self._event_buffer = event_buffer
 
         self._sensors: list[str] = []
         self._timeout_seconds: int = 300

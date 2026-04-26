@@ -142,6 +142,7 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
+from .diagnostics.event_buffer import EventBuffer
 from .managers.cover_command import (
     CoverCommandService,
     PositionContext,
@@ -266,8 +267,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.entities = self.config_entry.options.get(CONF_ENTITIES, [])
         # Cover engine object — populated at start of each update cycle
         self._cover_data = None
+
+        # Shared diagnostic ring buffer — owned here, injected into all writers
+        self._event_buffer = EventBuffer(
+            maxlen=self.config_entry.options.get(
+                CONF_DEBUG_EVENT_BUFFER_SIZE, DEFAULT_DEBUG_EVENT_BUFFER_SIZE
+            )
+        )
+
         self.manager = AdaptiveCoverManager(
-            self.hass, self.manual_duration, self.logger
+            self.hass, self.manual_duration, self.logger,
+            event_buffer=self._event_buffer,
         )
         self.ignore_intermediate_states = self.config_entry.options.get(
             CONF_MANUAL_IGNORE_INTERMEDIATE, False
@@ -279,9 +289,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
         )
         # Motion control tracking
-        self._motion_mgr = MotionManager(hass=self.hass, logger=self.logger)
+        self._motion_mgr = MotionManager(
+            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+        )
         # Weather override tracking
-        self._weather_mgr = WeatherManager(hass=self.hass, logger=self.logger)
+        self._weather_mgr = WeatherManager(
+            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+        )
         # Override pipeline — custom position handlers are created per-slot so
         # each can carry an independent priority configured by the user.
         self._pipeline = self._build_pipeline()
@@ -338,10 +352,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 CONF_TRANSIT_TIMEOUT
             ) or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
+            event_buffer=self._event_buffer,
         )
 
         # Time window manager (start/end time checks)
-        self._time_mgr = TimeWindowManager(hass=self.hass, logger=self.logger)
+        self._time_mgr = TimeWindowManager(
+            hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
+        )
 
         # Track sun validity transitions (for responsive sun in-front detection)
         self._last_sun_validity_state: bool | None = None
@@ -1589,7 +1606,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             [(h.name, h.priority) for h in custom_handlers],
             sun_tracking_enabled,
         )
-        return PipelineRegistry(handlers)
+        return PipelineRegistry(handlers, event_buffer=getattr(self, "_event_buffer", None))
 
     def _update_options(self, options):
         """Update coordinator options from config entry.
@@ -1645,6 +1662,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             severe_sensors=options.get(CONF_WEATHER_SEVERE_SENSORS, []),
             timeout_seconds=options.get(CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT),
         )
+        new_buf_size = options.get(
+            CONF_DEBUG_EVENT_BUFFER_SIZE, DEFAULT_DEBUG_EVENT_BUFFER_SIZE
+        )
+        event_buffer = getattr(self, "_event_buffer", None)
+        if event_buffer is not None and new_buf_size != event_buffer.maxlen:
+            event_buffer.resize(new_buf_size)
 
     def _update_manager_and_covers(self):
         """Update manager with cover entities.
@@ -1940,7 +1963,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force_override_position=self.config_entry.options.get(
                 CONF_FORCE_OVERRIDE_POSITION, 0
             ),
-            manual_override_events=self.manager.get_event_buffer() or None,
+            event_timeline=self._event_buffer.snapshot() or None,
             cover_command_state=self._cmd_svc.get_all_entity_state_snapshots() or None,
             debug_config={
                 "dry_run": self.config_entry.options.get(CONF_DRY_RUN, False),

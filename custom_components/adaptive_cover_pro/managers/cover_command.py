@@ -29,6 +29,7 @@ from ..const import (
     POSITION_CHECK_INTERVAL_MINUTES,
     POSITION_TOLERANCE_PERCENT,
 )
+from ..diagnostics.event_buffer import EventBuffer
 from ..helpers import check_cover_features, get_last_updated, get_open_close_state, should_use_tilt
 
 
@@ -99,6 +100,8 @@ class CoverCommandService:
         max_retries: int = MAX_POSITION_RETRIES,
         transit_timeout_seconds: int = DEFAULT_TRANSIT_TIMEOUT_SECONDS,
         on_tick=None,
+        *,
+        event_buffer=None,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -118,6 +121,8 @@ class CoverCommandService:
                 reconciliation tick. Use for coordinator-level periodic work
                 (e.g. time window transition checks) that must run on the same
                 interval without an extra timer.
+            event_buffer: Shared diagnostic ring buffer (optional). When provided,
+                cover_command_sent and cover_command_skipped events are appended.
 
         """
         self._hass = hass
@@ -208,6 +213,9 @@ class CoverCommandService:
             "inverse_state_applied": False,
             "timestamp": None,
         }
+
+        # Shared diagnostic ring buffer (coordinator-owned, injected here)
+        self._event_buffer: EventBuffer | None = event_buffer
 
         # Reconciliation timer handle (async_track_time_interval unsubscribe fn)
         self._reconcile_unsub = None
@@ -1231,6 +1239,20 @@ class CoverCommandService:
             inverse_state=inverse_state,
             extras=extras,
         )
+        if self._event_buffer is not None:
+            event: dict = {
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "cover_command_skipped",
+                "entity_id": entity_id,
+                "reason": reason,
+                "calculated_position": position,
+                "current_position": current_position,
+                "trigger": trigger,
+                "inverse_state_applied": inverse_state,
+            }
+            if extras:
+                event.update(extras)
+            self._event_buffer.record(event)
         return "skipped", reason
 
     def _prepare_service_call(
@@ -1415,8 +1437,23 @@ class CoverCommandService:
         state: int,
         supports_position: bool,
         inverse_state: bool = False,
+        *,
+        target_source: str = "",
+        force: bool = False,
+        is_safety: bool = False,
+        trigger: str = "",
+        auto_control_at_call: bool | None = None,
+        manual_override_at_call: bool | None = None,
+        in_time_window_at_call: bool | None = None,
+        enabled_at_call: bool | None = None,
+        pipeline_handler: str | None = None,
+        pipeline_control_method: str | None = None,
+        pipeline_bypass_auto_control: bool | None = None,
+        decision_trace_at_call: list | None = None,
+        gates_evaluated: dict | None = None,
     ) -> None:
-        """Update last_cover_action diagnostic dict."""
+        """Update last_cover_action diagnostic dict and record to event buffer."""
+        ts = dt.datetime.now(dt.UTC).isoformat()
         self.last_cover_action = {
             "entity_id": entity,
             "service": service,
@@ -1426,9 +1463,39 @@ class CoverCommandService:
             if not supports_position
             else None,
             "inverse_state_applied": inverse_state,
-            "timestamp": dt.datetime.now().isoformat(),
+            "timestamp": ts,
             "covers_controlled": 1,
+            "target_source": target_source,
+            "force": force,
+            "is_safety": is_safety,
+            "trigger": trigger,
+            "auto_control_at_call": auto_control_at_call,
+            "manual_override_at_call": manual_override_at_call,
+            "in_time_window_at_call": in_time_window_at_call,
+            "enabled_at_call": enabled_at_call,
+            "pipeline_handler": pipeline_handler,
+            "pipeline_control_method": pipeline_control_method,
+            "pipeline_bypass_auto_control": pipeline_bypass_auto_control,
+            "decision_trace_at_call": decision_trace_at_call,
+            "gates_evaluated": gates_evaluated,
         }
+        if self._event_buffer is not None:
+            self._event_buffer.record(
+                {
+                    "ts": ts,
+                    "event": "cover_command_sent",
+                    "entity_id": entity,
+                    "service": service,
+                    "position": self.last_cover_action["position"],
+                    "calculated_position": state,
+                    "inverse_state_applied": inverse_state,
+                    "supports_position": supports_position,
+                    "trigger": trigger,
+                    "target_source": target_source,
+                    "force": force,
+                    "is_safety": is_safety,
+                }
+            )
 
 
 def build_special_positions(options: dict) -> list[int]:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
+from ..diagnostics.event_buffer import EventBuffer
 from .handler import OverrideHandler
 from .types import DecisionStep, PipelineResult, PipelineSnapshot
 
@@ -9,11 +12,17 @@ from .types import DecisionStep, PipelineResult, PipelineSnapshot
 class PipelineRegistry:
     """Evaluates a set of :class:`OverrideHandler` instances in priority order."""
 
-    def __init__(self, handlers: list[OverrideHandler]) -> None:
+    def __init__(
+        self,
+        handlers: list[OverrideHandler],
+        *,
+        event_buffer: EventBuffer | None = None,
+    ) -> None:
         """Initialise and sort handlers by priority descending."""
         self._handlers: list[OverrideHandler] = sorted(
             handlers, key=lambda h: h.priority, reverse=True
         )
+        self._event_buffer = event_buffer
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
         """Evaluate all handlers and return the highest-priority matching result.
@@ -103,7 +112,7 @@ class PipelineRegistry:
                             merged[field_name] = val
                             break
 
-        return PipelineResult(
+        result = PipelineResult(
             position=winner.position,
             control_method=winner.control_method,
             reason=winner.reason,
@@ -123,3 +132,21 @@ class PipelineRegistry:
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,
         )
+        if self._event_buffer is not None:
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "pipeline_evaluated",
+                    "entity_id": "",
+                    "winning_handler": winning_handler.name,
+                    "winning_priority": winning_handler.priority,
+                    "control_method": result.control_method.value
+                    if hasattr(result.control_method, "value")
+                    else str(result.control_method),
+                    "position": result.position,
+                    "reason": result.reason,
+                    "bypass_auto_control": result.bypass_auto_control,
+                    "is_sunset_active": result.is_sunset_active,
+                }
+            )
+        return result
