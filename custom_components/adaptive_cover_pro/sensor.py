@@ -22,8 +22,26 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CLIMATE_MODE,
+    CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_CLOUD_SUPPRESSION,
+    CONF_CUSTOM_POSITION_1,
+    CONF_CUSTOM_POSITION_2,
+    CONF_CUSTOM_POSITION_3,
+    CONF_CUSTOM_POSITION_4,
+    CONF_CUSTOM_POSITION_SENSOR_1,
+    CONF_CUSTOM_POSITION_SENSOR_2,
+    CONF_CUSTOM_POSITION_SENSOR_3,
+    CONF_CUSTOM_POSITION_SENSOR_4,
+    CONF_ENABLE_GLARE_ZONES,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
+    CONF_WEATHER_ENTITY,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_SEVERE_SENSORS,
+    CONF_WEATHER_WIND_SPEED_SENSOR,
     DOMAIN,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
@@ -1061,6 +1079,12 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
         # Operational time window
         attrs["in_time_window"] = self.coordinator.check_adaptive_time
 
+        # Configured pipeline handlers — read by the card's decision-strip to
+        # hide handlers the user hasn't set up. Names match the card-normalized
+        # form (force, manual, motion, cloud) — not the pipeline's internal
+        # names (force_override, manual_override, motion_timeout, cloud_suppression).
+        attrs["enabled_handlers"] = self._configured_handlers()
+
         diagnostics = self.coordinator.data.diagnostics if self.coordinator.data else {}
         if diagnostics:
             attrs["sun_azimuth"] = diagnostics.get("sun_azimuth")
@@ -1081,6 +1105,61 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
                 )
 
         return attrs or None
+
+    def _configured_handlers(self) -> list[str]:
+        """Return the list of pipeline handlers that are configured to fire.
+
+        Configuration-based, not runtime-based: a handler is "enabled" if the
+        user has set it up in options, regardless of whether its runtime
+        switch is currently on. Names match the card's normalized handler
+        names so the card can use the list directly without translation.
+        """
+        opts = self.config_entry.options
+        enabled: list[str] = ["manual", "default"]
+
+        if opts.get(CONF_FORCE_OVERRIDE_SENSORS):
+            enabled.append("force")
+
+        if any(
+            opts.get(k)
+            for k in (
+                CONF_WEATHER_ENTITY,
+                CONF_WEATHER_WIND_SPEED_SENSOR,
+                CONF_WEATHER_RAIN_SENSOR,
+                CONF_WEATHER_IS_RAINING_SENSOR,
+                CONF_WEATHER_IS_WINDY_SENSOR,
+                CONF_WEATHER_SEVERE_SENSORS,
+            )
+        ):
+            enabled.append("weather")
+
+        if any(
+            opts.get(s) and opts.get(p) is not None
+            for s, p in (
+                (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1),
+                (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2),
+                (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3),
+                (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4),
+            )
+        ):
+            enabled.append("custom_position")
+
+        if opts.get(CONF_MOTION_SENSORS):
+            enabled.append("motion")
+
+        if opts.get(CONF_CLOUD_SUPPRESSION) and opts.get(CONF_CLOUD_COVERAGE_ENTITY):
+            enabled.append("cloud")
+
+        if opts.get(CONF_CLIMATE_MODE):
+            enabled.append("climate")
+
+        if opts.get(CONF_ENABLE_GLARE_ZONES):
+            enabled.append("glare_zone")
+
+        if opts.get(CONF_ENABLE_SUN_TRACKING, True):
+            enabled.append("solar")
+
+        return enabled
 
 
 class AdaptiveCoverLastSkippedActionSensor(
