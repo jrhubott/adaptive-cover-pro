@@ -142,13 +142,15 @@
           "manual_override_duration": "Duration of manual override",
           "manual_override_reset": "Reset Manual override duration",
           "manual_threshold": "Manual override threshold",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)"
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
+          "transit_timeout": "Transit timeout (seconds)"
         },
         "data_description": {
           "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
+          "transit_timeout": "How long ACP waits after a cover stops reporting forward progress before treating the next position report as a user-initiated manual override. The timer resets each time the cover moves closer to its commanded target, so slow-but-moving covers are protected for the full transit. Increase this value for covers that take longer than 45 seconds to complete a full traverse. Default: 45 seconds."
         }
       },
       "force_override": {
@@ -620,13 +622,15 @@
           "manual_override_duration": "Duration of manual override",
           "manual_override_reset": "Reset Manual override duration",
           "manual_threshold": "Manual override threshold",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)"
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
+          "transit_timeout": "Transit timeout (seconds)"
         },
         "data_description": {
           "manual_override_duration": "How long (minutes) to pause automatic control after manual adjustment. When you manually move the cover, automatic control pauses. Typical values: 10-15 min (short pause, resume tracking soon), 30 min (medium pause, balanced), 60-120 min (long pause, keep manual position longer), 0 (disabled, immediately resume automatic control - not recommended). Gives you control when you want it, resumes automation later.",
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
-          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement."
+          "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
+          "transit_timeout": "How long ACP waits after a cover stops reporting forward progress before treating the next position report as a user-initiated manual override. The timer resets each time the cover moves closer to its commanded target, so slow-but-moving covers are protected for the full transit. Increase this value for covers that take longer than 45 seconds to complete a full traverse. Default: 45 seconds."
         }
       },
       "force_override": {
@@ -872,20 +876,18 @@
       },
       "debug": {
         "title": "Debug & Diagnostics",
-        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a ring buffer of manual-override decisions is kept in memory and exposed in the HA Diagnostics download.\n\n{cover_capabilities}",
+        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a diagnostic event ring buffer is kept in memory and exposed in the HA Diagnostics download.\n\n{cover_capabilities}",
         "data": {
           "dry_run": "Dry Run (no cover movement)",
           "debug_mode": "Enable Debug Mode",
           "debug_categories": "Log Categories (promoted to INFO when debug mode is on)",
-          "debug_event_buffer_size": "Manual override event buffer size",
-          "transit_timeout": "Transit timeout (seconds)"
+          "debug_event_buffer_size": "Diagnostic event buffer size"
         },
         "data_description": {
           "dry_run": "When enabled, the integration runs the full update cycle (pipeline, diagnostics, sensors) but does NOT send any movement commands to your covers. Use for debugging and validating automation settings without disturbing your home. Default: off.",
           "debug_mode": "When enabled, log messages for the selected categories below are promoted from DEBUG to INFO. This means they appear in the Home Assistant log without requiring 'custom_components.adaptive_cover_pro: debug' in configuration.yaml. Turn off when you are done troubleshooting.",
           "debug_categories": "Select which areas to trace. 'Manual Override' covers override detection decisions (most useful for 'cover won't stop manual control' issues). 'Reconciliation' covers the 1-minute position retry loop. 'Pipeline' covers the priority handler chain. 'Motion' covers motion sensor and timeout decisions.",
-          "debug_event_buffer_size": "Number of manual-override decision events to keep in the rolling ring buffer. Each event is a small dict (~200 bytes). Increase for intermittent issues that require longer observation windows. The buffer is reset on integration reload.",
-          "transit_timeout": "How long ACP waits after a cover stops reporting forward progress before treating the next position report as a user-initiated manual override. The timer resets each time the cover moves closer to its commanded target, so slow-but-moving covers are protected for the full transit. Increase this value for covers that take longer than 45 seconds to complete a full traverse. Default: 45 seconds."
+          "debug_event_buffer_size": "Number of diagnostic events to keep in the rolling ring buffer. The buffer captures decisions and state transitions across all pipeline subsystems — manual override, motion, weather, time-window scheduling, cover commands, and the pipeline. Each event is a small dict (~200 bytes). Increase for intermittent issues that require longer observation windows. The buffer is reset on integration reload."
         }
       },
       "sync_confirm": {

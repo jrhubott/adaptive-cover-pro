@@ -142,13 +142,15 @@
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
           "manual_threshold": "Schwellwert der manuellen Übersteuerung",
-          "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)"
+          "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)",
+          "transit_timeout": "Transitzeit-Timeout (Sekunden)"
         },
         "data_description": {
           "manual_override_duration": "Wie lange (in Minuten) die automatische Kontrolle nach manueller Anpassung pausiert. Wenn Sie die Beschattung manuell bewegen, pausiert die automatische Kontrolle. Typische Werte: 10-15 Min. (kurze Pause, Verfolgung wird bald fortgesetzt), 30 Min. (mittlere Pause, ausgewogen), 60-120 Min. (lange Pause, manuelle Position länger behalten), 0 (deaktiviert, Verfolgung wird sofort fortgesetzt – nicht empfohlen). Gibt Ihnen Kontrolle, wenn Sie sie möchten, setzt die Automatisierung später fort.",
           "manual_override_reset": "Setzen Sie den Timer für die manuelle Übersteuerung nach jeder manuellen Anpassung zurück. Wenn aktiviert, startet jede manuelle Änderung die Übersteuerungsdauer neu. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie dies, wenn Sie möchten, dass der Übersteuerungszeitraum bei jeder manuellen Anpassung ‚erneuert' wird.",
           "manual_threshold": "Positionsdifferenz (%), die als ‚manuelle Übersteuerung' zählt (Standardwert: 1 %). Wenn Sie die Beschattung manuell um diesen Betrag bewegen, wird die Erkennungsüberschreibung ausgelöst. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Erkennungsüberschreibung durch kleine Motorabweichungen oder Positionsabweichungen.",
-          "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Erkennungsüberschreibung bei Übergangspositionen ausgelöst wird, während sich die Beschattung zu Ihrer Zielposition bewegt. Nützlich, wenn Ihre Beschattung viele Zwischenwerte während der Bewegung meldet."
+          "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Erkennungsüberschreibung bei Übergangspositionen ausgelöst wird, während sich die Beschattung zu Ihrer Zielposition bewegt. Nützlich, wenn Ihre Beschattung viele Zwischenwerte während der Bewegung meldet.",
+          "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden."
         }
       },
       "force_override": {
@@ -620,13 +622,15 @@
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
           "manual_threshold": "Schwellwert der manuellen Übersteuerung",
-          "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)"
+          "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)",
+          "transit_timeout": "Transitzeit-Timeout (Sekunden)"
         },
         "data_description": {
           "manual_override_duration": "Wie lange (Minuten) die automatische Steuerung nach manueller Anpassung pausiert. Wenn Sie den Behang manuell bewegen, pausiert die automatische Steuerung. Typische Werte: 10–15 Min (kurze Pause, Verfolgung bald fortgesetzt), 30 Min (mittlere Pause, ausgewogen), 60–120 Min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort automatische Steuerung fortsetzen – nicht empfohlen). Gibt Ihnen Kontrolle, wenn Sie sie wollen, setzt Automatisierung später fort.",
           "manual_override_reset": "Setzen Sie den Übersteuerungstimer nach jeder manuellen Anpassung zurück. Wenn aktiviert, startet jede manuelle Änderung die Übersteuerungsdauer neu. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie dies, wenn Sie möchten, dass die Übersteuerungsperiode mit jedem manuellen Eingriff 'erneuert' wird.",
           "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' gilt (Standard: 1%). Wenn Sie den Behang manuell um diesen Betrag bewegen, wird die Übersteuerungserkennung ausgelöst. Typische Werte: 1–2% (empfindlich, erkennt kleine Anpassungen), 5% (weniger empfindlich, empfohlen), 10% (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
-          "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Übersteuerungserkennung von Übergangspositionen während der Bewegung des Behangs zu Ihrer Zielposition ausgelöst wird. Nützlich, wenn Ihr Behang viele Zwischenwerte während der Bewegung meldet."
+          "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Übersteuerungserkennung von Übergangspositionen während der Bewegung des Behangs zu Ihrer Zielposition ausgelöst wird. Nützlich, wenn Ihr Behang viele Zwischenwerte während der Bewegung meldet.",
+          "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden."
         }
       },
       "force_override": {
@@ -877,15 +881,13 @@
           "dry_run": "Testlauf (keine Abdeckungsbewegung)",
           "debug_mode": "Debug-Modus aktivieren",
           "debug_categories": "Log-Kategorien (auf INFO befördert, wenn Debug-Modus aktiviert ist)",
-          "debug_event_buffer_size": "Puffergröße für manuelle Übersteuerungsereignisse",
-          "transit_timeout": "Transit-Timeout (Sekunden)"
+          "debug_event_buffer_size": "Größe des Diagnose-Ereignispuffers"
         },
         "data_description": {
           "dry_run": "Bei Aktivierung führt die Integration den vollständigen Update-Zyklus aus (Pipeline, Diagnose, Sensoren), sendet ABER KEINE Bewegungsbefehle an Ihre Abdeckungen. Verwenden Sie zum Debuggen und Validieren von Automatisierungseinstellungen ohne Störung Ihres Hauses. Standard: aus.",
           "debug_mode": "Bei Aktivierung werden Protokollmeldungen für die unten ausgewählten Kategorien von DEBUG zu INFO befördert. Das bedeutet, dass sie ohne „custom_components.adaptive_cover_pro: debug“ in configuration.yaml im Home Assistant-Protokoll erscheinen. Schalten Sie aus, wenn Sie mit der Problembehandlung fertig sind.",
           "debug_categories": "Wählen Sie aus, welche Bereiche zu verfolgen sind. „Manuelle Übersteuerung“ umfasst Entscheidungen zur Übersteuerungserkennung (am nützlichsten für Probleme „Abdeckung wird manuelle Kontrolle nicht stoppen“). „Abgleich“ umfasst die 1-Minuten-Position-Wiederholungsschleife. „Pipeline“ umfasst die Prioritäts-Handler-Kette. „Bewegung“ umfasst Bewegungssensor- und Timeout-Entscheidungen.",
-          "debug_event_buffer_size": "Anzahl der manuellen Übersteuerungsentscheidungsereignisse, die im rollierenden Ringpuffer beibehalten werden. Jedes Ereignis ist ein kleines dict (~200 Bytes). Erhöhen Sie für intermittierende Probleme, die längere Beobachtungsfenster erfordern. Der Puffer wird beim Neuladen der Integration zurückgesetzt.",
-          "transit_timeout": "Wie lange ACP wartet, nachdem eine Beschattung keine Fortschritte mehr meldet, bevor der nächste Positionsbericht als manuelle Übersteuerung behandelt wird. Der Timer wird jedes Mal zurückgesetzt, wenn sich die Beschattung näher an das angestrebte Ziel bewegt, sodass langsame, sich bewegende Beschattungen über die gesamte Transitzeit geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für eine vollständige Bewegung benötigen. Standard: 45 Sekunden."
+          "debug_event_buffer_size": "Anzahl der Diagnoseereignisse, die im rollierenden Ringpuffer beibehalten werden. Der Puffer erfasst Entscheidungen und Statusübergänge in allen Pipeline-Subsystemen — manuelle Übersteuerung, Bewegung, Wetter, Zeitfenster-Planung, Beschattungsbefehle und Pipeline. Jedes Ereignis ist ein kleines Dict (~200 Bytes). Erhöhen Sie den Wert für intermittierende Probleme, die längere Beobachtungsfenster erfordern. Der Puffer wird bei der Neuladen der Integration zurückgesetzt."
         }
       },
       "sync_confirm": {

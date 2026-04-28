@@ -78,8 +78,10 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
+    CONF_TRANSIT_TIMEOUT,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     SensorType,
 )
 
@@ -618,6 +620,37 @@ def test_manual_override_duration_shown():
     # Raw dict must NOT appear
     assert "{'hours'" not in summary
     assert "hours" not in summary or "5 h" in summary
+
+
+def test_transit_timeout_non_default_shown_in_manual_override_section():
+    """Non-default transit_timeout appears in the manual override line, not Position Limits."""
+    non_default = DEFAULT_TRANSIT_TIMEOUT_SECONDS + 30
+    cfg = {CONF_TRANSIT_TIMEOUT: non_default}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    lines = summary.splitlines()
+    mo_line = next((ln for ln in lines if "Manual override" in ln), None)
+    assert mo_line is not None, "Manual override line missing from summary"
+    assert f"transit timeout: {non_default}s" in mo_line, (
+        f"Expected 'transit timeout: {non_default}s' in manual override line; got: {mo_line!r}"
+    )
+    # Must NOT appear under Position Limits
+    in_position_limits = False
+    in_pl_section = False
+    for line in lines:
+        if "**Position Limits**" in line:
+            in_pl_section = True
+        elif line.startswith("**") and in_pl_section:
+            in_pl_section = False
+        if in_pl_section and "transit timeout" in line.lower():
+            in_position_limits = True
+    assert not in_position_limits, "transit_timeout must not appear under Position Limits"
+
+
+def test_transit_timeout_default_not_shown():
+    """Default transit_timeout is not surfaced in the summary."""
+    cfg = {CONF_TRANSIT_TIMEOUT: DEFAULT_TRANSIT_TIMEOUT_SECONDS}
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "transit timeout" not in summary.lower()
 
 
 # ---------------------------------------------------------------------------

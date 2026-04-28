@@ -467,6 +467,18 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_MANUAL_IGNORE_INTERMEDIATE, default=False
         ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_TRANSIT_TIMEOUT,
+            default=DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=MIN_TRANSIT_TIMEOUT,
+                max=MAX_TRANSIT_TIMEOUT,
+                step=5,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="seconds",
+            )
+        ),
     }
 )
 
@@ -615,18 +627,6 @@ DEBUG_SCHEMA = vol.Schema(
                 max=MAX_DEBUG_EVENT_BUFFER_SIZE,
                 step=10,
                 mode=selector.NumberSelectorMode.SLIDER,
-            )
-        ),
-        vol.Optional(
-            CONF_TRANSIT_TIMEOUT,
-            default=DEFAULT_TRANSIT_TIMEOUT_SECONDS,
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=MIN_TRANSIT_TIMEOUT,
-                max=MAX_TRANSIT_TIMEOUT,
-                step=5,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="seconds",
             )
         ),
     }
@@ -1378,6 +1378,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mo_parts.append("resets on next move")
     if config.get(CONF_MANUAL_IGNORE_INTERMEDIATE):
         mo_parts.append("ignores intermediate positions")
+    transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
+    if (
+        transit_timeout is not None
+        and int(transit_timeout) != DEFAULT_TRANSIT_TIMEOUT_SECONDS
+    ):
+        mo_parts.append(f"transit timeout: {int(transit_timeout)}s")
     mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
     lines.append(
         f"✋ Manual override: pauses automatic control when you move the cover"
@@ -1641,12 +1647,6 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         limit_parts.append(f"Min change: {delta_pos}%")
     if delta_time is not None:
         limit_parts.append(f"Min interval: {delta_time} min")
-    transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
-    if (
-        transit_timeout is not None
-        and int(transit_timeout) != DEFAULT_TRANSIT_TIMEOUT_SECONDS
-    ):
-        limit_parts.append(f"Transit timeout: {int(transit_timeout)}s")
     if config.get(CONF_INVERSE_STATE):
         limit_parts.append("Inverse state")
     oc_thresh = config.get(CONF_OPEN_CLOSE_THRESHOLD)
