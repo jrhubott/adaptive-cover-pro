@@ -76,6 +76,9 @@ def _make_coord(
 
     coord._build_position_context = _fake_build_ctx
 
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
+    coord._event_buffer = EventBuffer(maxlen=50)
+
     return coord
 
 

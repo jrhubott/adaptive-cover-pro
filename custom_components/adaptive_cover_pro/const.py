@@ -144,8 +144,8 @@ DEBUG_CATEGORIES_ALL = [
     DEBUG_CATEGORY_MOTION,
 ]
 
-DEFAULT_DEBUG_EVENT_BUFFER_SIZE = 50
-MAX_DEBUG_EVENT_BUFFER_SIZE = 200
+DEFAULT_DEBUG_EVENT_BUFFER_SIZE = 250
+MAX_DEBUG_EVENT_BUFFER_SIZE = 1000
 
 # Position verification constants (fixed values, not configurable)
 POSITION_CHECK_INTERVAL_MINUTES = 1  # Fixed interval for position verification

@@ -1112,6 +1112,15 @@ class CoverCommandService:
                         actual,
                         target,
                     )
+                    if self._event_buffer is not None:
+                        self._event_buffer.record({
+                            "ts": dt.datetime.now(dt.UTC).isoformat(),
+                            "event": "reconcile_gave_up",
+                            "entity_id": entity_id,
+                            "actual_position": actual,
+                            "target_position": target,
+                            "max_retries": self._max_retries,
+                        })
                     self._gave_up.add(entity_id)
                 else:
                     self._logger.debug(

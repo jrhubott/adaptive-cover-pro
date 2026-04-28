@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..diagnostics.event_buffer import EventBuffer
 
 
 class GracePeriodManager:
@@ -20,6 +24,7 @@ class GracePeriodManager:
         logger,
         command_grace_seconds: float = 5.0,
         startup_grace_seconds: float = 30.0,
+        event_buffer: EventBuffer | None = None,
     ) -> None:
         """Initialize the GracePeriodManager.
 
@@ -30,6 +35,7 @@ class GracePeriodManager:
 
         """
         self._logger = logger
+        self._event_buffer = event_buffer
         self._command_grace_seconds = command_grace_seconds
         self._startup_grace_seconds = startup_grace_seconds
 
@@ -96,6 +102,13 @@ class GracePeriodManager:
         self._grace_period_tasks.pop(entity_id, None)
 
         self._logger.debug("Grace period expired for %s", entity_id)
+        if self._event_buffer is not None:
+            self._event_buffer.record({
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "grace_period_expired",
+                "entity_id": entity_id,
+                "duration_seconds": self._command_grace_seconds,
+            })
 
     def cancel_command_grace_period(self, entity_id: str) -> None:
         """Cancel grace period task for entity.
@@ -162,6 +175,12 @@ class GracePeriodManager:
         self._startup_grace_period_task = None
 
         self._logger.debug("Startup grace period expired")
+        if self._event_buffer is not None:
+            self._event_buffer.record({
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "startup_grace_expired",
+                "duration_seconds": self._startup_grace_seconds,
+            })
 
     # --- Cleanup ---
 

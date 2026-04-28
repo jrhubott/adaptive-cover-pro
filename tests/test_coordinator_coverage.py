@@ -14,10 +14,12 @@ def _make_coordinator():
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
 
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
     return coord
 
 
@@ -439,9 +441,12 @@ async def test_window_close_sends_reposition_when_auto_control_on():
     )
     from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
 
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
+
     coord = object.__new__(AdaptiveDataUpdateCoordinator)
     coord.logger = MagicMock()
     coord._toggles = ToggleManager()
+    coord._event_buffer = EventBuffer(maxlen=50)
     coord.automatic_control = True
     coord._track_end_time = True
     coord._inverse_state = False

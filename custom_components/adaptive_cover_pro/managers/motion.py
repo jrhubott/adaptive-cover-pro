@@ -155,6 +155,12 @@ class MotionManager:
             "No motion detected - starting %s second timeout before using default position",
             self._timeout_seconds,
         )
+        if self._event_buffer is not None:
+            self._event_buffer.record({
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "motion_timeout_started",
+                "timeout_seconds": self._timeout_seconds,
+            })
 
         task = asyncio.create_task(
             self._motion_timeout_handler(self._timeout_seconds, refresh_callback)
@@ -181,6 +187,11 @@ class MotionManager:
             self._logger.debug(
                 "Motion detected during timeout - canceling default position"
             )
+            if self._event_buffer is not None:
+                self._event_buffer.record({
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "motion_detected_during_timeout",
+                })
             return
 
         self._motion_timeout_active = True
@@ -188,6 +199,12 @@ class MotionManager:
             "Motion timeout expired (%s seconds) - using default position",
             timeout_seconds,
         )
+        if self._event_buffer is not None:
+            self._event_buffer.record({
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "motion_timeout_expired",
+                "timeout_seconds": timeout_seconds,
+            })
 
         await refresh_callback()
 
@@ -196,4 +213,9 @@ class MotionManager:
         if self._motion_timeout_task and not self._motion_timeout_task.done():
             self._logger.debug("Motion timeout canceled")
             self._motion_timeout_task.cancel()
+            if self._event_buffer is not None:
+                self._event_buffer.record({
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "motion_timeout_canceled",
+                })
         self._motion_timeout_task = None
