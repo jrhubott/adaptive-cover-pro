@@ -142,13 +142,15 @@
           "manual_override_duration": "Durée de la dérogation manuelle",
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
           "manual_threshold": "Seuil de dérogation manuelle",
-          "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)"
+          "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
+          "transit_timeout": "Délai de transit (secondes)"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
           "manual_override_reset": "Réinitialisez le minuteur de dérogation manuelle après chaque ajustement manuel. S'il est activé, chaque changement manuel redémarre la durée de dérogation. S'il est désactivé, la durée s'applique uniquement au premier ajustement manuel (les changements ultérieurs ne prolongent pas la pause). Activez ceci si vous voulez que la période de dérogation se « renouvelle » à chaque toucher manuel.",
           "manual_threshold": "Différence de position (%) qui compte comme « dérogation manuelle » (par défaut : 1%). Si vous déplacez manuellement le store de ce montant, la détection de dérogation se déclenche. Valeurs typiques : 1-2% (sensible, détecte les petits ajustements), 5% (moins sensible, recommandé), 10% (seuls les grands changements manuels comptent). Empêche la détection accidentelle de dérogation due à de petites dérives de moteur ou aux variations de rapports de position.",
-          "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement."
+          "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
+          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes."
         }
       },
       "force_override": {
@@ -620,13 +622,15 @@
           "manual_override_duration": "Durée de la dérogation manuelle",
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
           "manual_threshold": "Seuil de dérogation manuelle",
-          "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)"
+          "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
+          "transit_timeout": "Délai de transit (secondes)"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
           "manual_override_reset": "Réinitialisez le minuteur de dérogation manuelle après chaque ajustement manuel. S'il est activé, chaque changement manuel redémarre la durée de dérogation. S'il est désactivé, la durée s'applique uniquement au premier ajustement manuel (les changements ultérieurs ne prolongent pas la pause). Activez ceci si vous voulez que la période de dérogation se « renouvelle » à chaque toucher manuel.",
           "manual_threshold": "Différence de position (%) qui compte comme « dérogation manuelle » (par défaut : 1%). Si vous déplacez manuellement le store de ce montant, la détection de dérogation se déclenche. Valeurs typiques : 1-2% (sensible, détecte les petits ajustements), 5% (moins sensible, recommandé), 10% (seuls les grands changements manuels comptent). Empêche la détection accidentelle de dérogation due à de petites dérives de moteur ou aux variations de rapports de position.",
-          "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement."
+          "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
+          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes."
         }
       },
       "force_override": {
@@ -877,15 +881,13 @@
           "dry_run": "Exécution à sec (aucun mouvement du store)",
           "debug_mode": "Activer le mode débogage",
           "debug_categories": "Catégories de journal (promues en INFO quand le mode débogage est actif)",
-          "debug_event_buffer_size": "Taille du tampon d'événements de dérogation manuelle",
-          "transit_timeout": "Délai de transit (secondes)"
+          "debug_event_buffer_size": "Taille du tampon d'événements de diagnostic"
         },
         "data_description": {
           "dry_run": "Quand activé, l'intégration exécute le cycle de mise à jour complet (pipeline, diagnostics, capteurs) mais N'ENVOIE PAS de commandes de mouvement à vos stores. Utilisez cette option pour déboguer et valider les paramètres d'automatisation sans perturber votre domicile. Par défaut : désactivé.",
           "debug_mode": "Quand activé, les messages de journal pour les catégories sélectionnées ci-dessous sont promus de DEBUG à INFO. Ils apparaissent ainsi dans le journal de Home Assistant sans nécessiter l'ajout de « custom_components.adaptive_cover_pro: debug » dans configuration.yaml. Désactivez quand vous avez terminé le débogage.",
           "debug_categories": "Sélectionnez les domaines à tracer. « Dérogation manuelle » couvre les décisions de détection de dérogation (le plus utile pour les problèmes « le store n'arrête pas le contrôle manuel »). « Réconciliation » couvre la boucle de nouvelle tentative de position toutes les minutes. « Pipeline » couvre les décisions de la chaîne de gestionnaires prioritaires. « Mouvement » couvre les événements des capteurs de mouvement et l'état du délai d'inactivité.",
-          "debug_event_buffer_size": "Nombre d'événements de décision de dérogation manuelle à conserver dans le tampon circulaire. Chaque événement est un petit dictionnaire (~200 octets). Augmentez cette valeur pour les problèmes intermittents nécessitant des fenêtres d'observation plus longues. Le tampon est réinitialisé lors du rechargement de l'intégration.",
-          "transit_timeout": "Durée pendant laquelle ACP attend après qu'une protection solaire cesse de signaler une progression avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection solaire se rapproche de sa position cible commandée, de sorte que les protections solaires qui bougent lentement mais régulièrement sont protégées pour la durée complète du transit. Augmentez cette valeur pour les protections solaires qui prennent plus de 45 secondes pour parcourir toute leur course. Par défaut : 45 secondes."
+          "debug_event_buffer_size": "Nombre d'événements de diagnostic à conserver dans le tampon circulaire roulant. Le tampon capture les décisions et transitions d'état dans tous les sous-systèmes du pipeline — dérogation manuelle, mouvement, météo, programmation par fenêtre temporelle, commandes de protection et pipeline. Chaque événement est un petit dictionnaire (~200 octets). Augmentez pour les problèmes intermittents qui nécessitent des fenêtres d'observation plus longues. Le tampon est réinitialisé au rechargement de l'intégration."
         }
       },
       "sync_confirm": {

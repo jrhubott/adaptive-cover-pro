@@ -173,7 +173,7 @@ STARTUP_GRACE_PERIOD_SECONDS = (
 DEFAULT_TRANSIT_TIMEOUT_SECONDS = 45
 TRANSIT_TIMEOUT_SECONDS = DEFAULT_TRANSIT_TIMEOUT_SECONDS  # backward-compat alias
 
-# User-configurable transit timeout (exposed in the debug/advanced config step)
+# User-configurable transit timeout (exposed in the manual override config step)
 CONF_TRANSIT_TIMEOUT = "transit_timeout"
 MIN_TRANSIT_TIMEOUT = 15
 MAX_TRANSIT_TIMEOUT = 600

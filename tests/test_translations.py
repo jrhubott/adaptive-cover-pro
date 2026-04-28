@@ -222,3 +222,50 @@ def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
                 f"{step_key}.blind_spot.data_description.{key} still references "
                 f"'window azimuth' — Option 2 requires FOV-left-edge framing"
             )
+
+
+# ---------------------------------------------------------------------------
+# Event buffer label honesty + transit_timeout step placement
+# ---------------------------------------------------------------------------
+
+
+def test_debug_event_buffer_label_not_manual_override_specific() -> None:
+    """The event buffer is shared across all pipeline subsystems — label must not claim it is manual-override-specific."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    debug = en["options"]["step"]["debug"]
+    label = debug["data"]["debug_event_buffer_size"]
+    desc = debug["data_description"]["debug_event_buffer_size"]
+    assert "manual override" not in label.lower(), (
+        f"Buffer is shared across handlers; label is misleading: {label!r}"
+    )
+    desc_lower = desc.lower()
+    consumers_mentioned = sum(
+        kw in desc_lower
+        for kw in (
+            "manual override",
+            "motion",
+            "weather",
+            "pipeline",
+            "cover command",
+            "time window",
+        )
+    )
+    assert consumers_mentioned >= 2, (
+        f"Description should reference multiple consumers; got: {desc!r}"
+    )
+
+
+def test_transit_timeout_on_manual_override_step_not_debug() -> None:
+    """transit_timeout belongs on the manual_override step, not debug."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    mo = en["options"]["step"]["manual_override"]
+    assert "transit_timeout" in mo.get("data", {}), (
+        "transit_timeout must be labelled on the manual_override step"
+    )
+    assert "transit_timeout" in mo.get("data_description", {}), (
+        "transit_timeout must have a data_description on the manual_override step"
+    )
+    debug = en["options"]["step"]["debug"]
+    assert "transit_timeout" not in debug.get("data", {}), (
+        "transit_timeout must NOT appear on the debug step"
+    )
