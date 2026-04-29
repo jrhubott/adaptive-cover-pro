@@ -63,6 +63,10 @@ def _make_coordinator(
         pipeline_result = _make_pipeline_result()
     coordinator._pipeline_result = pipeline_result
     coordinator._pipeline_bypasses_auto_control = pipeline_result.bypass_auto_control
+    coordinator._pipeline_is_safety_handler = pipeline_result.control_method in (
+        ControlMethod.FORCE,
+        ControlMethod.WEATHER,
+    )
 
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
@@ -222,6 +226,50 @@ class TestStateChangeWithDefaultPosition:
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator, state=0, options={}
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=False,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue #290: Custom position must NOT use force=True context
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPositionNoRedundantCommands:
+    """Custom position handler must not trigger force=True in position context.
+
+    bypass_auto_control=True on a CustomPositionHandler result exists only to
+    defeat the auto_control_off gate.  It must NOT cascade to force=True, which
+    would bypass the same-position short-circuit and resend set_cover_position
+    on every sun.sun update (every few seconds), causing audible relay clicks.
+    """
+
+    @pytest.mark.asyncio
+    async def test_custom_position_does_not_use_force_context(self):
+        """Custom position pipeline result must call _build_position_context with force=False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=60,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            bypass_auto_control=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=60, options={}
         )
 
         coordinator._build_position_context.assert_called_once_with(

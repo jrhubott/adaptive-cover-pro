@@ -134,3 +134,35 @@ class TestSafetyBypassStillWorks:
         assert outcome == "sent"
         assert svc.target_call[f"cover.{trigger}"] == 25
         assert f"cover.{trigger}" in svc._safety_targets
+
+
+# ---------------------------------------------------------------------------
+# Issue #290: same-position short-circuit must apply even when force=True
+# ---------------------------------------------------------------------------
+
+
+class TestSamePositionBypassesForceGate:
+    """Covers already at target must never receive a redundant command, even with force=True.
+
+    Prior to the fix, the same-position guard lived inside ``if not context.force:``,
+    so force=True callers (including custom positions after the v2.18.3 regression)
+    always resent the command, causing audible relay clicks every few seconds.
+    """
+
+    @pytest.mark.asyncio
+    async def test_force_true_same_position_is_skipped(self, svc, hass):
+        """apply_position with force=True and cover already at target must skip."""
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=60),
+        ):
+            outcome, detail = await svc.apply_position(
+                "cover.test",
+                60,
+                "custom_position",
+                _ctx(force=True, is_safety=False, auto_control=True),
+            )
+
+        assert outcome == "skipped"
+        assert detail == "same_position"
+        hass.services.async_call.assert_not_called()

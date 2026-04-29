@@ -169,6 +169,7 @@ from .pipeline.handlers import (
 )
 from .pipeline.registry import PipelineRegistry
 from .pipeline.types import ClimateOptions, PipelineSnapshot
+from .enums import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
@@ -1429,7 +1430,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         position change should not count against the time threshold.
         """
         sun_just_appeared = self._check_sun_validity_transition()
-        is_safety = self._pipeline_bypasses_auto_control
+        is_safety = self._pipeline_is_safety_handler
         force_override_released = (
             prev_force_override and not self.is_force_override_active
         )
@@ -1458,7 +1459,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
         else:
             reason = (
-                self._pipeline_result.control_method.value if is_safety else "solar"
+                self._pipeline_result.control_method.value
+                if self._pipeline_bypasses_auto_control
+                else "solar"
             )
         for cover in self.entities:
             ctx = self._build_position_context(
@@ -1551,7 +1554,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Set target positions and send initial positioning commands after startup."""
-        is_safety = self._pipeline_bypasses_auto_control
+        is_safety = self._pipeline_is_safety_handler
 
         # Outside the time window, only safety handlers (force override, weather)
         # are allowed to move covers on startup.  This prevents covers from
@@ -2151,8 +2154,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         Safety handlers (ForceOverrideHandler, WeatherOverrideHandler) set
         bypass_auto_control=True so that wind/rain/force protection still
         operates when the user has paused normal sun-tracking automation.
+        CustomPositionHandler also sets this flag to defeat the auto_control
+        gate, but is NOT a safety handler — see _pipeline_is_safety_handler.
         """
         return self._pipeline_result.bypass_auto_control
+
+    @property
+    def _pipeline_is_safety_handler(self) -> bool:
+        """True only when the active pipeline result came from a genuine safety handler.
+
+        Genuine safety handlers (ForceOverrideHandler, WeatherOverrideHandler)
+        require force=True so wind/rain/force protection bypasses delta and time
+        gates and always acts immediately.
+
+        Other handlers that set bypass_auto_control=True (e.g.
+        CustomPositionHandler) want to defeat the auto_control gate but must
+        still be subject to the same-position short-circuit and delta/time gates
+        so they don't issue redundant set_cover_position calls on every update
+        cycle (issue #290).
+        """
+        if self._pipeline_result is None:
+            return False
+        return self._pipeline_result.control_method in (
+            ControlMethod.FORCE,
+            ControlMethod.WEATHER,
+        )
 
     @property
     def manual_toggle(self):
