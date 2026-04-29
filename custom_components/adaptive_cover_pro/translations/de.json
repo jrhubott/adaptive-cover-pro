@@ -1570,6 +1570,16 @@
         }
       },
       "name": "Wetter-Sicherheitseinstellungen einstellen"
+    },
+    "get_diagnostics": {
+      "name": "Diagnosen abrufen",
+      "description": "Gibt die Live-Diagnose-Snapshot für die gezielten Adaptive Cover Pro Instanzen zurück — Pipeline-Entscheidungsspur, Beschattungspositionen, Klimaablesungen, Sonnendaten und Koordinator-Zustand.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konfigurationseintrag",
+          "description": "Explizite Konfigurations-Eintrags-IDs zum Abfragen. Wenn weggelassen, gilt die standardmäßige Zielauswahl. Kein Ziel gibt alle ACP-Instanzen zurück."
+        }
+      }
     }
   }
 }

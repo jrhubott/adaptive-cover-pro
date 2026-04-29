@@ -17,13 +17,25 @@ __all__ = [
 
 
 def _sanitize(obj):
-    """Recursively convert non-JSON-serializable types to strings."""
+    """Recursively convert non-JSON-serializable types to serializable equivalents."""
+    import dataclasses  # noqa: PLC0415
+    import enum  # noqa: PLC0415
+
     if isinstance(obj, dict):
         return {k: _sanitize(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple)):
         return [_sanitize(v) for v in obj]
+    if isinstance(obj, (set, frozenset)):
+        return sorted(_sanitize(v) for v in obj)
     if isinstance(obj, (dt.datetime, dt.date, dt.time)):
         return obj.isoformat()
+    if isinstance(obj, enum.Enum):
+        return obj.value
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return _sanitize(dataclasses.asdict(obj))
+    # numpy scalars (numpy not imported at module level — check by duck-typing)
+    if hasattr(obj, "item") and hasattr(obj, "dtype"):
+        return obj.item()
     return obj
 
 

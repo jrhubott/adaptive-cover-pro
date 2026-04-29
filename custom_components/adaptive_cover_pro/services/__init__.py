@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from ..const import DOMAIN
+from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
 from .export_service import EXPORT_CONFIG_SCHEMA, async_handle_export
 from .options_service import OPTIONS_SERVICE_NAMES, register_options_services
 
@@ -104,6 +105,14 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         schema=EXPORT_CONFIG_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
+    if not hass.services.has_service(DOMAIN, "get_diagnostics"):
+        hass.services.async_register(
+            DOMAIN,
+            "get_diagnostics",
+            async_handle_get_diagnostics,
+            schema=GET_DIAGNOSTICS_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
 
     async def handle_integration_enable(call: ServiceCall) -> None:
         targets = _resolve_targets(hass, call)
@@ -157,6 +166,7 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     if hass.data.get(DOMAIN):
         return  # Other entries still active
     hass.services.async_remove(DOMAIN, "export_config")
+    hass.services.async_remove(DOMAIN, "get_diagnostics")
     hass.services.async_remove(DOMAIN, "integration_enable")
     hass.services.async_remove(DOMAIN, "integration_disable")
     hass.services.async_remove(DOMAIN, "emergency_stop")

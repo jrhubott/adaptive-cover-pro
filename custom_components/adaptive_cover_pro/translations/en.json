@@ -1113,6 +1113,16 @@
         }
       }
     },
+    "get_diagnostics": {
+      "name": "Get diagnostics",
+      "description": "Returns the live diagnostics snapshot for the targeted Adaptive Cover Pro instances — pipeline decision trace, cover positions, climate readings, sun data, and coordinator health.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Explicit config entry id(s) to query. When omitted, standard target selection applies. No target returns all ACP instances."
+        }
+      }
+    },
     "set_position_limits": {
       "name": "Set position limits",
       "description": "Update default height, min/max position, open/close threshold, and inverse state.",

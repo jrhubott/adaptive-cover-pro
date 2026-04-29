@@ -924,3 +924,24 @@ set_option:
       required: true
       selector:
         text:
+
+get_diagnostics:
+  name: Get diagnostics
+  description: >-
+    Returns the live diagnostics snapshot for the targeted Adaptive Cover Pro
+    instances — pipeline decision trace, cover positions, climate readings, sun
+    data, and coordinator health. Designed to be called from the ACP Lovelace
+    card via hass.callService(..., { return_response: true }).
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    config_entry_id:
+      name: Config entry
+      description: >-
+        Explicit config entry id(s) to query. When omitted, standard target
+        (entity / device / area) selection applies. No target at all returns
+        all ACP instances.
+      selector:
+        config_entry:
+          integration: adaptive_cover_pro

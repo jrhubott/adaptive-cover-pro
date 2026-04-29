@@ -1570,6 +1570,16 @@
         }
       },
       "name": "Définir les paramètres de sécurité météorologique"
+    },
+    "get_diagnostics": {
+      "name": "Obtenir les diagnostics",
+      "description": "Retourne une capture instantanée des diagnostics en direct pour les instances Adaptive Cover Pro ciblées — trace de décision du pipeline, positions des protections, lectures climatiques, données solaires et santé du coordinateur.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entrée de configuration",
+          "description": "ID(s) d'entrée de configuration explicite(s) à interroger. Lorsqu'omis, la sélection de cible standard s'applique. Aucune cible retourne toutes les instances ACP."
+        }
+      }
     }
   }
 }
