@@ -1,1 +1,0 @@
-/Users/jrhubott/Repositories/claude/projects/adaptive-cover-pro/HANDOFF.md
