@@ -44,7 +44,11 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MAX_POSITION,
     CONF_MIN_POSITION,
     CONF_MOTION_SENSORS,
+    CONF_DISTANCE,
+    CONF_HEIGHT_WIN,
+    CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
+    CONF_WINDOW_WIDTH,
     CONF_MOTION_TIMEOUT,
     CONF_MY_POSITION_VALUE,
     CONF_RETURN_SUNSET,
@@ -253,6 +257,38 @@ class TestFieldValidators:
     def test_window_depth_negative_rejected(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS[CONF_WINDOW_DEPTH](-0.01)
+
+    def test_height_win_bounds_50m(self):
+        FIELD_VALIDATORS[CONF_HEIGHT_WIN](0.1)
+        FIELD_VALIDATORS[CONF_HEIGHT_WIN](50.0)
+
+    def test_height_win_above_50_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_HEIGHT_WIN](50.01)
+
+    def test_window_width_bounds_50m(self):
+        FIELD_VALIDATORS[CONF_WINDOW_WIDTH](0.1)
+        FIELD_VALIDATORS[CONF_WINDOW_WIDTH](50.0)
+
+    def test_window_width_above_50_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_WINDOW_WIDTH](50.01)
+
+    def test_sill_height_bounds_50m(self):
+        FIELD_VALIDATORS[CONF_SILL_HEIGHT](0.0)
+        FIELD_VALIDATORS[CONF_SILL_HEIGHT](50.0)
+
+    def test_sill_height_above_50_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_SILL_HEIGHT](50.01)
+
+    def test_distance_bounds_50m(self):
+        FIELD_VALIDATORS[CONF_DISTANCE](0.1)
+        FIELD_VALIDATORS[CONF_DISTANCE](50.0)
+
+    def test_distance_above_50_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_DISTANCE](50.01)
 
 
 class TestCrossFieldValidate:

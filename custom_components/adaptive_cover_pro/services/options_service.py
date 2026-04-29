@@ -184,10 +184,10 @@ def _select_v(*options: str):
 # Maps option key → validator callable. Used by validate_options_patch and set_option.
 FIELD_VALIDATORS: dict[str, Any] = {
     # Geometry — vertical blind
-    CONF_HEIGHT_WIN: _num(0.1, 6),
-    CONF_WINDOW_WIDTH: _num(0.1, 5),
+    CONF_HEIGHT_WIN: _num(0.1, 50),
+    CONF_WINDOW_WIDTH: _num(0.1, 50),
     CONF_WINDOW_DEPTH: _num(0.0, 5.0),
-    CONF_SILL_HEIGHT: _num(0.0, 3.0),
+    CONF_SILL_HEIGHT: _num(0.0, 50.0),
     # Geometry — awning
     CONF_LENGTH_AWNING: _num(0.3, 6),
     CONF_AWNING_ANGLE: _num(0, 45),
@@ -202,7 +202,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_FOV_RIGHT: _num(0, 180),
     CONF_MIN_ELEVATION: _num(0, 90),
     CONF_MAX_ELEVATION: _num(0, 90),
-    CONF_DISTANCE: _num(0.1, 5),
+    CONF_DISTANCE: _num(0.1, 50),
     # Blind spot
     CONF_ENABLE_BLIND_SPOT: _bool_v(),
     CONF_BLIND_SPOT_LEFT: _num(0, 359),
