@@ -176,18 +176,18 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
         vol.Required(CONF_HEIGHT_WIN, default=2.1): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
-                max=6,
+                max=50,
                 step=0.01,
-                mode=selector.NumberSelectorMode.SLIDER,
+                mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="m",
             )
         ),
         vol.Optional(CONF_WINDOW_WIDTH, default=1.0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
-                max=5.0,
+                max=50,
                 step=0.01,
-                mode=selector.NumberSelectorMode.SLIDER,
+                mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="m",
             )
         ),
@@ -203,9 +203,9 @@ GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
         vol.Optional(CONF_SILL_HEIGHT, default=0.0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
-                max=3.0,
+                max=50,
                 step=0.01,
-                mode=selector.NumberSelectorMode.SLIDER,
+                mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="m",
             )
         ),
@@ -234,9 +234,9 @@ GEOMETRY_HORIZONTAL_SCHEMA = vol.Schema(
         vol.Required(CONF_HEIGHT_WIN, default=2.1): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
-                max=6,
+                max=50,
                 step=0.01,
-                mode=selector.NumberSelectorMode.SLIDER,
+                mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="m",
             )
         ),
@@ -323,9 +323,9 @@ SUN_TRACKING_SCHEMA = vol.Schema(
         vol.Required(CONF_DISTANCE, default=0.5): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
-                max=5,
+                max=50,
                 step=0.1,
-                mode=selector.NumberSelectorMode.SLIDER,
+                mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="m",
             )
         ),

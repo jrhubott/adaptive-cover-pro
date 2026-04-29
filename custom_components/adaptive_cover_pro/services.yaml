@@ -708,13 +708,13 @@ set_sun_tracking:
           unit_of_measurement: "°"
     distance_shaded_area:
       name: Distance to shaded area
-      description: "Distance (m) from the window to the edge of the shaded area (0.1–5 m)."
+      description: "Distance (m) from the window to the edge of the shaded area (0.1–50 m)."
       selector:
         number:
           min: 0.1
-          max: 5
+          max: 50
           step: 0.1
-          mode: slider
+          mode: box
           unit_of_measurement: m
 
 set_blind_spot:
@@ -816,23 +816,23 @@ set_geometry:
   fields:
     window_height:
       name: Window height
-      description: "Window height in metres (0.1–6 m). Vertical blind and awning only."
+      description: "Window height in metres (0.1–50 m). Vertical blind and awning only."
       selector:
         number:
           min: 0.1
-          max: 6
+          max: 50
           step: 0.01
-          mode: slider
+          mode: box
           unit_of_measurement: m
     window_width:
       name: Window width
-      description: "Window width in metres (0.1–5 m). Vertical blind only."
+      description: "Window width in metres (0.1–50 m). Vertical blind only."
       selector:
         number:
           min: 0.1
-          max: 5
+          max: 50
           step: 0.01
-          mode: slider
+          mode: box
           unit_of_measurement: m
     window_depth:
       name: Window depth
@@ -846,13 +846,13 @@ set_geometry:
           unit_of_measurement: m
     sill_height:
       name: Sill height
-      description: "Window sill height from floor in metres (0–3 m). Vertical blind only."
+      description: "Window sill height from floor in metres (0–50 m). Vertical blind only."
       selector:
         number:
           min: 0
-          max: 3
+          max: 50
           step: 0.01
-          mode: slider
+          mode: box
           unit_of_measurement: m
     length_awning:
       name: Awning length
