@@ -392,6 +392,71 @@ class TestCoordinatorBypassProperty:
 
 
 # ---------------------------------------------------------------------------
+# Issue #290: _pipeline_is_safety_handler property (unit tests via unbound call)
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineIsSafetyHandlerProperty:
+    """_pipeline_is_safety_handler must return True only for genuine safety handlers.
+
+    FORCE and WEATHER are genuine safety handlers — they bypass delta/time gates
+    via force=True because wind/rain protection must act immediately.
+    CUSTOM_POSITION (and all others) set bypass_auto_control=True only to defeat
+    the auto_control_off gate, and must NOT trigger force=True (issue #290).
+    """
+
+    def _make_coord_with_result(self, control_method: ControlMethod) -> MagicMock:
+        coord = MagicMock()
+        coord._pipeline_result = PipelineResult(
+            position=60,
+            control_method=control_method,
+            reason="test",
+            bypass_auto_control=True,
+        )
+        return coord
+
+    def test_custom_position_is_not_safety_handler(self) -> None:
+        """CUSTOM_POSITION must return False — it bypasses auto_control, not delta/time gates."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = self._make_coord_with_result(ControlMethod.CUSTOM_POSITION)
+        result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
+        assert result is False
+
+    def test_force_is_safety_handler(self) -> None:
+        """FORCE must return True — wind/rain protection requires bypassing delta/time gates."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = self._make_coord_with_result(ControlMethod.FORCE)
+        result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
+        assert result is True
+
+    def test_weather_is_safety_handler(self) -> None:
+        """WEATHER must return True — storm protection requires bypassing delta/time gates."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = self._make_coord_with_result(ControlMethod.WEATHER)
+        result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
+        assert result is True
+
+    def test_solar_is_not_safety_handler(self) -> None:
+        """SOLAR must return False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = self._make_coord_with_result(ControlMethod.SOLAR)
+        result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
 # Trace and decision trace content
 # ---------------------------------------------------------------------------
 

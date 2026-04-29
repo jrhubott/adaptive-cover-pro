@@ -692,6 +692,8 @@ class CoverCommandService:
         - sun_just_appeared (cover may need to re-confirm same position)
         - moves to/from special positions (0, 100, default, sunset)
 
+        Same-position short-circuit is handled upstream in apply_position and
+        applies to all callers including force=True (issue #290).
         """
         position = self._get_current_position(entity)
         if position is None:
@@ -705,14 +707,6 @@ class CoverCommandService:
                 target,
             )
             return True
-
-        if position == target:
-            self._logger.debug(
-                "Delta check: %s already at target %s%% — no command needed",
-                entity,
-                target,
-            )
-            return False  # Cover is already at the desired position; skip regardless of special status
 
         if target in special_positions:
             self._logger.debug(
@@ -820,6 +814,26 @@ class CoverCommandService:
             return self._skip(
                 entity_id,
                 "auto_control_off",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=_current,
+            )
+
+        # Same-position short-circuit — applies to ALL callers, including force=True.
+        # Issuing set_cover_position with the current position is always a no-op
+        # physically but causes audible relay clicks on many motors (issue #290).
+        # sun_just_appeared is the one exception: the sun transitioning in/out of
+        # validity is a sentinel that we must re-confirm the cover position even
+        # if it hasn't changed numerically.
+        if (
+            not context.sun_just_appeared
+            and _current is not None
+            and _current == position
+        ):
+            return self._skip(
+                entity_id,
+                "same_position",
                 position,
                 trigger=_trigger,
                 inverse_state=_inverse,

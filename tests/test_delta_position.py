@@ -38,25 +38,37 @@ def test_check_position_delta_respects_threshold():
 
 
 def test_check_position_delta_already_at_target_zero():
-    """Cover already at 0% with target 0% — no command needed (Issue #127)."""
+    """_check_position_delta bypasses delta for special target 0% (issue #290).
+
+    Same-position short-circuit was moved to apply_position (issue #290) so
+    it applies to force=True callers too.  _check_position_delta no longer
+    returns False for same-position — it returns True (bypass) when the target
+    is a special position, which is the case for 0%.
+    """
     svc = _make_cmd_svc(current_position=0)
     result = svc._check_position_delta(
         "cover.test", 0, min_change=1, special_positions=[0, 100]
     )
-    assert result is False
+    assert result is True  # special target bypass; same-position caught upstream
 
 
 def test_check_position_delta_already_at_target_hundred():
-    """Cover already at 100% with target 100% — no command needed (Issue #127)."""
+    """_check_position_delta bypasses delta for special target 100% (issue #290).
+
+    Same-position short-circuit lives in apply_position (issue #290), not here.
+    """
     svc = _make_cmd_svc(current_position=100)
     result = svc._check_position_delta(
         "cover.test", 100, min_change=1, special_positions=[0, 100]
     )
-    assert result is False
+    assert result is True  # special target bypass; same-position caught upstream
 
 
 def test_check_position_delta_already_at_target_default():
-    """Cover already at default_height% with matching target — no command needed (Issue #127)."""
+    """_check_position_delta bypasses delta for special target = default_height (issue #290).
+
+    Same-position short-circuit lives in apply_position (issue #290), not here.
+    """
     from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_HEIGHT
 
     svc = _make_cmd_svc(current_position=40)
@@ -64,7 +76,7 @@ def test_check_position_delta_already_at_target_default():
     result = svc._check_position_delta(
         "cover.test", 40, min_change=1, special_positions=special
     )
-    assert result is False
+    assert result is True  # special target bypass; same-position caught upstream
 
 
 def test_check_position_delta_transition_to_zero_from_five():

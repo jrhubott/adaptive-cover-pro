@@ -1070,6 +1070,8 @@ async def test_same_position_skips_even_for_special_target(svc, mock_hass):
     The same-position short-circuit runs BEFORE the special-positions bypass.
     Regression: without this guard, covers at 0%/100% would receive a command
     every time_threshold minutes because the special-bypass would always fire.
+    Since issue #290, the skip reason is "same_position" (caught by the top-level
+    guard in apply_position that applies even to force=True callers).
     """
     _patch_position(svc, 100)  # cover is already at 100%
     outcome, reason = await svc.apply_position(
@@ -1079,7 +1081,7 @@ async def test_same_position_skips_even_for_special_target(svc, mock_hass):
         context=_ctx(min_change=1, special_positions=[0, 100, 50]),
     )
     assert outcome == "skipped"
-    assert reason == "delta_too_small"
+    assert reason == "same_position"
 
 
 @pytest.mark.asyncio
@@ -1093,7 +1095,7 @@ async def test_same_position_skips_for_zero_special(svc, mock_hass):
         context=_ctx(min_change=1, special_positions=[0, 100]),
     )
     assert outcome == "skipped"
-    assert reason == "delta_too_small"
+    assert reason == "same_position"
 
 
 @pytest.mark.asyncio
