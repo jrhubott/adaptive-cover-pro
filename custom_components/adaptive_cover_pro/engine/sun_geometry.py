@@ -238,6 +238,24 @@ class SunGeometry:
             Returns (None, None) if sun never enters the field of view today.
 
         """
+        start, end = self.solar_times_with_position()
+        if start is None or end is None:
+            return None, None
+        return start[0], end[0]
+
+    def solar_times_with_position(
+        self,
+    ) -> tuple[
+        tuple[datetime, float, float] | None,
+        tuple[datetime, float, float] | None,
+    ]:
+        """Like solar_times() but also returns sun azimuth/elevation at entry/exit.
+
+        Returns:
+            Tuple (start, end). Each element is either None (sun never enters FOV
+            today) or a (time, azimuth, elevation) tuple.
+
+        """
         df_today = pd.DataFrame(
             {
                 "azimuth": self.sun_data.solar_azimuth,
@@ -275,10 +293,14 @@ class SunGeometry:
         in_sun_window = (times_utc >= offset_sunrise) & (times_utc <= offset_sunset)
 
         frame = in_fov & valid_elev & in_sun_window
+        rows = solpos[frame]
 
-        if solpos[frame].empty:
+        if rows.empty:
             return None, None
+
+        first = rows.iloc[0]
+        last = rows.iloc[-1]
         return (
-            solpos[frame].index[0].to_pydatetime(),
-            solpos[frame].index[-1].to_pydatetime(),
+            (rows.index[0].to_pydatetime(), float(first["azimuth"]), float(first["elevation"])),
+            (rows.index[-1].to_pydatetime(), float(last["azimuth"]), float(last["elevation"])),
         )

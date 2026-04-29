@@ -155,6 +155,15 @@ class AdaptiveGeneralCover(ABC):
         """Delegate to SunGeometry.solar_times()."""
         return self.solar.solar_times()
 
+    def solar_times_with_position(
+        self,
+    ) -> tuple[
+        tuple[datetime, float, float] | None,
+        tuple[datetime, float, float] | None,
+    ]:
+        """Delegate to SunGeometry.solar_times_with_position()."""
+        return self.solar.solar_times_with_position()
+
     # ------------------------------------------------------------------
     # Compound properties (kept here so tests can patch individual parts)
     # ------------------------------------------------------------------

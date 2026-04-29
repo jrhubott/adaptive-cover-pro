@@ -228,6 +228,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._toggles.switch_mode = bool(self._climate_mode)
         self._sun_end_time = None
         self._sun_start_time = None
+        self._sun_start_position: dict[str, float] | None = None
+        self._sun_end_position: dict[str, float] | None = None
         self.manual_reset = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_RESET, False
         )
@@ -1148,11 +1150,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ):
             self.logger.debug("Calculating solar times")
             loop = asyncio.get_event_loop()
-            start, end = await loop.run_in_executor(None, normal_cover.solar_times)
-            self._sun_start_time = start
-            self._sun_end_time = end
-            self.logger.debug("Sun start time: %s, Sun end time: %s", start, end)
-            return start, end
+            start_pos, end_pos = await loop.run_in_executor(
+                None, normal_cover.solar_times_with_position
+            )
+            if start_pos is None or end_pos is None:
+                self._sun_start_time = None
+                self._sun_end_time = None
+                self._sun_start_position = None
+                self._sun_end_position = None
+            else:
+                self._sun_start_time = start_pos[0]
+                self._sun_end_time = end_pos[0]
+                self._sun_start_position = {
+                    "azimuth": start_pos[1],
+                    "elevation": start_pos[2],
+                }
+                self._sun_end_position = {
+                    "azimuth": end_pos[1],
+                    "elevation": end_pos[2],
+                }
+            self.logger.debug(
+                "Sun start time: %s, Sun end time: %s",
+                self._sun_start_time,
+                self._sun_end_time,
+            )
+            return self._sun_start_time, self._sun_end_time
 
         return self._sun_start_time, self._sun_end_time
 
@@ -1259,6 +1281,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "state": state,
                 "start": start,
                 "end": end,
+                "start_position": self._sun_start_position,
+                "end_position": self._sun_end_position,
                 "control": self._pipeline_result.control_method.value,
                 "sun_motion": self._cover_data.direct_sun_valid,
                 "manual_override": self.manager.binary_cover_manual,

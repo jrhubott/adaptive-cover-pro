@@ -314,6 +314,21 @@ class AdaptiveCoverTimeSensorEntity(AdaptiveCoverSensorBase, SensorEntity):
         """Handle when entity is added."""
         return self.data.states[self.key]
 
+    @property
+    def extra_state_attributes(self) -> dict[str, float] | None:
+        """Expose the sun's azimuth and elevation at this entry/exit moment.
+
+        Returns None when the sun never enters the FOV today (state is also
+        unknown in that case).
+        """
+        pos = self.data.states.get(f"{self.key}_position")
+        if pos is None:
+            return None
+        return {
+            "azimuth": round(float(pos["azimuth"]), 1),
+            "elevation": round(float(pos["elevation"]), 1),
+        }
+
 
 # ---------------------------------------------------------------------------
 # Diagnostic sensors
