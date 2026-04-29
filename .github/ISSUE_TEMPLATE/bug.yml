@@ -21,6 +21,8 @@ body:
           required: true
         - label: This report covers a single bug (open a separate issue for each additional bug).
           required: true
+        - label: I have attached the diagnostics file (see [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics) for how to download it).
+          required: false
 
   - type: input
     id: version
@@ -80,6 +82,7 @@ body:
       label: Diagnostics dump
       description: >
         Download from **Settings → Devices & Services → Adaptive Cover Pro** → select the affected cover → **⋮ → Download diagnostics**.
-        Drag the JSON file here. Diagnostics significantly speed up investigation and are strongly encouraged.
+        Drag the JSON file here. See [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics) for step-by-step instructions.
+        Diagnostics significantly speed up investigation and are strongly encouraged.
     validations:
       required: false
