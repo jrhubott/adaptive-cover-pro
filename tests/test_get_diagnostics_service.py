@@ -11,7 +11,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.services.diagnostics_service import (
-    GET_DIAGNOSTICS_SCHEMA,
     async_handle_get_diagnostics,
 )
 from custom_components.adaptive_cover_pro.const import DOMAIN
@@ -29,7 +28,7 @@ def make_coordinator(entry_id="entry-1", name="Test Cover", cover_type="cover_bl
     coord.config_entry.domain = DOMAIN
     coord._cover_type = cover_type  # noqa: SLF001
     coord.last_update_success = True
-    coord._last_update_success_time = dt.datetime(2026, 4, 28, 12, 0, 0, tzinfo=dt.timezone.utc)  # noqa: SLF001
+    coord._last_update_success_time = dt.datetime(2026, 4, 28, 12, 0, 0, tzinfo=dt.UTC)  # noqa: SLF001
     coord.entities = [f"cover.{name.lower().replace(' ', '_')}"]
     coord.data = MagicMock()
     coord.data.diagnostics = {"pipeline": {"handler": "solar"}, "sun": {"elevation": 25.5}}
@@ -140,7 +139,7 @@ async def test_sanitizer_handles_numpy_datetime_enum_dataclass():
     coord = make_coordinator()
     coord.data.diagnostics = {
         "numpy_val": numpy_val,
-        "timestamp": dt.datetime(2026, 4, 28, tzinfo=dt.timezone.utc),
+        "timestamp": dt.datetime(2026, 4, 28, tzinfo=dt.UTC),
         "colour": Colour.RED,
         "point": Point(1.0, 2.0),
         "tags": {"b", "a"},
