@@ -21,8 +21,8 @@ body:
           required: true
         - label: This report covers a single bug (open a separate issue for each additional bug).
           required: true
-        - label: I have attached the diagnostics file (see [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics) for how to download it).
-          required: false
+        - label: I have attached the diagnostics file as an upload (drag-and-drop the JSON file into the Diagnostics field below — do **not** paste its contents). See [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics).
+          required: true
 
   - type: input
     id: version
@@ -79,10 +79,15 @@ body:
 
   - type: textarea
     attributes:
-      label: Diagnostics dump
+      label: Diagnostics file (attachment)
       description: >
+        **Drag the JSON file into this box. Do not paste the file contents** — issues without an attached diagnostics file will be auto-labeled `needs-diagnostics` and closed after 7 days.
+
+
         Download from **Settings → Devices & Services → Adaptive Cover Pro** → select the affected cover → **⋮ → Download diagnostics**.
-        Drag the JSON file here. See [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics) for step-by-step instructions.
-        Diagnostics significantly speed up investigation and are strongly encouraged.
+        See [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics) for step-by-step instructions.
+
+
+        If GitHub refuses the `.json` file on drag-drop, zip it first or rename the file to `.txt`.
     validations:
       required: false

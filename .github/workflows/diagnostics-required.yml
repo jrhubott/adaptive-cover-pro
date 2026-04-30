@@ -1,0 +1,115 @@
+name: "Require Diagnostics Attachment on Bug Reports"
+
+on:
+  issues:
+    types: [opened, edited]
+  schedule:
+    # Daily at 13:00 UTC — sweep stale needs-diagnostics issues
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check-diagnostics-attachment:
+    name: "Label Missing-Attachment Bug Reports"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'bug')
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const issueNumber = context.payload.issue.number;
+            const labelName = 'needs-diagnostics';
+
+            // Issue forms render each field as "### <label>\n\n<value>\n\n".
+            // Pull the Diagnostics section by heading.
+            const headingRe = /^### Diagnostics file \(attachment\)\s*$/m;
+            const match = body.match(headingRe);
+            let section = '';
+            if (match) {
+              const start = match.index + match[0].length;
+              const rest = body.slice(start);
+              const next = rest.match(/^### /m);
+              section = (next ? rest.slice(0, next.index) : rest).trim();
+            }
+
+            const hasAttachment = /https:\/\/github\.com\/user-attachments\/(files|assets)\//i.test(section)
+              || /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/files\//i.test(section);
+
+            // Treat the placeholder "_No response_" (issue forms emit this for empty optional textareas) as missing.
+            const isEmpty = section === '' || /^_no response_$/i.test(section);
+
+            const labels = (context.payload.issue.labels || []).map(l => l.name);
+            const hasLabel = labels.includes(labelName);
+
+            if (hasAttachment) {
+              if (hasLabel) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: labelName,
+                }).catch(() => {});
+                console.log(`Attachment now present — removed ${labelName} from #${issueNumber}`);
+              } else {
+                console.log(`#${issueNumber} has attachment, no action`);
+              }
+              return;
+            }
+
+            // Missing or pasted contents — label and comment (only if not already labeled).
+            if (hasLabel) {
+              console.log(`#${issueNumber} already labeled ${labelName}, skipping comment`);
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: [labelName],
+            });
+
+            const reason = isEmpty
+              ? "the diagnostics field is empty"
+              : "the diagnostics field looks like pasted text, not an uploaded file";
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                `Thanks for the report — ${reason}.`,
+                ``,
+                `Please **edit this issue** and drag the diagnostics JSON file into the "Diagnostics file (attachment)" field instead of pasting its contents. An attachment shows up as a link like \`https://github.com/user-attachments/files/...\`.`,
+                ``,
+                `Steps: **Settings → Devices & Services → Adaptive Cover Pro** → select the affected cover → **⋮ → Download diagnostics**, then drag the JSON file into the issue. If GitHub refuses the \`.json\` file, zip it or rename to \`.txt\` first. Full instructions: [Downloading Diagnostics](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics#downloading-diagnostics).`,
+                ``,
+                `This issue will auto-close in 7 days if no attachment is added — just edit the issue with the file and the \`${labelName}\` label will be removed automatically.`,
+              ].join('\n'),
+            });
+
+            console.log(`Labeled #${issueNumber} with ${labelName} (reason: ${reason})`);
+
+  close-stale-missing-diagnostics:
+    name: "Close Stale needs-diagnostics Issues"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/stale@v9
+        with:
+          only-issue-labels: 'needs-diagnostics'
+          days-before-issue-stale: 7
+          days-before-issue-close: 0
+          stale-issue-label: 'stale-needs-diagnostics'
+          close-issue-message: >
+            Closing this issue as a diagnostics file was not attached within 7 days.
+            Feel free to reopen and attach the diagnostics JSON file (drag-and-drop into the issue) — happy to take another look.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          operations-per-run: 50
