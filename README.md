@@ -66,7 +66,7 @@ Original forum post that inspired both projects: [Automatic Blinds](https://comm
 
 ## How this project is built
 
-Adaptive Cover Pro is developed with substantial help from generative AI — specifically Anthropic's Claude, via the Claude Code CLI. AI assistance is used for code, tests, documentation, and release notes; I (the maintainer, 30+ years in software) own the architecture, vet every merge, and stay accountable for what ships. The test suite (over 2,500 tests) is the load-bearing safety net for AI-generated changes.
+Adaptive Cover Pro is developed with substantial help from generative AI — specifically Anthropic's Claude, via the Claude Code CLI. As a solo maintainer with limited spare time, AI assistance is what makes it possible to effectively support and enhance this integration — responding to issues, shipping features, and keeping the test suite green at a pace that wouldn't otherwise be sustainable. Mistakes happen, as they would with any software project, and defects will occur — but the scope of what this integration covers is far larger than I could have managed alone. I (the maintainer, 30+ years in software) own the architecture, vet every merge, and stay accountable for what ships. The test suite (over 2,500 tests) is the load-bearing safety net for AI-generated changes.
 
 For the full workflow — model routing, code-review gates, and what stays in human hands — see **[AI-Assisted Development](https://github.com/jrhubott/adaptive-cover-pro/wiki/AI-Assisted-Development)** on the wiki.
 
