@@ -9,11 +9,19 @@ on:
 
 jobs:
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Test (Python ${{ matrix.python-version }} / HA ${{ matrix.ha-channel }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.13"]
+        include:
+          - python-version: "3.13"
+            ha-channel: stable
+            experimental: false
+          - python-version: "3.13"
+            ha-channel: beta
+            experimental: true
 
     steps:
       - name: Checkout code
@@ -24,17 +32,28 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Install dependencies (stable)
+        if: matrix.ha-channel == 'stable'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+
+      - name: Install dependencies (beta — pre-release HA)
+        if: matrix.ha-channel == 'beta'
+        run: |
+          python -m pip install --upgrade pip
+          pip install --pre pytest-homeassistant-custom-component
+          pip install --pre -r requirements-dev.txt
+
+      - name: Show HA version
+        run: python -c "import homeassistant; print('HA version:', homeassistant.__version__)"
 
       - name: Run tests with coverage
         run: |
           pytest --cov --cov-report=xml --cov-report=term
 
-      - name: Upload coverage to Codecov (Python 3.13 only)
-        if: matrix.python-version == '3.13'
+      - name: Upload coverage to Codecov (stable only)
+        if: matrix.python-version == '3.13' && matrix.ha-channel == 'stable'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
