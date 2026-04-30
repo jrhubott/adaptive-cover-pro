@@ -96,7 +96,9 @@ class PipelineRegistry:
         #      still surface metadata this way (Issue #240).
         # Winner's non-None values are never overwritten.
         _MERGEABLE = ("climate_state", "climate_strategy", "climate_data", "tilt")
-        contributions: list[dict[str, object]] = [h.contribute(snapshot) for h, _ in evaluated]
+        contributions: list[dict[str, object]] = [
+            h.contribute(snapshot) for h, _ in evaluated
+        ]
         merged: dict[str, object] = {}
         for field_name in _MERGEABLE:
             if getattr(winner, field_name) is None:
@@ -140,9 +142,11 @@ class PipelineRegistry:
                     "entity_id": "",
                     "winning_handler": winning_handler.name,
                     "winning_priority": winning_handler.priority,
-                    "control_method": result.control_method.value
-                    if hasattr(result.control_method, "value")
-                    else str(result.control_method),
+                    "control_method": (
+                        result.control_method.value
+                        if hasattr(result.control_method, "value")
+                        else str(result.control_method)
+                    ),
                     "position": result.position,
                     "reason": result.reason,
                     "bypass_auto_control": result.bypass_auto_control,

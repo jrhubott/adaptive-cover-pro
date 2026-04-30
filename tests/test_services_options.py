@@ -472,9 +472,9 @@ class TestServiceRegistration:
             "set_geometry",
             "set_option",
         ]:
-            assert hass.services.has_service(DOMAIN, service), (
-                f"Service '{service}' not registered"
-            )
+            assert hass.services.has_service(
+                DOMAIN, service
+            ), f"Service '{service}' not registered"
 
 
 class TestSetPositionLimits:
@@ -1186,9 +1186,9 @@ class TestSetOption:
 
     async def test_all_settable_keys_in_field_validators(self):
         for key in ALL_SETTABLE_KEYS:
-            assert key in FIELD_VALIDATORS, (
-                f"'{key}' is in ALL_SETTABLE_KEYS but missing from FIELD_VALIDATORS"
-            )
+            assert (
+                key in FIELD_VALIDATORS
+            ), f"'{key}' is in ALL_SETTABLE_KEYS but missing from FIELD_VALIDATORS"
 
 
 class TestReloadPropagation:

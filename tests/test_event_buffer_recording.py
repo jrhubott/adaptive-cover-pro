@@ -14,7 +14,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
-from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
+from custom_components.adaptive_cover_pro.managers.grace_period import (
+    GracePeriodManager,
+)
 from custom_components.adaptive_cover_pro.managers.motion import MotionManager
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 
@@ -40,7 +42,9 @@ def _make_state(position: int, state_str: str = "open") -> MagicMock:
     return s
 
 
-def _make_event(entity_id: str, new_pos: int, old_pos: int, state: str = "open") -> MagicMock:
+def _make_event(
+    entity_id: str, new_pos: int, old_pos: int, state: str = "open"
+) -> MagicMock:
     ev = MagicMock()
     ev.entity_id = entity_id
     ev.new_state = _make_state(new_pos, state)
@@ -60,9 +64,15 @@ def _make_transit_coordinator(
     transit_timeout: int = 45,
 ) -> MagicMock:
     """Minimal coordinator wired for process_entity_state_change transit tests."""
-    from custom_components.adaptive_cover_pro.managers.cover_command import CoverCommandService
-    from custom_components.adaptive_cover_pro.managers.grace_period import GracePeriodManager
-    from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+    from custom_components.adaptive_cover_pro.managers.cover_command import (
+        CoverCommandService,
+    )
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
 
     buf = EventBuffer(maxlen=100)
 
@@ -106,14 +116,21 @@ def _make_transit_coordinator(
     cmd_svc.read_position_with_capabilities = MagicMock(side_effect=_read_pos)
     coord._cmd_svc = cmd_svc
 
-    coord._is_in_grace_period = lambda eid: AdaptiveDataUpdateCoordinator._is_in_grace_period(coord, eid)
-    coord._start_grace_period = lambda eid: AdaptiveDataUpdateCoordinator._start_grace_period(coord, eid)
+    coord._is_in_grace_period = (
+        lambda eid: AdaptiveDataUpdateCoordinator._is_in_grace_period(coord, eid)
+    )
+    coord._start_grace_period = (
+        lambda eid: AdaptiveDataUpdateCoordinator._start_grace_period(coord, eid)
+    )
 
     return coord
 
 
 def _call_process(coord) -> None:
-    from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
     AdaptiveDataUpdateCoordinator.process_entity_state_change(coord)
 
 
@@ -137,7 +154,11 @@ class TestTransitProgressEvents:
             "cover.shade", target=0, new_pos=50, old_pos=60, sent_seconds_ago=10.0
         )
         _call_process(coord)
-        ev = next(e for e in _events(coord._event_buffer) if e["event"] == "transit_progress_forward")
+        ev = next(
+            e
+            for e in _events(coord._event_buffer)
+            if e["event"] == "transit_progress_forward"
+        )
         assert ev["entity_id"] == "cover.shade"
         assert ev["old_position"] == 60
         assert ev["new_position"] == 50
@@ -147,19 +168,31 @@ class TestTransitProgressEvents:
 
     def test_timeout_exceeded_records_transit_timeout_cleared(self) -> None:
         coord = _make_transit_coordinator(
-            "cover.shade", target=0, new_pos=80, old_pos=80,
-            sent_seconds_ago=50.0, transit_timeout=45
+            "cover.shade",
+            target=0,
+            new_pos=80,
+            old_pos=80,
+            sent_seconds_ago=50.0,
+            transit_timeout=45,
         )
         _call_process(coord)
         assert "transit_timeout_cleared" in _event_types(coord._event_buffer)
 
     def test_timeout_event_contains_elapsed_and_timeout(self) -> None:
         coord = _make_transit_coordinator(
-            "cover.shade", target=0, new_pos=80, old_pos=80,
-            sent_seconds_ago=50.0, transit_timeout=45
+            "cover.shade",
+            target=0,
+            new_pos=80,
+            old_pos=80,
+            sent_seconds_ago=50.0,
+            transit_timeout=45,
         )
         _call_process(coord)
-        ev = next(e for e in _events(coord._event_buffer) if e["event"] == "transit_timeout_cleared")
+        ev = next(
+            e
+            for e in _events(coord._event_buffer)
+            if e["event"] == "transit_timeout_cleared"
+        )
         assert ev["entity_id"] == "cover.shade"
         assert ev["timeout_seconds"] == 45
         assert ev["elapsed_seconds"] > 45
@@ -167,8 +200,12 @@ class TestTransitProgressEvents:
     def test_startup_delay_records_transit_startup_delay(self) -> None:
         """Position unchanged, state transitioned from non-opening — motor startup."""
         coord = _make_transit_coordinator(
-            "cover.shade", target=100, new_pos=0, old_pos=0,
-            state="open", sent_seconds_ago=5.0
+            "cover.shade",
+            target=100,
+            new_pos=0,
+            old_pos=0,
+            state="open",
+            sent_seconds_ago=5.0,
         )
         coord.state_change_data.old_state.state = "closed"  # state changed
         coord.state_change_data.new_state.state = "open"
@@ -190,7 +227,9 @@ class TestTransitProgressEvents:
         )
         coord.state_change_data.old_state.state = "open"
         _call_process(coord)
-        ev = next(e for e in _events(coord._event_buffer) if e["event"] == "transit_cleared")
+        ev = next(
+            e for e in _events(coord._event_buffer) if e["event"] == "transit_cleared"
+        )
         assert ev["entity_id"] == "cover.shade"
         assert ev["position"] == 70
         assert ev["target"] == 0
@@ -205,7 +244,10 @@ class TestManualGateClosedEvent:
     """_manual_gate_closed_log records an event with gate state details."""
 
     def _make_coord(self) -> MagicMock:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         buf = EventBuffer(maxlen=50)
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
         coord.logger = MagicMock()
@@ -225,7 +267,11 @@ class TestManualGateClosedEvent:
         coord.manual_toggle = False
         coord.automatic_control = True
         coord._manual_gate_closed_log("handle_state_change", ["cover.living_room"])
-        ev = next(e for e in _events(coord._event_buffer) if e["event"] == "manual_override_gate_closed")
+        ev = next(
+            e
+            for e in _events(coord._event_buffer)
+            if e["event"] == "manual_override_gate_closed"
+        )
         assert ev["where"] == "handle_state_change"
         assert ev["manual_toggle"] is False
         assert ev["automatic_control"] is True
@@ -241,7 +287,10 @@ class TestSunFOVEvents:
     """_check_sun_validity_transition records sun_entered_fov / sun_left_fov."""
 
     def _make_coord(self, *, direct_sun_valid: bool, prev_state: bool) -> MagicMock:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         buf = EventBuffer(maxlen=50)
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
         coord.logger = MagicMock()
@@ -254,19 +303,28 @@ class TestSunFOVEvents:
         return coord
 
     def test_sun_entered_fov_records_event(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         coord = self._make_coord(direct_sun_valid=True, prev_state=False)
         AdaptiveDataUpdateCoordinator._check_sun_validity_transition(coord)
         assert "sun_entered_fov" in _event_types(coord._event_buffer)
 
     def test_sun_left_fov_records_event(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         coord = self._make_coord(direct_sun_valid=False, prev_state=True)
         AdaptiveDataUpdateCoordinator._check_sun_validity_transition(coord)
         assert "sun_left_fov" in _event_types(coord._event_buffer)
 
     def test_no_transition_records_no_fov_event(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         coord = self._make_coord(direct_sun_valid=True, prev_state=True)
         AdaptiveDataUpdateCoordinator._check_sun_validity_transition(coord)
         types = _event_types(coord._event_buffer)
@@ -283,9 +341,16 @@ class TestEndTimeDefaultSentEvent:
     """_check_time_window_transition records end_time_default_sent when end-time fires."""
 
     def _make_end_time_coord(
-        self, buf: EventBuffer, *, n_entities: int = 1, effective_pos: int = 0, is_sunset: bool = False
+        self,
+        buf: EventBuffer,
+        *,
+        n_entities: int = 1,
+        effective_pos: int = 0,
+        is_sunset: bool = False,
     ) -> MagicMock:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
         coord.logger = MagicMock()
@@ -301,7 +366,9 @@ class TestEndTimeDefaultSentEvent:
         coord._cmd_svc = cmd_svc
         coord.async_refresh = AsyncMock()
         coord._build_position_context = MagicMock(return_value=MagicMock(force=True))
-        coord._compute_current_effective_default = MagicMock(return_value=(effective_pos, is_sunset))
+        coord._compute_current_effective_default = MagicMock(
+            return_value=(effective_pos, is_sunset)
+        )
 
         config_entry = MagicMock()
         config_entry.options = {}
@@ -318,7 +385,9 @@ class TestEndTimeDefaultSentEvent:
 
     @pytest.mark.asyncio
     async def test_end_time_default_sent_records_event(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
 
         buf = EventBuffer(maxlen=50)
         coord = self._make_end_time_coord(buf)
@@ -329,10 +398,14 @@ class TestEndTimeDefaultSentEvent:
 
     @pytest.mark.asyncio
     async def test_end_time_event_contains_position_and_cover_count(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
 
         buf = EventBuffer(maxlen=50)
-        coord = self._make_end_time_coord(buf, n_entities=2, effective_pos=30, is_sunset=True)
+        coord = self._make_end_time_coord(
+            buf, n_entities=2, effective_pos=30, is_sunset=True
+        )
         await AdaptiveDataUpdateCoordinator._check_time_window_transition(
             coord, dt.datetime.now(dt.UTC)
         )
@@ -350,9 +423,13 @@ class TestSunsetWindowOpenedEvent:
     """_check_sunset_window_transition records sunset_window_opened."""
 
     def _make_coord(self, *, sunset_pos: int = 25) -> MagicMock:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
         from custom_components.adaptive_cover_pro.const import CONF_SUNSET_POS
-        from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            PositionContext,
+        )
 
         buf = EventBuffer(maxlen=50)
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
@@ -381,9 +458,14 @@ class TestSunsetWindowOpenedEvent:
 
         coord._build_position_context = MagicMock(
             return_value=PositionContext(
-                auto_control=True, manual_override=False, sun_just_appeared=False,
-                min_change=2, time_threshold=0, special_positions=[0, 100],
-                force=False, is_safety=False,
+                auto_control=True,
+                manual_override=False,
+                sun_just_appeared=False,
+                min_change=2,
+                time_threshold=0,
+                special_positions=[0, 100],
+                force=False,
+                is_safety=False,
             )
         )
         coord._compute_current_effective_default = MagicMock(return_value=(0, True))
@@ -391,24 +473,37 @@ class TestSunsetWindowOpenedEvent:
 
     @pytest.mark.asyncio
     async def test_sunset_window_opened_records_event(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         coord = self._make_coord(sunset_pos=25)
         await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
         assert "sunset_window_opened" in _event_types(coord._event_buffer)
 
     @pytest.mark.asyncio
     async def test_sunset_window_event_contains_position_and_count(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         coord = self._make_coord(sunset_pos=25)
         coord.entities = [MagicMock(), MagicMock()]
         await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
-        ev = next(e for e in _events(coord._event_buffer) if e["event"] == "sunset_window_opened")
+        ev = next(
+            e
+            for e in _events(coord._event_buffer)
+            if e["event"] == "sunset_window_opened"
+        )
         assert ev["position"] == 25
         assert ev["cover_count"] == 2
 
     @pytest.mark.asyncio
     async def test_no_sunset_window_event_when_already_open(self) -> None:
-        from custom_components.adaptive_cover_pro.coordinator import AdaptiveDataUpdateCoordinator
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
         coord = self._make_coord()
         coord._prev_sunset_active = True  # already open — no transition
         await AdaptiveDataUpdateCoordinator._check_sunset_window_transition(coord)
@@ -436,7 +531,9 @@ class TestGracePeriodExpiryEvents:
         assert "grace_period_expired" in _event_types(buf)
 
     @pytest.mark.asyncio
-    async def test_command_grace_expired_event_contains_entity_and_duration(self) -> None:
+    async def test_command_grace_expired_event_contains_entity_and_duration(
+        self,
+    ) -> None:
         buf = EventBuffer(maxlen=50)
         mgr = GracePeriodManager(
             logger=MagicMock(),
@@ -508,11 +605,15 @@ class TestGracePeriodExpiryEvents:
 class TestMotionTimeoutEvents:
     """MotionManager records motion_timeout_started, _expired, _canceled, _detected_during."""
 
-    def _make_mgr(self, buf: EventBuffer, *, sensors: list[str] | None = None) -> MotionManager:
+    def _make_mgr(
+        self, buf: EventBuffer, *, sensors: list[str] | None = None
+    ) -> MotionManager:
         hass = MagicMock()
         hass.states.get.return_value = None
         mgr = MotionManager(hass=hass, logger=MagicMock(), event_buffer=buf)
-        mgr.update_config(sensors=sensors or ["binary_sensor.motion"], timeout_seconds=60)
+        mgr.update_config(
+            sensors=sensors or ["binary_sensor.motion"], timeout_seconds=60
+        )
         return mgr
 
     @pytest.mark.asyncio
@@ -594,7 +695,9 @@ class TestReconcileGaveUpEvent:
     """CoverCommandService._reconcile records reconcile_gave_up when max retries exceeded."""
 
     def _make_svc(self) -> tuple:
-        from custom_components.adaptive_cover_pro.managers.cover_command import CoverCommandService
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            CoverCommandService,
+        )
 
         buf = EventBuffer(maxlen=50)
         hass = MagicMock()
@@ -613,7 +716,9 @@ class TestReconcileGaveUpEvent:
         )
         return svc, buf
 
-    def _prime_svc_for_reconcile(self, svc, entity_id: str, target: int, actual: int) -> dt.datetime:
+    def _prime_svc_for_reconcile(
+        self, svc, entity_id: str, target: int, actual: int
+    ) -> dt.datetime:
         """Set up svc state so a single _reconcile call reaches the gave-up branch.
 
         Seeds _retry_counts to max_retries so the very first reconcile tick triggers
@@ -644,8 +749,13 @@ class TestReconcileGaveUpEvent:
 
         with patch(
             "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
-            return_value={"has_set_position": True, "has_set_tilt_position": False,
-                          "has_open": True, "has_close": True, "has_stop": True},
+            return_value={
+                "has_set_position": True,
+                "has_set_tilt_position": False,
+                "has_open": True,
+                "has_close": True,
+                "has_stop": True,
+            },
         ):
             await svc._reconcile(now)
 
@@ -661,8 +771,13 @@ class TestReconcileGaveUpEvent:
 
         with patch(
             "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
-            return_value={"has_set_position": True, "has_set_tilt_position": False,
-                          "has_open": True, "has_close": True, "has_stop": True},
+            return_value={
+                "has_set_position": True,
+                "has_set_tilt_position": False,
+                "has_open": True,
+                "has_close": True,
+                "has_stop": True,
+            },
         ):
             await svc._reconcile(now)
 
@@ -682,8 +797,13 @@ class TestReconcileGaveUpEvent:
 
         with patch(
             "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
-            return_value={"has_set_position": True, "has_set_tilt_position": False,
-                          "has_open": True, "has_close": True, "has_stop": True},
+            return_value={
+                "has_set_position": True,
+                "has_set_tilt_position": False,
+                "has_open": True,
+                "has_close": True,
+                "has_stop": True,
+            },
         ):
             # Three ticks — gave_up triggers on first, subsequent ticks are silent
             for _ in range(3):

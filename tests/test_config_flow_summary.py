@@ -630,9 +630,9 @@ def test_transit_timeout_non_default_shown_in_manual_override_section():
     lines = summary.splitlines()
     mo_line = next((ln for ln in lines if "Manual override" in ln), None)
     assert mo_line is not None, "Manual override line missing from summary"
-    assert f"transit timeout: {non_default}s" in mo_line, (
-        f"Expected 'transit timeout: {non_default}s' in manual override line; got: {mo_line!r}"
-    )
+    assert (
+        f"transit timeout: {non_default}s" in mo_line
+    ), f"Expected 'transit timeout: {non_default}s' in manual override line; got: {mo_line!r}"
     # Must NOT appear under Position Limits
     in_position_limits = False
     in_pl_section = False
@@ -643,7 +643,9 @@ def test_transit_timeout_non_default_shown_in_manual_override_section():
             in_pl_section = False
         if in_pl_section and "transit timeout" in line.lower():
             in_position_limits = True
-    assert not in_position_limits, "transit_timeout must not appear under Position Limits"
+    assert (
+        not in_position_limits
+    ), "transit_timeout must not appear under Position Limits"
 
 
 def test_transit_timeout_default_not_shown():

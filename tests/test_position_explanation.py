@@ -775,7 +775,10 @@ class TestPositionExplanationChangeDetection:
         type(coord).is_motion_detected = PropertyMock(return_value=True)
         coord._motion_mgr = MagicMock()
         coord._motion_mgr._motion_timeout_active = False
-        from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
+        from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+            EventBuffer,
+        )
+
         coord._event_buffer = EventBuffer(maxlen=50)
         coord.manager = MagicMock()
         coord.manager.covers = set()

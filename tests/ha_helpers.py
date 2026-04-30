@@ -217,7 +217,7 @@ def assert_entities_registered(
 ) -> list[str]:
     """Assert at least min_count entities are registered for the entry/platform."""
     ids = get_entity_ids_for_entry(hass, entry, platform)
-    assert len(ids) >= min_count, (
-        f"Expected >= {min_count} {platform} entities, got {len(ids)}: {ids}"
-    )
+    assert (
+        len(ids) >= min_count
+    ), f"Expected >= {min_count} {platform} entities, got {len(ids)}: {ids}"
     return ids

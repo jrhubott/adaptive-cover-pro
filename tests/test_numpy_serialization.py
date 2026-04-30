@@ -106,9 +106,9 @@ class TestSafetyMarginCalculatorTypes:
 
         result = SafetyMarginCalculator.calculate(gamma=45.0, sol_elev=30.0)
         assert isinstance(result, float), f"Expected float, got {type(result)}"
-        assert not isinstance(result, np.floating), (
-            "Got numpy float, expected Python float"
-        )
+        assert not isinstance(
+            result, np.floating
+        ), "Got numpy float, expected Python float"
 
     def test_returns_python_float_extreme_gamma(self) -> None:
         from custom_components.adaptive_cover_pro.geometry import SafetyMarginCalculator

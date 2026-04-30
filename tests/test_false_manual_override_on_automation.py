@@ -239,9 +239,9 @@ def test_position_within_tolerance_floor_not_flagged_as_manual():
         manual_threshold=None,  # No user threshold configured
     )
 
-    assert not manager.is_cover_manual(entity_id), (
-        "2% position difference within POSITION_TOLERANCE_PERCENT (3%) should NOT trigger manual override"
-    )
+    assert not manager.is_cover_manual(
+        entity_id
+    ), "2% position difference within POSITION_TOLERANCE_PERCENT (3%) should NOT trigger manual override"
 
 
 def test_position_within_tolerance_floor_not_flagged_strict_user_threshold():
@@ -285,9 +285,9 @@ def test_position_exceeding_tolerance_floor_and_no_user_threshold_triggers_overr
         manual_threshold=None,
     )
 
-    assert manager.is_cover_manual(entity_id), (
-        "12% difference with no user threshold must trigger manual override"
-    )
+    assert manager.is_cover_manual(
+        entity_id
+    ), "12% difference with no user threshold must trigger manual override"
 
 
 def test_position_exceeding_user_threshold_and_tolerance_triggers_override():
@@ -307,9 +307,9 @@ def test_position_exceeding_user_threshold_and_tolerance_triggers_override():
         manual_threshold=5,
     )
 
-    assert manager.is_cover_manual(entity_id), (
-        "12% difference exceeds both 5% user threshold and 3% tolerance floor"
-    )
+    assert manager.is_cover_manual(
+        entity_id
+    ), "12% difference exceeds both 5% user threshold and 3% tolerance floor"
 
 
 def test_position_exactly_at_tolerance_boundary_not_flagged():
@@ -392,9 +392,9 @@ def test_large_user_threshold_wins_over_tolerance_floor():
         manual_threshold=10,
     )
 
-    assert not manager.is_cover_manual(entity_id), (
-        "5% difference is below the 10% user threshold — must NOT trigger override"
-    )
+    assert not manager.is_cover_manual(
+        entity_id
+    ), "5% difference is below the 10% user threshold — must NOT trigger override"
 
 
 def test_large_user_threshold_triggers_when_difference_exceeds_it():
@@ -413,9 +413,9 @@ def test_large_user_threshold_triggers_when_difference_exceeds_it():
         manual_threshold=10,
     )
 
-    assert manager.is_cover_manual(entity_id), (
-        "15% difference exceeds 10% user threshold — must trigger override"
-    )
+    assert manager.is_cover_manual(
+        entity_id
+    ), "15% difference exceeds 10% user threshold — must trigger override"
 
 
 def test_wait_for_target_prevents_override_regardless_of_tolerance():
@@ -435,9 +435,9 @@ def test_wait_for_target_prevents_override_regardless_of_tolerance():
         manual_threshold=None,
     )
 
-    assert not manager.is_cover_manual(entity_id), (
-        "wait_for_target=True must block all override detection"
-    )
+    assert not manager.is_cover_manual(
+        entity_id
+    ), "wait_for_target=True must block all override detection"
 
 
 def test_tolerance_floor_applies_to_tilt_cover():
@@ -466,9 +466,9 @@ def test_tolerance_floor_applies_to_tilt_cover():
         manual_threshold=None,
     )
 
-    assert not manager.is_cover_manual(entity_id), (
-        "2% tilt position difference within tolerance floor must NOT trigger override"
-    )
+    assert not manager.is_cover_manual(
+        entity_id
+    ), "2% tilt position difference within tolerance floor must NOT trigger override"
 
 
 # ===========================================================================

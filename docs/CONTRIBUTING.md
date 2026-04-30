@@ -44,7 +44,7 @@ People _love_ thorough bug reports. I'm not even kidding.
 
 ## Use a Consistent Coding Style
 
-Use [black](https://github.com/ambv/black) to make sure the code follows the style.
+Use [black](https://github.com/psf/black) to make sure the code follows the style.
 
 ## Test your code modification
 

@@ -455,9 +455,9 @@ async def test_quick_setup_critical_keys_never_none(hass: HomeAssistant) -> None
     assert result["type"] == "create_entry"
     opts = result["result"].options
     assert opts.get(CONF_DELTA_TIME) is not None, "CONF_DELTA_TIME must not be None"
-    assert opts.get(CONF_MANUAL_OVERRIDE_DURATION) is not None, (
-        "CONF_MANUAL_OVERRIDE_DURATION must not be None"
-    )
+    assert (
+        opts.get(CONF_MANUAL_OVERRIDE_DURATION) is not None
+    ), "CONF_MANUAL_OVERRIDE_DURATION must not be None"
 
 
 # ---------------------------------------------------------------------------
@@ -689,9 +689,9 @@ async def test_options_flow_menu_returns_list_not_dict(
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] == "menu"
-    assert isinstance(result["menu_options"], list), (
-        f"menu_options should be a list for client-side translation, got {type(result['menu_options'])}"
-    )
+    assert isinstance(
+        result["menu_options"], list
+    ), f"menu_options should be a list for client-side translation, got {type(result['menu_options'])}"
 
 
 def test_config_flow_does_not_import_async_get_translations() -> None:
@@ -1038,9 +1038,9 @@ async def test_config_flow_cover_entities_with_devices_shows_device_selector(
     assert result["type"] == "form"
     assert result["step_id"] == "cover_entities"
     schema_str_keys = [str(k) for k in result["data_schema"].schema]
-    assert CONF_DEVICE_ID in schema_str_keys, (
-        f"Expected {CONF_DEVICE_ID} in schema, got: {schema_str_keys}"
-    )
+    assert (
+        CONF_DEVICE_ID in schema_str_keys
+    ), f"Expected {CONF_DEVICE_ID} in schema, got: {schema_str_keys}"
 
 
 @pytest.mark.integration
@@ -1211,9 +1211,9 @@ async def test_options_flow_cover_entities_combined_form_with_devices(
 
         assert result["step_id"] == "cover_entities"
         schema_str_keys = [str(k) for k in result["data_schema"].schema]
-        assert CONF_DEVICE_ID in schema_str_keys, (
-            f"Expected {CONF_DEVICE_ID} in schema keys, got: {schema_str_keys}"
-        )
+        assert (
+            CONF_DEVICE_ID in schema_str_keys
+        ), f"Expected {CONF_DEVICE_ID} in schema keys, got: {schema_str_keys}"
 
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {CONF_ENTITIES: [], CONF_DEVICE_ID: "device_xyz789"}

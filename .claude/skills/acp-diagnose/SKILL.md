@@ -26,6 +26,7 @@ Work through each section in order. Missing sections = "not reported" (older fir
 ### 1. Sanity / Version
 
 Extract from `diagnostics.meta` (may be absent on older builds):
+
 - `integration_version` — note it
 - `cover_type` — note it
 - `coordinator_update.last_update_success` — if `false` → **CRITICAL**
@@ -37,16 +38,16 @@ Extract from `diagnostics.meta` (may be absent on older builds):
 
 Extract `diagnostics.control_status` and `diagnostics.control_state_reason`.
 
-| Status | Severity | Message |
-|--------|----------|---------|
-| `automatic_control_off` | INFO | "Automation is paused (Auto Control switch is off)" |
-| `manual_override` | INFO | Cross-reference `manual_override_state.entries` — list which covers, started_at, remaining_seconds |
-| `force_override_active` | INFO | "Force override active — check which binary sensor is on: {force_override_sensors}" |
-| `weather_override_active` | WARNING | "Weather override active — covers held at safe position" |
-| `motion_timeout` | INFO | "Motion timeout active" |
-| `sun_not_visible` | INFO | Report `sun_validity` details: valid, valid_elevation, in_blind_spot, sunset_window_active |
-| `outside_time_window` | INFO | Report configured start/end vs `last_updated` |
-| `active` | OK | "Normal solar tracking" |
+| Status                    | Severity | Message                                                                                            |
+| ------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `automatic_control_off`   | INFO     | "Automation is paused (Auto Control switch is off)"                                                |
+| `manual_override`         | INFO     | Cross-reference `manual_override_state.entries` — list which covers, started_at, remaining_seconds |
+| `force_override_active`   | INFO     | "Force override active — check which binary sensor is on: {force_override_sensors}"                |
+| `weather_override_active` | WARNING  | "Weather override active — covers held at safe position"                                           |
+| `motion_timeout`          | INFO     | "Motion timeout active"                                                                            |
+| `sun_not_visible`         | INFO     | Report `sun_validity` details: valid, valid_elevation, in_blind_spot, sunset_window_active         |
+| `outside_time_window`     | INFO     | Report configured start/end vs `last_updated`                                                      |
+| `active`                  | OK       | "Normal solar tracking"                                                                            |
 
 ### 3. Decision Trace
 
@@ -66,6 +67,7 @@ If `decision_trace` is empty or absent → note "Decision trace not available (u
 Extract `diagnostics.cover_commands` (dict of entity_id → snapshot).
 
 For each entity:
+
 - `gave_up == true` → **CRITICAL**: "cover.X stopped accepting commands after repeated retries — check HA logs for service call errors"
 - `retry_count > 2` → **WARNING**: "cover.X has {N} retries outstanding"
 - `wait_for_target == true` and `target_call` set → INFO: "cover.X waiting for position {target_call} to be confirmed"
@@ -92,6 +94,7 @@ Also check `diagnostics.position_delta_from_last_action` and `diagnostics.second
 Extract `diagnostics.configuration` and `config_options`.
 
 Flag these combinations:
+
 - `enable_min_position == false` AND `min_position` is set and > 0 → NOTE: "min_position is configured but enforcement is always-on (not sun-tracking-only). Set enable_min_position=true if you only want it during sun tracking."
 - `inverse_state == true` AND `cover_type == "cover_awning"` → NOTE: unusual combination, confirm intentional
 - `force_override_sensors` is non-empty → verify sensors exist by noting them; flag if `force_override_active` is false in pipeline but the status says active (stale state)
@@ -116,41 +119,49 @@ Extract `diagnostics.climate_control_method`, `active_temperature`, `temperature
 **Integration:** {version} · **Cover type:** {cover_type} · **Last update:** {last_update_success_time} ({success/FAILED})
 
 ### 🔴 Critical
+
 - [list or "(none)"]
 
 ### 🟡 Warnings
+
 - [list or "(none)"]
 
 ### ℹ️ Findings
+
 - Control status: {status} — {reason}
 - [manual override details if relevant]
 - [skip analysis if relevant]
 - [config notes if relevant]
 
 ### Decision Trace
+
 Winning handler: **{handler}** (position: {position}%, reason: "{reason}")
 
-| Handler | Matched | Reason |
-|---------|---------|--------|
-| force_override | ❌ | no sensor active |
-| manual_override | ✅ | user moved cover at 14:22 |
+| Handler         | Matched | Reason                    |
+| --------------- | ------- | ------------------------- |
+| force_override  | ❌      | no sensor active          |
+| manual_override | ✅      | user moved cover at 14:22 |
 
 ### Cover Commands
-| Entity | Retries | Gave Up | Waiting | Safety Target |
-|--------|---------|---------|---------|---------------|
-| cover.living_room | 0 | No | No | — |
+
+| Entity            | Retries | Gave Up | Waiting | Safety Target |
+| ----------------- | ------- | ------- | ------- | ------------- |
+| cover.living_room | 0       | No      | No      | —             |
 
 ### Cover Positions (live)
-| Entity | Position | Available |
-|--------|----------|-----------|
-| cover.living_room | 42% | ✅ |
+
+| Entity            | Position | Available |
+| ----------------- | -------- | --------- |
+| cover.living_room | 42%      | ✅        |
 
 ### Manual Override State
-| Entity | Active | Started | Remaining |
-|--------|--------|---------|-----------|
-| cover.living_room | ✅ | 14:22 UTC | ~70 min |
+
+| Entity            | Active | Started   | Remaining |
+| ----------------- | ------ | --------- | --------- |
+| cover.living_room | ✅     | 14:22 UTC | ~70 min   |
 
 ### Summary
+
 [1-3 sentence plain-English summary of what's going on and what to do next]
 ```
 

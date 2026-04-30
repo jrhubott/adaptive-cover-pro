@@ -59,7 +59,9 @@ def cmd_svc(hass):
     return s
 
 
-def _ctx(*, force=False, is_safety=False, bypass_auto_control=False, auto_control=False):
+def _ctx(
+    *, force=False, is_safety=False, bypass_auto_control=False, auto_control=False
+):
     return PositionContext(
         auto_control=auto_control,
         manual_override=False,

@@ -204,12 +204,12 @@ def test_en_blind_spot_labels_name_fov_frame() -> None:
     en = _load(TRANSLATIONS_DIR / "en.json")
     for step_key in ("options", "config"):
         bs = en[step_key]["step"]["blind_spot"]["data"]
-        assert "FOV" in bs["blind_spot_left"], (
-            f"{step_key}.blind_spot.data.blind_spot_left label must mention 'FOV'"
-        )
-        assert "FOV" in bs["blind_spot_right"], (
-            f"{step_key}.blind_spot.data.blind_spot_right label must mention 'FOV'"
-        )
+        assert (
+            "FOV" in bs["blind_spot_left"]
+        ), f"{step_key}.blind_spot.data.blind_spot_left label must mention 'FOV'"
+        assert (
+            "FOV" in bs["blind_spot_right"]
+        ), f"{step_key}.blind_spot.data.blind_spot_right label must mention 'FOV'"
 
 
 def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
@@ -235,9 +235,9 @@ def test_debug_event_buffer_label_not_manual_override_specific() -> None:
     debug = en["options"]["step"]["debug"]
     label = debug["data"]["debug_event_buffer_size"]
     desc = debug["data_description"]["debug_event_buffer_size"]
-    assert "manual override" not in label.lower(), (
-        f"Buffer is shared across handlers; label is misleading: {label!r}"
-    )
+    assert (
+        "manual override" not in label.lower()
+    ), f"Buffer is shared across handlers; label is misleading: {label!r}"
     desc_lower = desc.lower()
     consumers_mentioned = sum(
         kw in desc_lower
@@ -250,22 +250,22 @@ def test_debug_event_buffer_label_not_manual_override_specific() -> None:
             "time window",
         )
     )
-    assert consumers_mentioned >= 2, (
-        f"Description should reference multiple consumers; got: {desc!r}"
-    )
+    assert (
+        consumers_mentioned >= 2
+    ), f"Description should reference multiple consumers; got: {desc!r}"
 
 
 def test_transit_timeout_on_manual_override_step_not_debug() -> None:
     """transit_timeout belongs on the manual_override step, not debug."""
     en = _load(TRANSLATIONS_DIR / "en.json")
     mo = en["options"]["step"]["manual_override"]
-    assert "transit_timeout" in mo.get("data", {}), (
-        "transit_timeout must be labelled on the manual_override step"
-    )
-    assert "transit_timeout" in mo.get("data_description", {}), (
-        "transit_timeout must have a data_description on the manual_override step"
-    )
+    assert "transit_timeout" in mo.get(
+        "data", {}
+    ), "transit_timeout must be labelled on the manual_override step"
+    assert "transit_timeout" in mo.get(
+        "data_description", {}
+    ), "transit_timeout must have a data_description on the manual_override step"
     debug = en["options"]["step"]["debug"]
-    assert "transit_timeout" not in debug.get("data", {}), (
-        "transit_timeout must NOT appear on the debug step"
-    )
+    assert "transit_timeout" not in debug.get(
+        "data", {}
+    ), "transit_timeout must NOT appear on the debug step"

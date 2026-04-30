@@ -102,9 +102,9 @@ def test_glare_zone_handler_present_regardless_of_sun_tracking():
         coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: flag})
         registry = coord._build_pipeline()
         handler_types = {type(h) for h in registry._handlers}
-        assert GlareZoneHandler in handler_types, (
-            f"GlareZoneHandler missing when CONF_ENABLE_SUN_TRACKING={flag}"
-        )
+        assert (
+            GlareZoneHandler in handler_types
+        ), f"GlareZoneHandler missing when CONF_ENABLE_SUN_TRACKING={flag}"
 
 
 @pytest.mark.unit

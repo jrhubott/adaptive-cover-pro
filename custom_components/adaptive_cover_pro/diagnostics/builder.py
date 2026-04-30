@@ -71,7 +71,9 @@ class DiagnosticContext:
 
     # Debug & diagnostics (optional — only populated when debug_mode is on or buffer has entries)
     event_timeline: list[dict] | None = None
-    manual_override_events: list[dict] | None = None  # deprecated alias; use event_timeline
+    manual_override_events: list[dict] | None = (
+        None  # deprecated alias; use event_timeline
+    )
     cover_command_state: dict[str, dict] | None = None
     debug_config: dict | None = None
 
@@ -324,15 +326,15 @@ class DiagnosticsBuilder:
                 # equals configured_sunset_pos when is_sunset_active=True,
                 # equals configured_default otherwise.
                 "effective": result.default_position if result is not None else 0,
-                "is_sunset_active": result.is_sunset_active
-                if result is not None
-                else False,
-                "configured_default": result.configured_default
-                if result is not None
-                else 0,
-                "configured_sunset_pos": result.configured_sunset_pos
-                if result is not None
-                else None,
+                "is_sunset_active": (
+                    result.is_sunset_active if result is not None else False
+                ),
+                "configured_default": (
+                    result.configured_default if result is not None else 0
+                ),
+                "configured_sunset_pos": (
+                    result.configured_sunset_pos if result is not None else None
+                ),
             },
         }
 
@@ -419,7 +421,9 @@ class DiagnosticsBuilder:
         if timeline:
             diagnostics["event_timeline"] = timeline
             # Backward-compat filtered alias for consumers that read manual_override_history
-            mo_events = [e for e in timeline if e.get("event", "").startswith("manual_override_")]
+            mo_events = [
+                e for e in timeline if e.get("event", "").startswith("manual_override_")
+            ]
             if mo_events:
                 diagnostics["manual_override_history"] = mo_events
 

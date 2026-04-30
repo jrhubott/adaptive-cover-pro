@@ -268,9 +268,9 @@ class TestEdgeCases:
             base_cover_params, gamma=gamma, sol_elev=sol_elev
         )
         is_edge_case, _ = cover._handle_edge_cases()
-        assert is_edge_case is False, (
-            f"False edge case at gamma={gamma}, elev={sol_elev}"
-        )
+        assert (
+            is_edge_case is False
+        ), f"False edge case at gamma={gamma}, elev={sol_elev}"
 
 
 class TestEnhancedCalculatePosition:
@@ -317,9 +317,9 @@ class TestEnhancedCalculatePosition:
                 base_cover_params, gamma=gamma, sol_elev=sol_elev
             )
             position = cover.calculate_position()
-            assert position <= cover.h_win, (
-                f"Exceeded h_win at gamma={gamma}, elev={sol_elev}"
-            )
+            assert (
+                position <= cover.h_win
+            ), f"Exceeded h_win at gamma={gamma}, elev={sol_elev}"
 
     def test_calculate_position_never_negative(self, base_cover_params):
         """calculate_position should never return negative values."""
@@ -412,9 +412,9 @@ class TestRegressionNormalAngles:
             )
 
             # Should match within floating point precision
-            assert abs(enhanced_pos - baseline_pos) < 1e-6, (
-                f"Mismatch at gamma=0, elev={sol_elev}: enhanced={enhanced_pos:.6f}, baseline={baseline_pos:.6f}"
-            )
+            assert (
+                abs(enhanced_pos - baseline_pos) < 1e-6
+            ), f"Mismatch at gamma=0, elev={sol_elev}: enhanced={enhanced_pos:.6f}, baseline={baseline_pos:.6f}"
 
     def test_regression_extreme_angles_conservative(self, base_cover_params):
         """Extreme angles should be conservative (≥ baseline)."""
@@ -531,9 +531,9 @@ class TestWindowDepth:
 
         # Each position should be higher than the previous (more depth effect)
         for i in range(len(positions) - 1):
-            assert positions[i] < positions[i + 1], (
-                "Position should increase with gamma"
-            )
+            assert (
+                positions[i] < positions[i + 1]
+            ), "Position should increase with gamma"
 
     def test_window_depth_realistic_values(self, base_cover_params):
         """Test with realistic window depth values."""
@@ -553,9 +553,9 @@ class TestWindowDepth:
             position = cover.calculate_position()
 
             # All should be valid positions
-            assert 0 <= position <= cover.h_win, (
-                f"Invalid position for {description}: {position}"
-            )
+            assert (
+                0 <= position <= cover.h_win
+            ), f"Invalid position for {description}: {position}"
 
     def test_window_depth_backward_compatibility(self, base_cover_params):
         """Cover without window_depth parameter should work (backward compatibility)."""
@@ -620,9 +620,9 @@ class TestSmoothTransitions:
             max_jump = max(abs(d) for d in diffs)
             # High elevations naturally have larger changes per degree
             max_allowed = 0.20 if threshold == 75 else 0.15
-            assert max_jump < max_allowed, (
-                f"Large jump near {threshold}° threshold: {max_jump:.3f}m"
-            )
+            assert (
+                max_jump < max_allowed
+            ), f"Large jump near {threshold}° threshold: {max_jump:.3f}m"
 
     def test_monotonic_increase_with_elevation(self, base_cover_params):
         """Position should increase monotonically with elevation (at constant gamma)."""
@@ -635,6 +635,6 @@ class TestSmoothTransitions:
 
         # Check monotonic increase
         for i in range(len(positions) - 1):
-            assert positions[i] <= positions[i + 1], (
-                f"Non-monotonic at elevation {10 + i * 5}°"
-            )
+            assert (
+                positions[i] <= positions[i + 1]
+            ), f"Non-monotonic at elevation {10 + i * 5}°"

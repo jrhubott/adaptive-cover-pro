@@ -48,8 +48,8 @@ WORD_NUMBER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z\s]* \d+$")
 # Dotpath keys whose values are deliberately language-universal (proper nouns,
 # single words that are identical in all shipped languages, etc.).
 UNIVERSAL_KEYS: set[str] = {
-    "title",                                    # product name "Adaptive Cover Pro"
-    "config.step.create_new.data.name",         # "Name" — same in DE/FR
+    "title",  # product name "Adaptive Cover Pro"
+    "config.step.create_new.data.name",  # "Name" — same in DE/FR
     "config.step.duplicate_configure.data.name",  # "Name" — same in DE/FR
     "entity.sensor.decision_trace.state.winter",  # "Winter" — same in DE/FR
 }

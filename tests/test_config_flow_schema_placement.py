@@ -32,6 +32,6 @@ def test_conf_key_lives_on_correct_step(
     expected = _schema_keys(getattr(cf, expected_schema_name))
     forbidden = _schema_keys(getattr(cf, forbidden_schema_name))
     assert conf_key in expected, f"{conf_key} should be in {expected_schema_name}"
-    assert conf_key not in forbidden, (
-        f"{conf_key} should NOT be in {forbidden_schema_name}"
-    )
+    assert (
+        conf_key not in forbidden
+    ), f"{conf_key} should NOT be in {forbidden_schema_name}"

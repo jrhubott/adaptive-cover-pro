@@ -278,7 +278,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
         self.manager = AdaptiveCoverManager(
-            self.hass, self.manual_duration, self.logger,
+            self.hass,
+            self.manual_duration,
+            self.logger,
             event_buffer=self._event_buffer,
         )
         self.ignore_intermediate_states = self.config_entry.options.get(
@@ -351,9 +353,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
-            transit_timeout_seconds=self.config_entry.options.get(
-                CONF_TRANSIT_TIMEOUT
-            ) or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+            transit_timeout_seconds=self.config_entry.options.get(CONF_TRANSIT_TIMEOUT)
+            or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
             event_buffer=self._event_buffer,
         )
@@ -716,8 +717,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "closing",
                 )
 
-                old_position = self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
-                    entity_id, caps, event.old_state
+                old_position = (
+                    self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
+                        entity_id, caps, event.old_state
+                    )
                 )
                 target = self._cmd_svc.target_call.get(entity_id)
 
@@ -781,17 +784,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                             position,
                             event.new_state.state,
                         )
-                        self._event_buffer.record({
-                            "ts": now.isoformat(),
-                            "event": "transit_progress_forward",
-                            "entity_id": entity_id,
-                            "old_position": old_position,
-                            "new_position": position,
-                            "target": target,
-                            "old_distance": old_distance,
-                            "new_distance": new_distance,
-                            "cover_state": event.new_state.state,
-                        })
+                        self._event_buffer.record(
+                            {
+                                "ts": now.isoformat(),
+                                "event": "transit_progress_forward",
+                                "entity_id": entity_id,
+                                "old_position": old_position,
+                                "new_position": position,
+                                "target": target,
+                                "old_distance": old_distance,
+                                "new_distance": new_distance,
+                                "cover_state": event.new_state.state,
+                            }
+                        )
                         self.logger.debug("Wait for target: %s", self.wait_for_target)
                         return
 
@@ -804,11 +809,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     # prematurely cleared.  Covers that never report intermediate
                     # positions fall back to measuring from _sent_at.
                     now = dt.datetime.now(dt.UTC)
-                    elapsed = self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
-                        entity_id, now
+                    elapsed = (
+                        self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
+                            entity_id, now
+                        )
                     )
                     if elapsed is not None:
-                        timeout = self._cmd_svc._wait_for_target_timeout_seconds  # noqa: SLF001
+                        timeout = (
+                            self._cmd_svc._wait_for_target_timeout_seconds
+                        )  # noqa: SLF001
                         if elapsed > timeout:
                             self._cmd_svc.wait_for_target[entity_id] = False
                             self._debug_log(
@@ -819,16 +828,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 elapsed,
                                 timeout,
                             )
-                            self._event_buffer.record({
-                                "ts": now.isoformat(),
-                                "event": "transit_timeout_cleared",
-                                "entity_id": entity_id,
-                                "elapsed_seconds": round(elapsed, 1),
-                                "timeout_seconds": timeout,
-                                "position": position,
-                                "target": target,
-                                "cover_state": event.new_state.state,
-                            })
+                            self._event_buffer.record(
+                                {
+                                    "ts": now.isoformat(),
+                                    "event": "transit_timeout_cleared",
+                                    "entity_id": entity_id,
+                                    "elapsed_seconds": round(elapsed, 1),
+                                    "timeout_seconds": timeout,
+                                    "position": position,
+                                    "target": target,
+                                    "cover_state": event.new_state.state,
+                                }
+                            )
                             self.logger.debug(
                                 "Wait for target: %s", self.wait_for_target
                             )
@@ -849,7 +860,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         )
                         new_state_str = event.new_state.state
                         state_changed = old_state_str != new_state_str
-                        if old_state_str not in ("opening", "closing") and state_changed:
+                        if (
+                            old_state_str not in ("opening", "closing")
+                            and state_changed
+                        ):
                             self._debug_log(
                                 "manual_override",
                                 "Grace expired but %s position unchanged at %s "
@@ -859,15 +873,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 position,
                                 old_state_str,
                             )
-                            self._event_buffer.record({
-                                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                                "event": "transit_startup_delay",
-                                "entity_id": entity_id,
-                                "position": position,
-                                "old_state": old_state_str,
-                                "new_state": new_state_str,
-                                "target": target,
-                            })
+                            self._event_buffer.record(
+                                {
+                                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                                    "event": "transit_startup_delay",
+                                    "entity_id": entity_id,
+                                    "position": position,
+                                    "old_state": old_state_str,
+                                    "new_state": new_state_str,
+                                    "target": target,
+                                }
+                            )
                             self.logger.debug(
                                 "Wait for target: %s", self.wait_for_target
                             )
@@ -884,15 +900,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     position,
                     event.new_state.state,
                 )
-                self._event_buffer.record({
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
-                    "event": "transit_cleared",
-                    "entity_id": entity_id,
-                    "position": position,
-                    "cover_state": event.new_state.state,
-                    "old_position": old_position,
-                    "target": target,
-                })
+                self._event_buffer.record(
+                    {
+                        "ts": dt.datetime.now(dt.UTC).isoformat(),
+                        "event": "transit_cleared",
+                        "entity_id": entity_id,
+                        "position": position,
+                        "cover_state": event.new_state.state,
+                        "old_position": old_position,
+                        "target": target,
+                    }
+                )
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
@@ -944,14 +962,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.automatic_control,
             entity_ids if entity_ids is not None else "<no entities>",
         )
-        self._event_buffer.record({
-            "ts": dt.datetime.now(dt.UTC).isoformat(),
-            "event": "manual_override_gate_closed",
-            "where": where,
-            "manual_toggle": self.manual_toggle,
-            "automatic_control": self.automatic_control,
-            "entity_ids": entity_ids,
-        })
+        self._event_buffer.record(
+            {
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "manual_override_gate_closed",
+                "where": where,
+                "manual_toggle": self.manual_toggle,
+                "automatic_control": self.automatic_control,
+                "entity_ids": entity_ids,
+            }
+        )
 
     def _check_initial_motion_state(self) -> None:
         """Initialize motion state from current sensor readings at startup/reload.
@@ -1354,9 +1374,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             force=force,
             is_safety=is_safety,
             bypass_auto_control=bypass_auto_control,
-            use_my_position=self._pipeline_result.use_my_position
-            if self._pipeline_result
-            else False,
+            use_my_position=(
+                self._pipeline_result.use_my_position
+                if self._pipeline_result
+                else False
+            ),
         )
 
     async def _async_send_after_override_clear(
@@ -1515,9 +1537,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # discard_target() call below.  Only manual_toggle=False (the user has
         # globally disabled manual override detection) short-circuits the loop.
         if not self.manual_toggle:
-            self._manual_gate_closed_log(
-                "state_change", [e.entity_id for e in events]
-            )
+            self._manual_gate_closed_log("state_change", [e.entity_id for e in events])
             self.cover_state_change = False
             self.logger.debug("Cover state change handled")
             return
@@ -1694,7 +1714,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             [(h.name, h.priority) for h in custom_handlers],
             sun_tracking_enabled,
         )
-        return PipelineRegistry(handlers, event_buffer=getattr(self, "_event_buffer", None))
+        return PipelineRegistry(
+            handlers, event_buffer=getattr(self, "_event_buffer", None)
+        )
 
     def _update_options(self, options):
         """Update coordinator options from config entry.
@@ -1989,9 +2011,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             eid: {
                 "current_position": _positions.get(eid),
                 "available": _positions.get(eid) is not None,
-                "capabilities": dataclasses.asdict(_caps[eid])
-                if eid in _caps
-                else None,
+                "capabilities": (
+                    dataclasses.asdict(_caps[eid]) if eid in _caps else None
+                ),
             }
             for eid in cover_entities
         }
@@ -2081,7 +2103,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             covers=_covers,
             manual_override_state=_manual_override_state,
             manual_toggle=self.manual_toggle,
-            enabled_toggle=self.enabled_toggle if self.enabled_toggle is not None else True,
+            enabled_toggle=(
+                self.enabled_toggle if self.enabled_toggle is not None else True
+            ),
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)
@@ -2296,13 +2320,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 is_sunset,
                 len(self.entities),
             )
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "end_time_default_sent",
-                "position": pos_to_send,
-                "sunset_active": is_sunset,
-                "cover_count": len(self.entities),
-            })
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "end_time_default_sent",
+                    "position": pos_to_send,
+                    "sunset_active": is_sunset,
+                    "cover_count": len(self.entities),
+                }
+            )
             for cover_entity in self.entities:
                 ctx = self._build_position_context(cover_entity, options, force=False)
                 await self._cmd_svc.apply_position(
@@ -2385,7 +2411,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         pos_to_send = (
-            inverse_state(int(sunset_pos_cfg)) if self._inverse_state else int(sunset_pos_cfg)
+            inverse_state(int(sunset_pos_cfg))
+            if self._inverse_state
+            else int(sunset_pos_cfg)
         )
         self.logger.info(
             "Sunset window opened after end_time — dispatching sunset position %s%% "
@@ -2393,12 +2421,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             pos_to_send,
             len(self.entities),
         )
-        self._event_buffer.record({
-            "ts": dt.datetime.now(dt.UTC).isoformat(),
-            "event": "sunset_window_opened",
-            "position": pos_to_send,
-            "cover_count": len(self.entities),
-        })
+        self._event_buffer.record(
+            {
+                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                "event": "sunset_window_opened",
+                "position": pos_to_send,
+                "cover_count": len(self.entities),
+            }
+        )
         for cover_entity in self.entities:
             if self.manager.is_cover_manual(cover_entity):
                 continue
@@ -2436,18 +2466,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.info(
                 "Sun visibility transition detected: OFF → ON (sun came into field of view)"
             )
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "sun_entered_fov",
-            })
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "sun_entered_fov",
+                }
+            )
         elif sun_just_left:
             self.logger.debug(
                 "Sun visibility transition detected: ON → OFF (sun left field of view)"
             )
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "sun_left_fov",
-            })
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "sun_left_fov",
+                }
+            )
 
         return sun_just_appeared
 

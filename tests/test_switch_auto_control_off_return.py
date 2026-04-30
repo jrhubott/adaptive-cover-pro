@@ -56,8 +56,15 @@ def _make_coord_with_real_cmd_svc(hass):
     cmd_svc._enabled = True
     coord._cmd_svc = cmd_svc
 
-    def _build_ctx(entity, options, *, force=False, is_safety=False,
-                   bypass_auto_control=False, sun_just_appeared=False):
+    def _build_ctx(
+        entity,
+        options,
+        *,
+        force=False,
+        is_safety=False,
+        bypass_auto_control=False,
+        sun_just_appeared=False,
+    ):
         return PositionContext(
             auto_control=False,
             manual_override=False,

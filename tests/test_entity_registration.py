@@ -140,9 +140,9 @@ async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -
         )
 
     reg = er.async_get(hass)
-    assert not _has_force_trigger_sensor(entry_no, reg), (
-        "Force override sensor should not exist without sensors"
-    )
+    assert not _has_force_trigger_sensor(
+        entry_no, reg
+    ), "Force override sensor should not exist without sensors"
 
     # With force override sensor configured
     opts_force = dict(VERTICAL_OPTIONS)
@@ -150,9 +150,9 @@ async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -
     entry_yes = await _setup_entry(
         hass, options=opts_force, entry_id="force_yes_01", name="With Force"
     )
-    assert _has_force_trigger_sensor(entry_yes, reg), (
-        "Force override sensor should exist when configured"
-    )
+    assert _has_force_trigger_sensor(
+        entry_yes, reg
+    ), "Force override sensor should exist when configured"
 
 
 @pytest.mark.integration
@@ -174,9 +174,9 @@ async def test_climate_status_sensor_only_when_climate_mode(
         )
 
     reg = er.async_get(hass)
-    assert not _has_climate_status_sensor(entry_no, reg), (
-        "Climate status sensor should not exist without climate mode"
-    )
+    assert not _has_climate_status_sensor(
+        entry_no, reg
+    ), "Climate status sensor should not exist without climate mode"
 
     opts_climate = dict(VERTICAL_OPTIONS)
     opts_climate[CONF_CLIMATE_MODE] = True
@@ -184,9 +184,9 @@ async def test_climate_status_sensor_only_when_climate_mode(
     entry_yes = await _setup_entry(
         hass, options=opts_climate, entry_id="climate_yes_01", name="With Climate"
     )
-    assert _has_climate_status_sensor(entry_yes, reg), (
-        "Climate status sensor should exist with climate mode"
-    )
+    assert _has_climate_status_sensor(
+        entry_yes, reg
+    ), "Climate status sensor should exist with climate mode"
 
 
 @pytest.mark.integration
@@ -209,18 +209,18 @@ async def test_motion_control_switch_only_when_motion_sensors(
         )
 
     reg = er.async_get(hass)
-    assert not _has_motion_control_switch(entry_no, reg), (
-        "Motion Control switch should not exist without motion sensors"
-    )
+    assert not _has_motion_control_switch(
+        entry_no, reg
+    ), "Motion Control switch should not exist without motion sensors"
 
     opts_motion = dict(VERTICAL_OPTIONS)
     opts_motion[CONF_MOTION_SENSORS] = ["binary_sensor.presence"]
     entry_yes = await _setup_entry(
         hass, options=opts_motion, entry_id="motion_yes_01", name="With Motion"
     )
-    assert _has_motion_control_switch(entry_yes, reg), (
-        "Motion Control switch should exist when motion sensors configured"
-    )
+    assert _has_motion_control_switch(
+        entry_yes, reg
+    ), "Motion Control switch should exist when motion sensors configured"
 
 
 @pytest.mark.integration
@@ -232,9 +232,9 @@ async def test_no_button_when_no_cover_entities(hass: HomeAssistant) -> None:
         hass, options=opts_empty, entry_id="no_button_01", name="No Covers"
     )
     button_ids = get_entity_ids_for_entry(hass, entry, "button")
-    assert len(button_ids) == 0, (
-        f"Reset button should not exist when no cover entities: {button_ids}"
-    )
+    assert (
+        len(button_ids) == 0
+    ), f"Reset button should not exist when no cover entities: {button_ids}"
 
 
 @pytest.mark.integration
@@ -246,9 +246,9 @@ async def test_button_created_when_cover_entities_set(hass: HomeAssistant) -> No
         hass, options=opts_with_cover, entry_id="button_yes_01", name="With Covers"
     )
     button_ids = get_entity_ids_for_entry(hass, entry, "button")
-    assert len(button_ids) >= 1, (
-        f"Reset button should exist with cover entities: {button_ids}"
-    )
+    assert (
+        len(button_ids) >= 1
+    ), f"Reset button should exist with cover entities: {button_ids}"
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +266,9 @@ async def test_unique_ids_are_unique(hass: HomeAssistant) -> None:
         for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id
     ]
-    assert len(unique_ids) == len(set(unique_ids)), (
-        f"Duplicate unique_ids found: {[uid for uid in unique_ids if unique_ids.count(uid) > 1]}"
-    )
+    assert len(unique_ids) == len(
+        set(unique_ids)
+    ), f"Duplicate unique_ids found: {[uid for uid in unique_ids if unique_ids.count(uid) > 1]}"
 
 
 @pytest.mark.integration
@@ -292,9 +292,9 @@ async def test_unique_ids_stable_across_reload(hass: HomeAssistant) -> None:
         for e in reg.entities.values()
         if e.config_entry_id == entry.entry_id
     }
-    assert before == after, (
-        f"Unique IDs changed across reload. Added: {after - before}, Removed: {before - after}"
-    )
+    assert (
+        before == after
+    ), f"Unique IDs changed across reload. Added: {after - before}, Removed: {before - after}"
 
 
 @pytest.mark.integration
@@ -355,9 +355,9 @@ async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> No
     position_entities = [
         e for e in sensor_entities if "Cover_Position" in (e.unique_id or "")
     ]
-    assert len(position_entities) >= 1, (
-        f"Target Position sensor not found. All sensors: {[e.unique_id for e in sensor_entities]}"
-    )
+    assert (
+        len(position_entities) >= 1
+    ), f"Target Position sensor not found. All sensors: {[e.unique_id for e in sensor_entities]}"
 
 
 # ---------------------------------------------------------------------------
@@ -374,9 +374,9 @@ async def test_unload_entry_removes_coordinator(hass: HomeAssistant) -> None:
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.entry_id not in hass.data.get(DOMAIN, {}), (
-        "Coordinator should be removed from hass.data after unload"
-    )
+    assert entry.entry_id not in hass.data.get(
+        DOMAIN, {}
+    ), "Coordinator should be removed from hass.data after unload"
 
 
 @pytest.mark.integration
@@ -391,6 +391,6 @@ async def test_reload_creates_fresh_coordinator(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     coordinator_after = hass.data[DOMAIN][entry.entry_id]
-    assert coordinator_before is not coordinator_after, (
-        "Reload should create a new coordinator instance"
-    )
+    assert (
+        coordinator_before is not coordinator_after
+    ), "Reload should create a new coordinator instance"

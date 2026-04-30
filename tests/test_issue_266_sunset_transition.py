@@ -76,16 +76,23 @@ def _make_coord(
 
     coord._build_position_context = _fake_build_ctx
 
-    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
     coord._event_buffer = EventBuffer(maxlen=50)
 
     return coord
 
 
-def _seed_sunset_state(coord, *, prev: bool | None, current_is_sunset: bool, pos: int = 0):
+def _seed_sunset_state(
+    coord, *, prev: bool | None, current_is_sunset: bool, pos: int = 0
+):
     """Seed _prev_sunset_active and mock _compute_current_effective_default."""
     coord._prev_sunset_active = prev
-    coord._compute_current_effective_default = MagicMock(return_value=(pos, current_is_sunset))
+    coord._compute_current_effective_default = MagicMock(
+        return_value=(pos, current_is_sunset)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +112,9 @@ async def test_sunset_window_opens_after_end_time_dispatches_sunset_pos():
     assert coord._cmd_svc.apply_position.call_count == 2
     for call in coord._cmd_svc.apply_position.call_args_list:
         trigger = call.args[2] if len(call.args) > 2 else call.kwargs.get("trigger", "")
-        assert trigger == "sunset_window_opened", f"Expected trigger 'sunset_window_opened', got {trigger!r}"
+        assert (
+            trigger == "sunset_window_opened"
+        ), f"Expected trigger 'sunset_window_opened', got {trigger!r}"
     coord.async_refresh.assert_called_once()
 
 

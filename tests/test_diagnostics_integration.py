@@ -103,9 +103,9 @@ async def test_diagnostics_no_sensitive_tokens(hass: HomeAssistant) -> None:
     result_str = json.dumps(result, default=str)
     # No common HA token key names should appear
     for bad_key in ("access_token", "password", "api_key", "secret"):
-        assert bad_key not in result_str.lower(), (
-            f"Sensitive key '{bad_key}' found in diagnostics output"
-        )
+        assert (
+            bad_key not in result_str.lower()
+        ), f"Sensitive key '{bad_key}' found in diagnostics output"
 
 
 # ---------------------------------------------------------------------------

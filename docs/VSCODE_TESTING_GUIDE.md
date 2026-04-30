@@ -70,6 +70,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Verify VS Code is using the correct Python interpreter
 
 **Steps:**
+
 1. Open Command Palette (Cmd+Shift+P / Ctrl+Shift+P)
 2. Type "Python: Select Interpreter"
 3. Verify `./venv/bin/python` is selected (should have a checkmark)
@@ -78,6 +79,7 @@ code --install-extension esbenp.prettier-vscode
 **Expected Result:** Status bar shows `Python 3.11.x ('venv': venv)` or similar
 
 **Troubleshooting:**
+
 - If venv not listed, reload window: Cmd+Shift+P → "Developer: Reload Window"
 - If venv still not showing, run `./scripts/setup` to recreate it
 
@@ -88,17 +90,20 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Verify PYTHONPATH and venv auto-activation
 
 **Steps:**
+
 1. Open integrated terminal (Cmd+\` / Ctrl+\`)
 2. Check prompt shows `(venv)` prefix
 3. Run: `echo $PYTHONPATH`
 4. Run: `python -c "from custom_components.adaptive_cover_pro import coordinator; print('Import successful')"`
 
 **Expected Results:**
+
 - Prompt: `(venv) user@machine adaptive-cover %`
 - PYTHONPATH includes: `.../custom_components`
 - Import succeeds without errors
 
 **Troubleshooting:**
+
 - If venv not activated: Check `.vscode/settings.json` has `python.terminal.activateEnvironment: true`
 - If PYTHONPATH empty: Close terminal and open new one
 - On Windows: Terminal env vars work differently - PYTHONPATH may not be set (this is normal)
@@ -110,6 +115,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Verify Ruff is highlighting errors inline
 
 **Steps:**
+
 1. Open `custom_components/adaptive_cover_pro/coordinator.py`
 2. Add a deliberate error on a new line: `import this_module_does_not_exist`
 3. Save the file (Cmd+S / Ctrl+S)
@@ -119,12 +125,14 @@ code --install-extension esbenp.prettier-vscode
 7. Delete the bad import and save
 
 **Expected Results:**
+
 - Red squiggly underline appears immediately
 - Error shows in Problems panel
 - Hovering shows error message
 - Error disappears after deleting and saving
 
 **Troubleshooting:**
+
 - No squiggly: Check Ruff extension is installed and enabled
 - Check Output → Ruff for error logs
 - Verify `.vscode/settings.json` has `"ruff.enable": true`
@@ -136,8 +144,10 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Verify code auto-formats when saving
 
 **Steps:**
+
 1. Open `custom_components/adaptive_cover_pro/coordinator.py`
 2. Mess up formatting on a line:
+
    ```python
    # Change this (properly formatted):
    _LOGGER.debug("Updating Adaptive Cover data")
@@ -145,12 +155,14 @@ code --install-extension esbenp.prettier-vscode
    # To this (badly formatted):
    _LOGGER.debug(    "Updating Adaptive Cover data"   )
    ```
+
 3. Save file (Cmd+S / Ctrl+S)
 4. Watch the line auto-format back to proper spacing
 
 **Expected Result:** Line is automatically reformatted to remove extra spaces
 
 **Troubleshooting:**
+
 - Not formatting: Check `.vscode/settings.json` has `"editor.formatOnSave": true` under `[python]`
 - Wrong formatter: Check `"editor.defaultFormatter": "charliermarsh.ruff"` is set
 - Verify Ruff extension is installed and activated
@@ -162,6 +174,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Verify Test Explorer finds all 172 tests
 
 **Steps:**
+
 1. Open Test Explorer (click beaker icon in left sidebar)
 2. Wait 10-20 seconds for test discovery
 3. Expand `tests` folder
@@ -169,11 +182,13 @@ code --install-extension esbenp.prettier-vscode
 5. Expand `test_calculation.py` - should show ~129 tests
 
 **Expected Results:**
+
 - Test Explorer shows folder tree with all test files
 - Total of 172 tests discovered
 - Tests organized by file and function
 
 **Troubleshooting:**
+
 - "No tests discovered":
   - Check Python interpreter is `venv/bin/python`
   - Open Command Palette → "Python: Discover Tests"
@@ -188,6 +203,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Run an individual test via UI
 
 **Steps:**
+
 1. Open Test Explorer
 2. Navigate to `test_calculation.py` → expand
 3. Find test `test_gamma_angle`
@@ -196,11 +212,13 @@ code --install-extension esbenp.prettier-vscode
 6. Verify ✓ checkmark appears when test passes
 
 **Expected Results:**
+
 - Test runs in integrated terminal
 - Output shows: `test_calculation.py::test_gamma_angle PASSED`
 - Green checkmark appears in Test Explorer
 
 **Troubleshooting:**
+
 - Test fails: This is a known good test, so check venv has correct dependencies
 - No output: Check test panel at bottom is visible
 - Timeout: Increase pytest timeout in settings
@@ -212,6 +230,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Hit a breakpoint in a test
 
 **Steps:**
+
 1. Open `tests/test_calculation.py`
 2. Find the `test_gamma_angle` function (around line 20-30)
 3. Click in the gutter (left of line numbers) inside the test function to set a breakpoint
@@ -223,12 +242,14 @@ code --install-extension esbenp.prettier-vscode
 8. Press **F5** to continue, test should complete
 
 **Expected Results:**
+
 - Execution pauses at breakpoint
 - Variables panel shows test fixtures (`hass`, `coordinator`, etc.)
 - Can step through with F10, F11
 - Test completes successfully after F5
 
 **Troubleshooting:**
+
 - Breakpoint not hit:
   - Verify red dot is solid (not gray/hollow)
   - Check Python interpreter is from venv
@@ -243,6 +264,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Test context-aware test file debugging
 
 **Steps:**
+
 1. Open `tests/test_helpers.py`
 2. Set a breakpoint in any test (e.g., `test_sun_path_no_end`)
 3. Make sure this file is active/focused
@@ -251,12 +273,14 @@ code --install-extension esbenp.prettier-vscode
 6. Debugger should run all tests in this file and hit your breakpoint
 
 **Expected Results:**
+
 - Debugger launches automatically
 - Runs all tests in `test_helpers.py`
 - Pauses at your breakpoint
 - Shows test file path in debug console
 
 **Troubleshooting:**
+
 - Wrong file debugged: Make sure `test_helpers.py` is the active editor tab
 - Can't find config: Check `.vscode/launch.json` exists
 - No breakpoint hit: Verify breakpoint is in a test that runs (not skipped)
@@ -268,6 +292,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Debug the running Home Assistant integration
 
 **Steps:**
+
 1. Open `custom_components/adaptive_cover_pro/coordinator.py`
 2. Find the `_async_update_data` function (around line 337)
 3. Set a breakpoint on the line: `_LOGGER.debug("Updating Adaptive Cover data")`
@@ -280,6 +305,7 @@ code --install-extension esbenp.prettier-vscode
 10. Breakpoint should be hit
 
 **Expected Results:**
+
 - If HA was running, you'll see "Stopping Home Assistant gracefully..."
 - Home Assistant starts at http://localhost:8123
 - Debug console shows HA logs
@@ -287,6 +313,7 @@ code --install-extension esbenp.prettier-vscode
 - Can inspect `self._config_entry`, `self._cover`, etc.
 
 **Troubleshooting:**
+
 - HA won't start:
   - Check `config/configuration.yaml` exists
   - Look for errors in debug console
@@ -306,6 +333,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Debug tests by name pattern
 
 **Steps:**
+
 1. Press **F5**
 2. Select **"Debug Specific Test"**
 3. When prompted, enter: `gamma`
@@ -314,14 +342,16 @@ code --install-extension esbenp.prettier-vscode
 6. Should hit breakpoint
 
 **Expected Results:**
+
 - Input prompt appears for test pattern
 - Only matching tests run (e.g., `test_gamma_angle`, `test_gamma_integration`)
 - Breakpoint is hit if set
 - Non-matching tests are skipped
 
 **Troubleshooting:**
+
 - No prompt: Check `.vscode/launch.json` has `inputs` section
-- No tests match: Try broader pattern like "vertical" or "test_"
+- No tests match: Try broader pattern like "vertical" or "test\_"
 - All tests run: Pattern might be too broad (like "test")
 
 ---
@@ -331,6 +361,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Run linting via task runner with problem matcher
 
 **Steps:**
+
 1. Open Command Palette (Cmd+Shift+P)
 2. Type "Tasks: Run Task"
 3. Select **"Lint with Ruff"**
@@ -339,12 +370,14 @@ code --install-extension esbenp.prettier-vscode
 6. If errors exist, click on file:line links to navigate
 
 **Expected Results:**
+
 - Task runs in integrated terminal
 - Shows linting results (hopefully "All checks passed!")
 - File paths are clickable links
 - Problems panel (Cmd+Shift+M) shows errors
 
 **Troubleshooting:**
+
 - Command not found: Run `./scripts/setup` to install ruff in venv
 - No output: Check terminal panel is visible at bottom
 - Can't click links: This is normal in some terminals - use Problems panel instead
@@ -356,17 +389,20 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Run full test suite via task
 
 **Steps:**
+
 1. Command Palette → "Tasks: Run Task"
 2. Select **"Run All Tests"**
 3. Watch all 172 tests execute
 4. Verify all tests pass (may take 30-60 seconds)
 
 **Expected Results:**
+
 - All tests run with verbose output
 - Shows: `172 passed in X.XXs`
 - Green success message at end
 
 **Troubleshooting:**
+
 - Tests fail:
   - Check venv dependencies are installed: `./scripts/setup`
   - Run tests manually: `source venv/bin/activate && python -m pytest tests/ -v`
@@ -380,6 +416,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Generate HTML coverage report
 
 **Steps:**
+
 1. Run Task → **"Run Tests with Coverage"**
 2. Wait for completion
 3. Terminal shows coverage report with percentages
@@ -387,12 +424,14 @@ code --install-extension esbenp.prettier-vscode
 5. Browse coverage by file
 
 **Expected Results:**
+
 - Coverage report shows in terminal
 - HTML report generated in `htmlcov/` folder
 - Can view detailed coverage in browser
 - Shows 28% overall coverage (as documented)
 
 **Troubleshooting:**
+
 - No HTML report: Check terminal for errors
 - Can't find htmlcov/: Run `ls -la htmlcov/` to verify it exists
 - Coverage seems wrong: Clear `.coverage` file and re-run
@@ -404,17 +443,20 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Auto-format all Python files
 
 **Steps:**
+
 1. Make some formatting errors in a file
 2. Run Task → **"Format Code"**
 3. Watch terminal output
 4. Check files are reformatted
 
 **Expected Results:**
-- Task runs ruff format on all files
+
+- Task runs black on all files
 - Terminal shows "X files reformatted" or "All files already formatted"
 - Files are properly formatted
 
 **Troubleshooting:**
+
 - No changes: Files were already formatted (this is good!)
 - Errors: Check ruff is installed in venv
 
@@ -425,6 +467,7 @@ code --install-extension esbenp.prettier-vscode
 **Goal:** Verify imports are automatically organized on save
 
 **Steps:**
+
 1. Open `custom_components/adaptive_cover_pro/coordinator.py`
 2. Mess up import order at top of file:
    ```python
@@ -437,11 +480,13 @@ code --install-extension esbenp.prettier-vscode
 4. Watch imports automatically reorganize
 
 **Expected Results:**
+
 - Imports are automatically sorted into correct order
 - Standard library → third party → local imports
 - Alphabetically sorted within each group
 
 **Troubleshooting:**
+
 - Not organizing: Check `.vscode/settings.json` has `"source.organizeImports": "explicit"` in `codeActionsOnSave`
 - Wrong order: Ruff's import sorting follows PEP 8 conventions
 
@@ -506,6 +551,7 @@ After completing all tests, verify:
 ### Issue: "No module named 'custom_components'"
 
 **Solution:**
+
 ```bash
 # Verify PYTHONPATH in debug config
 # Check .vscode/launch.json has:
@@ -520,6 +566,7 @@ export PYTHONPATH="${PWD}/custom_components"
 ### Issue: "Debugger is slow or hangs"
 
 **Solution:**
+
 - Use `--no-cov` flag (already configured)
 - Set `"justMyCode": true` if you don't need to step into HA core
 - Debug specific tests instead of full suite
@@ -528,6 +575,7 @@ export PYTHONPATH="${PWD}/custom_components"
 ### Issue: "Breakpoints show as gray/hollow circles"
 
 **Solution:**
+
 - Verify Python interpreter is from venv
 - Check file is saved
 - Reload window: Cmd+Shift+P → "Developer: Reload Window"
@@ -536,6 +584,7 @@ export PYTHONPATH="${PWD}/custom_components"
 ### Issue: "Test discovery doesn't find tests"
 
 **Solution:**
+
 ```bash
 # Verify pytest works manually:
 source venv/bin/activate
@@ -553,6 +602,7 @@ python -m pytest --collect-only
 ### Issue: "Format on save not working"
 
 **Solution:**
+
 - Install Ruff extension: `code --install-extension charliermarsh.ruff`
 - Check settings: `.vscode/settings.json` → `"[python]"` → `"editor.formatOnSave": true`
 - Reload window
@@ -561,6 +611,7 @@ python -m pytest --collect-only
 ### Issue: "Home Assistant won't start in debugger"
 
 **Solution:**
+
 ```bash
 # Check config exists:
 ls config/configuration.yaml
@@ -611,6 +662,7 @@ The development environment automatically manages Home Assistant instances to pr
 Both `./scripts/develop` and the VS Code "Debug Home Assistant" configuration automatically stop any running Home Assistant instances before starting a new one.
 
 **How it works:**
+
 1. Detects running HA processes using your config directory
 2. Sends graceful shutdown signal (SIGTERM)
 3. Waits up to 10 seconds for clean shutdown
@@ -628,6 +680,7 @@ Both `./scripts/develop` and the VS Code "Debug Home Assistant" configuration au
 ```
 
 **Benefits:**
+
 - No more "Another Home Assistant instance is already running" errors
 - Clean restarts every time
 - Safe for debugging - preserves log files and state
@@ -651,18 +704,18 @@ ps aux | grep "[h]ass --config"
 
 ## Quick Reference
 
-| Action | Shortcut |
-|--------|----------|
-| Start Debugging | **F5** |
-| Toggle Breakpoint | **F9** |
-| Step Over | **F10** |
-| Step Into | **F11** |
-| Continue | **F5** |
-| Stop Debugging | **Shift+F5** |
-| Run Task | **Cmd+Shift+P** → Tasks: Run Task |
-| Test Explorer | Click beaker icon in sidebar |
-| Problems Panel | **Cmd+Shift+M** |
-| Command Palette | **Cmd+Shift+P** |
-| Stop Home Assistant | `./scripts/stop` |
+| Action              | Shortcut                          |
+| ------------------- | --------------------------------- |
+| Start Debugging     | **F5**                            |
+| Toggle Breakpoint   | **F9**                            |
+| Step Over           | **F10**                           |
+| Step Into           | **F11**                           |
+| Continue            | **F5**                            |
+| Stop Debugging      | **Shift+F5**                      |
+| Run Task            | **Cmd+Shift+P** → Tasks: Run Task |
+| Test Explorer       | Click beaker icon in sidebar      |
+| Problems Panel      | **Cmd+Shift+M**                   |
+| Command Palette     | **Cmd+Shift+P**                   |
+| Stop Home Assistant | `./scripts/stop`                  |
 
 Happy debugging! 🐛🔍

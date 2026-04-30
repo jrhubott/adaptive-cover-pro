@@ -182,9 +182,9 @@ class TestMinDistanceUsedNotMax:
         # without it. Check the first call.
         first_call = cover.calculate_percentage.call_args_list[0]
         override = first_call.kwargs.get("effective_distance_override")
-        assert override == 0.5, (
-            f"Expected effective_distance_override=0.5 (closest zone), got {override}"
-        )
+        assert (
+            override == 0.5
+        ), f"Expected effective_distance_override=0.5 (closest zone), got {override}"
 
     def test_contributing_zone_is_closest(self) -> None:
         """The reason string should name the closest zone, not the farthest."""

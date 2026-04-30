@@ -124,9 +124,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         targets = _resolve_targets(hass, call)
         for coord, entity_filter in targets.items():
             # Stop in-flight moves first (before gate closes)
-            await coord._cmd_svc.stop_in_flight(  # noqa: SLF001
-                entities=entity_filter
-            )
+            await coord._cmd_svc.stop_in_flight(entities=entity_filter)  # noqa: SLF001
             coord._cancel_motion_timeout()  # noqa: SLF001
             coord._cancel_weather_timeout()  # noqa: SLF001
             coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001

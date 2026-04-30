@@ -262,9 +262,9 @@ class TestSyncCategoriesSplit:
         ui_keys = (
             SYNC_CATEGORIES["light_cloud"] | SYNC_CATEGORIES["temperature_climate"]
         )
-        assert legacy_keys <= ui_keys, (
-            f"Keys in legacy but not in UI categories: {legacy_keys - ui_keys}"
-        )
+        assert (
+            legacy_keys <= ui_keys
+        ), f"Keys in legacy but not in UI categories: {legacy_keys - ui_keys}"
 
 
 # ---------------------------------------------------------------------------

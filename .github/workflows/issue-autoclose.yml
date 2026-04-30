@@ -3,7 +3,7 @@ name: "Auto-close Confirmed Issues"
 on:
   schedule:
     # Run daily at noon UTC
-    - cron: '0 12 * * *'
+    - cron: "0 12 * * *"
 
 permissions:
   issues: write
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/stale@v9
         with:
           # Only process issues carrying this label
-          only-issue-labels: 'waiting-for-confirmation'
+          only-issue-labels: "waiting-for-confirmation"
 
           # Days of inactivity before marking stale
           days-before-issue-stale: 14
@@ -26,7 +26,7 @@ jobs:
           days-before-issue-close: 0
 
           # Separate stale label so issues aren't treated as already-stale on first run
-          stale-issue-label: 'stale'
+          stale-issue-label: "stale"
 
           close-issue-message: >
             Closing this issue as we haven't heard back to confirm the fix.
@@ -37,7 +37,7 @@ jobs:
           days-before-pr-close: -1
 
           # Skip issues with these labels regardless of inactivity
-          exempt-issue-labels: 'pinned,security,Bug'
+          exempt-issue-labels: "pinned,security,Bug"
 
           # Avoid hitting rate limits on large issue backlogs
           operations-per-run: 50

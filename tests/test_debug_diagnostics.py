@@ -178,7 +178,9 @@ class TestRingBufferEvents:
             manual_threshold=5,
         )
         buf = event_buffer.snapshot()
-        rejected = [e for e in buf if e["event"] == "manual_override_rejected_within_threshold"]
+        rejected = [
+            e for e in buf if e["event"] == "manual_override_rejected_within_threshold"
+        ]
         assert len(rejected) == 1
 
     def test_wait_for_target_records_rejection(self):
@@ -194,7 +196,9 @@ class TestRingBufferEvents:
             manual_threshold=3,
         )
         buf = event_buffer.snapshot()
-        rejected = [e for e in buf if e["event"] == "manual_override_rejected_wait_for_target"]
+        rejected = [
+            e for e in buf if e["event"] == "manual_override_rejected_wait_for_target"
+        ]
         assert len(rejected) == 1
 
     def test_position_unavailable_records_rejection(self):
@@ -217,7 +221,11 @@ class TestRingBufferEvents:
                 manual_threshold=3,
             )
         buf = event_buffer.snapshot()
-        rejected = [e for e in buf if e["event"] == "manual_override_rejected_position_unavailable"]
+        rejected = [
+            e
+            for e in buf
+            if e["event"] == "manual_override_rejected_position_unavailable"
+        ]
         assert len(rejected) == 1
 
     def test_reset_records_reset_event(self):
@@ -242,7 +250,14 @@ class TestRingBufferEvents:
             wait_target_call={},
             manual_threshold=3,
         )
-        required_keys = {"ts", "entity_id", "event", "our_state", "new_position", "reason"}
+        required_keys = {
+            "ts",
+            "entity_id",
+            "event",
+            "our_state",
+            "new_position",
+            "reason",
+        }
         for ev in event_buffer.snapshot():
             assert required_keys.issubset(ev.keys()), f"Missing keys in: {ev}"
 
@@ -314,7 +329,9 @@ class TestResizeEventBuffer:
         _mgr, event_buffer = _make_manager()
         event_buffer.resize(3)
         for i in range(5):
-            event_buffer.record({"event": "manual_override_set", "entity_id": f"cover.{i}"})
+            event_buffer.record(
+                {"event": "manual_override_set", "entity_id": f"cover.{i}"}
+            )
         buf = event_buffer.snapshot()
         assert len(buf) == 3
         entity_ids = [e["entity_id"] for e in buf]
@@ -414,8 +431,16 @@ class TestDiagnosticsBuilderDebugInfo:
         """manual_override_history alias contains only manual_override_* events."""
         builder = DiagnosticsBuilder()
         events = [
-            {"ts": "2024-01-01T00:00:00+00:00", "event": "manual_override_set", "entity_id": "cover.test"},
-            {"ts": "2024-01-01T00:00:01+00:00", "event": "cover_command_sent", "entity_id": "cover.test"},
+            {
+                "ts": "2024-01-01T00:00:00+00:00",
+                "event": "manual_override_set",
+                "entity_id": "cover.test",
+            },
+            {
+                "ts": "2024-01-01T00:00:01+00:00",
+                "event": "cover_command_sent",
+                "entity_id": "cover.test",
+            },
         ]
         ctx = _base_ctx(event_timeline=events)
         result, _ = builder.build(ctx)
@@ -426,7 +451,11 @@ class TestDiagnosticsBuilderDebugInfo:
         """manual_override_history is absent when no manual_override_* events exist."""
         builder = DiagnosticsBuilder()
         events = [
-            {"ts": "2024-01-01T00:00:00+00:00", "event": "cover_command_sent", "entity_id": "cover.test"},
+            {
+                "ts": "2024-01-01T00:00:00+00:00",
+                "event": "cover_command_sent",
+                "entity_id": "cover.test",
+            },
         ]
         ctx = _base_ctx(event_timeline=events)
         result, _ = builder.build(ctx)
@@ -574,12 +603,18 @@ class TestPipelineRegistryEventBuffer:
     """Verify PipelineRegistry records pipeline_evaluated events."""
 
     def _make_registry(self, event_buffer=None):
-        from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-        from custom_components.adaptive_cover_pro.pipeline.handlers.default import DefaultHandler
+        from custom_components.adaptive_cover_pro.pipeline.registry import (
+            PipelineRegistry,
+        )
+        from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+            DefaultHandler,
+        )
+
         return PipelineRegistry([DefaultHandler()], event_buffer=event_buffer)
 
     def _make_snapshot(self):
         from tests.test_pipeline.conftest import make_snapshot
+
         return make_snapshot()
 
     def test_pipeline_evaluated_event_recorded(self):
@@ -639,7 +674,10 @@ class TestTrackActionEnrichment:
         """target_source kwarg is stored in last_cover_action."""
         svc, _buf = self._make_svc_with_buffer()
         svc._track_action(
-            "cover.test", "set_cover_position", 50, True,
+            "cover.test",
+            "set_cover_position",
+            50,
+            True,
             target_source="pipeline",
         )
         assert svc.last_cover_action["target_source"] == "pipeline"
@@ -648,8 +686,12 @@ class TestTrackActionEnrichment:
         """Force and is_safety flags are stored in last_cover_action."""
         svc, _buf = self._make_svc_with_buffer()
         svc._track_action(
-            "cover.test", "open_cover", 100, False,
-            force=True, is_safety=False,
+            "cover.test",
+            "open_cover",
+            100,
+            False,
+            force=True,
+            is_safety=False,
         )
         assert svc.last_cover_action["force"] is True
         assert svc.last_cover_action["is_safety"] is False
@@ -658,7 +700,10 @@ class TestTrackActionEnrichment:
         """auto_control_at_call and friends are stored in last_cover_action."""
         svc, _buf = self._make_svc_with_buffer()
         svc._track_action(
-            "cover.test", "set_cover_position", 42, True,
+            "cover.test",
+            "set_cover_position",
+            42,
+            True,
             auto_control_at_call=False,
             manual_override_at_call=True,
             in_time_window_at_call=True,
@@ -675,7 +720,10 @@ class TestTrackActionEnrichment:
         svc, _buf = self._make_svc_with_buffer()
         trace = [{"handler": "solar", "matched": True}]
         svc._track_action(
-            "cover.test", "set_cover_position", 60, True,
+            "cover.test",
+            "set_cover_position",
+            60,
+            True,
             pipeline_handler="solar",
             pipeline_control_method="SOLAR",
             pipeline_bypass_auto_control=False,
@@ -692,9 +740,14 @@ class TestTrackActionEnrichment:
         svc, event_buffer = self._make_svc_with_buffer()
         svc.target_call["cover.test"] = 75
         svc._track_action(
-            "cover.test", "set_cover_position", 75, True,
-            trigger="solar", target_source="pipeline",
-            force=False, is_safety=False,
+            "cover.test",
+            "set_cover_position",
+            75,
+            True,
+            trigger="solar",
+            target_source="pipeline",
+            force=False,
+            is_safety=False,
         )
         buf = event_buffer.snapshot()
         assert len(buf) == 1
@@ -713,6 +766,7 @@ class TestTrackActionEnrichment:
         from custom_components.adaptive_cover_pro.managers.grace_period import (
             GracePeriodManager,
         )
+
         svc = CoverCommandService(
             hass=MagicMock(),
             logger=MagicMock(),

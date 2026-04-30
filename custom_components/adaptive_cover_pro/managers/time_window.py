@@ -230,13 +230,16 @@ class TimeWindowManager:
             )
             if self._event_buffer is not None:
                 import datetime as dt
-                self._event_buffer.record({
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
-                    "event": "time_window_changed",
-                    "entity_id": "",
-                    "previous": self._last_time_window_state,
-                    "current": current_state,
-                })
+
+                self._event_buffer.record(
+                    {
+                        "ts": dt.datetime.now(dt.UTC).isoformat(),
+                        "event": "time_window_changed",
+                        "entity_id": "",
+                        "previous": self._last_time_window_state,
+                        "current": current_state,
+                    }
+                )
             self._last_time_window_state = current_state
 
             if current_state and on_window_open is not None:

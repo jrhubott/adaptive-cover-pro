@@ -301,6 +301,14 @@ class SunGeometry:
         first = rows.iloc[0]
         last = rows.iloc[-1]
         return (
-            (rows.index[0].to_pydatetime(), float(first["azimuth"]), float(first["elevation"])),
-            (rows.index[-1].to_pydatetime(), float(last["azimuth"]), float(last["elevation"])),
+            (
+                rows.index[0].to_pydatetime(),
+                float(first["azimuth"]),
+                float(first["elevation"]),
+            ),
+            (
+                rows.index[-1].to_pydatetime(),
+                float(last["azimuth"]),
+                float(last["elevation"]),
+            ),
         )

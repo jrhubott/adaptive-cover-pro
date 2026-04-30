@@ -7,18 +7,21 @@ This is a major release introducing **Adaptive Cover Pro** - a new, independent 
 ## 🚨 Breaking Changes
 
 ### New Domain
+
 - **Domain changed**: `adaptive_cover` → `adaptive_cover_pro`
 - **Integration name**: "Adaptive Cover" → "Adaptive Cover Pro"
 - **Entity IDs**: All entity IDs now use `adaptive_cover_pro.*` domain
 - This is a **separate integration** - both original and Pro can be installed together
 
 ### Entity Renames
+
 - **Automatic Control Switch**: Entity renamed from `switch.{type}_toggle_control_{name}` to `switch.{type}_automatic_control_{name}`
 - Internal property `control_toggle` renamed to `automatic_control`
 
 ## ⚠️ Migration Required
 
 Users upgrading will need to:
+
 1. Uninstall the old integration (optional - can keep both)
 2. Install Adaptive Cover Pro as a new integration
 3. Reconfigure all settings
@@ -34,10 +37,12 @@ Users upgrading will need to:
 ## 📦 Installation
 
 ### HACS
+
 Add `https://github.com/jrhubott/adaptive-cover` as a custom repository to HACS.
 Search for "Adaptive Cover Pro" and install.
 
 ### Manual
+
 Download the latest release and copy the `custom_components/adaptive_cover_pro` folder to your Home Assistant `custom_components` directory.
 
 ## 🔧 Requirements
@@ -48,6 +53,7 @@ Download the latest release and copy the `custom_components/adaptive_cover_pro` 
 ## 📝 Full Changelog
 
 **Changes:**
+
 - Rename integration to Adaptive Cover Pro with new domain
 - Rename "Toggle Control" to "Automatic Control"
 - Update version to 2.0.0

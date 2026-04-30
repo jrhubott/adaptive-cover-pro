@@ -212,12 +212,12 @@ async def test_first_refresh_skips_apply_position_for_manual_cover():
         coordinator, state=50, options={}
     )
 
-    assert eid_manual not in apply_calls, (
-        "apply_position should NOT be called for a manually-overridden cover"
-    )
-    assert eid_auto in apply_calls, (
-        "apply_position SHOULD be called for a non-manual cover"
-    )
+    assert (
+        eid_manual not in apply_calls
+    ), "apply_position should NOT be called for a manually-overridden cover"
+    assert (
+        eid_auto in apply_calls
+    ), "apply_position SHOULD be called for a non-manual cover"
 
 
 # ---------------------------------------------------------------------------

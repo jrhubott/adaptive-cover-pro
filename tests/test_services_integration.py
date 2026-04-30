@@ -68,9 +68,9 @@ async def test_export_config_service_registered_after_setup(
 ) -> None:
     """export_config service is registered after setup_entry."""
     await _setup(hass, entry_id="svc_reg_01")
-    assert hass.services.has_service(DOMAIN, "export_config"), (
-        "export_config service should be registered after setup"
-    )
+    assert hass.services.has_service(
+        DOMAIN, "export_config"
+    ), "export_config service should be registered after setup"
 
 
 @pytest.mark.integration
@@ -93,9 +93,9 @@ async def test_service_still_registered_after_one_entry_unloaded(
     await hass.config_entries.async_unload(entry_a.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.services.has_service(DOMAIN, "export_config"), (
-        "Service should still be registered while second entry is active"
-    )
+    assert hass.services.has_service(
+        DOMAIN, "export_config"
+    ), "Service should still be registered while second entry is active"
 
 
 @pytest.mark.integration
@@ -109,9 +109,9 @@ async def test_service_removed_after_all_entries_unloaded(
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert not hass.services.has_service(DOMAIN, "export_config"), (
-        "Service should be removed when last entry is unloaded"
-    )
+    assert not hass.services.has_service(
+        DOMAIN, "export_config"
+    ), "Service should be removed when last entry is unloaded"
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +163,9 @@ async def test_export_config_vertical_contains_geometry(hass: HomeAssistant) -> 
     )
     assert isinstance(response, dict)
     # Export response has cover_type and nested geometry sections
-    assert "cover_type" in response or "name" in response, (
-        f"Expected cover_type in response, got keys: {list(response.keys())}"
-    )
+    assert (
+        "cover_type" in response or "name" in response
+    ), f"Expected cover_type in response, got keys: {list(response.keys())}"
 
 
 @pytest.mark.integration

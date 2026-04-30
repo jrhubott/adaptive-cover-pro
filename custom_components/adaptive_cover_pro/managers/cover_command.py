@@ -29,7 +29,12 @@ from ..const import (
     POSITION_TOLERANCE_PERCENT,
 )
 from ..diagnostics.event_buffer import EventBuffer
-from ..helpers import check_cover_features, get_last_updated, get_open_close_state, should_use_tilt
+from ..helpers import (
+    check_cover_features,
+    get_last_updated,
+    get_open_close_state,
+    should_use_tilt,
+)
 
 
 @dataclasses.dataclass
@@ -355,9 +360,9 @@ class CoverCommandService:
             "last_command_sent_at": sent_at.isoformat() if sent_at else None,
             "in_manual_override_set": entity_id in self._manual_override_entities,
             "safety_target": entity_id in self._safety_targets,
-            "last_reconcile_time": reconcile_time.isoformat()
-            if reconcile_time
-            else None,
+            "last_reconcile_time": (
+                reconcile_time.isoformat() if reconcile_time else None
+            ),
         }
 
     def get_all_entity_state_snapshots(self) -> dict[str, dict]:
@@ -439,7 +444,9 @@ class CoverCommandService:
 
         Returns None if no sent_at is recorded for this entity (no command sent).
         """
-        reference = self._last_progress_at.get(entity_id) or self._sent_at.get(entity_id)
+        reference = self._last_progress_at.get(entity_id) or self._sent_at.get(
+            entity_id
+        )
         if reference is None:
             return None
         return (now - reference).total_seconds()
@@ -1126,14 +1133,16 @@ class CoverCommandService:
                         target,
                     )
                     if self._event_buffer is not None:
-                        self._event_buffer.record({
-                            "ts": dt.datetime.now(dt.UTC).isoformat(),
-                            "event": "reconcile_gave_up",
-                            "entity_id": entity_id,
-                            "actual_position": actual,
-                            "target_position": target,
-                            "max_retries": self._max_retries,
-                        })
+                        self._event_buffer.record(
+                            {
+                                "ts": dt.datetime.now(dt.UTC).isoformat(),
+                                "event": "reconcile_gave_up",
+                                "entity_id": entity_id,
+                                "actual_position": actual,
+                                "target_position": target,
+                                "max_retries": self._max_retries,
+                            }
+                        )
                     self._gave_up.add(entity_id)
                 else:
                     self._logger.debug(
@@ -1496,9 +1505,9 @@ class CoverCommandService:
             "service": service,
             "position": state if supports_position else self.target_call.get(entity),
             "calculated_position": state,
-            "threshold_used": self._open_close_threshold
-            if not supports_position
-            else None,
+            "threshold_used": (
+                self._open_close_threshold if not supports_position else None
+            ),
             "inverse_state_applied": inverse_state,
             "timestamp": ts,
             "covers_controlled": 1,

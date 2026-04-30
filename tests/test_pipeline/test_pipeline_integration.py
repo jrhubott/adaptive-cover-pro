@@ -27,7 +27,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout impor
 )
 from unittest.mock import MagicMock, patch
 
-from custom_components.adaptive_cover_pro.config_types import GlareZone, GlareZonesConfig
+from custom_components.adaptive_cover_pro.config_types import (
+    GlareZone,
+    GlareZonesConfig,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
 )
@@ -304,9 +307,9 @@ class TestClimateDataPropagation:
             calculate_percentage_return=55.0,
         )
         result = self.registry.evaluate(snap)
-        assert result.control_method == ControlMethod.SOLAR, (
-            "ClimateHandler should defer (GLARE_CONTROL) so SolarHandler wins"
-        )
+        assert (
+            result.control_method == ControlMethod.SOLAR
+        ), "ClimateHandler should defer (GLARE_CONTROL) so SolarHandler wins"
         assert result.climate_data is not None, (
             "REGRESSION (Issue #240): climate_data was dropped when ClimateHandler "
             "returned None for the GLARE_CONTROL defer path"
@@ -1158,5 +1161,7 @@ class TestGlareZoneVsClimatePriority:
         )
         result = self._make_registry().evaluate(snap)
         # normal_without_presence returns default — climate wins and populates climate_data
-        assert result.climate_data is not None  # climate won (not glare/solar which have no climate_data)
+        assert (
+            result.climate_data is not None
+        )  # climate won (not glare/solar which have no climate_data)
         assert result.control_method != ControlMethod.GLARE_ZONE

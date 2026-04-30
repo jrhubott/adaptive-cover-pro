@@ -290,7 +290,9 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
     """Custom position min-mode floors correctly when sun tracking is disabled."""
 
     def _make_handler(self) -> CustomPositionHandler:
-        return CustomPositionHandler(slot=1, entity_id="binary_sensor.cp1", position=80, priority=77)
+        return CustomPositionHandler(
+            slot=1, entity_id="binary_sensor.cp1", position=80, priority=77
+        )
 
     def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
         """Min-mode floor measured against default position, not solar, when tracking off."""
@@ -565,7 +567,9 @@ class TestOverrideHandlerContributeDefault:
 
     def test_default_contribute_is_empty_dict(self) -> None:
         """OverrideHandler.contribute() default returns {} — handlers opt in by overriding."""
-        from custom_components.adaptive_cover_pro.pipeline.handler import OverrideHandler
+        from custom_components.adaptive_cover_pro.pipeline.handler import (
+            OverrideHandler,
+        )
 
         class _Dummy(OverrideHandler):
             name = "dummy"
@@ -587,6 +591,6 @@ class TestOverrideHandlerContributeDefault:
             SolarHandler(),
             DefaultHandler(),
         ]:
-            assert handler.contribute(snap) == {}, (
-                f"{handler.__class__.__name__}.contribute() should return {{}}"
-            )
+            assert (
+                handler.contribute(snap) == {}
+            ), f"{handler.__class__.__name__}.contribute() should return {{}}"

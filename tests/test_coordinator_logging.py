@@ -282,7 +282,9 @@ class TestManualGateClosedLogging:
         assert any("manual override detection gate closed" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_state_change_does_NOT_log_gate_closed_when_only_auto_control_off(self):
+    async def test_state_change_does_NOT_log_gate_closed_when_only_auto_control_off(
+        self,
+    ):
         """Issue #293: auto_control off no longer closes the manual-override gate.
 
         Only manual_toggle=False emits the "gate closed" log line; with

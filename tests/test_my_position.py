@@ -578,7 +578,10 @@ class TestHandleStopServiceCall:
 
     @pytest.fixture
     def mgr(self, mock_hass):
-        from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
+        from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+            EventBuffer,
+        )
+
         event_buffer = EventBuffer(maxlen=50)
         m = AdaptiveCoverManager(
             hass=mock_hass,

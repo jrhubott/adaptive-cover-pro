@@ -139,7 +139,9 @@ class AdaptiveCoverManager:
         new_state = event.new_state
 
         caps = check_cover_features(self.hass, entity_id)
-        if should_use_tilt(blind_type == "cover_tilt", caps if caps is not None else {}):
+        if should_use_tilt(
+            blind_type == "cover_tilt", caps if caps is not None else {}
+        ):
             new_position = new_state.attributes.get("current_tilt_position")
         else:
             new_position = new_state.attributes.get("current_position")

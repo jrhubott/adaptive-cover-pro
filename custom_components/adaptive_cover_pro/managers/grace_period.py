@@ -103,12 +103,14 @@ class GracePeriodManager:
 
         self._logger.debug("Grace period expired for %s", entity_id)
         if self._event_buffer is not None:
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "grace_period_expired",
-                "entity_id": entity_id,
-                "duration_seconds": self._command_grace_seconds,
-            })
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "grace_period_expired",
+                    "entity_id": entity_id,
+                    "duration_seconds": self._command_grace_seconds,
+                }
+            )
 
     def cancel_command_grace_period(self, entity_id: str) -> None:
         """Cancel grace period task for entity.
@@ -176,11 +178,13 @@ class GracePeriodManager:
 
         self._logger.debug("Startup grace period expired")
         if self._event_buffer is not None:
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "startup_grace_expired",
-                "duration_seconds": self._startup_grace_seconds,
-            })
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "startup_grace_expired",
+                    "duration_seconds": self._startup_grace_seconds,
+                }
+            )
 
     # --- Cleanup ---
 

@@ -393,9 +393,9 @@ class TestSyncCategorySplit:
             "weather_override",
         }
         for key in mixed_keys:
-            assert key not in _SYNC_UI_CATEGORIES, (
-                f"'{key}' should not be in _SYNC_UI_CATEGORIES — use split *_values/*_sensors keys instead"
-            )
+            assert (
+                key not in _SYNC_UI_CATEGORIES
+            ), f"'{key}' should not be in _SYNC_UI_CATEGORIES — use split *_values/*_sensors keys instead"
 
     def test_sync_categories_still_has_legacy_mixed_keys(self):
         """SYNC_CATEGORIES must retain the original mixed keys for backward compat."""
@@ -407,9 +407,9 @@ class TestSyncCategorySplit:
             "custom_position",
             "weather_override",
         ):
-            assert key in SYNC_CATEGORIES, (
-                f"Legacy key '{key}' missing from SYNC_CATEGORIES"
-            )
+            assert (
+                key in SYNC_CATEGORIES
+            ), f"Legacy key '{key}' missing from SYNC_CATEGORIES"
 
 
 class TestEnsureUniqueName:

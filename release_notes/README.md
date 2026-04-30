@@ -17,6 +17,7 @@ This directory contains historical release notes for all versions of Adaptive Co
 ## Usage
 
 When creating a release, the release notes file is:
+
 1. Created in this directory with the version number as the filename
 2. Passed to the release script via `--notes` parameter
 3. Published to the GitHub release

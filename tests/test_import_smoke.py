@@ -20,9 +20,7 @@ def test_no_homeassistant_template_state_attr_imports():
     That helper was removed in HA 2026.5; it must come from the local helpers module.
     """
     root = (
-        Path(__file__).resolve().parents[1]
-        / "custom_components"
-        / "adaptive_cover_pro"
+        Path(__file__).resolve().parents[1] / "custom_components" / "adaptive_cover_pro"
     )
     forbidden = "from homeassistant.helpers.template import state_attr"
     offenders = [

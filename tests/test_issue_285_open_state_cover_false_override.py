@@ -16,7 +16,6 @@ import datetime as dt
 from unittest.mock import MagicMock
 
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirrors test_issue_271 helpers)
 # ---------------------------------------------------------------------------
@@ -83,7 +82,9 @@ def _make_coordinator(
 
     last_progress_at: dict[str, dt.datetime] = {}
     if last_progress_seconds_ago is not None:
-        last_progress_at[entity_id] = now - dt.timedelta(seconds=last_progress_seconds_ago)
+        last_progress_at[entity_id] = now - dt.timedelta(
+            seconds=last_progress_seconds_ago
+        )
 
     def _transit_elapsed(eid: str, now_arg: dt.datetime) -> float | None:
         reference = last_progress_at.get(eid) or cmd_svc._sent_at.get(eid)
@@ -183,11 +184,13 @@ class TestOpenStateCoverMakingProgress:
         )
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.record_progress.called, (
-            "record_progress must be called so the progress backstop window extends"
-        )
+        assert (
+            coord._cmd_svc.record_progress.called
+        ), "record_progress must be called so the progress backstop window extends"
 
-    def test_open_state_cover_stalled_beyond_timeout_clears_wait_for_target(self) -> None:
+    def test_open_state_cover_stalled_beyond_timeout_clears_wait_for_target(
+        self,
+    ) -> None:
         """Open-state cover with no progress for > timeout must still be cleared.
 
         The hard-timeout safety net must work even when the cover never emits
@@ -205,11 +208,13 @@ class TestOpenStateCoverMakingProgress:
         )
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False, (
-            "Hard timeout backstop must still fire for open-state covers with no progress"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is False
+        ), "Hard timeout backstop must still fire for open-state covers with no progress"
 
-    def test_open_state_cover_drifting_away_from_target_clears_wait_for_target(self) -> None:
+    def test_open_state_cover_drifting_away_from_target_clears_wait_for_target(
+        self,
+    ) -> None:
         """Open-state cover moving away from target must be detected as manual override.
 
         Position 60→70 while target=0 means the cover moved away — genuine user action.
@@ -225,9 +230,9 @@ class TestOpenStateCoverMakingProgress:
         )
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False, (
-            "Cover moving away from target must clear wait_for_target (genuine manual move)"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is False
+        ), "Cover moving away from target must clear wait_for_target (genuine manual move)"
 
     def test_open_state_cover_progress_backstop_resets_window(self) -> None:
         """Open-state cover: progress window extends when moving, even past sent_at timeout.
@@ -278,9 +283,9 @@ class TestRegressionExistingBehaviour:
         )
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False, (
-            "Stalled open→open (no movement) must clear wait_for_target — Issue #172 guard"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is False
+        ), "Stalled open→open (no movement) must clear wait_for_target — Issue #172 guard"
 
     def test_opening_state_cover_forward_progress_still_works(self) -> None:
         """The original 'opening' code path must still keep wait_for_target=True."""
@@ -294,6 +299,6 @@ class TestRegressionExistingBehaviour:
         )
         coord.state_change_data.old_state.state = "opening"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True, (
-            "opening→opening with forward progress must still keep wait_for_target=True"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is True
+        ), "opening→opening with forward progress must still keep wait_for_target=True"

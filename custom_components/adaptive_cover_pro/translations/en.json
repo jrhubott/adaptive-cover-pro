@@ -1127,182 +1127,458 @@
       "name": "Set position limits",
       "description": "Update default height, min/max position, open/close threshold, and inverse state.",
       "fields": {
-        "default_height": { "name": "Default height", "description": "Default cover position when sun is not visible (0–100%)." },
-        "min_position": { "name": "Minimum position", "description": "Minimum position the cover may move to (0–99%)." },
-        "enable_min_position": { "name": "Enable min position only during tracking", "description": "If true, min_position applies only while sun is tracked." },
-        "max_position": { "name": "Maximum position", "description": "Maximum position the cover may move to (1–100%)." },
-        "enable_max_position": { "name": "Enable max position only during tracking", "description": "If true, max_position applies only while sun is tracked." },
-        "open_close_threshold": { "name": "Open/close threshold", "description": "Position below which open/close-only covers are closed (1–99%)." },
-        "inverse_state": { "name": "Inverse state", "description": "Invert position for covers that report state inversely." }
+        "default_height": {
+          "name": "Default height",
+          "description": "Default cover position when sun is not visible (0–100%)."
+        },
+        "min_position": {
+          "name": "Minimum position",
+          "description": "Minimum position the cover may move to (0–99%)."
+        },
+        "enable_min_position": {
+          "name": "Enable min position only during tracking",
+          "description": "If true, min_position applies only while sun is tracked."
+        },
+        "max_position": {
+          "name": "Maximum position",
+          "description": "Maximum position the cover may move to (1–100%)."
+        },
+        "enable_max_position": {
+          "name": "Enable max position only during tracking",
+          "description": "If true, max_position applies only while sun is tracked."
+        },
+        "open_close_threshold": {
+          "name": "Open/close threshold",
+          "description": "Position below which open/close-only covers are closed (1–99%)."
+        },
+        "inverse_state": {
+          "name": "Inverse state",
+          "description": "Invert position for covers that report state inversely."
+        }
       }
     },
     "set_sunset_sunrise": {
       "name": "Set sunset / sunrise positions",
       "description": "Update sunset position and offset settings. Pass null to clear an optional field.",
       "fields": {
-        "sunset_position": { "name": "Sunset position", "description": "Position to move to at end of time window. Null = use default_height." },
-        "sunset_offset": { "name": "Sunset offset", "description": "Minutes to shift end-of-window trigger relative to sunset (-120–120)." },
-        "sunrise_offset": { "name": "Sunrise offset", "description": "Minutes to shift start-of-window trigger relative to sunrise (-120–120)." },
-        "sunset_use_my": { "name": "Use Somfy My at sunset", "description": "If true, use my_position_value instead of sunset_position at end of window." },
-        "my_position_value": { "name": "Somfy My position", "description": "The 'My' preset position (1–99%)." }
+        "sunset_position": {
+          "name": "Sunset position",
+          "description": "Position to move to at end of time window. Null = use default_height."
+        },
+        "sunset_offset": {
+          "name": "Sunset offset",
+          "description": "Minutes to shift end-of-window trigger relative to sunset (-120–120)."
+        },
+        "sunrise_offset": {
+          "name": "Sunrise offset",
+          "description": "Minutes to shift start-of-window trigger relative to sunrise (-120–120)."
+        },
+        "sunset_use_my": {
+          "name": "Use Somfy My at sunset",
+          "description": "If true, use my_position_value instead of sunset_position at end of window."
+        },
+        "my_position_value": {
+          "name": "Somfy My position",
+          "description": "The 'My' preset position (1–99%)."
+        }
       }
     },
     "set_automation_timing": {
       "name": "Set automation timing",
       "description": "Update delta thresholds, time window start/end, and return_sunset.",
       "fields": {
-        "delta_position": { "name": "Position delta threshold", "description": "Minimum position change (%) before sending a cover command (1–90)." },
-        "delta_time": { "name": "Time delta threshold", "description": "Minimum time (minutes) between cover commands (2–60)." },
-        "start_time": { "name": "Start time", "description": "Fixed time to start tracking window (HH:MM:SS). Mutually exclusive with start_entity." },
-        "start_entity": { "name": "Start entity", "description": "Entity whose state provides the start time. Mutually exclusive with start_time." },
-        "end_time": { "name": "End time", "description": "Fixed time to end tracking window (HH:MM:SS). Mutually exclusive with end_entity." },
-        "end_entity": { "name": "End entity", "description": "Entity whose state provides the end time. Mutually exclusive with end_time." },
-        "return_sunset": { "name": "Return to sunset position at end", "description": "If true, force-send sunset_position when time window ends." }
+        "delta_position": {
+          "name": "Position delta threshold",
+          "description": "Minimum position change (%) before sending a cover command (1–90)."
+        },
+        "delta_time": {
+          "name": "Time delta threshold",
+          "description": "Minimum time (minutes) between cover commands (2–60)."
+        },
+        "start_time": {
+          "name": "Start time",
+          "description": "Fixed time to start tracking window (HH:MM:SS). Mutually exclusive with start_entity."
+        },
+        "start_entity": {
+          "name": "Start entity",
+          "description": "Entity whose state provides the start time. Mutually exclusive with start_time."
+        },
+        "end_time": {
+          "name": "End time",
+          "description": "Fixed time to end tracking window (HH:MM:SS). Mutually exclusive with end_entity."
+        },
+        "end_entity": {
+          "name": "End entity",
+          "description": "Entity whose state provides the end time. Mutually exclusive with end_time."
+        },
+        "return_sunset": {
+          "name": "Return to sunset position at end",
+          "description": "If true, force-send sunset_position when time window ends."
+        }
       }
     },
     "set_manual_override": {
       "name": "Set manual override settings",
       "description": "Update manual override duration, reset behavior, and detection threshold.",
       "fields": {
-        "manual_override_duration": { "name": "Override duration", "description": "How long a manual override lasts before automatic control resumes." },
-        "manual_override_reset": { "name": "Reset on window start", "description": "If true, clear any active manual override when the time window starts." },
-        "manual_threshold": { "name": "Detection threshold", "description": "Position change (%) that triggers manual override detection (0–99)." },
-        "manual_ignore_intermediate": { "name": "Ignore intermediate states", "description": "If true, ignore opening/closing states for manual override detection." }
+        "manual_override_duration": {
+          "name": "Override duration",
+          "description": "How long a manual override lasts before automatic control resumes."
+        },
+        "manual_override_reset": {
+          "name": "Reset on window start",
+          "description": "If true, clear any active manual override when the time window starts."
+        },
+        "manual_threshold": {
+          "name": "Detection threshold",
+          "description": "Position change (%) that triggers manual override detection (0–99)."
+        },
+        "manual_ignore_intermediate": {
+          "name": "Ignore intermediate states",
+          "description": "If true, ignore opening/closing states for manual override detection."
+        }
       }
     },
     "set_force_override": {
       "name": "Set force override",
       "description": "Update force-override sensors, position, and min-mode.",
       "fields": {
-        "force_override_sensors": { "name": "Force override sensors", "description": "Binary sensors that trigger the force override. Empty list = disable." },
-        "force_override_position": { "name": "Force override position", "description": "Position to move to when a force override sensor is active (0–100%)." },
-        "force_override_min_mode": { "name": "Minimum position mode", "description": "If true, treat force_override_position as a minimum floor." }
+        "force_override_sensors": {
+          "name": "Force override sensors",
+          "description": "Binary sensors that trigger the force override. Empty list = disable."
+        },
+        "force_override_position": {
+          "name": "Force override position",
+          "description": "Position to move to when a force override sensor is active (0–100%)."
+        },
+        "force_override_min_mode": {
+          "name": "Minimum position mode",
+          "description": "If true, treat force_override_position as a minimum floor."
+        }
       }
     },
     "set_custom_position": {
       "name": "Set custom position slot",
       "description": "Update one custom position slot (1–4). Pass null for sensor and position to clear the slot.",
       "fields": {
-        "slot": { "name": "Slot", "description": "Which custom position slot to update (1–4)." },
-        "sensor": { "name": "Trigger sensor", "description": "Binary sensor that activates this custom position. Null = clear slot." },
-        "position": { "name": "Position", "description": "Target position (0–100%) when the sensor is active. Null = clear slot." },
-        "priority": { "name": "Priority", "description": "Pipeline priority (1–99, default 77)." },
-        "min_mode": { "name": "Minimum position mode", "description": "If true, treat position as a minimum floor." },
-        "use_my": { "name": "Use Somfy My", "description": "If true, use my_position_value instead of position." }
+        "slot": {
+          "name": "Slot",
+          "description": "Which custom position slot to update (1–4)."
+        },
+        "sensor": {
+          "name": "Trigger sensor",
+          "description": "Binary sensor that activates this custom position. Null = clear slot."
+        },
+        "position": {
+          "name": "Position",
+          "description": "Target position (0–100%) when the sensor is active. Null = clear slot."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Pipeline priority (1–99, default 77)."
+        },
+        "min_mode": {
+          "name": "Minimum position mode",
+          "description": "If true, treat position as a minimum floor."
+        },
+        "use_my": {
+          "name": "Use Somfy My",
+          "description": "If true, use my_position_value instead of position."
+        }
       }
     },
     "set_motion": {
       "name": "Set motion settings",
       "description": "Update motion sensors and no-motion timeout.",
       "fields": {
-        "motion_sensors": { "name": "Motion sensors", "description": "Binary sensors indicating occupancy. Empty list = disable motion control." },
-        "motion_timeout": { "name": "No-motion timeout", "description": "Seconds to wait after last motion before applying motion-timeout position (30–3600)." }
+        "motion_sensors": {
+          "name": "Motion sensors",
+          "description": "Binary sensors indicating occupancy. Empty list = disable motion control."
+        },
+        "motion_timeout": {
+          "name": "No-motion timeout",
+          "description": "Seconds to wait after last motion before applying motion-timeout position (30–3600)."
+        }
       }
     },
     "set_light_cloud": {
       "name": "Set light & cloud settings",
       "description": "Update weather entity, sunny-state filter, lux/irradiance/cloud thresholds, and cloud suppression.",
       "fields": {
-        "weather_entity": { "name": "Weather entity", "description": "Weather entity for condition readings. Null = none." },
-        "weather_state": { "name": "Sunny weather states", "description": "Weather condition states considered sunny for sun tracking." },
-        "lux_entity": { "name": "Lux sensor", "description": "Illuminance sensor entity. Null = none." },
-        "lux_threshold": { "name": "Lux threshold", "description": "Lux value above which the cover is in direct sunlight." },
-        "irradiance_entity": { "name": "Irradiance sensor", "description": "Solar irradiance sensor entity. Null = none." },
-        "irradiance_threshold": { "name": "Irradiance threshold", "description": "W/m² above which the cover is in direct sunlight." },
-        "cloud_coverage_entity": { "name": "Cloud coverage sensor", "description": "Sensor reporting cloud coverage percentage. Null = none." },
-        "cloud_coverage_threshold": { "name": "Cloud coverage threshold", "description": "Cloud coverage percentage above which sky is considered overcast." },
-        "cloud_suppression": { "name": "Enable cloud suppression", "description": "Suppress solar positioning when cloud coverage exceeds threshold." }
+        "weather_entity": {
+          "name": "Weather entity",
+          "description": "Weather entity for condition readings. Null = none."
+        },
+        "weather_state": {
+          "name": "Sunny weather states",
+          "description": "Weather condition states considered sunny for sun tracking."
+        },
+        "lux_entity": {
+          "name": "Lux sensor",
+          "description": "Illuminance sensor entity. Null = none."
+        },
+        "lux_threshold": {
+          "name": "Lux threshold",
+          "description": "Lux value above which the cover is in direct sunlight."
+        },
+        "irradiance_entity": {
+          "name": "Irradiance sensor",
+          "description": "Solar irradiance sensor entity. Null = none."
+        },
+        "irradiance_threshold": {
+          "name": "Irradiance threshold",
+          "description": "W/m² above which the cover is in direct sunlight."
+        },
+        "cloud_coverage_entity": {
+          "name": "Cloud coverage sensor",
+          "description": "Sensor reporting cloud coverage percentage. Null = none."
+        },
+        "cloud_coverage_threshold": {
+          "name": "Cloud coverage threshold",
+          "description": "Cloud coverage percentage above which sky is considered overcast."
+        },
+        "cloud_suppression": {
+          "name": "Enable cloud suppression",
+          "description": "Suppress solar positioning when cloud coverage exceeds threshold."
+        }
       }
     },
     "set_climate": {
       "name": "Set climate settings",
       "description": "Update climate mode and temperature/presence options. Enforces temp_low < temp_high.",
       "fields": {
-        "climate_mode": { "name": "Enable climate mode", "description": "Master toggle for temperature-aware positioning." },
-        "temp_entity": { "name": "Indoor temperature entity", "description": "Climate or sensor entity for indoor temperature. Null = none." },
-        "temp_low": { "name": "Low temperature threshold", "description": "Below this temperature (°), winter strategy applies (0–90)." },
-        "temp_high": { "name": "High temperature threshold", "description": "Above this temperature (°), summer strategy applies (0–90)." },
-        "outside_temp": { "name": "Outdoor temperature entity", "description": "Sensor entity for outdoor temperature. Null = none." },
-        "outside_threshold": { "name": "Outdoor temperature threshold", "description": "Outdoor temperature (°) above which summer strategy is forced (0–100)." },
-        "presence_entity": { "name": "Presence entity", "description": "Entity indicating occupancy. Null = none." },
-        "transparent_blind": { "name": "Transparent blind", "description": "If true, treat the blind as semi-transparent for climate calculations." },
-        "winter_close_insulation": { "name": "Close for winter insulation", "description": "If true, fully close the cover on cold days to improve insulation." }
+        "climate_mode": {
+          "name": "Enable climate mode",
+          "description": "Master toggle for temperature-aware positioning."
+        },
+        "temp_entity": {
+          "name": "Indoor temperature entity",
+          "description": "Climate or sensor entity for indoor temperature. Null = none."
+        },
+        "temp_low": {
+          "name": "Low temperature threshold",
+          "description": "Below this temperature (°), winter strategy applies (0–90)."
+        },
+        "temp_high": {
+          "name": "High temperature threshold",
+          "description": "Above this temperature (°), summer strategy applies (0–90)."
+        },
+        "outside_temp": {
+          "name": "Outdoor temperature entity",
+          "description": "Sensor entity for outdoor temperature. Null = none."
+        },
+        "outside_threshold": {
+          "name": "Outdoor temperature threshold",
+          "description": "Outdoor temperature (°) above which summer strategy is forced (0–100)."
+        },
+        "presence_entity": {
+          "name": "Presence entity",
+          "description": "Entity indicating occupancy. Null = none."
+        },
+        "transparent_blind": {
+          "name": "Transparent blind",
+          "description": "If true, treat the blind as semi-transparent for climate calculations."
+        },
+        "winter_close_insulation": {
+          "name": "Close for winter insulation",
+          "description": "If true, fully close the cover on cold days to improve insulation."
+        }
       }
     },
     "set_weather_safety": {
       "name": "Set weather safety settings",
       "description": "Update wind, rain, and severe-weather override settings.",
       "fields": {
-        "weather_bypass_auto_control": { "name": "Bypass automatic control", "description": "If true, weather override ignores the Automatic Control toggle." },
-        "weather_wind_speed_sensor": { "name": "Wind speed sensor", "description": "Sensor entity for wind speed. Null = none." },
-        "weather_wind_direction_sensor": { "name": "Wind direction sensor", "description": "Sensor entity for wind direction. Null = none." },
-        "weather_wind_speed_threshold": { "name": "Wind speed threshold", "description": "Wind speed above which the cover is retracted." },
-        "weather_wind_direction_tolerance": { "name": "Wind direction tolerance", "description": "Degrees either side of window azimuth considered a wind threat (5–180°)." },
-        "weather_rain_sensor": { "name": "Rain sensor", "description": "Sensor entity for rain accumulation. Null = none." },
-        "weather_rain_threshold": { "name": "Rain threshold", "description": "Rain accumulation above which the cover is retracted." },
-        "weather_is_raining_sensor": { "name": "Is raining sensor", "description": "Binary sensor indicating active rain. Null = none." },
-        "weather_is_windy_sensor": { "name": "Is windy sensor", "description": "Binary sensor indicating dangerous wind. Null = none." },
-        "weather_severe_sensors": { "name": "Severe weather sensors", "description": "Binary sensors for severe weather (OR logic). Empty list = none." },
-        "weather_override_position": { "name": "Weather override position", "description": "Position to move to when weather override is triggered (0–100%)." },
-        "weather_override_min_mode": { "name": "Minimum position mode", "description": "If true, treat weather_override_position as a minimum floor." },
-        "weather_timeout": { "name": "Weather clear timeout", "description": "Seconds to wait after conditions clear before resuming automatic control (0–3600)." }
+        "weather_bypass_auto_control": {
+          "name": "Bypass automatic control",
+          "description": "If true, weather override ignores the Automatic Control toggle."
+        },
+        "weather_wind_speed_sensor": {
+          "name": "Wind speed sensor",
+          "description": "Sensor entity for wind speed. Null = none."
+        },
+        "weather_wind_direction_sensor": {
+          "name": "Wind direction sensor",
+          "description": "Sensor entity for wind direction. Null = none."
+        },
+        "weather_wind_speed_threshold": {
+          "name": "Wind speed threshold",
+          "description": "Wind speed above which the cover is retracted."
+        },
+        "weather_wind_direction_tolerance": {
+          "name": "Wind direction tolerance",
+          "description": "Degrees either side of window azimuth considered a wind threat (5–180°)."
+        },
+        "weather_rain_sensor": {
+          "name": "Rain sensor",
+          "description": "Sensor entity for rain accumulation. Null = none."
+        },
+        "weather_rain_threshold": {
+          "name": "Rain threshold",
+          "description": "Rain accumulation above which the cover is retracted."
+        },
+        "weather_is_raining_sensor": {
+          "name": "Is raining sensor",
+          "description": "Binary sensor indicating active rain. Null = none."
+        },
+        "weather_is_windy_sensor": {
+          "name": "Is windy sensor",
+          "description": "Binary sensor indicating dangerous wind. Null = none."
+        },
+        "weather_severe_sensors": {
+          "name": "Severe weather sensors",
+          "description": "Binary sensors for severe weather (OR logic). Empty list = none."
+        },
+        "weather_override_position": {
+          "name": "Weather override position",
+          "description": "Position to move to when weather override is triggered (0–100%)."
+        },
+        "weather_override_min_mode": {
+          "name": "Minimum position mode",
+          "description": "If true, treat weather_override_position as a minimum floor."
+        },
+        "weather_timeout": {
+          "name": "Weather clear timeout",
+          "description": "Seconds to wait after conditions clear before resuming automatic control (0–3600)."
+        }
       }
     },
     "set_sun_tracking": {
       "name": "Set sun tracking settings",
       "description": "Update azimuth, field-of-view, elevation limits, and sun-tracking toggle.",
       "fields": {
-        "enable_sun_tracking": { "name": "Enable sun tracking", "description": "Master toggle for solar-position-based cover control." },
-        "set_azimuth": { "name": "Window azimuth", "description": "Compass direction the window faces (0–359°)." },
-        "fov_left": { "name": "Field of view left", "description": "Degrees to the left of azimuth within which sun affects this cover (0–180°)." },
-        "fov_right": { "name": "Field of view right", "description": "Degrees to the right of azimuth within which sun affects this cover (0–180°)." },
-        "min_elevation": { "name": "Minimum sun elevation", "description": "Sun elevation (°) below which the cover is not moved. Null = no minimum." },
-        "max_elevation": { "name": "Maximum sun elevation", "description": "Sun elevation (°) above which the cover is fully opened. Null = no maximum." },
-        "distance_shaded_area": { "name": "Distance to shaded area", "description": "Distance (m) from window to edge of shaded area (0.1–50 m)." }
+        "enable_sun_tracking": {
+          "name": "Enable sun tracking",
+          "description": "Master toggle for solar-position-based cover control."
+        },
+        "set_azimuth": {
+          "name": "Window azimuth",
+          "description": "Compass direction the window faces (0–359°)."
+        },
+        "fov_left": {
+          "name": "Field of view left",
+          "description": "Degrees to the left of azimuth within which sun affects this cover (0–180°)."
+        },
+        "fov_right": {
+          "name": "Field of view right",
+          "description": "Degrees to the right of azimuth within which sun affects this cover (0–180°)."
+        },
+        "min_elevation": {
+          "name": "Minimum sun elevation",
+          "description": "Sun elevation (°) below which the cover is not moved. Null = no minimum."
+        },
+        "max_elevation": {
+          "name": "Maximum sun elevation",
+          "description": "Sun elevation (°) above which the cover is fully opened. Null = no maximum."
+        },
+        "distance_shaded_area": {
+          "name": "Distance to shaded area",
+          "description": "Distance (m) from window to edge of shaded area (0.1–50 m)."
+        }
       }
     },
     "set_blind_spot": {
       "name": "Set blind spot",
       "description": "Update blind spot zone angles. blind_spot_right must be greater than blind_spot_left.",
       "fields": {
-        "blind_spot": { "name": "Enable blind spot", "description": "If true, the blind spot zone is active." },
-        "blind_spot_left": { "name": "Left edge (from FOV left)", "description": "Left edge of the blind spot zone in degrees inward from your FOV left boundary (0 = at the FOV left edge, range 0–359°)." },
-        "blind_spot_right": { "name": "Right edge (from FOV left)", "description": "Right edge of the blind spot zone in degrees inward from your FOV left boundary. Must be greater than left edge (range 1–360°)." },
-        "blind_spot_elevation": { "name": "Elevation limit", "description": "Maximum sun elevation (°) for the blind spot to apply. Null = always apply." }
+        "blind_spot": {
+          "name": "Enable blind spot",
+          "description": "If true, the blind spot zone is active."
+        },
+        "blind_spot_left": {
+          "name": "Left edge (from FOV left)",
+          "description": "Left edge of the blind spot zone in degrees inward from your FOV left boundary (0 = at the FOV left edge, range 0–359°)."
+        },
+        "blind_spot_right": {
+          "name": "Right edge (from FOV left)",
+          "description": "Right edge of the blind spot zone in degrees inward from your FOV left boundary. Must be greater than left edge (range 1–360°)."
+        },
+        "blind_spot_elevation": {
+          "name": "Elevation limit",
+          "description": "Maximum sun elevation (°) for the blind spot to apply. Null = always apply."
+        }
       }
     },
     "set_interpolation": {
       "name": "Set interpolation",
       "description": "Enable position interpolation and configure the start/end range and lookup table.",
       "fields": {
-        "interp": { "name": "Enable interpolation", "description": "If true, apply interpolation mapping to the calculated position." },
-        "interp_start": { "name": "Interpolation start", "description": "Calculated position (%) at which interpolation begins. Null = none." },
-        "interp_end": { "name": "Interpolation end", "description": "Calculated position (%) at which interpolation ends. Null = none." },
-        "interp_list": { "name": "Input list", "description": "Input positions for the interpolation lookup table." },
-        "interp_list_new": { "name": "Output list", "description": "Output positions mapped from interp_list." }
+        "interp": {
+          "name": "Enable interpolation",
+          "description": "If true, apply interpolation mapping to the calculated position."
+        },
+        "interp_start": {
+          "name": "Interpolation start",
+          "description": "Calculated position (%) at which interpolation begins. Null = none."
+        },
+        "interp_end": {
+          "name": "Interpolation end",
+          "description": "Calculated position (%) at which interpolation ends. Null = none."
+        },
+        "interp_list": {
+          "name": "Input list",
+          "description": "Input positions for the interpolation lookup table."
+        },
+        "interp_list_new": {
+          "name": "Output list",
+          "description": "Output positions mapped from interp_list."
+        }
       }
     },
     "set_geometry": {
       "name": "Set geometry",
       "description": "Update cover geometry dimensions. Supply only fields applicable to your cover type.",
       "fields": {
-        "window_height": { "name": "Window height", "description": "Window height in metres (0.1–50 m). Vertical blind and awning only." },
-        "window_width": { "name": "Window width", "description": "Window width in metres (0.1–50 m). Vertical blind only." },
-        "window_depth": { "name": "Window depth", "description": "Window reveal depth in metres (0–5 m). Vertical blind only." },
-        "sill_height": { "name": "Sill height", "description": "Window sill height from floor in metres (0–50 m). Vertical blind only." },
-        "length_awning": { "name": "Awning length", "description": "Awning projection length in metres (0.3–6 m). Awning only." },
-        "angle": { "name": "Awning angle", "description": "Awning tilt angle in degrees (0–45°). Awning only." },
-        "slat_depth": { "name": "Slat depth", "description": "Venetian slat depth in centimetres (0.1–15 cm). Tilt only." },
-        "slat_distance": { "name": "Slat distance", "description": "Distance between slats in centimetres (0.1–15 cm). Tilt only." },
-        "tilt_mode": { "name": "Tilt mode", "description": "Slat angle calculation mode (mode1 or mode2). Tilt only." }
+        "window_height": {
+          "name": "Window height",
+          "description": "Window height in metres (0.1–50 m). Vertical blind and awning only."
+        },
+        "window_width": {
+          "name": "Window width",
+          "description": "Window width in metres (0.1–50 m). Vertical blind only."
+        },
+        "window_depth": {
+          "name": "Window depth",
+          "description": "Window reveal depth in metres (0–5 m). Vertical blind only."
+        },
+        "sill_height": {
+          "name": "Sill height",
+          "description": "Window sill height from floor in metres (0–50 m). Vertical blind only."
+        },
+        "length_awning": {
+          "name": "Awning length",
+          "description": "Awning projection length in metres (0.3–6 m). Awning only."
+        },
+        "angle": {
+          "name": "Awning angle",
+          "description": "Awning tilt angle in degrees (0–45°). Awning only."
+        },
+        "slat_depth": {
+          "name": "Slat depth",
+          "description": "Venetian slat depth in centimetres (0.1–15 cm). Tilt only."
+        },
+        "slat_distance": {
+          "name": "Slat distance",
+          "description": "Distance between slats in centimetres (0.1–15 cm). Tilt only."
+        },
+        "tilt_mode": {
+          "name": "Tilt mode",
+          "description": "Slat angle calculation mode (mode1 or mode2). Tilt only."
+        }
       }
     },
     "set_option": {
       "name": "Set option (generic)",
       "description": "Generic escape hatch — update any single supported option by key name. Identity keys are rejected.",
       "fields": {
-        "option": { "name": "Option key", "description": "The internal option key to update (e.g. 'default_percentage', 'sunset_position')." },
-        "value": { "name": "Value", "description": "New value for the option. Pass null to clear an optional field." }
+        "option": {
+          "name": "Option key",
+          "description": "The internal option key to update (e.g. 'default_percentage', 'sunset_position')."
+        },
+        "value": {
+          "name": "Value",
+          "description": "New value for the option. Pass null to clear an optional field."
+        }
       }
     }
   }

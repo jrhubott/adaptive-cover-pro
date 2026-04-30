@@ -8,6 +8,24 @@ on:
       - main
 
 jobs:
+  lint:
+    name: Format check (Black)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install Black
+        run: pip install black==25.1.0
+
+      - name: Run black --check
+        run: black --check .
+
   test:
     name: Test (Python ${{ matrix.python-version }} / HA ${{ matrix.ha-channel }})
     runs-on: ubuntu-latest

@@ -220,13 +220,16 @@ class WeatherManager:
         self._override_active = True
         if not previous and self._event_buffer is not None:
             import datetime as dt
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "weather_override_changed",
-                "entity_id": "",
-                "previous": False,
-                "current": True,
-            })
+
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "weather_override_changed",
+                    "entity_id": "",
+                    "previous": False,
+                    "current": True,
+                }
+            )
 
     def reconcile(self) -> str | None:
         """Self-healing check against live sensor state.
@@ -299,14 +302,17 @@ class WeatherManager:
         self._override_active = False
         if self._event_buffer is not None:
             import datetime as dt
-            self._event_buffer.record({
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "weather_override_changed",
-                "entity_id": "",
-                "previous": True,
-                "current": False,
-                "reason": f"clear-delay expired ({timeout_seconds}s)",
-            })
+
+            self._event_buffer.record(
+                {
+                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "event": "weather_override_changed",
+                    "entity_id": "",
+                    "previous": True,
+                    "current": False,
+                    "reason": f"clear-delay expired ({timeout_seconds}s)",
+                }
+            )
         self._logger.info(
             "Weather clear-delay expired (%s seconds) — resuming normal control",
             timeout_seconds,

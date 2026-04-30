@@ -25,6 +25,7 @@ Automatically control your blinds, awnings, and shutters based on the sun's posi
 ## 🆕 Recent Improvements (v2.6.8 - Latest)
 
 ### Position Verification & Reliability (v2.6.7-2.6.8)
+
 - ✅ **Periodic position verification** - Automatically detects when covers drift from target position
 - ✅ **Smart repositioning** - Retries with exponential backoff if position doesn't match
 - ✅ **Position mismatch detection** - Binary sensor alerts when covers drift
@@ -32,6 +33,7 @@ Automatically control your blinds, awnings, and shutters based on the sun's posi
 - ✅ **Fixed critical bugs** - Position verification sensors now work correctly with full statistics support
 
 ### Diagnostic & Testing (v2.6.0-2.6.1)
+
 - ✅ **Comprehensive diagnostic sensors** - 8 diagnostic entities (4 enabled by default, 4 optional)
   - Last Cover Action, Sun Position, Control Status, Calculated Position
   - Active Temperature, Climate Conditions, Time Window, Sun Validity
@@ -40,6 +42,7 @@ Automatically control your blinds, awnings, and shutters based on the sun's posi
 - ✅ **Developer documentation** - 1000+ line comprehensive developer guide
 
 ### Configuration & Usability (v2.6.2-2.6.6)
+
 - ✅ **Enhanced config flow UI** - Clear field descriptions in all supported languages
 - ✅ **Min/max position documentation** - Complete docs for position limit features
 - ✅ **Automated release tooling** - Streamlined release process for faster updates
@@ -85,4 +88,4 @@ Have questions or want to share your setup? Join the discussion in this thread!
 
 ---
 
-**Latest Version: v2.6.8** | *Compatible with Home Assistant 2024.5.0+ | Python 3.11+*
+**Latest Version: v2.6.8** | _Compatible with Home Assistant 2024.5.0+ | Python 3.11+_

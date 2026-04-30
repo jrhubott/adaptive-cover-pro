@@ -1,4 +1,5 @@
 """Docstring hygiene for services.yaml (Issue #211 Option 2)."""
+
 from __future__ import annotations
 
 from pathlib import Path

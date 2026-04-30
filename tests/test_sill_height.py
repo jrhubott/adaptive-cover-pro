@@ -216,9 +216,9 @@ class TestGeometrySillHeightEffect:
 
         # Positions should be monotonically decreasing with sill_height
         for i in range(len(positions) - 1):
-            assert positions[i] >= positions[i + 1], (
-                f"Expected monotonic decrease: sill_heights={sill_heights}, positions={positions}"
-            )
+            assert (
+                positions[i] >= positions[i + 1]
+            ), f"Expected monotonic decrease: sill_heights={sill_heights}, positions={positions}"
 
 
 class TestMathVerification:
@@ -255,9 +255,9 @@ class TestMathVerification:
 
         # At gamma=0, sol_elev=45°, safety margin = 1.0, so result = expected_base_height
         # expected 0.2 < h_win=2.1, so no clipping
-        assert abs(position - expected_base_height) < 1e-6, (
-            f"Expected {expected_base_height:.6f} but got {position:.6f}"
-        )
+        assert (
+            abs(position - expected_base_height) < 1e-6
+        ), f"Expected {expected_base_height:.6f} but got {position:.6f}"
 
     def test_sill_offset_formula_at_30_degrees(self, base_cover_params):
         """At 30° elevation, sill_offset = sill_height / tan(30°)."""
@@ -281,9 +281,9 @@ class TestMathVerification:
         position = cover.calculate_position()
 
         # At gamma=0, sol_elev=30°, safety margin = 1.0
-        assert abs(position - expected_base_height) < 1e-6, (
-            f"Expected {expected_base_height:.6f} but got {position:.6f}"
-        )
+        assert (
+            abs(position - expected_base_height) < 1e-6
+        ), f"Expected {expected_base_height:.6f} but got {position:.6f}"
 
     def test_sill_offset_reduces_effective_distance(self, base_cover_params):
         """The sill_offset subtracts from effective_distance, reducing required position.
@@ -391,9 +391,9 @@ class TestEdgeCasesAtThreshold:
             results.append(cover.calculate_position())
 
         # All should be h_win, all identical
-        assert all(r == results[0] for r in results), (
-            f"Expected identical results for all sill_heights at elev=1.5°: {results}"
-        )
+        assert all(
+            r == results[0] for r in results
+        ), f"Expected identical results for all sill_heights at elev=1.5°: {results}"
 
 
 class TestInteractionWithWindowDepth:
@@ -476,9 +476,9 @@ class TestInteractionWithWindowDepth:
         actual_position = cover_both.calculate_position()
 
         # At gamma=30°, safety margin = 1.0, so actual should match expected
-        assert abs(actual_position - expected_base_height) < 1e-6, (
-            f"Expected {expected_base_height:.6f} but got {actual_position:.6f}"
-        )
+        assert (
+            abs(actual_position - expected_base_height) < 1e-6
+        ), f"Expected {expected_base_height:.6f} but got {actual_position:.6f}"
 
 
 class TestHorizontalCoverSillHeight:
@@ -591,12 +591,12 @@ class TestNumericalStability:
                     )
                     position = cover.calculate_position()
 
-                    assert not np.isnan(position), (
-                        f"NaN at gamma={gamma}, elev={sol_elev}, sill_height={sill_height}"
-                    )
-                    assert not np.isinf(position), (
-                        f"Inf at gamma={gamma}, elev={sol_elev}, sill_height={sill_height}"
-                    )
+                    assert not np.isnan(
+                        position
+                    ), f"NaN at gamma={gamma}, elev={sol_elev}, sill_height={sill_height}"
+                    assert not np.isinf(
+                        position
+                    ), f"Inf at gamma={gamma}, elev={sol_elev}, sill_height={sill_height}"
 
     def test_position_always_in_valid_range(self, base_cover_params):
         """Position should always be in [0, h_win] with any sill_height."""

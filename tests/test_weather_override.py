@@ -137,7 +137,9 @@ async def test_weather_state_change_starts_timeout_when_cleared():
     coordinator.state_change = False
     coordinator._start_weather_timeout = MagicMock()
     # Bind real reconcile so _start_weather_timeout is called transitively
-    coordinator._reconcile_weather_override = lambda: AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
+    coordinator._reconcile_weather_override = (
+        lambda: AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
+    )
 
     event = MagicMock()
     event.data = {
@@ -340,8 +342,9 @@ async def test_restart_race_then_conditions_clear_starts_timer():
     hass.states.get.return_value = MagicMock(state="10.0")
     coordinator._start_weather_timeout = MagicMock()
     # Bind real reconcile so _start_weather_timeout is called transitively
-    coordinator._reconcile_weather_override = lambda: AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
-
+    coordinator._reconcile_weather_override = (
+        lambda: AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
+    )
 
     from homeassistant.core import Event
 
@@ -412,7 +415,9 @@ async def test_recover_on_restart_called_before_calculate_on_first_refresh():
     coordinator, hass = _make_coordinator_with_weather_mgr(
         wind_speed_sensor="sensor.wind", wind_speed_threshold=50.0
     )
-    hass.states.get.return_value = None  # state_attr returns None → azimuth/elevation 0.0
+    hass.states.get.return_value = (
+        None  # state_attr returns None → azimuth/elevation 0.0
+    )
     coordinator.first_refresh = True
     coordinator.config_entry = MagicMock()
     coordinator.config_entry.options = {}
@@ -425,7 +430,9 @@ async def test_recover_on_restart_called_before_calculate_on_first_refresh():
     coordinator._pipeline_result = MagicMock()
 
     call_order: list[str] = []
-    original_recover = AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart
+    original_recover = (
+        AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart
+    )
 
     def spy_recover():
         call_order.append("recover")
@@ -440,12 +447,12 @@ async def test_recover_on_restart_called_before_calculate_on_first_refresh():
 
     await AdaptiveDataUpdateCoordinator._async_update_data(coordinator)
 
-    assert "recover" in call_order, (
-        "_recover_weather_override_on_restart must be called from _async_update_data"
-    )
-    assert call_order.index("recover") < call_order.index("calculate"), (
-        "Recovery must run before _calculate_cover_state so pipeline sees restored flag"
-    )
+    assert (
+        "recover" in call_order
+    ), "_recover_weather_override_on_restart must be called from _async_update_data"
+    assert call_order.index("recover") < call_order.index(
+        "calculate"
+    ), "Recovery must run before _calculate_cover_state so pipeline sees restored flag"
 
 
 @pytest.mark.asyncio
@@ -483,6 +490,6 @@ async def test_recover_on_restart_not_called_on_subsequent_refresh():
 
     await AdaptiveDataUpdateCoordinator._async_update_data(coordinator)
 
-    assert "recover" not in call_order, (
-        "_recover_weather_override_on_restart must NOT run when first_refresh=False"
-    )
+    assert (
+        "recover" not in call_order
+    ), "_recover_weather_override_on_restart must NOT run when first_refresh=False"

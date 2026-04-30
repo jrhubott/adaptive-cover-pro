@@ -85,9 +85,7 @@ class TestGlareZoneGeometry:
         gamma = 30.0
         # nearest_x = 0; nearest_y = 2.0
         # x_at_window = 0 + 2.0*tan(30) ≈ 1.1547; window_half_width=1.5 → reachable
-        dist = _glare_zone_effective_distance(
-            zone, gamma=gamma, window_half_width=1.5
-        )
+        dist = _glare_zone_effective_distance(zone, gamma=gamma, window_half_width=1.5)
         assert dist == pytest.approx(2.00, abs=1e-6)
 
     def test_zone_outside_window_angle_returns_none(self):
@@ -111,9 +109,7 @@ class TestGlareZoneGeometry:
         # x_at_window = -1.0 + 2.0*tan(-30) ≈ -1.0 - 1.1547 = -2.1547
         # abs(-2.1547) > 1.5 → None (ray exits left of window)
         zone = GlareZone(name="Z", x=-1.0, y=2.0, radius=0.0)
-        dist = _glare_zone_effective_distance(
-            zone, gamma=-30.0, window_half_width=1.5
-        )
+        dist = _glare_zone_effective_distance(zone, gamma=-30.0, window_half_width=1.5)
         assert dist is None
 
 

@@ -271,9 +271,9 @@ class TestSunOnlyLimitsAppliedDuringSolarTracking:
                 direct_sun_valid=True,
             )
             result = _registry_solar_default().evaluate(snap)
-            assert result.position == 25, (
-                f"sun_only={sun_only} should clamp to 25 when sun is valid"
-            )
+            assert (
+                result.position == 25
+            ), f"sun_only={sun_only} should clamp to 25 when sun is valid"
 
 
 # ---------------------------------------------------------------------------

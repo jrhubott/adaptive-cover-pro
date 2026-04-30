@@ -202,7 +202,9 @@ class TestClimateHandlerGlareControl:
         snap = make_snapshot(
             cover=cover,
             climate_mode_enabled=True,
-            climate_readings=_make_readings(inside_temperature=22.0, is_presence=True, is_sunny=False),
+            climate_readings=_make_readings(
+                inside_temperature=22.0, is_presence=True, is_sunny=False
+            ),
             climate_options=_make_options(temp_low=18.0, temp_high=26.0),
         )
         result = self.handler.evaluate(snap)
@@ -496,9 +498,9 @@ class TestClimateHandlerTimeWindow:
         """describe_skip() should mention 'time window' when outside window."""
         snap = self._active_snap(in_time_window=False)
         reason = self.handler.describe_skip(snap)
-        assert "time window" in reason.lower(), (
-            f"Expected 'time window' in describe_skip reason but got: {reason!r}"
-        )
+        assert (
+            "time window" in reason.lower()
+        ), f"Expected 'time window' in describe_skip reason but got: {reason!r}"
 
     def test_summer_returns_none_outside_window(self) -> None:
         """Summer cooling must also be gated by time window."""
@@ -589,7 +591,9 @@ class TestClimateHandlerContribute:
             ),
             climate_options=_make_options(temp_low=18.0, temp_high=26.0),
         )
-        assert self.handler.evaluate(snap) is None, "sanity: should defer on GLARE_CONTROL"
+        assert (
+            self.handler.evaluate(snap) is None
+        ), "sanity: should defer on GLARE_CONTROL"
         contrib = self.handler.contribute(snap)
         assert "climate_data" in contrib
         assert isinstance(contrib["climate_data"], ClimateCoverData)
@@ -631,7 +635,9 @@ class TestClimateHandlerContribute:
         )
         assert self.handler.contribute(snap) == {}
 
-    def test_contribute_climate_data_consistent_with_evaluate_when_handler_wins(self) -> None:
+    def test_contribute_climate_data_consistent_with_evaluate_when_handler_wins(
+        self,
+    ) -> None:
         """When evaluate() wins, contribute() returns the same climate_data (single source of truth)."""
         cover = _make_blind_cover(direct_sun_valid=True)
         snap = make_snapshot(
@@ -644,5 +650,8 @@ class TestClimateHandlerContribute:
         contrib = self.handler.contribute(snap)
         assert result is not None, "winter should win"
         assert "climate_data" in contrib
-        assert contrib["climate_data"].inside_temperature == result.climate_data.inside_temperature
+        assert (
+            contrib["climate_data"].inside_temperature
+            == result.climate_data.inside_temperature
+        )
         assert contrib["climate_data"].is_winter == result.climate_data.is_winter

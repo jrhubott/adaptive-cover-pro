@@ -33,7 +33,7 @@ jobs:
           jupyter nbconvert --to notebook --execute --inplace test_env.ipynb
 
       - name: Upload generated plots
-        if: always()  # Upload even if notebook fails (might have partial plots)
+        if: always() # Upload even if notebook fails (might have partial plots)
         uses: actions/upload-artifact@v4
         with:
           name: notebook-plots

@@ -237,9 +237,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # migration idempotent.
 _CM_TO_M_SENTINEL = 5.0
 _GLARE_ZONE_DIMENSION_KEYS = tuple(
-    f"glare_zone_{i}_{suffix}"
-    for i in range(1, 5)
-    for suffix in ("x", "y", "radius")
+    f"glare_zone_{i}_{suffix}" for i in range(1, 5) for suffix in ("x", "y", "radius")
 )
 
 

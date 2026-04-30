@@ -95,13 +95,13 @@ def _make_coordinator(
 
     # Record when the command was "sent"
     now = dt.datetime.now(dt.UTC)
-    cmd_svc._sent_at = {
-        entity_id: now - dt.timedelta(seconds=sent_seconds_ago)
-    }
+    cmd_svc._sent_at = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
 
     # Wire up the progress-aware timeout helpers used by process_entity_state_change.
     # These tests don't pre-populate last_progress_at, so elapsed falls back to sent_at.
-    from custom_components.adaptive_cover_pro.const import DEFAULT_TRANSIT_TIMEOUT_SECONDS
+    from custom_components.adaptive_cover_pro.const import (
+        DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+    )
 
     cmd_svc._wait_for_target_timeout_seconds = DEFAULT_TRANSIT_TIMEOUT_SECONDS
     _progress_at: dict[str, dt.datetime] = {}
@@ -222,9 +222,9 @@ class TestTransitDetection:
                 new_state_str="opening",
             )
             _call(coord)
-            assert coord._cmd_svc.wait_for_target[entity_id] is True, (
-                f"wait_for_target must stay True at position {new_pos} (was {old_pos})"
-            )
+            assert (
+                coord._cmd_svc.wait_for_target[entity_id] is True
+            ), f"wait_for_target must stay True at position {new_pos} (was {old_pos})"
 
 
 # ===========================================================================
@@ -597,7 +597,9 @@ class TestTransitTimeout:
 
     def test_transit_timeout_constant_is_documented(self) -> None:
         """DEFAULT_TRANSIT_TIMEOUT_SECONDS must be defined in const.py and be 45."""
-        from custom_components.adaptive_cover_pro.const import DEFAULT_TRANSIT_TIMEOUT_SECONDS
+        from custom_components.adaptive_cover_pro.const import (
+            DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+        )
 
         assert DEFAULT_TRANSIT_TIMEOUT_SECONDS == 45
 

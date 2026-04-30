@@ -94,17 +94,17 @@ async def test_prune_removes_legacy_orphans(hass: HomeAssistant) -> None:
 
     registry = er.async_get(hass)
     for eid in orphan_entity_ids:
-        assert registry.async_get(eid) is not None, (
-            f"Orphan {eid} should exist pre-migration"
-        )
+        assert (
+            registry.async_get(eid) is not None
+        ), f"Orphan {eid} should exist pre-migration"
 
     await async_prune_legacy_entities(hass, entry)
     await hass.async_block_till_done()
 
     for eid in orphan_entity_ids:
-        assert registry.async_get(eid) is None, (
-            f"Orphan {eid} should be removed post-migration"
-        )
+        assert (
+            registry.async_get(eid) is None
+        ), f"Orphan {eid} should be removed post-migration"
 
 
 @pytest.mark.integration
@@ -118,26 +118,26 @@ async def test_prune_leaves_modern_entities_intact(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     registry = er.async_get(hass)
-    assert registry.async_get(modern.entity_id) is not None, (
-        f"Modern entity {modern.entity_id} should not be removed"
-    )
+    assert (
+        registry.async_get(modern.entity_id) is not None
+    ), f"Modern entity {modern.entity_id} should not be removed"
 
 
 @pytest.mark.integration
 async def test_prune_sets_flag(hass: HomeAssistant) -> None:
     """Migration writes the _orphan_prune_v1 flag to entry.options."""
     entry = _make_entry(hass)
-    assert not entry.options.get(_PRUNE_V1_FLAG), (
-        "Flag should not be set before migration"
-    )
+    assert not entry.options.get(
+        _PRUNE_V1_FLAG
+    ), "Flag should not be set before migration"
 
     await async_prune_legacy_entities(hass, entry)
     await hass.async_block_till_done()
 
     updated_entry = hass.config_entries.async_get_entry(ENTRY_ID)
-    assert updated_entry.options.get(_PRUNE_V1_FLAG) is True, (
-        "Flag should be set after migration"
-    )
+    assert (
+        updated_entry.options.get(_PRUNE_V1_FLAG) is True
+    ), "Flag should be set after migration"
 
 
 @pytest.mark.integration
@@ -163,9 +163,9 @@ async def test_prune_is_idempotent(hass: HomeAssistant) -> None:
     entries_after_second = {
         e.entity_id for e in er.async_entries_for_config_entry(registry, ENTRY_ID)
     }
-    assert entries_after_first == entries_after_second, (
-        "Second migration run should not change the entity registry"
-    )
+    assert (
+        entries_after_first == entries_after_second
+    ), "Second migration run should not change the entity registry"
 
 
 @pytest.mark.integration
@@ -178,9 +178,9 @@ async def test_prune_no_effect_when_no_orphans(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     registry = er.async_get(hass)
-    assert registry.async_get(modern.entity_id) is not None, (
-        "Modern entity should still exist"
-    )
+    assert (
+        registry.async_get(modern.entity_id) is not None
+    ), "Modern entity should still exist"
     updated_entry = hass.config_entries.async_get_entry(ENTRY_ID)
     assert updated_entry.options.get(_PRUNE_V1_FLAG) is True
 
@@ -212,12 +212,12 @@ async def test_prune_does_not_touch_non_binary_sensor_domains(
     await async_prune_legacy_entities(hass, entry)
     await hass.async_block_till_done()
 
-    assert registry.async_get(sensor_entry.entity_id) is not None, (
-        "Sensor entity must not be removed"
-    )
-    assert registry.async_get(switch_entry.entity_id) is not None, (
-        "Switch entity must not be removed"
-    )
+    assert (
+        registry.async_get(sensor_entry.entity_id) is not None
+    ), "Sensor entity must not be removed"
+    assert (
+        registry.async_get(switch_entry.entity_id) is not None
+    ), "Switch entity must not be removed"
 
 
 @pytest.mark.integration
@@ -225,6 +225,6 @@ async def test_legacy_suffixes_cover_both_known_patterns() -> None:
     """Sanity-check: the constant contains both expected legacy suffixes."""
     assert "_Sun Infront" in _LEGACY_BINARY_SENSOR_SUFFIXES
     assert "_Manual Override" in _LEGACY_BINARY_SENSOR_SUFFIXES
-    assert len(_LEGACY_BINARY_SENSOR_SUFFIXES) == 2, (
-        "Update this test if new legacy suffixes are added"
-    )
+    assert (
+        len(_LEGACY_BINARY_SENSOR_SUFFIXES) == 2
+    ), "Update this test if new legacy suffixes are added"

@@ -100,9 +100,9 @@ def make_snapshot(
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,
-        force_override_sensors=force_override_sensors
-        if force_override_sensors is not None
-        else {},
+        force_override_sensors=(
+            force_override_sensors if force_override_sensors is not None else {}
+        ),
         force_override_position=force_override_position,
         force_override_min_mode=force_override_min_mode,
         manual_override_active=manual_override_active,
@@ -112,14 +112,16 @@ def make_snapshot(
         weather_override_min_mode=weather_override_min_mode,
         weather_bypass_auto_control=weather_bypass_auto_control,
         glare_zones=glare_zones,
-        active_zone_names=frozenset(active_zone_names)
-        if active_zone_names is not None
-        else frozenset(),
+        active_zone_names=(
+            frozenset(active_zone_names)
+            if active_zone_names is not None
+            else frozenset()
+        ),
         in_time_window=in_time_window,
         motion_control_enabled=motion_control_enabled,
-        custom_position_sensors=custom_position_sensors
-        if custom_position_sensors is not None
-        else [],
+        custom_position_sensors=(
+            custom_position_sensors if custom_position_sensors is not None else []
+        ),
         my_position_value=my_position_value,
         sunset_use_my=sunset_use_my,
         enable_sun_tracking=enable_sun_tracking,

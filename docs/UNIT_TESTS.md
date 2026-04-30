@@ -7,6 +7,7 @@ This document describes the unit test structure, organization, and coverage for 
 The test suite provides comprehensive coverage of the core calculation logic, manager classes, pipeline handlers, state providers, and diagnostics builder. Tests are organized by subsystem and use pytest with lightweight fixtures that avoid requiring a running Home Assistant instance.
 
 **Current Status:**
+
 - **Total Tests:** 751
 - **Overall Coverage:** 61% (platform and coordinator files not yet fully tested)
 - **calculation.py Coverage:** 91% (primary target achieved)
@@ -68,6 +69,7 @@ tests/
 ### Test Markers
 
 Tests use pytest markers to categorize:
+
 - `@pytest.mark.unit` - Unit tests (fast, no I/O)
 - `@pytest.mark.integration` - Integration tests (slower, may involve I/O)
 - `@pytest.mark.asyncio` - Async tests requiring event loop
@@ -81,6 +83,7 @@ Tests use pytest markers to categorize:
 Calculation tests no longer require a `hass` mock. They pass `sun_data=mock_sun_data` directly to cover constructors, keeping tests fast and HA-independent.
 
 **Azimuth and Gamma Calculations:**
+
 - `test_gamma_angle_calculation_sun_directly_in_front` - Gamma = 0° when sun directly ahead
 - `test_gamma_angle_calculation_sun_to_left` - Positive gamma for sun to the left
 - `test_gamma_angle_calculation_sun_to_right` - Negative gamma for sun to the right
@@ -89,45 +92,53 @@ Calculation tests no longer require a `hass` mock. They pass `sun_data=mock_sun_
 - `test_azi_edges_calculation` - FOV edge calculation
 
 **Sun Validity:**
+
 - Valid/invalid sun in FOV and above/below horizon
 - Direct sun validity with sunset offset
 - Blind spot detection (enabled, disabled, None config, elevation limits)
 
 **Default Position Logic:**
+
 - Before/after sunset behavior
 - Sunset position application
 
 **AdaptiveVerticalCover (8+ tests):**
+
 - Standard height calculation (45° sun)
 - High/low sun position clipping
 - Angled sun path length with gamma
 - Height-to-percentage conversion
 
 **AdaptiveHorizontalCover (7+ tests):**
+
 - Standard awning extension
 - Non-zero awning angle
 - High/low sun scenarios
 - Awning angle variations (0°, 15°, 30°, 45°)
 
 **AdaptiveTiltCover (9+ tests):**
+
 - Beta angle calculation
 - Mode1 (90°) and Mode2 (180°) tilt angles
 - Slat depth and distance variations
 - Beta with different sun elevations
 
 **NormalCoverState (20 tests):**
+
 - Sun valid/invalid → calculated vs. default position
 - Max/min position clamping (always and during direct sun only)
 - After-sunset behavior
 
 **ClimateCoverData:**
 Pre-read values are passed directly (no HA state mocking needed for the data object itself):
+
 - Temperature readings (outside entity, weather entity, inside sensor, climate entity)
 - Presence detection (device_tracker, zone, binary_sensor, None)
 - Winter/summer detection
 - Weather and lux/irradiance thresholds
 
 **ClimateCoverState (50 tests):**
+
 - Normal/tilt cover routing
 - Winter strategy: open fully when cold and sunny
 - Summer strategy: close when hot
@@ -138,6 +149,7 @@ Pre-read values are passed directly (no HA state mocking needed for the data obj
 ### test_geometric_accuracy.py (34 tests)
 
 Dedicated tests for the enhanced geometric accuracy calculations added in v2.7.0:
+
 - Safety margin behavior at all angle ranges (low, normal, high elevation; small/large gamma)
 - Edge case handling at thresholds (elevation < 2°, |gamma| > 85°, elevation > 88°)
 - Smooth transitions across ranges (no discontinuities)
@@ -148,6 +160,7 @@ Dedicated tests for the enhanced geometric accuracy calculations added in v2.7.0
 ### test_sill_height.py (22 tests)
 
 Tests for the sill height geometric parameter:
+
 - Sill height reduces effective distance and raises the blind
 - Zero sill height produces identical results to previous behavior
 - Various sill heights across elevation ranges
@@ -170,6 +183,7 @@ Helper function tests covering all utility functions:
 ### test_inverse_state.py (13 tests, 100% coverage)
 
 Inverse state behavior tests (critical feature):
+
 - Function-level inversion (0 → 100, 100 → 0, 50 → 50, intermediate values)
 - Position-capable cover flow with inversion
 - Open/close cover flow above/at/below threshold
@@ -181,12 +195,14 @@ Inverse state behavior tests (critical feature):
 Manager tests use real manager instances with mocked dependencies (hass, logger). No HA-specific imports needed.
 
 **test_grace_period.py (8 tests) — GracePeriodManager:**
+
 - Startup grace period tracking (active vs. expired)
 - Command-issued grace period (prevents re-issuing commands)
 - Grace period reset on new commands
 - Concurrent startup and command grace periods
 
 **test_motion.py (17 tests) — MotionManager:**
+
 - OR logic: ANY sensor detecting motion enables automatic positioning
 - No-motion debounce: configurable timeout before reverting to default
 - Immediate response when motion detected; delayed response when motion stops
@@ -195,12 +211,14 @@ Manager tests use real manager instances with mocked dependencies (hass, logger)
 - Config updates (sensor list, timeout) take effect immediately
 
 **test_position_verification.py (17 tests) — PositionVerificationManager:**
+
 - Position tolerance checking (within/outside threshold)
 - Retry counting and max retry enforcement
 - Check interval enforcement (avoids excessive verification calls)
 - Reset behavior on new commands
 
 **test_cover_command.py (34 tests) — CoverCommandService:**
+
 - Cover service call construction (set_cover_position, open_cover, close_cover)
 - Special position handling (force override position, motion timeout default)
 - Grace period integration (skip commands during grace)
@@ -222,12 +240,14 @@ Each handler is tested independently with a `make_ctx()` helper that builds a `P
 - **DefaultHandler** — Always returns the configured default position (fallback)
 
 All handlers are tested for:
+
 - Expected `ControlMethod` enum value on output
 - Correct position selection
 - Pass-through behavior when handler condition is not met
 - Edge cases (None positions, boundary states)
 
 **test_registry.py (13 tests) — PipelineRegistry:**
+
 - Handler registration order (force override → motion timeout → manual → climate → solar → default)
 - `process()` returns first handler whose condition is met
 - All handlers registered by default
@@ -254,6 +274,7 @@ Tests for the frozen dataclasses that hold unified state for each update cycle.
 - `ClimateReadings` dataclass field types and defaults
 
 **test_sun_provider.py (4 tests) — SunProvider:**
+
 - `create_sun_data()` returns a `SunData` instance
 - Correct astral location lookup
 - Timezone handling
@@ -261,6 +282,7 @@ Tests for the frozen dataclasses that hold unified state for each update cycle.
 ### test_engine/test_venetian.py
 
 Tests for `VenetianCoverCalculation` — dual-axis venetian blind calculations:
+
 - Calculates both position and tilt angle simultaneously
 - Handles elevation and gamma inputs from `SunGeometry`
 - Edge cases for near-horizontal and near-vertical sun positions
@@ -271,6 +293,7 @@ Tests for `VenetianCoverCalculation` — dual-axis venetian blind calculations:
 `DiagnosticsBuilder` assembles the `position_explanation` attribute and control-state diagnostics.
 
 Tests use a `_make_cover()` helper to construct minimal cover-like objects:
+
 - All sun-validity decision branches (in FOV, above horizon, blind spot, sunset)
 - Safety margin application in position explanation
 - Climate mode branch reporting (winter open, summer close, intermediate)
@@ -280,23 +303,23 @@ Tests use a `_make_cover()` helper to construct minimal cover-like objects:
 
 ### Existing Feature Tests
 
-| File | Tests | What it covers |
-|------|-------|----------------|
-| `test_interpolation.py` | 8 | Position interpolation smoothing |
-| `test_delta_position.py` | 6 | Delta threshold prevents micro-movements |
-| `test_manual_override.py` | 10 | Manual override detection and reset |
-| `test_motion_control.py` | 31 | Full motion control integration (OR logic, debounce) |
-| `test_force_override_sensors.py` | 13 | Force override sensor behavior |
-| `test_startup_grace_period.py` | 8 | Startup grace period integration |
-| `test_control_state_reason.py` | 14 | Control state reason tracking |
-| `test_position_explanation.py` | 25 | position_explanation diagnostic attribute |
-| `test_position_limits.py` | 10 | Min/max position limits |
-| `test_time_window_sensor.py` | 13 | Time window sensor entities |
-| `test_duplicate_sync.py` | 17 | Prevents duplicate cover commands |
-| `test_device_association.py` | 11 | Entity-to-device association |
-| `test_coordinator_logging.py` | 9 | Coordinator logging output |
-| `test_active_temperature_unit.py` | 3 | Temperature unit (°C/°F) handling |
-| `test_export_service.py` | 10 | Configuration export service |
+| File                              | Tests | What it covers                                       |
+| --------------------------------- | ----- | ---------------------------------------------------- |
+| `test_interpolation.py`           | 8     | Position interpolation smoothing                     |
+| `test_delta_position.py`          | 6     | Delta threshold prevents micro-movements             |
+| `test_manual_override.py`         | 10    | Manual override detection and reset                  |
+| `test_motion_control.py`          | 31    | Full motion control integration (OR logic, debounce) |
+| `test_force_override_sensors.py`  | 13    | Force override sensor behavior                       |
+| `test_startup_grace_period.py`    | 8     | Startup grace period integration                     |
+| `test_control_state_reason.py`    | 14    | Control state reason tracking                        |
+| `test_position_explanation.py`    | 25    | position_explanation diagnostic attribute            |
+| `test_position_limits.py`         | 10    | Min/max position limits                              |
+| `test_time_window_sensor.py`      | 13    | Time window sensor entities                          |
+| `test_duplicate_sync.py`          | 17    | Prevents duplicate cover commands                    |
+| `test_device_association.py`      | 11    | Entity-to-device association                         |
+| `test_coordinator_logging.py`     | 9     | Coordinator logging output                           |
+| `test_active_temperature_unit.py` | 3     | Temperature unit (°C/°F) handling                    |
+| `test_export_service.py`          | 10    | Configuration export service                         |
 
 ## Running Tests
 
@@ -355,58 +378,70 @@ Fixtures are defined in `tests/conftest.py` and provide reusable test components
 ### Core Fixtures
 
 **`hass`**
+
 - Mock HomeAssistant instance
 - Configured with default units (°C)
 - Returns None for `states.get()` by default
 
 **`mock_logger`**
+
 - Mock ConfigContextAdapter logger
 - All logging methods mocked (debug, info, warning, error)
 
 **`mock_sun_data`**
+
 - Mock SunData instance
 - Default values: azimuth=180°, elevation=45°
 - Predictable sun position for testing — passed as `sun_data=` to cover constructors
 
 **`mock_state`**
+
 - Factory fixture for creating mock state objects
 - Usage: `mock_state("entity_id", "state_value", {"attr": "value"})`
 
 ### Configuration Fixtures
 
 **`sample_vertical_config`**
+
 - Standard vertical cover configuration dictionary
 - Window facing south (180°), 45° FOV each side
 - Distance 0.5m, window height 2.0m
 
 **`sample_horizontal_config`**
+
 - Standard horizontal cover configuration
 - Awning length 2.0m, angle 0°
 
 **`sample_tilt_config`**
+
 - Standard tilt cover configuration
 - Slat depth 0.02m, distance 0.03m, mode1
 
 **`sample_climate_config`**
+
 - Standard climate mode configuration
 - Temperature thresholds, weather conditions
 
 ### Cover Instance Fixtures
 
 **`vertical_cover_instance`**
+
 - Real `AdaptiveVerticalCover` instance with `sun_data=mock_sun_data`
 - No `hass` required
 - Fully instantiated with all parameters
 
 **`horizontal_cover_instance`**
+
 - Real `AdaptiveHorizontalCover` instance with `sun_data=mock_sun_data`
 - Includes awning-specific parameters
 
 **`tilt_cover_instance`**
+
 - Real `AdaptiveTiltCover` instance with `sun_data=mock_sun_data`
 - Includes slat parameters and mode
 
 **`climate_data_instance`**
+
 - Real `ClimateCoverData` instance with pre-read values
 - Accepts pre-computed booleans (is_presence, is_sunny, etc.) instead of mocking HA state
 
@@ -514,24 +549,24 @@ def test_edge_case_nan_handling(self, tilt_cover_instance):
 
 ### Current Coverage
 
-| Module | Coverage | Status |
-|--------|----------|--------|
-| calculation.py | 91% | Target achieved |
-| helpers.py | ~100% | Complete |
-| inverse_state behavior | 100% | Complete |
-| managers/ | 83–100% | Mostly complete |
-| pipeline/handlers/ | ~69% each | In progress |
-| pipeline/registry.py | ~100% | Complete |
-| state/climate_provider.py | 96% | Near complete |
-| state/sun_provider.py | 100% | Complete |
-| state/cover_provider.py | ~90% | Mostly complete |
-| state/snapshot.py | ~90% | Mostly complete |
-| engine/covers/venetian.py | ~90% | Mostly complete |
-| diagnostics/builder.py | ~100% | Complete |
-| coordinator.py | ~30% | Future work |
-| sensor.py | 29% | Future work |
-| switch.py | 0% | Future work |
-| **Overall** | **61%** | In progress |
+| Module                    | Coverage  | Status          |
+| ------------------------- | --------- | --------------- |
+| calculation.py            | 91%       | Target achieved |
+| helpers.py                | ~100%     | Complete        |
+| inverse_state behavior    | 100%      | Complete        |
+| managers/                 | 83–100%   | Mostly complete |
+| pipeline/handlers/        | ~69% each | In progress     |
+| pipeline/registry.py      | ~100%     | Complete        |
+| state/climate_provider.py | 96%       | Near complete   |
+| state/sun_provider.py     | 100%      | Complete        |
+| state/cover_provider.py   | ~90%      | Mostly complete |
+| state/snapshot.py         | ~90%      | Mostly complete |
+| engine/covers/venetian.py | ~90%      | Mostly complete |
+| diagnostics/builder.py    | ~100%     | Complete        |
+| coordinator.py            | ~30%      | Future work     |
+| sensor.py                 | 29%       | Future work     |
+| switch.py                 | 0%        | Future work     |
+| **Overall**               | **61%**   | In progress     |
 
 ### Missing Coverage in calculation.py (9%)
 
@@ -571,16 +606,19 @@ def test_edge_case_nan_handling(self, tilt_cover_instance):
 ## Continuous Integration
 
 Tests run automatically on:
+
 - Every commit via GitHub Actions
 - Pull requests before merge
 
 **CI Configuration:** `.github/workflows/test.yml`
 
 **Python Versions Tested:**
+
 - Python 3.11
 - Python 3.12
 
 **Home Assistant Versions:**
+
 - Minimum: 2024.5.0
 - Tested with latest stable
 
@@ -589,12 +627,14 @@ Tests run automatically on:
 ### Common Test Failures
 
 **ImportError: No module named 'pytest'**
+
 ```bash
 source venv/bin/activate
 pip install -e ".[dev]"
 ```
 
 **datetime comparison errors**
+
 ```python
 # Always mock datetime for time-dependent tests
 @patch("custom_components.adaptive_cover_pro.calculation.datetime")
@@ -603,12 +643,14 @@ def test_with_time(self, mock_datetime, ...):
 ```
 
 **NaN comparison failures**
+
 ```python
 # Use np.isnan() or handle ValueError from round(NaN)
 assert (0 <= result <= 100) or np.isnan(result)
 ```
 
 **numpy.int64 vs int type errors**
+
 ```python
 # Accept both types
 assert isinstance(result, (int, np.integer))

@@ -101,15 +101,15 @@ def _make_coordinator(
     cmd_svc._position_tolerance = 5
 
     now = dt.datetime.now(dt.UTC)
-    cmd_svc._sent_at = {
-        entity_id: now - dt.timedelta(seconds=sent_seconds_ago)
-    }
+    cmd_svc._sent_at = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
     cmd_svc._wait_for_target_timeout_seconds = transit_timeout_seconds
 
     # Track last progress per entity so record_progress / _transit_elapsed work together
     last_progress_at: dict[str, dt.datetime] = {}
     if last_progress_seconds_ago is not None:
-        last_progress_at[entity_id] = now - dt.timedelta(seconds=last_progress_seconds_ago)
+        last_progress_at[entity_id] = now - dt.timedelta(
+            seconds=last_progress_seconds_ago
+        )
 
     def _transit_elapsed(eid: str, now_arg: dt.datetime) -> float | None:
         reference = last_progress_at.get(eid) or cmd_svc._sent_at.get(eid)
@@ -213,9 +213,9 @@ class TestProgressAwareBackstop:
             last_progress_seconds_ago=None,  # no progress recorded
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False, (
-            "wait_for_target must be cleared when no progress for > 45s"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is False
+        ), "wait_for_target must be cleared when no progress for > 45s"
 
     def test_slow_cover_still_moving_at_50s_does_not_trigger_false_override(
         self,
@@ -269,9 +269,9 @@ class TestProgressAwareBackstop:
             last_progress_seconds_ago=None,  # never reported progress
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False, (
-            "Hard timeout safety net must still work for covers without intermediate reports"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is False
+        ), "Hard timeout safety net must still work for covers without intermediate reports"
 
     def test_configurable_timeout_extends_window(self) -> None:
         """When transit_timeout is set to 120s, a 50s old command is not timed out."""
@@ -288,9 +288,9 @@ class TestProgressAwareBackstop:
         )
         _call(coord)
         # 50s elapsed < 120s timeout → must NOT fire
-        assert coord._cmd_svc.wait_for_target[entity_id] is True, (
-            "With transit_timeout=120s, a 50s old command must not trigger the backstop"
-        )
+        assert (
+            coord._cmd_svc.wait_for_target[entity_id] is True
+        ), "With transit_timeout=120s, a 50s old command must not trigger the backstop"
 
 
 # ===========================================================================
@@ -516,6 +516,6 @@ class TestReconciliationBackstop:
         svc._enabled = True
 
         await svc._reconcile(now)
-        assert svc.wait_for_target.get(entity_id) is False, (
-            "Reconcile backstop must clear wait_for_target after 50s > 45s configured timeout"
-        )
+        assert (
+            svc.wait_for_target.get(entity_id) is False
+        ), "Reconcile backstop must clear wait_for_target after 50s > 45s configured timeout"

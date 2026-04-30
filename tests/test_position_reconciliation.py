@@ -337,7 +337,9 @@ async def test_reconcile_clears_wait_for_target_after_timeout(svc, mock_hass):
     now = dt.datetime.now(dt.UTC)
     svc.target_call["cover.test"] = 50
     svc.wait_for_target["cover.test"] = True
-    svc._sent_at["cover.test"] = now - dt.timedelta(seconds=50)  # Expired (> 45s default)
+    svc._sent_at["cover.test"] = now - dt.timedelta(
+        seconds=50
+    )  # Expired (> 45s default)
     _patch_position(svc, 50)  # At target after timeout
 
     await svc._reconcile(now)
@@ -353,7 +355,9 @@ async def test_reconcile_retries_after_wait_for_target_timeout(svc, mock_hass):
     now = dt.datetime.now(dt.UTC)
     svc.target_call["cover.test"] = 50
     svc.wait_for_target["cover.test"] = True
-    svc._sent_at["cover.test"] = now - dt.timedelta(seconds=50)  # Expired (> 45s default)
+    svc._sent_at["cover.test"] = now - dt.timedelta(
+        seconds=50
+    )  # Expired (> 45s default)
     _patch_position(svc, 40)  # Off target
 
     with _patch_caps():

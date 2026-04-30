@@ -130,9 +130,7 @@ def test_get_datetime_from_str_converts_utc_iso_to_local_wallclock():
     (UTC-4 DST) must become 00:46 local naive, not 04:46.
     """
     ny = zoneinfo.ZoneInfo("America/New_York")
-    with patch(
-        "homeassistant.util.dt.DEFAULT_TIME_ZONE", ny
-    ):
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
         result = get_datetime_from_str("2026-04-18T04:46:00+00:00")
 
     # In April NY is UTC-4, so 04:46 UTC == 00:46 local
@@ -146,9 +144,7 @@ def test_get_datetime_from_str_converts_utc_iso_to_local_wallclock():
 def test_get_datetime_from_str_preserves_naive_static_time():
     """Static "06:30" has no tzinfo — parsed as-is, naive, wall-clock preserved."""
     ny = zoneinfo.ZoneInfo("America/New_York")
-    with patch(
-        "homeassistant.util.dt.DEFAULT_TIME_ZONE", ny
-    ):
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
         result = get_datetime_from_str("06:30")
 
     assert result.hour == 6
@@ -160,9 +156,7 @@ def test_get_datetime_from_str_preserves_naive_static_time():
 def test_get_datetime_from_str_preserves_naive_iso_datetime():
     """ISO string without tzinfo is treated as naive-local, not shifted."""
     ny = zoneinfo.ZoneInfo("America/New_York")
-    with patch(
-        "homeassistant.util.dt.DEFAULT_TIME_ZONE", ny
-    ):
+    with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", ny):
         result = get_datetime_from_str("2024-06-21T20:00:00")
 
     assert result == dt.datetime(2024, 6, 21, 20, 0, 0)

@@ -73,9 +73,9 @@ async def test_glare_active_binary_sensor_created_when_enabled(hass) -> None:
         if e.config_entry_id == entry.entry_id and e.domain == "binary_sensor"
     ]
     entity_unique_ids = [e.unique_id for e in binary_sensor_entities]
-    assert any("glare_active" in uid for uid in entity_unique_ids), (
-        f"Expected glare_active binary sensor, got unique_ids: {entity_unique_ids}"
-    )
+    assert any(
+        "glare_active" in uid for uid in entity_unique_ids
+    ), f"Expected glare_active binary sensor, got unique_ids: {entity_unique_ids}"
 
 
 @pytest.mark.integration

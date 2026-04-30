@@ -188,9 +188,9 @@ def test_issue_24_sunset_position_with_conditional_min_pos(mock_sun_data, mock_l
         # min_pos_bool=True means min_pos is only applied when sun is in window.
         # direct_sun_valid=False so min_pos is NOT applied.
         # Result should be sunset_pos (0), NOT min_pos (35).
-        assert result.position == 0, (
-            f"Expected 0 (sunset_pos), got {result.position} (min_pos applied incorrectly)"
-        )
+        assert (
+            result.position == 0
+        ), f"Expected 0 (sunset_pos), got {result.position} (min_pos applied incorrectly)"
 
 
 @pytest.mark.unit
@@ -273,9 +273,9 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
 
         # Sunset position is exempt from min/max limits (#128).
         # sunset_pos=0 must not be clamped to min_pos=35.
-        assert result.position == 0, (
-            f"Expected 0 (sunset position exempt from min_pos), got {result.position}"
-        )
+        assert (
+            result.position == 0
+        ), f"Expected 0 (sunset position exempt from min_pos), got {result.position}"
 
 
 @pytest.mark.unit
@@ -333,9 +333,9 @@ def test_sun_in_window_with_conditional_min_pos(mock_sun_data, mock_logger):
         result = state.get_state()
 
         # Result should be >= min_pos (35) because sun is in window and enable_min_position = True
-        assert result >= 35, (
-            f"Expected >= 35 (min_pos applied during sun), got {result}"
-        )
+        assert (
+            result >= 35
+        ), f"Expected >= 35 (min_pos applied during sun), got {result}"
 
 
 @pytest.mark.unit

@@ -5,7 +5,7 @@ on:
     types: [opened, edited]
   schedule:
     # Daily at 13:00 UTC — sweep stale needs-diagnostics issues
-    - cron: '0 13 * * *'
+    - cron: "0 13 * * *"
   workflow_dispatch:
 
 permissions:
@@ -103,10 +103,10 @@ jobs:
     steps:
       - uses: actions/stale@v9
         with:
-          only-issue-labels: 'needs-diagnostics'
+          only-issue-labels: "needs-diagnostics"
           days-before-issue-stale: 7
           days-before-issue-close: 0
-          stale-issue-label: 'stale-needs-diagnostics'
+          stale-issue-label: "stale-needs-diagnostics"
           close-issue-message: >
             Closing this issue as a diagnostics file was not attached within 7 days.
             Feel free to reopen and attach the diagnostics JSON file (drag-and-drop into the issue) — happy to take another look.

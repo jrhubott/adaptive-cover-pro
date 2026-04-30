@@ -715,7 +715,9 @@ async def test_is_timeout_running_false_when_task_done(mgr):
 # --- reconcile ---
 
 
-def _make_simple_wind_mgr(mock_hass, logger, *, speed: str = "10.0", threshold: float = 50.0):
+def _make_simple_wind_mgr(
+    mock_hass, logger, *, speed: str = "10.0", threshold: float = 50.0
+):
     """Return manager with one wind sensor reporting the given speed."""
     m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(

@@ -389,9 +389,9 @@ class TestTiltNegativeDiscriminant:
             mode="mode1",
         )
         result = cover.calculate_position()
-        assert result == pytest.approx(0.0), (
-            f"Expected 0.0 (closed) for negative discriminant, got {result}"
-        )
+        assert result == pytest.approx(
+            0.0
+        ), f"Expected 0.0 (closed) for negative discriminant, got {result}"
 
     @pytest.mark.unit
     def test_negative_discriminant_percentage_returns_zero(
@@ -498,9 +498,9 @@ class TestHorizontalDivisionByZeroGuard:
         with patch.object(horiz_mod, "sin", return_value=np.float64(1e-8)):
             result = cover.calculate_position()
 
-        assert result == pytest.approx(3.0), (
-            f"Guard should return full extension 3.0m, got {result}"
-        )
+        assert result == pytest.approx(
+            3.0
+        ), f"Guard should return full extension 3.0m, got {result}"
 
     @pytest.mark.unit
     def test_extension_increases_with_larger_gap(self, mock_sun_data, mock_logger):

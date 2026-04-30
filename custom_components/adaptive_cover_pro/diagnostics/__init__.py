@@ -43,7 +43,9 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: ConfigEntry
 ):
     """Return config entry diagnostics."""
-    from custom_components.adaptive_cover_pro.const import DOMAIN as _DOMAIN  # noqa: PLC0415
+    from custom_components.adaptive_cover_pro.const import (
+        DOMAIN as _DOMAIN,
+    )  # noqa: PLC0415
 
     coordinator = hass.data.get(_DOMAIN, {}).get(config_entry.entry_id)
     coordinator_diagnostics = None

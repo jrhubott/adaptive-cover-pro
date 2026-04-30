@@ -25,6 +25,7 @@ homeassistant = ">=2026.3.0"
 python = "^3.14"
 
 [tool.poetry.group.dev.dependencies]
+black = "25.1.0"
 hass-nabucasa = "0.75.1"
 hypothesis = ">=6.0"
 pre-commit = "4.0.1"
@@ -40,6 +41,15 @@ Changelog = "https://github.com/jrhubott/adaptive-cover/releases"
 [build-system]
 build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+extend-exclude = '''
+/(
+  notebooks
+)/
+'''
 
 [tool.ruff]
 exclude = ["notebooks/"]

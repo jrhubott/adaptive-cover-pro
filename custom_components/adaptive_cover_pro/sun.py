@@ -59,7 +59,9 @@ class SunData:
         except (ValueError, AttributeError):
             # Polar midnight sun: sun never sets — treat as end of day
             today = date.today()
-            return datetime(today.year, today.month, today.day, 23, 59, 59)  # noqa: DTZ001
+            return datetime(
+                today.year, today.month, today.day, 23, 59, 59
+            )  # noqa: DTZ001
 
     def sunrise(self) -> datetime:
         """Fetch sunrise time.

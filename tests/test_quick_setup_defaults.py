@@ -301,9 +301,9 @@ class TestOptionsBuilderDefaults:
             "REGRESSION (Issue #133): CONF_MANUAL_OVERRIDE_DURATION was None — "
             "quick-setup skip causes TypeError: timedelta(**None) on coordinator init"
         )
-        assert isinstance(duration, dict), (
-            f"Expected dict, got {type(duration)}: {duration}"
-        )
+        assert isinstance(
+            duration, dict
+        ), f"Expected dict, got {type(duration)}: {duration}"
         # Must be a valid timedelta argument
         td = dt.timedelta(**duration)
         assert td.total_seconds() > 0, f"Expected positive duration, got {td}"
@@ -433,9 +433,9 @@ class TestCoordinatorInitWithNoneOptions:
             "min_change was None after _update_options — "
             "will crash with TypeError: '>=' not supported between int and NoneType"
         )
-        assert isinstance(coord.min_change, int), (
-            f"Expected int, got {type(coord.min_change)}: {coord.min_change}"
-        )
+        assert isinstance(
+            coord.min_change, int
+        ), f"Expected int, got {type(coord.min_change)}: {coord.min_change}"
         assert coord.min_change == 1
 
     @pytest.mark.unit
@@ -458,9 +458,9 @@ class TestCoordinatorInitWithNoneOptions:
             "time_threshold was None after _update_options — "
             "will crash with TypeError: timedelta(minutes=None)"
         )
-        assert isinstance(coord.time_threshold, int), (
-            f"Expected int, got {type(coord.time_threshold)}: {coord.time_threshold}"
-        )
+        assert isinstance(
+            coord.time_threshold, int
+        ), f"Expected int, got {type(coord.time_threshold)}: {coord.time_threshold}"
         assert coord.time_threshold == 2
 
     @pytest.mark.unit
@@ -582,27 +582,27 @@ class TestQuickVsFullSetupParity:
             CONF_DELTA_POSITION,
             CONF_DELTA_TIME,
         ):
-            assert options[key] is not None, (
-                f"{key} was None in full-setup options — schema defaults not applied"
-            )
+            assert (
+                options[key] is not None
+            ), f"{key} was None in full-setup options — schema defaults not applied"
 
     @pytest.mark.unit
     def test_quick_setup_delta_position_is_valid_int(self):
         """CONF_DELTA_POSITION in quick-setup options must be a positive integer."""
         options = _build_options_from_config(_QUICK_SETUP_CONFIG)
         val = options[CONF_DELTA_POSITION]
-        assert isinstance(val, int) and val >= 1, (
-            f"CONF_DELTA_POSITION={val!r} is not a valid positive integer"
-        )
+        assert (
+            isinstance(val, int) and val >= 1
+        ), f"CONF_DELTA_POSITION={val!r} is not a valid positive integer"
 
     @pytest.mark.unit
     def test_quick_setup_delta_time_is_valid_int(self):
         """CONF_DELTA_TIME in quick-setup options must be a positive integer."""
         options = _build_options_from_config(_QUICK_SETUP_CONFIG)
         val = options[CONF_DELTA_TIME]
-        assert isinstance(val, int) and val >= 2, (
-            f"CONF_DELTA_TIME={val!r} is not a valid integer >= 2"
-        )
+        assert (
+            isinstance(val, int) and val >= 2
+        ), f"CONF_DELTA_TIME={val!r} is not a valid integer >= 2"
 
     @pytest.mark.unit
     def test_quick_setup_manual_duration_is_valid_timedelta_dict(self):
@@ -617,12 +617,12 @@ class TestQuickVsFullSetupParity:
     def test_full_setup_explicit_values_not_overridden_by_defaults(self):
         """Full setup values must survive the or-default expressions unchanged."""
         options = _build_options_from_config(_FULL_SETUP_CONFIG)
-        assert options[CONF_DELTA_POSITION] == 3, (
-            "or-default clobbered explicit CONF_DELTA_POSITION=3 from full setup"
-        )
-        assert options[CONF_DELTA_TIME] == 5, (
-            "or-default clobbered explicit CONF_DELTA_TIME=5 from full setup"
-        )
-        assert options[CONF_MANUAL_OVERRIDE_DURATION] == {"hours": 1}, (
-            "or-default clobbered explicit CONF_MANUAL_OVERRIDE_DURATION from full setup"
-        )
+        assert (
+            options[CONF_DELTA_POSITION] == 3
+        ), "or-default clobbered explicit CONF_DELTA_POSITION=3 from full setup"
+        assert (
+            options[CONF_DELTA_TIME] == 5
+        ), "or-default clobbered explicit CONF_DELTA_TIME=5 from full setup"
+        assert options[CONF_MANUAL_OVERRIDE_DURATION] == {
+            "hours": 1
+        }, "or-default clobbered explicit CONF_MANUAL_OVERRIDE_DURATION from full setup"

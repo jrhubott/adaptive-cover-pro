@@ -370,7 +370,9 @@ class TestCloudSuppressionWiring:
         )
 
     @pytest.mark.unit
-    def test_cloud_suppression_forces_use_irradiance_when_irradiance_entity_configured(self):
+    def test_cloud_suppression_forces_use_irradiance_when_irradiance_entity_configured(
+        self,
+    ):
         """use_irradiance must be True when cloud_suppression=True and irradiance_entity
         is set, even when irradiance_toggle is None (climate mode off).
         """

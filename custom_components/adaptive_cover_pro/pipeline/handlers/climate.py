@@ -303,7 +303,9 @@ class ClimateHandler(OverrideHandler):
     name = "climate"
     priority = 50
 
-    def _build_climate_data(self, snapshot: PipelineSnapshot) -> ClimateCoverData | None:
+    def _build_climate_data(
+        self, snapshot: PipelineSnapshot
+    ) -> ClimateCoverData | None:
         """Build ClimateCoverData from the snapshot, or None when not applicable.
 
         Single source of truth — both evaluate() and contribute() delegate here

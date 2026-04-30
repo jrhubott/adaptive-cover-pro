@@ -104,8 +104,13 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     # _build_position_context: preserve force and is_safety kwargs in the returned
     # PositionContext so callers can inspect which values the coordinator passed.
     def _fake_build_ctx(
-        entity, options, *, force=False, is_safety=False,
-        bypass_auto_control=False, sun_just_appeared=False,
+        entity,
+        options,
+        *,
+        force=False,
+        is_safety=False,
+        bypass_auto_control=False,
+        sun_just_appeared=False,
     ):
         return PositionContext(
             auto_control=False,  # reflects automatic_control=False

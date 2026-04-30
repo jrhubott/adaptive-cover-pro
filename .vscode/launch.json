@@ -6,11 +6,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "homeassistant",
-      "args": [
-        "--debug",
-        "-c",
-        "config"
-      ],
+      "args": ["--debug", "-c", "config"],
       "env": {
         "PYTHONPATH": "${workspaceFolder}/custom_components"
       },
@@ -18,7 +14,7 @@
       "justMyCode": false,
       "purpose": ["debug-in-terminal"],
       "python": "${workspaceFolder}/venv/bin/python",
-      "preLaunchTask": "Stop Home Assistant",
+      "preLaunchTask": "Stop Home Assistant"
       // NOTE: This configuration matches scripts/develop behavior:
       // - Stops any running HA instance first (preLaunchTask)
       // - Uses venv Python interpreter (python field above)
@@ -34,11 +30,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": [
-        "${file}",
-        "-v",
-        "--no-cov"
-      ],
+      "args": ["${file}", "-v", "--no-cov"],
       "console": "integratedTerminal",
       "justMyCode": false,
       "purpose": ["debug-test"],
@@ -49,11 +41,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": [
-        "tests/",
-        "-v",
-        "--no-cov"
-      ],
+      "args": ["tests/", "-v", "--no-cov"],
       "console": "integratedTerminal",
       "justMyCode": false,
       "purpose": ["debug-test"],
@@ -64,13 +52,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": [
-        "tests/",
-        "-v",
-        "--no-cov",
-        "-k",
-        "${input:testName}"
-      ],
+      "args": ["tests/", "-v", "--no-cov", "-k", "${input:testName}"],
       "console": "integratedTerminal",
       "justMyCode": false,
       "purpose": ["debug-test"],
@@ -81,11 +63,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": [
-        "tests/test_calculation.py",
-        "-v",
-        "--no-cov"
-      ],
+      "args": ["tests/test_calculation.py", "-v", "--no-cov"],
       "console": "integratedTerminal",
       "justMyCode": false,
       "purpose": ["debug-test"],
