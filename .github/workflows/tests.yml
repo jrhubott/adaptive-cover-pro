@@ -53,7 +53,7 @@ jobs:
           pytest --cov --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov (stable only)
-        if: matrix.python-version == '3.13' && matrix.ha-channel == 'stable'
+        if: matrix.python-version == '3.14' && matrix.ha-channel == 'stable'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
