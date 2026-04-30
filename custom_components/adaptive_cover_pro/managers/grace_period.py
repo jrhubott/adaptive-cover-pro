@@ -32,6 +32,7 @@ class GracePeriodManager:
             logger: Logger instance for debug output
             command_grace_seconds: Duration of per-command grace period
             startup_grace_seconds: Duration of startup grace period
+            event_buffer: Optional EventBuffer to record grace-period events
 
         """
         self._logger = logger

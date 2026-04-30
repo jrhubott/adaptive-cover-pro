@@ -52,7 +52,6 @@ def _resolve_by_config_entry(
 async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
     """Handle the get_diagnostics service call and return live diagnostics."""
     hass: HomeAssistant = call.hass
-    all_coordinators: dict = hass.data.get(DOMAIN, {})
 
     explicit_entry_ids: list[str] = call.data.get("config_entry_id") or []
 
@@ -64,7 +63,7 @@ async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
 
         target_map = _resolve_targets(hass, call)
         coords_by_entry = {
-            coord.config_entry.entry_id: coord for coord in target_map.keys()
+            coord.config_entry.entry_id: coord for coord in target_map
         }
 
     entries: dict[str, dict] = {}
