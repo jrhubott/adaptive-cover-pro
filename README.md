@@ -64,6 +64,12 @@ Inspired by and originally forked from **[Adaptive Cover](https://github.com/bas
 
 Original forum post that inspired both projects: [Automatic Blinds](https://community.home-assistant.io/t/automatic-blinds-sunscreen-control-based-on-sun-platform/).
 
+## How this project is built
+
+Adaptive Cover Pro is developed with substantial help from generative AI — specifically Anthropic's Claude, via the Claude Code CLI. AI assistance is used for code, tests, documentation, and release notes; I (the maintainer, 30+ years in software) own the architecture, vet every merge, and stay accountable for what ships. The test suite (over 2,500 tests) is the load-bearing safety net for AI-generated changes.
+
+For the full workflow — model routing, code-review gates, and what stays in human hands — see **[AI-Assisted Development](https://github.com/jrhubott/adaptive-cover-pro/wiki/AI-Assisted-Development)** on the wiki.
+
 ## For developers
 
 See the **[For Developers](https://github.com/jrhubott/adaptive-cover-pro/wiki/For-Developers)** wiki hub for setup, architecture, workflow, testing strategies, code standards, and the automated release process.
