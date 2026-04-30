@@ -21,7 +21,7 @@ repository = "https://github.com/jrhubott/adaptive-cover"
 version = "2.0.2"
 
 [tool.poetry.dependencies]
-homeassistant = ">=2025.11.0"
+homeassistant = ">=2025.9.0"
 python = "^3.12"
 
 [tool.poetry.group.dev.dependencies]
@@ -30,7 +30,7 @@ hypothesis = ">=6.0"
 pre-commit = "4.0.1"
 pre-commit-hooks = "5.0.0"
 pylint = "3.3.1"
-pytest-homeassistant-custom-component = ">=0.13"
+pytest-homeassistant-custom-component = "==0.13.280"
 ruff = "0.9.1"
 
 [tool.poetry.urls]
