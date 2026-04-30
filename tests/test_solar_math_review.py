@@ -769,3 +769,44 @@ class TestSolarTimes:
         start, end = sg.solar_times()
         assert start is None
         assert end is None
+
+    @pytest.mark.unit
+    def test_solar_times_with_position_returns_azimuth_and_elevation(self):
+        """solar_times_with_position returns (time, azimuth, elevation) tuples."""
+        sun_data = _make_full_day_sun_data(azimuth=180.0, elevation=30.0)
+        config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
+        sg = SunGeometry(
+            sol_azi=180.0,
+            sol_elev=30.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
+        )
+        start, end = sg.solar_times_with_position()
+        assert start is not None
+        assert end is not None
+        s_time, s_azi, s_elev = start
+        e_time, e_azi, e_elev = end
+        assert isinstance(s_time, datetime)
+        assert isinstance(e_time, datetime)
+        assert s_azi == pytest.approx(180.0)
+        assert e_azi == pytest.approx(180.0)
+        assert s_elev == pytest.approx(30.0)
+        assert e_elev == pytest.approx(30.0)
+        assert s_time <= e_time
+
+    @pytest.mark.unit
+    def test_solar_times_with_position_returns_none_when_sun_never_in_fov(self):
+        """solar_times_with_position returns (None, None) when sun never enters window."""
+        sun_data = _make_full_day_sun_data(azimuth=0.0, elevation=30.0)
+        config = make_cover_config(win_azi=180, fov_left=45, fov_right=45)
+        sg = SunGeometry(
+            sol_azi=0.0,
+            sol_elev=30.0,
+            sun_data=sun_data,
+            config=config,
+            logger=MagicMock(),
+        )
+        start, end = sg.solar_times_with_position()
+        assert start is None
+        assert end is None
