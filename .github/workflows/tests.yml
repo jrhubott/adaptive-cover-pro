@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies (stable — HA 2025.9.3)
+      - name: Install dependencies (stable — HA 2026.3.1)
         if: matrix.ha-channel == 'stable'
         run: |
           python -m pip install --upgrade pip
@@ -42,8 +42,8 @@ jobs:
         if: matrix.ha-channel == 'latest'
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade --no-cache-dir pytest-homeassistant-custom-component
           pip install -r requirements-dev.txt
+          pip install --upgrade --no-cache-dir pytest-homeassistant-custom-component
 
       - name: Show HA version
         run: python -c "from homeassistant.const import __version__; print('HA version:', __version__)"
