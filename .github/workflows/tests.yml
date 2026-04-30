@@ -46,7 +46,7 @@ jobs:
           pip install --pre -r requirements-dev.txt
 
       - name: Show HA version
-        run: python -c "from homeassistant.const import HAVERSION; print('HA version:', HAVERSION)"
+        run: python -c "from homeassistant.const import __version__; print('HA version:', __version__)"
 
       - name: Run tests with coverage
         run: |
