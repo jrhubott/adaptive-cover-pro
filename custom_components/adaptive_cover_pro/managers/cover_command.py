@@ -16,8 +16,7 @@ from homeassistant.const import (
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.template import state_attr
-
+from ..helpers import state_attr
 from ..const import (
     ATTR_POSITION,
     ATTR_TILT_POSITION,

@@ -24,10 +24,9 @@ try:
 except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
-from homeassistant.helpers.template import state_attr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .helpers import compute_effective_default
+from .helpers import compute_effective_default, state_attr
 from .engine.covers import (
     AdaptiveHorizontalCover,
     AdaptiveTiltCover,

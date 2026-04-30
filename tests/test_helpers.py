@@ -532,3 +532,42 @@ def test_should_use_tilt_false_open_close_only_dataclass():
         has_close=True,
     )
     assert should_use_tilt(False, caps) is False
+
+
+# --- state_attr ---
+
+
+@pytest.mark.unit
+def test_state_attr_returns_none_when_entity_missing(mock_hass):
+    """state_attr returns None when the entity does not exist."""
+    from custom_components.adaptive_cover_pro.helpers import state_attr
+
+    mock_hass.states.get.return_value = None
+
+    assert state_attr(mock_hass, "sensor.nonexistent", "temperature") is None
+
+
+@pytest.mark.unit
+def test_state_attr_returns_none_when_attribute_missing(mock_hass):
+    """state_attr returns None when the entity exists but the attribute is absent."""
+    from custom_components.adaptive_cover_pro.helpers import state_attr
+    from unittest.mock import MagicMock
+
+    state_obj = MagicMock()
+    state_obj.attributes = {}
+    mock_hass.states.get.return_value = state_obj
+
+    assert state_attr(mock_hass, "cover.test", "current_position") is None
+
+
+@pytest.mark.unit
+def test_state_attr_returns_value_when_present(mock_hass):
+    """state_attr returns the attribute value when entity and attribute exist."""
+    from custom_components.adaptive_cover_pro.helpers import state_attr
+    from unittest.mock import MagicMock
+
+    state_obj = MagicMock()
+    state_obj.attributes = {"current_position": 42}
+    mock_hass.states.get.return_value = state_obj
+
+    assert state_attr(mock_hass, "cover.test", "current_position") == 42

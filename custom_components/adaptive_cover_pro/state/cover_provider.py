@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from homeassistant.helpers.template import state_attr
-
-from ..helpers import check_cover_features, get_open_close_state, should_use_tilt
+from ..helpers import check_cover_features, get_open_close_state, should_use_tilt, state_attr
 from .snapshot import CoverCapabilities
 
 if TYPE_CHECKING:

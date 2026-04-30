@@ -5,9 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from homeassistant.helpers.template import state_attr
-
-from ..helpers import get_domain, get_safe_state
+from ..helpers import get_domain, get_safe_state, state_attr
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant

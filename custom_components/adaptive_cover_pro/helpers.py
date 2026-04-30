@@ -24,6 +24,19 @@ def get_safe_state(hass: HomeAssistant, entity_id: str):
     return state.state
 
 
+def state_attr(hass: HomeAssistant, entity_id: str, attribute: str):
+    """Return an entity attribute value, or None if the entity or attribute is absent.
+
+    Replaces homeassistant.helpers.template.state_attr, which was removed from
+    the public Python API in HA 2026.5. Same contract: None when the entity is
+    unknown or the attribute is absent, otherwise the raw value.
+    """
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    return state.attributes.get(attribute)
+
+
 def get_domain(entity: str):
     """Get domain of entity."""
     if entity is not None:
