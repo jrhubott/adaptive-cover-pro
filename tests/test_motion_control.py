@@ -125,7 +125,7 @@ def test_is_motion_detected_all_sensors_off():
 
 
 def test_is_motion_detected_sensor_unavailable():
-    """Test that unavailable sensors are treated as off."""
+    """Unavailable sensor → True (fail-open; don't penalize covers for sensor outages)."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -134,11 +134,11 @@ def test_is_motion_detected_sensor_unavailable():
         sensors=["binary_sensor.motion_living_room"]
     )
 
-    # Mock sensor unavailable (None state)
+    # Sensor missing from hass.states → is_entity_active returns True (fail-open)
     hass.states.get.return_value = None
 
     result = AdaptiveDataUpdateCoordinator.is_motion_detected.fget(coordinator)
-    assert result is False
+    assert result is True
 
 
 def test_is_motion_timeout_active_no_sensors():
@@ -1056,3 +1056,85 @@ def test_motion_status_sensor_startup_no_motion():
 
     sensor = _make_motion_status_sensor(coordinator)
     assert sensor.native_value == "no_motion"
+
+
+# --- Expanded domain tests for is_motion_detected ---
+
+
+def _motion_result(hass_state_str, entity_id):
+    """Create a MotionManager with one sensor, set state, return is_motion_detected."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, hass = _make_coordinator_with_motion_mgr(sensors=[entity_id])
+    state = MagicMock()
+    state.state = hass_state_str
+    hass.states.get.return_value = state
+    return AdaptiveDataUpdateCoordinator.is_motion_detected.fget(coordinator)
+
+
+def _motion_result_missing(entity_id):
+    """Create a MotionManager with one sensor and a missing entity state."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, hass = _make_coordinator_with_motion_mgr(sensors=[entity_id])
+    hass.states.get.return_value = None
+    return AdaptiveDataUpdateCoordinator.is_motion_detected.fget(coordinator)
+
+
+def test_is_motion_detected_device_tracker_home():
+    """device_tracker 'home' state → motion detected (True)."""
+    assert _motion_result("home", "device_tracker.dog") is True
+
+
+def test_is_motion_detected_device_tracker_away():
+    """device_tracker 'away' state → no motion (False)."""
+    assert _motion_result("away", "device_tracker.dog") is False
+
+
+def test_is_motion_detected_person_home():
+    """Person 'home' state → motion detected (True)."""
+    assert _motion_result("home", "person.dad") is True
+
+
+def test_is_motion_detected_person_away():
+    """Person 'not_home' state → no motion (False)."""
+    assert _motion_result("not_home", "person.dad") is False
+
+
+def test_is_motion_detected_zone_occupied():
+    """Zone with occupant count > 0 → motion detected (True)."""
+    assert _motion_result("2", "zone.lounge") is True
+
+
+def test_is_motion_detected_zone_empty():
+    """Zone with occupant count 0 → no motion (False)."""
+    assert _motion_result("0", "zone.lounge") is False
+
+
+def test_is_motion_detected_switch_on():
+    """Switch 'on' state → motion detected (True)."""
+    assert _motion_result("on", "switch.guests") is True
+
+
+def test_is_motion_detected_switch_off():
+    """Switch 'off' state → no motion (False)."""
+    assert _motion_result("off", "switch.guests") is False
+
+
+def test_is_motion_detected_schedule_on():
+    """Schedule 'on' state → motion detected (True)."""
+    assert _motion_result("on", "schedule.evening") is True
+
+
+def test_is_motion_detected_schedule_off():
+    """Schedule 'off' state → no motion (False)."""
+    assert _motion_result("off", "schedule.evening") is False
+
+
+def test_is_motion_detected_sensor_unavailable_fail_open():
+    """Unavailable sensor (state=None) → True (fail-open, matches presence semantics)."""
+    assert _motion_result_missing("binary_sensor.motion_living_room") is True

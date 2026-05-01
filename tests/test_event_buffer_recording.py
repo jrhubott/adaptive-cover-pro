@@ -652,7 +652,9 @@ class TestMotionTimeoutEvents:
     async def test_timeout_expired_records_event(self) -> None:
         buf = EventBuffer(maxlen=50)
         hass = MagicMock()
-        hass.states.get.return_value = None  # no motion sensors active
+        off_state = MagicMock()
+        off_state.state = "off"
+        hass.states.get.return_value = off_state  # sensor explicitly off → no motion
         mgr = MotionManager(hass=hass, logger=MagicMock(), event_buffer=buf)
         mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=0)
         refresh = AsyncMock()
