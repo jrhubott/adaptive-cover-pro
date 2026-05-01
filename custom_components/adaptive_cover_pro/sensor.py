@@ -24,14 +24,6 @@ from .const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_SUPPRESSION,
-    CONF_CUSTOM_POSITION_1,
-    CONF_CUSTOM_POSITION_2,
-    CONF_CUSTOM_POSITION_3,
-    CONF_CUSTOM_POSITION_4,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_SUN_TRACKING,
     CONF_FORCE_OVERRIDE_SENSORS,
@@ -42,6 +34,7 @@ from .const import (
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_WIND_SPEED_SENSOR,
+    CUSTOM_POSITION_SLOTS,
     DOMAIN,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
@@ -1149,13 +1142,9 @@ class AdaptiveCoverDecisionTraceSensor(AdaptiveCoverDiagnosticSensorBase, Sensor
             enabled.append("weather")
 
         if any(
-            opts.get(s) and opts.get(p) is not None
-            for s, p in (
-                (CONF_CUSTOM_POSITION_SENSOR_1, CONF_CUSTOM_POSITION_1),
-                (CONF_CUSTOM_POSITION_SENSOR_2, CONF_CUSTOM_POSITION_2),
-                (CONF_CUSTOM_POSITION_SENSOR_3, CONF_CUSTOM_POSITION_3),
-                (CONF_CUSTOM_POSITION_SENSOR_4, CONF_CUSTOM_POSITION_4),
-            )
+            opts.get(slot_keys["sensor"])
+            and opts.get(slot_keys["position"]) is not None
+            for slot_keys in CUSTOM_POSITION_SLOTS.values()
         ):
             enabled.append("custom_position")
 

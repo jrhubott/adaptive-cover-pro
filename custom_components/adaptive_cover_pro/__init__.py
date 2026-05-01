@@ -12,10 +12,6 @@ from homeassistant.helpers.event import (
 
 from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_DEVICE_ID,
     CONF_END_ENTITY,
     CONF_ENTITIES,
@@ -35,6 +31,7 @@ from .const import (
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_WIDTH,
+    CUSTOM_POSITION_SLOTS,
     DOMAIN,
     _LOGGER,
 )
@@ -99,13 +96,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Add custom position sensors to tracked entities so the pipeline
     # re-evaluates immediately when a sensor turns on or off, rather
     # than waiting for the next periodic refresh or another entity change.
-    for _sensor_key in [
-        CONF_CUSTOM_POSITION_SENSOR_1,
-        CONF_CUSTOM_POSITION_SENSOR_2,
-        CONF_CUSTOM_POSITION_SENSOR_3,
-        CONF_CUSTOM_POSITION_SENSOR_4,
-    ]:
-        _sensor = entry.options.get(_sensor_key)
+    for _slot_keys in CUSTOM_POSITION_SLOTS.values():
+        _sensor = entry.options.get(_slot_keys["sensor"])
         if _sensor:
             _entities.append(_sensor)
 

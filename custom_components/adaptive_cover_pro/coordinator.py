@@ -46,28 +46,9 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
-    CONF_CUSTOM_POSITION_1,
-    CONF_CUSTOM_POSITION_2,
-    CONF_CUSTOM_POSITION_3,
-    CONF_CUSTOM_POSITION_4,
-    CONF_CUSTOM_POSITION_MIN_MODE_1,
-    CONF_CUSTOM_POSITION_MIN_MODE_2,
-    CONF_CUSTOM_POSITION_MIN_MODE_3,
-    CONF_CUSTOM_POSITION_MIN_MODE_4,
-    CONF_CUSTOM_POSITION_USE_MY_1,
-    CONF_CUSTOM_POSITION_USE_MY_2,
-    CONF_CUSTOM_POSITION_USE_MY_3,
-    CONF_CUSTOM_POSITION_USE_MY_4,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
-    CONF_CUSTOM_POSITION_PRIORITY_1,
-    CONF_CUSTOM_POSITION_PRIORITY_2,
-    CONF_CUSTOM_POSITION_PRIORITY_3,
-    CONF_CUSTOM_POSITION_PRIORITY_4,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
+    CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -1654,38 +1635,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         alongside all other handlers.
         """
         options = self.config_entry.options
-        _slot_keys = [
-            (
-                1,
-                CONF_CUSTOM_POSITION_SENSOR_1,
-                CONF_CUSTOM_POSITION_1,
-                CONF_CUSTOM_POSITION_PRIORITY_1,
-            ),
-            (
-                2,
-                CONF_CUSTOM_POSITION_SENSOR_2,
-                CONF_CUSTOM_POSITION_2,
-                CONF_CUSTOM_POSITION_PRIORITY_2,
-            ),
-            (
-                3,
-                CONF_CUSTOM_POSITION_SENSOR_3,
-                CONF_CUSTOM_POSITION_3,
-                CONF_CUSTOM_POSITION_PRIORITY_3,
-            ),
-            (
-                4,
-                CONF_CUSTOM_POSITION_SENSOR_4,
-                CONF_CUSTOM_POSITION_4,
-                CONF_CUSTOM_POSITION_PRIORITY_4,
-            ),
-        ]
         custom_handlers: list[CustomPositionHandler] = []
-        for slot, sensor_key, pos_key, pri_key in _slot_keys:
-            sensor = options.get(sensor_key)
-            position = options.get(pos_key)
+        for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
+            sensor = options.get(slot_keys["sensor"])
+            position = options.get(slot_keys["position"])
             if sensor and position is not None:
-                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
+                priority = int(
+                    options.get(slot_keys["priority"])
+                    or DEFAULT_CUSTOM_POSITION_PRIORITY
+                )
                 custom_handlers.append(
                     CustomPositionHandler(
                         slot=slot,
@@ -1953,47 +1911,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         use_my defaults to False; when True the slot triggers the cover's hardware
         "My" preset via stop_cover instead of the slot's numeric position.
         """
-        _sensor_keys = [
-            (
-                CONF_CUSTOM_POSITION_SENSOR_1,
-                CONF_CUSTOM_POSITION_1,
-                CONF_CUSTOM_POSITION_PRIORITY_1,
-                CONF_CUSTOM_POSITION_MIN_MODE_1,
-                CONF_CUSTOM_POSITION_USE_MY_1,
-            ),
-            (
-                CONF_CUSTOM_POSITION_SENSOR_2,
-                CONF_CUSTOM_POSITION_2,
-                CONF_CUSTOM_POSITION_PRIORITY_2,
-                CONF_CUSTOM_POSITION_MIN_MODE_2,
-                CONF_CUSTOM_POSITION_USE_MY_2,
-            ),
-            (
-                CONF_CUSTOM_POSITION_SENSOR_3,
-                CONF_CUSTOM_POSITION_3,
-                CONF_CUSTOM_POSITION_PRIORITY_3,
-                CONF_CUSTOM_POSITION_MIN_MODE_3,
-                CONF_CUSTOM_POSITION_USE_MY_3,
-            ),
-            (
-                CONF_CUSTOM_POSITION_SENSOR_4,
-                CONF_CUSTOM_POSITION_4,
-                CONF_CUSTOM_POSITION_PRIORITY_4,
-                CONF_CUSTOM_POSITION_MIN_MODE_4,
-                CONF_CUSTOM_POSITION_USE_MY_4,
-            ),
-        ]
         result = []
-        for sensor_key, pos_key, pri_key, min_mode_key, use_my_key in _sensor_keys:
-            sensor = options.get(sensor_key)
-            position = options.get(pos_key)
+        for slot_keys in CUSTOM_POSITION_SLOTS.values():
+            sensor = options.get(slot_keys["sensor"])
+            position = options.get(slot_keys["position"])
             if sensor and position is not None:
                 is_on = bool(
                     (state := self.hass.states.get(sensor)) and state.state == "on"
                 )
-                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
-                min_mode = bool(options.get(min_mode_key, False))
-                use_my = bool(options.get(use_my_key, False))
+                priority = int(
+                    options.get(slot_keys["priority"])
+                    or DEFAULT_CUSTOM_POSITION_PRIORITY
+                )
+                min_mode = bool(options.get(slot_keys["min_mode"], False))
+                use_my = bool(options.get(slot_keys["use_my"], False))
                 result.append(
                     (sensor, is_on, int(position), priority, min_mode, use_my)
                 )

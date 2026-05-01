@@ -39,28 +39,9 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
-    CONF_CUSTOM_POSITION_1,
-    CONF_CUSTOM_POSITION_2,
-    CONF_CUSTOM_POSITION_3,
-    CONF_CUSTOM_POSITION_4,
-    CONF_CUSTOM_POSITION_MIN_MODE_1,
-    CONF_CUSTOM_POSITION_MIN_MODE_2,
-    CONF_CUSTOM_POSITION_MIN_MODE_3,
-    CONF_CUSTOM_POSITION_MIN_MODE_4,
-    CONF_CUSTOM_POSITION_USE_MY_1,
-    CONF_CUSTOM_POSITION_USE_MY_2,
-    CONF_CUSTOM_POSITION_USE_MY_3,
-    CONF_CUSTOM_POSITION_USE_MY_4,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
-    CONF_CUSTOM_POSITION_PRIORITY_1,
-    CONF_CUSTOM_POSITION_PRIORITY_2,
-    CONF_CUSTOM_POSITION_PRIORITY_3,
-    CONF_CUSTOM_POSITION_PRIORITY_4,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
+    CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -563,46 +544,23 @@ def _priority_slider() -> selector.NumberSelector:
     )
 
 
-CUSTOM_POSITION_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_1, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_1, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_2, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_2, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_3, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_3, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_4, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_4, default=False
-        ): selector.BooleanSelector(),
-    }
-)
+def _build_custom_position_schema_dict() -> dict:
+    """Compose the full custom-position schema by iterating CUSTOM_POSITION_SLOTS."""
+    schema: dict = {}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        schema[vol.Optional(slot_keys["sensor"])] = _binary_on_selector()
+        schema[vol.Optional(slot_keys["position"])] = _position_slider()
+        schema[vol.Optional(slot_keys["priority"])] = _priority_slider()
+        schema[vol.Optional(slot_keys["min_mode"], default=False)] = (
+            selector.BooleanSelector()
+        )
+        schema[vol.Optional(slot_keys["use_my"], default=False)] = (
+            selector.BooleanSelector()
+        )
+    return schema
+
+
+CUSTOM_POSITION_SCHEMA = vol.Schema(_build_custom_position_schema_dict())
 
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
@@ -1853,57 +1811,16 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         }
     ),
     "custom_position_values": frozenset(
-        {
-            CONF_CUSTOM_POSITION_1,
-            CONF_CUSTOM_POSITION_PRIORITY_1,
-            CONF_CUSTOM_POSITION_MIN_MODE_1,
-            CONF_CUSTOM_POSITION_USE_MY_1,
-            CONF_CUSTOM_POSITION_2,
-            CONF_CUSTOM_POSITION_PRIORITY_2,
-            CONF_CUSTOM_POSITION_MIN_MODE_2,
-            CONF_CUSTOM_POSITION_USE_MY_2,
-            CONF_CUSTOM_POSITION_3,
-            CONF_CUSTOM_POSITION_PRIORITY_3,
-            CONF_CUSTOM_POSITION_MIN_MODE_3,
-            CONF_CUSTOM_POSITION_USE_MY_3,
-            CONF_CUSTOM_POSITION_4,
-            CONF_CUSTOM_POSITION_PRIORITY_4,
-            CONF_CUSTOM_POSITION_MIN_MODE_4,
-            CONF_CUSTOM_POSITION_USE_MY_4,
-        }
+        keys[k]
+        for keys in CUSTOM_POSITION_SLOTS.values()
+        for k in ("position", "priority", "min_mode", "use_my")
     ),
     "custom_position_sensors": frozenset(
-        {
-            CONF_CUSTOM_POSITION_SENSOR_1,
-            CONF_CUSTOM_POSITION_SENSOR_2,
-            CONF_CUSTOM_POSITION_SENSOR_3,
-            CONF_CUSTOM_POSITION_SENSOR_4,
-        }
+        keys["sensor"] for keys in CUSTOM_POSITION_SLOTS.values()
     ),
     # Legacy alias: full union of custom_position_values + custom_position_sensors
     "custom_position": frozenset(
-        {
-            CONF_CUSTOM_POSITION_SENSOR_1,
-            CONF_CUSTOM_POSITION_1,
-            CONF_CUSTOM_POSITION_PRIORITY_1,
-            CONF_CUSTOM_POSITION_MIN_MODE_1,
-            CONF_CUSTOM_POSITION_USE_MY_1,
-            CONF_CUSTOM_POSITION_SENSOR_2,
-            CONF_CUSTOM_POSITION_2,
-            CONF_CUSTOM_POSITION_PRIORITY_2,
-            CONF_CUSTOM_POSITION_MIN_MODE_2,
-            CONF_CUSTOM_POSITION_USE_MY_2,
-            CONF_CUSTOM_POSITION_SENSOR_3,
-            CONF_CUSTOM_POSITION_3,
-            CONF_CUSTOM_POSITION_PRIORITY_3,
-            CONF_CUSTOM_POSITION_MIN_MODE_3,
-            CONF_CUSTOM_POSITION_USE_MY_3,
-            CONF_CUSTOM_POSITION_SENSOR_4,
-            CONF_CUSTOM_POSITION_4,
-            CONF_CUSTOM_POSITION_PRIORITY_4,
-            CONF_CUSTOM_POSITION_MIN_MODE_4,
-            CONF_CUSTOM_POSITION_USE_MY_4,
-        }
+        v for keys in CUSTOM_POSITION_SLOTS.values() for v in keys.values()
     ),
     "motion_override_values": frozenset(
         {
