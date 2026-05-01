@@ -415,6 +415,7 @@ class TestStepMotorIntermediatePause:
         assert coord._cmd_svc.wait_for_target[entity_id] is True
         # Grace period must have been restarted
         assert coord._grace_mgr.is_in_command_grace_period(entity_id)
+        coord._grace_mgr.cancel_all()
 
     @pytest.mark.asyncio
     async def test_closing_to_open_mid_transit_restarts_grace_period(self) -> None:
@@ -431,6 +432,7 @@ class TestStepMotorIntermediatePause:
         _call(coord)
         assert coord._cmd_svc.wait_for_target[entity_id] is True
         assert coord._grace_mgr.is_in_command_grace_period(entity_id)
+        coord._grace_mgr.cancel_all()
 
     def test_stall_opening_to_opening_unchanged_position_clears_wait_for_target(
         self,
