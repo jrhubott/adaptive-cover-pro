@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_raw_calculated_position
+from ..helpers import apply_minimum_mode, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -34,12 +34,9 @@ class WeatherOverrideHandler(OverrideHandler):
         configured = snapshot.weather_override_position
         bypass = snapshot.weather_bypass_auto_control
         raw = compute_raw_calculated_position(snapshot)
-        if snapshot.weather_override_min_mode:
-            pos = max(configured, raw)
-            mode_note = f" [minimum mode — floor {configured}%, calculated {raw}%]"
-        else:
-            pos = configured
-            mode_note = ""
+        pos, mode_note = apply_minimum_mode(
+            configured, raw, enabled=snapshot.weather_override_min_mode
+        )
         reason = f"weather override active — position {pos}%{mode_note}"
         if bypass:
             reason += " [bypasses automatic control]"

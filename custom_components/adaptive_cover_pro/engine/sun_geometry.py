@@ -75,6 +75,24 @@ class SunGeometry:
     # Validity checks
     # ------------------------------------------------------------------
 
+    def _elevation_within_bounds(self, elev):
+        """Return whether *elev* is within the configured min/max bounds.
+
+        Works for scalar floats and pandas Series alike (uses bitwise ``&`` and
+        comparison operators that both support).
+
+        **Caller** must handle the "neither bound configured" case separately —
+        the scalar property defaults to ``elev >= 0`` while the Series-based
+        ``solar_times_with_position`` defaults to ``elev > 0``. That ½°
+        difference at the horizon is intentional and predates this helper.
+        """
+        min_e, max_e = self.config.min_elevation, self.config.max_elevation
+        if min_e is None:
+            return elev <= max_e
+        if max_e is None:
+            return elev >= min_e
+        return (elev >= min_e) & (elev <= max_e)
+
     @property
     def valid_elevation(self) -> bool:
         """Check if sun elevation is within configured limits.
@@ -86,13 +104,7 @@ class SunGeometry:
         """
         if self.config.min_elevation is None and self.config.max_elevation is None:
             return self.sol_elev >= 0
-        if self.config.min_elevation is None:
-            return self.sol_elev <= self.config.max_elevation
-        if self.config.max_elevation is None:
-            return self.sol_elev >= self.config.min_elevation
-        within_range = (
-            self.config.min_elevation <= self.sol_elev <= self.config.max_elevation
-        )
+        within_range = bool(self._elevation_within_bounds(self.sol_elev))
         self.logger.debug("elevation within range? %s", within_range)
         return within_range
 
@@ -272,17 +284,13 @@ class SunGeometry:
             self.azi_max_abs - self.azi_min_abs
         ) % 360
 
-        # Elevation check — matches valid_elevation property logic
+        # Elevation check — matches valid_elevation property logic, except the
+        # "no bounds set" default here is `elev > 0` (strictly above horizon)
+        # while the scalar property uses `>= 0` to include the horizon line.
         if self.config.min_elevation is None and self.config.max_elevation is None:
             valid_elev = elev > 0
-        elif self.config.min_elevation is None:
-            valid_elev = elev <= self.config.max_elevation
-        elif self.config.max_elevation is None:
-            valid_elev = elev >= self.config.min_elevation
         else:
-            valid_elev = (elev >= self.config.min_elevation) & (
-                elev <= self.config.max_elevation
-            )
+            valid_elev = self._elevation_within_bounds(elev)
 
         # Sunset/sunrise offset — exclude times within the offset windows.
         sunset_utc = self.sun_data.sunset().replace(tzinfo=None)

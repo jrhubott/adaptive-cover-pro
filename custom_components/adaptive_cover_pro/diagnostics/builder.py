@@ -253,9 +253,18 @@ class DiagnosticsBuilder:
 
     @classmethod
     def _build_position(cls, ctx: DiagnosticContext) -> dict:
-        """Build position diagnostics."""
+        """Build position diagnostics by composing the smaller per-section helpers."""
         diagnostics: dict = {}
+        diagnostics.update(cls._build_position_base(ctx))
+        diagnostics.update(cls._build_position_delta_time(ctx))
+        diagnostics.update(cls._build_position_calc_details(ctx))
+        diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
+        return diagnostics
 
+    @classmethod
+    def _build_position_base(cls, ctx: DiagnosticContext) -> dict:
+        """Build calculated position, control status/reason, optional flags, and explanation."""
+        diagnostics: dict = {}
         result = ctx.pipeline_result
         raw_pos = result.raw_calculated_position if result is not None else 0
         diagnostics["calculated_position"] = raw_pos
@@ -272,25 +281,31 @@ class DiagnosticsBuilder:
         if result is not None and result.tilt is not None:
             diagnostics["tilt"] = result.tilt
 
-        explanation = cls._build_position_explanation(ctx)
-        diagnostics["position_explanation"] = explanation
+        diagnostics["position_explanation"] = cls._build_position_explanation(ctx)
+        return diagnostics
 
-        # Delta thresholds
-        diagnostics["delta_position_threshold"] = ctx.min_change
-        diagnostics["delta_time_threshold_minutes"] = ctx.time_threshold
-
-        # Position delta from last action
+    @staticmethod
+    def _build_position_delta_time(ctx: DiagnosticContext) -> dict:
+        """Threshold values plus delta-from-last-action and time-since-last-action."""
+        diagnostics: dict = {
+            "delta_position_threshold": ctx.min_change,
+            "delta_time_threshold_minutes": ctx.time_threshold,
+        }
+        result = ctx.pipeline_result
+        raw_pos = result.raw_calculated_position if result is not None else 0
         last_action = ctx.last_cover_action
+
         if last_action.get("position") is not None:
             diagnostics["position_delta_from_last_action"] = abs(
                 raw_pos - last_action["position"]
             )
 
-        # Time since last action
         if last_action.get("timestamp"):
             try:
                 last_ts = dt.datetime.fromisoformat(last_action["timestamp"])
                 if last_ts.tzinfo is None:
+                    # ISO timestamps without offset are stored as UTC by the
+                    # coordinator; treat them that way for the elapsed-time math.
                     last_ts = last_ts.replace(tzinfo=dt.UTC)
                 now_utc = dt.datetime.now(dt.UTC)
                 elapsed = (now_utc - last_ts).total_seconds()
@@ -298,15 +313,17 @@ class DiagnosticsBuilder:
             except (ValueError, AttributeError):
                 pass
 
-        # Vertical cover calculation details
-        if ctx.cover:
-            calc_details = getattr(ctx.cover, "_last_calc_details", None)
-            if calc_details is not None:
-                diagnostics["calculation_details"] = calc_details
-
-        diagnostics["last_updated"] = dt.datetime.now(dt.UTC).isoformat()
-
         return diagnostics
+
+    @staticmethod
+    def _build_position_calc_details(ctx: DiagnosticContext) -> dict:
+        """Surface the cover's per-cycle calc trace when one was recorded."""
+        if not ctx.cover:
+            return {}
+        calc_details = getattr(ctx.cover, "_last_calc_details", None)
+        if calc_details is None:
+            return {}
+        return {"calculation_details": calc_details}
 
     @staticmethod
     def _build_time_window(ctx: DiagnosticContext) -> dict:
