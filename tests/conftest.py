@@ -55,8 +55,13 @@ from .cover_helpers import (  # noqa: F401 — re-exported for convenience
 
 
 @pytest.fixture(autouse=True)
-async def _auto_unload_config_entries(request):
-    """Unload config entries created during integration tests to prevent lingering timers."""
+async def _auto_unload_config_entries(request, verify_cleanup):
+    """Unload config entries created during integration tests to prevent lingering timers.
+
+    Explicitly depends on verify_cleanup so this fixture is set up AFTER it and
+    therefore tears down BEFORE it — guaranteeing entries are unloaded before
+    verify_cleanup checks for lingering timer handles.
+    """
     if not request.node.get_closest_marker("integration"):
         yield
         return
