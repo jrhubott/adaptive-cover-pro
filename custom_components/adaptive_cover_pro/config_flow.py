@@ -836,7 +836,13 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
             CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(
-                domain=["binary_sensor", "input_boolean"]
+                domain=[
+                    "device_tracker",
+                    "person",
+                    "zone",
+                    "binary_sensor",
+                    "input_boolean",
+                ]
             )
         ),
         vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
