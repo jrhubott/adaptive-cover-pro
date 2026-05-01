@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -115,6 +116,18 @@ def test_is_motion_timeout_active_sensors_but_flag_false(mock_hass, logger):
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     assert mgr.is_motion_timeout_active is False
+
+
+# --- _now ---
+
+
+def test_now_returns_utc_aware_datetime():
+    """_now() returns a UTC-aware datetime so every timestamp source is consistent."""
+    now = MotionManager._now()
+
+    assert isinstance(now, dt.datetime)
+    assert now.tzinfo is not None
+    assert now.utcoffset() == dt.timedelta(0)
 
 
 # --- last_motion_time ---
