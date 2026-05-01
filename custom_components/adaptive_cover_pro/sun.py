@@ -25,7 +25,7 @@ class SunData:
         return times
 
     @property
-    def solar_azimuth(self) -> list:
+    def solar_azimuth(self) -> list[float]:
         """Create list with solar azimuth data per 5 minutes."""
         index = 0
         azi_list = []
@@ -37,7 +37,7 @@ class SunData:
         return azi_list
 
     @property
-    def solar_elevation(self) -> list:
+    def solar_elevation(self) -> list[float]:
         """Create list with solar elevation data per 5 minutes."""
         index = 0
         ele_list = []
@@ -75,9 +75,3 @@ class SunData:
             # Polar night: sun never rises — treat as very early morning
             today = date.today()
             return datetime(today.year, today.month, today.day, 0, 1, 0)  # noqa: DTZ001
-
-    # def df_today(self)-> pd.DataFrame:
-    #     """Create dataframe with azimuth and elevation data"""
-    #     df_today = pd.DataFrame({"azimuth":self.solar_azimuth, "elevation":self.solar_elevation})
-    #     df_today = df_today.set_index(self.times)
-    #     return df_today

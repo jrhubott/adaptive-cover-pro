@@ -12,11 +12,16 @@ class CoverType(StrEnum):
 
     @property
     def display_name(self) -> str:
-        """Return human-readable display name."""
+        """Return human-readable display name (no "Cover" suffix).
+
+        Callers that want "<type> Cover" should append it explicitly. Returning
+        the bare adjective here lets `entity_base.device_info` produce
+        "Adaptive Vertical Cover" without doubling the word.
+        """
         return {
-            self.BLIND: "Vertical Cover",
-            self.AWNING: "Horizontal Cover",
-            self.TILT: "Tilt Cover",
+            self.BLIND: "Vertical",
+            self.AWNING: "Horizontal",
+            self.TILT: "Tilt",
         }[self]
 
 

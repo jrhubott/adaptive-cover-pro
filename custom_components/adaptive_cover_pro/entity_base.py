@@ -67,18 +67,15 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
         )
 
     @staticmethod
-    def _get_type_display_name(cover_type: str) -> str:
-        """Get display name for cover type."""
-        # Handle both string and CoverType enum
-        if isinstance(cover_type, CoverType):
-            return cover_type.display_name
-        # Convert string to CoverType for display name
-        type_map = {
-            CoverType.BLIND.value: "Vertical",
-            CoverType.AWNING.value: "Horizontal",
-            CoverType.TILT.value: "Tilt",
-        }
-        return type_map.get(cover_type, "Unknown")
+    def _get_type_display_name(cover_type: str | CoverType) -> str:
+        """Get display name for cover type.
+
+        Delegates to `CoverType.display_name`. Accepts either the enum or its
+        underlying string value. Raises `ValueError` for unrecognised values
+        rather than silently returning "Unknown" — a new enum member needs an
+        intentional add to `display_name`.
+        """
+        return CoverType(cover_type).display_name
 
     @property
     def available(self) -> bool:

@@ -98,10 +98,7 @@ class EdgeCaseHandler:
 
         # Very high elevation: sun nearly overhead, use simplified calculation
         if sol_elev > EDGE_CASE_HIGH_ELEVATION:
-            from numpy import radians as rad
-            from numpy import tan
-
-            simple_height = distance * tan(rad(sol_elev))
+            simple_height = distance * np.tan(np.radians(sol_elev))
             return (True, float(np.clip(simple_height, 0, h_win)))
 
         return (False, 0.0)
