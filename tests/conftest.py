@@ -55,6 +55,30 @@ from .cover_helpers import (  # noqa: F401 — re-exported for convenience
 
 
 @pytest.fixture(autouse=True)
+async def _auto_unload_config_entries(request):
+    """Unload config entries created during integration tests to prevent lingering timers."""
+    if not request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    hass = request.getfixturevalue("hass")
+    entries_before = {e.entry_id for e in hass.config_entries.async_entries()}
+    yield
+
+    from homeassistant.config_entries import ConfigEntryState
+
+    new_entries = [
+        e
+        for e in hass.config_entries.async_entries()
+        if e.entry_id not in entries_before and e.state == ConfigEntryState.LOADED
+    ]
+    for entry in new_entries:
+        await hass.config_entries.async_unload(entry.entry_id)
+    if new_entries:
+        await hass.async_block_till_done()
+
+
+@pytest.fixture(autouse=True)
 def _auto_enable_custom_integrations(request):
     """Auto-enable custom integration discovery for real HA integration tests.
 

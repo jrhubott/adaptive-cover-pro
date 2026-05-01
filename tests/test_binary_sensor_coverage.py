@@ -77,6 +77,9 @@ async def test_glare_active_binary_sensor_created_when_enabled(hass) -> None:
         "glare_active" in uid for uid in entity_unique_ids
     ), f"Expected glare_active binary sensor, got unique_ids: {entity_unique_ids}"
 
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
 
 @pytest.mark.integration
 async def test_glare_active_binary_sensor_not_created_when_awning(hass) -> None:
@@ -108,6 +111,9 @@ async def test_glare_active_binary_sensor_not_created_when_awning(hass) -> None:
     ]
     entity_unique_ids = [e.unique_id for e in binary_sensor_entities]
     assert not any("glare_active" in uid for uid in entity_unique_ids)
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
 
 # ---------------------------------------------------------------------------
