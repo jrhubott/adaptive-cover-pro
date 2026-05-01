@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_raw_calculated_position
+from ..helpers import apply_minimum_mode, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -81,12 +81,9 @@ class CustomPositionHandler(OverrideHandler):
                             ),
                             raw_calculated_position=raw,
                         )
-                    if min_mode:
-                        pos = max(self._position, raw)
-                        mode_note = f" [minimum mode — floor {self._position}%, calculated {raw}%]"
-                    else:
-                        pos = self._position
-                        mode_note = ""
+                    pos, mode_note = apply_minimum_mode(
+                        self._position, raw, enabled=min_mode
+                    )
                     return PipelineResult(
                         position=pos,
                         bypass_auto_control=True,

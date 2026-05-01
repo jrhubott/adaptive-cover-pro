@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from operator import ge, le
 from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from ..helpers import get_domain, get_safe_state, state_attr
 
@@ -132,6 +134,35 @@ class ClimateProvider:
         self._logger.debug("is_sunny(): No weather condition defined")
         return True
 
+    def _read_numeric_threshold(
+        self,
+        *,
+        enabled: bool,
+        entity: str | None,
+        threshold: int | None,
+        comparison: Callable[[float, float], bool],
+        label: str,
+    ) -> bool:
+        """Compare an entity's numeric state to a threshold.
+
+        Shared shape used by lux / irradiance / cloud-coverage readings:
+        feature-flag gate, then read the entity, coerce to float, and compare
+        against the configured threshold. Non-numeric or unavailable values
+        return False so the climate snapshot stays bool-typed.
+        """
+        if not enabled or entity is None or threshold is None:
+            return False
+        value = get_safe_state(self._hass, entity)
+        if value is None:
+            return False
+        try:
+            return comparison(float(value), threshold)
+        except (ValueError, TypeError):
+            self._logger.debug(
+                "%s entity %s returned non-numeric value: %r", label, entity, value
+            )
+            return False
+
     def _read_lux(
         self,
         use_lux: bool,
@@ -139,20 +170,13 @@ class ClimateProvider:
         lux_threshold: int | None,
     ) -> bool:
         """Check if lux is at or below threshold (low light)."""
-        if not use_lux:
-            return False
-        if lux_entity is not None and lux_threshold is not None:
-            value = get_safe_state(self._hass, lux_entity)
-            if value is None:
-                return False
-            try:
-                return float(value) <= lux_threshold
-            except (ValueError, TypeError):
-                self._logger.debug(
-                    "Lux entity %s returned non-numeric value: %r", lux_entity, value
-                )
-                return False
-        return False
+        return self._read_numeric_threshold(
+            enabled=use_lux,
+            entity=lux_entity,
+            threshold=lux_threshold,
+            comparison=le,
+            label="Lux",
+        )
 
     def _read_irradiance(
         self,
@@ -161,22 +185,13 @@ class ClimateProvider:
         irradiance_threshold: int | None,
     ) -> bool:
         """Check if irradiance is at or below threshold (low radiation)."""
-        if not use_irradiance:
-            return False
-        if irradiance_entity is not None and irradiance_threshold is not None:
-            value = get_safe_state(self._hass, irradiance_entity)
-            if value is None:
-                return False
-            try:
-                return float(value) <= irradiance_threshold
-            except (ValueError, TypeError):
-                self._logger.debug(
-                    "Irradiance entity %s returned non-numeric value: %r",
-                    irradiance_entity,
-                    value,
-                )
-                return False
-        return False
+        return self._read_numeric_threshold(
+            enabled=use_irradiance,
+            entity=irradiance_entity,
+            threshold=irradiance_threshold,
+            comparison=le,
+            label="Irradiance",
+        )
 
     def _read_cloud_coverage(
         self,
@@ -185,19 +200,10 @@ class ClimateProvider:
         cloud_coverage_threshold: int | None,
     ) -> bool:
         """Check if cloud coverage is at or above threshold (overcast)."""
-        if not use_cloud_coverage:
-            return False
-        if cloud_coverage_entity is not None and cloud_coverage_threshold is not None:
-            value = get_safe_state(self._hass, cloud_coverage_entity)
-            if value is None:
-                return False
-            try:
-                return float(value) >= cloud_coverage_threshold
-            except (ValueError, TypeError):
-                self._logger.debug(
-                    "Cloud coverage entity %s returned non-numeric value: %r",
-                    cloud_coverage_entity,
-                    value,
-                )
-                return False
-        return False
+        return self._read_numeric_threshold(
+            enabled=use_cloud_coverage,
+            entity=cloud_coverage_entity,
+            threshold=cloud_coverage_threshold,
+            comparison=ge,
+            label="Cloud coverage",
+        )

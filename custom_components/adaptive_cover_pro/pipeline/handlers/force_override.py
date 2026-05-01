@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_raw_calculated_position
+from ..helpers import apply_minimum_mode, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -28,12 +28,9 @@ class ForceOverrideHandler(OverrideHandler):
         active = [e for e, on in snapshot.force_override_sensors.items() if on]
         configured = snapshot.force_override_position
         raw = compute_raw_calculated_position(snapshot)
-        if snapshot.force_override_min_mode:
-            pos = max(configured, raw)
-            mode_note = f" [minimum mode — floor {configured}%, calculated {raw}%]"
-        else:
-            pos = configured
-            mode_note = ""
+        pos, mode_note = apply_minimum_mode(
+            configured, raw, enabled=snapshot.force_override_min_mode
+        )
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.FORCE,

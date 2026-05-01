@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 from dateutil import parser
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
@@ -15,11 +16,15 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entity states that mean "no usable value" — used by the safe-read helpers
+# below so the same set is checked everywhere instead of inline literals.
+_INVALID_STATES: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE})
+
 
 def get_safe_state(hass: HomeAssistant, entity_id: str):
     """Get a safe state value if not available."""
     state = hass.states.get(entity_id)
-    if not state or state.state in ["unknown", "unavailable"]:
+    if not state or state.state in _INVALID_STATES:
         return None
     return state.state
 
@@ -238,7 +243,7 @@ def get_open_close_state(hass: HomeAssistant, entity_id: str) -> int | None:
 
     """
     state = hass.states.get(entity_id)
-    if not state or state.state in ["unknown", "unavailable"]:
+    if not state or state.state in _INVALID_STATES:
         return None
 
     if state.state == "closed":
