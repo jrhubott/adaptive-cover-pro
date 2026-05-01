@@ -31,4 +31,6 @@ notebooks/test_python.ipynb
 notebooks/.ipynb_checkpoints
 notebooks/outputs/
 .hypothesis/
+
+# Superpowers skill working files (local only)
 docs/superpowers/
