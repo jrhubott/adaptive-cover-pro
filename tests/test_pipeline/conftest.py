@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.pipeline.types import (
     ClimateOptions,
+    CustomPositionSensorState,
     PipelineSnapshot,
 )
 
@@ -77,7 +78,7 @@ def make_snapshot(
     active_zone_names: set[str] | frozenset[str] | None = None,
     in_time_window: bool = True,
     motion_control_enabled: bool = True,
-    custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] | None = None,
+    custom_position_sensors: list[CustomPositionSensorState] | None = None,
     my_position_value: int | None = None,
     sunset_use_my: bool = False,
     enable_sun_tracking: bool = True,

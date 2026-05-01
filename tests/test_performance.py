@@ -13,6 +13,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
+)
 from tests.cover_helpers import (
     build_horizontal_cover,
     build_tilt_cover,
@@ -224,12 +227,17 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
     snapshot.weather_position = 0
     snapshot.weather_bypass_auto_control = False
     snapshot.manual_override_active = False
-    snapshot.custom_position_sensors = (
-        (None, False, 0, 77, False, False),
-        (None, False, 0, 77, False, False),
-        (None, False, 0, 77, False, False),
-        (None, False, 0, 77, False, False),
-    )
+    snapshot.custom_position_sensors = [
+        CustomPositionSensorState(
+            entity_id=f"binary_sensor.cp_perf_{i}",
+            is_on=False,
+            position=0,
+            priority=77,
+            min_mode=False,
+            use_my=False,
+        )
+        for i in range(4)
+    ]
     snapshot.motion_timeout_active = False
     snapshot.cloud_suppression_enabled = False
     snapshot.cloud_coverage_above_threshold = False

@@ -17,7 +17,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     SolarHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
+    CustomPositionSensorState,
+)
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 
 from tests.test_pipeline.conftest import make_snapshot
@@ -331,7 +334,14 @@ def test_climate_data_populated_when_custom_position_wins() -> None:
         climate_readings=_summer_readings(),
         climate_options=_climate_options_summer(),
         custom_position_sensors=[
-            ("binary_sensor.custom", True, 50, 77, False, False),
+            CustomPositionSensorState(
+                entity_id="binary_sensor.custom",
+                is_on=True,
+                position=50,
+                priority=77,
+                min_mode=False,
+                use_my=False,
+            ),
         ],
     )
     result = registry.evaluate(snap)
@@ -405,7 +415,14 @@ def test_outprioritized_handler_trace_has_descriptive_reason() -> None:
         direct_sun_valid=True,
         calculate_percentage_return=70.0,
         custom_position_sensors=[
-            ("binary_sensor.custom", True, 50, 77, False, False),
+            CustomPositionSensorState(
+                entity_id="binary_sensor.custom",
+                is_on=True,
+                position=50,
+                priority=77,
+                min_mode=False,
+                use_my=False,
+            ),
         ],
     )
     result = registry.evaluate(snap)

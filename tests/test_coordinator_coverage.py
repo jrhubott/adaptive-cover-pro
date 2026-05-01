@@ -262,13 +262,13 @@ def test_read_custom_position_sensor_states_reads_entity_state():
     result = coord._read_custom_position_sensor_states(options)
 
     assert len(result) == 1
-    sensor, is_on, position, priority, min_mode, use_my = result[0]
-    assert sensor == "binary_sensor.custom_pos"
-    assert is_on is True
-    assert position == 42
-    assert priority == 77
-    assert min_mode is False
-    assert use_my is False
+    state = result[0]
+    assert state.entity_id == "binary_sensor.custom_pos"
+    assert state.is_on is True
+    assert state.position == 42
+    assert state.priority == 77
+    assert state.min_mode is False
+    assert state.use_my is False
 
 
 @pytest.mark.unit
@@ -303,10 +303,10 @@ def test_read_custom_position_sensor_states_with_priority_fallback():
     result = coord._read_custom_position_sensor_states(options)
 
     assert len(result) == 1
-    _, _, _, priority, min_mode, use_my = result[0]
-    assert priority == DEFAULT_CUSTOM_POSITION_PRIORITY
-    assert min_mode is False
-    assert use_my is False
+    state = result[0]
+    assert state.priority == DEFAULT_CUSTOM_POSITION_PRIORITY
+    assert state.min_mode is False
+    assert state.use_my is False
 
 
 # ---------------------------------------------------------------------------

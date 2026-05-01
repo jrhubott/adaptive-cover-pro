@@ -28,6 +28,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
+)
 
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -313,7 +316,16 @@ def _snapshot_custom(
     my_position_value: int | None = None,
 ):
     return make_snapshot(
-        custom_position_sensors=[(entity_id, is_on, position, priority, False, use_my)],
+        custom_position_sensors=[
+            CustomPositionSensorState(
+                entity_id=entity_id,
+                is_on=is_on,
+                position=position,
+                priority=priority,
+                min_mode=False,
+                use_my=use_my,
+            )
+        ],
         my_position_value=my_position_value,
     )
 
