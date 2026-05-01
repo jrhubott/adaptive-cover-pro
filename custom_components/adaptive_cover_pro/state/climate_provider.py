@@ -104,7 +104,7 @@ class ClimateProvider:
         if presence is None:
             return True
         domain = get_domain(presence_entity)
-        if domain == "device_tracker":
+        if domain in ("device_tracker", "person"):
             return presence == "home"
         if domain == "zone":
             return int(presence) > 0

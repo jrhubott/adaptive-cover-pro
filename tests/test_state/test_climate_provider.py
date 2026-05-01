@@ -160,6 +160,20 @@ class TestPresence:
         assert readings.is_presence is False
 
     @pytest.mark.unit
+    def test_person_home(self, provider, mock_hass):
+        """person 'home' → True (regression guard for #313)."""
+        mock_hass.states.get.return_value = _mock_state("person.alice", "home")
+        readings = provider.read(presence_entity="person.alice")
+        assert readings.is_presence is True
+
+    @pytest.mark.unit
+    def test_person_away(self, provider, mock_hass):
+        """person 'not_home' → False (regression guard for #313)."""
+        mock_hass.states.get.return_value = _mock_state("person.alice", "not_home")
+        readings = provider.read(presence_entity="person.alice")
+        assert readings.is_presence is False
+
+    @pytest.mark.unit
     def test_input_boolean_on(self, provider, mock_hass):
         """input_boolean 'on' → True."""
         mock_hass.states.get.return_value = _mock_state("input_boolean.presence", "on")

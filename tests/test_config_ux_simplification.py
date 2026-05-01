@@ -131,6 +131,27 @@ class TestSplitSchemas:
         keys = [str(k) for k in TEMPERATURE_CLIMATE_SCHEMA.schema]
         assert "presence_entity" in keys
 
+    def test_presence_entity_selector_allows_five_domains(self):
+        """Presence entity selector must accept the five supported domains.
+
+        Regression guard for #313 — PR #287 silently narrowed this list to
+        just binary_sensor/input_boolean, blocking zone/device_tracker users
+        even though the runtime consumer still routes by domain.
+        """
+        for key, value in TEMPERATURE_CLIMATE_SCHEMA.schema.items():
+            if str(key) == "presence_entity":
+                domain = value.config["domain"]
+                assert set(domain) == {
+                    "device_tracker",
+                    "person",
+                    "zone",
+                    "binary_sensor",
+                    "input_boolean",
+                }
+                assert len(domain) == 5
+                return
+        raise AssertionError("presence_entity not found in schema")
+
     def test_temperature_climate_no_lux(self):
         """TEMPERATURE_CLIMATE_SCHEMA should NOT contain lux settings."""
         keys = [str(k) for k in TEMPERATURE_CLIMATE_SCHEMA.schema]
