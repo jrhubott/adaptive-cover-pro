@@ -24,7 +24,6 @@ from custom_components.adaptive_cover_pro.const import (
 )
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

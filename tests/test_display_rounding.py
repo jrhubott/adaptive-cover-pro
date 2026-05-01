@@ -17,7 +17,6 @@ from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverSunPositionSensor,
 )
 
-
 # ---------------------------------------------------------------------------
 # coordinator.state — interpolation float guard
 # ---------------------------------------------------------------------------

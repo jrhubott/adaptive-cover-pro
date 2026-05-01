@@ -175,7 +175,6 @@ from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
 
-
 _MANIFEST_VERSION: str = json.loads(
     (pathlib.Path(__file__).parent / "manifest.json").read_text()
 )["version"]
@@ -718,8 +717,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "closing",
                 )
 
-                old_position = self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
-                    entity_id, caps, event.old_state
+                old_position = (
+                    self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
+                        entity_id, caps, event.old_state
+                    )
                 )
                 target = self._cmd_svc.target_call.get(entity_id)
 
@@ -808,11 +809,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     # prematurely cleared.  Covers that never report intermediate
                     # positions fall back to measuring from _sent_at.
                     now = dt.datetime.now(dt.UTC)
-                    elapsed = self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
-                        entity_id, now
+                    elapsed = (
+                        self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
+                            entity_id, now
+                        )
                     )
                     if elapsed is not None:
-                        timeout = self._cmd_svc._wait_for_target_timeout_seconds  # noqa: SLF001
+                        timeout = (
+                            self._cmd_svc._wait_for_target_timeout_seconds
+                        )  # noqa: SLF001
                         if elapsed > timeout:
                             self._cmd_svc.wait_for_target[entity_id] = False
                             self._debug_log(

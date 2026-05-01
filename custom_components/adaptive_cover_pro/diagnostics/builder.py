@@ -15,7 +15,6 @@ from typing import Any
 from ..const import ControlStatus
 from ..enums import ClimateStrategy, ControlMethod
 
-
 # ---------------------------------------------------------------------------
 # Context dataclass – the coordinator populates this before calling build()
 # ---------------------------------------------------------------------------

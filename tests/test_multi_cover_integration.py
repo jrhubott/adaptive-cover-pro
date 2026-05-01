@@ -45,7 +45,6 @@ from tests.ha_helpers import (
     _patch_coordinator_refresh as _patch_refresh,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
 # ---------------------------------------------------------------------------

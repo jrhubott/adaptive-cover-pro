@@ -22,7 +22,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirrors test_issue_172_false_manual_override helpers, extended)
 # ---------------------------------------------------------------------------

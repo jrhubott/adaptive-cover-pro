@@ -21,7 +21,6 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
     PositionContext,
 )
 
-
 # ------------------------------------------------------------------ #
 # Fixtures
 # ------------------------------------------------------------------ #

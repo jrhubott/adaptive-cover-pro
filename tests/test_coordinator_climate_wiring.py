@@ -37,7 +37,6 @@ from custom_components.adaptive_cover_pro.state.climate_provider import (
     ClimateReadings,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

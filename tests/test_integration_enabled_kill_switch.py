@@ -28,7 +28,6 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
     PositionContext,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (mirror test_position_reconciliation.py)
 # ---------------------------------------------------------------------------

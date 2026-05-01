@@ -33,7 +33,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHa
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineSnapshot
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

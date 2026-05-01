@@ -15,7 +15,6 @@ from __future__ import annotations
 import datetime as dt
 from unittest.mock import MagicMock
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirrors test_issue_271 helpers)
 # ---------------------------------------------------------------------------

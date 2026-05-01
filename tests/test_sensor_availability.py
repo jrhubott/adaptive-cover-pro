@@ -69,7 +69,6 @@ from custom_components.adaptive_cover_pro.binary_sensor import (
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
