@@ -48,26 +48,50 @@ CONF_FORCE_OVERRIDE_SENSORS = "force_override_sensors"
 CONF_FORCE_OVERRIDE_POSITION = "force_override_position"
 CONF_FORCE_OVERRIDE_MIN_MODE = "force_override_min_mode"
 
-CONF_CUSTOM_POSITION_SENSOR_1 = "custom_position_sensor_1"
-CONF_CUSTOM_POSITION_1 = "custom_position_1"
-CONF_CUSTOM_POSITION_PRIORITY_1 = "custom_position_priority_1"
-CONF_CUSTOM_POSITION_MIN_MODE_1 = "custom_position_min_mode_1"
-CONF_CUSTOM_POSITION_USE_MY_1 = "custom_position_use_my_1"
-CONF_CUSTOM_POSITION_SENSOR_2 = "custom_position_sensor_2"
-CONF_CUSTOM_POSITION_2 = "custom_position_2"
-CONF_CUSTOM_POSITION_PRIORITY_2 = "custom_position_priority_2"
-CONF_CUSTOM_POSITION_MIN_MODE_2 = "custom_position_min_mode_2"
-CONF_CUSTOM_POSITION_USE_MY_2 = "custom_position_use_my_2"
-CONF_CUSTOM_POSITION_SENSOR_3 = "custom_position_sensor_3"
-CONF_CUSTOM_POSITION_3 = "custom_position_3"
-CONF_CUSTOM_POSITION_PRIORITY_3 = "custom_position_priority_3"
-CONF_CUSTOM_POSITION_MIN_MODE_3 = "custom_position_min_mode_3"
-CONF_CUSTOM_POSITION_USE_MY_3 = "custom_position_use_my_3"
-CONF_CUSTOM_POSITION_SENSOR_4 = "custom_position_sensor_4"
-CONF_CUSTOM_POSITION_4 = "custom_position_4"
-CONF_CUSTOM_POSITION_PRIORITY_4 = "custom_position_priority_4"
-CONF_CUSTOM_POSITION_MIN_MODE_4 = "custom_position_min_mode_4"
-CONF_CUSTOM_POSITION_USE_MY_4 = "custom_position_use_my_4"
+# --- Custom position slots ---------------------------------------------------
+# Each slot exposes the same five config keys (sensor / position / priority /
+# min_mode / use_my). The wire-format names ("custom_position_sensor_3" etc.)
+# are stored in user config_entry.options, so they MUST stay stable; the helper
+# below derives them programmatically and the per-slot CONF_* aliases below are
+# kept for callers that prefer the named constant.
+CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3, 4)
+
+
+def _custom_position_slot_keys(n: int) -> dict[str, str]:
+    """Return the five wire-format option keys for slot *n*."""
+    return {
+        "sensor": f"custom_position_sensor_{n}",
+        "position": f"custom_position_{n}",
+        "priority": f"custom_position_priority_{n}",
+        "min_mode": f"custom_position_min_mode_{n}",
+        "use_my": f"custom_position_use_my_{n}",
+    }
+
+
+CUSTOM_POSITION_SLOTS: dict[int, dict[str, str]] = {
+    n: _custom_position_slot_keys(n) for n in CUSTOM_POSITION_SLOT_NUMBERS
+}
+
+CONF_CUSTOM_POSITION_SENSOR_1 = CUSTOM_POSITION_SLOTS[1]["sensor"]
+CONF_CUSTOM_POSITION_1 = CUSTOM_POSITION_SLOTS[1]["position"]
+CONF_CUSTOM_POSITION_PRIORITY_1 = CUSTOM_POSITION_SLOTS[1]["priority"]
+CONF_CUSTOM_POSITION_MIN_MODE_1 = CUSTOM_POSITION_SLOTS[1]["min_mode"]
+CONF_CUSTOM_POSITION_USE_MY_1 = CUSTOM_POSITION_SLOTS[1]["use_my"]
+CONF_CUSTOM_POSITION_SENSOR_2 = CUSTOM_POSITION_SLOTS[2]["sensor"]
+CONF_CUSTOM_POSITION_2 = CUSTOM_POSITION_SLOTS[2]["position"]
+CONF_CUSTOM_POSITION_PRIORITY_2 = CUSTOM_POSITION_SLOTS[2]["priority"]
+CONF_CUSTOM_POSITION_MIN_MODE_2 = CUSTOM_POSITION_SLOTS[2]["min_mode"]
+CONF_CUSTOM_POSITION_USE_MY_2 = CUSTOM_POSITION_SLOTS[2]["use_my"]
+CONF_CUSTOM_POSITION_SENSOR_3 = CUSTOM_POSITION_SLOTS[3]["sensor"]
+CONF_CUSTOM_POSITION_3 = CUSTOM_POSITION_SLOTS[3]["position"]
+CONF_CUSTOM_POSITION_PRIORITY_3 = CUSTOM_POSITION_SLOTS[3]["priority"]
+CONF_CUSTOM_POSITION_MIN_MODE_3 = CUSTOM_POSITION_SLOTS[3]["min_mode"]
+CONF_CUSTOM_POSITION_USE_MY_3 = CUSTOM_POSITION_SLOTS[3]["use_my"]
+CONF_CUSTOM_POSITION_SENSOR_4 = CUSTOM_POSITION_SLOTS[4]["sensor"]
+CONF_CUSTOM_POSITION_4 = CUSTOM_POSITION_SLOTS[4]["position"]
+CONF_CUSTOM_POSITION_PRIORITY_4 = CUSTOM_POSITION_SLOTS[4]["priority"]
+CONF_CUSTOM_POSITION_MIN_MODE_4 = CUSTOM_POSITION_SLOTS[4]["min_mode"]
+CONF_CUSTOM_POSITION_USE_MY_4 = CUSTOM_POSITION_SLOTS[4]["use_my"]
 CONF_MY_POSITION_VALUE = "my_position_value"
 CONF_SUNSET_USE_MY = "sunset_use_my"
 DEFAULT_CUSTOM_POSITION_PRIORITY = 77

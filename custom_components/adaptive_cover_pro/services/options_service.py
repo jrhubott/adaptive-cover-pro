@@ -27,26 +27,6 @@ from ..const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
-    CONF_CUSTOM_POSITION_1,
-    CONF_CUSTOM_POSITION_2,
-    CONF_CUSTOM_POSITION_3,
-    CONF_CUSTOM_POSITION_4,
-    CONF_CUSTOM_POSITION_MIN_MODE_1,
-    CONF_CUSTOM_POSITION_MIN_MODE_2,
-    CONF_CUSTOM_POSITION_MIN_MODE_3,
-    CONF_CUSTOM_POSITION_MIN_MODE_4,
-    CONF_CUSTOM_POSITION_PRIORITY_1,
-    CONF_CUSTOM_POSITION_PRIORITY_2,
-    CONF_CUSTOM_POSITION_PRIORITY_3,
-    CONF_CUSTOM_POSITION_PRIORITY_4,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
-    CONF_CUSTOM_POSITION_USE_MY_1,
-    CONF_CUSTOM_POSITION_USE_MY_2,
-    CONF_CUSTOM_POSITION_USE_MY_3,
-    CONF_CUSTOM_POSITION_USE_MY_4,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
@@ -125,6 +105,7 @@ from ..const import (
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     CONF_WINTER_CLOSE_INSULATION,
+    CUSTOM_POSITION_SLOTS,
     DOMAIN,
     SensorType,
 )
@@ -244,27 +225,18 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_FORCE_OVERRIDE_SENSORS: _entities_v(),
     CONF_FORCE_OVERRIDE_POSITION: _num(0, 100),
     CONF_FORCE_OVERRIDE_MIN_MODE: _bool_v(),
-    # Custom positions 1–4
-    CONF_CUSTOM_POSITION_SENSOR_1: _entity_v(),
-    CONF_CUSTOM_POSITION_1: _num(0, 100),
-    CONF_CUSTOM_POSITION_PRIORITY_1: _num(1, 99),
-    CONF_CUSTOM_POSITION_MIN_MODE_1: _bool_v(),
-    CONF_CUSTOM_POSITION_USE_MY_1: _bool_v(),
-    CONF_CUSTOM_POSITION_SENSOR_2: _entity_v(),
-    CONF_CUSTOM_POSITION_2: _num(0, 100),
-    CONF_CUSTOM_POSITION_PRIORITY_2: _num(1, 99),
-    CONF_CUSTOM_POSITION_MIN_MODE_2: _bool_v(),
-    CONF_CUSTOM_POSITION_USE_MY_2: _bool_v(),
-    CONF_CUSTOM_POSITION_SENSOR_3: _entity_v(),
-    CONF_CUSTOM_POSITION_3: _num(0, 100),
-    CONF_CUSTOM_POSITION_PRIORITY_3: _num(1, 99),
-    CONF_CUSTOM_POSITION_MIN_MODE_3: _bool_v(),
-    CONF_CUSTOM_POSITION_USE_MY_3: _bool_v(),
-    CONF_CUSTOM_POSITION_SENSOR_4: _entity_v(),
-    CONF_CUSTOM_POSITION_4: _num(0, 100),
-    CONF_CUSTOM_POSITION_PRIORITY_4: _num(1, 99),
-    CONF_CUSTOM_POSITION_MIN_MODE_4: _bool_v(),
-    CONF_CUSTOM_POSITION_USE_MY_4: _bool_v(),
+    # Custom positions 1–4 — same five validators per slot, generated below
+    **{
+        slot_keys[k]: validator
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+        for k, validator in {
+            "sensor": _entity_v(),
+            "position": _num(0, 100),
+            "priority": _num(1, 99),
+            "min_mode": _bool_v(),
+            "use_my": _bool_v(),
+        }.items()
+    },
     # Motion
     CONF_MOTION_SENSORS: _entities_v(),
     CONF_MOTION_TIMEOUT: _num(30, 3600),
@@ -466,43 +438,12 @@ ALL_SETTABLE_KEYS: frozenset[str] = (
     | _SECTION_BLIND_SPOT
     | _SECTION_INTERPOLATION
     | _SECTION_GEOMETRY_ALL
-    | frozenset(
-        {
-            CONF_CUSTOM_POSITION_SENSOR_1,
-            CONF_CUSTOM_POSITION_1,
-            CONF_CUSTOM_POSITION_PRIORITY_1,
-            CONF_CUSTOM_POSITION_MIN_MODE_1,
-            CONF_CUSTOM_POSITION_USE_MY_1,
-            CONF_CUSTOM_POSITION_SENSOR_2,
-            CONF_CUSTOM_POSITION_2,
-            CONF_CUSTOM_POSITION_PRIORITY_2,
-            CONF_CUSTOM_POSITION_MIN_MODE_2,
-            CONF_CUSTOM_POSITION_USE_MY_2,
-            CONF_CUSTOM_POSITION_SENSOR_3,
-            CONF_CUSTOM_POSITION_3,
-            CONF_CUSTOM_POSITION_PRIORITY_3,
-            CONF_CUSTOM_POSITION_MIN_MODE_3,
-            CONF_CUSTOM_POSITION_USE_MY_3,
-            CONF_CUSTOM_POSITION_SENSOR_4,
-            CONF_CUSTOM_POSITION_4,
-            CONF_CUSTOM_POSITION_PRIORITY_4,
-            CONF_CUSTOM_POSITION_MIN_MODE_4,
-            CONF_CUSTOM_POSITION_USE_MY_4,
-        }
-    )
+    | frozenset(v for keys in CUSTOM_POSITION_SLOTS.values() for v in keys.values())
 )
 
-# Custom position slot key maps
-_CUSTOM_SLOT_KEYS: dict[int, dict[str, str]] = {
-    i: {
-        "sensor": f"custom_position_sensor_{i}",
-        "position": f"custom_position_{i}",
-        "priority": f"custom_position_priority_{i}",
-        "min_mode": f"custom_position_min_mode_{i}",
-        "use_my": f"custom_position_use_my_{i}",
-    }
-    for i in range(1, 5)
-}
+# Local alias kept for readability at the per-slot iteration sites below; the
+# canonical map lives in const.CUSTOM_POSITION_SLOTS.
+_CUSTOM_SLOT_KEYS = CUSTOM_POSITION_SLOTS
 
 # ---------------------------------------------------------------------------
 # Core helpers
