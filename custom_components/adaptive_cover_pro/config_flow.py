@@ -25,6 +25,7 @@ from .const import (
     CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
@@ -791,6 +792,15 @@ LIGHT_CLOUD_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_CLOUDY_POSITION): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
     }
 )
 
@@ -1433,9 +1443,14 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if wx_states and config.get(CONF_WEATHER_ENTITY):
             cloud_parts.append(f"weather in {{{', '.join(wx_states)}}}")
         cloud_str = f" when {', '.join(cloud_parts)}" if cloud_parts else ""
+        cloudy_pos = config.get(CONF_CLOUDY_POSITION)
+        if cloudy_pos is not None:
+            fallback_label = f"cloudy position {cloudy_pos}%"
+        else:
+            fallback_label = f"default ({default_pos}%)"
         lines.append(
             f"☁️ Cloud suppression: skips sun tracking{cloud_str} → "
-            f"default ({default_pos}%){_badge(60)}"
+            f"{fallback_label}{_badge(60)}"
         )
     elif any(
         [
@@ -1454,6 +1469,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             sensor_names.append("cloud coverage")
         lines.append(
             f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off."
+        )
+
+    # Warn if cloudy_position set but cloud suppression is disabled
+    cloudy_pos_cfg = config.get(CONF_CLOUDY_POSITION)
+    if cloudy_pos_cfg is not None and not has_cloud:
+        lines.append(
+            f"⚠️ Cloudy position ({cloudy_pos_cfg}%) configured but cloud suppression is disabled — value will be ignored."
         )
 
     # Climate mode (50)
@@ -1947,6 +1969,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_THRESHOLD,
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUDY_POSITION,
         }
     ),
     "light_cloud_sensors": frozenset(
@@ -1969,6 +1992,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_ENTITY,
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUDY_POSITION,
         }
     ),
     "temperature_climate_values": frozenset(
@@ -2013,6 +2037,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_ENTITY,
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUDY_POSITION,
             CONF_CLIMATE_MODE,
             CONF_TEMP_ENTITY,
             CONF_TEMP_LOW,

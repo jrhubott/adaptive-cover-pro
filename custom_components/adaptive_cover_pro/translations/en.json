@@ -271,6 +271,7 @@
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Suppress glare control in low light",
+          "cloudy_position": "Cloudy position (optional)",
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
           "temp_low": "Low temperature threshold",
@@ -289,6 +290,7 @@
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0-100%. Available from integrations like Google Weather. When at or above the threshold, glare control is suppressed and covers return to their default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed (e.g., 75 means 75% cloud cover = overcast). Default: 75%.",
           "cloud_suppression": "When enabled, suppresses glare control when weather, lux, irradiance, or cloud coverage conditions indicate no real direct sun — covers return to their default position instead of tracking the sun. Does NOT require climate mode to be enabled: configure a weather entity, lux sensor, irradiance sensor, or cloud coverage sensor above and this toggle will work on its own. Useful if you want light-aware glare suppression without full temperature-based climate control.",
+          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position.",
           "climate_mode": "Enable temperature-based cover strategies. When ON: cover behavior adapts based on indoor temperature — opens fully in winter to capture solar heat, closes fully in summer to block overheating. Requires an inside temperature sensor. Leave OFF if you only want glare control (sun tracking) without temperature-driven behavior.",
           "temp_entity": "Temperature sensor for climate mode (indoor or outdoor). Used to determine winter/summer strategies. Indoor sensor recommended (measures room comfort). Outdoor sensor alternative (tracks outside weather). Thermostat: Can use current_temperature attribute. Make sure sensor units match your Home Assistant unit system (°C or °F).",
           "temp_low": "Temperature threshold for WINTER mode (in your system units). When temperature < this value: Cover opens fully on sunny days to gain heat. Recommended values: °C: 18-20°C (65-68°F), °F: 65-68°F. Adjust based on your comfort preference. Lower value = winter mode less often (only when very cold). Higher value = winter mode more often (prioritize solar gain).",
@@ -422,6 +424,7 @@
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Suppress glare control in low light",
+          "cloudy_position": "Cloudy position (optional)",
           "weather_state": "Weather Conditions"
         },
         "data_description": {
@@ -433,7 +436,8 @@
           "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. Adjust based on your climate and preference.",
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast.",
-          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control."
+          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control.",
+          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position."
         }
       },
       "temperature_climate": {
@@ -751,6 +755,7 @@
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Suppress glare control in low light",
+          "cloudy_position": "Cloudy position (optional)",
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
           "temp_low": "Low temperature threshold",
@@ -769,6 +774,7 @@
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0-100%. Available from integrations like Google Weather. When at or above the threshold, glare control is suppressed and covers return to their default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed (e.g., 75 means 75% cloud cover = overcast). Default: 75%.",
           "cloud_suppression": "When enabled, suppresses glare control when weather, lux, irradiance, or cloud coverage conditions indicate no real direct sun — covers return to their default position instead of tracking the sun. Does NOT require climate mode to be enabled: configure a weather entity, lux sensor, irradiance sensor, or cloud coverage sensor above and this toggle will work on its own. Useful if you want light-aware glare suppression without full temperature-based climate control.",
+          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position.",
           "climate_mode": "Enable temperature-based cover strategies. When ON: cover behavior adapts based on indoor temperature — opens fully in winter to capture solar heat, closes fully in summer to block overheating. Requires an inside temperature sensor. Leave OFF if you only want glare control (sun tracking) without temperature-driven behavior.",
           "temp_entity": "Temperature sensor for climate mode (indoor or outdoor). Used to determine winter/summer strategies. Indoor sensor recommended (measures room comfort). Outdoor sensor alternative (tracks outside weather). Thermostat: Can use current_temperature attribute. Make sure sensor units match your Home Assistant unit system (°C or °F).",
           "temp_low": "Temperature threshold for WINTER mode (in your system units). When temperature < this value: Cover opens fully on sunny days to gain heat. Recommended values: °C: 18-20°C (65-68°F), °F: 65-68°F. Adjust based on your comfort preference. Lower value = winter mode less often (only when very cold). Higher value = winter mode more often (prioritize solar gain).",
@@ -909,6 +915,7 @@
           "cloud_coverage_entity": "Cloud coverage sensor (optional)",
           "cloud_coverage_threshold": "Cloud coverage threshold",
           "cloud_suppression": "Suppress glare control in low light",
+          "cloudy_position": "Cloudy position (optional)",
           "weather_state": "Weather Conditions"
         },
         "data_description": {
@@ -920,7 +927,8 @@
           "irradiance_threshold": "Solar irradiance level above which the sun is considered present. Below this value the cover returns to its default position. Typical values: 300–500 W/m² for direct sunlight, 100–200 W/m² for an overcast day. Adjust based on your climate and preference.",
           "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
           "cloud_coverage_threshold": "Cloud coverage percentage at or above which glare control is suppressed. For example, 75 means the cover stops sun-tracking when the sky is 75% or more overcast.",
-          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control."
+          "cloud_suppression": "When enabled, any configured light or cloud sensor (weather state, lux, irradiance, or cloud coverage) can suppress glare control. If any sensor indicates no real direct sun, the cover returns to its default position instead of tracking the sun. Does not require climate mode — this works as a standalone light-aware glare control.",
+          "cloudy_position": "Position (0-100%) to move covers to when cloud suppression fires (cloudy / low-light conditions). 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Leave blank to use the default position."
         }
       },
       "temperature_climate": {

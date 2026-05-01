@@ -17,7 +17,11 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
 )
-from custom_components.adaptive_cover_pro.const import ControlStatus
+from custom_components.adaptive_cover_pro.const import (
+    CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUDY_POSITION,
+    ControlStatus,
+)
 from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
 
 
@@ -65,6 +69,7 @@ def _make_pr(
     is_sunset_active: bool = False,
     configured_default: int = 0,
     configured_sunset_pos: int | None = None,
+    configured_cloudy_pos: int | None = None,
     bypass_auto_control: bool = False,
 ) -> PipelineResult:
     """Build a PipelineResult with sensible defaults."""
@@ -80,6 +85,7 @@ def _make_pr(
         is_sunset_active=is_sunset_active,
         configured_default=configured_default,
         configured_sunset_pos=configured_sunset_pos,
+        configured_cloudy_pos=configured_cloudy_pos,
         bypass_auto_control=bypass_auto_control,
     )
 
@@ -716,6 +722,8 @@ class TestConfigurationDiagnostics:
             "motion_timeout_active",
             "manual_toggle",
             "enabled_toggle",
+            "cloud_suppression_enabled",
+            "cloudy_position",
         }
         assert expected_keys == set(config.keys())
 
@@ -1020,3 +1028,84 @@ class TestManualOverrideState:
             ]
             == 0
         )
+
+
+# ---------------------------------------------------------------------------
+# cloudy_position diagnostics (Issue #311)
+# ---------------------------------------------------------------------------
+
+
+class TestCloudyPositionDiagnostics:
+    """Verify cloudy_position appears in the correct diagnostic sections."""
+
+    def test_configuration_includes_cloudy_position_when_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configuration.cloudy_position surfaces the configured value."""
+        options = {CONF_CLOUD_SUPPRESSION: True, CONF_CLOUDY_POSITION: 25}
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["cloudy_position"] == 25
+
+    def test_configuration_cloudy_position_none_when_absent(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configuration.cloudy_position is None when option is not configured."""
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        assert diag["configuration"]["cloudy_position"] is None
+
+    def test_configuration_includes_cloud_suppression_enabled(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configuration.cloud_suppression_enabled surfaces the toggle state."""
+        options = {CONF_CLOUD_SUPPRESSION: True}
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["cloud_suppression_enabled"] is True
+
+    def test_configuration_cloud_suppression_enabled_false_when_absent(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configuration.cloud_suppression_enabled defaults to False."""
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        assert diag["configuration"]["cloud_suppression_enabled"] is False
+
+    def test_default_position_includes_configured_cloudy_pos(
+        self, builder: DiagnosticsBuilder
+    ):
+        """default_position.configured_cloudy_pos surfaces PipelineResult.configured_cloudy_pos."""
+        pr = _make_pr(configured_cloudy_pos=25)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        assert diag["default_position"]["configured_cloudy_pos"] == 25
+
+    def test_default_position_configured_cloudy_pos_none_when_not_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """configured_cloudy_pos is None when not configured (not 0)."""
+        pr = _make_pr()
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        assert diag["default_position"]["configured_cloudy_pos"] is None
+
+    def test_decision_trace_preserves_cloudy_position_reason(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Handler reason mentioning 'cloudy position' is preserved in decision_trace."""
+        pr = PipelineResult(
+            position=25,
+            control_method=ControlMethod.CLOUD,
+            reason="cloud/low-light suppression — weather not sunny → cloudy position 25%",
+            decision_trace=[
+                DecisionStep(
+                    handler="cloud_suppression",
+                    matched=True,
+                    reason="cloud/low-light suppression — weather not sunny → cloudy position 25%",
+                    position=25,
+                )
+            ],
+        )
+        diag, explanation = builder.build(_base_ctx(pipeline_result=pr))
+        trace = diag["decision_trace"]
+        cloud_step = next(
+            (s for s in trace if s["handler"] == "cloud_suppression"), None
+        )
+        assert cloud_step is not None
+        assert "cloudy position 25%" in cloud_step["reason"]
+        assert "cloudy position 25%" in explanation

@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
@@ -1828,3 +1829,67 @@ async def test_compute_todays_sun_times_returns_none_on_failure():
         result = await _compute_todays_sun_times(hass, {})
 
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# cloudy_position summary (Issue #311)
+# ---------------------------------------------------------------------------
+
+
+def test_cloud_suppression_shows_cloudy_position_when_set():
+    """When cloudy_position is configured and suppression is on, summary shows 'cloudy position N%'."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 500,
+        CONF_CLOUDY_POSITION: 25,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "cloudy position 25%" in summary
+    assert "default (" not in summary.split("Cloud suppression")[1].split("\n")[0]
+
+
+def test_cloud_suppression_shows_default_when_cloudy_position_not_set():
+    """When cloudy_position is absent, summary shows 'default (N%)' as before."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: 500,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "default (" in summary
+    assert "cloudy position" not in summary
+
+
+def test_cloudy_position_zero_is_shown_not_skipped():
+    """CONF_CLOUDY_POSITION=0 renders as '0%', not treated as unset."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUDY_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "cloudy position 0%" in summary
+
+
+def test_cloudy_position_set_without_suppression_shows_warning():
+    """⚠️ warning when cloudy_position is set but cloud suppression is disabled."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: False,
+        CONF_CLOUDY_POSITION: 25,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "⚠️" in summary
+    assert "cloud suppression" in summary.lower()
+
+
+def test_cloudy_position_no_warning_when_suppression_on():
+    """No ⚠️ warning for cloudy_position when cloud suppression is enabled."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUDY_POSITION: 25,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    cloud_line = next(
+        (ln for ln in summary.splitlines() if "Cloud suppression" in ln), ""
+    )
+    assert "⚠️" not in cloud_line

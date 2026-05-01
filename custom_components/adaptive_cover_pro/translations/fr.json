@@ -278,7 +278,8 @@
           "outside_temp": "Capteur de température extérieure (optionnel)",
           "presence_entity": "Entité de présence (optionnelle)",
           "transparent_blind": "Store transparent",
-          "winter_close_insulation": "Mode isolation hivernale"
+          "winter_close_insulation": "Mode isolation hivernale",
+          "cloudy_position": "Position nuageux (optionnel)"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle pour un contrôle adapté aux nuages. Quand la météo est nuageuse/pluvieuse : l'apport solaire hivernal est ignoré (pas de soleil à capter) et le store revient à sa position par défaut (aucun risque de surchauffe). Quand la météo est ensoleillée/dégagée : les stratégies climatiques complètes s'appliquent. Laissez vide pour supposer qu'il fait toujours soleil (mode simplifié). Recommandé si vous disposez d'une intégration météo — évite les fermetures inutiles.",
@@ -296,7 +297,8 @@
           "outside_temp": "Capteur de température extérieure optionnel pour une meilleure détection du mode été. Quand configuré, le mode été nécessite que BOTH : la température intérieure soit supérieure au seuil haut ET la température extérieure soit supérieure au seuil extérieur. Évite de fermer les stores quand il fait frais dehors (laissez entrer la brise). Laissez vide pour n'utiliser que la température intérieure. Recommandé si vous disposez d'un capteur extérieur — améliore le confort.",
           "presence_entity": "Capteur de présence optionnel (détection présent/absent). Types pris en charge : device_tracker, person, zone, binary_sensor. Quand ABSENT : l'été, le store se ferme complètement (économie de climatisation) ; l'hiver, il s'ouvre par temps ensoleillé (chauffage solaire passif). Quand PRÉSENT : utilise les stratégies climatiques normales avec prise en compte de la météo. Laissez vide pour supposer qu'une personne est toujours présente. Économise de l'énergie en cas d'absence, maintient le confort quand quelqu'un est là.",
           "transparent_blind": "Cochez cette case si votre store est transparent (tissu léger ou voile). Modifie le comportement estival : Transparent ACTIVÉ ferme à 0 % en été (bloque la chaleur, laisse passer la lumière). Transparent DÉSACTIVÉ utilise la position calculée. Les stores transparents réduisent la chaleur tout en laissant passer la lumière. Laissez décoché pour les stores opaques ou occultants.",
-          "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude."
+          "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude.",
+          "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
         },
         "description": "Configurez le contrôle conscient du climat pour l'efficacité énergétique et le confort. Ces paramètres permettent à l'intégration d'adapter le comportement du store en fonction de la température, la météo et la présence.",
         "title": "Configuration climatique"
@@ -422,7 +424,8 @@
           "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
           "cloud_coverage_threshold": "Seuil de couverture nuageuse",
           "cloud_suppression": "Supprimer le contrôle d'éblouissement en faible lumière",
-          "weather_state": "Conditions météorologiques"
+          "weather_state": "Conditions météorologiques",
+          "cloudy_position": "Position nuageux (optionnel)"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -433,7 +436,8 @@
           "irradiance_threshold": "Niveau d'irradiance solaire au-dessus duquel le soleil est considéré comme présent. En dessous de cette valeur, le store revient à sa position par défaut. Valeurs typiques : 300-500 W/m² pour le soleil direct, 100-200 W/m² pour un jour couvert. Ajustez selon votre climat et vos préférences.",
           "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 % (par ex. d'une intégration météo). Quand la valeur atteint le seuil, le contrôle de l'éblouissement est supprimé et le store revient à sa position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel le contrôle de l'éblouissement est supprimé. Par exemple, 75 signifie que le store arrête de suivre le soleil quand le ciel est couvert à 75 % ou plus.",
-          "cloud_suppression": "Quand cette option est activée, tout capteur de lumière ou de nuages configuré (état météo, lux, irradiance ou couverture nuageuse) peut supprimer le contrôle de l'éblouissement. Si un capteur indique l'absence de soleil direct, le store revient à sa position par défaut au lieu de suivre le soleil. Ne nécessite pas le mode climatique — fonctionne comme un contrôle de l'éblouissement autonome adapté à la lumière."
+          "cloud_suppression": "Quand cette option est activée, tout capteur de lumière ou de nuages configuré (état météo, lux, irradiance ou couverture nuageuse) peut supprimer le contrôle de l'éblouissement. Si un capteur indique l'absence de soleil direct, le store revient à sa position par défaut au lieu de suivre le soleil. Ne nécessite pas le mode climatique — fonctionne comme un contrôle de l'éblouissement autonome adapté à la lumière.",
+          "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
         }
       },
       "temperature_climate": {
@@ -758,7 +762,8 @@
           "outside_temp": "Capteur de température extérieure (optionnel)",
           "presence_entity": "Entité de présence (optionnelle)",
           "transparent_blind": "Store transparent",
-          "winter_close_insulation": "Mode isolation hivernale"
+          "winter_close_insulation": "Mode isolation hivernale",
+          "cloudy_position": "Position nuageux (optionnel)"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle pour un contrôle adapté aux nuages. Quand la météo est nuageuse/pluvieuse : l'apport solaire hivernal est ignoré (pas de soleil à capter) et le store revient à sa position par défaut (aucun risque de surchauffe). Quand la météo est ensoleillée/dégagée : les stratégies climatiques complètes s'appliquent. Laissez vide pour supposer qu'il fait toujours soleil (mode simplifié). Recommandé si vous disposez d'une intégration météo — évite les fermetures inutiles.",
@@ -776,7 +781,8 @@
           "outside_temp": "Capteur de température extérieure optionnel pour une meilleure détection du mode été. Quand configuré, le mode été nécessite que BOTH : la température intérieure soit supérieure au seuil haut ET la température extérieure soit supérieure au seuil extérieur. Évite de fermer les stores quand il fait frais dehors (laissez entrer la brise). Laissez vide pour n'utiliser que la température intérieure. Recommandé si vous disposez d'un capteur extérieur — améliore le confort.",
           "presence_entity": "Capteur de présence optionnel (détection présent/absent). Types pris en charge : device_tracker, person, zone, binary_sensor. Quand ABSENT : l'été, le store se ferme complètement (économie de climatisation) ; l'hiver, il s'ouvre par temps ensoleillé (chauffage solaire passif). Quand PRÉSENT : utilise les stratégies climatiques normales avec prise en compte de la météo. Laissez vide pour supposer qu'une personne est toujours présente. Économise de l'énergie en cas d'absence, maintient le confort quand quelqu'un est là.",
           "transparent_blind": "Cochez cette case si votre store est transparent (tissu léger ou voile). Modifie le comportement estival : Transparent ACTIVÉ ferme à 0 % en été (bloque la chaleur, laisse passer la lumière). Transparent DÉSACTIVÉ utilise la position calculée. Les stores transparents réduisent la chaleur tout en laissant passer la lumière. Laissez décoché pour les stores opaques ou occultants.",
-          "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude."
+          "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude.",
+          "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
         },
         "description": "Configurez le contrôle conscient du climat pour l'efficacité énergétique et le confort. Ces paramètres permettent à l'intégration d'adapter le comportement du store en fonction de la température, la météo et la présence.",
         "title": "Configuration climatique"
@@ -909,7 +915,8 @@
           "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
           "cloud_coverage_threshold": "Seuil de couverture nuageuse",
           "cloud_suppression": "Supprimer le contrôle d'éblouissement en faible lumière",
-          "weather_state": "Conditions météorologiques"
+          "weather_state": "Conditions météorologiques",
+          "cloudy_position": "Position nuageux (optionnel)"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -920,7 +927,8 @@
           "irradiance_threshold": "Niveau d'irradiance solaire au-dessus duquel le soleil est considéré comme présent. En dessous de cette valeur, le store revient à sa position par défaut. Valeurs typiques : 300-500 W/m² pour le soleil direct, 100-200 W/m² pour un jour couvert. Ajustez selon votre climat et vos préférences.",
           "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 % (par ex. d'une intégration météo). Quand la valeur atteint le seuil, le contrôle de l'éblouissement est supprimé et le store revient à sa position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel le contrôle de l'éblouissement est supprimé. Par exemple, 75 signifie que le store arrête de suivre le soleil quand le ciel est couvert à 75 % ou plus.",
-          "cloud_suppression": "Quand cette option est activée, tout capteur de lumière ou de nuages configuré (état météo, lux, irradiance ou couverture nuageuse) peut supprimer le contrôle de l'éblouissement. Si un capteur indique l'absence de soleil direct, le store revient à sa position par défaut au lieu de suivre le soleil. Ne nécessite pas le mode climatique — fonctionne comme un contrôle de l'éblouissement autonome adapté à la lumière."
+          "cloud_suppression": "Quand cette option est activée, tout capteur de lumière ou de nuages configuré (état météo, lux, irradiance ou couverture nuageuse) peut supprimer le contrôle de l'éblouissement. Si un capteur indique l'absence de soleil direct, le store revient à sa position par défaut au lieu de suivre le soleil. Ne nécessite pas le mode climatique — fonctionne comme un contrôle de l'éblouissement autonome adapté à la lumière.",
+          "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
         }
       },
       "temperature_climate": {

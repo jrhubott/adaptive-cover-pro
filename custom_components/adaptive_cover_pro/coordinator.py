@@ -118,6 +118,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WINTER_CLOSE_INSULATION,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUDY_POSITION,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_LUX_ENTITY,
@@ -717,10 +718,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     "closing",
                 )
 
-                old_position = (
-                    self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
-                        entity_id, caps, event.old_state
-                    )
+                old_position = self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
+                    entity_id, caps, event.old_state
                 )
                 target = self._cmd_svc.target_call.get(entity_id)
 
@@ -809,15 +808,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     # prematurely cleared.  Covers that never report intermediate
                     # positions fall back to measuring from _sent_at.
                     now = dt.datetime.now(dt.UTC)
-                    elapsed = (
-                        self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
-                            entity_id, now
-                        )
+                    elapsed = self._cmd_svc._transit_elapsed_without_progress(  # noqa: SLF001
+                        entity_id, now
                     )
                     if elapsed is not None:
-                        timeout = (
-                            self._cmd_svc._wait_for_target_timeout_seconds
-                        )  # noqa: SLF001
+                        timeout = self._cmd_svc._wait_for_target_timeout_seconds  # noqa: SLF001
                         if elapsed > timeout:
                             self._cmd_svc.wait_for_target[entity_id] = False
                             self._debug_log(
@@ -1141,6 +1136,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             configured_sunset_pos=(
                 int(sunset_pos_cfg) if sunset_pos_cfg is not None else None
             ),
+            configured_cloudy_pos=options.get(CONF_CLOUDY_POSITION),
         )
 
         self.logger.debug(
@@ -1926,6 +1922,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             winter_close_insulation=bool(
                 options.get(CONF_WINTER_CLOSE_INSULATION, False)
             ),
+            cloudy_position=options.get(CONF_CLOUDY_POSITION),
         )
 
     def _read_force_sensor_states(self, options) -> dict[str, bool]:
