@@ -37,6 +37,7 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
 from custom_components.adaptive_cover_pro.pipeline.types import (
     ClimateOptions,
+    CustomPositionSensorState,
     PipelineSnapshot,
 )
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
@@ -887,7 +888,14 @@ class TestCustomPositionEndToEnd:
                 glare_zones=None,
                 active_zone_names=frozenset(),
                 custom_position_sensors=[
-                    ("binary_sensor.scene", True, 33, 77, False, False)
+                    CustomPositionSensorState(
+                        entity_id="binary_sensor.scene",
+                        is_on=True,
+                        position=33,
+                        priority=77,
+                        min_mode=False,
+                        use_my=False,
+                    )
                 ],
             )
             result = pipeline.evaluate(snapshot)

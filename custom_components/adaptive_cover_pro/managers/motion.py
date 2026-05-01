@@ -47,6 +47,17 @@ class MotionManager:
         self._last_motion_time: float | None = None
         self._motion_timeout_active: bool = False
 
+    # --- Internal helpers ---
+
+    @staticmethod
+    def _now() -> dt.datetime:
+        """Return the current time as a UTC-aware datetime.
+
+        Single source of "now" for this manager so timestamp construction
+        is consistent (UTC-aware) and mockable in one place.
+        """
+        return dt.datetime.now(dt.UTC)
+
     # --- Configuration ---
 
     def update_config(self, sensors: list[str], timeout_seconds: int) -> None:
@@ -128,7 +139,7 @@ class MotionManager:
         )
         had_active = self._motion_timeout_active
         self.cancel_motion_timeout()
-        self._last_motion_time = dt.datetime.now().timestamp()
+        self._last_motion_time = self._now().timestamp()
         self._motion_timeout_active = False
         return had_active or had_pending
 
@@ -155,7 +166,7 @@ class MotionManager:
         if self._event_buffer is not None:
             self._event_buffer.record(
                 {
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "ts": self._now().isoformat(),
                     "event": "motion_timeout_started",
                     "timeout_seconds": self._timeout_seconds,
                 }
@@ -189,7 +200,7 @@ class MotionManager:
             if self._event_buffer is not None:
                 self._event_buffer.record(
                     {
-                        "ts": dt.datetime.now(dt.UTC).isoformat(),
+                        "ts": self._now().isoformat(),
                         "event": "motion_detected_during_timeout",
                     }
                 )
@@ -203,7 +214,7 @@ class MotionManager:
         if self._event_buffer is not None:
             self._event_buffer.record(
                 {
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
+                    "ts": self._now().isoformat(),
                     "event": "motion_timeout_expired",
                     "timeout_seconds": timeout_seconds,
                 }
@@ -219,7 +230,7 @@ class MotionManager:
             if self._event_buffer is not None:
                 self._event_buffer.record(
                     {
-                        "ts": dt.datetime.now(dt.UTC).isoformat(),
+                        "ts": self._now().isoformat(),
                         "event": "motion_timeout_canceled",
                     }
                 )

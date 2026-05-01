@@ -41,7 +41,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
+    CustomPositionSensorState,
+)
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 
 from tests.test_pipeline.conftest import make_snapshot
@@ -346,7 +349,14 @@ class TestCustomPositionPriorityInteractions:
         registry = _full_registry()
         snap = make_snapshot(
             custom_position_sensors=[
-                ("binary_sensor.scene", True, 55, 77, False, False)
+                CustomPositionSensorState(
+                    entity_id="binary_sensor.scene",
+                    is_on=True,
+                    position=55,
+                    priority=77,
+                    min_mode=False,
+                    use_my=False,
+                )
             ],
             motion_timeout_active=True,
             default_position=10,
@@ -362,7 +372,14 @@ class TestCustomPositionPriorityInteractions:
         snap = make_snapshot(
             manual_override_active=True,
             custom_position_sensors=[
-                ("binary_sensor.scene", True, 55, 77, False, False)
+                CustomPositionSensorState(
+                    entity_id="binary_sensor.scene",
+                    is_on=True,
+                    position=55,
+                    priority=77,
+                    min_mode=False,
+                    use_my=False,
+                )
             ],
         )
         result = registry.evaluate(snap)
@@ -374,7 +391,14 @@ class TestCustomPositionPriorityInteractions:
         registry = _full_registry()
         snap = make_snapshot(
             custom_position_sensors=[
-                ("binary_sensor.scene", False, 55, 77, False, False)
+                CustomPositionSensorState(
+                    entity_id="binary_sensor.scene",
+                    is_on=False,
+                    position=55,
+                    priority=77,
+                    min_mode=False,
+                    use_my=False,
+                )
             ],  # off
             motion_timeout_active=True,
             default_position=10,
@@ -389,7 +413,14 @@ class TestCustomPositionPriorityInteractions:
         registry = _full_registry()
         snap = make_snapshot(
             custom_position_sensors=[
-                ("binary_sensor.scene", True, 55, 77, False, False)
+                CustomPositionSensorState(
+                    entity_id="binary_sensor.scene",
+                    is_on=True,
+                    position=55,
+                    priority=77,
+                    min_mode=False,
+                    use_my=False,
+                )
             ],
             direct_sun_valid=True,
             calculate_percentage_return=90.0,

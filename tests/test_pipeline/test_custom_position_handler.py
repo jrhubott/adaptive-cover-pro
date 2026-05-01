@@ -7,6 +7,9 @@ from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
+)
 
 from .conftest import make_snapshot
 
@@ -38,7 +41,28 @@ def _snapshot_with(
 ):
     """Build a snapshot with a single custom position sensor entry."""
     return make_snapshot(
-        custom_position_sensors=[(entity_id, is_on, position, priority, False, False)]
+        custom_position_sensors=[
+            _make_state(entity_id, is_on, position, priority, False, False)
+        ]
+    )
+
+
+def _make_state(
+    entity_id: str,
+    is_on: bool,
+    position: int,
+    priority: int,
+    min_mode: bool,
+    use_my: bool,
+) -> CustomPositionSensorState:
+    """Compact constructor for test sensor states."""
+    return CustomPositionSensorState(
+        entity_id=entity_id,
+        is_on=is_on,
+        position=position,
+        priority=priority,
+        min_mode=min_mode,
+        use_my=use_my,
     )
 
 
@@ -93,7 +117,7 @@ class TestEvaluateNoMatchingEntity:
         """Different entity_id in snapshot — handler's sensor not present."""
         snapshot = make_snapshot(
             custom_position_sensors=[
-                ("binary_sensor.other", True, 50, 77, False, False)
+                _make_state("binary_sensor.other", True, 50, 77, False, False)
             ]
         )
         assert _handler(entity_id=_ENTITY).evaluate(snapshot) is None
@@ -174,8 +198,8 @@ class TestPerInstanceIsolation:
     def test_handler_ignores_other_sensors(self) -> None:
         """Handler for entity A is not triggered by entity B being on."""
         sensors = [
-            ("binary_sensor.slot1", False, 30, 77, False, False),
-            ("binary_sensor.slot2", True, 70, 77, False, False),
+            _make_state("binary_sensor.slot1", False, 30, 77, False, False),
+            _make_state("binary_sensor.slot2", True, 70, 77, False, False),
         ]
         snapshot = make_snapshot(custom_position_sensors=sensors)
 
@@ -192,8 +216,8 @@ class TestPerInstanceIsolation:
     def test_both_on_both_handlers_fire(self) -> None:
         """When both sensors are on, both handlers independently return results."""
         sensors = [
-            ("binary_sensor.slot1", True, 30, 95, False, False),
-            ("binary_sensor.slot2", True, 70, 60, False, False),
+            _make_state("binary_sensor.slot1", True, 30, 95, False, False),
+            _make_state("binary_sensor.slot2", True, 70, 60, False, False),
         ]
         snapshot = make_snapshot(custom_position_sensors=sensors)
 
@@ -265,7 +289,9 @@ class TestMinimumPositionMode:
         """Build a snapshot for min_mode tests."""
         return make_snapshot(
             custom_position_sensors=[
-                (_ENTITY, is_on, position, _DEFAULT_PRIORITY, min_mode, False)
+                _make_state(
+                    _ENTITY, is_on, position, _DEFAULT_PRIORITY, min_mode, False
+                )
             ],
             direct_sun_valid=direct_sun_valid,
             calculate_percentage_return=calculate_percentage_return,
@@ -346,7 +372,7 @@ class TestBypassAutoControl:
     def test_bypass_flag_set_normal_path(self) -> None:
         """Normal position path sets bypass_auto_control=True."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_ENTITY, True, 50, 77, False, False)]
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
         assert result is not None
@@ -355,7 +381,7 @@ class TestBypassAutoControl:
     def test_bypass_flag_set_min_mode_path(self) -> None:
         """Min-mode path sets bypass_auto_control=True."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_ENTITY, True, 30, 77, True, False)],
+            custom_position_sensors=[_make_state(_ENTITY, True, 30, 77, True, False)],
             calculate_percentage_return=50.0,
         )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snapshot)
@@ -365,7 +391,7 @@ class TestBypassAutoControl:
     def test_bypass_flag_set_use_my_path(self) -> None:
         """Use-My path sets bypass_auto_control=True."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_ENTITY, True, 50, 77, False, True)],
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, True)],
             my_position_value=30,
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
@@ -376,7 +402,7 @@ class TestBypassAutoControl:
     def test_reason_includes_bypass_text_normal_path(self) -> None:
         """Reason string includes '[bypasses automatic control]' on normal path."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_ENTITY, True, 50, 77, False, False)]
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
         assert result is not None
@@ -385,7 +411,7 @@ class TestBypassAutoControl:
     def test_reason_includes_bypass_text_use_my_path(self) -> None:
         """Reason string includes '[bypasses automatic control]' on use-My path."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_ENTITY, True, 50, 77, False, True)],
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, True)],
             my_position_value=30,
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
@@ -395,7 +421,7 @@ class TestBypassAutoControl:
     def test_no_bypass_when_sensor_off(self) -> None:
         """Handler returns None (not a bypass result) when sensor is off."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_ENTITY, False, 50, 77, False, False)]
+            custom_position_sensors=[_make_state(_ENTITY, False, 50, 77, False, False)]
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
         assert result is None

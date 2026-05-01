@@ -149,7 +149,7 @@ from .pipeline.handlers import (
     WeatherOverrideHandler,
 )
 from .pipeline.registry import PipelineRegistry
-from .pipeline.types import ClimateOptions, PipelineSnapshot
+from .pipeline.types import ClimateOptions, CustomPositionSensorState, PipelineSnapshot
 from .enums import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -1900,16 +1900,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _read_custom_position_sensor_states(
         self, options
-    ) -> list[tuple[str, bool, int, int, bool, bool]]:
+    ) -> list[CustomPositionSensorState]:
         """Read custom position sensor states from HA into an ordered list.
 
-        Returns a list of (entity_id, is_on, position, priority, min_mode, use_my) tuples
-        for every slot that has both a sensor and a position configured.  Priority
-        defaults to DEFAULT_CUSTOM_POSITION_PRIORITY (77) when not set so that
-        existing installations behave identically to the previous release.
-        min_mode defaults to False so existing installations behave identically.
-        use_my defaults to False; when True the slot triggers the cover's hardware
-        "My" preset via stop_cover instead of the slot's numeric position.
+        Returns one CustomPositionSensorState per configured slot (sensor and
+        position both set).  Priority defaults to DEFAULT_CUSTOM_POSITION_PRIORITY
+        (77) when not set so existing installations behave identically.  min_mode
+        defaults to False; use_my defaults to False (when True the slot triggers
+        the cover's hardware "My" preset via stop_cover instead of the slot's
+        numeric position).
         """
         result = []
         for slot_keys in CUSTOM_POSITION_SLOTS.values():
@@ -1926,7 +1925,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 min_mode = bool(options.get(slot_keys["min_mode"], False))
                 use_my = bool(options.get(slot_keys["use_my"], False))
                 result.append(
-                    (sensor, is_on, int(position), priority, min_mode, use_my)
+                    CustomPositionSensorState(
+                        entity_id=sensor,
+                        is_on=is_on,
+                        position=int(position),
+                        priority=priority,
+                        min_mode=min_mode,
+                        use_my=use_my,
+                    )
                 )
         return result
 
