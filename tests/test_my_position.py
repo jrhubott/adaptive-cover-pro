@@ -31,7 +31,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
 
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------

@@ -20,7 +20,6 @@ from custom_components.adaptive_cover_pro.managers.grace_period import (
 from custom_components.adaptive_cover_pro.managers.motion import MotionManager
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

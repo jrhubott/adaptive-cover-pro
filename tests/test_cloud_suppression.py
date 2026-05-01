@@ -4,6 +4,7 @@ Covers:
 - _is_cloud_suppression_active() logic with all WeatherReading combinations
 - Pipeline integration — cloud suppression overrides solar handler
 - Priority ordering — cloud suppression defers to higher-priority handlers
+- cloudy_position option (Issue #311) — separate position for cloud-suppressed state
 """
 
 from __future__ import annotations
@@ -24,8 +25,7 @@ from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegis
 from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 
-from tests.test_pipeline.conftest import make_snapshot
-
+from tests.test_pipeline.conftest import _make_mock_cover, make_snapshot
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -381,3 +381,122 @@ class TestCloudSuppressionPipelineIntegration:
         result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.CLOUD
         assert result.position == 70
+
+
+# ---------------------------------------------------------------------------
+# cloudy_position option (Issue #311)
+# ---------------------------------------------------------------------------
+
+
+def _make_cloud_options(*, cloudy_position: int | None = None) -> ClimateOptions:
+    return ClimateOptions(
+        temp_low=None,
+        temp_high=None,
+        temp_switch=True,
+        transparent_blind=False,
+        temp_summer_outside=None,
+        cloud_suppression_enabled=True,
+        winter_close_insulation=False,
+        cloudy_position=cloudy_position,
+    )
+
+
+class TestCloudyPosition:
+    """Tests for the cloudy_position config option (Issue #311)."""
+
+    def _handler(self) -> CloudSuppressionHandler:
+        return CloudSuppressionHandler()
+
+    def test_returns_cloudy_position_when_configured(self) -> None:
+        """Handler returns cloudy_position when set and cloud triggers fire."""
+        snapshot = make_snapshot(
+            default_position=60,
+            is_sunset_active=False,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=_make_cloud_options(cloudy_position=85),
+        )
+        result = self._handler().evaluate(snapshot)
+        assert result is not None
+        assert result.position == 85
+        assert result.control_method == ControlMethod.CLOUD
+        assert "cloudy position" in result.reason
+        assert "85%" in result.reason
+
+    def test_falls_back_to_default_when_cloudy_position_none(self) -> None:
+        """Handler falls back to default_position when cloudy_position is None."""
+        snapshot = make_snapshot(
+            default_position=60,
+            is_sunset_active=False,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=_make_cloud_options(cloudy_position=None),
+        )
+        result = self._handler().evaluate(snapshot)
+        assert result is not None
+        assert result.position == 60
+        assert "default position" in result.reason
+
+    def test_returns_none_when_no_triggers_even_with_cloudy_position_set(self) -> None:
+        """cloudy_position alone never forces the handler to fire."""
+        snapshot = make_snapshot(
+            default_position=60,
+            is_sunset_active=False,
+            climate_readings=make_weather_readings(is_sunny=True),
+            climate_options=_make_cloud_options(cloudy_position=85),
+        )
+        assert self._handler().evaluate(snapshot) is None
+
+    def test_sunset_active_overrides_cloudy_position(self) -> None:
+        """Sunset position wins over cloudy_position when sunset window is active."""
+        snapshot = make_snapshot(
+            default_position=10,
+            is_sunset_active=True,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=_make_cloud_options(cloudy_position=85),
+        )
+        result = self._handler().evaluate(snapshot)
+        assert result is not None
+        assert result.position == 10
+        assert "sunset position" in result.reason
+        assert "cloudy position" not in result.reason
+
+    def test_cloudy_position_respects_max_position_limit(self) -> None:
+        """Max position limit clamps cloudy_position."""
+        from unittest.mock import MagicMock
+
+        cfg = MagicMock()
+        cfg.min_pos = None
+        cfg.max_pos = 70
+        cfg.min_pos_sun_only = False
+        cfg.max_pos_sun_only = False
+        cover = _make_mock_cover(config=cfg)
+        snapshot = make_snapshot(
+            cover=cover,
+            default_position=60,
+            is_sunset_active=False,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=_make_cloud_options(cloudy_position=90),
+        )
+        result = self._handler().evaluate(snapshot)
+        assert result is not None
+        assert result.position == 70
+
+    def test_cloudy_position_respects_min_position_limit(self) -> None:
+        """Min position limit clamps cloudy_position."""
+        from unittest.mock import MagicMock
+
+        cfg = MagicMock()
+        cfg.min_pos = 30
+        cfg.max_pos = None
+        cfg.min_pos_sun_only = False
+        cfg.max_pos_sun_only = False
+        cover = _make_mock_cover(config=cfg)
+        snapshot = make_snapshot(
+            cover=cover,
+            default_position=60,
+            is_sunset_active=False,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=_make_cloud_options(cloudy_position=10),
+        )
+        result = self._handler().evaluate(snapshot)
+        assert result is not None
+        assert result.position == 30

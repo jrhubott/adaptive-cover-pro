@@ -74,7 +74,6 @@ from custom_components.adaptive_cover_pro.managers.cover_command import Position
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

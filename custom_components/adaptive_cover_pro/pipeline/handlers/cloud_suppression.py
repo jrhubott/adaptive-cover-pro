@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_default_position, compute_raw_calculated_position
+from ..helpers import (
+    apply_snapshot_limits,
+    compute_default_position,
+    compute_raw_calculated_position,
+)
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -47,10 +51,17 @@ class CloudSuppressionHandler(OverrideHandler):
         if not triggers:
             return None
 
-        position = compute_default_position(snapshot)
-        pos_label = (
-            "sunset position" if snapshot.is_sunset_active else "default position"
-        )
+        cloudy = snapshot.climate_options.cloudy_position
+        if snapshot.is_sunset_active:
+            position = compute_default_position(snapshot)
+            pos_label = "sunset position"
+        elif cloudy is not None:
+            position = apply_snapshot_limits(snapshot, cloudy, sun_valid=False)
+            pos_label = "cloudy position"
+        else:
+            position = compute_default_position(snapshot)
+            pos_label = "default position"
+
         trigger_detail = ", ".join(triggers)
         return PipelineResult(
             position=position,

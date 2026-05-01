@@ -22,7 +22,6 @@ from custom_components.adaptive_cover_pro.managers.manual_override import (
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

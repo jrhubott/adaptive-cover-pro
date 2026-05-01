@@ -15,7 +15,6 @@ from typing import Any
 from ..const import ControlStatus
 from ..enums import ClimateStrategy, ControlMethod
 
-
 # ---------------------------------------------------------------------------
 # Context dataclass – the coordinator populates this before calling build()
 # ---------------------------------------------------------------------------
@@ -335,6 +334,9 @@ class DiagnosticsBuilder:
                 "configured_sunset_pos": (
                     result.configured_sunset_pos if result is not None else None
                 ),
+                "configured_cloudy_pos": (
+                    result.configured_cloudy_pos if result is not None else None
+                ),
             },
         }
 
@@ -488,6 +490,8 @@ class DiagnosticsBuilder:
             CONF_BLIND_SPOT_ELEVATION,
             CONF_BLIND_SPOT_LEFT,
             CONF_BLIND_SPOT_RIGHT,
+            CONF_CLOUD_SUPPRESSION,
+            CONF_CLOUDY_POSITION,
             CONF_ENABLE_BLIND_SPOT,
             CONF_ENABLE_MAX_POSITION,
             CONF_ENABLE_MIN_POSITION,
@@ -538,5 +542,7 @@ class DiagnosticsBuilder:
                 "motion_timeout_active": ctx.motion_timeout_active,
                 "manual_toggle": ctx.manual_toggle,
                 "enabled_toggle": ctx.enabled_toggle,
+                "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
+                "cloudy_position": options.get(CONF_CLOUDY_POSITION),
             }
         }

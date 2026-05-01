@@ -16,7 +16,6 @@ from custom_components.adaptive_cover_pro.pipeline.helpers import (
     compute_solar_position,
 )
 
-
 # ---------------------------------------------------------------------------
 # Minimal snapshot / cover helpers
 # ---------------------------------------------------------------------------

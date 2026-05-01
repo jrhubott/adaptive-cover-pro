@@ -1,7 +1,9 @@
 {
   "domain": "adaptive_cover_pro",
   "name": "Adaptive Cover Pro",
-  "codeowners": ["@jrhubott"],
+  "codeowners": [
+    "@jrhubott"
+  ],
   "config_flow": true,
   "dependencies": [
     "sun",
@@ -14,6 +16,9 @@
   "documentation": "https://github.com/jrhubott/adaptive-cover-pro",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/jrhubott/adaptive-cover-pro/issues",
-  "requirements": ["astral", "pandas"],
-  "version": "2.18.6"
+  "requirements": [
+    "astral",
+    "pandas"
+  ],
+  "version": "2.18.7-beta.1"
 }

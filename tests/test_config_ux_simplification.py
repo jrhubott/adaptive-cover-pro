@@ -49,7 +49,6 @@ from custom_components.adaptive_cover_pro.const import (
     SensorType,
 )
 
-
 # ---------------------------------------------------------------------------
 # Quick vs Full setup flow
 # ---------------------------------------------------------------------------

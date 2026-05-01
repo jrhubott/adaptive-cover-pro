@@ -28,7 +28,6 @@ from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegis
 
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirroring test_effective_default.py's pattern)
 # ---------------------------------------------------------------------------

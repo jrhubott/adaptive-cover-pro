@@ -29,6 +29,7 @@ class ClimateOptions:
     temp_summer_outside: float | None
     cloud_suppression_enabled: bool
     winter_close_insulation: bool
+    cloudy_position: int | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +179,9 @@ class PipelineResult:
     is_sunset_active: bool = False
     configured_default: int = 0  # raw h_def from user config
     configured_sunset_pos: int | None = None  # raw sunset_pos (None = not configured)
+    configured_cloudy_pos: int | None = (
+        None  # raw cloudy_position (None = not configured)
+    )
 
     # Optional climate diagnostics set by ClimateHandler
     climate_state: int | None = None

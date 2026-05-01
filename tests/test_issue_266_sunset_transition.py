@@ -19,7 +19,6 @@ from custom_components.adaptive_cover_pro.coordinator import (
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

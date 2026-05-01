@@ -46,7 +46,6 @@ from custom_components.adaptive_cover_pro.state.climate_provider import ClimateR
 
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

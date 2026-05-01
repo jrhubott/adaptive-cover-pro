@@ -16,7 +16,6 @@ import pytest
 
 from tests.cover_helpers import build_vertical_cover
 
-
 # ---------------------------------------------------------------------------
 # Helper: verify an object and all nested values are native Python types
 # ---------------------------------------------------------------------------

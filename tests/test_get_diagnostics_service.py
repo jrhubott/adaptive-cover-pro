@@ -15,7 +15,6 @@ from custom_components.adaptive_cover_pro.services.diagnostics_service import (
 )
 from custom_components.adaptive_cover_pro.const import DOMAIN
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

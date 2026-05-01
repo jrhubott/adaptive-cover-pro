@@ -278,7 +278,8 @@
           "outside_temp": "Außentemperatursensor (optional)",
           "presence_entity": "Anwesenheitsentität (optional)",
           "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winterisolationsmodus"
+          "winter_close_insulation": "Winterisolationsmodus",
+          "cloudy_position": "Bewölkungsposition (optional)"
         },
         "data_description": {
           "weather_entity": "Optionale Wetter-Integration für wolkenkalibrierte Steuerung. Wenn Wetter = bewölkt/regnerisch: Überspringt Winterwärmeerwerb (keine Sonne zum Erfassen), Kehrt zur Standardposition zurück (keine Überhitzungsgefahr). Wenn Wetter = sonnig/klar: Wendet vollständige Klimastrategien an. Lassen Sie leer, um immer sonnig anzunehmen (einfacher). Empfohlen, wenn Sie Wetter-Integration haben – vermeidet unnötige Schließungen.",
@@ -296,7 +297,8 @@
           "outside_temp": "Optionaler Außentemperatursensor für bessere Sommererkennung. Wenn eingestellt, erfordert der Sommermodus BEIDE: Raumtemperatur > hoher Schwellwert UND Außentemperatur > Außenschwellwert. Verhindert Schließen der Beschattung, wenn es draußen kühl ist (offen für Brise). Lassen Sie leer, um nur Raumtemperatur zu verwenden. Empfohlen, wenn Sie Außensensor haben – verbessert den Komfort.",
           "presence_entity": "Optionaler Anwesenheitssensor (Home/Away-Erkennung). Unterstützte Typen: device_tracker, person, zone, binary_sensor. Wenn WEG: Sommer schließt vollständig (sparen auf AC), Winter öffnet sich an sonnigen Tagen (passive Solarheizung). Wenn ZUHAUSE: Verwenden Sie normale Klimastrategien mit Wetterkennung. Lassen Sie leer, um immer anzunehmen, dass jemand zuhause ist. Spart Energie wenn weg, behält Komfort bei wenn zuhause.",
           "transparent_blind": "Aktivieren Sie dies, wenn Ihre Jalousie lichtdurchlässig ist (Voile/leichter Stoff). Ändert Sommerverhalten: Transparent AN schließt auf 0% im Sommer (blockiere Wärme, behalte Licht). Transparent AUS nutzt berechnete Position. Lichtdurchlässige Jalousien reduzieren Wärme, lassen aber Licht durch. Lassen Sie deaktiviert für undurchsichtige/Verdunkelungs-Jalousien.",
-          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne nicht das Fenster trifft. Bietet Isolierung durch Abhalten kalter Luft und Bewahrung von Wärme. Wenn die Sonne in das Sichtfeld des Fensters eintritt, öffnet sich die Beschattung wie normal zur Solarheizung."
+          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne nicht das Fenster trifft. Bietet Isolierung durch Abhalten kalter Luft und Bewahrung von Wärme. Wenn die Sonne in das Sichtfeld des Fensters eintritt, öffnet sich die Beschattung wie normal zur Solarheizung.",
+          "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
         },
         "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen der Integration, das Beschattungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
         "title": "Klimakonfiguration"
@@ -422,7 +424,8 @@
           "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
           "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
           "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
-          "weather_state": "Wetterbedingungen"
+          "weather_state": "Wetterbedingungen",
+          "cloudy_position": "Bewölkungsposition (optional)"
         },
         "data_description": {
           "weather_entity": "Optionale Wetterintegrationen zur Erkennung von Wolkenbedeckung. Wenn der aktuelle Wetterzustand nicht in der unten ausgewählten Liste enthalten ist, wird angenommen, dass direktes Sonnenlicht nicht vorhanden ist, und die Blendungskontrolle wird unterdrückt. Leer lassen, um den Wetterzustand zu ignorieren.",
@@ -433,7 +436,8 @@
           "irradiance_threshold": "Sonnenbestrahlungsniveau, über dem die Sonne als vorhanden gilt. Darunter kehrt die Beschattung zu ihrer Standardposition zurück. Typische Werte: 300–500 W/m² für direktes Sonnenlicht, 100–200 W/m² für einen bewölkten Tag. Passen Sie je nach Klima und Vorlieben an.",
           "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100 % meldet (z. B. von einer Wetterintegrationen). Wenn der Wert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und die Beschattung kehrt zu ihrer Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
           "cloud_coverage_threshold": "Wolkenbedeckungsprozentsatz, bei dem oder über dem die Blendungskontrolle unterdrückt wird. Beispiel: 75 bedeutet, dass die Beschattung die Sonnenverfolgung stoppt, wenn der Himmel zu 75 % oder stärker bewölkt ist.",
-          "cloud_suppression": "Wenn aktiviert, können alle konfigurierten Licht- oder Wolkensensoren (Wetterzustand, Lux, Bestrahlung oder Wolkenbedeckung) die Blendungskontrolle unterdrücken. Wenn einer der Sensoren anzeigt, dass kein direktes Sonnenlicht vorhanden ist, kehrt die Beschattung zu ihrer Standardposition zurück, anstatt der Sonne zu folgen. Erfordert keinen Klimamodus – dies funktioniert als eigenständige lichtkontrollierte Blendungskontrolle."
+          "cloud_suppression": "Wenn aktiviert, können alle konfigurierten Licht- oder Wolkensensoren (Wetterzustand, Lux, Bestrahlung oder Wolkenbedeckung) die Blendungskontrolle unterdrücken. Wenn einer der Sensoren anzeigt, dass kein direktes Sonnenlicht vorhanden ist, kehrt die Beschattung zu ihrer Standardposition zurück, anstatt der Sonne zu folgen. Erfordert keinen Klimamodus – dies funktioniert als eigenständige lichtkontrollierte Blendungskontrolle.",
+          "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
         }
       },
       "temperature_climate": {
@@ -758,7 +762,8 @@
           "outside_temp": "Außentemperatursensor (optional)",
           "presence_entity": "Anwesenheitsentität (optional)",
           "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winterisolationsmodus"
+          "winter_close_insulation": "Winterisolationsmodus",
+          "cloudy_position": "Bewölkungsposition (optional)"
         },
         "data_description": {
           "weather_entity": "Optionale Wetter-Integration für bewölkungsbewusste Kontrolle. Wenn Wetter = bewölkt/regnerisch: Überspringt Wintersolareintrag (keine Sonne zum Nutzen), Kehrt zur Standardposition zurück (keine Überhitzungsgefahr). Wenn Wetter = sonnig/klar: Wendet vollständige Klimastrategien an. Lassen Sie leer, um immer sonnig anzunehmen (einfacher). Empfohlen, wenn Sie eine Wetter-Integration haben - vermeidet unnötige Schließvorgänge.",
@@ -776,7 +781,8 @@
           "outside_temp": "Optionaler Außentemperatursensor für bessere Sommererkennung. Bei Einstellung erfordert der Sommermodus BEIDES: Innentemperatur > hoher Schwellwert UND Außentemperatur > außerer Schwellwert. Verhindert das Schließen von Beschattung, wenn es außen kühl ist (öffnen Sie für Luftzug). Lassen Sie leer, um nur die Innentemperatur zu verwenden. Empfohlen, wenn Sie einen Außensensor haben - verbessert Komfort.",
           "presence_entity": "Optionaler Anwesenheitssensor (Zuhause/Weg-Erkennung). Unterstützte Typen: device_tracker, person, zone, binary_sensor. Bei WEG: Sommer schließt vollständig (Klimaanlage sparen), Winter öffnet an sonnigen Tagen (passive Solarheizung). Bei ZUHAUSE: Verwenden Sie normale Klimastrategien mit Wetteralertness. Lassen Sie leer, um immer davon auszugehen, dass jemand zuhause ist. Spart Energie, wenn weg, erhält Komfort, wenn zuhause.",
           "transparent_blind": "Aktivieren Sie dies, wenn Ihre Jalousie durchsichtig ist (Seidenstoff/Leichtgewebe). Ändert das Sommerverhalten: Transparent AN schließt im Sommer auf 0% (Wärme blockieren, Licht bewahren). Transparent AUS verwendet berechnete Position. Durchsichtige Jalousien reduzieren Wärme, aber lassen Licht durch. Lassen Sie deaktiviert für undurchsichtige/Verdunkelungsjaloussen.",
-          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne das Fenster nicht trifft. Bietet Isolierung, indem kalte Luft draußen und Wärme drinnen bleibt. Wenn die Sonne das Sichtfeld des Fensters erreicht, öffnet sich die Beschattung für Solarheizung wie gewohnt."
+          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne das Fenster nicht trifft. Bietet Isolierung, indem kalte Luft draußen und Wärme drinnen bleibt. Wenn die Sonne das Sichtfeld des Fensters erreicht, öffnet sich die Beschattung für Solarheizung wie gewohnt.",
+          "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
         },
         "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen der Integration, das Beschattungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
         "title": "Klimakonfiguration"
@@ -909,7 +915,8 @@
           "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
           "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
           "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
-          "weather_state": "Wetterbedingungen"
+          "weather_state": "Wetterbedingungen",
+          "cloudy_position": "Bewölkungsposition (optional)"
         },
         "data_description": {
           "weather_entity": "Optionale Wetter-Integration, um Wolkendeckung zu erkennen. Wenn der aktuelle Wetterzustand nicht in der unten ausgewählten Liste enthalten ist, wird davon ausgegangen, dass direkte Sonne abwesend ist und die Blendungskontrolle wird unterdrückt. Leer lassen, um den Wetterzustand zu ignorieren.",
@@ -920,7 +927,8 @@
           "irradiance_threshold": "Sonnenbestrahlungsstärke, über der die Sonne als vorhanden gilt. Unterhalb dieses Wertes kehrt der Behang zu seiner Standardposition zurück. Typische Werte: 300–500 W/m² für direkte Sonnenstrahlung, 100–200 W/m² für einen bewölkten Tag. Passen Sie je nach Klima und Vorlieben an.",
           "cloud_coverage_entity": "Optionaler Wolkendeckungssensor, der 0–100 % meldet (z. B. von einer Wetter-Integration). Wenn der Messwert den Schwellwert erreicht, wird die Blendungskontrolle unterdrückt und der Behang kehrt zu seiner Standardposition zurück. Leer lassen, wenn Sie diesen Sensor nicht haben.",
           "cloud_coverage_threshold": "Wolkendeckungsprozentsatz bei oder über dem die Blendungskontrolle unterdrückt wird. Zum Beispiel bedeutet 75, dass der Behang die Sonnenverfolgung stoppt, wenn der Himmel zu 75 % oder mehr bewölkt ist.",
-          "cloud_suppression": "Wenn aktiviert, können alle konfigurierten Licht- oder Wolkensensoren (Wetterzustand, Lux, Bestrahlungsstärke oder Wolkendeckung) die Blendungskontrolle unterdrücken. Wenn ein Sensor anzeigt, dass keine echte direkte Sonnenstrahlung vorhanden ist, kehrt der Behang zu seiner Standardposition zurück, anstatt die Sonne zu verfolgen. Erfordert keinen Klimamodus – dies funktioniert als eigenständige lichtgesteuerte Blendungskontrolle."
+          "cloud_suppression": "Wenn aktiviert, können alle konfigurierten Licht- oder Wolkensensoren (Wetterzustand, Lux, Bestrahlungsstärke oder Wolkendeckung) die Blendungskontrolle unterdrücken. Wenn ein Sensor anzeigt, dass keine echte direkte Sonnenstrahlung vorhanden ist, kehrt der Behang zu seiner Standardposition zurück, anstatt die Sonne zu verfolgen. Erfordert keinen Klimamodus – dies funktioniert als eigenständige lichtgesteuerte Blendungskontrolle.",
+          "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
         }
       },
       "temperature_climate": {

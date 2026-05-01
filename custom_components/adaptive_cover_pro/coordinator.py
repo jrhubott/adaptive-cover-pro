@@ -118,6 +118,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WINTER_CLOSE_INSULATION,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUDY_POSITION,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_LUX_ENTITY,
@@ -173,7 +174,6 @@ from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
-
 
 _MANIFEST_VERSION: str = json.loads(
     (pathlib.Path(__file__).parent / "manifest.json").read_text()
@@ -1141,6 +1141,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             configured_sunset_pos=(
                 int(sunset_pos_cfg) if sunset_pos_cfg is not None else None
             ),
+            configured_cloudy_pos=options.get(CONF_CLOUDY_POSITION),
         )
 
         self.logger.debug(
@@ -1926,6 +1927,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             winter_close_insulation=bool(
                 options.get(CONF_WINTER_CLOSE_INSULATION, False)
             ),
+            cloudy_position=options.get(CONF_CLOUDY_POSITION),
         )
 
     def _read_force_sensor_states(self, options) -> dict[str, bool]:

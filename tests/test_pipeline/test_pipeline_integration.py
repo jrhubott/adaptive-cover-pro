@@ -40,7 +40,6 @@ from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # Entity ID used by the default custom position handler in integration tests.
 _CUSTOM_SENSOR = "binary_sensor.scene"
 

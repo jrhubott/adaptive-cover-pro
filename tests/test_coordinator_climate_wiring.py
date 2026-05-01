@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
+    CONF_CLOUDY_POSITION,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_LUX_ENTITY,
@@ -35,7 +36,6 @@ from custom_components.adaptive_cover_pro.state.climate_provider import (
     ClimateProvider,
     ClimateReadings,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -438,3 +438,49 @@ class TestCloudSuppressionWiring:
             "REGRESSION (Issue #268): cloud suppression must be able to read lux "
             "even when the climate-mode lux toggle is off."
         )
+
+
+# ---------------------------------------------------------------------------
+# cloudy_position wiring (Issue #311)
+# ---------------------------------------------------------------------------
+
+
+def _make_coordinator_with_toggles():
+    """Build a coordinator with temp_toggle for _build_climate_options tests."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    toggles = MagicMock()
+    toggles.temp_toggle = False
+    coord._toggles = toggles
+    return coord
+
+
+class TestCloudyPositionWiring:
+    """Guard that CONF_CLOUDY_POSITION flows through into ClimateOptions."""
+
+    @pytest.mark.unit
+    def test_cloudy_position_passed_to_climate_options(self):
+        """CONF_CLOUDY_POSITION is forwarded as cloudy_position in ClimateOptions."""
+        coord = _make_coordinator_with_toggles()
+        options = {CONF_CLOUD_SUPPRESSION: True, CONF_CLOUDY_POSITION: 30}
+        result = coord._build_climate_options(options)
+        assert result.cloudy_position == 30
+
+    @pytest.mark.unit
+    def test_cloudy_position_none_when_absent(self):
+        """cloudy_position is None when CONF_CLOUDY_POSITION is not in options."""
+        coord = _make_coordinator_with_toggles()
+        options = {CONF_CLOUD_SUPPRESSION: True}
+        result = coord._build_climate_options(options)
+        assert result.cloudy_position is None
+
+    @pytest.mark.unit
+    def test_cloudy_position_zero_is_distinct_from_unset(self):
+        """CONF_CLOUDY_POSITION=0 must be preserved as 0, not coerced to None."""
+        coord = _make_coordinator_with_toggles()
+        options = {CONF_CLOUD_SUPPRESSION: True, CONF_CLOUDY_POSITION: 0}
+        result = coord._build_climate_options(options)
+        assert result.cloudy_position == 0

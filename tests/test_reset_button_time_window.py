@@ -11,7 +11,6 @@ shared gate for both the auto-expiry path and the button path.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

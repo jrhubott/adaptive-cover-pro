@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 
 from custom_components.adaptive_cover_pro.helpers import compute_effective_default
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
