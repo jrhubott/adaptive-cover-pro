@@ -483,13 +483,57 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
+_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
+_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
+_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
+
+
+def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a single or multi-pick selector for on/off entities."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
+    )
+
+
+def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
+    )
+
+
+def _numeric_selector(
+    *, device_class: str | None = None, multiple: bool = False
+) -> selector.EntitySelector:
+    """Return a selector for numeric-state entities, optionally filtered by device_class."""
+    if device_class is not None:
+        return selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(
+                domain=_NUMERIC_DOMAINS, device_class=device_class
+            )
+        )
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_NUMERIC_DOMAINS, multiple=multiple)
+    )
+
+
+def _position_slider() -> selector.NumberSelector:
+    """Return a reusable 0-100% position slider selector."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0,
+            max=100,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+            unit_of_measurement="%",
+        )
+    )
+
+
 FORCE_OVERRIDE_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_FORCE_OVERRIDE_SENSORS, default=[]): selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["binary_sensor", "input_boolean"],
-                multiple=True,
-            )
+        vol.Optional(CONF_FORCE_OVERRIDE_SENSORS, default=[]): _binary_on_selector(
+            multiple=True
         ),
         vol.Optional(CONF_FORCE_OVERRIDE_POSITION, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -507,28 +551,6 @@ FORCE_OVERRIDE_SCHEMA = vol.Schema(
 )
 
 
-def _position_slider() -> selector.NumberSelector:
-    """Return a reusable 0-100% position slider selector."""
-    return selector.NumberSelector(
-        selector.NumberSelectorConfig(
-            min=0,
-            max=100,
-            step=1,
-            mode=selector.NumberSelectorMode.SLIDER,
-            unit_of_measurement="%",
-        )
-    )
-
-
-def _binary_sensor_selector() -> selector.EntitySelector:
-    """Return a single binary_sensor / input_boolean entity selector."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(
-            domain=["binary_sensor", "input_boolean"], multiple=False
-        )
-    )
-
-
 def _priority_slider() -> selector.NumberSelector:
     """Return a number selector for pipeline priority (1-99)."""
     return selector.NumberSelector(
@@ -543,7 +565,7 @@ def _priority_slider() -> selector.NumberSelector:
 
 CUSTOM_POSITION_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_on_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
         vol.Optional(
@@ -552,7 +574,7 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_CUSTOM_POSITION_USE_MY_1, default=False
         ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_on_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
         vol.Optional(
@@ -561,7 +583,7 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_CUSTOM_POSITION_USE_MY_2, default=False
         ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_on_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
         vol.Optional(
@@ -570,7 +592,7 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_CUSTOM_POSITION_USE_MY_3, default=False
         ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_sensor_selector(),
+        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_on_selector(),
         vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
         vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
         vol.Optional(
@@ -584,11 +606,8 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(
 
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_MOTION_SENSORS, default=[]): selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["binary_sensor", "input_boolean"],
-                multiple=True,
-            )
+        vol.Optional(CONF_MOTION_SENSORS, default=[]): _presence_like_selector(
+            multiple=True
         ),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
@@ -640,10 +659,10 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
         ): selector.BooleanSelector(),
         vol.Optional(
             CONF_WEATHER_WIND_SPEED_SENSOR, default=vol.UNDEFINED
-        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        ): _numeric_selector(),
         vol.Optional(
             CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
-        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        ): _numeric_selector(),
         vol.Optional(
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             default=DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
@@ -669,7 +688,7 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
-        ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
+        ): _numeric_selector(),
         vol.Optional(
             CONF_WEATHER_RAIN_THRESHOLD, default=DEFAULT_WEATHER_RAIN_THRESHOLD
         ): selector.NumberSelector(
@@ -682,18 +701,12 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
-        ),
+        ): _binary_on_selector(),
         vol.Optional(
             CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
-        ),
-        vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["binary_sensor", "input_boolean"], multiple=True
-            )
+        ): _binary_on_selector(),
+        vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): _binary_on_selector(
+            multiple=True
         ),
         vol.Optional(
             CONF_WEATHER_OVERRIDE_POSITION, default=0
@@ -757,22 +770,16 @@ LIGHT_CLOUD_SCHEMA = vol.Schema(
                 ],
             )
         ),
-        vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(
-                domain=["sensor"], device_class="illuminance"
-            )
+        vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): _numeric_selector(
+            device_class="illuminance"
         ),
         vol.Optional(CONF_LUX_THRESHOLD, default=1000): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 mode=selector.NumberSelectorMode.BOX, unit_of_measurement="lux"
             )
         ),
-        vol.Optional(
-            CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(
-                domain=["sensor"], device_class="irradiance"
-            )
+        vol.Optional(CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED): _numeric_selector(
+            device_class="irradiance"
         ),
         vol.Optional(CONF_IRRADIANCE_THRESHOLD, default=300): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -781,9 +788,7 @@ LIGHT_CLOUD_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(domain=["sensor"])
-        ),
+        ): _numeric_selector(),
         vol.Optional(
             CONF_CLOUD_COVERAGE_THRESHOLD, default=DEFAULT_CLOUD_COVERAGE_THRESHOLD
         ): selector.NumberSelector(
@@ -831,9 +836,7 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(domain=["sensor"])
-        ),
+        ): _numeric_selector(),
         vol.Optional(CONF_OUTSIDE_THRESHOLD, default=25): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -844,17 +847,7 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
-        ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(
-                domain=[
-                    "device_tracker",
-                    "person",
-                    "zone",
-                    "binary_sensor",
-                    "input_boolean",
-                ]
-            )
-        ),
+        ): _presence_like_selector(),
         vol.Optional(CONF_TRANSPARENT_BLIND, default=False): selector.BooleanSelector(),
         vol.Optional(
             CONF_WINTER_CLOSE_INSULATION, default=False

@@ -130,12 +130,12 @@ class TestSplitSchemas:
         keys = [str(k) for k in TEMPERATURE_CLIMATE_SCHEMA.schema]
         assert "presence_entity" in keys
 
-    def test_presence_entity_selector_allows_five_domains(self):
-        """Presence entity selector must accept the five supported domains.
+    def test_presence_entity_selector_allows_seven_domains(self):
+        """Presence entity selector must accept device_tracker, person, zone,
+        binary_sensor, input_boolean, switch, and schedule.
 
-        Regression guard for #313 — PR #287 silently narrowed this list to
-        just binary_sensor/input_boolean, blocking zone/device_tracker users
-        even though the runtime consumer still routes by domain.
+        Regression guard for #313 — PR #287 silently narrowed this list.
+        Updated for #318 — switch and schedule added to match motion selector.
         """
         for key, value in TEMPERATURE_CLIMATE_SCHEMA.schema.items():
             if str(key) == "presence_entity":
@@ -146,8 +146,9 @@ class TestSplitSchemas:
                     "zone",
                     "binary_sensor",
                     "input_boolean",
+                    "switch",
+                    "schedule",
                 }
-                assert len(domain) == 5
                 return
         raise AssertionError("presence_entity not found in schema")
 
@@ -388,3 +389,175 @@ class TestSwitchEnabledDefault:
 
         sig = inspect.signature(AdaptiveCoverSwitch.__init__)
         assert "enabled_default" in sig.parameters
+
+
+# ---------------------------------------------------------------------------
+# Selector domain widening (#318)
+# ---------------------------------------------------------------------------
+
+_BINARY_ON_EXPECTED = {"binary_sensor", "input_boolean", "switch", "schedule"}
+_PRESENCE_LIKE_EXPECTED = _BINARY_ON_EXPECTED | {"device_tracker", "person", "zone"}
+_NUMERIC_EXPECTED = {"sensor", "input_number", "number"}
+
+
+def _domain_for(schema, key_name: str) -> set[str]:
+    """Return the domain set for a named key in a vol.Schema."""
+    for key, value in schema.schema.items():
+        if str(key) == key_name:
+            return set(value.config["domain"])
+    raise AssertionError(f"{key_name!r} not found in schema")
+
+
+class TestSelectorDomains:
+    """Regression guards for entity selector domain widening (#318)."""
+
+    # --- FORCE_OVERRIDE_SCHEMA ---
+
+    def test_force_override_sensors_binary_on_domains(self):
+        """force_override_sensors accepts binary_on domains (binary_sensor, input_boolean, switch, schedule)."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            FORCE_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(FORCE_OVERRIDE_SCHEMA, "force_override_sensors")
+            == _BINARY_ON_EXPECTED
+        )
+
+    # --- CUSTOM_POSITION_SCHEMA ---
+
+    def test_custom_position_sensors_binary_on_domains(self):
+        """All four custom_position_sensor_N selectors accept binary_on domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            CUSTOM_POSITION_SCHEMA,
+        )
+
+        for n in range(1, 5):
+            assert (
+                _domain_for(CUSTOM_POSITION_SCHEMA, f"custom_position_sensor_{n}")
+                == _BINARY_ON_EXPECTED
+            ), f"custom_position_sensor_{n} domain mismatch"
+
+    # --- MOTION_OVERRIDE_SCHEMA ---
+
+    def test_motion_sensors_presence_like_domains(self):
+        """motion_sensors accepts device_tracker/person/zone plus binary_on domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            MOTION_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(MOTION_OVERRIDE_SCHEMA, "motion_sensors")
+            == _PRESENCE_LIKE_EXPECTED
+        )
+
+    # --- WEATHER_OVERRIDE_SCHEMA ---
+
+    def test_weather_wind_speed_numeric_domains(self):
+        """weather_wind_speed_sensor accepts numeric domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            WEATHER_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(WEATHER_OVERRIDE_SCHEMA, "weather_wind_speed_sensor")
+            == _NUMERIC_EXPECTED
+        )
+
+    def test_weather_wind_direction_numeric_domains(self):
+        """weather_wind_direction_sensor accepts numeric domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            WEATHER_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(WEATHER_OVERRIDE_SCHEMA, "weather_wind_direction_sensor")
+            == _NUMERIC_EXPECTED
+        )
+
+    def test_weather_rain_sensor_numeric_domains(self):
+        """weather_rain_sensor accepts numeric domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            WEATHER_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(WEATHER_OVERRIDE_SCHEMA, "weather_rain_sensor")
+            == _NUMERIC_EXPECTED
+        )
+
+    def test_weather_is_raining_binary_on_domains(self):
+        """weather_is_raining_sensor accepts binary_on domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            WEATHER_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(WEATHER_OVERRIDE_SCHEMA, "weather_is_raining_sensor")
+            == _BINARY_ON_EXPECTED
+        )
+
+    def test_weather_is_windy_binary_on_domains(self):
+        """weather_is_windy_sensor accepts binary_on domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            WEATHER_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(WEATHER_OVERRIDE_SCHEMA, "weather_is_windy_sensor")
+            == _BINARY_ON_EXPECTED
+        )
+
+    def test_weather_severe_sensors_binary_on_domains(self):
+        """weather_severe_sensors accepts binary_on domains."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            WEATHER_OVERRIDE_SCHEMA,
+        )
+
+        assert (
+            _domain_for(WEATHER_OVERRIDE_SCHEMA, "weather_severe_sensors")
+            == _BINARY_ON_EXPECTED
+        )
+
+    # --- LIGHT_CLOUD_SCHEMA ---
+
+    def test_lux_entity_numeric_domains_with_device_class(self):
+        """lux_entity accepts numeric domains and filters by device_class=illuminance."""
+        from custom_components.adaptive_cover_pro.config_flow import LIGHT_CLOUD_SCHEMA
+
+        for key, value in LIGHT_CLOUD_SCHEMA.schema.items():
+            if str(key) == "lux_entity":
+                assert set(value.config["domain"]) == _NUMERIC_EXPECTED
+                # EntityFilterSelectorConfig stores device_class as a list
+                assert "illuminance" in value.config.get("device_class", [])
+                return
+        raise AssertionError("lux_entity not found in LIGHT_CLOUD_SCHEMA")
+
+    def test_irradiance_entity_numeric_domains_with_device_class(self):
+        """irradiance_entity accepts numeric domains and filters by device_class=irradiance."""
+        from custom_components.adaptive_cover_pro.config_flow import LIGHT_CLOUD_SCHEMA
+
+        for key, value in LIGHT_CLOUD_SCHEMA.schema.items():
+            if str(key) == "irradiance_entity":
+                assert set(value.config["domain"]) == _NUMERIC_EXPECTED
+                # EntityFilterSelectorConfig stores device_class as a list
+                assert "irradiance" in value.config.get("device_class", [])
+                return
+        raise AssertionError("irradiance_entity not found in LIGHT_CLOUD_SCHEMA")
+
+    def test_cloud_coverage_entity_numeric_domains(self):
+        """cloud_coverage_entity accepts numeric domains."""
+        from custom_components.adaptive_cover_pro.config_flow import LIGHT_CLOUD_SCHEMA
+
+        assert (
+            _domain_for(LIGHT_CLOUD_SCHEMA, "cloud_coverage_entity")
+            == _NUMERIC_EXPECTED
+        )
+
+    # --- TEMPERATURE_CLIMATE_SCHEMA ---
+
+    def test_outsidetemp_entity_numeric_domains(self):
+        """outside_temp (outsidetemp_entity) accepts numeric domains."""
+        assert (
+            _domain_for(TEMPERATURE_CLIMATE_SCHEMA, "outside_temp") == _NUMERIC_EXPECTED
+        )

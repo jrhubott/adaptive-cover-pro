@@ -10,6 +10,8 @@ from collections.abc import Callable
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+from ..helpers import is_entity_active
+
 
 class MotionManager:
     """Manage motion sensor state and timeout tracking for cover control.
@@ -75,12 +77,7 @@ class MotionManager:
         if not self._sensors:
             return True  # Feature disabled — assume presence
 
-        for sensor_id in self._sensors:
-            state = self._hass.states.get(sensor_id)
-            if state and state.state == "on":
-                return True
-
-        return False
+        return any(is_entity_active(self._hass, sid) for sid in self._sensors)
 
     @property
     def is_motion_timeout_active(self) -> bool:

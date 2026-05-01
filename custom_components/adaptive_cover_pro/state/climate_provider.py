@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..helpers import get_domain, get_safe_state, state_attr
+from ..helpers import get_domain, get_safe_state, is_entity_active, state_attr
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -98,19 +98,7 @@ class ClimateProvider:
 
     def _read_presence(self, presence_entity: str | None) -> bool:
         """Read presence with domain-specific logic."""
-        if presence_entity is None:
-            return True
-        presence = get_safe_state(self._hass, presence_entity)
-        if presence is None:
-            return True
-        domain = get_domain(presence_entity)
-        if domain in ("device_tracker", "person"):
-            return presence == "home"
-        if domain == "zone":
-            return int(presence) > 0
-        if domain in ("binary_sensor", "input_boolean"):
-            return presence == "on"
-        return True
+        return is_entity_active(self._hass, presence_entity)
 
     def _read_sunny(
         self,

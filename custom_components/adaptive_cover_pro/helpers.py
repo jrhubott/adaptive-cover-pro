@@ -44,6 +44,33 @@ def get_domain(entity: str):
         return domain
 
 
+def is_entity_active(hass: HomeAssistant, entity_id: str | None) -> bool:
+    """Return True when an entity reports an active/present state.
+
+    Domain-aware evaluation:
+      - device_tracker / person → state == "home"
+      - zone                    → occupant count > 0
+      - binary_sensor / input_boolean / switch / schedule → state == "on"
+      - None / missing / unknown / unavailable / other domains → True (fail-open)
+    """
+    if entity_id is None:
+        return True
+    raw = get_safe_state(hass, entity_id)
+    if raw is None:
+        return True
+    domain = get_domain(entity_id)
+    if domain in ("device_tracker", "person"):
+        return raw == "home"
+    if domain == "zone":
+        try:
+            return int(raw) > 0
+        except (TypeError, ValueError):
+            return False
+    if domain in ("binary_sensor", "input_boolean", "switch", "schedule"):
+        return raw == "on"
+    return True
+
+
 def get_timedelta_str(string: str):
     """Convert string to timedelta."""
     if string is not None:

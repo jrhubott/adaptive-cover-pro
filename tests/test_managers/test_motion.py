@@ -62,13 +62,13 @@ def test_is_motion_detected_sensor_off(mock_hass, logger):
 
 
 def test_is_motion_detected_sensor_unavailable(mock_hass, logger):
-    """Returns False when sensor state is unavailable (None)."""
+    """Returns True when sensor is missing (fail-open; don't penalize for outages)."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
     mock_hass.states.get.return_value = None
 
-    assert mgr.is_motion_detected is False
+    assert mgr.is_motion_detected is True
 
 
 def test_is_motion_detected_or_logic(mock_hass, logger):

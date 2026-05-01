@@ -565,3 +565,116 @@ def test_state_attr_returns_value_when_present(mock_hass):
     mock_hass.states.get.return_value = state_obj
 
     assert state_attr(mock_hass, "cover.test", "current_position") == 42
+
+
+# --- is_entity_active ---
+
+
+def _make_state(state_str: str) -> MagicMock:
+    s = MagicMock()
+    s.state = state_str
+    return s
+
+
+@pytest.mark.unit
+def test_is_entity_active_none_entity_id(mock_hass):
+    """None entity_id → True (fail-open, feature disabled)."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    assert is_entity_active(mock_hass, None) is True
+
+
+@pytest.mark.unit
+def test_is_entity_active_missing_entity(mock_hass):
+    """Missing entity (states.get returns None) → True (fail-open)."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = None
+    assert is_entity_active(mock_hass, "binary_sensor.missing") is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_state", ["unknown", "unavailable"])
+def test_is_entity_active_unknown_unavailable(mock_hass, bad_state):
+    """unknown/unavailable state → True (fail-open)."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state(bad_state)
+    assert is_entity_active(mock_hass, "binary_sensor.flaky") is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("domain", ["device_tracker", "person"])
+def test_is_entity_active_tracker_home(mock_hass, domain):
+    """device_tracker/person state 'home' → True."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state("home")
+    assert is_entity_active(mock_hass, f"{domain}.dad") is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "domain,away_state",
+    [
+        ("device_tracker", "away"),
+        ("person", "not_home"),
+    ],
+)
+def test_is_entity_active_tracker_away(mock_hass, domain, away_state):
+    """device_tracker/person not-home state → False."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state(away_state)
+    assert is_entity_active(mock_hass, f"{domain}.dad") is False
+
+
+@pytest.mark.unit
+def test_is_entity_active_zone_occupied(mock_hass):
+    """Zone with count > 0 → True."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state("2")
+    assert is_entity_active(mock_hass, "zone.house") is True
+
+
+@pytest.mark.unit
+def test_is_entity_active_zone_empty(mock_hass):
+    """Zone with count 0 → False."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state("0")
+    assert is_entity_active(mock_hass, "zone.house") is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "domain", ["binary_sensor", "input_boolean", "switch", "schedule"]
+)
+def test_is_entity_active_binary_on(mock_hass, domain):
+    """binary_sensor/input_boolean/switch/schedule state 'on' → True."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state("on")
+    assert is_entity_active(mock_hass, f"{domain}.test") is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "domain", ["binary_sensor", "input_boolean", "switch", "schedule"]
+)
+def test_is_entity_active_binary_off(mock_hass, domain):
+    """binary_sensor/input_boolean/switch/schedule state 'off' → False."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state("off")
+    assert is_entity_active(mock_hass, f"{domain}.test") is False
+
+
+@pytest.mark.unit
+def test_is_entity_active_unknown_domain(mock_hass):
+    """Unknown domain → True (fail-open)."""
+    from custom_components.adaptive_cover_pro.helpers import is_entity_active
+
+    mock_hass.states.get.return_value = _make_state("some_state")
+    assert is_entity_active(mock_hass, "light.living_room") is True
