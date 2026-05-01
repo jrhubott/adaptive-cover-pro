@@ -62,9 +62,7 @@ async def async_handle_get_diagnostics(call: ServiceCall) -> dict:
         from . import _resolve_targets  # noqa: PLC0415
 
         target_map = _resolve_targets(hass, call)
-        coords_by_entry = {
-            coord.config_entry.entry_id: coord for coord in target_map
-        }
+        coords_by_entry = {coord.config_entry.entry_id: coord for coord in target_map}
 
     entries: dict[str, dict] = {}
     for entry_id, coord in coords_by_entry.items():
