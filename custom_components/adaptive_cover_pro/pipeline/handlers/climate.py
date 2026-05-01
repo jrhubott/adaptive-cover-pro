@@ -181,7 +181,7 @@ class ClimateCoverState:
         ):
             self.climate_strategy = ClimateStrategy.LOW_LIGHT
             return self.default_position
-        if is_summer and self.climate_data.transparent_blind:
+        if is_summer and self.climate_data.transparent_blind and self.cover.valid:
             self.climate_strategy = ClimateStrategy.SUMMER_COOLING
             return 0
         self.climate_strategy = ClimateStrategy.GLARE_CONTROL
