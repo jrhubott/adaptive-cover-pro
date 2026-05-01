@@ -351,6 +351,61 @@ class TestClimateStrategyNormalWithPresence:
         assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
 
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_transparent_with_presence_defers_when_sun_not_in_window(
+        self, mock_datetime, mock_hass, mock_logger, vertical_cover
+    ):
+        """Summer + transparent + presence + sun NOT in FOV → defer (GLARE_CONTROL)."""
+        mock_datetime.now.return_value = datetime(2024, 6, 21, 12, 0, 0)
+        vertical_cover.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 6, 21, 21, 0, 0)
+        )
+        vertical_cover.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 6, 21, 5, 0, 0)
+        )
+
+        climate_data = make_climate_data(
+            mock_hass,
+            transparent_blind=True,
+            is_presence=True,
+            is_sunny=True,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            winter_close_insulation=False,
+        )
+
+        with (
+            patch.object(
+                type(climate_data),
+                "is_winter",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(climate_data),
+                "is_summer",
+                new_callable=PropertyMock,
+                return_value=True,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+            patch.object(
+                type(vertical_cover),
+                "sunset_valid",
+                new_callable=PropertyMock,
+                return_value=False,
+            ),
+        ):
+            state_handler = make_climate_state(vertical_cover, climate_data)
+            result = state_handler.normal_with_presence()
+
+        assert result is None, "should defer to glare/solar when sun is not in window"
+        assert state_handler.climate_strategy == ClimateStrategy.GLARE_CONTROL
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_glare_control_strategy(
         self, mock_datetime, mock_hass, mock_logger, vertical_cover
     ):
