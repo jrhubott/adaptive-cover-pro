@@ -24,7 +24,7 @@ class AdaptiveCoverManager:
     def __init__(
         self,
         hass: HomeAssistant,
-        reset_duration: dict[str:int],
+        reset_duration: dict[str, int],
         logger,
         *,
         event_buffer: EventBuffer | None = None,
