@@ -83,6 +83,22 @@ async def _auto_unload_config_entries(request, verify_cleanup):
         await hass.async_block_till_done()
 
 
+@pytest.fixture
+def expected_lingering_timers(request) -> bool:
+    """Tolerate the EntityPlatform polling-timer leak for integration tests.
+
+    HA's EntityPlatform schedules its polling timer with raw `loop.call_later`
+    (entity_platform.py:748), not via a HassJob, so verify_cleanup cannot
+    distinguish a safe-to-leak timer from a real leak. HA core works around
+    this for its own non-base-platform tests; we follow the same pattern for
+    our @pytest.mark.integration tests. Overrides the plugin's same-named
+    autouse fixture by name resolution.
+    """
+    if request.node.get_closest_marker("integration"):
+        return True
+    return False
+
+
 @pytest.fixture(autouse=True)
 def _auto_enable_custom_integrations(request):
     """Auto-enable custom integration discovery for real HA integration tests.
