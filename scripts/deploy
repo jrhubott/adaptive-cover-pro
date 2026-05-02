@@ -103,16 +103,19 @@ if [[ -n "$EXISTING_MOUNT" ]]; then
     echo "==> Share already mounted at ${EXISTING_MOUNT}, reusing it."
     MOUNT_POINT="$EXISTING_MOUNT"
 else
-    MOUNT_POINT="$(mktemp -d)"
+    # macOS resolves /var → /private/var in `mount` output, so track the
+    # realpath — otherwise post-mount grep checks never match.
+    MOUNT_POINT="$(cd "$(mktemp -d)" && pwd -P)"
     MOUNTED_BY_US=true
     echo "==> Mounting smb://${HA_SMB_HOST}/${HA_SMB_SHARE} → ${MOUNT_POINT}..."
+    rc=0
     if $VERBOSE; then
-        mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" || true
+        mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" || rc=$?
     else
-        mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" 2>/dev/null || true
+        mount_smbfs "${SMB_URL}" "${MOUNT_POINT}" 2>/dev/null || rc=$?
     fi
-    if ! mount | grep -q "on ${MOUNT_POINT} "; then
-        echo "    Guest access failed; trying with credentials..."
+    if [[ $rc -ne 0 ]]; then
+        echo "    Initial mount failed; trying with credentials..."
         read -r -p "    SMB username: " SMB_USER
         read -r -s -p "    SMB password: " SMB_PASS
         echo
