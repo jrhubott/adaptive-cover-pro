@@ -453,7 +453,7 @@ def _last_action_value(s: _ACPDiagnosticSensor) -> str | None:
         try:
             ts = dt_util.parse_datetime(timestamp_str)
             if ts:
-                time_str = ts.strftime("%H:%M:%S")
+                time_str = dt_util.as_local(ts).strftime("%H:%M:%S")
                 return f"{service} → {entity.split('.')[-1]} at {time_str}"
         except (ValueError, AttributeError):
             pass
