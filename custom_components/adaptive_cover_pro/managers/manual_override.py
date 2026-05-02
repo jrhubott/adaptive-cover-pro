@@ -101,7 +101,7 @@ class AdaptiveCoverManager:
         our_state,
         blind_type,
         allow_reset,
-        wait_target_call,
+        is_waiting,
         manual_threshold,
     ):
         """Process state change for manual override.
@@ -116,7 +116,8 @@ class AdaptiveCoverManager:
             our_state: Expected position from coordinator calculation
             blind_type: Cover type (cover_blind, cover_awning, cover_tilt)
             allow_reset: If True, updates timestamp on subsequent changes
-            wait_target_call: Dict of entity_id → waiting_for_target_bool
+            is_waiting: Callable(entity_id) -> bool indicating whether the cover
+                is currently expected to be moving toward a commanded target.
             manual_threshold: Minimum position delta to trigger manual detection
 
         """
@@ -126,7 +127,7 @@ class AdaptiveCoverManager:
         entity_id = event.entity_id
         if entity_id not in self.covers:
             return
-        if wait_target_call.get(entity_id):
+        if is_waiting(entity_id):
             self._record_event(
                 entity_id,
                 "manual_override_rejected_wait_for_target",
@@ -221,7 +222,7 @@ class AdaptiveCoverManager:
         self,
         entity_id: str,
         my_position_value: int,
-        wait_target_call: dict,
+        is_waiting,
     ) -> None:
         """Mark manual override when a user-initiated cover.stop_cover is detected.
 
@@ -234,14 +235,14 @@ class AdaptiveCoverManager:
         Args:
             entity_id:        Cover entity_id that received stop_cover.
             my_position_value: The position (0–100) the My preset represents.
-            wait_target_call:  Dict of entity_id → wait_for_target bool from
-                               CoverCommandService; used as a belt-and-braces
-                               guard on top of the context-id filter.
+            is_waiting:       Callable(entity_id) -> bool from
+                              CoverCommandService; used as a belt-and-braces
+                              guard on top of the context-id filter.
 
         """
         if entity_id not in self.covers:
             return
-        if wait_target_call.get(entity_id):
+        if is_waiting(entity_id):
             self.logger.debug(
                 "handle_stop_service_call: ignoring stop for %s — wait_for_target active",
                 entity_id,

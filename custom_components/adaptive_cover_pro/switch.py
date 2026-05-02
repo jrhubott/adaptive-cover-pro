@@ -252,7 +252,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
             self.coordinator._cancel_motion_timeout()  # noqa: SLF001
             self.coordinator._cancel_weather_timeout()  # noqa: SLF001
             self.coordinator._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-            self.coordinator._cmd_svc._safety_targets.clear()  # noqa: SLF001
+            self.coordinator._cmd_svc.clear_safety_targets()  # noqa: SLF001
 
         if self._key == "automatic_control" and kwargs.get("added") is not True:
             for entity in self.coordinator.manager.manual_controlled:

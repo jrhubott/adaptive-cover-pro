@@ -360,16 +360,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     # --- Property delegates for CoverCommandService state ---
 
     @property
-    def wait_for_target(self) -> dict:
-        """Delegate to CoverCommandService.wait_for_target."""
-        return self._cmd_svc.wait_for_target
-
-    @property
-    def target_call(self) -> dict:
-        """Delegate to CoverCommandService.target_call."""
-        return self._cmd_svc.target_call
-
-    @property
     def last_cover_action(self) -> dict:
         """Delegate to CoverCommandService.last_cover_action."""
         return self._cmd_svc.last_cover_action
@@ -550,16 +540,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.manager.handle_stop_service_call(
                 entity_id,
                 int(my_position_value),
-                self.wait_for_target,
+                self._cmd_svc.is_waiting_for_target,
             )
             # When a cover transitions into manual override via stop_cover,
             # discard any pre-existing safety-tagged target so reconciliation
             # cannot resurrect it (issue #215/#216).
             if not was_manual and self.manager.is_cover_manual(entity_id):
                 self._cmd_svc.discard_target(entity_id)
-            # Update target_call so the next reconciliation compares against
+            # Update target so the next reconciliation compares against
             # My rather than the stale calculated state.
-            self._cmd_svc.target_call[entity_id] = int(my_position_value)
+            self._cmd_svc.set_target(entity_id, int(my_position_value))
 
     async def async_check_weather_state_change(
         self, event: Event[EventStateChangedData]
@@ -650,7 +640,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ]:
             self.logger.debug("Ignoring intermediate state change for %s", entity_id)
             return
-        if self.wait_for_target.get(entity_id):
+        if self._cmd_svc.is_waiting_for_target(entity_id):
             # Check if still in grace period
             if self._is_in_grace_period(entity_id):
                 self.logger.debug(
@@ -703,7 +693,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         entity_id, caps, event.old_state
                     )
                 )
-                target = self._cmd_svc.target_call.get(entity_id)
+                target = self._cmd_svc.get_target(entity_id)
 
                 # Step-motor pause (Issue #186) takes highest priority: some covers
                 # briefly report "open"/"closed" at an intermediate position between
@@ -733,7 +723,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         position,
                         target,
                     )
-                    self.logger.debug("Wait for target: %s", self.wait_for_target)
+                    self.logger.debug(
+                        "Wait for target: %s", self._cmd_svc.waiting_entities()
+                    )
                     return
 
                 # Direction/progress check: runs for all covers where positions and
@@ -778,7 +770,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 "cover_state": event.new_state.state,
                             }
                         )
-                        self.logger.debug("Wait for target: %s", self.wait_for_target)
+                        self.logger.debug(
+                            "Wait for target: %s", self._cmd_svc.waiting_entities()
+                        )
                         return
 
                     # Progress-aware backstop: if no forward progress has been
@@ -800,7 +794,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                             self._cmd_svc._wait_for_target_timeout_seconds
                         )  # noqa: SLF001
                         if elapsed > timeout:
-                            self._cmd_svc.wait_for_target[entity_id] = False
+                            self._cmd_svc.set_waiting(entity_id, False)
                             self._debug_log(
                                 "manual_override",
                                 "Transit timeout for %s (%.0fs > %ds without progress) "
@@ -822,7 +816,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 }
                             )
                             self.logger.debug(
-                                "Wait for target: %s", self.wait_for_target
+                                "Wait for target: %s", self._cmd_svc.waiting_entities()
                             )
                             return
 
@@ -866,12 +860,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 }
                             )
                             self.logger.debug(
-                                "Wait for target: %s", self.wait_for_target
+                                "Wait for target: %s", self._cmd_svc.waiting_entities()
                             )
                             return
 
                 # Clear wait_for_target to allow manual override detection.
-                self._cmd_svc.wait_for_target[entity_id] = False
+                self._cmd_svc.set_waiting(entity_id, False)
                 self._debug_log(
                     "manual_override",
                     "Grace period expired, cover %s not in transit "
@@ -892,7 +886,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         "target": target,
                     }
                 )
-            self.logger.debug("Wait for target: %s", self.wait_for_target)
+            self.logger.debug("Wait for target: %s", self._cmd_svc.waiting_entities())
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
 
@@ -1552,11 +1546,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 continue
 
-            # Use target_call if available (contains actual sent position),
-            # otherwise fall back to calculated state.
-            # This is critical for open/close-only covers where the calculated
-            # state gets transformed (via threshold) to 0 or 100 before sending.
-            expected_position = self.target_call.get(entity_id, state)
+            # Use the recorded target if available (the actual sent position),
+            # otherwise fall back to calculated state. Critical for open/close-only
+            # covers where the calculated state gets transformed (via threshold)
+            # to 0 or 100 before sending.
+            recorded_target = self._cmd_svc.get_target(entity_id)
+            expected_position = state if recorded_target is None else recorded_target
 
             was_manual = self.manager.is_cover_manual(entity_id)
             self.manager.handle_state_change(
@@ -1564,7 +1559,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 expected_position,
                 self._cover_type,
                 self.manual_reset,
-                self.wait_for_target,
+                self._cmd_svc.is_waiting_for_target,
                 self.manual_threshold,
             )
             # When a cover transitions into manual override, discard any

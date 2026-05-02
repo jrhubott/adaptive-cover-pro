@@ -37,7 +37,6 @@ def _make_coordinator(entities: list[str]) -> MagicMock:
     coord._cmd_svc.stop_in_flight = AsyncMock(return_value=[])
     coord._cmd_svc.stop_all = AsyncMock(return_value=[])
     coord._cmd_svc.clear_non_safety_targets = MagicMock()
-    coord._cmd_svc._safety_targets = set()
     coord._cancel_motion_timeout = MagicMock()
     coord._cancel_weather_timeout = MagicMock()
     return coord

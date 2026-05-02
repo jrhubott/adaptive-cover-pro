@@ -138,8 +138,8 @@ class TestApplyPositionGateLogging:
             )
 
         assert outcome == "sent"
-        assert "cover.test" in svc.target_call
-        assert svc.target_call["cover.test"] == 60
+        assert svc.has_target("cover.test")
+        assert svc.get_target("cover.test") == 60
 
     @pytest.mark.asyncio
     async def test_force_bypasses_delta_and_manual_override_gates(self):

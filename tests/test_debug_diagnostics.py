@@ -153,7 +153,7 @@ class TestRingBufferEvents:
             our_state=50,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call={},
+            is_waiting=lambda _eid: False,
             manual_threshold=3,
         )
         buf = event_buffer.snapshot()
@@ -173,7 +173,7 @@ class TestRingBufferEvents:
             our_state=50,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call={},
+            is_waiting=lambda _eid: False,
             manual_threshold=5,
         )
         buf = event_buffer.snapshot()
@@ -191,7 +191,7 @@ class TestRingBufferEvents:
             our_state=50,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call={"cover.test": True},
+            is_waiting=lambda _eid: True,
             manual_threshold=3,
         )
         buf = event_buffer.snapshot()
@@ -216,7 +216,7 @@ class TestRingBufferEvents:
                 our_state=50,
                 blind_type="cover_blind",
                 allow_reset=True,
-                wait_target_call={},
+                is_waiting=lambda _eid: False,
                 manual_threshold=3,
             )
         buf = event_buffer.snapshot()
@@ -246,7 +246,7 @@ class TestRingBufferEvents:
             our_state=50,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call={},
+            is_waiting=lambda _eid: False,
             manual_threshold=3,
         )
         required_keys = {
@@ -269,7 +269,7 @@ class TestRingBufferEvents:
             our_state=50,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call={},
+            is_waiting=lambda _eid: False,
             manual_threshold=3,
         )
         ev = event_buffer.snapshot()[0]
@@ -544,12 +544,12 @@ class TestCoverCommandServiceSnapshots:
     def test_snapshot_reflects_set_values(self):
         """Snapshot correctly reflects all per-entity state values."""
         svc = self._make_svc()
-        svc.target_call["cover.test"] = 75
-        svc.wait_for_target["cover.test"] = True
-        svc._retry_counts["cover.test"] = 2
-        svc._gave_up.add("cover.test")
+        svc.set_target("cover.test", 75)
+        svc.set_waiting("cover.test", True)
+        svc.state("cover.test").retry_count = 2
+        svc.state("cover.test").gave_up = True
         svc._manual_override_entities.add("cover.test")
-        svc._safety_targets.add("cover.test")
+        svc.state("cover.test").is_safety = True
 
         snap = svc.get_entity_state_snapshot("cover.test")
         assert snap["target_call"] == 75
@@ -562,8 +562,8 @@ class TestCoverCommandServiceSnapshots:
     def test_get_all_snapshots_covers_all_tracked_entities(self):
         """get_all_entity_state_snapshots includes every tracked entity."""
         svc = self._make_svc()
-        svc.target_call["cover.a"] = 30
-        svc.wait_for_target["cover.b"] = False
+        svc.set_target("cover.a", 30)
+        svc.set_waiting("cover.b", False)
         snaps = svc.get_all_entity_state_snapshots()
         assert "cover.a" in snaps
         assert "cover.b" in snaps
@@ -578,8 +578,8 @@ class TestCoverCommandServiceSnapshots:
         """last_command_sent_at is serialised as an ISO-format string."""
         svc = self._make_svc()
         now = dt.datetime.now(dt.UTC)
-        svc._sent_at["cover.test"] = now
-        svc.target_call["cover.test"] = 50
+        svc.state("cover.test").sent_at = now
+        svc.set_target("cover.test", 50)
         snap = svc.get_entity_state_snapshot("cover.test")
         assert snap["last_command_sent_at"] == now.isoformat()
 
@@ -587,8 +587,8 @@ class TestCoverCommandServiceSnapshots:
         """last_reconcile_time is serialised as an ISO-format string."""
         svc = self._make_svc()
         now = dt.datetime.now(dt.UTC)
-        svc._last_reconcile_time["cover.test"] = now
-        svc.target_call["cover.test"] = 50
+        svc.state("cover.test").last_reconcile_at = now
+        svc.set_target("cover.test", 50)
         snap = svc.get_entity_state_snapshot("cover.test")
         assert snap["last_reconcile_time"] == now.isoformat()
 
@@ -737,7 +737,7 @@ class TestTrackActionEnrichment:
     def test_cover_command_sent_event_recorded(self):
         """_track_action records a cover_command_sent event to the event buffer."""
         svc, event_buffer = self._make_svc_with_buffer()
-        svc.target_call["cover.test"] = 75
+        svc.set_target("cover.test", 75)
         svc._track_action(
             "cover.test",
             "set_cover_position",

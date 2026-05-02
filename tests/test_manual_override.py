@@ -225,7 +225,6 @@ async def test_reset_button_clears_manual_override_and_sends_post_refresh_positi
     coordinator = MagicMock()
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.config_entry.options = options
-    coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
     coordinator.state = POST_REFRESH_STATE
     coordinator.async_refresh = AsyncMock()
@@ -259,15 +258,27 @@ async def test_reset_button_suppresses_redetection_during_refresh():
     states_during_refresh = []
 
     async def capture_refresh():
-        # Record wait_for_target state at the moment async_refresh executes
-        states_during_refresh.append(coordinator.wait_for_target.get(entity_id))
+        # Record waiting state at the moment async_refresh executes
+        states_during_refresh.append(
+            coordinator._cmd_svc.is_waiting_for_target(entity_id)
+        )
+
+    # Use a stateful tracker so set_waiting actually mutates is_waiting_for_target.
+    waiting_state = {entity_id: False}
+
+    def _set_waiting(eid, value):
+        waiting_state[eid] = value
+
+    def _is_waiting(eid):
+        return waiting_state.get(eid, False)
 
     coordinator = MagicMock()
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.state = 50
     coordinator.config_entry.options = {}
     coordinator.async_refresh = AsyncMock(side_effect=capture_refresh)
-    coordinator.wait_for_target = {entity_id: False}
+    coordinator._cmd_svc.set_waiting = MagicMock(side_effect=_set_waiting)
+    coordinator._cmd_svc.is_waiting_for_target = MagicMock(side_effect=_is_waiting)
     coordinator.cover_state_change = False
     coordinator._async_send_after_override_clear = AsyncMock(return_value={entity_id})
 
@@ -300,7 +311,6 @@ async def test_reset_button_clears_wait_for_target_when_no_command_sent():
     # Shared method returns empty set — entity was not sent to
     coordinator._async_send_after_override_clear = AsyncMock(return_value=set())
     coordinator.async_refresh = AsyncMock()
-    coordinator.wait_for_target = {entity_id: True}  # was True from suppression
     coordinator.cover_state_change = False
 
     button = AdaptiveCoverButton.__new__(AdaptiveCoverButton)
@@ -310,7 +320,7 @@ async def test_reset_button_clears_wait_for_target_when_no_command_sent():
     await button.async_press()
 
     # Not in sent set — wait_for_target must be cleared so state tracking resumes
-    assert coordinator.wait_for_target[entity_id] is False
+    coordinator._cmd_svc.set_waiting.assert_any_call(entity_id, False)
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +397,6 @@ async def test_reset_button_sends_correct_position_with_climate_mode():
     coordinator = MagicMock()
     coordinator.manager.is_cover_manual.return_value = True
     coordinator.config_entry.options = {}
-    coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
 
     # Simulate: after refresh the pipeline now returns the climate position

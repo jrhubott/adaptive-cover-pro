@@ -67,7 +67,7 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
                 self.coordinator.manager.reset(entity)
                 # Suppress re-detection: cover state events during refresh must
                 # not be treated as a new manual override.
-                self.coordinator.wait_for_target[entity] = True
+                self.coordinator._cmd_svc.set_waiting(entity, True)  # noqa: SLF001
                 self.coordinator.cover_state_change = False
                 reset_entities.append(entity)
             else:
@@ -106,4 +106,4 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
                     "Manual override reset: no position change sent for %s",
                     entity,
                 )
-                self.coordinator.wait_for_target[entity] = False
+                self.coordinator._cmd_svc.set_waiting(entity, False)  # noqa: SLF001

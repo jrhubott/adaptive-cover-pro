@@ -37,16 +37,17 @@ def _make_coord_auto_off():
     coord = MagicMock()
     coord.manual_toggle = True
     coord.automatic_control = False  # ← key: auto control is OFF
-    coord.target_call = {"cover.a": 100}
-    coord.wait_for_target = {"cover.a": True}  # latched by prior unwanted command
     coord._cover_type = "cover_awning"
     coord.manual_reset = False
     coord.manual_threshold = 5
     coord.logger = MagicMock()
     coord.cover_state_change = True
     coord._is_in_startup_grace_period = MagicMock(return_value=False)
+    coord._manual_gate_closed_log = MagicMock()
     coord._target_just_reached = set()
     coord._cmd_svc = MagicMock()
+    coord._cmd_svc.get_target = MagicMock(return_value=100)  # latched
+    coord._cmd_svc.is_waiting_for_target = MagicMock(return_value=True)
     return coord
 
 

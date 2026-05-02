@@ -94,42 +94,29 @@ def _make_coordinator(
         grace_mgr._command_timestamps[entity_id] = dt.datetime.now().timestamp()
     coordinator._grace_mgr = grace_mgr
 
-    cmd_svc = MagicMock(spec=CoverCommandService)
-    cmd_svc.wait_for_target = {entity_id: True}
-    cmd_svc.target_call = {entity_id: target_position}
-    cmd_svc._position_tolerance = 5
+    cmd_svc = CoverCommandService(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=5,
+        transit_timeout_seconds=transit_timeout_seconds,
+    )
+    cmd_svc.set_target(entity_id, target_position)
+    cmd_svc.set_waiting(entity_id, True)
 
     now = dt.datetime.now(dt.UTC)
-    cmd_svc._sent_at = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
-    cmd_svc._wait_for_target_timeout_seconds = transit_timeout_seconds
+    cmd_svc.state(entity_id).sent_at = now - dt.timedelta(seconds=sent_seconds_ago)
 
-    # Track last progress per entity so record_progress / _transit_elapsed work together
-    last_progress_at: dict[str, dt.datetime] = {}
     if last_progress_seconds_ago is not None:
-        last_progress_at[entity_id] = now - dt.timedelta(
+        cmd_svc.state(entity_id).last_progress_at = now - dt.timedelta(
             seconds=last_progress_seconds_ago
         )
 
-    def _transit_elapsed(eid: str, now_arg: dt.datetime) -> float | None:
-        reference = last_progress_at.get(eid) or cmd_svc._sent_at.get(eid)
-        return (now_arg - reference).total_seconds() if reference else None
+    # Wrap record_progress so tests can assert it was called.
+    cmd_svc.record_progress = MagicMock(wraps=cmd_svc.record_progress)
 
-    def _record_progress(eid: str, now_arg: dt.datetime) -> None:
-        last_progress_at[eid] = now_arg
-
-    cmd_svc._transit_elapsed_without_progress = MagicMock(side_effect=_transit_elapsed)
-    cmd_svc.record_progress = MagicMock(side_effect=_record_progress)
-
-    def _check_target_reached(eid, pos):
-        if pos is None:
-            return False
-        if abs(pos - cmd_svc.target_call.get(eid, -999)) <= cmd_svc._position_tolerance:
-            cmd_svc.wait_for_target[eid] = False
-            return True
-        return False
-
-    cmd_svc.check_target_reached = MagicMock(side_effect=_check_target_reached)
-    cmd_svc.get_cover_capabilities = MagicMock(return_value={"has_set_position": True})
+    cmd_svc.get_cover_capabilities = lambda eid: {"has_set_position": True}
 
     def _read_position(eid, caps, state_obj):
         if state_obj is coordinator.state_change_data.new_state:
@@ -138,7 +125,7 @@ def _make_coordinator(
             return old_position
         return current_position
 
-    cmd_svc.read_position_with_capabilities = MagicMock(side_effect=_read_position)
+    cmd_svc.read_position_with_capabilities = _read_position
     coordinator._cmd_svc = cmd_svc
 
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -190,7 +177,7 @@ class TestProgressAwareBackstop:
             last_progress_seconds_ago=20.0,
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True, (
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True, (
             "wait_for_target must stay True when cover made progress 20s ago "
             "(even though 50s have elapsed since the command was sent)"
         )
@@ -213,7 +200,7 @@ class TestProgressAwareBackstop:
         )
         _call(coord)
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is False
+            coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "wait_for_target must be cleared when no progress for > 45s"
 
     def test_slow_cover_still_moving_at_50s_does_not_trigger_false_override(
@@ -240,7 +227,7 @@ class TestProgressAwareBackstop:
         )
         _call(coord)
         # wait_for_target must stay True — no manual override check reaches handle_state_change
-        assert coord._cmd_svc.wait_for_target[entity_id] is True, (
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True, (
             "wait_for_target must stay True for a slow cover that is still "
             "making progress — this is the false-override scenario from issue #271"
         )
@@ -269,7 +256,7 @@ class TestProgressAwareBackstop:
         )
         _call(coord)
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is False
+            coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "Hard timeout safety net must still work for covers without intermediate reports"
 
     def test_configurable_timeout_extends_window(self) -> None:
@@ -288,7 +275,7 @@ class TestProgressAwareBackstop:
         _call(coord)
         # 50s elapsed < 120s timeout → must NOT fire
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is True
+            coord._cmd_svc.is_waiting_for_target(entity_id) is True
         ), "With transit_timeout=120s, a 50s old command must not trigger the backstop"
 
 
@@ -370,7 +357,7 @@ class TestConfigurableTransitTimeout:
             grace_mgr=grace_mgr,
         )
         sent_at = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)
-        svc._sent_at[entity_id] = sent_at
+        svc.state(entity_id).sent_at = sent_at
 
         now = dt.datetime.now(dt.UTC)
         elapsed = svc._transit_elapsed_without_progress(entity_id, now)
@@ -395,7 +382,9 @@ class TestConfigurableTransitTimeout:
             grace_mgr=grace_mgr,
         )
         # Command sent 50s ago
-        svc._sent_at[entity_id] = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=50)
+        svc.state(entity_id).sent_at = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=50
+        )
         # But progress recorded only 10s ago
         now = dt.datetime.now(dt.UTC)
         svc.record_progress(entity_id, now - dt.timedelta(seconds=10))
@@ -420,7 +409,7 @@ class TestConfigurableTransitTimeout:
         )
         now = dt.datetime.now(dt.UTC)
         svc.record_progress(entity_id, now)
-        assert svc._last_progress_at[entity_id] == now
+        assert svc.state(entity_id).last_progress_at == now
 
     def test_apply_position_resets_last_progress_at(self) -> None:
         """Sending a new command must clear _last_progress_at so the new transit starts fresh."""
@@ -442,11 +431,11 @@ class TestConfigurableTransitTimeout:
         )
         now = dt.datetime.now(dt.UTC)
         svc.record_progress(entity_id, now - dt.timedelta(seconds=30))
-        assert entity_id in svc._last_progress_at
+        assert svc.state(entity_id).last_progress_at is not None
 
         # Directly reset as apply_position would
-        svc._last_progress_at.pop(entity_id, None)
-        assert entity_id not in svc._last_progress_at
+        svc.state(entity_id).last_progress_at = None
+        assert svc.state(entity_id).last_progress_at is None
 
 
 # ===========================================================================
@@ -477,13 +466,13 @@ class TestReconciliationBackstop:
             transit_timeout_seconds=120,
         )
         now = dt.datetime.now(dt.UTC)
-        svc.wait_for_target[entity_id] = True
-        svc.target_call[entity_id] = 0
-        svc._sent_at[entity_id] = now - dt.timedelta(seconds=50)
+        svc.set_waiting(entity_id, True)
+        svc.set_target(entity_id, 0)
+        svc.state(entity_id).sent_at = now - dt.timedelta(seconds=50)
 
         # 50s elapsed < 120s configured timeout → reconcile must NOT clear wait_for_target
         await svc._reconcile(now)
-        assert svc.wait_for_target.get(entity_id) is True, (
+        assert svc.is_waiting_for_target(entity_id) is True, (
             "Reconcile backstop must respect the configured transit timeout of 120s "
             "— 50s elapsed should not clear wait_for_target"
         )
@@ -509,12 +498,12 @@ class TestReconciliationBackstop:
             transit_timeout_seconds=45,
         )
         now = dt.datetime.now(dt.UTC)
-        svc.wait_for_target[entity_id] = True
-        svc.target_call[entity_id] = 0
-        svc._sent_at[entity_id] = now - dt.timedelta(seconds=50)
+        svc.set_waiting(entity_id, True)
+        svc.set_target(entity_id, 0)
+        svc.state(entity_id).sent_at = now - dt.timedelta(seconds=50)
         svc._enabled = True
 
         await svc._reconcile(now)
         assert (
-            svc.wait_for_target.get(entity_id) is False
+            svc.is_waiting_for_target(entity_id) is False
         ), "Reconcile backstop must clear wait_for_target after 50s > 45s configured timeout"

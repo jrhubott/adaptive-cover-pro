@@ -86,11 +86,9 @@ def _make_coordinator(
     coordinator.state_change_data = state_data
     coordinator._pending_cover_events = [state_data]
     coordinator._target_just_reached = set()
-    coordinator.target_call = {}
     coordinator._cover_type = "cover_blind"
     coordinator.manual_reset = False
     coordinator.manual_threshold = None
-    coordinator.wait_for_target = {}
     coordinator.manager = MagicMock()
     coordinator.manager.is_cover_manual.return_value = False
 

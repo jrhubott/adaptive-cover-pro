@@ -106,8 +106,8 @@ async def test_full_repro_no_command_escapes_when_auto_off(cmd_svc, hass):
 
     # No service call escaped to HA — this is the user-visible fix.
     hass.services.async_call.assert_not_called()
-    assert cmd_svc.target_call.get("cover.awning") is None
-    assert cmd_svc.wait_for_target.get("cover.awning") is not True
+    assert cmd_svc.get_target("cover.awning") is None
+    assert cmd_svc.is_waiting_for_target("cover.awning") is not True
 
 
 @pytest.mark.asyncio
@@ -121,16 +121,17 @@ async def test_full_repro_user_recovery_observed():
     coord = MagicMock()
     coord.manual_toggle = True
     coord.automatic_control = False
-    coord.target_call = {"cover.awning": 100}  # latched by hypothetical earlier escape
-    coord.wait_for_target = {"cover.awning": True}
     coord._cover_type = "cover_awning"
     coord.manual_reset = False
     coord.manual_threshold = 5
     coord.logger = MagicMock()
     coord.cover_state_change = True
     coord._is_in_startup_grace_period = MagicMock(return_value=False)
+    coord._manual_gate_closed_log = MagicMock()
     coord._target_just_reached = set()
     coord._cmd_svc = MagicMock()
+    coord._cmd_svc.get_target = MagicMock(return_value=100)  # latched
+    coord._cmd_svc.is_waiting_for_target = MagicMock(return_value=True)
 
     coord.manager = MagicMock()
     # was_manual=False before observation, became_manual=True after

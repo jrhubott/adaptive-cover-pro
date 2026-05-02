@@ -73,22 +73,20 @@ def _make_coordinator(
     coordinator._grace_mgr = grace_mgr
 
     # CoverCommandService — has a target and wait_for_target=True
-    cmd_svc = MagicMock(spec=CoverCommandService)
-    cmd_svc.wait_for_target = {entity_id: True}
-    cmd_svc.target_call = {entity_id: target_position}
-    cmd_svc._position_tolerance = 5
+    cmd_svc = CoverCommandService(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=5,
+    )
+    cmd_svc.set_target(entity_id, target_position)
+    cmd_svc.set_waiting(entity_id, True)
 
-    def _check_target_reached(eid, pos):
-        if pos is None:
-            return False
-        if abs(pos - cmd_svc.target_call.get(eid, -999)) <= cmd_svc._position_tolerance:
-            cmd_svc.wait_for_target[eid] = False
-            return True
-        return False
-
-    cmd_svc.check_target_reached = MagicMock(side_effect=_check_target_reached)
-    cmd_svc.get_cover_capabilities = MagicMock(return_value={"has_set_position": True})
-    cmd_svc.read_position_with_capabilities = MagicMock(return_value=current_position)
+    cmd_svc.get_cover_capabilities = lambda eid: {"has_set_position": True}
+    cmd_svc.read_position_with_capabilities = (
+        lambda eid, caps, state_obj: current_position
+    )
     coordinator._cmd_svc = cmd_svc
 
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -133,7 +131,7 @@ class TestProcessEntityStateChange:
             grace_expired=False,
         )
         self._call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
     def test_target_reached_marks_target_just_reached(self) -> None:
         """When cover arrives at the target, entity is added to _target_just_reached."""
@@ -147,7 +145,7 @@ class TestProcessEntityStateChange:
         self._call(coord)
         assert entity_id in coord._target_just_reached
         # wait_for_target cleared by check_target_reached
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_intermediate_state_ignored_when_flag_set(self) -> None:
         """'opening'/'closing' states are skipped when ignore_intermediate_states=True."""
@@ -162,7 +160,7 @@ class TestProcessEntityStateChange:
         coord.ignore_intermediate_states = True
         self._call(coord)
         # Nothing should have changed
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
         assert entity_id not in coord._target_just_reached
 
     # ------------------------------------------------------------------
@@ -186,7 +184,7 @@ class TestProcessEntityStateChange:
         self._call(coord)
 
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is False
+            coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "wait_for_target must be cleared when grace expires and cover is not at target"
 
     def test_grace_expired_target_not_reached_does_not_add_to_target_just_reached(
@@ -243,14 +241,12 @@ class TestManualOverrideAfterGracePeriod:
         event = _make_state_change_data(entity_id, user_position)
 
         # After the fix, wait_for_target is cleared; handle_state_change sees False
-        wait_for_target = {entity_id: False}
-
         manager.handle_state_change(
             states_data=event,
             our_state=target,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call=wait_for_target,
+            is_waiting=lambda _eid: False,
             manual_threshold=5,
         )
 
@@ -276,14 +272,13 @@ class TestManualOverrideAfterGracePeriod:
         manager.add_covers([entity_id])
 
         event = _make_state_change_data(entity_id, motor_rounding)
-        wait_for_target = {entity_id: False}
 
         manager.handle_state_change(
             states_data=event,
             our_state=target,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call=wait_for_target,
+            is_waiting=lambda _eid: False,
             manual_threshold=5,
         )
 
@@ -315,14 +310,12 @@ class TestManualOverrideAfterGracePeriod:
         event = _make_state_change_data(entity_id, user_position)
         # wait_for_target still True (grace period active — coordinator bails early,
         # so handle_state_change is never reached)
-        wait_for_target = {entity_id: True}
-
         manager.handle_state_change(
             states_data=event,
             our_state=target,
             blind_type="cover_blind",
             allow_reset=True,
-            wait_target_call=wait_for_target,
+            is_waiting=lambda _eid: True,
             manual_threshold=5,
         )
 

@@ -154,7 +154,7 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
         """Return True if position mismatch detected."""
         # Check if any entity has a position mismatch between target and actual
         for entity_id in self.coordinator.entities:
-            target = self.coordinator.target_call.get(entity_id)
+            target = self.coordinator._cmd_svc.get_target(entity_id)  # noqa: SLF001
             if target is None:
                 continue  # No command sent yet
 
