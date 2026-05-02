@@ -137,6 +137,20 @@ SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 
 _STANDALONE_SENTINEL = "__standalone__"
 
+_GEOMETRY_WIKI_URL: dict[str, str] = {
+    SensorType.BLIND: "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Vertical",
+    SensorType.AWNING: "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Horizontal",
+    SensorType.TILT: "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Tilt",
+}
+
+
+def _geometry_wiki_link(sensor_type: str | None) -> str:
+    url = _GEOMETRY_WIKI_URL.get(
+        sensor_type,
+        "https://github.com/jrhubott/adaptive-cover-pro/wiki/Cover-Types",
+    )
+    return f"[Learn more]({url})"
+
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -2280,7 +2294,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_sun_tracking()
 
         schema = _get_geometry_schema(self.type_blind)
-        return self.async_show_form(step_id="geometry", data_schema=schema)
+        return self.async_show_form(
+            step_id="geometry",
+            data_schema=schema,
+            description_placeholders={
+                "geometry_wiki_link": _geometry_wiki_link(self.type_blind)
+            },
+        )
 
     async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
         """Configure glare zone definitions (initial flow)."""
@@ -2912,6 +2932,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, user_input or self.options
             ),
+            description_placeholders={
+                "geometry_wiki_link": _geometry_wiki_link(self.sensor_type)
+            },
         )
 
     async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):

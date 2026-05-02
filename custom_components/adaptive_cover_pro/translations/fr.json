@@ -17,7 +17,7 @@
       },
       "cover_entities": {
         "title": "Stores et appareil",
-        "description": "Sélectionnez les entités de store que cette instance contrôlera.",
+        "description": "Sélectionnez les protections que cette instance contrôle et connectez-les optionnellement à un appareil physique dans HA. Plusieurs protections peuvent partager une instance – elles utilisent les mêmes paramètres et se déplacent indépendamment. Pour contrôler des protections avec des orientations de fenêtre différentes, créez une instance séparée pour chacune.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup)",
         "data": {
           "group": "Entités de store",
           "linked_device_id": "Attacher à un appareil"
@@ -29,7 +29,7 @@
       },
       "geometry": {
         "title": "Géométrie du store",
-        "description": "Configurez les dimensions du store. Ces mesures sont utilisées pour calculer la position de blocage du soleil.",
+        "description": "Saisissez vos mesures de protection et de fenêtre. L'intégration les utilise pour calculer exactement la distance à laquelle abaisser ou dérouler la protection afin de bloquer la lumière directe du soleil tout en maximisant la lumière naturelle.\n\n**Hauteur de fenêtre** et **zone ombrée** sont obligatoires pour les stores verticaux et les stores bannes. **Profondeur de révélation** et **hauteur d'appui** améliorent la précision géométrique pour les fenêtres encastrées dans le mur. **Largeur et angle de store banne** s'appliquent aux stores bannes horizontaux. **Profondeur et espacement des lamelles** sont obligatoires pour les stores inclinables/vénitiens.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Hauteur de la fenêtre",
           "distance_shaded_area": "Zone ombragée",
@@ -55,7 +55,7 @@
       },
       "sun_tracking": {
         "title": "Suivi du soleil",
-        "description": "Configurez l'orientation de la fenêtre et les angles de suivi du soleil.",
+        "description": "Définissez la direction boussole de votre fenêtre et la plage angulaire où le soleil est visible. L'intégration suit le soleil dans ce champ de vision et maintient la protection à sa position par défaut lorsque le soleil est en dehors de celui-ci.\n\n**Azimut** est l'orientation boussole vers laquelle votre fenêtre fait face (0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest). **FOV** définit la distance à gauche et à droite du centre suivie par le soleil. **Limites d'élévation** filtrent les angles très bas (éblouissement au lever du soleil) ou très hauts (zénith) où le blocage peut ne pas être nécessaire.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking)",
         "data": {
           "enable_sun_tracking": "Activer le suivi du soleil",
           "set_azimuth": "Azimut de la fenêtre",
@@ -81,7 +81,7 @@
       },
       "position": {
         "title": "Paramètres de position",
-        "description": "Configurez les limites de position du store, les valeurs par défaut et le comportement au coucher du soleil.",
+        "description": "Définissez les limites de position, la position de repos par défaut et le comportement au coucher du soleil.\n\nLa **position par défaut** est l'endroit où les protections vont lorsque le soleil est en dehors de la fenêtre de suivi ou aucune dérogation n'est active. **Limites min/max** limitent la plage que l'intégration commandera — le bouton bascule « appliquer uniquement pendant le suivi du soleil » détermine si chaque limite est appliquée toute la journée ou uniquement pendant le suivi du soleil. **Position coucher du soleil** déplace les protections à une position spécifique à la fin ; laissez vide pour utiliser la position par défaut à la place.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position)",
         "data": {
           "default_percentage": "Position par défaut",
           "max_position": "Position maximale",
@@ -115,7 +115,7 @@
       },
       "automation": {
         "title": "Horaires et synchronisation",
-        "description": "Configurez la synchronisation de l'automatisation, les seuils de changement de position et les heures actives pour le contrôle automatique.",
+        "description": "Définissez la fenêtre opérationnelle (heures de début/fin) et le delta de position ou de temps minimal entre les ajustements.\n\n**Delta position** empêche la protection de se déplacer sauf si la cible s'est décalée d'au moins ce pourcentage — réduit l'usure du moteur dues aux petits changements du soleil. **Delta temps** applique un intervalle minimal entre les commandes consécutives. **Heures de début/fin** définissent quand le contrôle automatique est autorisé à s'exécuter ; laissez vide pour fonctionner toute la journée. Une entité HA peut fournir l'une ou l'autre heure de manière dynamique, utile pour les assistants d'horaire ou les réveille-matin.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation)",
         "data": {
           "delta_position": "Ajustement minimum de position",
           "delta_time": "Intervalle minimum entre les changements de position",
@@ -137,7 +137,7 @@
       },
       "manual_override": {
         "title": "Dérogation manuelle",
-        "description": "Configurez comment les changements de position manuels interagissent avec le contrôle automatique.",
+        "description": "Contrôlez ce qui se passe après qu'une personne déplace manuellement une protection. Le contrôle automatique s'interrompt pendant la durée configurée, puis reprend.\n\n**Durée de la dérogation** est le temps en minutes qu'ACP attend avant de reprendre le contrôle. **Réinitialiser à chaque ajustement** redémarrage le minuteur chaque fois que la protection est déplacée — utile si quelqu'un ajuste une protection plusieurs fois d'affilée. **Seuil** est le changement de position minimum qui compte comme un mouvement manuel ; augmentez-le légèrement si la dérive de position du moteur cause des faux positifs. **Délai d'expiration du transit** indique à ACP le temps à attendre pour qu'une protection en déplacement s'arrête avant de traiter sa position finale comme intentionnelle.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)",
         "data": {
           "manual_override_duration": "Durée de la dérogation manuelle",
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
@@ -155,7 +155,7 @@
       },
       "force_override": {
         "title": "Dérogation forcée",
-        "description": "Configurez les capteurs binaires qui dérogent inconditionnellement au contrôle automatique et déplacent les stores à une position fixe. La dérogation forcée reste active même quand le commutateur de contrôle automatique est éteint — les stores seront toujours déplacés à la position configurée quand un capteur est déclenché.",
+        "description": "Configurez les capteurs binaires qui dérogent inconditionnellement au contrôle automatique et déplacent les protections à une position fixe. La dérogation forcée reste active même lorsque le commutateur Contrôle automatique est désactivé — les protections seront toujours déplacées à la position configurée lorsqu'un capteur est déclenché.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Force-Override)",
         "data": {
           "force_override_sensors": "Capteurs de dérogation forcée",
           "force_override_position": "Position de dérogation forcée",
@@ -169,7 +169,7 @@
       },
       "custom_position": {
         "title": "Positions personnalisées",
-        "description": "Configurez les capteurs binaires qui définissent le store à des positions spécifiques quand ils sont actifs. Chaque emplacement a son propre capteur, position cible et priorité de pipeline. Chaque emplacement actif est évalué indépendamment — l'emplacement actif de plus haute priorité gagne. Utilisez les automatisations Home Assistant pour basculer ces capteurs pour un contrôle du store basé sur les scènes ou les horaires.",
+        "description": "Configurez les capteurs binaires qui définissent la protection à des positions spécifiques lorsqu'ils sont actifs. Chaque emplacement a son propre capteur, position cible et priorité de pipeline. Chaque emplacement actif est évalué indépendamment — l'emplacement actif avec la priorité la plus élevée gagne. Utilisez les automations Home Assistant pour basculer ces capteurs pour le contrôle de protection basé sur les scènes ou les horaires.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position)",
         "data": {
           "custom_position_sensor_1": "Capteur 1",
           "custom_position_1": "Position pour le capteur 1",
@@ -217,7 +217,7 @@
       },
       "motion_override": {
         "title": "Dérogation mouvement",
-        "description": "Configurez les capteurs de mouvement et d'occupation pour un contrôle automatique basé sur la présence.",
+        "description": "Activez le contrôle basé sur l'occupance. Lorsque tous les capteurs configurés signalent l'absence de mouvement, l'intégration arrête le suivi du soleil et déplace les protections à leur position par défaut après l'expiration du délai d'attente. Lorsqu'un capteur détecte un mouvement, le positionnement automatique reprend.\n\nN'importe quel mélange de capteurs de mouvement, d'occupance ou de présence binaire peut être utilisé. La logique est OU — n'importe quel capteur actif compte comme occupé. Ceci est utile pour les pièces où vous ne voulez pas que les protections s'ajustent lorsque personne n'est présent.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)",
         "data": {
           "motion_sensors": "Capteurs de mouvement/occupation pour le contrôle basé sur l'occupation",
           "motion_timeout": "Durée du délai d'inactivité du mouvement"
@@ -229,7 +229,7 @@
       },
       "weather_override": {
         "title": "Dérogation météo",
-        "description": "Configurez les dérogations de sécurité basées sur la météo. Toute condition configurée déclenche la rétraction du store. Les entrées non configurées sont ignorées.",
+        "description": "Configurez les dérogations de sécurité basées sur la météo. N'importe quelle condition configurée déclenche la rétraction des protections. Les entrées non configurées sont ignorées.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety)",
         "data": {
           "weather_bypass_auto_control": "Actif quand le contrôle automatique est désactivé",
           "weather_wind_speed_sensor": "Capteur de vitesse du vent",
@@ -300,7 +300,7 @@
           "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
         },
-        "description": "Configurez le contrôle conscient du climat pour l'efficacité énergétique et le confort. Ces paramètres permettent à l'intégration d'adapter le comportement du store en fonction de la température, la météo et la présence.",
+        "description": "Activez le contrôle de protection conscient du climat. Lorsqu'actif, l'intégration ouvre les protections en hiver pour capturer la chaleur solaire et les ferme en été pour réduire la charge de refroidissement. Cet écran configure quels capteurs de lumière et de nuage déterminent si le soleil est actuellement actif.\n\nLes seuils de température, les paramètres de présence et les règles de comportement saisonnier se trouvent sur l'écran suivant. Les mappages de conditions météorologiques suivent ensuite. Tous les paramètres secondaires du climat sont ignorés lorsque le mode climat est désactivé.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate)",
         "title": "Configuration climatique"
       },
       "weather": {
@@ -310,7 +310,8 @@
         "data_description": {
           "weather_state": "Sélectionnez les états météorologiques qui signifient « le soleil est dehors » pour le mode climatique. Sélection recommandée (préremplie) : ☑ ensoleillé (soleil direct), ☑ partiellement nuageux (un peu de soleil), ☐ nuageux (pas de soleil direct), ☐ clair (généralement la nuit). Quand la météo actuelle correspond à la sélection : Appliquez les stratégies climatiques. Quand il n'y a pas de correspondance : Utilisez la position par défaut (pas de soleil supposé). La plupart des utilisateurs doivent conserver les valeurs par défaut."
         },
-        "title": "Conditions météorologiques"
+        "title": "Conditions météorologiques",
+        "description": "Sélectionnez les états météorologiques qui comptent comme « le soleil est dehors » pour le mode climat. L'intégration compare l'état de l'entité météo en direct à cette liste — les états correspondants activent le contrôle de protection basé sur l'énergie solaire. Les états qui ne figurent pas dans la liste sont traités comme nuageux, donc les règles d'été/fermeture et d'hiver/ouverture s'appliquent uniquement lorsque la météo correspond.\n\nLes choix typiques sont « ensoleillé » et « partiellement nuageux ». Les états disponibles dépendent de votre intégration météo.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode)"
       },
       "blind_spot": {
         "data": {
@@ -324,11 +325,11 @@
           "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle."
         },
         "title": "Zone cachée",
-        "description": "Définissez les zones où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Ces valeurs angulaires sont des degrés relatifs dans votre champ de vision, où 0 est la limite FOV la plus à gauche. Le store ignorera la position du soleil quand elle se trouve dans cette zone de point aveugle."
+        "description": "Définissez les zones où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Ces valeurs angulaires sont relatives en degrés dans votre champ de vision, où 0 est la limite FOV la plus à gauche. La protection ignorera la position du soleil lorsqu'elle se trouve dans cette zone de point aveugle.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot)"
       },
       "glare_zones": {
         "title": "Zones d'éblouissement",
-        "description": "Définissez jusqu'à 4 zones de sol à protéger de la lumière directe du soleil. Laissez un nom de zone vide pour le sauter. Les coordonnées sont relatives au centre de la fenêtre projeté sur le sol.",
+        "description": "Définissez jusqu'à 4 zones de plancher à protéger de la lumière directe du soleil. Lorsque l'angle du soleil projetterait la lumière directe sur une zone, le store s'abaisse pour l'ombrager. Laissez le nom d'une zone vide pour ignorer cet emplacement.\n\nLes coordonnées sont relatives au centre de la fenêtre projeté sur le sol. **X** est le décalage gauche/droite (positif = droite). **Y** est la distance dans la pièce. **Rayon** définit la zone protégée circulaire. Utilisez la carte Lovelace compagnon pour visualiser les positions des zones et vérifier la couverture.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones)",
         "data": {
           "enable_glare_zones": "Activer les zones d'éblouissement",
           "glare_zone_1_name": "Nom zone 1",
@@ -382,7 +383,7 @@
           "interp_list_new": "Positions de sortie pour le mappage personnalisé d'interpolation (positions réelles envoyées au store). Entrez les positions réelles correspondantes comme : 0, 20, 40, 65, 100. C'est ce qui est réellement envoyé à votre entité store. Doit avoir la même longueur que « Positions calculées (entrée) ». Exemple d'utilisation : Rendez le store plus agressif en fermant en mappant 50 % calculé à 40 % réel. L'intégration interpole entre vos points. Laissez vide pour un fonctionnement normal."
         },
         "title": "Étalonnage de position",
-        "description": "Ajustez le mappage de position du store pour les stores non-standard en mappant une position calculée (entrée) à une position réelle envoyée au store (sortie). Utilisez une calibration simple à 2 points (mappez 0 % et 100 %) pour les stores avec plage limitée (par exemple, ne bouge qu'entre 10–90 %). Utilisez le mappage de liste avancée pour les stores non-linéaires ou pour biaiser le comportement plus ouvert/fermé. La plupart des stores n'en ont pas besoin — activez uniquement si votre store ne répond pas correctement aux commandes 0–100 % standard."
+        "description": "Ajustez le mappage de position de protection pour les protections non-standard en mappant une position calculée (entrée) à une position réelle envoyée à la protection (sortie). Utilisez un étalonnage simple à 2 points (mappage 0% et 100%) pour les protections avec une plage limitée (par exemple, se déplace uniquement entre 10 et 90%). Utilisez le mappage de liste avancé pour les protections non-linéaires ou pour biaiser le comportement plus ouvert/fermé. La plupart des protections n'en ont pas besoin — activez uniquement si votre protection ne répond pas correctement aux commandes 0-100% standard.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position)"
       },
       "duplicate_select": {
         "title": "Dupliquer un store — Sélectionner la source",
@@ -406,7 +407,7 @@
       },
       "setup_mode": {
         "title": "Mode de configuration",
-        "description": "Choisissez la quantité à configurer maintenant. Vous pouvez toujours ajuster tous les paramètres ultérieurement depuis le menu des options.",
+        "description": "Choisissez la quantité à configurer maintenant. Vous pouvez toujours ajuster tous les paramètres plus tard à partir du menu options.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup)",
         "menu_options": {
           "quick_setup": "Configuration rapide — Fenêtre basique + suivi du soleil uniquement (recommandé pour la première configuration)",
           "full_setup": "Configuration complète — Toutes les options y compris le climat, les dérogations et l'automatisation"
@@ -414,7 +415,7 @@
       },
       "light_cloud": {
         "title": "Capteurs de lumière et suppression des nuages",
-        "description": "Configurez les capteurs de lumière et météo pour détecter quand les nuages bloquent la lumière directe du soleil. Ceux-ci fonctionnent indépendamment du mode climatique.",
+        "description": "Supprimez le contrôle de l'éblouissement lorsque la lumière solaire est absente. Configurez les capteurs pour détecter les nuages ou la faible luminosité — lorsqu'ils sont déclenchés, l'intégration arrête le suivi du soleil et déplace optionnellement les protections vers une position de stationnement. Empêche le mouvement inutile des protections par temps couvert.\n\nN'importe lequel des quatre éléments (état météo, capteur lux, capteur d'irradiance, capteur de couverture nuageuse) peut être utilisé individuellement ou ensemble — n'importe quel seul match est suffisant pour supprimer le suivi. La **position nuageuse** optionnelle déplace les protections à une position spécifique lorsque la suppression se déclenche ; laissez vide pour maintenir la position actuelle à la place.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)",
         "data": {
           "weather_entity": "Entité météo (optionnelle)",
           "lux_entity": "Capteur de lux (optionnel)",
@@ -442,7 +443,7 @@
       },
       "temperature_climate": {
         "title": "Température et mode climatique",
-        "description": "Le mode climatique ajuste la position du store en fonction de la température intérieure/extérieure, de la présence et de l'ensoleillement réel de la fenêtre. Quand il est désactivé, le store suit le suivi solaire/anti-éblouissement normal.\n\n**Comment la saison est déterminée** — La température de référence est celle du capteur extérieur si disponible, sinon celle du capteur intérieur.\n- **Hiver** — la température actuelle est inférieure au seuil bas.\n- **Été** — la température actuelle est supérieure au seuil haut **et** la température extérieure est supérieure au seuil extérieur (évite le comportement estival par temps froid).\n- **Intermédiaire** — aucune des conditions ci-dessus ; le suivi solaire/anti-éblouissement normal s'applique.\n\n**Ce que fait chaque mode**\n- **Hiver + soleil sur la fenêtre** → ouvre complètement (100 %) pour capter la chaleur solaire gratuite.\n- **Hiver, soleil absent de la fenêtre**, *Mode isolation hivernale* activé → ferme complètement (0 %) pour retenir la chaleur.\n- **Été** → ferme complètement (0 %) pour bloquer les apports de chaleur. Pour les stores, cela ne se produit qu'avec présence si *Store transparent* est activé ; sans présence, le store se ferme toujours.\n- **Faible luminosité** (nuageux / sombre / pas ensoleillé) → revient à la position par défaut, neutralisant la fermeture estivale pour que les stores ne se ferment pas inutilement.\n- **Intermédiaire / soleil valide avec présence** → suivi anti-éblouissement normal.\n\n**La présence** conditionne le comportement : quand personne n'est là, une règle simplifiée été-fermé / hiver-ouvert s'applique ; quand des occupants sont présents, le suivi de l'éblouissement fonctionne en mode intermédiaire et les stores transparents se ferment quand même en été.\n\n**Les stores à inclinaison** suivent la même logique saisonnière mais utilisent des angles de lamelles plutôt que des positions ouvert/fermé.\n\nLaissez *Capteur de température extérieure* et *Entité de présence* vides pour ignorer ces vérifications. Le mode climatique s'exécute après les dérogations de force/météo/manuelle/personnalisée mais avant le suivi solaire normal.",
+        "description": "Le mode climat ajuste la position de la protection en fonction de la température intérieure/extérieure, de la présence et de savoir si le soleil frappe réellement la fenêtre. Lorsqu'il est désactivé, la protection suit le suivi normal du soleil/éblouissement.\n\n**Comment la saison est choisie** — La température actuelle provient du capteur extérieur s'il est fourni, sinon du capteur intérieur.\n- **Hiver** — température actuelle est en dessous du seuil bas.\n- **Été** — température actuelle est au-dessus du seuil haut **et** température extérieure est au-dessus du seuil extérieur (empêche le comportement d'été par une journée froide).\n- **Intermédiaire** — aucun de ce qui précède ; le suivi normal du soleil/éblouissement s'exécute.\n\n**Ce que chaque mode fait**\n- **Hiver + soleil sur fenêtre** → ouverture complète (100%) pour capturer la chaleur solaire gratuite.\n- **Hiver, pas de soleil sur fenêtre**, *Mode d'isolation hivernale* actif → fermeture complète (0%) pour piéger la chaleur.\n- **Été** → fermeture complète (0%) pour bloquer le gain de chaleur. Pour les stores, cela ne se produit avec présence que si *Store transparent* est actif ; sans présence, il se ferme toujours.\n- **Faible luminosité** (nuageux / sombre / pas ensoleillé) → retour à la position par défaut, dérogation à la fermeture estivale pour que les protections ne se ferment pas inutilement.\n- **Intermédiaire / soleil valide avec présence** → suivi normal du contrôle de l'éblouissement.\n\n**Présence** contrôle le comportement : sans personne à la maison, une règle d'été/ouverture hivernale plus simple s'applique ; avec des occupants présents, le suivi de l'éblouissement s'exécute dans des conditions intermédiaires et les stores transparents se ferment toujours en été.\n\n**Les stores inclinables** suivent la même logique saisonnière mais utilisent les angles de lamelle au lieu des positions ouvertes/fermées.\n\nLaissez *Capteur de température extérieure* et *Entité de présence* vides pour ignorer ces vérifications. Le mode climat s'exécute après les dérogations forcées/météorologiques/manuelles/personnalisées mais avant le suivi normal du soleil.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode)",
         "data": {
           "climate_mode": "Activer le mode climatique",
           "temp_entity": "Entité de température intérieure",
@@ -501,7 +502,7 @@
       },
       "automation": {
         "title": "Horaires et synchronisation",
-        "description": "Configurez la synchronisation de l'automatisation, les seuils de changement de position et les heures actives pour le contrôle automatique.",
+        "description": "Définissez la fenêtre opérationnelle (heures de début/fin) et le delta de position ou de temps minimal entre les ajustements.\n\n**Delta position** empêche la protection de se déplacer sauf si la cible s'est décalée d'au moins ce pourcentage — réduit l'usure du moteur dues aux petits changements du soleil. **Delta temps** applique un intervalle minimal entre les commandes consécutives. **Heures de début/fin** définissent quand le contrôle automatique est autorisé à s'exécuter ; laissez vide pour fonctionner toute la journée. Une entité HA peut fournir l'une ou l'autre heure de manière dynamique, utile pour les assistants d'horaire ou les réveille-matin.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation)",
         "data": {
           "delta_position": "Ajustement minimum de position",
           "delta_time": "Intervalle minimum entre les changements de position",
@@ -523,7 +524,7 @@
       },
       "cover_entities": {
         "title": "Stores et appareil",
-        "description": "Sélectionnez les entités de store que cette instance contrôlera.",
+        "description": "Sélectionnez les protections que cette instance contrôle et connectez-les optionnellement à un appareil physique dans HA. Plusieurs protections peuvent partager une instance – elles utilisent les mêmes paramètres et se déplacent indépendamment. Pour contrôler des protections avec des orientations de fenêtre différentes, créez une instance séparée pour chacune.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup)",
         "data": {
           "group": "Entités de store",
           "linked_device_id": "Attacher à un appareil"
@@ -535,7 +536,7 @@
       },
       "geometry": {
         "title": "Géométrie du store",
-        "description": "Configurez les dimensions du store.",
+        "description": "Saisissez vos mesures de protection et de fenêtre. L'intégration les utilise pour calculer exactement la distance à laquelle abaisser ou dérouler la protection afin de bloquer la lumière directe du soleil tout en maximisant la lumière naturelle.\n\n**Hauteur de fenêtre** et **zone ombrée** sont obligatoires pour les stores verticaux et les stores bannes. **Profondeur de révélation** et **hauteur d'appui** améliorent la précision géométrique pour les fenêtres encastrées dans le mur. **Largeur et angle de store banne** s'appliquent aux stores bannes horizontaux. **Profondeur et espacement des lamelles** sont obligatoires pour les stores inclinables/vénitiens.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Hauteur de la fenêtre",
           "distance_shaded_area": "Zone ombragée",
@@ -561,7 +562,7 @@
       },
       "sun_tracking": {
         "title": "Suivi du soleil",
-        "description": "Configurez l'orientation de la fenêtre et les angles de suivi du soleil.",
+        "description": "Définissez la direction boussole de votre fenêtre et la plage angulaire où le soleil est visible. L'intégration suit le soleil dans ce champ de vision et maintient la protection à sa position par défaut lorsque le soleil est en dehors de celui-ci.\n\n**Azimut** est l'orientation boussole vers laquelle votre fenêtre fait face (0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest). **FOV** définit la distance à gauche et à droite du centre suivie par le soleil. **Limites d'élévation** filtrent les angles très bas (éblouissement au lever du soleil) ou très hauts (zénith) où le blocage peut ne pas être nécessaire.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking)",
         "data": {
           "enable_sun_tracking": "Activer le suivi du soleil",
           "set_azimuth": "Azimut de la fenêtre",
@@ -587,7 +588,7 @@
       },
       "position": {
         "title": "Paramètres de position",
-        "description": "Configurez les limites de position du store, les valeurs par défaut et le comportement au coucher du soleil.",
+        "description": "Définissez les limites de position, la position de repos par défaut et le comportement au coucher du soleil.\n\nLa **position par défaut** est l'endroit où les protections vont lorsque le soleil est en dehors de la fenêtre de suivi ou aucune dérogation n'est active. **Limites min/max** limitent la plage que l'intégration commandera — le bouton bascule « appliquer uniquement pendant le suivi du soleil » détermine si chaque limite est appliquée toute la journée ou uniquement pendant le suivi du soleil. **Position coucher du soleil** déplace les protections à une position spécifique à la fin ; laissez vide pour utiliser la position par défaut à la place.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position)",
         "data": {
           "default_percentage": "Position par défaut",
           "max_position": "Position maximale",
@@ -621,7 +622,7 @@
       },
       "manual_override": {
         "title": "Dérogation manuelle",
-        "description": "Configurez comment les changements de position manuels interagissent avec le contrôle automatique.",
+        "description": "Contrôlez ce qui se passe après qu'une personne déplace manuellement une protection. Le contrôle automatique s'interrompt pendant la durée configurée, puis reprend.\n\n**Durée de la dérogation** est le temps en minutes qu'ACP attend avant de reprendre le contrôle. **Réinitialiser à chaque ajustement** redémarrage le minuteur chaque fois que la protection est déplacée — utile si quelqu'un ajuste une protection plusieurs fois d'affilée. **Seuil** est le changement de position minimum qui compte comme un mouvement manuel ; augmentez-le légèrement si la dérive de position du moteur cause des faux positifs. **Délai d'expiration du transit** indique à ACP le temps à attendre pour qu'une protection en déplacement s'arrête avant de traiter sa position finale comme intentionnelle.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)",
         "data": {
           "manual_override_duration": "Durée de la dérogation manuelle",
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
@@ -639,7 +640,7 @@
       },
       "force_override": {
         "title": "Dérogation forcée",
-        "description": "Configurez les capteurs binaires qui dérogent inconditionnellement au contrôle automatique et déplacent les stores à une position fixe. La dérogation forcée reste active même quand le commutateur de contrôle automatique est éteint — les stores seront toujours déplacés à la position configurée quand un capteur est déclenché.",
+        "description": "Configurez les capteurs binaires qui dérogent inconditionnellement au contrôle automatique et déplacent les protections à une position fixe. La dérogation forcée reste active même lorsque le commutateur Contrôle automatique est désactivé — les protections seront toujours déplacées à la position configurée lorsqu'un capteur est déclenché.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Force-Override)",
         "data": {
           "force_override_sensors": "Capteurs de dérogation forcée",
           "force_override_position": "Position de dérogation forcée",
@@ -653,7 +654,7 @@
       },
       "custom_position": {
         "title": "Positions personnalisées",
-        "description": "Configurez les capteurs binaires qui définissent le store à des positions spécifiques quand ils sont actifs. Chaque emplacement a son propre capteur, position cible et priorité de pipeline. Chaque emplacement actif est évalué indépendamment — l'emplacement actif de plus haute priorité gagne. Utilisez les automatisations Home Assistant pour basculer ces capteurs pour un contrôle du store basé sur les scènes ou les horaires.",
+        "description": "Configurez les capteurs binaires qui définissent la protection à des positions spécifiques lorsqu'ils sont actifs. Chaque emplacement a son propre capteur, position cible et priorité de pipeline. Chaque emplacement actif est évalué indépendamment — l'emplacement actif avec la priorité la plus élevée gagne. Utilisez les automations Home Assistant pour basculer ces capteurs pour le contrôle de protection basé sur les scènes ou les horaires.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position)",
         "data": {
           "custom_position_sensor_1": "Capteur 1",
           "custom_position_1": "Position pour le capteur 1",
@@ -701,7 +702,7 @@
       },
       "motion_override": {
         "title": "Dérogation mouvement",
-        "description": "Configurez les capteurs de mouvement et d'occupation pour un contrôle automatique basé sur la présence.",
+        "description": "Activez le contrôle basé sur l'occupance. Lorsque tous les capteurs configurés signalent l'absence de mouvement, l'intégration arrête le suivi du soleil et déplace les protections à leur position par défaut après l'expiration du délai d'attente. Lorsqu'un capteur détecte un mouvement, le positionnement automatique reprend.\n\nN'importe quel mélange de capteurs de mouvement, d'occupance ou de présence binaire peut être utilisé. La logique est OU — n'importe quel capteur actif compte comme occupé. Ceci est utile pour les pièces où vous ne voulez pas que les protections s'ajustent lorsque personne n'est présent.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)",
         "data": {
           "motion_sensors": "Capteurs de mouvement/occupation pour le contrôle basé sur l'occupation",
           "motion_timeout": "Durée du délai d'inactivité du mouvement"
@@ -713,7 +714,7 @@
       },
       "weather_override": {
         "title": "Dérogation météo",
-        "description": "Configurez les dérogations de sécurité basées sur la météo. Toute condition configurée déclenche la rétraction du store. Les entrées non configurées sont ignorées.",
+        "description": "Configurez les dérogations de sécurité basées sur la météo. N'importe quelle condition configurée déclenche la rétraction des protections. Les entrées non configurées sont ignorées.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety)",
         "data": {
           "weather_bypass_auto_control": "Actif quand le contrôle automatique est désactivé",
           "weather_wind_speed_sensor": "Capteur de vitesse du vent",
@@ -784,7 +785,7 @@
           "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
         },
-        "description": "Configurez le contrôle conscient du climat pour l'efficacité énergétique et le confort. Ces paramètres permettent à l'intégration d'adapter le comportement du store en fonction de la température, la météo et la présence.",
+        "description": "Activez le contrôle de protection conscient du climat. Lorsqu'actif, l'intégration ouvre les protections en hiver pour capturer la chaleur solaire et les ferme en été pour réduire la charge de refroidissement. Cet écran configure quels capteurs de lumière et de nuage déterminent si le soleil est actuellement actif.\n\nLes seuils de température, les paramètres de présence et les règles de comportement saisonnier se trouvent sur l'écran suivant. Les mappages de conditions météorologiques suivent ensuite. Tous les paramètres secondaires du climat sont ignorés lorsque le mode climat est désactivé.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate)",
         "title": "Configuration climatique"
       },
       "weather": {
@@ -794,7 +795,8 @@
         "data_description": {
           "weather_state": "Sélectionnez les états météorologiques qui signifient « le soleil est dehors » pour le mode climatique. Sélection recommandée (préremplie) : ☑ ensoleillé (soleil direct), ☑ partiellement nuageux (un peu de soleil), ☐ nuageux (pas de soleil direct), ☐ clair (généralement la nuit). Quand la météo actuelle correspond à la sélection : Appliquez les stratégies climatiques. Quand il n'y a pas de correspondance : Utilisez la position par défaut (pas de soleil supposé). La plupart des utilisateurs doivent conserver les valeurs par défaut."
         },
-        "title": "Conditions météorologiques"
+        "title": "Conditions météorologiques",
+        "description": "Sélectionnez les états météorologiques qui comptent comme « le soleil est dehors » pour le mode climat. L'intégration compare l'état de l'entité météo en direct à cette liste — les états correspondants activent le contrôle de protection basé sur l'énergie solaire. Les états qui ne figurent pas dans la liste sont traités comme nuageux, donc les règles d'été/fermeture et d'hiver/ouverture s'appliquent uniquement lorsque la météo correspond.\n\nLes choix typiques sont « ensoleillé » et « partiellement nuageux ». Les états disponibles dépendent de votre intégration météo.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode)"
       },
       "blind_spot": {
         "data": {
@@ -808,7 +810,7 @@
           "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle."
         },
         "title": "Zone cachée",
-        "description": "Définissez les zones où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Ces valeurs angulaires sont des degrés relatifs dans votre champ de vision, où 0 est la limite FOV la plus à gauche. Le store ignorera la position du soleil quand elle se trouve dans cette zone de point aveugle."
+        "description": "Définissez les zones où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Ces valeurs angulaires sont relatives en degrés dans votre champ de vision, où 0 est la limite FOV la plus à gauche. La protection ignorera la position du soleil lorsqu'elle se trouve dans cette zone de point aveugle.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot)"
       },
       "interp": {
         "data": {
@@ -824,11 +826,11 @@
           "interp_list_new": "Positions de sortie pour le mappage personnalisé d'interpolation (positions réelles envoyées au store). Entrez les positions réelles correspondantes comme : 0, 20, 40, 65, 100. C'est ce qui est réellement envoyé à votre entité store. Doit avoir la même longueur que « Positions calculées (entrée) ». Exemple d'utilisation : Rendez le store plus agressif en fermant en mappant 50 % calculé à 40 % réel. L'intégration interpole entre vos points. Laissez vide pour un fonctionnement normal."
         },
         "title": "Étalonnage de position",
-        "description": "Ajustez le mappage de position du store pour les stores non-standard en mappant une position calculée (entrée) à une position réelle envoyée au store (sortie). Utilisez une calibration simple à 2 points (mappez 0 % et 100 %) pour les stores avec plage limitée (par exemple, ne bouge qu'entre 10–90 %). Utilisez le mappage de liste avancée pour les stores non-linéaires ou pour biaiser le comportement plus ouvert/fermé. La plupart des stores n'en ont pas besoin — activez uniquement si votre store ne répond pas correctement aux commandes 0–100 % standard."
+        "description": "Ajustez le mappage de position de protection pour les protections non-standard en mappant une position calculée (entrée) à une position réelle envoyée à la protection (sortie). Utilisez un étalonnage simple à 2 points (mappage 0% et 100%) pour les protections avec une plage limitée (par exemple, se déplace uniquement entre 10 et 90%). Utilisez le mappage de liste avancé pour les protections non-linéaires ou pour biaiser le comportement plus ouvert/fermé. La plupart des protections n'en ont pas besoin — activez uniquement si votre protection ne répond pas correctement aux commandes 0-100% standard.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position)"
       },
       "glare_zones": {
         "title": "Zones d'éblouissement",
-        "description": "Définissez jusqu'à 4 zones de sol à protéger de la lumière directe du soleil. Laissez un nom de zone vide pour le sauter. Les coordonnées sont relatives au centre de la fenêtre projeté sur le sol.",
+        "description": "Définissez jusqu'à 4 zones de plancher à protéger de la lumière directe du soleil. Lorsque l'angle du soleil projetterait la lumière directe sur une zone, le store s'abaisse pour l'ombrager. Laissez le nom d'une zone vide pour ignorer cet emplacement.\n\nLes coordonnées sont relatives au centre de la fenêtre projeté sur le sol. **X** est le décalage gauche/droite (positif = droite). **Y** est la distance dans la pièce. **Rayon** définit la zone protégée circulaire. Utilisez la carte Lovelace compagnon pour visualiser les positions des zones et vérifier la couverture.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones)",
         "data": {
           "enable_glare_zones": "Activer les zones d'éblouissement",
           "glare_zone_1_name": "Nom zone 1",
@@ -882,7 +884,7 @@
       },
       "debug": {
         "title": "Débogage et diagnostics",
-        "description": "Activez le mode débogage pour collecter des données de diagnostic détaillées sans modifier configuration.yaml. Quand actif, les catégories sélectionnées sont journalisées au niveau INFO et un tampon circulaire des décisions de dérogation manuelle est conservé en mémoire et exposé dans le téléchargement des diagnostics HA.\n\n{cover_capabilities}",
+        "description": "Activez le mode débogage pour collecter les données de dépannage détaillées sans éditer configuration.yaml. Lorsqu'actif, les catégories sélectionnées sont enregistrées au niveau INFO et un anneau tampon d'événements de diagnostic est conservé en mémoire et exposé au téléchargement de diagnostics HA.\n\n{cover_capabilities}\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics)",
         "data": {
           "dry_run": "Exécution à sec (aucun mouvement du store)",
           "debug_mode": "Activer le mode débogage",
@@ -905,7 +907,7 @@
       },
       "light_cloud": {
         "title": "Capteurs de lumière et suppression des nuages",
-        "description": "Configurez les capteurs de lumière et météo pour détecter quand les nuages bloquent la lumière directe du soleil.",
+        "description": "Supprimez le contrôle de l'éblouissement lorsque la lumière solaire est absente. Configurez les capteurs pour détecter les nuages ou la faible luminosité — lorsqu'ils sont déclenchés, l'intégration arrête le suivi du soleil et déplace optionnellement les protections vers une position de stationnement. Empêche le mouvement inutile des protections par temps couvert.\n\nN'importe lequel des quatre éléments (état météo, capteur lux, capteur d'irradiance, capteur de couverture nuageuse) peut être utilisé individuellement ou ensemble — n'importe quel seul match est suffisant pour supprimer le suivi. La **position nuageuse** optionnelle déplace les protections à une position spécifique lorsque la suppression se déclenche ; laissez vide pour maintenir la position actuelle à la place.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides)",
         "data": {
           "weather_entity": "Entité météo (optionnelle)",
           "lux_entity": "Capteur de lux (optionnel)",
@@ -933,7 +935,7 @@
       },
       "temperature_climate": {
         "title": "Température et mode climatique",
-        "description": "Le mode climatique ajuste la position du store en fonction de la température intérieure/extérieure, de la présence et de l'ensoleillement réel de la fenêtre. Quand il est désactivé, le store suit le suivi solaire/anti-éblouissement normal.\n\n**Comment la saison est déterminée** — La température de référence est celle du capteur extérieur si disponible, sinon celle du capteur intérieur.\n- **Hiver** — la température actuelle est inférieure au seuil bas.\n- **Été** — la température actuelle est supérieure au seuil haut **et** la température extérieure est supérieure au seuil extérieur (évite le comportement estival par temps froid).\n- **Intermédiaire** — aucune des conditions ci-dessus ; le suivi solaire/anti-éblouissement normal s'applique.\n\n**Ce que fait chaque mode**\n- **Hiver + soleil sur la fenêtre** → ouvre complètement (100 %) pour capter la chaleur solaire gratuite.\n- **Hiver, soleil absent de la fenêtre**, *Mode isolation hivernale* activé → ferme complètement (0 %) pour retenir la chaleur.\n- **Été** → ferme complètement (0 %) pour bloquer les apports de chaleur. Pour les stores, cela ne se produit qu'avec présence si *Store transparent* est activé ; sans présence, le store se ferme toujours.\n- **Faible luminosité** (nuageux / sombre / pas ensoleillé) → revient à la position par défaut, neutralisant la fermeture estivale pour que les stores ne se ferment pas inutilement.\n- **Intermédiaire / soleil valide avec présence** → suivi anti-éblouissement normal.\n\n**La présence** conditionne le comportement : quand personne n'est là, une règle simplifiée été-fermé / hiver-ouvert s'applique ; quand des occupants sont présents, le suivi de l'éblouissement fonctionne en mode intermédiaire et les stores transparents se ferment quand même en été.\n\n**Les stores à inclinaison** suivent la même logique saisonnière mais utilisent des angles de lamelles plutôt que des positions ouvert/fermé.\n\nLaissez *Capteur de température extérieure* et *Entité de présence* vides pour ignorer ces vérifications. Le mode climatique s'exécute après les dérogations de force/météo/manuelle/personnalisée mais avant le suivi solaire normal.",
+        "description": "Le mode climat ajuste la position de la protection en fonction de la température intérieure/extérieure, de la présence et de savoir si le soleil frappe réellement la fenêtre. Lorsqu'il est désactivé, la protection suit le suivi normal du soleil/éblouissement.\n\n**Comment la saison est choisie** — La température actuelle provient du capteur extérieur s'il est fourni, sinon du capteur intérieur.\n- **Hiver** — température actuelle est en dessous du seuil bas.\n- **Été** — température actuelle est au-dessus du seuil haut **et** température extérieure est au-dessus du seuil extérieur (empêche le comportement d'été par une journée froide).\n- **Intermédiaire** — aucun de ce qui précède ; le suivi normal du soleil/éblouissement s'exécute.\n\n**Ce que chaque mode fait**\n- **Hiver + soleil sur fenêtre** → ouverture complète (100%) pour capturer la chaleur solaire gratuite.\n- **Hiver, pas de soleil sur fenêtre**, *Mode d'isolation hivernale* actif → fermeture complète (0%) pour piéger la chaleur.\n- **Été** → fermeture complète (0%) pour bloquer le gain de chaleur. Pour les stores, cela ne se produit avec présence que si *Store transparent* est actif ; sans présence, il se ferme toujours.\n- **Faible luminosité** (nuageux / sombre / pas ensoleillé) → retour à la position par défaut, dérogation à la fermeture estivale pour que les protections ne se ferment pas inutilement.\n- **Intermédiaire / soleil valide avec présence** → suivi normal du contrôle de l'éblouissement.\n\n**Présence** contrôle le comportement : sans personne à la maison, une règle d'été/ouverture hivernale plus simple s'applique ; avec des occupants présents, le suivi de l'éblouissement s'exécute dans des conditions intermédiaires et les stores transparents se ferment toujours en été.\n\n**Les stores inclinables** suivent la même logique saisonnière mais utilisent les angles de lamelle au lieu des positions ouvertes/fermées.\n\nLaissez *Capteur de température extérieure* et *Entité de présence* vides pour ignorer ces vérifications. Le mode climat s'exécute après les dérogations forcées/météorologiques/manuelles/personnalisées mais avant le suivi normal du soleil.\n\n[Learn more](https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode)",
         "data": {
           "climate_mode": "Activer le mode climatique",
           "temp_entity": "Entité de température intérieure",
