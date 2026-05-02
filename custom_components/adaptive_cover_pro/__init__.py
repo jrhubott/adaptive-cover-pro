@@ -36,7 +36,7 @@ from .const import (
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
-from .migrations import async_prune_legacy_entities
+from .migrations import async_prune_legacy_entities, async_prune_legacy_sensor_entities
 from .services import async_setup_services, async_unload_services
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
@@ -169,9 +169,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # access it during RestoreEntity rehydration (must run before first_refresh).
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Prune entity registry orphans left over from the v2.14.3 unique_id rename.
+    # Prune entity registry orphans left over from past unique_id renames.
     # Runs before platform setup so orphans are removed before new entities register.
     await async_prune_legacy_entities(hass, entry)
+    await async_prune_legacy_sensor_entities(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
