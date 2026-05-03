@@ -60,10 +60,8 @@ def tilt_cmd_svc(mock_hass, logger, grace_mgr):
 
 def test_initial_state(cmd_svc):
     """Empty tracking dicts are initialised on construction."""
-    assert cmd_svc.wait_for_target == {}
-    assert cmd_svc.target_call == {}
-    assert cmd_svc._retry_counts == {}
-    assert cmd_svc._gave_up == set()
+    assert not cmd_svc.waiting_entities()
+    assert not list(cmd_svc.iter_targets())
     assert cmd_svc.last_cover_action["entity_id"] is None
     assert cmd_svc.last_skipped_action["entity_id"] is None
 
@@ -252,8 +250,8 @@ def test_prepare_service_call_position_cover(cmd_svc, grace_mgr):
     assert data["position"] == 75
     assert data["entity_id"] == "cover.test"
     assert supports_position is True
-    assert cmd_svc.wait_for_target["cover.test"] is True
-    assert cmd_svc.target_call["cover.test"] == 75
+    assert cmd_svc.is_waiting_for_target("cover.test") is True
+    assert cmd_svc.get_target("cover.test") == 75
     grace_mgr.start_command_grace_period.assert_called_once_with("cover.test")
 
 
@@ -280,7 +278,7 @@ def test_prepare_service_call_open_cover(cmd_svc, grace_mgr):
         "cover.test", 70, caps=caps
     )
     assert service == "open_cover"
-    assert cmd_svc.target_call["cover.test"] == 100
+    assert cmd_svc.get_target("cover.test") == 100
     assert supports_position is False
 
 
@@ -296,7 +294,7 @@ def test_prepare_service_call_close_cover(cmd_svc, grace_mgr):
         "cover.test", 30, caps=caps
     )
     assert service == "close_cover"
-    assert cmd_svc.target_call["cover.test"] == 0
+    assert cmd_svc.get_target("cover.test") == 0
     assert supports_position is False
 
 
@@ -318,22 +316,22 @@ def test_prepare_service_call_missing_open_close_caps(cmd_svc):
 
 def test_prepare_service_call_reset_retries_true_clears_state(cmd_svc, grace_mgr):
     """reset_retries=True (default) clears retry count and gave_up for new target."""
-    cmd_svc._retry_counts["cover.test"] = 2
-    cmd_svc._gave_up.add("cover.test")
+    cmd_svc.state("cover.test").retry_count = 2
+    cmd_svc.state("cover.test").gave_up = True
     caps = {"has_set_position": True, "has_set_tilt_position": False}
     cmd_svc._prepare_service_call("cover.test", 60, caps=caps, reset_retries=True)
-    assert "cover.test" not in cmd_svc._retry_counts
-    assert "cover.test" not in cmd_svc._gave_up
+    assert cmd_svc.state("cover.test").retry_count == 0
+    assert not cmd_svc.state("cover.test").gave_up
 
 
 def test_prepare_service_call_reset_retries_false_preserves_state(cmd_svc, grace_mgr):
     """reset_retries=False preserves retry count and gave_up (reconciliation retries)."""
-    cmd_svc._retry_counts["cover.test"] = 2
-    cmd_svc._gave_up.add("cover.test")
+    cmd_svc.state("cover.test").retry_count = 2
+    cmd_svc.state("cover.test").gave_up = True
     caps = {"has_set_position": True, "has_set_tilt_position": False}
     cmd_svc._prepare_service_call("cover.test", 60, caps=caps, reset_retries=False)
-    assert cmd_svc._retry_counts["cover.test"] == 2
-    assert "cover.test" in cmd_svc._gave_up
+    assert cmd_svc.state("cover.test").retry_count == 2
+    assert cmd_svc.state("cover.test").gave_up
 
 
 # --- _track_action ---
@@ -341,7 +339,7 @@ def test_prepare_service_call_reset_retries_false_preserves_state(cmd_svc, grace
 
 def test_track_action_position_service(cmd_svc):
     """Records last_cover_action correctly for position-capable service."""
-    cmd_svc.target_call["cover.test"] = 80
+    cmd_svc.set_target("cover.test", 80)
     cmd_svc._track_action("cover.test", "set_cover_position", 80, True)
 
     action = cmd_svc.last_cover_action
@@ -357,7 +355,7 @@ def test_track_action_position_service(cmd_svc):
 
 def test_track_action_open_close_service(cmd_svc):
     """Records last_cover_action correctly for open/close service."""
-    cmd_svc.target_call["cover.test"] = 100
+    cmd_svc.set_target("cover.test", 100)
     cmd_svc._track_action("cover.test", "open_cover", 70, False)
 
     action = cmd_svc.last_cover_action
@@ -368,7 +366,7 @@ def test_track_action_open_close_service(cmd_svc):
 
 def test_track_action_inverse_state(cmd_svc):
     """Records inverse_state_applied correctly."""
-    cmd_svc.target_call["cover.test"] = 30
+    cmd_svc.set_target("cover.test", 30)
     cmd_svc._track_action(
         "cover.test", "set_cover_position", 30, True, inverse_state=True
     )
@@ -439,7 +437,7 @@ def test_update_threshold(cmd_svc):
     }
     # 70 < 75 threshold → should close
     cmd_svc._prepare_service_call("cover.test", 70, caps=caps)
-    assert cmd_svc.target_call["cover.test"] == 0
+    assert cmd_svc.get_target("cover.test") == 0
 
 
 # --- _gave_up (max retry tracking) ---
@@ -447,12 +445,12 @@ def test_update_threshold(cmd_svc):
 
 def test_gave_up_cleared_on_new_target(cmd_svc, grace_mgr):
     """_gave_up entry is cleared when a new target is set via reset_retries=True."""
-    cmd_svc._gave_up.add("cover.test")
-    cmd_svc._retry_counts["cover.test"] = 3
+    cmd_svc.state("cover.test").gave_up = True
+    cmd_svc.state("cover.test").retry_count = 3
     caps = {"has_set_position": True, "has_set_tilt_position": False}
     cmd_svc._prepare_service_call("cover.test", 80, caps=caps, reset_retries=True)
-    assert "cover.test" not in cmd_svc._gave_up
-    assert "cover.test" not in cmd_svc._retry_counts
+    assert not cmd_svc.state("cover.test").gave_up
+    assert cmd_svc.state("cover.test").retry_count == 0
 
 
 # --- build_special_positions ---

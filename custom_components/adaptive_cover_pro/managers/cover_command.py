@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 from collections import deque
+from collections.abc import Iterator
 from typing import Any
 
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
@@ -35,6 +36,29 @@ from ..helpers import (
     get_open_close_state,
     should_use_tilt,
 )
+
+
+@dataclasses.dataclass(slots=True)
+class PerEntityState:
+    """Per-entity positioning state owned by CoverCommandService.
+
+    Replaces a fan of parallel dicts/sets keyed by entity_id. The service
+    holds a single dict[str, PerEntityState]; an entity has no state until
+    apply_position / send_my_position records one.
+
+    `target` and `sent_at` use ``None`` to mean "absent" — preserving the
+    "key not in dict" semantics of the previous parallel-dict design.
+
+    """
+
+    target: int | None = None
+    sent_at: dt.datetime | None = None
+    waiting: bool = False
+    last_progress_at: dt.datetime | None = None
+    retry_count: int = 0
+    gave_up: bool = False
+    is_safety: bool = False
+    last_reconcile_at: dt.datetime | None = None
 
 
 @dataclasses.dataclass
@@ -73,7 +97,7 @@ class CoverCommandService:
     Owns the full cover positioning lifecycle:
     - Gate checks (auto control, time window, delta, time, manual override)
     - Service call preparation and execution
-    - Target tracking (wait_for_target, target_call)
+    - Per-entity state via ``PerEntityState`` (target, waiting, retry_count, ...)
     - Reconciliation timer: every minute, re-sends target if cover missed it
     - Diagnostic tracking (last action, last skipped action)
 
@@ -143,19 +167,14 @@ class CoverCommandService:
         self._wait_for_target_timeout_seconds = transit_timeout_seconds
         self._on_tick = on_tick
 
-        # Per-entity positioning state
-        # target_call: last position we decided to send (the "desired" position)
-        # _sent_at: when we last executed a service call for this entity
-        # wait_for_target: True while cover is expected to still be moving
-        # _last_progress_at: last time the cover reported forward progress toward target
-        # _retry_counts: how many reconciliation retries for the current target
-        # _gave_up: entities that have hit max_retries (cleared on new target)
-        self.target_call: dict[str, int] = {}
-        self._sent_at: dict[str, dt.datetime] = {}
-        self.wait_for_target: dict[str, bool] = {}
-        self._last_progress_at: dict[str, dt.datetime] = {}
-        self._retry_counts: dict[str, int] = {}
-        self._gave_up: set[str] = set()
+        # Per-entity positioning state — single source of truth.
+        # All previously-parallel dicts/sets (target_call, _sent_at,
+        # wait_for_target, _last_progress_at, _retry_counts, _gave_up,
+        # _safety_targets, _last_reconcile_time) live as fields on
+        # PerEntityState. External callers go through the typed accessors
+        # (get_target/set_target/is_waiting_for_target/...) or via state()
+        # for white-box / test access.
+        self._state: dict[str, PerEntityState] = {}
 
         # Context ids of cover.stop_cover calls that ACP itself originated.
         # The EVENT_CALL_SERVICE listener in the coordinator uses this to
@@ -175,12 +194,6 @@ class CoverCommandService:
         # doesn't fight the user's intention to pause automation.
         self._auto_control_enabled: bool = True
 
-        # Entities whose current target_call was set via apply_position(is_safety=True).
-        # These are safety targets (force override, weather) and reconciliation
-        # must still resend them even when _auto_control_enabled is False or the
-        # time window is closed.  Cleared when a non-safety target overwrites the entry.
-        self._safety_targets: set[str] = set()
-
         # Whether the coordinator's operational time window is currently active.
         # Synced by the coordinator each update cycle (alongside auto_control_enabled).
         # Reconciliation skips non-safety targets when this is False so stale
@@ -196,9 +209,6 @@ class CoverCommandService:
         # full update cycle (pipeline, diagnostics, sensors) runs normally.
         # Synced by the coordinator each update cycle from the Debug & Diagnostics option.
         self._dry_run: bool = False
-
-        # Last reconciliation timestamps per entity (for diagnostics sensor)
-        self._last_reconcile_time: dict[str, dt.datetime] = {}
 
         # Diagnostic tracking
         self.last_cover_action: dict[str, Any] = {
@@ -261,6 +271,81 @@ class CoverCommandService:
             self._reconcile_unsub()
             self._reconcile_unsub = None
             self._logger.debug("CoverCommandService: reconciliation timer stopped")
+
+    # ------------------------------------------------------------------ #
+    # Per-entity state — typed accessors over PerEntityState.
+    # The single backing store is ``self._state: dict[str, PerEntityState]``.
+    # Every read or write — internal, external, or test — goes through the
+    # methods below. There is no dict-shaped facade and no parallel state.
+    # White-box tests that need to set seldom-touched fields use ``state()``
+    # to obtain the live record and assign fields directly.
+    # ------------------------------------------------------------------ #
+
+    def state(self, entity_id: str) -> PerEntityState:
+        """Return the live per-entity record, creating one if it does not exist.
+
+        Mutations to the returned record are persisted in the service's
+        backing dict. Use this for white-box / test access; production code
+        should prefer the typed methods (``get_target``, ``set_waiting``,
+        etc.) when available.
+        """
+        s = self._state.get(entity_id)
+        if s is None:
+            s = PerEntityState()
+            self._state[entity_id] = s
+        return s
+
+    def _get(self, entity_id: str) -> PerEntityState:
+        """Return the existing record, or a fresh empty one (does NOT insert).
+
+        For read-only callers that should not pollute ``_state`` with empty
+        records. The returned object is a transient when missing — mutations
+        won't persist.
+        """
+        return self._state.get(entity_id) or PerEntityState()
+
+    def has_target(self, entity_id: str) -> bool:
+        """Return True if a target is currently recorded for ``entity_id``."""
+        s = self._state.get(entity_id)
+        return s is not None and s.target is not None
+
+    def get_target(self, entity_id: str) -> int | None:
+        """Return the most recently commanded target position, or None if unset."""
+        s = self._state.get(entity_id)
+        return None if s is None else s.target
+
+    def set_target(self, entity_id: str, position: int | None) -> None:
+        """Set the commanded target position. ``None`` clears the target."""
+        self.state(entity_id).target = position
+
+    def iter_targets(self) -> Iterator[tuple[str, int]]:
+        """Yield (entity_id, target) for every entity with a recorded target."""
+        for eid, s in list(self._state.items()):
+            if s.target is not None:
+                yield eid, s.target
+
+    def is_waiting_for_target(self, entity_id: str) -> bool:
+        """Return True if the cover is currently expected to be moving toward target."""
+        s = self._state.get(entity_id)
+        return bool(s and s.waiting)
+
+    def set_waiting(self, entity_id: str, value: bool) -> None:
+        """Mark an entity as waiting (or no-longer-waiting) for its target."""
+        self.state(entity_id).waiting = value
+
+    def waiting_entities(self) -> list[str]:
+        """Return all entities currently in ``waiting=True``."""
+        return [eid for eid, s in self._state.items() if s.waiting]
+
+    def is_safety_target(self, entity_id: str) -> bool:
+        """Return True if this entity's current target was set via a safety override."""
+        s = self._state.get(entity_id)
+        return bool(s and s.is_safety)
+
+    def clear_safety_targets(self) -> None:
+        """Clear the safety flag on every tracked entity."""
+        for s in self._state.values():
+            s.is_safety = False
 
     # ------------------------------------------------------------------ #
     # Properties
@@ -350,25 +435,23 @@ class CoverCommandService:
 
     def get_entity_state_snapshot(self, entity_id: str) -> dict:
         """Return a diagnostic snapshot of per-entity positioning state."""
-        sent_at = self._sent_at.get(entity_id)
-        reconcile_time = self._last_reconcile_time.get(entity_id)
+        s = self._get(entity_id)
         return {
-            "target_call": self.target_call.get(entity_id),
-            "wait_for_target": self.wait_for_target.get(entity_id, False),
-            "retry_count": self._retry_counts.get(entity_id, 0),
-            "gave_up": entity_id in self._gave_up,
-            "last_command_sent_at": sent_at.isoformat() if sent_at else None,
+            "target_call": s.target,
+            "wait_for_target": s.waiting,
+            "retry_count": s.retry_count,
+            "gave_up": s.gave_up,
+            "last_command_sent_at": s.sent_at.isoformat() if s.sent_at else None,
             "in_manual_override_set": entity_id in self._manual_override_entities,
-            "safety_target": entity_id in self._safety_targets,
+            "safety_target": s.is_safety,
             "last_reconcile_time": (
-                reconcile_time.isoformat() if reconcile_time else None
+                s.last_reconcile_at.isoformat() if s.last_reconcile_at else None
             ),
         }
 
     def get_all_entity_state_snapshots(self) -> dict[str, dict]:
         """Return diagnostic snapshots for all tracked entities."""
-        all_ids = set(self.target_call) | set(self.wait_for_target)
-        return {eid: self.get_entity_state_snapshot(eid) for eid in sorted(all_ids)}
+        return {eid: self.get_entity_state_snapshot(eid) for eid in sorted(self._state)}
 
     def clear_non_safety_targets(self) -> None:
         """Remove non-safety target_call entries so stale targets cannot be resent.
@@ -378,12 +461,17 @@ class CoverCommandService:
         preserved so reconciliation can still drive covers to their safe
         position.
         """
-        stale = [eid for eid in self.target_call if eid not in self._safety_targets]
+        stale = [
+            eid
+            for eid, s in self._state.items()
+            if s.target is not None and not s.is_safety
+        ]
         for eid in stale:
-            del self.target_call[eid]
-            self.wait_for_target.pop(eid, None)
-            self._retry_counts.pop(eid, None)
-            self._gave_up.discard(eid)
+            s = self._state[eid]
+            s.target = None
+            s.waiting = False
+            s.retry_count = 0
+            s.gave_up = False
         if stale:
             self._logger.debug(
                 "Cleared %d stale non-safety target(s) on window close: %s",
@@ -403,15 +491,8 @@ class CoverCommandService:
             entity_id: Cover entity ID to clear.
 
         """
-        had_target = entity_id in self.target_call
-        self.target_call.pop(entity_id, None)
-        self.wait_for_target.pop(entity_id, None)
-        self._sent_at.pop(entity_id, None)
-        self._last_progress_at.pop(entity_id, None)
-        self._retry_counts.pop(entity_id, None)
-        self._gave_up.discard(entity_id)
-        self._safety_targets.discard(entity_id)
-        if had_target:
+        existing = self._state.pop(entity_id, None)
+        if existing is not None and existing.target is not None:
             self._logger.debug(
                 "Discarded stale target for %s on manual override start",
                 entity_id,
@@ -429,7 +510,7 @@ class CoverCommandService:
         Resets the transit-timeout clock so slow-but-moving covers are not
         prematurely cleared by the backstop.
         """
-        self._last_progress_at[entity_id] = now
+        self.state(entity_id).last_progress_at = now
 
     def _transit_elapsed_without_progress(
         self, entity_id: str, now: dt.datetime
@@ -437,16 +518,15 @@ class CoverCommandService:
         """Seconds since the cover last made forward progress (or since sent_at).
 
         Returns the elapsed time the transit backstop should compare against the
-        configured timeout. Uses `_last_progress_at` as the reference when
-        forward progress has been recorded; falls back to `_sent_at` when no
+        configured timeout. Uses ``last_progress_at`` as the reference when
+        forward progress has been recorded; falls back to ``sent_at`` when no
         progress has been observed yet (covers that don't report intermediate
         positions, or the very first position event).
 
         Returns None if no sent_at is recorded for this entity (no command sent).
         """
-        reference = self._last_progress_at.get(entity_id) or self._sent_at.get(
-            entity_id
-        )
+        s = self._get(entity_id)
+        reference = s.last_progress_at or s.sent_at
         if reference is None:
             return None
         return (now - reference).total_seconds()
@@ -506,13 +586,14 @@ class CoverCommandService:
         stopped: list[str] = []
         candidates = {
             eid
-            for eid, waiting in self.wait_for_target.items()
-            if waiting and (entities is None or eid in entities)
+            for eid, s in self._state.items()
+            if s.waiting and (entities is None or eid in entities)
         }
         for eid in candidates:
             caps = check_cover_features(self._hass, eid)
             if not (caps and caps.get("has_stop")):
                 continue
+            s = self.state(eid)
             if not self._is_cover_in_motion(eid):
                 state_val = getattr(self._hass.states.get(eid), "state", None)
                 self._logger.debug(
@@ -521,15 +602,15 @@ class CoverCommandService:
                     eid,
                     state_val,
                 )
-                self.wait_for_target[eid] = False
-                self._sent_at.pop(eid, None)
+                s.waiting = False
+                s.sent_at = None
                 continue
             if self._dry_run:
                 self._logger.info("[dry_run] would stop_cover %s", eid)
             else:
                 await self._call_stop_cover(eid)
-            self.wait_for_target[eid] = False
-            self._sent_at.pop(eid, None)
+            s.waiting = False
+            s.sent_at = None
             stopped.append(eid)
             self._logger.debug("stop_in_flight: stopped %s", eid)
         return stopped
@@ -610,12 +691,13 @@ class CoverCommandService:
         else:
             await self._call_stop_cover(entity_id)
         now = dt.datetime.now(dt.UTC)
-        self.target_call[entity_id] = target
-        self.wait_for_target[entity_id] = True
-        self._sent_at[entity_id] = now
-        self._last_progress_at.pop(entity_id, None)
-        self._retry_counts.pop(entity_id, None)
-        self._gave_up.discard(entity_id)
+        s = self.state(entity_id)
+        s.target = target
+        s.waiting = True
+        s.sent_at = now
+        s.last_progress_at = None
+        s.retry_count = 0
+        s.gave_up = False
         self._logger.debug(
             "send_my_position: stop_cover sent to %s (My = %d%%)", entity_id, target
         )
@@ -986,16 +1068,17 @@ class CoverCommandService:
             True if target reached (wait_for_target cleared), False otherwise.
 
         """
-        if entity_id not in self.target_call:
+        s = self._state.get(entity_id)
+        if s is None or s.target is None:
             return False
 
         if reported_position is None:
             return False
 
-        target = self.target_call[entity_id]
+        target = s.target
         if abs(reported_position - target) <= self._position_tolerance:
-            self.wait_for_target[entity_id] = False
-            self._retry_counts.pop(entity_id, None)
+            s.waiting = False
+            s.retry_count = 0
             self._logger.debug(
                 "Target reached for %s (reported=%s target=%s)",
                 entity_id,
@@ -1047,11 +1130,12 @@ class CoverCommandService:
         if not self._enabled:
             return
 
-        for entity_id, target in list(self.target_call.items()):
-            self._last_reconcile_time[entity_id] = now
+        for entity_id, target in list(self.iter_targets()):
+            s = self.state(entity_id)
+            s.last_reconcile_at = now
 
             # 1. Timeout: clear stuck wait_for_target
-            if self.wait_for_target.get(entity_id, False):
+            if s.waiting:
                 elapsed = self._transit_elapsed_without_progress(entity_id, now)
                 if elapsed is not None:
                     if elapsed > self._wait_for_target_timeout_seconds:
@@ -1061,7 +1145,7 @@ class CoverCommandService:
                             elapsed,
                             self._wait_for_target_timeout_seconds,
                         )
-                        self.wait_for_target[entity_id] = False
+                        s.waiting = False
                     else:
                         # Cover still expected to be moving
                         continue
@@ -1071,7 +1155,7 @@ class CoverCommandService:
             # 2. Skip entities under manual override — the user moved the cover
             # intentionally; resending the integration's stale target would fight
             # the user.  Safety handlers (force override, weather) bypass this by
-            # calling apply_position(is_safety=True) which overwrites target_call
+            # calling apply_position(is_safety=True) which overwrites target
             # with the safety position, so they are always protected by reconciliation.
             if entity_id in self._manual_override_entities:
                 self._logger.debug(
@@ -1081,10 +1165,10 @@ class CoverCommandService:
 
             # 3. Skip non-safety targets when automatic control is off.  Safety
             # targets (force override, weather) are still resent because they
-            # were placed via apply_position(is_safety=True) and are tracked in
-            # _safety_targets — covers must reach a safe position regardless of
+            # were placed via apply_position(is_safety=True) and have
+            # is_safety=True — covers must reach a safe position regardless of
             # the automatic control toggle.
-            if not self._auto_control_enabled and entity_id not in self._safety_targets:
+            if not self._auto_control_enabled and not s.is_safety:
                 self._logger.debug(
                     "Reconcile: %s skipped — automatic control off", entity_id
                 )
@@ -1094,7 +1178,7 @@ class CoverCommandService:
             # Prevents stale daytime targets from being resent overnight.
             # Safety targets (force override, weather, end_time_default) are
             # always resent regardless of the time window.
-            if not self._in_time_window and entity_id not in self._safety_targets:
+            if not self._in_time_window and not s.is_safety:
                 self._logger.debug(
                     "Reconcile: %s skipped — outside time window", entity_id
                 )
@@ -1110,7 +1194,7 @@ class CoverCommandService:
 
             # 6. Check match
             if abs(actual - target) <= self._position_tolerance:
-                self._retry_counts.pop(entity_id, None)
+                s.retry_count = 0
                 self._logger.debug(
                     "Reconcile: %s at target (actual=%s target=%s)",
                     entity_id,
@@ -1120,9 +1204,8 @@ class CoverCommandService:
                 continue
 
             # 7. Mismatch — retry up to max_retries
-            retry_count = self._retry_counts.get(entity_id, 0)
-            if retry_count >= self._max_retries:
-                if entity_id not in self._gave_up:
+            if s.retry_count >= self._max_retries:
+                if not s.gave_up:
                     # Log warning exactly once; subsequent ticks are silent
                     self._logger.warning(
                         "Reconcile: max retries (%d) exceeded for %s "
@@ -1143,7 +1226,7 @@ class CoverCommandService:
                                 "max_retries": self._max_retries,
                             }
                         )
-                    self._gave_up.add(entity_id)
+                    s.gave_up = True
                 else:
                     self._logger.debug(
                         "Reconcile: %s still off target (actual=%s target=%s), max retries reached",
@@ -1153,13 +1236,13 @@ class CoverCommandService:
                     )
                 continue
 
-            self._retry_counts[entity_id] = retry_count + 1
+            s.retry_count += 1
             self._logger.debug(
                 "Reconcile: %s missed target (actual=%s target=%s) — retry %d/%d",
                 entity_id,
                 actual,
                 target,
-                retry_count + 1,
+                s.retry_count,
                 self._max_retries,
             )
             await self._execute_command(entity_id, target)
@@ -1180,20 +1263,22 @@ class CoverCommandService:
 
         """
         actual = self._get_current_position(entity_id)
-        target = self.target_call.get(entity_id)
+        s = self._get(entity_id)
+        target = s.target
         at_target = (
             target is not None
             and actual is not None
             and abs(actual - target) <= self._position_tolerance
         )
-        last_recon = self._last_reconcile_time.get(entity_id)
         return {
             "target": target,
             "actual": actual,
             "at_target": at_target,
-            "retry_count": self._retry_counts.get(entity_id, 0),
-            "last_reconcile_time": last_recon.isoformat() if last_recon else None,
-            "wait_for_target": self.wait_for_target.get(entity_id, False),
+            "retry_count": s.retry_count,
+            "last_reconcile_time": (
+                s.last_reconcile_at.isoformat() if s.last_reconcile_at else None
+            ),
+            "wait_for_target": s.waiting,
         }
 
     def record_skipped_action(
@@ -1360,6 +1445,22 @@ class CoverCommandService:
 
         now = dt.datetime.now(dt.UTC)
 
+        s = self.state(entity)
+
+        def _record(target_value: int) -> None:
+            """Update per-entity bookkeeping on a fresh outbound command."""
+            s.target = target_value
+            s.waiting = True
+            s.sent_at = now
+            s.last_progress_at = None
+            if reset_retries:
+                s.retry_count = 0  # New target resets retry count
+                s.gave_up = False  # Allow warnings again for new target
+            # Track whether this target was set by a safety override so
+            # reconciliation knows whether to resend it when auto_control is off.
+            s.is_safety = is_safety
+            self._grace_mgr.start_command_grace_period(entity)
+
         if supports_position:
             service = (
                 SERVICE_SET_COVER_TILT_POSITION
@@ -1372,20 +1473,7 @@ class CoverCommandService:
             else:
                 service_data[ATTR_POSITION] = state
 
-            self.target_call[entity] = state
-            self.wait_for_target[entity] = True
-            self._sent_at[entity] = now
-            self._last_progress_at.pop(entity, None)
-            if reset_retries:
-                self._retry_counts.pop(entity, None)  # New target resets retry count
-                self._gave_up.discard(entity)  # Allow warnings again for new target
-            # Track whether this target was set by a safety override so
-            # reconciliation knows whether to resend it when auto_control is off.
-            if is_safety:
-                self._safety_targets.add(entity)
-            else:
-                self._safety_targets.discard(entity)
-            self._grace_mgr.start_command_grace_period(entity)
+            _record(state)
             return service, service_data, True
 
         # "My" position path (non-position-capable covers only).
@@ -1396,18 +1484,7 @@ class CoverCommandService:
             self._logger.debug(
                 "My-position routing: stop_cover → %s (My = %d%%)", entity, state
             )
-            self.target_call[entity] = state
-            self.wait_for_target[entity] = True
-            self._sent_at[entity] = now
-            self._last_progress_at.pop(entity, None)
-            if reset_retries:
-                self._retry_counts.pop(entity, None)
-                self._gave_up.discard(entity)
-            if is_safety:
-                self._safety_targets.add(entity)
-            else:
-                self._safety_targets.discard(entity)
-            self._grace_mgr.start_command_grace_period(entity)
+            _record(state)
             return "stop_cover", {ATTR_ENTITY_ID: entity}, False
 
         # Open/close-only cover
@@ -1421,24 +1498,12 @@ class CoverCommandService:
 
         if state >= self._open_close_threshold:
             service = "open_cover"
-            self.target_call[entity] = 100
+            _record(100)
         else:
             service = "close_cover"
-            self.target_call[entity] = 0
+            _record(0)
 
         service_data = {ATTR_ENTITY_ID: entity}
-        self.wait_for_target[entity] = True
-        self._sent_at[entity] = now
-        self._last_progress_at.pop(entity, None)
-        if reset_retries:
-            self._retry_counts.pop(entity, None)
-            self._gave_up.discard(entity)
-        # Track safety target status for open/close-only covers too.
-        if is_safety:
-            self._safety_targets.add(entity)
-        else:
-            self._safety_targets.discard(entity)
-        self._grace_mgr.start_command_grace_period(entity)
         self._logger.debug(
             "Open/close control: state=%s threshold=%s service=%s",
             state,
@@ -1503,7 +1568,7 @@ class CoverCommandService:
         self.last_cover_action = {
             "entity_id": entity,
             "service": service,
-            "position": state if supports_position else self.target_call.get(entity),
+            "position": state if supports_position else self._get(entity).target,
             "calculated_position": state,
             "threshold_used": (
                 self._open_close_threshold if not supports_position else None

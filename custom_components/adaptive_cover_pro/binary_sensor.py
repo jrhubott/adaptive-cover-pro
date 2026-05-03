@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
@@ -19,6 +20,47 @@ from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
 
+@dataclass(frozen=True, slots=True)
+class _SimpleBinarySensorSpec:
+    """Spec for the three simple state-reader binary sensors.
+
+    Each sensor reads a single bool from `coordinator.data.states[key]`. The
+    `key` doubles as the unique_id suffix and the translation key — this is the
+    contract preserved verbatim from the pre-refactor classes.
+    """
+
+    name: str  # display name
+    key: str  # → unique_id suffix + translation_key + states-dict key
+    device_class: BinarySensorDeviceClass
+    enabled_when: Callable[[ConfigEntry], bool] = lambda _: True
+
+
+def _glare_zones_enabled_for_blind(entry: ConfigEntry) -> bool:
+    return bool(entry.options.get(CONF_ENABLE_GLARE_ZONES)) and (
+        entry.data.get(CONF_SENSOR_TYPE) == "cover_blind"
+    )
+
+
+_BINARY_SENSOR_SPECS: tuple[_SimpleBinarySensorSpec, ...] = (
+    _SimpleBinarySensorSpec(
+        name="Sun Infront",
+        key="sun_motion",
+        device_class=BinarySensorDeviceClass.MOTION,
+    ),
+    _SimpleBinarySensorSpec(
+        name="Manual Override",
+        key="manual_override",
+        device_class=BinarySensorDeviceClass.RUNNING,
+    ),
+    _SimpleBinarySensorSpec(
+        name="Glare Active",
+        key="glare_active",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        enabled_when=_glare_zones_enabled_for_blind,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -29,52 +71,24 @@ async def async_setup_entry(
         config_entry.entry_id
     ]
 
-    entities = []
-
-    binary_sensor = AdaptiveCoverBinarySensor(
-        config_entry,
-        config_entry.entry_id,
-        "Sun Infront",
-        False,
-        "sun_motion",
-        BinarySensorDeviceClass.MOTION,
-        coordinator,
-    )
-    manual_override = AdaptiveCoverBinarySensor(
-        config_entry,
-        config_entry.entry_id,
-        "Manual Override",
-        False,
-        "manual_override",
-        BinarySensorDeviceClass.RUNNING,
-        coordinator,
-    )
-    entities.extend([binary_sensor, manual_override])
-
-    # Diagnostic binary sensor (always enabled)
-    position_mismatch = AdaptiveCoverPositionMismatchSensor(
-        config_entry,
-        config_entry.entry_id,
-        coordinator,
-    )
-    entities.append(position_mismatch)
-
-    # Glare active sensor — only created when glare zones are configured
-    if (
-        config_entry.options.get(CONF_ENABLE_GLARE_ZONES)
-        and config_entry.data.get(CONF_SENSOR_TYPE) == "cover_blind"
-    ):
-        glare_active_sensor = AdaptiveCoverBinarySensor(
+    entities: list[BinarySensorEntity] = [
+        AdaptiveCoverBinarySensor(
             config_entry,
             config_entry.entry_id,
-            "Glare Active",
+            spec.name,
             False,
-            "glare_active",
-            BinarySensorDeviceClass.RUNNING,
+            spec.key,
+            spec.device_class,
             coordinator,
         )
-        entities.append(glare_active_sensor)
-
+        for spec in _BINARY_SENSOR_SPECS
+        if spec.enabled_when(config_entry)
+    ]
+    entities.append(
+        AdaptiveCoverPositionMismatchSensor(
+            config_entry, config_entry.entry_id, coordinator
+        )
+    )
     async_add_entities(entities)
 
 
@@ -152,11 +166,10 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
     @property
     def is_on(self) -> bool:
         """Return True if position mismatch detected."""
-        # Check if any entity has a position mismatch between target and actual
         for entity_id in self.coordinator.entities:
-            target = self.coordinator.target_call.get(entity_id)
+            target = self.coordinator._cmd_svc.get_target(entity_id)  # noqa: SLF001
             if target is None:
-                continue  # No command sent yet
+                continue
 
             actual = self.coordinator._get_current_position(entity_id)
             if actual is None:
@@ -172,11 +185,8 @@ class AdaptiveCoverPositionMismatchSensor(AdaptiveCoverBaseEntity, BinarySensorE
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return additional attributes."""
         tolerance = self.coordinator._cmd_svc._position_tolerance
-        attrs: dict[str, Any] = {
-            "tolerance": tolerance,
-        }
+        attrs: dict[str, Any] = {"tolerance": tolerance}
 
-        # Add per-entity details
         entity_details: dict[str, dict[str, Any]] = {}
         for entity_id in self.coordinator.entities:
             diag = self.coordinator._cmd_svc.get_diagnostics(entity_id)

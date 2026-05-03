@@ -70,41 +70,29 @@ def _make_coordinator(
         grace_mgr._command_timestamps[entity_id] = dt.datetime.now().timestamp()
     coordinator._grace_mgr = grace_mgr
 
-    cmd_svc = MagicMock(spec=CoverCommandService)
-    cmd_svc.wait_for_target = {entity_id: True}
-    cmd_svc.target_call = {entity_id: target_position}
-    cmd_svc._position_tolerance = 5
+    cmd_svc = CoverCommandService(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=5,
+        transit_timeout_seconds=transit_timeout_seconds,
+    )
+    cmd_svc.set_target(entity_id, target_position)
+    cmd_svc.set_waiting(entity_id, True)
 
     now = dt.datetime.now(dt.UTC)
-    cmd_svc._sent_at = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
-    cmd_svc._wait_for_target_timeout_seconds = transit_timeout_seconds
+    cmd_svc.state(entity_id).sent_at = now - dt.timedelta(seconds=sent_seconds_ago)
 
-    last_progress_at: dict[str, dt.datetime] = {}
     if last_progress_seconds_ago is not None:
-        last_progress_at[entity_id] = now - dt.timedelta(
+        cmd_svc.state(entity_id).last_progress_at = now - dt.timedelta(
             seconds=last_progress_seconds_ago
         )
 
-    def _transit_elapsed(eid: str, now_arg: dt.datetime) -> float | None:
-        reference = last_progress_at.get(eid) or cmd_svc._sent_at.get(eid)
-        return (now_arg - reference).total_seconds() if reference else None
+    # Wrap record_progress so tests can assert it was called.
+    cmd_svc.record_progress = MagicMock(wraps=cmd_svc.record_progress)
 
-    def _record_progress(eid: str, now_arg: dt.datetime) -> None:
-        last_progress_at[eid] = now_arg
-
-    cmd_svc._transit_elapsed_without_progress = MagicMock(side_effect=_transit_elapsed)
-    cmd_svc.record_progress = MagicMock(side_effect=_record_progress)
-
-    def _check_target_reached(eid, pos):
-        if pos is None:
-            return False
-        if abs(pos - cmd_svc.target_call.get(eid, -999)) <= cmd_svc._position_tolerance:
-            cmd_svc.wait_for_target[eid] = False
-            return True
-        return False
-
-    cmd_svc.check_target_reached = MagicMock(side_effect=_check_target_reached)
-    cmd_svc.get_cover_capabilities = MagicMock(return_value={"has_set_position": True})
+    cmd_svc.get_cover_capabilities = lambda eid: {"has_set_position": True}
 
     def _read_position(eid, caps, state_obj):
         if state_obj is coordinator.state_change_data.new_state:
@@ -113,7 +101,7 @@ def _make_coordinator(
             return old_position
         return current_position
 
-    cmd_svc.read_position_with_capabilities = MagicMock(side_effect=_read_position)
+    cmd_svc.read_position_with_capabilities = _read_position
     coordinator._cmd_svc = cmd_svc
 
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -165,7 +153,7 @@ class TestOpenStateCoverMakingProgress:
         )
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True, (
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True, (
             "wait_for_target must stay True: cover is moving toward target "
             "even though HA state stays 'open' throughout transit"
         )
@@ -208,7 +196,7 @@ class TestOpenStateCoverMakingProgress:
         coord.state_change_data.old_state.state = "open"
         _call(coord)
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is False
+            coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "Hard timeout backstop must still fire for open-state covers with no progress"
 
     def test_open_state_cover_drifting_away_from_target_clears_wait_for_target(
@@ -230,7 +218,7 @@ class TestOpenStateCoverMakingProgress:
         coord.state_change_data.old_state.state = "open"
         _call(coord)
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is False
+            coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "Cover moving away from target must clear wait_for_target (genuine manual move)"
 
     def test_open_state_cover_progress_backstop_resets_window(self) -> None:
@@ -252,7 +240,7 @@ class TestOpenStateCoverMakingProgress:
         )
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True, (
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True, (
             "Progress-aware backstop must work for open-state covers: "
             "20s since last progress < 45s timeout, cover still moving forward"
         )
@@ -283,7 +271,7 @@ class TestRegressionExistingBehaviour:
         coord.state_change_data.old_state.state = "open"
         _call(coord)
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is False
+            coord._cmd_svc.is_waiting_for_target(entity_id) is False
         ), "Stalled open→open (no movement) must clear wait_for_target — Issue #172 guard"
 
     def test_opening_state_cover_forward_progress_still_works(self) -> None:
@@ -299,5 +287,5 @@ class TestRegressionExistingBehaviour:
         coord.state_change_data.old_state.state = "opening"
         _call(coord)
         assert (
-            coord._cmd_svc.wait_for_target[entity_id] is True
+            coord._cmd_svc.is_waiting_for_target(entity_id) is True
         ), "opening→opening with forward progress must still keep wait_for_target=True"

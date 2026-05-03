@@ -184,10 +184,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             )  # ~2.9° minimum
             effective_distance -= sill_offset
 
-        # Floor at zero: large sill_offset can exceed effective_distance,
-        # which is physically correct (sun can't reach floor) but produces
-        # confusing negative intermediates in debug logs.
-        effective_distance = max(effective_distance, 0.0)
+        # When the sill alone blocks all sun penetration to the protected zone,
+        # the blind is not needed — return h_win (fully raised = 100% open).
+        # Issue #304: previously clamped to 0, producing 0% (fully closed) —
+        # the opposite of the correct geometric answer.
+        if self.sill_height > 0 and effective_distance <= 0:
+            return self.h_win
 
         # Base calculation: project to vertical blind height.
         # Clamp cos(gamma) to a minimum of 0.01 (≈89.4°) to prevent division

@@ -90,8 +90,8 @@ class TestForceWithoutSafetyDoesNotBypassAutoControl:
         assert detail == "auto_control_off"
         assert svc.last_skipped_action["reason"] == "auto_control_off"
         hass.services.async_call.assert_not_called()
-        assert svc.target_call.get("cover.test") is None
-        assert svc.wait_for_target.get("cover.test") is not True
+        assert svc.get_target("cover.test") is None
+        assert svc.is_waiting_for_target("cover.test") is not True
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +114,8 @@ class TestSafetyBypassStillWorks:
 
         assert outcome == "sent"
         hass.services.async_call.assert_awaited_once()
-        assert svc.target_call["cover.test"] == 0
-        assert "cover.test" in svc._safety_targets
+        assert svc.get_target("cover.test") == 0
+        assert svc.is_safety_target("cover.test")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -132,8 +132,8 @@ class TestSafetyBypassStillWorks:
             )
 
         assert outcome == "sent"
-        assert svc.target_call[f"cover.{trigger}"] == 25
-        assert f"cover.{trigger}" in svc._safety_targets
+        assert svc.get_target(f"cover.{trigger}") == 25
+        assert svc.is_safety_target(f"cover.{trigger}")
 
 
 # ---------------------------------------------------------------------------

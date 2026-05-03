@@ -17,6 +17,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
+)
 
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -298,7 +301,16 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
         """Min-mode floor measured against default position, not solar, when tracking off."""
         handler = self._make_handler()
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.cp1", True, 80, 77, True, False)],
+            custom_position_sensors=[
+                CustomPositionSensorState(
+                    entity_id="binary_sensor.cp1",
+                    is_on=True,
+                    position=80,
+                    priority=77,
+                    min_mode=True,
+                    use_my=False,
+                )
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=29.0,
             default_position=100,
@@ -312,7 +324,16 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
         """Regression guard: solar floor semantics unchanged when tracking is on."""
         handler = self._make_handler()
         snap = make_snapshot(
-            custom_position_sensors=[("binary_sensor.cp1", True, 80, 77, True, False)],
+            custom_position_sensors=[
+                CustomPositionSensorState(
+                    entity_id="binary_sensor.cp1",
+                    is_on=True,
+                    position=80,
+                    priority=77,
+                    min_mode=True,
+                    use_my=False,
+                )
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=29.0,
             default_position=100,

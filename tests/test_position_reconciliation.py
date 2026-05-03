@@ -97,7 +97,7 @@ async def test_apply_skips_auto_control_off(svc):
     )
     assert outcome == "skipped"
     assert reason == "auto_control_off"
-    assert "cover.test" not in svc.target_call
+    assert not svc.has_target("cover.test")
 
 
 @pytest.mark.asyncio
@@ -151,8 +151,8 @@ async def test_apply_sends_when_all_gates_pass(svc, mock_hass):
     ):
         outcome, _ = await svc.apply_position("cover.test", 60, "solar", context=_ctx())
     assert outcome == "sent"
-    assert svc.target_call["cover.test"] == 60
-    assert svc.wait_for_target["cover.test"] is True
+    assert svc.get_target("cover.test") == 60
+    assert svc.is_waiting_for_target("cover.test") is True
     mock_hass.services.async_call.assert_called_once()
 
 
@@ -200,7 +200,7 @@ async def test_apply_records_skip_action(svc):
 @pytest.mark.asyncio
 async def test_apply_new_target_resets_retry_count(svc, mock_hass):
     """Sending a new target resets the reconciliation retry counter."""
-    svc._retry_counts["cover.test"] = 2
+    svc.state("cover.test").retry_count = 2
     _patch_position(svc, 30)
     with (
         _patch_caps(),
@@ -210,7 +210,7 @@ async def test_apply_new_target_resets_retry_count(svc, mock_hass):
         ),
     ):
         await svc.apply_position("cover.test", 60, "solar", context=_ctx())
-    assert svc._retry_counts.get("cover.test", 0) == 0
+    assert svc.state("cover.test").retry_count == 0
 
 
 # ------------------------------------------------------------------ #
@@ -220,35 +220,35 @@ async def test_apply_new_target_resets_retry_count(svc, mock_hass):
 
 def test_check_target_reached_within_tolerance(svc):
     """Clears wait_for_target when position is within tolerance."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
-    svc._retry_counts["cover.test"] = 1
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
+    svc.state("cover.test").retry_count = 1
 
     reached = svc.check_target_reached("cover.test", 52)  # delta=2 <= 3
 
     assert reached is True
-    assert svc.wait_for_target["cover.test"] is False
-    assert "cover.test" not in svc._retry_counts
+    assert svc.is_waiting_for_target("cover.test") is False
+    assert svc.state("cover.test").retry_count == 0
 
 
 def test_check_target_reached_outside_tolerance(svc):
     """Does NOT clear wait_for_target when outside tolerance."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
 
     reached = svc.check_target_reached("cover.test", 54)  # delta=4 > 3
 
     assert reached is False
-    assert svc.wait_for_target["cover.test"] is True
+    assert svc.is_waiting_for_target("cover.test") is True
 
 
 def test_check_target_reached_exact_match(svc):
     """Clears wait_for_target on exact match (delta=0)."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
 
     assert svc.check_target_reached("cover.test", 50) is True
-    assert svc.wait_for_target["cover.test"] is False
+    assert svc.is_waiting_for_target("cover.test") is False
 
 
 def test_check_target_reached_no_target(svc):
@@ -258,14 +258,14 @@ def test_check_target_reached_no_target(svc):
 
 def test_check_target_reached_none_position(svc):
     """Returns False when reported position is None."""
-    svc.target_call["cover.test"] = 50
+    svc.set_target("cover.test", 50)
     assert svc.check_target_reached("cover.test", None) is False
 
 
 def test_check_target_reached_tolerance_boundary(svc):
     """At exactly tolerance boundary (delta==3), should clear."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
     assert svc.check_target_reached("cover.test", 47) is True  # delta=3 == tolerance
 
 
@@ -277,36 +277,36 @@ def test_check_target_reached_tolerance_boundary(svc):
 @pytest.mark.asyncio
 async def test_reconcile_no_action_when_at_target(svc, mock_hass):
     """Reconciliation does nothing when cover is within tolerance."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 51)  # delta=1, within tolerance=3
 
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
     mock_hass.services.async_call.assert_not_called()
-    assert svc._retry_counts.get("cover.test", 0) == 0
+    assert svc.state("cover.test").retry_count == 0
 
 
 @pytest.mark.asyncio
 async def test_reconcile_retries_when_cover_missed_target(svc, mock_hass):
     """Reconciliation resends command when cover is outside tolerance."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 42)  # delta=8 > tolerance=3
 
     with _patch_caps():
         await svc._reconcile(dt.datetime.now(dt.UTC))
 
     mock_hass.services.async_call.assert_called_once()
-    assert svc._retry_counts["cover.test"] == 1
+    assert svc.state("cover.test").retry_count == 1
 
 
 @pytest.mark.asyncio
 async def test_reconcile_stops_at_max_retries(svc, mock_hass):
     """Reconciliation gives up after max_retries and logs warning."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = False
-    svc._retry_counts["cover.test"] = 3  # Already at max (max_retries=3)
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
+    svc.state("cover.test").retry_count = 3  # Already at max (max_retries=3)
     _patch_position(svc, 40)  # Still off target
 
     with _patch_caps():
@@ -314,16 +314,16 @@ async def test_reconcile_stops_at_max_retries(svc, mock_hass):
 
     # No additional service call — already at max
     mock_hass.services.async_call.assert_not_called()
-    assert svc._retry_counts["cover.test"] == 3  # Not incremented
+    assert svc.state("cover.test").retry_count == 3  # Not incremented
 
 
 @pytest.mark.asyncio
 async def test_reconcile_skips_while_wait_for_target_active(svc, mock_hass):
     """Reconciliation skips entity while cover is still expected to be moving."""
     now = dt.datetime.now(dt.UTC)
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
-    svc._sent_at["cover.test"] = now  # Just sent — within 30s timeout
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
+    svc.state("cover.test").sent_at = now  # Just sent — within 30s timeout
 
     await svc._reconcile(now)
 
@@ -334,9 +334,9 @@ async def test_reconcile_skips_while_wait_for_target_active(svc, mock_hass):
 async def test_reconcile_clears_wait_for_target_after_timeout(svc, mock_hass):
     """Reconciliation force-clears wait_for_target after configured timeout (default 45s)."""
     now = dt.datetime.now(dt.UTC)
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
-    svc._sent_at["cover.test"] = now - dt.timedelta(
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
+    svc.state("cover.test").sent_at = now - dt.timedelta(
         seconds=50
     )  # Expired (> 45s default)
     _patch_position(svc, 50)  # At target after timeout
@@ -344,7 +344,7 @@ async def test_reconcile_clears_wait_for_target_after_timeout(svc, mock_hass):
     await svc._reconcile(now)
 
     # wait_for_target should be cleared, no retry needed (at target)
-    assert svc.wait_for_target["cover.test"] is False
+    assert svc.is_waiting_for_target("cover.test") is False
     mock_hass.services.async_call.assert_not_called()
 
 
@@ -352,9 +352,9 @@ async def test_reconcile_clears_wait_for_target_after_timeout(svc, mock_hass):
 async def test_reconcile_retries_after_wait_for_target_timeout(svc, mock_hass):
     """After wait_for_target timeout, reconcile retries if still off target."""
     now = dt.datetime.now(dt.UTC)
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
-    svc._sent_at["cover.test"] = now - dt.timedelta(
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
+    svc.state("cover.test").sent_at = now - dt.timedelta(
         seconds=50
     )  # Expired (> 45s default)
     _patch_position(svc, 40)  # Off target
@@ -364,14 +364,14 @@ async def test_reconcile_retries_after_wait_for_target_timeout(svc, mock_hass):
 
     # Command was sent, so wait_for_target is True again (set by _prepare_service_call)
     mock_hass.services.async_call.assert_called_once()
-    assert svc._retry_counts["cover.test"] == 1
+    assert svc.state("cover.test").retry_count == 1
 
 
 @pytest.mark.asyncio
 async def test_reconcile_skips_when_position_unavailable(svc, mock_hass):
     """Reconciliation skips entity when position cannot be read."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, None)
 
     await svc._reconcile(dt.datetime.now(dt.UTC))
@@ -382,14 +382,14 @@ async def test_reconcile_skips_when_position_unavailable(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_reconcile_resets_retry_count_on_target_reached(svc):
     """Reconciliation resets retry count when cover reaches target."""
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = False
-    svc._retry_counts["cover.test"] = 2
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
+    svc.state("cover.test").retry_count = 2
     _patch_position(svc, 50)  # At target
 
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
-    assert "cover.test" not in svc._retry_counts
+    assert svc.state("cover.test").retry_count == 0
 
 
 @pytest.mark.asyncio
@@ -407,10 +407,10 @@ async def test_reconcile_calls_on_tick_callback(svc):
 @pytest.mark.asyncio
 async def test_reconcile_multiple_entities(svc, mock_hass):
     """Reconciliation handles multiple entities independently."""
-    svc.target_call["cover.blind"] = 50
-    svc.target_call["cover.awning"] = 70
-    svc.wait_for_target["cover.blind"] = False
-    svc.wait_for_target["cover.awning"] = False
+    svc.set_target("cover.blind", 50)
+    svc.set_target("cover.awning", 70)
+    svc.set_waiting("cover.blind", False)
+    svc.set_waiting("cover.awning", False)
 
     # blind: at target; awning: missed
     def fake_position(entity):
@@ -482,8 +482,8 @@ def test_stop_when_not_started_is_safe(svc):
 
 
 def test_get_diagnostics_at_target(svc):
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 51)  # within tolerance=3
 
     diag = svc.get_diagnostics("cover.test")
@@ -496,9 +496,9 @@ def test_get_diagnostics_at_target(svc):
 
 
 def test_get_diagnostics_off_target(svc):
-    svc.target_call["cover.test"] = 50
-    svc.wait_for_target["cover.test"] = True
-    svc._retry_counts["cover.test"] = 2
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", True)
+    svc.state("cover.test").retry_count = 2
     _patch_position(svc, 40)  # outside tolerance=3
 
     diag = svc.get_diagnostics("cover.test")
@@ -519,8 +519,8 @@ def test_get_diagnostics_no_target(svc):
 
 def test_get_diagnostics_includes_reconcile_time(svc):
     now = dt.datetime.now(dt.UTC)
-    svc.target_call["cover.test"] = 50
-    svc._last_reconcile_time["cover.test"] = now
+    svc.set_target("cover.test", 50)
+    svc.state("cover.test").last_reconcile_at = now
     _patch_position(svc, 50)
 
     diag = svc.get_diagnostics("cover.test")
@@ -539,8 +539,8 @@ async def test_reconcile_skips_entity_in_manual_override(svc, mock_hass):
     Regression test for issue #116: user manually moves cover but it snaps
     back because reconciliation fights the manual position.
     """
-    svc.target_call["cover.blind"] = 85  # integration last sent 85%
-    svc.wait_for_target["cover.blind"] = False
+    svc.set_target("cover.blind", 85)  # integration last sent 85%
+    svc.set_waiting("cover.blind", False)
     _patch_position(svc, 50)  # user moved it to 50%
 
     # Coordinator marks this entity as manually overridden
@@ -551,14 +551,14 @@ async def test_reconcile_skips_entity_in_manual_override(svc, mock_hass):
     # Must NOT resend — cover should stay where the user put it
     mock_hass.services.async_call.assert_not_called()
     # retry count must not be incremented
-    assert svc._retry_counts.get("cover.blind", 0) == 0
+    assert svc.state("cover.blind").retry_count == 0
 
 
 @pytest.mark.asyncio
 async def test_reconcile_resumes_after_manual_override_cleared(svc, mock_hass):
     """Once manual override clears, reconciliation should resume protecting target."""
-    svc.target_call["cover.blind"] = 85
-    svc.wait_for_target["cover.blind"] = False
+    svc.set_target("cover.blind", 85)
+    svc.set_waiting("cover.blind", False)
     _patch_position(svc, 50)
 
     # Override active — should skip
@@ -576,10 +576,10 @@ async def test_reconcile_resumes_after_manual_override_cleared(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_reconcile_only_skips_manual_entity_not_others(svc, mock_hass):
     """Reconciliation skips the manually-overridden entity but still retries others."""
-    svc.target_call["cover.blind"] = 85  # manually moved — should skip
-    svc.target_call["cover.awning"] = 70  # auto-controlled — should retry
-    svc.wait_for_target["cover.blind"] = False
-    svc.wait_for_target["cover.awning"] = False
+    svc.set_target("cover.blind", 85)  # manually moved — should skip
+    svc.set_target("cover.awning", 70)  # auto-controlled — should retry
+    svc.set_waiting("cover.blind", False)
+    svc.set_waiting("cover.awning", False)
 
     def fake_position(entity):
         return 50  # both off target
@@ -604,8 +604,8 @@ async def test_reconcile_safety_override_still_protected(svc, mock_hass):
     fires while manual override is active).
     """
     # Safety handler fired: target_call updated to safety position (100%)
-    svc.target_call["cover.blind"] = 100
-    svc.wait_for_target["cover.blind"] = False
+    svc.set_target("cover.blind", 100)
+    svc.set_waiting("cover.blind", False)
     _patch_position(svc, 50)  # Cover still moving toward safety position
 
     # Manual override set still contains the entity (coordinator syncs next cycle)
@@ -643,8 +643,8 @@ async def test_reconcile_with_force_override_sensor_scenario(svc, mock_hass):
     fighting the user's manual position on every cycle.
     """
     # Integration last sent default position (85%) — target_call is set
-    svc.target_call["cover.balcony"] = 85
-    svc.wait_for_target["cover.balcony"] = False
+    svc.set_target("cover.balcony", 85)
+    svc.set_waiting("cover.balcony", False)
     # wait_for_target is False — cover reached 85% and stopped
 
     # User manually closes cover to 50%
@@ -660,7 +660,7 @@ async def test_reconcile_with_force_override_sensor_scenario(svc, mock_hass):
 
     # Cover must NOT have been moved back — user's 50% position preserved
     mock_hass.services.async_call.assert_not_called()
-    assert svc._retry_counts.get("cover.balcony", 0) == 0
+    assert svc.state("cover.balcony").retry_count == 0
 
 
 # ------------------------------------------------------------------ #
@@ -678,7 +678,7 @@ async def test_safety_apply_marks_safety_target(svc, mock_hass):
         await svc.apply_position(
             "cover.test", 0, "force_override", context=_ctx(force=True, is_safety=True)
         )
-    assert "cover.test" in svc._safety_targets
+    assert svc.is_safety_target("cover.test")
 
 
 @pytest.mark.asyncio
@@ -699,7 +699,7 @@ async def test_force_without_is_safety_does_not_mark_safety_target(svc, mock_has
             "manual_override_cleared",
             context=_ctx(force=True, is_safety=False),
         )
-    assert "cover.test" not in svc._safety_targets
+    assert not svc.is_safety_target("cover.test")
 
 
 @pytest.mark.asyncio
@@ -710,7 +710,7 @@ async def test_non_safety_apply_removes_from_safety_targets(svc, mock_hass):
     entity should no longer be treated as a safety target.
     """
     # First set it as safety
-    svc._safety_targets.add("cover.test")
+    svc.state("cover.test").is_safety = True
 
     _patch_position(svc, 30)
     with (
@@ -721,7 +721,7 @@ async def test_non_safety_apply_removes_from_safety_targets(svc, mock_hass):
         ),
     ):
         await svc.apply_position("cover.test", 60, "solar", context=_ctx(force=False))
-    assert "cover.test" not in svc._safety_targets
+    assert not svc.is_safety_target("cover.test")
 
 
 @pytest.mark.asyncio
@@ -731,12 +731,12 @@ async def test_reconcile_skips_non_safety_when_auto_control_off(svc, mock_hass):
     Regression: after the user turned off Automatic Control a later
     reconciliation tick was still resending the old solar position.
     """
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 40)  # Off target — would normally trigger retry
 
     # Mark as non-safety (normal solar target)
-    svc._safety_targets.discard("cover.test")
+    svc.state("cover.test").is_safety = False
     # Automatic control turned off
     svc.auto_control_enabled = False
 
@@ -744,7 +744,7 @@ async def test_reconcile_skips_non_safety_when_auto_control_off(svc, mock_hass):
 
     # Must NOT resend — automatic control is off
     mock_hass.services.async_call.assert_not_called()
-    assert svc._retry_counts.get("cover.test", 0) == 0
+    assert svc.state("cover.test").retry_count == 0
 
 
 @pytest.mark.asyncio
@@ -756,12 +756,12 @@ async def test_reconcile_still_resends_safety_target_when_auto_control_off(
     The whole point of safety overrides is that they work regardless of whether
     automatic control is enabled.
     """
-    svc.target_call["cover.test"] = 0  # Force override retracted to 0%
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 0)  # Force override retracted to 0%
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 50)  # Cover hasn't reached safety position yet
 
     # Mark as safety target (sent via is_safety=True)
-    svc._safety_targets.add("cover.test")
+    svc.state("cover.test").is_safety = True
     # Automatic control is off
     svc.auto_control_enabled = False
 
@@ -775,10 +775,10 @@ async def test_reconcile_still_resends_safety_target_when_auto_control_off(
 @pytest.mark.asyncio
 async def test_reconcile_resumes_when_auto_control_re_enabled(svc, mock_hass):
     """Turning automatic control back on resumes reconciliation for normal targets."""
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 40)  # Off target
-    svc._safety_targets.discard("cover.test")
+    svc.state("cover.test").is_safety = False
 
     # Control off: should skip
     svc.auto_control_enabled = False
@@ -799,12 +799,12 @@ async def test_reconcile_skips_non_safety_outside_time_window(svc, mock_hass):
     Regression for #179: covers were being commanded at midnight by reconciliation
     resending stale daytime targets after the time window had closed.
     """
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 40)  # Off target — would normally trigger retry
 
     # Normal solar target (not safety)
-    svc._safety_targets.discard("cover.test")
+    svc.state("cover.test").is_safety = False
     # Time window closed
     svc.in_time_window = False
 
@@ -812,7 +812,7 @@ async def test_reconcile_skips_non_safety_outside_time_window(svc, mock_hass):
 
     # Must NOT resend — outside time window
     mock_hass.services.async_call.assert_not_called()
-    assert svc._retry_counts.get("cover.test", 0) == 0
+    assert svc.state("cover.test").retry_count == 0
 
 
 @pytest.mark.asyncio
@@ -821,12 +821,12 @@ async def test_reconcile_resends_safety_target_outside_time_window(svc, mock_has
 
     Force override and weather safety commands must work at any hour.
     """
-    svc.target_call["cover.test"] = 0
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 0)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 50)  # Cover hasn't reached safety position yet
 
     # Mark as safety target (sent via is_safety=True)
-    svc._safety_targets.add("cover.test")
+    svc.state("cover.test").is_safety = True
     # Time window is closed
     svc.in_time_window = False
 
@@ -840,10 +840,10 @@ async def test_reconcile_resends_safety_target_outside_time_window(svc, mock_has
 @pytest.mark.asyncio
 async def test_reconcile_resumes_when_time_window_reopens(svc, mock_hass):
     """Reconciliation resumes normal targets when the time window reopens."""
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 40)
-    svc._safety_targets.discard("cover.test")
+    svc.state("cover.test").is_safety = False
 
     # Window closed: should skip
     svc.in_time_window = False
@@ -863,29 +863,29 @@ def test_clear_non_safety_targets(svc):
     Safety targets (force override, weather, end_time_default) must survive
     so reconciliation can still drive covers to their safe position after window close.
     """
-    svc.target_call["cover.solar"] = 60
-    svc.wait_for_target["cover.solar"] = True
-    svc._retry_counts["cover.solar"] = 2
-    svc._gave_up.add("cover.solar")
+    svc.set_target("cover.solar", 60)
+    svc.set_waiting("cover.solar", True)
+    svc.state("cover.solar").retry_count = 2
+    svc.state("cover.solar").gave_up = True
 
-    svc.target_call["cover.safety"] = 0
-    svc.wait_for_target["cover.safety"] = False
-    svc._retry_counts["cover.safety"] = 1
-    svc._safety_targets.add("cover.safety")
+    svc.set_target("cover.safety", 0)
+    svc.set_waiting("cover.safety", False)
+    svc.state("cover.safety").retry_count = 1
+    svc.state("cover.safety").is_safety = True
 
     svc.clear_non_safety_targets()
 
     # Non-safety entry fully removed
-    assert "cover.solar" not in svc.target_call
-    assert "cover.solar" not in svc.wait_for_target
-    assert "cover.solar" not in svc._retry_counts
-    assert "cover.solar" not in svc._gave_up
+    assert not svc.has_target("cover.solar")
+    assert not svc.is_waiting_for_target("cover.solar")
+    assert svc.state("cover.solar").retry_count == 0
+    assert not svc.state("cover.solar").gave_up
 
     # Safety entry preserved
-    assert svc.target_call["cover.safety"] == 0
-    assert svc.wait_for_target["cover.safety"] is False
-    assert svc._retry_counts["cover.safety"] == 1
-    assert "cover.safety" in svc._safety_targets
+    assert svc.get_target("cover.safety") == 0
+    assert svc.is_waiting_for_target("cover.safety") is False
+    assert svc.state("cover.safety").retry_count == 1
+    assert svc.is_safety_target("cover.safety")
 
 
 @pytest.mark.asyncio
@@ -949,7 +949,7 @@ async def test_auto_control_enabled_setter(svc):
 @pytest.mark.asyncio
 async def test_safety_target_cleared_on_open_close_non_force(svc, mock_hass):
     """Non-force apply on open/close-only covers also clears safety target."""
-    svc._safety_targets.add("cover.test")
+    svc.state("cover.test").is_safety = True
 
     with (
         patch(
@@ -967,7 +967,7 @@ async def test_safety_target_cleared_on_open_close_non_force(svc, mock_hass):
         ),
     ):
         await svc.apply_position("cover.test", 80, "solar", context=_ctx(force=False))
-    assert "cover.test" not in svc._safety_targets
+    assert not svc.is_safety_target("cover.test")
 
 
 @pytest.mark.asyncio
@@ -985,7 +985,7 @@ async def test_safety_target_set_on_open_close_force(svc, mock_hass):
         await svc.apply_position(
             "cover.test", 0, "force_override", context=_ctx(force=True, is_safety=True)
         )
-    assert "cover.test" in svc._safety_targets
+    assert svc.is_safety_target("cover.test")
 
 
 # ------------------------------------------------------------------ #
@@ -1017,7 +1017,7 @@ async def test_special_position_target_bypasses_delta(svc, mock_hass):
             context=_ctx(min_change=5, special_positions=[0, 100, 50]),
         )
     assert outcome == "sent"
-    assert svc.target_call["cover.test"] == 100
+    assert svc.get_target("cover.test") == 100
 
 
 @pytest.mark.asyncio
@@ -1369,7 +1369,7 @@ async def test_execute_command_dry_run_no_send(svc, mock_hass):
 async def test_stop_in_flight_dry_run_no_send(svc, mock_hass):
     """stop_in_flight with dry_run=True skips async_call but still clears wait_for_target."""
     svc.dry_run = True
-    svc.wait_for_target["cover.test"] = True
+    svc.set_waiting("cover.test", True)
     state_obj = MagicMock()
     state_obj.state = "opening"
     mock_hass.states.get.return_value = state_obj
@@ -1380,7 +1380,7 @@ async def test_stop_in_flight_dry_run_no_send(svc, mock_hass):
         stopped = await svc.stop_in_flight()
     mock_hass.services.async_call.assert_not_called()
     assert "cover.test" in stopped
-    assert svc.wait_for_target["cover.test"] is False
+    assert svc.is_waiting_for_target("cover.test") is False
 
 
 @pytest.mark.asyncio

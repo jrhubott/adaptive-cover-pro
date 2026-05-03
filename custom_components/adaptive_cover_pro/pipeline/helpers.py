@@ -1,11 +1,14 @@
 """Shared pipeline computation helpers.
 
-These module-level functions eliminate copy-paste of the three most repeated
+These module-level functions eliminate copy-paste of the most repeated
 patterns across pipeline handlers:
 
-- ``apply_snapshot_limits`` — apply position limits using config from the snapshot
-- ``compute_solar_position``  — calculate_percentage() + floor-at-1 + limits
+- ``apply_snapshot_limits``    — apply position limits using config from the snapshot
+- ``compute_solar_position``   — calculate_percentage() + floor-at-1 + limits
 - ``compute_default_position`` — default_position + limits (sun not in FOV)
+- ``apply_minimum_mode``       — pick max(configured, raw) when min-mode is on,
+                                 else just the configured value, plus a
+                                 reason-string suffix for diagnostics
 """
 
 from __future__ import annotations
@@ -92,6 +95,39 @@ def compute_raw_calculated_position(snapshot: PipelineSnapshot) -> int:
         snapshot.default_position,
         sun_valid=False,
     )
+
+
+def apply_minimum_mode(
+    configured: int,
+    raw: int,
+    *,
+    enabled: bool,
+) -> tuple[int, str]:
+    """Pick a position from the configured/raw pair under min-mode rules.
+
+    Several override handlers (force, weather, custom-position) support a
+    "minimum-mode" toggle: when on, the override acts as a *floor* under the
+    sun-tracked position rather than a hard target — covers go to whichever
+    is more closed (the configured override, or what solar tracking would do
+    anyway).  When off, the configured override is used as-is.
+
+    Args:
+        configured: User-configured override position (0–100).
+        raw:        The sun-tracked position the handler would otherwise yield.
+        enabled:    Whether minimum-mode is active for this handler instance.
+
+    Returns:
+        ``(position, reason_suffix)`` — the position to send and a short
+        diagnostic suffix to append to the handler's reason string. Suffix is
+        empty when minimum-mode is off so the reason reads cleanly.
+
+    """
+    if enabled:
+        return (
+            max(configured, raw),
+            f" [minimum mode — floor {configured}%, calculated {raw}%]",
+        )
+    return configured, ""
 
 
 def compute_default_position(snapshot: PipelineSnapshot) -> int:

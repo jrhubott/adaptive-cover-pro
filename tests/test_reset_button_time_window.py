@@ -207,7 +207,6 @@ async def test_reset_button_skips_send_when_outside_time_window():
 
     coordinator = _make_coordinator(check_adaptive_time=False)
     coordinator.manager.is_cover_manual.return_value = True
-    coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
     coordinator.state = 0
     coordinator.config_entry.options = {}
@@ -223,7 +222,7 @@ async def test_reset_button_skips_send_when_outside_time_window():
     # No direct apply_position call from the button — it delegates
     coordinator._cmd_svc.apply_position.assert_not_called()
     # wait_for_target must be unblocked (entity not in sent set)
-    assert coordinator.wait_for_target[entity_id] is False
+    coordinator._cmd_svc.set_waiting.assert_any_call(entity_id, False)
 
 
 @pytest.mark.asyncio
@@ -233,7 +232,6 @@ async def test_reset_button_skips_send_when_auto_control_off():
 
     coordinator = _make_coordinator(automatic_control=False)
     coordinator.manager.is_cover_manual.return_value = True
-    coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
     coordinator.state = 0
     coordinator.config_entry.options = {}
@@ -245,7 +243,7 @@ async def test_reset_button_skips_send_when_auto_control_off():
 
     coordinator.manager.reset.assert_called_once_with(entity_id)
     coordinator._cmd_svc.apply_position.assert_not_called()
-    assert coordinator.wait_for_target[entity_id] is False
+    coordinator._cmd_svc.set_waiting.assert_any_call(entity_id, False)
 
 
 @pytest.mark.asyncio
@@ -256,7 +254,6 @@ async def test_reset_button_delegates_to_shared_method_with_correct_args():
 
     coordinator = _make_coordinator()
     coordinator.manager.is_cover_manual.return_value = True
-    coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
     coordinator.state = 55
     coordinator.config_entry.options = options
@@ -282,7 +279,6 @@ async def test_reset_button_clears_wait_for_target_for_unsent_entities():
 
     coordinator = _make_coordinator()
     coordinator.manager.is_cover_manual.return_value = True
-    coordinator.wait_for_target = {entity_a: True, entity_b: True}
     coordinator.cover_state_change = False
     coordinator.state = 60
     coordinator.config_entry.options = {}
@@ -293,10 +289,12 @@ async def test_reset_button_clears_wait_for_target_for_unsent_entities():
     button = _make_button(coordinator, [entity_a, entity_b])
     await button.async_press()
 
-    # entity_a was sent — wait_for_target stays True (apply_position set it)
-    assert coordinator.wait_for_target[entity_a] is True
+    # entity_a was sent — apply_position would set waiting=True; button does NOT clear it
+    set_waiting_calls = coordinator._cmd_svc.set_waiting.call_args_list
+    cleared = [call for call in set_waiting_calls if call.args == (entity_a, False)]
+    assert not cleared, "entity_a was sent — wait_for_target must not be cleared"
     # entity_b was not sent — wait_for_target must be cleared
-    assert coordinator.wait_for_target[entity_b] is False
+    coordinator._cmd_svc.set_waiting.assert_any_call(entity_b, False)
 
 
 @pytest.mark.asyncio
@@ -306,7 +304,6 @@ async def test_reset_button_happy_path_inside_window():
 
     coordinator = _make_coordinator(check_adaptive_time=True, automatic_control=True)
     coordinator.manager.is_cover_manual.return_value = True
-    coordinator.wait_for_target = {entity_id: False}
     coordinator.cover_state_change = False
     coordinator.state = 42
     coordinator.config_entry.options = {}
@@ -319,5 +316,7 @@ async def test_reset_button_happy_path_inside_window():
     coordinator.manager.reset.assert_called_once_with(entity_id)
     coordinator.async_refresh.assert_called_once()
     coordinator._async_send_after_override_clear.assert_called_once()
-    # entity was sent — wait_for_target remains True
-    assert coordinator.wait_for_target[entity_id] is True
+    # entity was sent — button must NOT clear waiting (apply_position set it)
+    set_waiting_calls = coordinator._cmd_svc.set_waiting.call_args_list
+    cleared = [call for call in set_waiting_calls if call.args == (entity_id, False)]
+    assert not cleared

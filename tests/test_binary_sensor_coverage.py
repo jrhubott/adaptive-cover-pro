@@ -33,9 +33,9 @@ def _make_coordinator(mock_hass=None):
     coord.hass = mock_hass or MagicMock()
     coord.logger = MagicMock()
     coord.entities = []
-    coord.target_call = {}
     coord._cmd_svc = MagicMock()
     coord._cmd_svc._position_tolerance = 5
+    coord._cmd_svc.get_target = MagicMock(return_value=None)
     return coord
 
 
@@ -126,7 +126,7 @@ def test_position_mismatch_is_on_true_when_delta_exceeds_tolerance():
     """is_on returns True when any entity has |target - actual| > tolerance."""
     coord = _make_coordinator()
     coord.entities = ["cover.test"]
-    coord.target_call = {"cover.test": 50}
+    coord._cmd_svc.get_target = MagicMock(return_value=50)
     coord._get_current_position = MagicMock(return_value=42)  # delta = 8 > 5
     coord._cmd_svc._position_tolerance = 5
 
@@ -145,7 +145,7 @@ def test_position_mismatch_is_on_false_when_delta_within_tolerance():
     """is_on returns False when all entities have |target - actual| <= tolerance."""
     coord = _make_coordinator()
     coord.entities = ["cover.test"]
-    coord.target_call = {"cover.test": 50}
+    coord._cmd_svc.get_target = MagicMock(return_value=50)
     coord._get_current_position = MagicMock(return_value=48)  # delta = 2 <= 5
     coord._cmd_svc._position_tolerance = 5
 
@@ -164,7 +164,7 @@ def test_position_mismatch_is_on_false_when_no_target():
     """is_on returns False when no target has been set (target is None)."""
     coord = _make_coordinator()
     coord.entities = ["cover.test"]
-    coord.target_call = {}  # no target
+    coord._cmd_svc.get_target = MagicMock(return_value=None)  # no target
     coord._get_current_position = MagicMock(return_value=50)
 
     config_entry = _make_config_entry()
@@ -182,7 +182,7 @@ def test_position_mismatch_is_on_false_when_actual_none():
     """is_on returns False when actual position is None (cover unavailable)."""
     coord = _make_coordinator()
     coord.entities = ["cover.test"]
-    coord.target_call = {"cover.test": 50}
+    coord._cmd_svc.get_target = MagicMock(return_value=50)
     coord._get_current_position = MagicMock(return_value=None)
 
     config_entry = _make_config_entry()
@@ -205,7 +205,7 @@ def test_position_mismatch_extra_state_attributes_with_mismatch():
     """extra_state_attributes includes per-entity detail when target/actual both set."""
     coord = _make_coordinator()
     coord.entities = ["cover.test"]
-    coord.target_call = {"cover.test": 50}
+    coord._cmd_svc.get_target = MagicMock(return_value=50)
     coord._get_current_position = MagicMock(return_value=42)
     coord._cmd_svc._position_tolerance = 5
     coord._cmd_svc.get_diagnostics.return_value = {
@@ -236,7 +236,7 @@ def test_position_mismatch_extra_state_attributes_no_entities():
     """extra_state_attributes omits 'entities' key when no diagnostics are available."""
     coord = _make_coordinator()
     coord.entities = ["cover.test"]
-    coord.target_call = {}
+    coord._cmd_svc.get_target = MagicMock(return_value=None)
     coord._cmd_svc._position_tolerance = 5
     coord._cmd_svc.get_diagnostics.return_value = {
         "target": None,

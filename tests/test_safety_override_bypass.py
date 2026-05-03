@@ -28,7 +28,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
     CustomPositionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
+    PipelineResult,
+)
 
 from tests.test_pipeline.conftest import make_snapshot
 
@@ -517,7 +520,16 @@ class TestCustomPositionBypass:
 
     def _snapshot_on(self, position: int = 50) -> object:
         return make_snapshot(
-            custom_position_sensors=[(_CP_ENTITY, True, position, 77, False, False)]
+            custom_position_sensors=[
+                CustomPositionSensorState(
+                    entity_id=_CP_ENTITY,
+                    is_on=True,
+                    position=position,
+                    priority=77,
+                    min_mode=False,
+                    use_my=False,
+                )
+            ]
         )
 
     def test_bypass_flag_set(self) -> None:
@@ -535,7 +547,16 @@ class TestCustomPositionBypass:
     def test_sensor_off_returns_none(self) -> None:
         """No result when sensor is off — bypass flag irrelevant."""
         snapshot = make_snapshot(
-            custom_position_sensors=[(_CP_ENTITY, False, 50, 77, False, False)]
+            custom_position_sensors=[
+                CustomPositionSensorState(
+                    entity_id=_CP_ENTITY,
+                    is_on=False,
+                    position=50,
+                    priority=77,
+                    min_mode=False,
+                    use_my=False,
+                )
+            ]
         )
         result = self._handler().evaluate(snapshot)
         assert result is None

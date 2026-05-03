@@ -57,8 +57,11 @@ def _make_coordinator(
     coordinator = MagicMock()
     coordinator.manual_toggle = manual_toggle
     coordinator.automatic_control = automatic_control
-    coordinator.target_call = {entity_id: target}
-    coordinator.wait_for_target = {entity_id: False}
+    cmd_svc = MagicMock()
+    cmd_svc.get_target = MagicMock(return_value=target)
+    cmd_svc.is_waiting_for_target = MagicMock(return_value=False)
+    cmd_svc.discard_target = MagicMock()
+    coordinator._cmd_svc = cmd_svc
     coordinator._cover_type = "cover_blind"
     coordinator.manual_reset = False
     coordinator.manual_threshold = manual_threshold
@@ -66,6 +69,7 @@ def _make_coordinator(
     coordinator.manager = MagicMock()
     coordinator.cover_state_change = True
     coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
+    coordinator._manual_gate_closed_log = MagicMock()
     coordinator._target_just_reached = (
         target_just_reached if target_just_reached is not None else set()
     )
@@ -234,7 +238,7 @@ def test_position_within_tolerance_floor_not_flagged_as_manual():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=None,  # No user threshold configured
     )
 
@@ -257,7 +261,7 @@ def test_position_within_tolerance_floor_not_flagged_strict_user_threshold():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=1,
     )
 
@@ -280,7 +284,7 @@ def test_position_exceeding_tolerance_floor_and_no_user_threshold_triggers_overr
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=None,
     )
 
@@ -302,7 +306,7 @@ def test_position_exceeding_user_threshold_and_tolerance_triggers_override():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=5,
     )
 
@@ -334,7 +338,7 @@ def test_position_exactly_at_tolerance_boundary_not_flagged():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=None,
     )
 
@@ -362,7 +366,7 @@ def test_position_just_inside_tolerance_boundary_not_flagged():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=None,
     )
 
@@ -387,7 +391,7 @@ def test_large_user_threshold_wins_over_tolerance_floor():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=10,
     )
 
@@ -408,7 +412,7 @@ def test_large_user_threshold_triggers_when_difference_exceeds_it():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=10,
     )
 
@@ -430,7 +434,7 @@ def test_wait_for_target_prevents_override_regardless_of_tolerance():
         our_state=72,
         blind_type="cover_blind",
         allow_reset=False,
-        wait_target_call={entity_id: True},  # Still waiting for target
+        is_waiting=lambda _eid: True,  # Still waiting for target
         manual_threshold=None,
     )
 
@@ -461,7 +465,7 @@ def test_tolerance_floor_applies_to_tilt_cover():
         our_state=45,
         blind_type="cover_tilt",
         allow_reset=False,
-        wait_target_call={entity_id: False},
+        is_waiting=lambda _eid: False,
         manual_threshold=None,
     )
 

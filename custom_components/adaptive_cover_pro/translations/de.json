@@ -17,7 +17,7 @@
       },
       "cover_entities": {
         "title": "Beschattungen & Gerät",
-        "description": "Wählen Sie die Beschattungsentitäten, die diese Instanz steuern wird.",
+        "description": "Wählen Sie die Beschattungselemente aus, die diese Instanz steuert, und ordnen Sie sie optional einem physischen Gerät in HA zu. Mehrere Beschattungselemente können eine Instanz teilen — sie verwenden die gleichen Einstellungen und bewegen sich unabhängig. Um Beschattungselemente mit unterschiedlichen Fensterorientierungen zu steuern, erstellen Sie eine separate Instanz für jedes.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "group": "Beschattungsentitäten",
           "linked_device_id": "An Gerät anhängen"
@@ -29,7 +29,7 @@
       },
       "geometry": {
         "title": "Beschattungsgeometrie",
-        "description": "Konfigurieren Sie die Beschattungsabmessungen. Diese Messungen werden verwendet, um die Sonnenschutzposition zu berechnen.",
+        "description": "Geben Sie Ihre Maße für Beschattungselemente und Fenster ein. Die Integration berechnet damit genau, wie weit das Beschattungselement herunterfahren oder ausfahren muss, um direkte Sonneneinstrahlung zu blockieren und gleichzeitig natürliches Licht zu maximieren.\n\n**Fensterhöhe** und **schattierter Bereich** sind erforderlich für Jalousien und Markisen. **Fenstertiefe** und **Fenstersillhöhe** verbessern die geometrische Genauigkeit für tiefer liegende Fenster. **Markisenspanne** und **Winkel** gelten für horizontale Markisen. **Lamellendicke** und **Lamellenschranke** sind erforderlich für Neigungs-/Venetian-Beschattungselemente.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Fensterhöhe",
           "distance_shaded_area": "Beschatteter Bereich",
@@ -55,7 +55,7 @@
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Konfigurieren Sie die Fensterorientierung und Sonnenverfolgungswinkel.",
+        "description": "Geben Sie die Himmelsrichtung Ihres Fensters und den Winkelbereich ein, in dem die Sonne sichtbar ist. Die Integration verfolgt die Sonne innerhalb dieses Sichtfelds und hält das Beschattungselement in seiner Standardposition, wenn sich die Sonne außerhalb davon befindet.\n\n**Azimut** ist die Kompassrichtung, auf die Ihr Fenster zeigt (0° = Norden, 90° = Osten, 180° = Süden, 270° = Westen). **Sichtfeld** definiert, wie weit links und rechts von der Mitte die Sonne verfolgt wird. **Höhenwinkel-Grenzen** filtern sehr niedrige Winkel (Sunrise Blendung) oder sehr hohe Winkel (Zenit) heraus, wo Blockierung möglicherweise nicht erforderlich ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "enable_sun_tracking": "Sonnenverfolgung aktivieren",
           "set_azimuth": "Fenster-Azimut",
@@ -81,7 +81,7 @@
       },
       "position": {
         "title": "Positionseinstellungen",
-        "description": "Konfigurieren Sie Beschattungspositionsgrenzen, Standardwerte und Sonnenuntergangsverhalten.",
+        "description": "Legen Sie Positionsgrenzen, die Standard-Ruheposition und das Verhalten bei Sonnenuntergang fest.\n\nDie **Standardposition** ist der Platz, an den Beschattungselemente gehen, wenn sich die Sonne außerhalb des Verfolgungsfensters befindet oder keine Übersteuerung aktiv ist. **Min-/Max-Grenzen** begrenzen den Bereich, den die Integration steuert — das Umschalter „Nur während Sonnenverfolgung anwenden\" kontrolliert, ob jede Grenze ganztägig oder nur während der Sonnenverfolgung erzwungen wird. **Sonnenuntergang-Position** bewegt Beschattungselemente bei Ende-Zeit in eine bestimmte Position; lassen Sie es leer, um stattdessen die Standardposition zu verwenden.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "default_percentage": "Standardposition",
           "max_position": "Maximale Position",
@@ -115,7 +115,7 @@
       },
       "automation": {
         "title": "Zeitplan und Timing",
-        "description": "Konfigurieren Sie Automatisierungstiming, Positionsänderungsschwellen und aktive Stunden für automatische Steuerung.",
+        "description": "Legen Sie das Betriebsfenster (Start-/Endzeiten) und die minimale Positions- oder Zeitdifferenz zwischen Anpassungen fest.\n\n**Positionsdelta** verhindert, dass sich das Beschattungselement bewegt, es sei denn, das Ziel hat sich um mindestens diesen Prozentsatz verschoben — reduziert Motorverschleiß durch kleine Sonnenveränderungen. **Zeitdelta** erzwingt einen Mindestabstand zwischen aufeinanderfolgenden Befehlen. **Start-/Endzeiten** definieren, wann die automatische Steuerung ausgeführt werden darf; lassen Sie sie leer, um ganztägig zu laufen. Eine HA-Entität kann beide Zeiten dynamisch liefern, nützlich für Schedule-Helfer oder Wecker.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "delta_position": "Minimale Positionsanpassung",
           "delta_time": "Minimales Intervall zwischen Positionsänderungen",
@@ -137,7 +137,7 @@
       },
       "manual_override": {
         "title": "Manuelle Übersteuerung",
-        "description": "Konfigurieren Sie, wie manuelle Positionsänderungen mit automatischer Steuerung interagieren.",
+        "description": "Steuern Sie, was geschieht, nachdem jemand ein Beschattungselement manuell bewegt. Die automatische Steuerung wird für die konfigurierte Dauer unterbrochen und setzt sich dann fort.\n\n**Übersteuerungsdauer** gibt an, wie lange (in Minuten) ACP wartet, bevor es die Kontrolle zurücknimmt. **Bei jeder Anpassung zurücksetzen** setzt den Timer jedes Mal neu auf, wenn das Beschattungselement berührt wird — nützlich, wenn jemand ein Beschattungselement mehrfach nacheinander anpasst. **Schwellenwert** ist die minimale Positionsänderung, die als manuelle Bewegung zählt; erhöhen Sie ihn leicht, wenn Motor-Positionsdrift falsche Übersteuerungen verursacht. **Transitzeitüberschreitung** teilt ACP mit, wie lange es auf ein bewegendes Beschattungselement warten soll, bevor es die Endposition als beabsichtigt behandelt.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
@@ -155,7 +155,7 @@
       },
       "force_override": {
         "title": "Zwangsübersteuerung",
-        "description": "Konfigurieren Sie Binärsensoren, die automatische Steuerung bedingungslos überschreiben und Beschattungen in eine feste Position verschieben. Die Zwangsübersteuerung bleibt aktiv, auch wenn der Schalter Automatische Steuerung aus ist - Beschattungen werden immer noch in die konfigurierte Position verschoben, wenn ein Sensor ausgelöst wird.",
+        "description": "Konfigurieren Sie Binärsensoren, die die automatische Steuerung bedingungslos übersteuern und Beschattungselemente in eine feste Position bringen. Die Zwangsübersteuerung bleibt aktiv, auch wenn der Schalter für die automatische Steuerung aus ist — Beschattungselemente werden immer noch in die konfigurierte Position bewegt, wenn ein Sensor ausgelöst wird.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "force_override_sensors": "Zwangsübersteuerungssensoren",
           "force_override_position": "Position der Zwangsübersteuerung",
@@ -169,7 +169,7 @@
       },
       "custom_position": {
         "title": "Benutzerdefinierte Positionen",
-        "description": "Konfigurieren Sie Binärsensoren, die die Beschattung bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, Zielposition und Pipeline-Priorität. Jeder aktive Slot wird unabhängig ausgewertet - der höchstpriorisierte aktive Slot gewinnt. Verwenden Sie Home Assistant-Automatisierungen, um diese Sensoren für szenariobasierte oder zeitplanbasierte Beschattungssteuerung umzuschalten.",
+        "description": "Konfigurieren Sie Binärsensoren, die das Beschattungselement bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, die Zielposition und die Pipeline-Priorität. Jeder aktive Slot wird unabhängig bewertet — der höchste aktive Slot gewinnt. Verwenden Sie Home Assistant Automationen, um diese Sensoren für Szenen- oder zeitplanbasierte Beschattungselemente-Steuerung zu schalten.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position für Sensor 1",
@@ -217,7 +217,7 @@
       },
       "motion_override": {
         "title": "Bewegungsübersteuerung",
-        "description": "Konfigurieren Sie Bewegungs- und Belegungssensoren für präsenzbasierte automatische Steuerung.",
+        "description": "Aktivieren Sie anwesenheitsbasierte Steuerung. Wenn alle konfigurierten Sensoren keine Bewegung melden, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente nach Ablauf des Timeouts in ihre Standardposition. Wenn ein Sensor Bewegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nJede Mischung aus Bewegungs-, Anwesenheits- oder Binär-Präsenzsensoren kann verwendet werden. Die Logik ist ODER — jeder einzelne aktive Sensor zählt als anwesend. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich Beschattungselemente anpassen, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
           "motion_timeout": "Bewegungs-Timeout-Dauer"
@@ -229,7 +229,7 @@
       },
       "weather_override": {
         "title": "Wetter-Übersteuerung",
-        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jeder konfigurierte Zustand löst die Beschattungseinziehung aus. Nicht konfigurierte Eingaben werden ignoriert.",
+        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jede konfigurierte Bedingung löst Beschattungselemente-Einziehen aus. Nicht konfigurierte Eingaben werden ignoriert.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Aktiv, wenn automatische Steuerung aus ist",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
@@ -300,7 +300,7 @@
           "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne nicht das Fenster trifft. Bietet Isolierung durch Abhalten kalter Luft und Bewahrung von Wärme. Wenn die Sonne in das Sichtfeld des Fensters eintritt, öffnet sich die Beschattung wie normal zur Solarheizung.",
           "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
         },
-        "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen der Integration, das Beschattungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
+        "description": "Aktivieren Sie klimabewusste Beschattungselemente-Steuerung. Wenn aktiv, öffnet die Integration Beschattungselemente im Winter, um Solarwärme zu nutzen, und schließt sie im Sommer, um die Kühlast zu reduzieren. Dieser Bildschirm konfiguriert, welche Licht- und Wolkensensoren bestimmen, ob die Sonne derzeit aktiv ist.\n\nTemperaturgrenzen, Anwesenheitseinstellungen und saisonale Verhaltensregeln befinden sich auf dem nächsten Bildschirm. Wetterbedingungsmappings folgen danach. Alle Klima-Untereinstellungen werden ignoriert, wenn der Klimamodus deaktiviert ist.\n\n[Weitere Informationen]({learn_more})",
         "title": "Klimakonfiguration"
       },
       "weather": {
@@ -310,7 +310,8 @@
         "data_description": {
           "weather_state": "Wählen Sie Wetterzustände, die ‚Sonne scheint' für den Klimamodus bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sonnig (direktes Licht), ☑ teilweise bewölkt (etwas Sonne), ☐ bewölkt (kein direktes Licht), ☐ klar (normalerweise nachts). Wenn aktuelles Wetter der Auswahl entspricht: Wenden Sie Klimastrategien an. Wenn keine Übereinstimmung: Verwenden Sie die Standardposition (keine Sonne angenommen). Die meisten Benutzer sollten die Standardwerte behalten."
         },
-        "title": "Wetterbedingungen"
+        "title": "Wetterbedingungen",
+        "description": "Wählen Sie die Wetterzustände aus, die im Klimamodus als „Sonne ist draußen\" zählen. Die Integration vergleicht den Live-Wetterzustand mit dieser Liste — übereinstimmende Zustände aktivieren die solarbasierte Beschattungselemente-Steuerung. Zustände, die nicht in der Liste stehen, werden als bewölkt behandelt, daher gelten Sommer-Schließen- und Winter-Öffnen-Regeln nur, wenn das Wetter passt.\n\nTypische Auswahlen sind „sonnig\" und „teilweise bewölkt\". Die verfügbaren Zustände hängen von Ihrer Wetterintegrationen ab.\n\n[Weitere Informationen]({learn_more})"
       },
       "blind_spot": {
         "data": {
@@ -324,11 +325,11 @@
           "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über dem Horizont), bei der der blinde Fleck gilt. Beispiel: Ein Dachüberstand blockiert die Sonne nur wenn diese niedrig ist (< 30°), also auf 30 einstellen. Sonnenhöhen über dieser Elevation durchqueren das Hindernis, daher gilt der blinde Fleck nicht. Falls das Hindernis alle Elevationen blockiert (hohes Gebäude), auf 90 einstellen oder höher lassen. Sonnenhöhe: 0°=Horizont, 45°=halbe Höhe, 90°=direkt oben. Messen oder schätzen Sie basierend auf Hindernishöhe und Entfernung."
         },
         "title": "Blindfleck",
-        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstände). Diese Winkelwerte sind relative Grad innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeldgrenze ist. Die Beschattung ignoriert die Sonnenposition, wenn sie in diese Blindfleckzone fällt."
+        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
       },
       "glare_zones": {
         "title": "Blendungszonen",
-        "description": "Definieren Sie bis zu 4 Bodenbereiche zum Schutz vor direkter Sonneneinstrahlung. Lassen Sie einen Zonennamen blank, um ihn zu überspringen. Koordinaten sind relativ zur Fensterposition auf den Boden projiziert.",
+        "description": "Definieren Sie bis zu 4 Bodenbereiche, die vor direkter Sonneneinstrahlung geschützt werden sollen. Wenn der Sonnenwinkel direktes Licht auf eine Zone werfen würde, senkt sich die Jalousie, um sie abzuschatten. Lassen Sie einen Zonennamen leer, um diesen Slot zu überspringen.\n\nKoordinaten sind relativ zur Fenstermitte, die auf den Boden projiziert ist. **X** ist der Links-/Rechts-Versatz (positiv = rechts). **Y** ist der Abstand in den Raum. **Radius** definiert den zirkulären geschützten Bereich. Verwenden Sie die Lovelace-Begleitkarte, um Zonenpositionen zu visualisieren und Abdeckung zu überprüfen.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "enable_glare_zones": "Blendungszonen aktivieren",
           "glare_zone_1_name": "Name Zone 1",
@@ -382,7 +383,7 @@
           "interp_list_new": "Ausgabepositionen für benutzerdefinierte Interpolationszuordnung (tatsächliche an Beschattung gesendete Positionen). Geben Sie entsprechende reale Positionen ein wie: 0, 20, 40, 65, 100. Dies ist das, was tatsächlich an Ihre Beschattungsentität gesendet wird. Muss die gleiche Länge wie „Berechnete Positionen (Eingang)\" haben. Beispielverwendung: Beschattung beim Schließen aggressiver machen, indem 50% berechnet auf 40% tatsächlich zugeordnet wird. Die Integration interpoliert zwischen Ihren Punkten. Lassen Sie diesen Bereich leer für normalen Betrieb."
         },
         "title": "Positionskalibrierung",
-        "description": "Passen Sie die Positionszuordnung der Beschattung für nicht standardmäßige Beschattungen an, indem Sie eine berechnete Position (Eingang) einer tatsächlich an die Beschattung gesendeten Position (Ausgang) zuordnen. Verwenden Sie einfache 2-Punkt-Kalibrierung (0% und 100% zuordnen) für Beschattungen mit begrenztem Bereich (z. B. nur Bewegung zwischen 10–90%). Verwenden Sie erweiterte Listenzuordnung für nichtlineare Beschattungen oder um das Verhalten mehr zu öffnen/schließen. Die meisten Beschattungen benötigen dies nicht – aktivieren Sie es nur, wenn Ihre Beschattung nicht korrekt auf Standardbefehle von 0–100% reagiert."
+        "description": "Passen Sie die Positions-Zuordnung von Beschattungselementen für nicht standardisierte Beschattungselemente durch Zuordnung einer berechneten Position (Eingabe) zu einer tatsächlichen Position an, die an das Beschattungselement gesendet wird (Ausgabe). Verwenden Sie einfache 2-Punkt-Kalibrierung (0 % und 100 % zuordnen) für Beschattungselemente mit begrenztem Bereich (z. B. nur zwischen 10–90 % bewegbar). Verwenden Sie erweitertes Listen-Mapping für nichtlineare Beschattungselemente oder um das Verhalten mehr offen/geschlossen zu neigen. Die meisten Beschattungselemente benötigen dies nicht — aktivieren Sie es nur, wenn Ihr Beschattungselement nicht korrekt auf Standard-0–100%-Befehle reagiert.\n\n[Weitere Informationen]({learn_more})"
       },
       "duplicate_select": {
         "title": "Beschattung duplizieren - Quelle auswählen",
@@ -406,7 +407,7 @@
       },
       "setup_mode": {
         "title": "Setup-Modus",
-        "description": "Wählen Sie, wie viel Sie jetzt konfigurieren möchten. Sie können alle Einstellungen später über das Optionsmenü anpassen.",
+        "description": "Wählen Sie, wie viel Sie jetzt konfigurieren möchten. Sie können alle Einstellungen später im Optionsmenü anpassen.\n\n[Weitere Informationen]({learn_more})",
         "menu_options": {
           "quick_setup": "Schnelles Setup - Fenstergrundlagen + Sonnenverfolgung (empfohlen für erstmalige Einrichtung)",
           "full_setup": "Vollständiges Setup - Alle Optionen einschließlich Klima, Übersteuerungen und Automatisierung"
@@ -414,7 +415,7 @@
       },
       "light_cloud": {
         "title": "Lichtsensoren und Wolkenunterdrückung",
-        "description": "Konfigurieren Sie Licht- und Wettersensoren, um zu erkennen, wenn Wolken die direkte Sonne blockieren. Diese funktionieren unabhängig vom Klimamodus.",
+        "description": "Unterdrücken Sie Blendschutz, wenn Sonnenlicht fehlt. Konfigurieren Sie Sensoren zur Erkennung von Wolken oder schwachem Licht — wenn ausgelöst, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente optional in eine geparkte Position. Verhindert unnötige Beschattungselemente-Bewegung an bewölkten Tagen.\n\nJede der vier Eingaben (Wetterzustand, Luxsensor, Bestrahlungssensor, Wolkenbedeckungssensor) kann einzeln oder zusammen verwendet werden — jede einzelne Übereinstimmung reicht aus, um die Verfolgung zu unterdrücken. Die optionale **bewölkte Position** bewegt Beschattungselemente in eine bestimmte Position, wenn die Unterdrückung ausgelöst wird; lassen Sie sie leer, um die aktuelle Position stattdessen zu halten.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "weather_entity": "Wetter-Entität (optional)",
           "lux_entity": "Luxsensor (optional)",
@@ -442,7 +443,7 @@
       },
       "temperature_climate": {
         "title": "Temperatur und Klimamodus",
-        "description": "Der Klimamodus passt die Beschattungsposition basierend auf Innen-/Außentemperatur, Anwesenheit und an, ob die Sonne das Fenster trifft. Wenn deaktiviert, folgt die Beschattung normaler Sonne/Blendungsverfolgung.\n\n**Wie die Jahreszeit ausgewählt wird** – Die aktuelle Temperatur ist der Außensensor, falls bereitgestellt, ansonsten der Innensensor.\n- **Winter** – aktuelle Temperatur liegt unter dem niedriger Schwellwert.\n- **Sommer** – aktuelle Temperatur liegt über dem hoher Schwellwert **und** Außentemperatur liegt über der Außenschwelle (verhindert Sommerverhalten an einem kalten Tag).\n- **Zwischenstufe** – beides oben nicht erfüllt; normale Solar-/Blendungsverfolgung läuft.\n\n**Was jeder Modus tut**\n- **Winter + Sonne auf Fenster** → vollständig öffnen (100 %), um Solarwärme zu erfassen.\n- **Winter, Sonne nicht auf Fenster**, *Winter-Isolationsmodus* aktiviert → vollständig schließen (0 %), um Wärme zu halten.\n- **Sommer** → vollständig schließen (0 %), um Wärmezunahme zu blockieren. Für Jalousien geschieht dies nur mit Anwesenheit, wenn *Transparente Jalousie* aktiviert ist; ohne Anwesenheit schließt sich immer.\n- **Schwaches Licht** (bewölkt / dunkel / nicht sonnig) → kehrt zur Standardposition zurück und überschreibt Sommer-Schließung, sodass Beschattungen nicht unnötig schließen.\n- **Zwischenstufe / Sonne gültig mit Anwesenheit** → normale Blendungskontrolle-Verfolgung.\n\n**Anwesenheit** kontrolliert das Verhalten: Wenn niemand zu Hause ist, gilt eine einfachere Sommergeschlossen-/Winteroffen-Regel; mit Anwesenden läuft die Blendungskontrolle-Verfolgung unter Zwischenbedingungen und transparente Jalousien schließen sich immer noch im Sommer.\n\n**Neigungsbeschattungen** folgen der gleichen saisonalen Logik, verwenden aber Lamellenwinkel anstelle von offenen/geschlossenen Positionen.\n\nLassen Sie *Außentemperatursensor* und *Anwesenheitsentität* leer, um diese Prüfungen zu überspringen. Der Klimamodus läuft nach Zwangs-/Wetter-/Manual-/Benutzer-Übersteuerungen, aber vor normaler Sonnenverfolgung.",
+        "description": "Der Klimamodus passt die Beschattungselemente-Position basierend auf Innen-/Außentemperatur, Anwesenheit und ob die Sonne tatsächlich das Fenster trifft, an. Wenn deaktiviert, folgt das Beschattungselement der normalen Sonne/Blendschutz-Verfolgung.\n\n**Wie die Jahreszeit gewählt wird** — Die aktuelle Temperatur ist der Außensensor, falls vorhanden, andernfalls der Innensensor.\n- **Winter** — aktuelle Temperatur liegt unter der niedrigen Schwelle.\n- **Sommer** — aktuelle Temperatur liegt über der hohen Schwelle **und** Außentemperatur liegt über der Außenschwelle (verhindert Sommerverhalten an einem kalten Tag).\n- **Übergangszeit** — keines der oben genannten; normale Solar-/Blendschutz-Verfolgung läuft.\n\n**Was jeder Modus tut**\n- **Winter + Sonne am Fenster** → vollständig öffnen (100 %), um kostenlose Solarwärme zu nutzen.\n- **Winter, Sonne nicht am Fenster**, *Winter-Isolationsmodus* an → vollständig schließen (0 %), um Wärme zu speichern.\n- **Sommer** → vollständig schließen (0 %), um Wärmegainauf zu blockieren. Bei Jalousien geschieht dies nur mit Anwesenheit, wenn *Transparente Jalousie* an ist; ohne Anwesenheit schließt sie sich immer.\n- **Schwaches Licht** (bewölkt / dunkel / nicht sonnig) → kehrt zur Standardposition zurück und überschreibt die Sommerversion, damit Beschattungselemente nicht unnötig schließen.\n- **Übergangszeit / Sonne gültig mit Anwesenheit** → normale Blendschutz-Verfolgung.\n\n**Anwesenheit** steuert das Verhalten: Mit niemandem zu Hause gilt eine einfachere Sommer-geschlossen / Winter-offen Regel; bei anwesenden Personen läuft die Blendschutz-Verfolgung unter Übergangsbedingungen und transparente Jalousien schließen sich immer noch im Sommer.\n\n**Neigungs-Beschattungselemente** folgen der gleichen saisonalen Logik, verwenden aber Schiebewinkel statt offen/geschlossen Positionen.\n\nLassen Sie *Außentemperatursensor* und *Anwesenheitsentität* leer, um diese Prüfungen zu überspringen. Der Klimamodus läuft nach Zwangs-/Wetter-/Manuell-/Benutzerdefinierten Übersteuerungen, aber vor der normalen Sonnenverfolgung.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "climate_mode": "Klimamodus aktivieren",
           "temp_entity": "Innere Temperaturentität",
@@ -497,11 +498,12 @@
           "done": "✅ Speichern und schließen",
           "light_cloud": "☁️ Lichtsensoren und Wolken",
           "temperature_climate": "🌡️ Temperatur und Klima"
-        }
+        },
+        "description": "Konfiguration: **{instance_name}**"
       },
       "automation": {
         "title": "Zeitplan und Timing",
-        "description": "Konfigurieren Sie Automatisierungstiming, Positionsänderungsschwellen und aktive Stunden für automatische Steuerung.",
+        "description": "Legen Sie das Betriebsfenster (Start-/Endzeiten) und die minimale Positions- oder Zeitdifferenz zwischen Anpassungen fest.\n\n**Positionsdelta** verhindert, dass sich das Beschattungselement bewegt, es sei denn, das Ziel hat sich um mindestens diesen Prozentsatz verschoben — reduziert Motorverschleiß durch kleine Sonnenveränderungen. **Zeitdelta** erzwingt einen Mindestabstand zwischen aufeinanderfolgenden Befehlen. **Start-/Endzeiten** definieren, wann die automatische Steuerung ausgeführt werden darf; lassen Sie sie leer, um ganztägig zu laufen. Eine HA-Entität kann beide Zeiten dynamisch liefern, nützlich für Schedule-Helfer oder Wecker.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "delta_position": "Minimale Positionsanpassung",
           "delta_time": "Minimales Intervall zwischen Positionsänderungen",
@@ -523,7 +525,7 @@
       },
       "cover_entities": {
         "title": "Beschattungen & Gerät",
-        "description": "Wählen Sie die Cover-Entitäten aus, die diese Instanz steuern wird.",
+        "description": "Wählen Sie die Beschattungselemente aus, die diese Instanz steuert, und ordnen Sie sie optional einem physischen Gerät in HA zu. Mehrere Beschattungselemente können eine Instanz teilen — sie verwenden die gleichen Einstellungen und bewegen sich unabhängig. Um Beschattungselemente mit unterschiedlichen Fensterorientierungen zu steuern, erstellen Sie eine separate Instanz für jedes.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "group": "Beschattungsentitäten",
           "linked_device_id": "An Gerät anhängen"
@@ -535,7 +537,7 @@
       },
       "geometry": {
         "title": "Beschattungsgeometrie",
-        "description": "Konfigurieren Sie die Abdeckungsabmessungen.",
+        "description": "Geben Sie Ihre Maße für Beschattungselemente und Fenster ein. Die Integration berechnet damit genau, wie weit das Beschattungselement herunterfahren oder ausfahren muss, um direkte Sonneneinstrahlung zu blockieren und gleichzeitig natürliches Licht zu maximieren.\n\n**Fensterhöhe** und **schattierter Bereich** sind erforderlich für Jalousien und Markisen. **Fenstertiefe** und **Fenstersillhöhe** verbessern die geometrische Genauigkeit für tiefer liegende Fenster. **Markisenspanne** und **Winkel** gelten für horizontale Markisen. **Lamellendicke** und **Lamellenschranke** sind erforderlich für Neigungs-/Venetian-Beschattungselemente.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Fensterhöhe",
           "distance_shaded_area": "Beschatteter Bereich",
@@ -561,7 +563,7 @@
       },
       "sun_tracking": {
         "title": "Sonnenverfolgung",
-        "description": "Konfigurieren Sie die Fensterorientierung und Sonnenverfolgungswinkel.",
+        "description": "Geben Sie die Himmelsrichtung Ihres Fensters und den Winkelbereich ein, in dem die Sonne sichtbar ist. Die Integration verfolgt die Sonne innerhalb dieses Sichtfelds und hält das Beschattungselement in seiner Standardposition, wenn sich die Sonne außerhalb davon befindet.\n\n**Azimut** ist die Kompassrichtung, auf die Ihr Fenster zeigt (0° = Norden, 90° = Osten, 180° = Süden, 270° = Westen). **Sichtfeld** definiert, wie weit links und rechts von der Mitte die Sonne verfolgt wird. **Höhenwinkel-Grenzen** filtern sehr niedrige Winkel (Sunrise Blendung) oder sehr hohe Winkel (Zenit) heraus, wo Blockierung möglicherweise nicht erforderlich ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "enable_sun_tracking": "Sonnenverfolgung aktivieren",
           "set_azimuth": "Fenster-Azimut",
@@ -587,7 +589,7 @@
       },
       "position": {
         "title": "Positionseinstellungen",
-        "description": "Konfigurieren Sie Beschattungspositionsgrenzen, Standardwerte und Sonnenuntergangsverhalten.",
+        "description": "Legen Sie Positionsgrenzen, die Standard-Ruheposition und das Verhalten bei Sonnenuntergang fest.\n\nDie **Standardposition** ist der Platz, an den Beschattungselemente gehen, wenn sich die Sonne außerhalb des Verfolgungsfensters befindet oder keine Übersteuerung aktiv ist. **Min-/Max-Grenzen** begrenzen den Bereich, den die Integration steuert — das Umschalter „Nur während Sonnenverfolgung anwenden\" kontrolliert, ob jede Grenze ganztägig oder nur während der Sonnenverfolgung erzwungen wird. **Sonnenuntergang-Position** bewegt Beschattungselemente bei Ende-Zeit in eine bestimmte Position; lassen Sie es leer, um stattdessen die Standardposition zu verwenden.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "default_percentage": "Standardposition",
           "max_position": "Maximale Position",
@@ -621,7 +623,7 @@
       },
       "manual_override": {
         "title": "Manuelle Übersteuerung",
-        "description": "Konfigurieren Sie, wie manuelle Positionsänderungen mit automatischer Steuerung interagieren.",
+        "description": "Steuern Sie, was geschieht, nachdem jemand ein Beschattungselement manuell bewegt. Die automatische Steuerung wird für die konfigurierte Dauer unterbrochen und setzt sich dann fort.\n\n**Übersteuerungsdauer** gibt an, wie lange (in Minuten) ACP wartet, bevor es die Kontrolle zurücknimmt. **Bei jeder Anpassung zurücksetzen** setzt den Timer jedes Mal neu auf, wenn das Beschattungselement berührt wird — nützlich, wenn jemand ein Beschattungselement mehrfach nacheinander anpasst. **Schwellenwert** ist die minimale Positionsänderung, die als manuelle Bewegung zählt; erhöhen Sie ihn leicht, wenn Motor-Positionsdrift falsche Übersteuerungen verursacht. **Transitzeitüberschreitung** teilt ACP mit, wie lange es auf ein bewegendes Beschattungselement warten soll, bevor es die Endposition als beabsichtigt behandelt.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "manual_override_duration": "Dauer der manuellen Übersteuerung",
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
@@ -639,7 +641,7 @@
       },
       "force_override": {
         "title": "Zwangsübersteuerung",
-        "description": "Konfigurieren Sie Binärsensoren, die automatische Steuerung bedingungslos überschreiben und Beschattungen in eine feste Position verschieben. Die Zwangsübersteuerung bleibt aktiv, auch wenn der Schalter Automatische Steuerung aus ist - Beschattungen werden immer noch in die konfigurierte Position verschoben, wenn ein Sensor ausgelöst wird.",
+        "description": "Konfigurieren Sie Binärsensoren, die die automatische Steuerung bedingungslos übersteuern und Beschattungselemente in eine feste Position bringen. Die Zwangsübersteuerung bleibt aktiv, auch wenn der Schalter für die automatische Steuerung aus ist — Beschattungselemente werden immer noch in die konfigurierte Position bewegt, wenn ein Sensor ausgelöst wird.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "force_override_sensors": "Zwangsübersteuerungssensoren",
           "force_override_position": "Position der Zwangsübersteuerung",
@@ -653,7 +655,7 @@
       },
       "custom_position": {
         "title": "Benutzerdefinierte Positionen",
-        "description": "Konfigurieren Sie Binärsensoren, die die Beschattung bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, Zielposition und Pipeline-Priorität. Jeder aktive Slot wird unabhängig ausgewertet - der höchstpriorisierte aktive Slot gewinnt. Verwenden Sie Home Assistant-Automatisierungen, um diese Sensoren für szenariobasierte oder zeitplanbasierte Beschattungssteuerung umzuschalten.",
+        "description": "Konfigurieren Sie Binärsensoren, die das Beschattungselement bei Aktivierung auf bestimmte Positionen setzen. Jeder Slot hat seinen eigenen Sensor, die Zielposition und die Pipeline-Priorität. Jeder aktive Slot wird unabhängig bewertet — der höchste aktive Slot gewinnt. Verwenden Sie Home Assistant Automationen, um diese Sensoren für Szenen- oder zeitplanbasierte Beschattungselemente-Steuerung zu schalten.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position für Sensor 1",
@@ -701,7 +703,7 @@
       },
       "motion_override": {
         "title": "Bewegungsübersteuerung",
-        "description": "Konfigurieren Sie Bewegungs- und Belegungssensoren für präsenzbasierte automatische Steuerung.",
+        "description": "Aktivieren Sie anwesenheitsbasierte Steuerung. Wenn alle konfigurierten Sensoren keine Bewegung melden, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente nach Ablauf des Timeouts in ihre Standardposition. Wenn ein Sensor Bewegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nJede Mischung aus Bewegungs-, Anwesenheits- oder Binär-Präsenzsensoren kann verwendet werden. Die Logik ist ODER — jeder einzelne aktive Sensor zählt als anwesend. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich Beschattungselemente anpassen, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
           "motion_timeout": "Bewegungs-Timeout-Dauer"
@@ -713,7 +715,7 @@
       },
       "weather_override": {
         "title": "Wetter-Übersteuerung",
-        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jeder konfigurierte Zustand löst die Beschattungseinziehung aus. Nicht konfigurierte Eingaben werden ignoriert.",
+        "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jede konfigurierte Bedingung löst Beschattungselemente-Einziehen aus. Nicht konfigurierte Eingaben werden ignoriert.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Aktiv, wenn automatische Steuerung aus ist",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
@@ -784,7 +786,7 @@
           "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne das Fenster nicht trifft. Bietet Isolierung, indem kalte Luft draußen und Wärme drinnen bleibt. Wenn die Sonne das Sichtfeld des Fensters erreicht, öffnet sich die Beschattung für Solarheizung wie gewohnt.",
           "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
         },
-        "description": "Konfigurieren Sie klimabewusste Steuerung für Energieeffizienz und Komfort. Diese Einstellungen ermöglichen der Integration, das Beschattungsverhalten basierend auf Temperatur, Wetter und Anwesenheit anzupassen.",
+        "description": "Aktivieren Sie klimabewusste Beschattungselemente-Steuerung. Wenn aktiv, öffnet die Integration Beschattungselemente im Winter, um Solarwärme zu nutzen, und schließt sie im Sommer, um die Kühlast zu reduzieren. Dieser Bildschirm konfiguriert, welche Licht- und Wolkensensoren bestimmen, ob die Sonne derzeit aktiv ist.\n\nTemperaturgrenzen, Anwesenheitseinstellungen und saisonale Verhaltensregeln befinden sich auf dem nächsten Bildschirm. Wetterbedingungsmappings folgen danach. Alle Klima-Untereinstellungen werden ignoriert, wenn der Klimamodus deaktiviert ist.\n\n[Weitere Informationen]({learn_more})",
         "title": "Klimakonfiguration"
       },
       "weather": {
@@ -794,7 +796,8 @@
         "data_description": {
           "weather_state": "Wählen Sie Wetterzustände, die für den Klimamodus 'Sonne scheint' bedeuten. Empfohlene Auswahl (vorausgefüllt): ☑ sonnig (direkte Sonne), ☑ teilweise bewölkt (etwas Sonne), ☐ bewölkt (keine direkte Sonne), ☐ klar (normalerweise Nacht). Wenn aktuelles Wetter der Auswahl entspricht: Wenden Sie Klimastrategien an. Wenn nicht: Verwenden Sie Standardposition (keine Sonne angenommen). Die meisten Benutzer sollten die Standardwerte behalten."
         },
-        "title": "Wetterbedingungen"
+        "title": "Wetterbedingungen",
+        "description": "Wählen Sie die Wetterzustände aus, die im Klimamodus als „Sonne ist draußen\" zählen. Die Integration vergleicht den Live-Wetterzustand mit dieser Liste — übereinstimmende Zustände aktivieren die solarbasierte Beschattungselemente-Steuerung. Zustände, die nicht in der Liste stehen, werden als bewölkt behandelt, daher gelten Sommer-Schließen- und Winter-Öffnen-Regeln nur, wenn das Wetter passt.\n\nTypische Auswahlen sind „sonnig\" und „teilweise bewölkt\". Die verfügbaren Zustände hängen von Ihrer Wetterintegrationen ab.\n\n[Weitere Informationen]({learn_more})"
       },
       "blind_spot": {
         "data": {
@@ -808,7 +811,7 @@
           "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über Horizont), bei der der blinde Fleck gilt. Beispiel: Dachüberstand blockiert Sonne nur, wenn niedrig (< 30°), also auf 30 setzen. Sonne mit höherer Höhe schiebt das Hindernis, daher gilt der blinde Fleck nicht. Wenn das Hindernis alle Höhen blockiert (hohes Gebäude), auf 90 setzen oder hoch lassen. Sonnenhöhe: 0°=Horizont, 45°=halber Weg oben, 90°=direkt oben. Messen oder schätzen basierend auf Hindernishöhe und Entfernung."
         },
         "title": "Blindfleck",
-        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstände). Diese Winkelwerte sind relative Grad innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeldgrenze ist. Die Beschattung ignoriert die Sonnenposition, wenn sie in diese Blindfleckzone fällt."
+        "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
       },
       "interp": {
         "data": {
@@ -824,11 +827,11 @@
           "interp_list_new": "Ausgabepositionen für benutzerdefinierte Interpolationszuordnung (tatsächliche an Beschattung gesendete Positionen). Geben Sie entsprechende reale Positionen ein wie: 0, 20, 40, 65, 100. Dies ist das, was tatsächlich an Ihre Beschattungsentität gesendet wird. Muss die gleiche Länge wie „Berechnete Positionen (Eingang)\" haben. Beispielverwendung: Beschattung beim Schließen aggressiver machen, indem 50% berechnet auf 40% tatsächlich zugeordnet wird. Die Integration interpoliert zwischen Ihren Punkten. Lassen Sie diesen Bereich leer für normalen Betrieb."
         },
         "title": "Positionskalibrierung",
-        "description": "Passen Sie die Positionszuordnung der Beschattung für nicht standardmäßige Beschattungen an, indem Sie eine berechnete Position (Eingang) einer tatsächlich an die Beschattung gesendeten Position (Ausgang) zuordnen. Verwenden Sie einfache 2-Punkt-Kalibrierung (0% und 100% zuordnen) für Beschattungen mit begrenztem Bereich (z. B. nur Bewegung zwischen 10–90%). Verwenden Sie erweiterte Listenzuordnung für nichtlineare Beschattungen oder um das Verhalten mehr zu öffnen/schließen. Die meisten Beschattungen benötigen dies nicht – aktivieren Sie es nur, wenn Ihre Beschattung nicht korrekt auf Standardbefehle von 0–100% reagiert."
+        "description": "Passen Sie die Positions-Zuordnung von Beschattungselementen für nicht standardisierte Beschattungselemente durch Zuordnung einer berechneten Position (Eingabe) zu einer tatsächlichen Position an, die an das Beschattungselement gesendet wird (Ausgabe). Verwenden Sie einfache 2-Punkt-Kalibrierung (0 % und 100 % zuordnen) für Beschattungselemente mit begrenztem Bereich (z. B. nur zwischen 10–90 % bewegbar). Verwenden Sie erweitertes Listen-Mapping für nichtlineare Beschattungselemente oder um das Verhalten mehr offen/geschlossen zu neigen. Die meisten Beschattungselemente benötigen dies nicht — aktivieren Sie es nur, wenn Ihr Beschattungselement nicht korrekt auf Standard-0–100%-Befehle reagiert.\n\n[Weitere Informationen]({learn_more})"
       },
       "glare_zones": {
         "title": "Blendungszonen",
-        "description": "Definieren Sie bis zu 4 Bodenbereiche zum Schutz vor direkter Sonneneinstrahlung. Lassen Sie einen Zonennamen blank, um ihn zu überspringen. Koordinaten sind relativ zur Fensterposition auf den Boden projiziert.",
+        "description": "Definieren Sie bis zu 4 Bodenbereiche, die vor direkter Sonneneinstrahlung geschützt werden sollen. Wenn der Sonnenwinkel direktes Licht auf eine Zone werfen würde, senkt sich die Jalousie, um sie abzuschatten. Lassen Sie einen Zonennamen leer, um diesen Slot zu überspringen.\n\nKoordinaten sind relativ zur Fenstermitte, die auf den Boden projiziert ist. **X** ist der Links-/Rechts-Versatz (positiv = rechts). **Y** ist der Abstand in den Raum. **Radius** definiert den zirkulären geschützten Bereich. Verwenden Sie die Lovelace-Begleitkarte, um Zonenpositionen zu visualisieren und Abdeckung zu überprüfen.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "enable_glare_zones": "Blendungszonen aktivieren",
           "glare_zone_1_name": "Zone-1-Name",
@@ -882,7 +885,7 @@
       },
       "debug": {
         "title": "Debug & Diagnose",
-        "description": "Aktivieren Sie den Debug-Modus, um detaillierte Fehlerbehebungsdaten zu sammeln, ohne configuration.yaml zu bearbeiten. Bei Aktivierung werden ausgewählte Kategorien auf INFO-Ebene protokolliert und ein Ringpuffer mit manuellen Übersteuerungsentscheidungen wird im Speicher beibehalten und im HA-Diagnosedownload verfügbar gemacht.\n\n{cover_capabilities}",
+        "description": "Aktivieren Sie den Debug-Modus, um detaillierte Fehlerbehebungsdaten zu sammeln, ohne configuration.yaml zu bearbeiten. Wenn aktiv, werden ausgewählte Kategorien auf INFO-Ebene protokolliert und ein Event-Ringpuffer wird im Speicher gespeichert und in der HA-Diagnostik-Download verfügbar gemacht.\n\n{cover_capabilities}\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "dry_run": "Testlauf (keine Abdeckungsbewegung)",
           "debug_mode": "Debug-Modus aktivieren",
@@ -905,7 +908,7 @@
       },
       "light_cloud": {
         "title": "Lichtsensoren und Wolkenunterdrückung",
-        "description": "Konfigurieren Sie Licht- und Wettersensoren, um zu erkennen, wenn Wolken die direkte Sonnenstrahlung blockieren.",
+        "description": "Unterdrücken Sie Blendschutz, wenn Sonnenlicht fehlt. Konfigurieren Sie Sensoren zur Erkennung von Wolken oder schwachem Licht — wenn ausgelöst, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente optional in eine geparkte Position. Verhindert unnötige Beschattungselemente-Bewegung an bewölkten Tagen.\n\nJede der vier Eingaben (Wetterzustand, Luxsensor, Bestrahlungssensor, Wolkenbedeckungssensor) kann einzeln oder zusammen verwendet werden — jede einzelne Übereinstimmung reicht aus, um die Verfolgung zu unterdrücken. Die optionale **bewölkte Position** bewegt Beschattungselemente in eine bestimmte Position, wenn die Unterdrückung ausgelöst wird; lassen Sie sie leer, um die aktuelle Position stattdessen zu halten.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "weather_entity": "Wetter-Entität (optional)",
           "lux_entity": "Luxsensor (optional)",
@@ -933,7 +936,7 @@
       },
       "temperature_climate": {
         "title": "Temperatur und Klimamodus",
-        "description": "Der Klimamodus passt die Behangposition je nach Innen-/Außentemperatur, Anwesenheit und ob die Sonne tatsächlich auf das Fenster scheint an. Wenn deaktiviert, folgt der Behang normaler Sonne-/Blendungsverfolgung.\n\n**Wie die Jahreszeit gewählt wird** – Die aktuelle Temperatur ist der Außensensor, wenn bereitgestellt, ansonsten der Innensensor.\n- **Winter** – aktuelle Temperatur liegt unter dem niedrigen Schwellwert.\n- **Sommer** – aktuelle Temperatur liegt über dem hohen Schwellwert **und** Außentemperatur liegt über dem Außenschwellwert (verhindert Sommerverhalten an einem kalten Tag).\n- **Zwischenstufe** – keiner der obigen; normale Sonne-/Blendungsverfolgung läuft.\n\n**Was jeder Modus tut**\n- **Winter + Sonne auf Fenster** → vollständig öffnen (100%), um kostenlose Solarwärme zu nutzen.\n- **Winter, Sonne nicht auf Fenster**, *Winterisolationsmodus* an → vollständig schließen (0%), um Wärme einzufangen.\n- **Sommer** → vollständig schließen (0%), um Wärmeeintrag zu blockieren. Für Jalousien geschieht dies nur mit Anwesenheit, wenn *Durchscheinende Jalousie* an ist; ohne Anwesenheit schließt es sich immer.\n- **Schwaches Licht** (bewölkt/dunkel/nicht sonnig) → kehrt zur Standardposition zurück, überschreibt Sommer-Schließen, damit Behänge sich nicht unnötig schließen.\n- **Zwischenstufe/Sonne gültig mit Anwesenheit** → normale Blendungsverfolgung.\n\n**Anwesenheit** begrenzt das Verhalten: wenn niemand zu Hause ist, gilt eine einfachere sommerlich-geschlossen/winterlich-offen Regel; mit Anwesenden läuft Blendungsverfolgung in Zwischenstufen und durchscheinende Jalousien schließen sich dennoch im Sommer.\n\n**Dreh-Behänge** folgen der gleichen saisonalen Logik, aber verwenden Lattenwinkel anstelle von Öffnen/Geschlossen-Positionen.\n\nLassen Sie *Außentemperatursensor* und *Anwesenheitsentität* leer, um diese Überprüfungen zu überspringen. Der Klimamodus läuft nach Zwangs-/Wetter-/Manuell-/Benutzerdefinierten Übersteuerungen, aber vor normaler Sonnenverfolgung.",
+        "description": "Der Klimamodus passt die Beschattungselemente-Position basierend auf Innen-/Außentemperatur, Anwesenheit und ob die Sonne tatsächlich das Fenster trifft, an. Wenn deaktiviert, folgt das Beschattungselement der normalen Sonne/Blendschutz-Verfolgung.\n\n**Wie die Jahreszeit gewählt wird** — Die aktuelle Temperatur ist der Außensensor, falls vorhanden, andernfalls der Innensensor.\n- **Winter** — aktuelle Temperatur liegt unter der niedrigen Schwelle.\n- **Sommer** — aktuelle Temperatur liegt über der hohen Schwelle **und** Außentemperatur liegt über der Außenschwelle (verhindert Sommerverhalten an einem kalten Tag).\n- **Übergangszeit** — keines der oben genannten; normale Solar-/Blendschutz-Verfolgung läuft.\n\n**Was jeder Modus tut**\n- **Winter + Sonne am Fenster** → vollständig öffnen (100 %), um kostenlose Solarwärme zu nutzen.\n- **Winter, Sonne nicht am Fenster**, *Winter-Isolationsmodus* an → vollständig schließen (0 %), um Wärme zu speichern.\n- **Sommer** → vollständig schließen (0 %), um Wärmegainauf zu blockieren. Bei Jalousien geschieht dies nur mit Anwesenheit, wenn *Transparente Jalousie* an ist; ohne Anwesenheit schließt sie sich immer.\n- **Schwaches Licht** (bewölkt / dunkel / nicht sonnig) → kehrt zur Standardposition zurück und überschreibt die Sommerversion, damit Beschattungselemente nicht unnötig schließen.\n- **Übergangszeit / Sonne gültig mit Anwesenheit** → normale Blendschutz-Verfolgung.\n\n**Anwesenheit** steuert das Verhalten: Mit niemandem zu Hause gilt eine einfachere Sommer-geschlossen / Winter-offen Regel; bei anwesenden Personen läuft die Blendschutz-Verfolgung unter Übergangsbedingungen und transparente Jalousien schließen sich immer noch im Sommer.\n\n**Neigungs-Beschattungselemente** folgen der gleichen saisonalen Logik, verwenden aber Schiebewinkel statt offen/geschlossen Positionen.\n\nLassen Sie *Außentemperatursensor* und *Anwesenheitsentität* leer, um diese Prüfungen zu überspringen. Der Klimamodus läuft nach Zwangs-/Wetter-/Manuell-/Benutzerdefinierten Übersteuerungen, aber vor der normalen Sonnenverfolgung.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "climate_mode": "Klimamodus aktivieren",
           "temp_entity": "Innere Temperaturentität",

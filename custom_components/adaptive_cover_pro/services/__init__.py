@@ -128,7 +128,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             coord._cancel_motion_timeout()  # noqa: SLF001
             coord._cancel_weather_timeout()  # noqa: SLF001
             coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-            coord._cmd_svc._safety_targets.clear()  # noqa: SLF001
+            coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
             coord.enabled_toggle = False
             coord.logger.debug("integration_disable service: disabled")
 
@@ -144,7 +144,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             coord._cancel_motion_timeout()  # noqa: SLF001
             coord._cancel_weather_timeout()  # noqa: SLF001
             coord._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-            coord._cmd_svc._safety_targets.clear()  # noqa: SLF001
+            coord._cmd_svc.clear_safety_targets()  # noqa: SLF001
             coord.enabled_toggle = False
             coord.logger.debug("emergency_stop service: stopped and disabled")
 

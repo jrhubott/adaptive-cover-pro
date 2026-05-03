@@ -46,28 +46,9 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
-    CONF_CUSTOM_POSITION_1,
-    CONF_CUSTOM_POSITION_2,
-    CONF_CUSTOM_POSITION_3,
-    CONF_CUSTOM_POSITION_4,
-    CONF_CUSTOM_POSITION_MIN_MODE_1,
-    CONF_CUSTOM_POSITION_MIN_MODE_2,
-    CONF_CUSTOM_POSITION_MIN_MODE_3,
-    CONF_CUSTOM_POSITION_MIN_MODE_4,
-    CONF_CUSTOM_POSITION_USE_MY_1,
-    CONF_CUSTOM_POSITION_USE_MY_2,
-    CONF_CUSTOM_POSITION_USE_MY_3,
-    CONF_CUSTOM_POSITION_USE_MY_4,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
-    CONF_CUSTOM_POSITION_PRIORITY_1,
-    CONF_CUSTOM_POSITION_PRIORITY_2,
-    CONF_CUSTOM_POSITION_PRIORITY_3,
-    CONF_CUSTOM_POSITION_PRIORITY_4,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
+    CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -168,7 +149,7 @@ from .pipeline.handlers import (
     WeatherOverrideHandler,
 )
 from .pipeline.registry import PipelineRegistry
-from .pipeline.types import ClimateOptions, PipelineSnapshot
+from .pipeline.types import ClimateOptions, CustomPositionSensorState, PipelineSnapshot
 from .enums import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -379,16 +360,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     # --- Property delegates for CoverCommandService state ---
 
     @property
-    def wait_for_target(self) -> dict:
-        """Delegate to CoverCommandService.wait_for_target."""
-        return self._cmd_svc.wait_for_target
-
-    @property
-    def target_call(self) -> dict:
-        """Delegate to CoverCommandService.target_call."""
-        return self._cmd_svc.target_call
-
-    @property
     def last_cover_action(self) -> dict:
         """Delegate to CoverCommandService.last_cover_action."""
         return self._cmd_svc.last_cover_action
@@ -569,16 +540,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.manager.handle_stop_service_call(
                 entity_id,
                 int(my_position_value),
-                self.wait_for_target,
+                self._cmd_svc.is_waiting_for_target,
             )
             # When a cover transitions into manual override via stop_cover,
             # discard any pre-existing safety-tagged target so reconciliation
             # cannot resurrect it (issue #215/#216).
             if not was_manual and self.manager.is_cover_manual(entity_id):
                 self._cmd_svc.discard_target(entity_id)
-            # Update target_call so the next reconciliation compares against
+            # Update target so the next reconciliation compares against
             # My rather than the stale calculated state.
-            self._cmd_svc.target_call[entity_id] = int(my_position_value)
+            self._cmd_svc.set_target(entity_id, int(my_position_value))
 
     async def async_check_weather_state_change(
         self, event: Event[EventStateChangedData]
@@ -669,7 +640,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ]:
             self.logger.debug("Ignoring intermediate state change for %s", entity_id)
             return
-        if self.wait_for_target.get(entity_id):
+        if self._cmd_svc.is_waiting_for_target(entity_id):
             # Check if still in grace period
             if self._is_in_grace_period(entity_id):
                 self.logger.debug(
@@ -722,7 +693,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         entity_id, caps, event.old_state
                     )
                 )
-                target = self._cmd_svc.target_call.get(entity_id)
+                target = self._cmd_svc.get_target(entity_id)
 
                 # Step-motor pause (Issue #186) takes highest priority: some covers
                 # briefly report "open"/"closed" at an intermediate position between
@@ -752,7 +723,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         position,
                         target,
                     )
-                    self.logger.debug("Wait for target: %s", self.wait_for_target)
+                    self.logger.debug(
+                        "Wait for target: %s", self._cmd_svc.waiting_entities()
+                    )
                     return
 
                 # Direction/progress check: runs for all covers where positions and
@@ -797,7 +770,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 "cover_state": event.new_state.state,
                             }
                         )
-                        self.logger.debug("Wait for target: %s", self.wait_for_target)
+                        self.logger.debug(
+                            "Wait for target: %s", self._cmd_svc.waiting_entities()
+                        )
                         return
 
                     # Progress-aware backstop: if no forward progress has been
@@ -819,7 +794,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                             self._cmd_svc._wait_for_target_timeout_seconds
                         )  # noqa: SLF001
                         if elapsed > timeout:
-                            self._cmd_svc.wait_for_target[entity_id] = False
+                            self._cmd_svc.set_waiting(entity_id, False)
                             self._debug_log(
                                 "manual_override",
                                 "Transit timeout for %s (%.0fs > %ds without progress) "
@@ -841,7 +816,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 }
                             )
                             self.logger.debug(
-                                "Wait for target: %s", self.wait_for_target
+                                "Wait for target: %s", self._cmd_svc.waiting_entities()
                             )
                             return
 
@@ -885,12 +860,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                                 }
                             )
                             self.logger.debug(
-                                "Wait for target: %s", self.wait_for_target
+                                "Wait for target: %s", self._cmd_svc.waiting_entities()
                             )
                             return
 
                 # Clear wait_for_target to allow manual override detection.
-                self._cmd_svc.wait_for_target[entity_id] = False
+                self._cmd_svc.set_waiting(entity_id, False)
                 self._debug_log(
                     "manual_override",
                     "Grace period expired, cover %s not in transit "
@@ -911,7 +886,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         "target": target,
                     }
                 )
-            self.logger.debug("Wait for target: %s", self.wait_for_target)
+            self.logger.debug("Wait for target: %s", self._cmd_svc.waiting_entities())
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
 
@@ -1571,11 +1546,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 continue
 
-            # Use target_call if available (contains actual sent position),
-            # otherwise fall back to calculated state.
-            # This is critical for open/close-only covers where the calculated
-            # state gets transformed (via threshold) to 0 or 100 before sending.
-            expected_position = self.target_call.get(entity_id, state)
+            # Use the recorded target if available (the actual sent position),
+            # otherwise fall back to calculated state. Critical for open/close-only
+            # covers where the calculated state gets transformed (via threshold)
+            # to 0 or 100 before sending.
+            recorded_target = self._cmd_svc.get_target(entity_id)
+            expected_position = state if recorded_target is None else recorded_target
 
             was_manual = self.manager.is_cover_manual(entity_id)
             self.manager.handle_state_change(
@@ -1583,7 +1559,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 expected_position,
                 self._cover_type,
                 self.manual_reset,
-                self.wait_for_target,
+                self._cmd_svc.is_waiting_for_target,
                 self.manual_threshold,
             )
             # When a cover transitions into manual override, discard any
@@ -1654,38 +1630,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         alongside all other handlers.
         """
         options = self.config_entry.options
-        _slot_keys = [
-            (
-                1,
-                CONF_CUSTOM_POSITION_SENSOR_1,
-                CONF_CUSTOM_POSITION_1,
-                CONF_CUSTOM_POSITION_PRIORITY_1,
-            ),
-            (
-                2,
-                CONF_CUSTOM_POSITION_SENSOR_2,
-                CONF_CUSTOM_POSITION_2,
-                CONF_CUSTOM_POSITION_PRIORITY_2,
-            ),
-            (
-                3,
-                CONF_CUSTOM_POSITION_SENSOR_3,
-                CONF_CUSTOM_POSITION_3,
-                CONF_CUSTOM_POSITION_PRIORITY_3,
-            ),
-            (
-                4,
-                CONF_CUSTOM_POSITION_SENSOR_4,
-                CONF_CUSTOM_POSITION_4,
-                CONF_CUSTOM_POSITION_PRIORITY_4,
-            ),
-        ]
         custom_handlers: list[CustomPositionHandler] = []
-        for slot, sensor_key, pos_key, pri_key in _slot_keys:
-            sensor = options.get(sensor_key)
-            position = options.get(pos_key)
+        for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
+            sensor = options.get(slot_keys["sensor"])
+            position = options.get(slot_keys["position"])
             if sensor and position is not None:
-                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
+                priority = int(
+                    options.get(slot_keys["priority"])
+                    or DEFAULT_CUSTOM_POSITION_PRIORITY
+                )
                 custom_handlers.append(
                     CustomPositionHandler(
                         slot=slot,
@@ -1942,60 +1895,39 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     def _read_custom_position_sensor_states(
         self, options
-    ) -> list[tuple[str, bool, int, int, bool, bool]]:
+    ) -> list[CustomPositionSensorState]:
         """Read custom position sensor states from HA into an ordered list.
 
-        Returns a list of (entity_id, is_on, position, priority, min_mode, use_my) tuples
-        for every slot that has both a sensor and a position configured.  Priority
-        defaults to DEFAULT_CUSTOM_POSITION_PRIORITY (77) when not set so that
-        existing installations behave identically to the previous release.
-        min_mode defaults to False so existing installations behave identically.
-        use_my defaults to False; when True the slot triggers the cover's hardware
-        "My" preset via stop_cover instead of the slot's numeric position.
+        Returns one CustomPositionSensorState per configured slot (sensor and
+        position both set).  Priority defaults to DEFAULT_CUSTOM_POSITION_PRIORITY
+        (77) when not set so existing installations behave identically.  min_mode
+        defaults to False; use_my defaults to False (when True the slot triggers
+        the cover's hardware "My" preset via stop_cover instead of the slot's
+        numeric position).
         """
-        _sensor_keys = [
-            (
-                CONF_CUSTOM_POSITION_SENSOR_1,
-                CONF_CUSTOM_POSITION_1,
-                CONF_CUSTOM_POSITION_PRIORITY_1,
-                CONF_CUSTOM_POSITION_MIN_MODE_1,
-                CONF_CUSTOM_POSITION_USE_MY_1,
-            ),
-            (
-                CONF_CUSTOM_POSITION_SENSOR_2,
-                CONF_CUSTOM_POSITION_2,
-                CONF_CUSTOM_POSITION_PRIORITY_2,
-                CONF_CUSTOM_POSITION_MIN_MODE_2,
-                CONF_CUSTOM_POSITION_USE_MY_2,
-            ),
-            (
-                CONF_CUSTOM_POSITION_SENSOR_3,
-                CONF_CUSTOM_POSITION_3,
-                CONF_CUSTOM_POSITION_PRIORITY_3,
-                CONF_CUSTOM_POSITION_MIN_MODE_3,
-                CONF_CUSTOM_POSITION_USE_MY_3,
-            ),
-            (
-                CONF_CUSTOM_POSITION_SENSOR_4,
-                CONF_CUSTOM_POSITION_4,
-                CONF_CUSTOM_POSITION_PRIORITY_4,
-                CONF_CUSTOM_POSITION_MIN_MODE_4,
-                CONF_CUSTOM_POSITION_USE_MY_4,
-            ),
-        ]
         result = []
-        for sensor_key, pos_key, pri_key, min_mode_key, use_my_key in _sensor_keys:
-            sensor = options.get(sensor_key)
-            position = options.get(pos_key)
+        for slot_keys in CUSTOM_POSITION_SLOTS.values():
+            sensor = options.get(slot_keys["sensor"])
+            position = options.get(slot_keys["position"])
             if sensor and position is not None:
                 is_on = bool(
                     (state := self.hass.states.get(sensor)) and state.state == "on"
                 )
-                priority = int(options.get(pri_key) or DEFAULT_CUSTOM_POSITION_PRIORITY)
-                min_mode = bool(options.get(min_mode_key, False))
-                use_my = bool(options.get(use_my_key, False))
+                priority = int(
+                    options.get(slot_keys["priority"])
+                    or DEFAULT_CUSTOM_POSITION_PRIORITY
+                )
+                min_mode = bool(options.get(slot_keys["min_mode"], False))
+                use_my = bool(options.get(slot_keys["use_my"], False))
                 result.append(
-                    (sensor, is_on, int(position), priority, min_mode, use_my)
+                    CustomPositionSensorState(
+                        entity_id=sensor,
+                        is_on=is_on,
+                        position=int(position),
+                        priority=priority,
+                        min_mode=min_mode,
+                        use_my=use_my,
+                    )
                 )
         return result
 

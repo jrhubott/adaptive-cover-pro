@@ -156,14 +156,14 @@ async def test_reconcile_skips_all_targets_when_integration_disabled(svc, mock_h
     the kill switch blocks everything.
     """
     # Non-safety target
-    svc.target_call["cover.solar"] = 60
-    svc.wait_for_target["cover.solar"] = False
-    svc._safety_targets.discard("cover.solar")
+    svc.set_target("cover.solar", 60)
+    svc.set_waiting("cover.solar", False)
+    svc.state("cover.solar").is_safety = False
 
     # Safety target (force override)
-    svc.target_call["cover.force"] = 0
-    svc.wait_for_target["cover.force"] = False
-    svc._safety_targets.add("cover.force")
+    svc.set_target("cover.force", 0)
+    svc.set_waiting("cover.force", False)
+    svc.state("cover.force").is_safety = True
 
     _patch_position(svc, 50)  # Both off-target — would trigger retry if enabled
     svc.enabled = False
@@ -204,16 +204,16 @@ async def test_safety_targets_cleared_on_disable_prevents_replay(svc, mock_hass)
     The switch OFF transition calls clear_non_safety_targets() and
     _safety_targets.clear() so no prior force position is resent on re-enable.
     """
-    svc.target_call["cover.force"] = 0
-    svc.wait_for_target["cover.force"] = False
-    svc._safety_targets.add("cover.force")
+    svc.set_target("cover.force", 0)
+    svc.set_waiting("cover.force", False)
+    svc.state("cover.force").is_safety = True
     _patch_position(svc, 50)
 
     # Simulate what the switch OFF transition does
     svc.clear_non_safety_targets()  # clears non-safety (cover.force is safety, kept)
-    svc._safety_targets.clear()  # explicitly cleared on Integration Enabled OFF
+    svc.clear_safety_targets()  # explicitly cleared on Integration Enabled OFF
     # Now clear target_call entry that was safety (no longer in _safety_targets, remove manually)
-    svc.target_call.clear()
+    svc._state.clear()
 
     svc.enabled = True  # Re-enable
 
@@ -239,10 +239,10 @@ def test_enabled_setter(svc):
 @pytest.mark.asyncio
 async def test_enable_resumes_normal_sends(svc, mock_hass):
     """After re-enabling, normal sends work again (not blocked)."""
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     _patch_position(svc, 40)
-    svc._safety_targets.discard("cover.test")
+    svc.state("cover.test").is_safety = False
     svc.auto_control_enabled = True
 
     # Disabled: no send
@@ -269,23 +269,23 @@ async def test_position_verification_does_not_retry_beyond_max(svc, mock_hass):
     If a physical cover is blocked by an obstacle, the integration retries
     up to max_retries then backs off — it does not hammer the motor indefinitely.
     """
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     # Cover stuck at 50% (blocked obstacle)
     _patch_position(svc, 50)
-    svc._safety_targets.discard("cover.test")
+    svc.state("cover.test").is_safety = False
 
     # Each tick: reset wait_for_target so reconcile treats the cover as settled
     # (simulates what check_target_reached does after each position report).
     with _patch_caps():
         for _ in range(5):  # 5 ticks, max_retries=3
-            svc.wait_for_target["cover.test"] = False
+            svc.set_waiting("cover.test", False)
             await svc._reconcile(dt.datetime.now(dt.UTC))
 
     # Sent at most max_retries (3) times, not 5
     assert mock_hass.services.async_call.call_count <= 3
     # Entity is now in gave_up set — integration backed off
-    assert "cover.test" in svc._gave_up
+    assert svc.state("cover.test").gave_up
 
 
 @pytest.mark.asyncio
@@ -297,8 +297,8 @@ async def test_delta_prevents_hammering_when_cover_reports_same_position(
     If a cover reports a position matching the target (within tolerance), reconciliation
     clears wait_for_target and does not resend — preventing motor hammering.
     """
-    svc.target_call["cover.test"] = 60
-    svc.wait_for_target["cover.test"] = False
+    svc.set_target("cover.test", 60)
+    svc.set_waiting("cover.test", False)
     # Cover already at target (within 3% tolerance)
     _patch_position(svc, 61)
 
@@ -308,7 +308,7 @@ async def test_delta_prevents_hammering_when_cover_reports_same_position(
     # No command sent — cover is at target
     mock_hass.services.async_call.assert_not_called()
     # Retry count reset (cover arrived)
-    assert svc._retry_counts.get("cover.test", 0) == 0
+    assert svc.state("cover.test").retry_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -323,12 +323,12 @@ async def test_manual_override_wins_over_auto_control(svc, mock_hass):
     Semantic: user walked through, pushed the cover — integration backs off.
     auto_control=True but entity is in manual_override_entities → skip.
     """
-    svc.target_call["cover.room"] = 60
-    svc.wait_for_target["cover.room"] = False
+    svc.set_target("cover.room", 60)
+    svc.set_waiting("cover.room", False)
     _patch_position(svc, 80)  # User moved cover to 80%
     svc.manual_override_entities = {"cover.room"}
     svc.auto_control_enabled = True
-    svc._safety_targets.discard("cover.room")
+    svc.state("cover.room").is_safety = False
 
     await svc._reconcile(dt.datetime.now(dt.UTC))
 
@@ -472,8 +472,8 @@ def _stub_all_covers_state(mock_hass, state_str: str) -> None:
 @pytest.mark.asyncio
 async def test_stop_in_flight_sends_stop_to_waiting_entities(svc, mock_hass):
     """stop_in_flight sends stop_cover to every entity with wait_for_target=True."""
-    svc.wait_for_target["cover.a"] = True
-    svc.wait_for_target["cover.b"] = True
+    svc.set_waiting("cover.a", True)
+    svc.set_waiting("cover.b", True)
     _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=True):
@@ -489,7 +489,7 @@ async def test_stop_in_flight_sends_stop_to_waiting_entities(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_stop_in_flight_skips_covers_without_has_stop(svc, mock_hass):
     """stop_in_flight skips entities whose cover does not support STOP."""
-    svc.wait_for_target["cover.nostop"] = True
+    svc.set_waiting("cover.nostop", True)
     _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=False):
@@ -502,7 +502,7 @@ async def test_stop_in_flight_skips_covers_without_has_stop(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_stop_in_flight_skips_entities_not_waiting(svc, mock_hass):
     """stop_in_flight ignores entities where wait_for_target is False."""
-    svc.wait_for_target["cover.settled"] = False
+    svc.set_waiting("cover.settled", False)
     _stub_all_covers_state(mock_hass, "opening")
 
     with _patch_caps_with_stop(has_stop=True):
@@ -515,8 +515,8 @@ async def test_stop_in_flight_skips_entities_not_waiting(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_stop_in_flight_clears_wait_for_target(svc, mock_hass):
     """stop_in_flight clears wait_for_target for stopped entities."""
-    svc.wait_for_target["cover.moving"] = True
-    svc._sent_at["cover.moving"] = __import__("datetime").datetime.now(
+    svc.set_waiting("cover.moving", True)
+    svc.state("cover.moving").sent_at = __import__("datetime").datetime.now(
         __import__("datetime").timezone.utc
     )
     _stub_all_covers_state(mock_hass, "opening")
@@ -524,8 +524,8 @@ async def test_stop_in_flight_clears_wait_for_target(svc, mock_hass):
     with _patch_caps_with_stop(has_stop=True):
         await svc.stop_in_flight()
 
-    assert svc.wait_for_target["cover.moving"] is False
-    assert "cover.moving" not in svc._sent_at
+    assert svc.is_waiting_for_target("cover.moving") is False
+    assert svc.state("cover.moving").sent_at is None
 
 
 # ---------------------------------------------------------------------------
@@ -542,8 +542,8 @@ async def test_stop_in_flight_skips_stationary_cover_somfy_my(svc, mock_hass):
     the "My" preset position instead of being a no-op.  The in-flight
     bookkeeping (wait_for_target, _sent_at) should still be cleaned up.
     """
-    svc.wait_for_target["cover.awning"] = True
-    svc._sent_at["cover.awning"] = __import__("datetime").datetime.now(
+    svc.set_waiting("cover.awning", True)
+    svc.state("cover.awning").sent_at = __import__("datetime").datetime.now(
         __import__("datetime").timezone.utc
     )
     _stub_all_covers_state(mock_hass, "open")  # already stationary
@@ -554,8 +554,8 @@ async def test_stop_in_flight_skips_stationary_cover_somfy_my(svc, mock_hass):
     assert stopped == []
     mock_hass.services.async_call.assert_not_called()
     # Stale bookkeeping must be cleared even though no stop was sent
-    assert svc.wait_for_target["cover.awning"] is False
-    assert "cover.awning" not in svc._sent_at
+    assert svc.is_waiting_for_target("cover.awning") is False
+    assert svc.state("cover.awning").sent_at is None
 
 
 @pytest.mark.asyncio

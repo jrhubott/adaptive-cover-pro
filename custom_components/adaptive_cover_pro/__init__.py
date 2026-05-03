@@ -12,10 +12,6 @@ from homeassistant.helpers.event import (
 
 from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
     CONF_DEVICE_ID,
     CONF_END_ENTITY,
     CONF_ENTITIES,
@@ -35,11 +31,12 @@ from .const import (
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_WIDTH,
+    CUSTOM_POSITION_SLOTS,
     DOMAIN,
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
-from .migrations import async_prune_legacy_entities
+from .migrations import async_prune_legacy_entities, async_prune_legacy_sensor_entities
 from .services import async_setup_services, async_unload_services
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
@@ -99,13 +96,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Add custom position sensors to tracked entities so the pipeline
     # re-evaluates immediately when a sensor turns on or off, rather
     # than waiting for the next periodic refresh or another entity change.
-    for _sensor_key in [
-        CONF_CUSTOM_POSITION_SENSOR_1,
-        CONF_CUSTOM_POSITION_SENSOR_2,
-        CONF_CUSTOM_POSITION_SENSOR_3,
-        CONF_CUSTOM_POSITION_SENSOR_4,
-    ]:
-        _sensor = entry.options.get(_sensor_key)
+    for _slot_keys in CUSTOM_POSITION_SLOTS.values():
+        _sensor = entry.options.get(_slot_keys["sensor"])
         if _sensor:
             _entities.append(_sensor)
 
@@ -177,9 +169,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # access it during RestoreEntity rehydration (must run before first_refresh).
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Prune entity registry orphans left over from the v2.14.3 unique_id rename.
+    # Prune entity registry orphans left over from past unique_id renames.
     # Runs before platform setup so orphans are removed before new entities register.
     await async_prune_legacy_entities(hass, entry)
+    await async_prune_legacy_sensor_entities(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

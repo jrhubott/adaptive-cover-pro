@@ -101,7 +101,7 @@ async def test_return_to_default_fires_when_auto_control_toggled_off():
 
     # The return-to-default command must have been sent.
     hass.services.async_call.assert_awaited()
-    assert coord._cmd_svc.target_call.get("cover.test") == 60
+    assert coord._cmd_svc.get_target("cover.test") == 60
 
 
 @pytest.mark.asyncio

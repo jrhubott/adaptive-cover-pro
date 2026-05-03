@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...enums import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_raw_calculated_position
+from ..helpers import apply_minimum_mode, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -24,7 +24,7 @@ class CustomPositionHandler(OverrideHandler):
 
     The handler matches by looking up its sensor entity_id in
     ``snapshot.custom_position_sensors`` (a list of
-    ``(entity_id, is_on, position, priority)`` tuples).  If the sensor is
+    :class:`CustomPositionSensorState` entries).  If the sensor is
     ``is_on=True`` it claims the position; otherwise it passes through.
     """
 
@@ -42,7 +42,7 @@ class CustomPositionHandler(OverrideHandler):
         self._entity_id = entity_id
         self._position = position
         self.priority = priority  # instance attribute overrides any class-level default
-        # min_mode is read from the snapshot tuple at evaluate() time, not stored here,
+        # min_mode is read from the snapshot at evaluate() time, not stored here,
         # since snapshot is the single source of truth for per-cycle config.
 
     @property
@@ -53,21 +53,14 @@ class CustomPositionHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
         """Return the configured position when this slot's sensor is active."""
         # Find our sensor in the snapshot's sensor list by entity_id.
-        for (
-            entity_id,
-            is_on,
-            _position,
-            _priority,
-            min_mode,
-            use_my,
-        ) in snapshot.custom_position_sensors:
-            if entity_id == self._entity_id:
-                if is_on:
+        for state in snapshot.custom_position_sensors:
+            if state.entity_id == self._entity_id:
+                if state.is_on:
                     raw = compute_raw_calculated_position(snapshot)
                     # "Use My" path: route through the cover's hardware-stored My preset.
                     # my_position_value acts as both the target and the reason annotation.
                     # min_mode is ignored — My is hardware-pinned; floor semantics don't apply.
-                    if use_my and snapshot.my_position_value is not None:
+                    if state.use_my and snapshot.my_position_value is not None:
                         pos = snapshot.my_position_value
                         return PipelineResult(
                             position=pos,
@@ -81,12 +74,9 @@ class CustomPositionHandler(OverrideHandler):
                             ),
                             raw_calculated_position=raw,
                         )
-                    if min_mode:
-                        pos = max(self._position, raw)
-                        mode_note = f" [minimum mode — floor {self._position}%, calculated {raw}%]"
-                    else:
-                        pos = self._position
-                        mode_note = ""
+                    pos, mode_note = apply_minimum_mode(
+                        self._position, raw, enabled=state.min_mode
+                    )
                     return PipelineResult(
                         position=pos,
                         bypass_auto_control=True,

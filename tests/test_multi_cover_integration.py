@@ -139,8 +139,8 @@ class TestAllCoversReceiveSamePipelinePosition:
                 await svc.apply_position(entity, 65, "solar", context=_ctx())
 
         assert mock_hass.services.async_call.call_count == 2
-        assert svc.target_call["cover.blind_1"] == 65
-        assert svc.target_call["cover.blind_2"] == 65
+        assert svc.get_target("cover.blind_1") == 65
+        assert svc.get_target("cover.blind_2") == 65
 
     @pytest.mark.asyncio
     async def test_three_covers_all_tracked_independently(self, mock_hass, grace_mgr):
@@ -153,9 +153,9 @@ class TestAllCoversReceiveSamePipelinePosition:
             for entity in entities:
                 await svc.apply_position(entity, 70, "solar", context=_ctx())
 
-        assert len(svc.target_call) == 3
+        assert len(list(svc.iter_targets())) == 3
         for entity in entities:
-            assert svc.target_call[entity] == 70
+            assert svc.get_target(entity) == 70
 
     @pytest.mark.asyncio
     async def test_all_covers_set_wait_for_target(self, mock_hass, grace_mgr):
@@ -169,7 +169,7 @@ class TestAllCoversReceiveSamePipelinePosition:
                 await svc.apply_position(entity, 55, "solar", context=_ctx())
 
         for entity in entities:
-            assert svc.wait_for_target[entity] is True
+            assert svc.is_waiting_for_target(entity) is True
 
 
 # ---------------------------------------------------------------------------
@@ -201,17 +201,17 @@ class TestManualOverridePerEntity:
         assert outcome_a == "skipped"
         assert reason_a == "manual_override"
         assert outcome_b == "sent"
-        assert "cover.a" not in svc.target_call
-        assert svc.target_call["cover.b"] == 60
+        assert not svc.has_target("cover.a")
+        assert svc.get_target("cover.b") == 60
 
     @pytest.mark.asyncio
     async def test_reconciliation_skips_manual_entity_only(self, mock_hass, grace_mgr):
         """Reconciliation skips the manually-overridden entity but retries others."""
         svc = _make_svc(mock_hass, grace_mgr)
-        svc.target_call["cover.manual"] = 85
-        svc.target_call["cover.auto"] = 70
-        svc.wait_for_target["cover.manual"] = False
-        svc.wait_for_target["cover.auto"] = False
+        svc.set_target("cover.manual", 85)
+        svc.set_target("cover.auto", 70)
+        svc.set_waiting("cover.manual", False)
+        svc.set_waiting("cover.auto", False)
 
         # Both off their targets
         _patch_position(svc, {"cover.manual": 50, "cover.auto": 50})
@@ -297,11 +297,8 @@ class TestGracePeriodPerEntity:
             await svc.apply_position("cover.blind_1", 50, "solar", context=_ctx())
             await svc.apply_position("cover.blind_2", 80, "solar", context=_ctx())
 
-        assert "cover.blind_1" in svc._sent_at
-        assert "cover.blind_2" in svc._sent_at
-        # Timestamps are independent (could be same sub-second, but keys exist)
-        assert svc._sent_at["cover.blind_1"] is not None
-        assert svc._sent_at["cover.blind_2"] is not None
+        assert svc.state("cover.blind_1").sent_at is not None
+        assert svc.state("cover.blind_2").sent_at is not None
 
 
 # ---------------------------------------------------------------------------
@@ -318,10 +315,10 @@ class TestReconciliationTargetsPerEntity:
     ):
         """Retry counts are tracked independently per entity."""
         svc = _make_svc(mock_hass, grace_mgr)
-        svc.target_call["cover.a"] = 60
-        svc.target_call["cover.b"] = 70
-        svc.wait_for_target["cover.a"] = False
-        svc.wait_for_target["cover.b"] = False
+        svc.set_target("cover.a", 60)
+        svc.set_target("cover.b", 70)
+        svc.set_waiting("cover.a", False)
+        svc.set_waiting("cover.b", False)
 
         # cover.a: at target (delta=2 ≤ 3); cover.b: off target (delta=20 > 3)
         _patch_position(svc, {"cover.a": 58, "cover.b": 50})
@@ -330,8 +327,8 @@ class TestReconciliationTargetsPerEntity:
             await svc._reconcile(dt.datetime.now(dt.UTC))
 
         # Only cover.b should have been retried
-        assert svc._retry_counts.get("cover.a", 0) == 0
-        assert svc._retry_counts.get("cover.b", 0) == 1
+        assert svc.state("cover.a").retry_count == 0
+        assert svc.state("cover.b").retry_count == 1
 
     @pytest.mark.asyncio
     async def test_target_call_updated_per_entity(self, mock_hass, grace_mgr):
@@ -343,38 +340,38 @@ class TestReconciliationTargetsPerEntity:
             await svc.apply_position("cover.north", 40, "solar", context=_ctx())
             await svc.apply_position("cover.south", 80, "solar", context=_ctx())
 
-        assert svc.target_call["cover.north"] == 40
-        assert svc.target_call["cover.south"] == 80
+        assert svc.get_target("cover.north") == 40
+        assert svc.get_target("cover.south") == 80
 
     @pytest.mark.asyncio
     async def test_check_target_reached_per_entity(self, mock_hass, grace_mgr):
         """check_target_reached is independent: clearing one doesn't affect the other."""
         svc = _make_svc(mock_hass, grace_mgr)
-        svc.target_call["cover.a"] = 50
-        svc.target_call["cover.b"] = 70
-        svc.wait_for_target["cover.a"] = True
-        svc.wait_for_target["cover.b"] = True
+        svc.set_target("cover.a", 50)
+        svc.set_target("cover.b", 70)
+        svc.set_waiting("cover.a", True)
+        svc.set_waiting("cover.b", True)
 
         # cover.a reaches its target; cover.b does not
         reached_a = svc.check_target_reached("cover.a", 50)  # exact match
         reached_b = svc.check_target_reached("cover.b", 50)  # delta=20 > tolerance=3
 
         assert reached_a is True
-        assert svc.wait_for_target["cover.a"] is False  # cleared
+        assert svc.is_waiting_for_target("cover.a") is False  # cleared
 
         assert reached_b is False
-        assert svc.wait_for_target["cover.b"] is True  # still waiting
+        assert svc.is_waiting_for_target("cover.b") is True  # still waiting
 
     @pytest.mark.asyncio
     async def test_max_retries_per_entity_independent(self, mock_hass, grace_mgr):
         """When one entity hits max retries, others still get retried."""
         svc = _make_svc(mock_hass, grace_mgr)
         # cover.a at max retries — should be skipped
-        svc.target_call["cover.a"] = 60
-        svc.target_call["cover.b"] = 70
-        svc.wait_for_target["cover.a"] = False
-        svc.wait_for_target["cover.b"] = False
-        svc._retry_counts["cover.a"] = 3  # at max_retries=3
+        svc.set_target("cover.a", 60)
+        svc.set_target("cover.b", 70)
+        svc.set_waiting("cover.a", False)
+        svc.set_waiting("cover.b", False)
+        svc.state("cover.a").retry_count = 3  # at max_retries=3
 
         # Both off target
         _patch_position(svc, {"cover.a": 40, "cover.b": 40})
@@ -383,9 +380,9 @@ class TestReconciliationTargetsPerEntity:
             await svc._reconcile(dt.datetime.now(dt.UTC))
 
         # cover.b retried; cover.a skipped (at max)
-        assert svc._retry_counts.get("cover.b", 0) == 1
+        assert svc.state("cover.b").retry_count == 1
         # cover.a retry count stays at 3 (not incremented further)
-        assert svc._retry_counts["cover.a"] == 3
+        assert svc.state("cover.a").retry_count == 3
 
 
 # ---------------------------------------------------------------------------

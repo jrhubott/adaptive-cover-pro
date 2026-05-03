@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
@@ -27,6 +29,148 @@ from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
 
+@dataclass(frozen=True, slots=True)
+class _SwitchSpec:
+    """Spec for a single AdaptiveCoverSwitch instance.
+
+    Locked unique_id contract: `switch_name` becomes the suffix in
+    `f"{entry_id}_{switch_name}"`. **Do not change any switch_name string** —
+    those are user-installed registry keys. Translation/internal lookups use
+    `key`. The two are intentionally different (e.g. `Manual Override` vs
+    `manual_toggle`) and the test in
+    `tests/test_switch_actions.py:204` pins this asymmetry.
+    """
+
+    switch_name: str  # → unique_id suffix; LOCKED
+    key: str  # translation_key + coordinator attribute name
+    initial_state: bool
+    enabled_default: bool = True
+    display_name: str | None = None
+    enabled_when: Callable[[ConfigEntry], bool] = field(default=lambda _: True)
+
+
+def _has_climate_mode(entry: ConfigEntry) -> bool:
+    return bool(entry.options.get(CONF_CLIMATE_MODE))
+
+
+def _has_climate_temp_source(entry: ConfigEntry) -> bool:
+    if not _has_climate_mode(entry):
+        return False
+    return bool(
+        entry.options.get(CONF_WEATHER_ENTITY)
+        or entry.options.get(CONF_OUTSIDETEMP_ENTITY)
+    )
+
+
+def _has_climate_lux(entry: ConfigEntry) -> bool:
+    return _has_climate_mode(entry) and bool(entry.options.get(CONF_LUX_ENTITY))
+
+
+def _has_climate_irradiance(entry: ConfigEntry) -> bool:
+    return _has_climate_mode(entry) and bool(entry.options.get(CONF_IRRADIANCE_ENTITY))
+
+
+def _is_vertical_or_horizontal(entry: ConfigEntry) -> bool:
+    return entry.data.get(CONF_SENSOR_TYPE) in ("cover_awning", "cover_blind")
+
+
+def _has_motion_sensors(entry: ConfigEntry) -> bool:
+    return bool(entry.options.get(CONF_MOTION_SENSORS, []))
+
+
+# Order matches the pre-refactor instantiation order in async_setup_entry so
+# that platform-add ordering (and therefore HA logbook chronology) is
+# unchanged.
+_SWITCH_SPECS: tuple[_SwitchSpec, ...] = (
+    _SwitchSpec(
+        switch_name="Integration Enabled",
+        key="enabled_toggle",
+        initial_state=True,
+    ),
+    _SwitchSpec(
+        switch_name="Automatic Control",
+        key="automatic_control",
+        initial_state=True,
+    ),
+    _SwitchSpec(
+        switch_name="Manual Override",
+        key="manual_toggle",
+        initial_state=True,
+        display_name="Manual Override Detection",
+    ),
+    _SwitchSpec(
+        switch_name="Return to default when disabled",
+        key="return_to_default_toggle",
+        initial_state=False,
+        enabled_when=_is_vertical_or_horizontal,
+    ),
+    _SwitchSpec(
+        switch_name="Motion Control",
+        key="motion_control",
+        initial_state=True,
+        enabled_when=_has_motion_sensors,
+    ),
+    _SwitchSpec(
+        switch_name="Climate Mode",
+        key="switch_mode",
+        initial_state=True,
+        enabled_when=_has_climate_mode,
+    ),
+    _SwitchSpec(
+        switch_name="Outside Temperature",
+        key="temp_toggle",
+        initial_state=False,
+        enabled_default=False,
+        enabled_when=_has_climate_temp_source,
+    ),
+    _SwitchSpec(
+        switch_name="Lux",
+        key="lux_toggle",
+        initial_state=True,
+        enabled_default=False,
+        enabled_when=_has_climate_lux,
+    ),
+    _SwitchSpec(
+        switch_name="Irradiance",
+        key="irradiance_toggle",
+        initial_state=True,
+        enabled_default=False,
+        enabled_when=_has_climate_irradiance,
+    ),
+)
+
+
+def _glare_zone_specs(entry: ConfigEntry) -> list[_SwitchSpec]:
+    """Build dynamic glare-zone switch specs from configured zone names.
+
+    Vertical-cover-only feature. The compact 0-based key (`glare_zone_0`,
+    `glare_zone_1`, …) advances only for *named* zones, matching the index
+    that ConfigurationService uses. The unique_id suffix
+    `f"Glare Zone: {zone_name}"` carries the user-provided text and **must
+    stay byte-identical** — that user text is the registry key.
+    """
+    if entry.data.get(CONF_SENSOR_TYPE) != "cover_blind":
+        return []
+    if not entry.options.get(CONF_ENABLE_GLARE_ZONES):
+        return []
+
+    specs: list[_SwitchSpec] = []
+    zone_counter = 0
+    for idx in range(1, 5):  # idx is 1-based (matches config option keys)
+        zone_name = entry.options.get(f"glare_zone_{idx}_name", "")
+        if not zone_name:
+            continue
+        specs.append(
+            _SwitchSpec(
+                switch_name=f"Glare Zone: {zone_name}",
+                key=f"glare_zone_{zone_counter}",
+                initial_state=True,
+            )
+        )
+        zone_counter += 1
+    return specs
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -37,150 +181,25 @@ async def async_setup_entry(
         config_entry.entry_id
     ]
 
-    enabled_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Integration Enabled",
-        True,
-        "enabled_toggle",
-    )
-    manual_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Manual Override",
-        True,
-        "manual_toggle",
-        display_name="Manual Override Detection",
-    )
-    control_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Automatic Control",
-        True,
-        "automatic_control",
-    )
-    climate_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Climate Mode",
-        True,
-        "switch_mode",
-    )
-    temp_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Outside Temperature",
-        False,
-        "temp_toggle",
-        enabled_default=False,
-    )
-    lux_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Lux",
-        True,
-        "lux_toggle",
-        enabled_default=False,
-    )
-    irradiance_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Irradiance",
-        True,
-        "irradiance_toggle",
-        enabled_default=False,
-    )
-    return_default_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Return to default when disabled",
-        False,
-        "return_to_default_toggle",
-    )
+    specs: list[_SwitchSpec] = [
+        spec for spec in _SWITCH_SPECS if spec.enabled_when(config_entry)
+    ]
+    specs.extend(_glare_zone_specs(config_entry))
 
-    motion_control_switch = AdaptiveCoverSwitch(
-        config_entry.entry_id,
-        hass,
-        config_entry,
-        coordinator,
-        "Motion Control",
-        True,
-        "motion_control",
+    async_add_entities(
+        AdaptiveCoverSwitch(
+            config_entry.entry_id,
+            hass,
+            config_entry,
+            coordinator,
+            spec.switch_name,
+            spec.initial_state,
+            spec.key,
+            enabled_default=spec.enabled_default,
+            display_name=spec.display_name,
+        )
+        for spec in specs
     )
-
-    climate_mode = config_entry.options.get(CONF_CLIMATE_MODE)
-    weather_entity = config_entry.options.get(CONF_WEATHER_ENTITY)
-    sensor_entity = config_entry.options.get(CONF_OUTSIDETEMP_ENTITY)
-    lux_entity = config_entry.options.get(CONF_LUX_ENTITY)
-    irradiance_entity = config_entry.options.get(CONF_IRRADIANCE_ENTITY)
-    sensor_type = config_entry.data.get(CONF_SENSOR_TYPE)
-    motion_sensors = config_entry.options.get(CONF_MOTION_SENSORS, [])
-
-    # Always add control and manual switches for all cover types
-    switches = [enabled_switch, control_switch, manual_switch]
-
-    # Add return to default switch for vertical and horizontal covers
-    if sensor_type in ["cover_awning", "cover_blind"]:
-        switches.append(return_default_switch)
-
-    # Motion control switch — only when motion sensors are configured
-    if motion_sensors:
-        switches.append(motion_control_switch)
-
-    if climate_mode:
-        switches.append(climate_switch)
-        if weather_entity or sensor_entity:
-            switches.append(temp_switch)
-        if lux_entity:
-            switches.append(lux_switch)
-        if irradiance_entity:
-            switches.append(irradiance_switch)
-
-    # Glare zone switches — one per configured zone for vertical covers
-    if sensor_type == "cover_blind" and config_entry.options.get(
-        CONF_ENABLE_GLARE_ZONES
-    ):
-        zone_counter = 0
-        for idx in range(1, 5):  # idx is 1-based (matches config option keys)
-            zone_name = config_entry.options.get(f"glare_zone_{idx}_name", "")
-            if not zone_name:
-                continue
-            # Key uses sequential 0-based counter so it matches the compact list
-            # that ConfigurationService builds (skipping blank slots). Both the
-            # coordinator's enumerate() and this counter advance only for named zones,
-            # so glare_zone_0 always refers to the first named zone regardless of
-            # which config slot it came from.
-            zone_key = f"glare_zone_{zone_counter}"
-            zone_counter += 1
-            switches.append(
-                AdaptiveCoverSwitch(
-                    config_entry.entry_id,
-                    hass,
-                    config_entry,
-                    coordinator,
-                    f"Glare Zone: {zone_name}",
-                    True,
-                    zone_key,
-                )
-            )
-
-    async_add_entities(switches)
 
 
 class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
@@ -252,7 +271,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
             self.coordinator._cancel_motion_timeout()  # noqa: SLF001
             self.coordinator._cancel_weather_timeout()  # noqa: SLF001
             self.coordinator._cmd_svc.clear_non_safety_targets()  # noqa: SLF001
-            self.coordinator._cmd_svc._safety_targets.clear()  # noqa: SLF001
+            self.coordinator._cmd_svc.clear_safety_targets()  # noqa: SLF001
 
         if self._key == "automatic_control" and kwargs.get("added") is not True:
             for entity in self.coordinator.manager.manual_controlled:

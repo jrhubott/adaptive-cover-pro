@@ -52,6 +52,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNSET_OFFSET,
     CONF_INVERSE_STATE,
     CONF_WINDOW_DEPTH,
+    CUSTOM_POSITION_SLOTS,
     DOMAIN,
     SensorType,
 )
@@ -1220,3 +1221,67 @@ async def test_options_flow_cover_entities_combined_form_with_devices(
         )
 
     assert result["type"] in ("form", "menu", "create_entry")
+
+
+# ---------------------------------------------------------------------------
+# Regression: clearing custom position slots (issue #323)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_options_flow_custom_position_clears_sensor_position_and_priority(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing custom position fields in options flow must set keys to None.
+
+    Regression for issue #323: submitting an empty custom_position form while
+    previously-saved slot values exist must overwrite them with None, not leave
+    the old values in place.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    for n, slot in CUSTOM_POSITION_SLOTS.items():
+        pre_options[slot["sensor"]] = f"binary_sensor.slot_{n}"
+        pre_options[slot["position"]] = 25
+        pre_options[slot["priority"]] = 60
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Clear Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=pre_options,
+        entry_id="custom_pos_clear_01",
+        title="Clear Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "custom_position"}
+    )
+    assert result["step_id"] == "custom_position"
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] in ("form", "menu")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    saved = result["data"]
+    for slot in CUSTOM_POSITION_SLOTS.values():
+        assert (
+            saved.get(slot["sensor"]) is None
+        ), f"{slot['sensor']} should be None after clearing"
+        assert (
+            saved.get(slot["position"]) is None
+        ), f"{slot['position']} should be None after clearing"
+        assert (
+            saved.get(slot["priority"]) is None
+        ), f"{slot['priority']} should be None after clearing"

@@ -12,6 +12,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
 from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
+    CONF_TRANSIT_TIMEOUT,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
@@ -361,6 +362,14 @@ class TestSyncCategorySplit:
         assert result[CONF_WEATHER_WIND_SPEED_SENSOR] == "sensor.wind_speed"
         assert result[CONF_WEATHER_RAIN_SENSOR] == "sensor.rain"
         assert CONF_WEATHER_WIND_SPEED_THRESHOLD not in result
+
+    # --- manual_override ---
+
+    def test_manual_override_includes_transit_timeout(self):
+        """manual_override category must include transit_timeout."""
+        entry = _make_entry({CONF_TRANSIT_TIMEOUT: 30})
+        result = _extract_shared_options(entry, ["manual_override"])
+        assert result[CONF_TRANSIT_TIMEOUT] == 30
 
     # --- UI category list ---
 

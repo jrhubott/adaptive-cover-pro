@@ -85,20 +85,21 @@ def _make_transit_coordinator(
     coord._grace_mgr = grace_mgr
 
     cmd_svc = MagicMock(spec=CoverCommandService)
-    cmd_svc.wait_for_target = {entity_id: True}
-    cmd_svc.target_call = {entity_id: target}
+    cmd_svc.is_waiting_for_target = MagicMock(return_value=True)
+    cmd_svc.get_target = MagicMock(return_value=target)
+    cmd_svc.has_target = MagicMock(return_value=True)
     cmd_svc._position_tolerance = 5
     cmd_svc._wait_for_target_timeout_seconds = transit_timeout
 
     now = dt.datetime.now(dt.UTC)
-    cmd_svc._sent_at = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
+    _sent_at_map = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
 
     _progress: dict[str, dt.datetime] = {}
     if last_progress_seconds_ago is not None:
         _progress[entity_id] = now - dt.timedelta(seconds=last_progress_seconds_ago)
 
     def _elapsed(eid, now_arg):
-        ref = _progress.get(eid) or cmd_svc._sent_at.get(eid)
+        ref = _progress.get(eid) or _sent_at_map.get(eid)
         return (now_arg - ref).total_seconds() if ref else None
 
     def _record_prog(eid, now_arg):
@@ -726,13 +727,13 @@ class TestReconcileGaveUpEvent:
         gave_up without calling _execute_command (which would reset wait_for_target).
         """
         now = dt.datetime.now(dt.UTC)
-        svc.wait_for_target[entity_id] = False
-        svc.target_call[entity_id] = target
-        svc._sent_at[entity_id] = now - dt.timedelta(seconds=5)
+        svc.set_waiting(entity_id, False)
+        svc.set_target(entity_id, target)
+        svc.state(entity_id).sent_at = now - dt.timedelta(seconds=5)
         svc._enabled = True
         svc._auto_control_enabled = True
         svc._in_time_window = True
-        svc._retry_counts[entity_id] = svc._max_retries  # already exhausted
+        svc.state(entity_id).retry_count = svc._max_retries  # already exhausted
 
         actual_state = MagicMock()
         actual_state.state = "open"

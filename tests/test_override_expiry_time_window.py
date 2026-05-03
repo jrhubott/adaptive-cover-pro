@@ -602,30 +602,23 @@ class TestIssue215EuropeParisSunsetConfig:
             CoverCommandService,
         )
 
-        svc = MagicMock(spec=CoverCommandService)
+        svc = CoverCommandService(
+            hass=MagicMock(),
+            logger=MagicMock(),
+            cover_type="cover_blind",
+            grace_mgr=MagicMock(),
+        )
         svc._in_time_window = False
-        svc._safety_targets = set()
-        svc._manual_override_entities = set()
-        svc._auto_control_enabled = True
         # cover is at 0 but stale target_call says 100
-        svc.target_call = {"cover.smart_plug_in_unit": 100}
-        svc.wait_for_target = {"cover.smart_plug_in_unit": False}
-        svc._sent_at = {}
-        svc._retry_counts = {}
-        svc._gave_up = set()
-        svc._enabled = True
-        svc._logger = MagicMock()
-        svc._on_tick = None
-        svc._get_current_position = MagicMock(return_value=0)
-        svc._last_reconcile_time = {}
-        svc._wait_for_target_timeout_seconds = 45
+        svc.set_target("cover.smart_plug_in_unit", 100)
+        svc.set_waiting("cover.smart_plug_in_unit", False)
 
         # Verify the gate condition that reconcile checks
         entity_id = "cover.smart_plug_in_unit"
         assert not svc._in_time_window
-        assert entity_id not in svc._safety_targets
+        assert not svc.is_safety_target(entity_id)
         # Gate condition: skip if not in_time_window and not in safety_targets
-        should_skip = not svc._in_time_window and entity_id not in svc._safety_targets
+        should_skip = not svc._in_time_window and not svc.is_safety_target(entity_id)
         assert should_skip is True, (
             "Reconciliation should skip cover.smart_plug_in_unit outside the time "
             "window when it is not a safety target"
@@ -700,7 +693,7 @@ class TestIssue215StaleSafetyTarget:
         )
         await svc.apply_position(entity_id, 0, "end_time_default", context=ctx)
 
-        assert entity_id not in svc._safety_targets, (
+        assert not svc.is_safety_target(entity_id), (
             "end_time_default must NOT be tagged as a safety target. "
             "force=False ensures is_safety=False so reconciliation cannot "
             "bypass the time-window gate and reopen the cover after a manual "
@@ -762,8 +755,8 @@ class TestIssue215StaleSafetyTarget:
         # With the bug (entity in _safety_targets), gate returns False → cover resent.
         # After fix (entity not in _safety_targets), gate returns True → cover skipped.
         in_time_window = False
-        reconcile_would_skip = (
-            not in_time_window and entity_id not in svc._safety_targets
+        reconcile_would_skip = not in_time_window and not svc.is_safety_target(
+            entity_id
         )
         assert reconcile_would_skip is True, (
             "Reconcile must skip cover outside the time window. "
@@ -797,17 +790,17 @@ class TestIssue215StaleSafetyTarget:
         entity_id = "cover.smart_plug_in_unit"
         # Artificially place a safety-tagged target (as _on_window_closed
         # used to do with force=True before the fix)
-        svc.target_call[entity_id] = 100
-        svc.wait_for_target[entity_id] = True
-        svc._safety_targets.add(entity_id)
-        svc._retry_counts[entity_id] = 1
+        svc.set_target(entity_id, 100)
+        svc.set_waiting(entity_id, True)
+        svc.state(entity_id).is_safety = True
+        svc.state(entity_id).retry_count = 1
 
         svc.discard_target(entity_id)
 
-        assert entity_id not in svc.target_call
-        assert entity_id not in svc.wait_for_target
-        assert entity_id not in svc._safety_targets
-        assert entity_id not in svc._retry_counts
+        assert not svc.has_target(entity_id)
+        assert not svc.is_waiting_for_target(entity_id)
+        assert not svc.is_safety_target(entity_id)
+        assert svc.state(entity_id).retry_count == 0
 
     @pytest.mark.asyncio
     async def test_manual_override_discards_pre_existing_safety_target(self):
@@ -825,9 +818,6 @@ class TestIssue215StaleSafetyTarget:
         )
 
         cmd_svc = MagicMock()
-        cmd_svc.target_call = {"cover.smart_plug_in_unit": 100}
-        cmd_svc._safety_targets = {"cover.smart_plug_in_unit"}
-        cmd_svc.wait_for_target = {}
         cmd_svc.discard_target = MagicMock()
 
         coordinator = MagicMock()
@@ -836,7 +826,6 @@ class TestIssue215StaleSafetyTarget:
         coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
         coordinator._target_just_reached = set()
         coordinator._cmd_svc = cmd_svc
-        coordinator.target_call = cmd_svc.target_call
         coordinator.logger = MagicMock()
         coordinator._cover_type = "cover_blind"
         coordinator.manual_reset = True
@@ -888,14 +877,14 @@ class TestIssue215StaleSafetyTarget:
         )
 
         entity_id = "cover.smart_plug_in_unit"
-        svc.target_call[entity_id] = 100
-        svc._safety_targets.add(entity_id)
+        svc.set_target(entity_id, 100)
+        svc.state(entity_id).is_safety = True
 
         # Simulate manual override starting: coordinator calls discard_target
         svc.discard_target(entity_id)
 
         # Now nothing for reconcile to iterate
-        assert entity_id not in svc.target_call, (
+        assert not svc.has_target(entity_id), (
             "After discard_target, entity must not appear in target_call — "
             "reconcile loop has nothing to process"
         )
@@ -970,7 +959,7 @@ class TestIssue223OverrideClearSafetyTag:
         )
         await svc.apply_position(entity_id, 55, "manual_override_cleared", context=ctx)
 
-        assert entity_id not in svc._safety_targets, (
+        assert not svc.is_safety_target(entity_id), (
             "Override-clear target must NOT be tagged as a safety target. "
             "is_safety=False ensures the target is cleaned up when the window "
             "closes (fix for issue #223)."
@@ -1006,7 +995,7 @@ class TestIssue223OverrideClearSafetyTag:
         # Simulate window closing
         svc.clear_non_safety_targets()
 
-        assert entity_id not in svc.target_call, (
+        assert not svc.has_target(entity_id), (
             "After window close, override-clear target must be removed — "
             "it was not safety-tagged so clear_non_safety_targets() must clear it."
         )
@@ -1037,7 +1026,7 @@ class TestIssue223OverrideClearSafetyTag:
         )
         await svc.apply_position(entity_id, 0, "force_override", context=ctx)
 
-        assert entity_id in svc._safety_targets, (
+        assert svc.is_safety_target(entity_id), (
             "Safety handler target must be tagged — reconciliation needs it to "
             "persist across window boundaries."
         )
@@ -1085,7 +1074,7 @@ class TestIssue223OverrideClearSafetyTag:
             is_safety=False,
         )
         await svc.apply_position(entity_id, 55, "manual_override_cleared", context=ctx)
-        svc.wait_for_target[entity_id] = False  # cover reached position
+        svc.set_waiting(entity_id, False)  # cover reached position
 
         # Step 2: Window closes → clear_non_safety_targets removes the target
         svc.in_time_window = False

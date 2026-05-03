@@ -39,28 +39,9 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_ENTITIES,
-    CONF_CUSTOM_POSITION_1,
-    CONF_CUSTOM_POSITION_2,
-    CONF_CUSTOM_POSITION_3,
-    CONF_CUSTOM_POSITION_4,
-    CONF_CUSTOM_POSITION_MIN_MODE_1,
-    CONF_CUSTOM_POSITION_MIN_MODE_2,
-    CONF_CUSTOM_POSITION_MIN_MODE_3,
-    CONF_CUSTOM_POSITION_MIN_MODE_4,
-    CONF_CUSTOM_POSITION_USE_MY_1,
-    CONF_CUSTOM_POSITION_USE_MY_2,
-    CONF_CUSTOM_POSITION_USE_MY_3,
-    CONF_CUSTOM_POSITION_USE_MY_4,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_USE_MY,
-    CONF_CUSTOM_POSITION_PRIORITY_1,
-    CONF_CUSTOM_POSITION_PRIORITY_2,
-    CONF_CUSTOM_POSITION_PRIORITY_3,
-    CONF_CUSTOM_POSITION_PRIORITY_4,
-    CONF_CUSTOM_POSITION_SENSOR_1,
-    CONF_CUSTOM_POSITION_SENSOR_2,
-    CONF_CUSTOM_POSITION_SENSOR_3,
-    CONF_CUSTOM_POSITION_SENSOR_4,
+    CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -155,6 +136,20 @@ _LOGGER = logging.getLogger(__name__)
 SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 
 _STANDALONE_SENTINEL = "__standalone__"
+
+_GEOMETRY_WIKI_URL: dict[str, str] = {
+    SensorType.BLIND: "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Vertical",
+    SensorType.AWNING: "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Horizontal",
+    SensorType.TILT: "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Tilt",
+}
+
+
+def _geometry_wiki_link(sensor_type: str | None) -> str:
+    url = _GEOMETRY_WIKI_URL.get(
+        sensor_type,
+        "https://github.com/jrhubott/adaptive-cover-pro/wiki/Cover-Types",
+    )
+    return f"[Learn more]({url})"
 
 
 CONFIG_SCHEMA = vol.Schema(
@@ -563,46 +558,33 @@ def _priority_slider() -> selector.NumberSelector:
     )
 
 
-CUSTOM_POSITION_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_1): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_1): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_1): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_1, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_1, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_2): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_2): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_2): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_2, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_2, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_3): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_3): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_3): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_3, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_3, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_CUSTOM_POSITION_SENSOR_4): _binary_on_selector(),
-        vol.Optional(CONF_CUSTOM_POSITION_4): _position_slider(),
-        vol.Optional(CONF_CUSTOM_POSITION_PRIORITY_4): _priority_slider(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_MIN_MODE_4, default=False
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_CUSTOM_POSITION_USE_MY_4, default=False
-        ): selector.BooleanSelector(),
-    }
-)
+def _build_custom_position_schema_dict() -> dict:
+    """Compose the full custom-position schema by iterating CUSTOM_POSITION_SLOTS."""
+    schema: dict = {}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        schema[vol.Optional(slot_keys["sensor"])] = _binary_on_selector()
+        schema[vol.Optional(slot_keys["position"])] = _position_slider()
+        schema[vol.Optional(slot_keys["priority"])] = _priority_slider()
+        schema[vol.Optional(slot_keys["min_mode"], default=False)] = (
+            selector.BooleanSelector()
+        )
+        schema[vol.Optional(slot_keys["use_my"], default=False)] = (
+            selector.BooleanSelector()
+        )
+    return schema
+
+
+CUSTOM_POSITION_SCHEMA = vol.Schema(_build_custom_position_schema_dict())
+
+# Keys in CUSTOM_POSITION_SCHEMA that have no schema default (sensor, position,
+# priority). Voluptuous omits them from user_input when cleared, so both flow
+# handlers must call optional_entities() with this list before dict.update() --
+# otherwise the prior value survives a clear (issue #323).
+_CUSTOM_POSITION_OPTIONAL_KEYS: list[str] = [
+    slot[field]
+    for slot in CUSTOM_POSITION_SLOTS.values()
+    for field in ("sensor", "position", "priority")
+]
 
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
@@ -1831,6 +1813,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MANUAL_IGNORE_INTERMEDIATE,
+            CONF_TRANSIT_TIMEOUT,
         }
     ),
     "force_override_values": frozenset(
@@ -1853,57 +1836,16 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         }
     ),
     "custom_position_values": frozenset(
-        {
-            CONF_CUSTOM_POSITION_1,
-            CONF_CUSTOM_POSITION_PRIORITY_1,
-            CONF_CUSTOM_POSITION_MIN_MODE_1,
-            CONF_CUSTOM_POSITION_USE_MY_1,
-            CONF_CUSTOM_POSITION_2,
-            CONF_CUSTOM_POSITION_PRIORITY_2,
-            CONF_CUSTOM_POSITION_MIN_MODE_2,
-            CONF_CUSTOM_POSITION_USE_MY_2,
-            CONF_CUSTOM_POSITION_3,
-            CONF_CUSTOM_POSITION_PRIORITY_3,
-            CONF_CUSTOM_POSITION_MIN_MODE_3,
-            CONF_CUSTOM_POSITION_USE_MY_3,
-            CONF_CUSTOM_POSITION_4,
-            CONF_CUSTOM_POSITION_PRIORITY_4,
-            CONF_CUSTOM_POSITION_MIN_MODE_4,
-            CONF_CUSTOM_POSITION_USE_MY_4,
-        }
+        keys[k]
+        for keys in CUSTOM_POSITION_SLOTS.values()
+        for k in ("position", "priority", "min_mode", "use_my")
     ),
     "custom_position_sensors": frozenset(
-        {
-            CONF_CUSTOM_POSITION_SENSOR_1,
-            CONF_CUSTOM_POSITION_SENSOR_2,
-            CONF_CUSTOM_POSITION_SENSOR_3,
-            CONF_CUSTOM_POSITION_SENSOR_4,
-        }
+        keys["sensor"] for keys in CUSTOM_POSITION_SLOTS.values()
     ),
     # Legacy alias: full union of custom_position_values + custom_position_sensors
     "custom_position": frozenset(
-        {
-            CONF_CUSTOM_POSITION_SENSOR_1,
-            CONF_CUSTOM_POSITION_1,
-            CONF_CUSTOM_POSITION_PRIORITY_1,
-            CONF_CUSTOM_POSITION_MIN_MODE_1,
-            CONF_CUSTOM_POSITION_USE_MY_1,
-            CONF_CUSTOM_POSITION_SENSOR_2,
-            CONF_CUSTOM_POSITION_2,
-            CONF_CUSTOM_POSITION_PRIORITY_2,
-            CONF_CUSTOM_POSITION_MIN_MODE_2,
-            CONF_CUSTOM_POSITION_USE_MY_2,
-            CONF_CUSTOM_POSITION_SENSOR_3,
-            CONF_CUSTOM_POSITION_3,
-            CONF_CUSTOM_POSITION_PRIORITY_3,
-            CONF_CUSTOM_POSITION_MIN_MODE_3,
-            CONF_CUSTOM_POSITION_USE_MY_3,
-            CONF_CUSTOM_POSITION_SENSOR_4,
-            CONF_CUSTOM_POSITION_4,
-            CONF_CUSTOM_POSITION_PRIORITY_4,
-            CONF_CUSTOM_POSITION_MIN_MODE_4,
-            CONF_CUSTOM_POSITION_USE_MY_4,
-        }
+        v for keys in CUSTOM_POSITION_SLOTS.values() for v in keys.values()
     ),
     "motion_override_values": frozenset(
         {
@@ -2294,6 +2236,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return self.async_show_menu(
             step_id="setup_mode",
             menu_options=["quick_setup", "full_setup"],
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
+            },
         )
 
     async def async_step_quick_setup(self, user_input: dict[str, Any] | None = None):
@@ -2350,11 +2295,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     data_schema=self.add_suggested_values_to_schema(
                         schema, self.config
                     ),
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
+                    },
                 )
             return await self.async_step_geometry()
 
         schema = _build_cover_entity_schema(self.type_blind)
-        return self.async_show_form(step_id="cover_entities", data_schema=schema)
+        return self.async_show_form(
+            step_id="cover_entities",
+            data_schema=schema,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
+            },
+        )
 
     async def async_step_geometry(self, user_input: dict[str, Any] | None = None):
         """Configure cover geometry dimensions."""
@@ -2363,7 +2317,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_sun_tracking()
 
         schema = _get_geometry_schema(self.type_blind)
-        return self.async_show_form(step_id="geometry", data_schema=schema)
+        return self.async_show_form(
+            step_id="geometry",
+            data_schema=schema,
+            description_placeholders={
+                "geometry_wiki_link": _geometry_wiki_link(self.type_blind)
+            },
+        )
 
     async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
         """Configure glare zone definitions (initial flow)."""
@@ -2374,7 +2334,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_automation()
 
         schema = _build_glare_zones_schema(self.config)
-        return self.async_show_form(step_id="glare_zones", data_schema=schema)
+        return self.async_show_form(
+            step_id="glare_zones",
+            data_schema=schema,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones"
+            },
+        )
 
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
         """Configure sun tracking parameters."""
@@ -2391,12 +2357,18 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
                     },
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking"
+                    },
                 )
             self.config.update(user_input)
             return await self.async_step_position()
         return self.async_show_form(
             step_id="sun_tracking",
             data_schema=_get_sun_tracking_schema(self.type_blind),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking"
+            },
         )
 
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
@@ -2415,7 +2387,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
             return await self.async_step_automation()
-        return self.async_show_form(step_id="position", data_schema=POSITION_SCHEMA)
+        return self.async_show_form(
+            step_id="position",
+            data_schema=POSITION_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+            },
+        )
 
     async def async_step_blind_spot(self, user_input: dict[str, Any] | None = None):
         """Add blindspot to data."""
@@ -2457,6 +2435,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     errors={
                         CONF_BLIND_SPOT_RIGHT: "Must be greater than 'Blind Spot Left Edge'"
                     },
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
+                    },
                 )
             self.config.update(user_input)
             if self.type_blind == SensorType.BLIND and self.config.get(
@@ -2467,7 +2448,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_interp()
             return await self.async_step_automation()
 
-        return self.async_show_form(step_id="blind_spot", data_schema=schema)
+        return self.async_show_form(
+            step_id="blind_spot",
+            data_schema=schema,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
+            },
+        )
 
     async def async_step_interp(self, user_input: dict[str, Any] | None = None):
         """Show interpolation options."""
@@ -2481,10 +2468,19 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     errors={
                         CONF_INTERP_LIST_NEW: "Must have same length as 'Calculated positions (input)' list"
                     },
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+                    },
                 )
             self.config.update(user_input)
             return await self.async_step_automation()
-        return self.async_show_form(step_id="interp", data_schema=INTERPOLATION_OPTIONS)
+        return self.async_show_form(
+            step_id="interp",
+            data_schema=INTERPOLATION_OPTIONS,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+            },
+        )
 
     async def async_step_automation(self, user_input: dict[str, Any] | None = None):
         """Manage automation options."""
@@ -2492,7 +2488,13 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
             self.config.update(user_input)
             return await self.async_step_manual_override()
-        return self.async_show_form(step_id="automation", data_schema=AUTOMATION_SCHEMA)
+        return self.async_show_form(
+            step_id="automation",
+            data_schema=AUTOMATION_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation"
+            },
+        )
 
     async def async_step_manual_override(
         self, user_input: dict[str, Any] | None = None
@@ -2503,7 +2505,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_force_override()
         return self.async_show_form(
-            step_id="manual_override", data_schema=MANUAL_OVERRIDE_SCHEMA
+            step_id="manual_override",
+            data_schema=MANUAL_OVERRIDE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_force_override(self, user_input: dict[str, Any] | None = None):
@@ -2512,7 +2518,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_custom_position()
         return self.async_show_form(
-            step_id="force_override", data_schema=FORCE_OVERRIDE_SCHEMA
+            step_id="force_override",
+            data_schema=FORCE_OVERRIDE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Force-Override"
+            },
         )
 
     async def async_step_custom_position(
@@ -2520,10 +2530,15 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ):
         """Configure custom position sensors."""
         if user_input is not None:
+            self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             return await self.async_step_motion_override()
         return self.async_show_form(
-            step_id="custom_position", data_schema=CUSTOM_POSITION_SCHEMA
+            step_id="custom_position",
+            data_schema=CUSTOM_POSITION_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
+            },
         )
 
     async def async_step_motion_override(
@@ -2534,7 +2549,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_weather_override()
         return self.async_show_form(
-            step_id="motion_override", data_schema=MOTION_OVERRIDE_SCHEMA
+            step_id="motion_override",
+            data_schema=MOTION_OVERRIDE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_weather_override(
@@ -2555,7 +2574,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_light_cloud()
         return self.async_show_form(
-            step_id="weather_override", data_schema=WEATHER_OVERRIDE_SCHEMA
+            step_id="weather_override",
+            data_schema=WEATHER_OVERRIDE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+            },
         )
 
     async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
@@ -2573,7 +2596,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.config.update(user_input)
             return await self.async_step_temperature_climate()
         return self.async_show_form(
-            step_id="light_cloud", data_schema=LIGHT_CLOUD_SCHEMA
+            step_id="light_cloud",
+            data_schema=LIGHT_CLOUD_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_temperature_climate(
@@ -2594,11 +2621,18 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     step_id="temperature_climate",
                     data_schema=TEMPERATURE_CLIMATE_SCHEMA,
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+                    },
                 )
             self.config.update(user_input)
             return await self.async_step_summary()
         return self.async_show_form(
-            step_id="temperature_climate", data_schema=TEMPERATURE_CLIMATE_SCHEMA
+            step_id="temperature_climate",
+            data_schema=TEMPERATURE_CLIMATE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+            },
         )
 
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
@@ -2620,19 +2654,34 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     step_id="climate",
                     data_schema=CLIMATE_SCHEMA,
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
+                    },
                 )
             self.config.update(user_input)
             if self.config.get(CONF_WEATHER_ENTITY):
                 return await self.async_step_weather()
             return await self.async_step_summary()
-        return self.async_show_form(step_id="climate", data_schema=CLIMATE_SCHEMA)
+        return self.async_show_form(
+            step_id="climate",
+            data_schema=CLIMATE_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
+            },
+        )
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None):
         """Manage weather conditions."""
         if user_input is not None:
             self.config.update(user_input)
             return await self.async_step_summary()
-        return self.async_show_form(step_id="weather", data_schema=WEATHER_OPTIONS)
+        return self.async_show_form(
+            step_id="weather",
+            data_schema=WEATHER_OPTIONS,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+            },
+        )
 
     async def async_step_summary(self, user_input: dict[str, Any] | None = None):
         """Show a read-only summary of all collected configuration before creating the entry."""
@@ -2957,7 +3006,11 @@ class OptionsFlowHandler(OptionsFlow):
         # Icons are embedded directly in each translation string (e.g. "🪟 Covers & Device").
         menu_options: list[str] = keys
 
-        return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
+        return self.async_show_menu(  # type: ignore[return-value]
+            step_id="init",
+            menu_options=menu_options,
+            description_placeholders={"instance_name": self.config_entry.title},
+        )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Adjust cover entities and device association on a single combined form."""
@@ -2981,6 +3034,9 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="cover_entities",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
+            },
         )
 
     async def async_step_geometry(self, user_input: dict[str, Any] | None = None):
@@ -2995,6 +3051,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, user_input or self.options
             ),
+            description_placeholders={
+                "geometry_wiki_link": _geometry_wiki_link(self.sensor_type)
+            },
         )
 
     async def async_step_glare_zones(self, user_input: dict[str, Any] | None = None):
@@ -3007,6 +3066,9 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="glare_zones",
             data_schema=self.add_suggested_values_to_schema(schema, self.options),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones"
+            },
         )
 
     async def async_step_sun_tracking(self, user_input: dict[str, Any] | None = None):
@@ -3027,6 +3089,9 @@ class OptionsFlowHandler(OptionsFlow):
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
                     },
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking"
+                    },
                 )
             self.options.update(user_input)
             return await self.async_step_init()
@@ -3036,6 +3101,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking"
+            },
         )
 
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
@@ -3048,6 +3116,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 POSITION_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+            },
         )
 
     async def async_step_automation(self, user_input: dict[str, Any] | None = None):
@@ -3061,6 +3132,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 AUTOMATION_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Automation"
+            },
         )
 
     async def async_step_manual_override(
@@ -3076,6 +3150,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 MANUAL_OVERRIDE_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_force_override(self, user_input: dict[str, Any] | None = None):
@@ -3088,6 +3165,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 FORCE_OVERRIDE_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Force-Override"
+            },
         )
 
     async def async_step_custom_position(
@@ -3095,6 +3175,7 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         """Manage custom position sensors."""
         if user_input is not None:
+            self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
@@ -3102,6 +3183,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 CUSTOM_POSITION_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
+            },
         )
 
     async def async_step_motion_override(
@@ -3116,6 +3200,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 MOTION_OVERRIDE_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_weather_override(
@@ -3140,6 +3227,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 WEATHER_OVERRIDE_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+            },
         )
 
     async def async_step_sync(
@@ -3291,6 +3381,9 @@ class OptionsFlowHandler(OptionsFlow):
                     errors={
                         CONF_INTERP_LIST_NEW: "Must have same length as 'Calculated positions (input)' list"
                     },
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+                    },
                 )
             self.options.update(user_input)
             return await self.async_step_init()
@@ -3299,6 +3392,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 INTERPOLATION_OPTIONS, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+            },
         )
 
     async def async_step_blind_spot(self, user_input: dict[str, Any] | None = None):
@@ -3341,6 +3437,9 @@ class OptionsFlowHandler(OptionsFlow):
                     errors={
                         CONF_BLIND_SPOT_RIGHT: "Must be greater than 'Blind Spot Left Edge'"
                     },
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
+                    },
                 )
             self.options.update(user_input)
             return await self.async_step_init()
@@ -3349,6 +3448,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
+            },
         )
 
     async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
@@ -3370,6 +3472,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 LIGHT_CLOUD_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_temperature_climate(
@@ -3392,6 +3497,9 @@ class OptionsFlowHandler(OptionsFlow):
                         TEMPERATURE_CLIMATE_SCHEMA, user_input or self.options
                     ),
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+                    },
                 )
             self.options.update(user_input)
             return await self.async_step_init()
@@ -3400,6 +3508,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 TEMPERATURE_CLIMATE_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+            },
         )
 
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
@@ -3423,6 +3534,9 @@ class OptionsFlowHandler(OptionsFlow):
                         CLIMATE_SCHEMA, user_input or self.options
                     ),
                     errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
+                    },
                 )
             self.options.update(user_input)
             return await self.async_step_init()
@@ -3431,6 +3545,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 CLIMATE_SCHEMA, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
+            },
         )
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None):
@@ -3443,6 +3560,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 WEATHER_OPTIONS, user_input or self.options
             ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
+            },
         )
 
     async def async_step_summary(
@@ -3476,7 +3596,10 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 DEBUG_SCHEMA, user_input or self.options
             ),
-            description_placeholders={"cover_capabilities": caps_text},
+            description_placeholders={
+                "cover_capabilities": caps_text,
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Debug-Diagnostics",
+            },
         )
 
     async def async_step_done(

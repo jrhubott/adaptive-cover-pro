@@ -87,44 +87,26 @@ def _make_coordinator(
         grace_mgr._command_timestamps[entity_id] = dt.datetime.now().timestamp()
     coordinator._grace_mgr = grace_mgr
 
-    cmd_svc = MagicMock(spec=CoverCommandService)
-    cmd_svc.wait_for_target = {entity_id: True}
-    cmd_svc.target_call = {entity_id: target_position}
-    cmd_svc._position_tolerance = 5
-
-    # Record when the command was "sent"
-    now = dt.datetime.now(dt.UTC)
-    cmd_svc._sent_at = {entity_id: now - dt.timedelta(seconds=sent_seconds_ago)}
-
-    # Wire up the progress-aware timeout helpers used by process_entity_state_change.
-    # These tests don't pre-populate last_progress_at, so elapsed falls back to sent_at.
     from custom_components.adaptive_cover_pro.const import (
         DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     )
 
-    cmd_svc._wait_for_target_timeout_seconds = DEFAULT_TRANSIT_TIMEOUT_SECONDS
-    _progress_at: dict[str, dt.datetime] = {}
+    cmd_svc = CoverCommandService(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=5,
+        transit_timeout_seconds=DEFAULT_TRANSIT_TIMEOUT_SECONDS,
+    )
+    cmd_svc.set_target(entity_id, target_position)
+    cmd_svc.set_waiting(entity_id, True)
 
-    def _transit_elapsed(eid: str, now_arg: dt.datetime) -> float | None:
-        reference = _progress_at.get(eid) or cmd_svc._sent_at.get(eid)
-        return (now_arg - reference).total_seconds() if reference else None
+    # Record when the command was "sent"
+    now = dt.datetime.now(dt.UTC)
+    cmd_svc.state(entity_id).sent_at = now - dt.timedelta(seconds=sent_seconds_ago)
 
-    def _record_progress(eid: str, now_arg: dt.datetime) -> None:
-        _progress_at[eid] = now_arg
-
-    cmd_svc._transit_elapsed_without_progress = MagicMock(side_effect=_transit_elapsed)
-    cmd_svc.record_progress = MagicMock(side_effect=_record_progress)
-
-    def _check_target_reached(eid, pos):
-        if pos is None:
-            return False
-        if abs(pos - cmd_svc.target_call.get(eid, -999)) <= cmd_svc._position_tolerance:
-            cmd_svc.wait_for_target[eid] = False
-            return True
-        return False
-
-    cmd_svc.check_target_reached = MagicMock(side_effect=_check_target_reached)
-    cmd_svc.get_cover_capabilities = MagicMock(return_value={"has_set_position": True})
+    cmd_svc.get_cover_capabilities = lambda eid: {"has_set_position": True}
 
     # read_position_with_capabilities returns current_position for new_state and
     # old_position for old_state (needed for transit direction checks).
@@ -135,7 +117,7 @@ def _make_coordinator(
             return old_position
         return current_position
 
-    cmd_svc.read_position_with_capabilities = MagicMock(side_effect=_read_position)
+    cmd_svc.read_position_with_capabilities = _read_position
     coordinator._cmd_svc = cmd_svc
 
     from custom_components.adaptive_cover_pro.coordinator import (
@@ -185,7 +167,7 @@ class TestTransitDetection:
             new_state_str="opening",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
     def test_cover_closing_toward_target_keeps_wait_for_target(self) -> None:
         """Cover closing toward a lower target must not clear wait_for_target."""
@@ -198,7 +180,7 @@ class TestTransitDetection:
             new_state_str="closing",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
     def test_full_slow_cover_sequence_no_false_override(self) -> None:
         """Repeated position reports during a slow transit must never clear wait_for_target.
@@ -222,7 +204,7 @@ class TestTransitDetection:
             )
             _call(coord)
             assert (
-                coord._cmd_svc.wait_for_target[entity_id] is True
+                coord._cmd_svc.is_waiting_for_target(entity_id) is True
             ), f"wait_for_target must stay True at position {new_pos} (was {old_pos})"
 
 
@@ -264,7 +246,7 @@ class TestHardwareStartupDelay:
         # Override old_state to "closed" (non-transitional) to simulate state transition
         coord.state_change_data.old_state.state = "closed"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
     def test_subsequent_startup_delay_event_still_opening(self) -> None:
         """Second state event (opening→opening, pos still 0) is a stall — must clear.
@@ -284,7 +266,7 @@ class TestHardwareStartupDelay:
         # old_state already "opening" (was already transitional) → stall → clear
         coord.state_change_data.old_state.state = "opening"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_full_scenario_cancel_manual_then_auto_move(self) -> None:
         """Full scenario: manual done, reset, integration commands cover, startup delay.
@@ -305,7 +287,7 @@ class TestHardwareStartupDelay:
         # Simulate startup: old state was "closed" before command started cover
         coord.state_change_data.old_state.state = "closed"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
         # After cover actually starts moving (pos changes), transit detection works
         coord2 = _make_coordinator(
@@ -318,7 +300,9 @@ class TestHardwareStartupDelay:
         )
         coord2.state_change_data.old_state.state = "opening"
         _call(coord2)
-        assert coord2._cmd_svc.wait_for_target[entity_id] is True  # still in transit
+        assert (
+            coord2._cmd_svc.is_waiting_for_target(entity_id) is True
+        )  # still in transit
 
 
 # ===========================================================================
@@ -346,7 +330,7 @@ class TestStopDetection:
             new_state_str="stopped",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_cover_open_state_not_at_target_clears_wait_for_target(self) -> None:
         """Cover reporting 'open' at a non-target position clears wait when old state was also open.
@@ -364,7 +348,7 @@ class TestStopDetection:
         )
         # old_state defaults to same as new_state_str ("open") — not transitional
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_cover_closed_state_not_at_target_clears_wait_for_target(self) -> None:
         """Cover reporting 'closed' state at a position different from target clears wait."""
@@ -377,7 +361,7 @@ class TestStopDetection:
             new_state_str="closed",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
 
 # ===========================================================================
@@ -412,7 +396,7 @@ class TestStepMotorIntermediatePause:
         coord.state_change_data.old_state.state = "opening"
         _call(coord)
         # wait_for_target must remain True (grace period restarted)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
         # Grace period must have been restarted
         assert coord._grace_mgr.is_in_command_grace_period(entity_id)
         coord._grace_mgr.cancel_all()
@@ -430,7 +414,7 @@ class TestStepMotorIntermediatePause:
         )
         coord.state_change_data.old_state.state = "closing"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
         assert coord._grace_mgr.is_in_command_grace_period(entity_id)
         coord._grace_mgr.cancel_all()
 
@@ -453,7 +437,7 @@ class TestStepMotorIntermediatePause:
         )
         coord.state_change_data.old_state.state = "opening"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_open_at_target_does_not_restart_grace_period(self) -> None:
         """Cover reaching target position must not restart grace period (normal arrival)."""
@@ -468,7 +452,7 @@ class TestStepMotorIntermediatePause:
         coord.state_change_data.old_state.state = "opening"
         _call(coord)
         # Target reached — wait_for_target cleared by check_target_reached
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_open_from_open_not_at_target_clears_wait_for_target(self) -> None:
         """Cover reporting open→open (not opening→open) at non-target clears wait_for_target.
@@ -487,7 +471,7 @@ class TestStepMotorIntermediatePause:
         # old_state is "open" (not transitional) — not a step-motor pause
         coord.state_change_data.old_state.state = "open"
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
 
 # ===========================================================================
@@ -515,7 +499,7 @@ class TestManualMoveDetection:
             new_state_str="opening",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_cover_stalled_same_position_clears_wait_for_target(self) -> None:
         """Cover reporting the same position twice (stalled) clears wait_for_target.
@@ -531,7 +515,7 @@ class TestManualMoveDetection:
             new_state_str="opening",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_actual_manual_override_still_detected_during_transit(self) -> None:
         """If user grabs cover and moves it backward, override must still be detected.
@@ -548,7 +532,7 @@ class TestManualMoveDetection:
             new_state_str="opening",
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
 
 # ===========================================================================
@@ -580,7 +564,7 @@ class TestTransitTimeout:
             sent_seconds_ago=TRANSIT_TIMEOUT_SECONDS + 1,
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is False
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is False
 
     def test_within_transit_window_direction_detection_applies(self) -> None:
         """Command sent 10s ago (within 45s window) uses direction detection."""
@@ -594,7 +578,7 @@ class TestTransitTimeout:
             sent_seconds_ago=10.0,
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
     def test_transit_timeout_constant_is_documented(self) -> None:
         """DEFAULT_TRANSIT_TIMEOUT_SECONDS must be defined in const.py and be 45."""
@@ -630,7 +614,7 @@ class TestIgnoreIntermediateStates:
         )
         _call(coord)
         # Early return — wait_for_target not changed
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
     def test_closing_state_ignored_when_flag_set(self) -> None:
         """'closing' events are skipped entirely when ignore_intermediate_states=True."""
@@ -644,7 +628,7 @@ class TestIgnoreIntermediateStates:
             ignore_intermediate=True,
         )
         _call(coord)
-        assert coord._cmd_svc.wait_for_target[entity_id] is True
+        assert coord._cmd_svc.is_waiting_for_target(entity_id) is True
 
 
 # ===========================================================================

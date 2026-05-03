@@ -32,6 +32,23 @@ class ClimateOptions:
     cloudy_position: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class CustomPositionSensorState:
+    """Per-slot sensor reading carried in the pipeline snapshot.
+
+    One instance per configured custom position slot.  Built once per update
+    cycle by ``coordinator._read_custom_position_sensor_states()`` and consumed
+    by the matching ``CustomPositionHandler`` instance via entity_id lookup.
+    """
+
+    entity_id: str
+    is_on: bool
+    position: int
+    priority: int
+    min_mode: bool
+    use_my: bool
+
+
 @dataclass(frozen=True)
 class PipelineSnapshot:
     """Raw state passed to all pipeline handlers.
@@ -118,17 +135,13 @@ class PipelineSnapshot:
     # Defaults to True for backward compatibility.
     motion_control_enabled: bool = True
 
-    # Custom position sensor states: list of (entity_id, is_on, position, priority, min_mode, use_my).
-    # Each entry corresponds to one configured custom position slot.  The pipeline
-    # creates a separate CustomPositionHandler instance per slot, each with its own
-    # priority, so the PipelineRegistry sorts them correctly relative to all other
-    # handlers.  The handler reads its own sensor's is_on state from this list by
-    # matching entity_id.
-    # min_mode: when True, the position acts as a floor (max of configured vs calculated).
-    # use_my: when True and my_position_value is set, trigger the cover's "My" hardware
-    #   preset via cover.stop_cover instead of the slot's numeric position.
+    # Custom position sensor states — one CustomPositionSensorState per configured
+    # slot.  The pipeline creates a separate CustomPositionHandler instance per
+    # slot, each carrying its own priority, so the PipelineRegistry sorts them
+    # correctly relative to all other handlers.  The handler matches its sensor
+    # by looking up entity_id in this list.
     # Defaults to empty list (feature disabled / not configured).
-    custom_position_sensors: list[tuple[str, bool, int, int, bool, bool]] = field(
+    custom_position_sensors: list[CustomPositionSensorState] = field(
         default_factory=list
     )
 

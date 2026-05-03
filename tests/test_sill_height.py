@@ -145,10 +145,12 @@ class TestGeometrySillHeightEffect:
         """sill_height > 0 DECREASES blind height at low elevation (20°).
 
         The sill provides free protection, so less blind extension is needed.
+        Uses sill_height=0.1 so effective_distance stays positive (no sill-blocks-sun
+        short-circuit): sill_offset≈0.275m, effective=0.225m > 0.
         """
         cover_no_sill = make_vertical_cover(base_cover_params, gamma=0.0, sol_elev=20.0)
         cover_with_sill = make_vertical_cover(
-            base_cover_params, gamma=0.0, sol_elev=20.0, sill_height=0.5
+            base_cover_params, gamma=0.0, sol_elev=20.0, sill_height=0.1
         )
 
         pos_no_sill = cover_no_sill.calculate_position()
@@ -164,10 +166,12 @@ class TestGeometrySillHeightEffect:
         """sill_height > 0 DECREASES blind height at medium elevation (45°).
 
         The sill provides free protection, so less blind extension is needed.
+        Uses sill_height=0.2 so effective_distance stays positive (no sill-blocks-sun
+        short-circuit): sill_offset=0.2m, effective=0.3m > 0.
         """
         cover_no_sill = make_vertical_cover(base_cover_params, gamma=0.0, sol_elev=45.0)
         cover_with_sill = make_vertical_cover(
-            base_cover_params, gamma=0.0, sol_elev=45.0, sill_height=0.5
+            base_cover_params, gamma=0.0, sol_elev=45.0, sill_height=0.2
         )
 
         pos_no_sill = cover_no_sill.calculate_position()
@@ -203,9 +207,9 @@ class TestGeometrySillHeightEffect:
 
         More sill height = more free protection = less blind extension needed.
         Uses h_win=2.1 and distance=0.5; at 45° elevation, base without sill=0.5m.
-        Sill heights up to 0.5m will reduce position; beyond that clips to 0.
+        Sweep stays in the no-clip regime (all sill_offsets < 0.5m distance).
         """
-        sill_heights = [0.0, 0.1, 0.2, 0.5]
+        sill_heights = [0.0, 0.1, 0.2, 0.3]
         positions = []
 
         for sh in sill_heights:
@@ -219,6 +223,13 @@ class TestGeometrySillHeightEffect:
             assert (
                 positions[i] >= positions[i + 1]
             ), f"Expected monotonic decrease: sill_heights={sill_heights}, positions={positions}"
+
+        # Once sill_offset >= distance (sill_height=0.5 at 45°), the sill blocks all
+        # sun → blind not needed → position jumps to h_win (fully raised), not 0.
+        clip_case = make_vertical_cover(
+            base_cover_params, gamma=0.0, sol_elev=45.0, sill_height=0.5
+        )
+        assert clip_case.calculate_position() == clip_case.h_win
 
 
 class TestMathVerification:
@@ -310,11 +321,11 @@ class TestMathVerification:
 class TestEdgeCasesLowElevation:
     """Tests for edge cases at low sun elevation angles."""
 
-    def test_very_low_elevation_large_sill_clips_to_zero(self, base_cover_params):
-        """At sol_elev=2.5° with large sill_height, effective_distance goes very negative.
+    def test_very_low_elevation_large_sill_returns_h_win(self, base_cover_params):
+        """At sol_elev=2.5° with large sill_height, sill blocks all sun → blind not needed.
 
         tan(2.5°) ≈ 0.0437 < 0.05 guard → sill_offset = 3.0 / 0.05 = 60.0
-        effective_distance = 0.5 - 60.0 = -59.5 → clips to 0 (sill blocks all sun)
+        effective_distance = 0.5 - 60.0 = -59.5 → sill blocks sun → h_win (fully raised).
         """
         cover = make_vertical_cover(
             base_cover_params,
@@ -324,8 +335,10 @@ class TestEdgeCasesLowElevation:
         )
         position = cover.calculate_position()
 
-        # Sill more than covers the sun penetration, so blind is fully raised (position=0)
-        assert position == 0.0, f"Expected 0.0 (sill blocks all sun) but got {position}"
+        # Sill blocks all sun → blind fully raised (h_win = 100% open)
+        assert position == cover.h_win, (
+            f"Expected h_win={cover.h_win} (sill blocks all sun) but got {position}"
+        )
 
     def test_very_low_elevation_no_exception_raised(self, base_cover_params):
         """At sol_elev=2.5° with large sill_height, no exception should be raised."""
@@ -571,6 +584,42 @@ class TestHorizontalCoverSillHeight:
         fields = {f.name: f for f in dataclasses.fields(VerticalConfig)}
         assert "sill_height" in fields
         assert fields["sill_height"].default == 0.0
+
+
+class TestIssue304SillBlocksSun:
+    """Regression: when sill geometry blocks all sun penetration to the
+    protected zone, the blind must be fully raised (h_win → 100% open),
+    not fully lowered (0 → 0% closed). Issue #304.
+    """
+
+    def test_sill_blocks_sun_returns_h_win_low_elevation(self, base_cover_params):
+        """sol_elev=20°, sill=0.5, distance=0.5: sill_offset≈1.37m exceeds distance.
+        Sun cannot reach the protected zone. Blind not needed → position must be h_win.
+        """
+        cover = make_vertical_cover(
+            base_cover_params, gamma=0.0, sol_elev=20.0, sill_height=0.5
+        )
+        position = cover.calculate_position()
+        assert position == cover.h_win, (
+            f"Sill blocks sun → blind should be fully raised (h_win={cover.h_win}), "
+            f"got {position}"
+        )
+
+    def test_sill_blocks_sun_returns_h_win_exact_clip(self, base_cover_params):
+        """sol_elev=45°, sill=0.5, distance=0.5: sill_offset=0.5 exactly cancels distance.
+        effective_distance=0 → sun cannot penetrate to zone. Position must be h_win.
+        """
+        cover = make_vertical_cover(
+            base_cover_params, gamma=0.0, sol_elev=45.0, sill_height=0.5
+        )
+        assert cover.calculate_position() == cover.h_win
+
+    def test_sill_blocks_sun_percentage_is_100(self, base_cover_params):
+        """HA-facing percentage must be 100 (open) not 0 (closed) when sill blocks sun."""
+        cover = make_vertical_cover(
+            base_cover_params, gamma=0.0, sol_elev=20.0, sill_height=0.5
+        )
+        assert cover.calculate_percentage() == 100
 
 
 class TestNumericalStability:

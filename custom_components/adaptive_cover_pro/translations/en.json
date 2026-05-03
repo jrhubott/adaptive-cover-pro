@@ -17,7 +17,7 @@
       },
       "cover_entities": {
         "title": "Covers & Device",
-        "description": "Select the cover entities this instance will control.",
+        "description": "Select the covers this instance controls and optionally attach them to a physical device in HA. Multiple covers can share one instance — they use the same settings and move independently. To control covers with different window orientations, create a separate instance for each.\n\n[Learn more]({learn_more})",
         "data": {
           "group": "Cover Entities",
           "linked_device_id": "Attach to Device"
@@ -29,7 +29,7 @@
       },
       "geometry": {
         "title": "Cover Geometry",
-        "description": "Configure cover dimensions. These measurements are used to calculate sun blocking position.",
+        "description": "Enter your cover and window measurements. The integration uses these to calculate exactly how far to lower or extend the cover to block direct sunlight while maximising natural light.\n\n**Window height** and **shaded area** are required for vertical blinds and awnings. **Reveal depth** and **sill height** improve geometric accuracy for windows set back into the wall. **Awning span** and **angle** apply to horizontal awnings. **Slat depth** and **spacing** are required for tilt/venetian covers.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Window Height",
           "distance_shaded_area": "Shaded area",
@@ -55,7 +55,7 @@
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Configure window orientation and sun tracking angles.",
+        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
           "set_azimuth": "Window Azimuth",
@@ -81,7 +81,7 @@
       },
       "position": {
         "title": "Position Settings",
-        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "description": "Set position limits, the default resting position, and sunset behaviour.\n\nThe **default position** is where covers go when the sun is outside the tracking window or no override is active. **Min/max limits** cap the range the integration will command — the \"apply during sun tracking only\" toggle controls whether each limit is enforced all day or only while sun tracking is active. **Sunset position** moves covers to a specific position at end-time; leave it blank to use the default position instead.\n\n[Learn more]({learn_more})",
         "data": {
           "default_percentage": "Default Position",
           "max_position": "Maximum Position",
@@ -115,7 +115,7 @@
       },
       "automation": {
         "title": "Schedule & Timing",
-        "description": "Configure automation timing, position change thresholds, and active hours for automatic control.",
+        "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
@@ -137,7 +137,7 @@
       },
       "manual_override": {
         "title": "Manual Override",
-        "description": "Configure how manual position changes interact with automatic control.",
+        "description": "Control what happens after someone manually moves a cover. Automatic control pauses for the configured duration then resumes.\n\n**Override duration** is how long (in minutes) ACP waits before retaking control. **Reset on each adjustment** restarts the timer every time the cover is touched — useful if someone adjusts a cover several times in a row. **Threshold** is the minimum position change that counts as a manual move; raise it slightly if motor position drift causes false overrides. **Transit timeout** tells ACP how long to wait for a moving cover to stop before treating its final position as intentional.\n\n[Learn more]({learn_more})",
         "data": {
           "manual_override_duration": "Duration of manual override",
           "manual_override_reset": "Reset Manual override duration",
@@ -155,7 +155,7 @@
       },
       "force_override": {
         "title": "Force Override",
-        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.\n\n[Learn more]({learn_more})",
         "data": {
           "force_override_sensors": "Force override sensors",
           "force_override_position": "Force override position",
@@ -169,7 +169,7 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position for Sensor 1",
@@ -217,7 +217,7 @@
       },
       "motion_override": {
         "title": "Motion Override",
-        "description": "Configure motion and occupancy sensors for presence-based automatic control.",
+        "description": "Enable occupancy-based control. When all configured sensors report no motion, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any sensor detects motion, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used. The logic is OR — any single active sensor counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
         "data": {
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
           "motion_timeout": "Motion timeout duration"
@@ -229,7 +229,7 @@
       },
       "weather_override": {
         "title": "Weather Override",
-        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Active when Automatic Control is off",
           "weather_wind_speed_sensor": "Wind speed sensor",
@@ -300,7 +300,7 @@
           "transparent_blind": "Check this if your blind is see-through (sheer/light fabric). Changes summer behavior: Transparent ON closes to 0% in summer (block heat, keep light). Transparent OFF uses calculated position. Transparent blinds reduce heat but allow light through. Leave unchecked for opaque/blackout blinds.",
           "winter_close_insulation": "Close covers in winter when the sun is not hitting the window. Provides insulation by keeping cold air out and warmth in. When the sun enters the window's field of view, covers will open for solar heating as normal."
         },
-        "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
+        "description": "Enable climate-aware cover control. When active, the integration opens covers in winter to capture solar heat and closes them in summer to reduce cooling load. This screen configures which light and cloud sensors determine whether the sun is currently active.\n\nTemperature thresholds, presence settings, and seasonal behaviour rules are on the next screen. Weather condition mappings follow after that. All climate sub-settings are ignored when climate mode is disabled.\n\n[Learn more]({learn_more})",
         "title": "Climate Configuration"
       },
       "weather": {
@@ -310,7 +310,8 @@
         "data_description": {
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
-        "title": "Weather Conditions"
+        "title": "Weather Conditions",
+        "description": "Select the weather states that count as \"sun is out\" for climate mode. The integration compares the live weather entity state to this list — matching states enable solar-based cover control. States not in the list are treated as cloudy, so summer-close and winter-open rules only apply when the weather matches.\n\nTypical choices are \"sunny\" and \"partlycloudy\". The available states depend on your weather integration.\n\n[Learn more]({learn_more})"
       },
       "blind_spot": {
         "data": {
@@ -324,11 +325,11 @@
           "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance."
         },
         "title": "Blind Spot",
-        "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
+        "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone.\n\n[Learn more]({learn_more})"
       },
       "glare_zones": {
         "title": "Glare Zones",
-        "description": "Define up to 4 floor areas to protect from direct sunlight. Leave a zone name blank to skip it. Coordinates are relative to the window centre projected onto the floor.",
+        "description": "Define up to 4 floor areas to protect from direct sunlight. When the sun's angle would cast direct light onto a zone, the blind lowers to shade it. Leave a zone name blank to skip that slot.\n\nCoordinates are relative to the window centre projected onto the floor. **X** is the left/right offset (positive = right). **Y** is the distance into the room. **Radius** defines the circular protected area. Use the Lovelace companion card to visualise zone positions and verify coverage.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_glare_zones": "Enable Glare Zones",
           "glare_zone_1_name": "Zone 1 Name",
@@ -382,7 +383,7 @@
           "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as 'Calculated positions (input)'. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
         "title": "Position Calibration",
-        "description": "Adjust cover position mapping for non-standard covers by mapping a calculated position (input) to an actual position sent to the cover (output). Use simple 2-point calibration (map 0% and 100%) for covers with limited range (e.g., only moves between 10–90%). Use advanced list mapping for non-linear covers or to bias behavior more open/closed. Most covers don't need this — only enable if your cover doesn't respond correctly to standard 0–100% commands."
+        "description": "Adjust cover position mapping for non-standard covers by mapping a calculated position (input) to an actual position sent to the cover (output). Use simple 2-point calibration (map 0% and 100%) for covers with limited range (e.g., only moves between 10–90%). Use advanced list mapping for non-linear covers or to bias behavior more open/closed. Most covers don't need this — only enable if your cover doesn't respond correctly to standard 0–100% commands.\n\n[Learn more]({learn_more})"
       },
       "duplicate_select": {
         "title": "Duplicate Cover — Select Source",
@@ -406,7 +407,7 @@
       },
       "setup_mode": {
         "title": "Setup Mode",
-        "description": "Choose how much to configure now. You can always adjust all settings later from the options menu.",
+        "description": "Choose how much to configure now. You can always adjust all settings later from the options menu.\n\n[Learn more]({learn_more})",
         "menu_options": {
           "quick_setup": "Quick Setup — Window basics + sun tracking only (recommended for first-time setup)",
           "full_setup": "Full Setup — All options including climate, overrides, and automation"
@@ -414,7 +415,7 @@
       },
       "light_cloud": {
         "title": "Light Sensors & Cloud Suppression",
-        "description": "Configure light and weather sensors to detect when clouds block direct sunlight. These work independently of climate mode.",
+        "description": "Suppress glare control when sunlight is absent. Configure sensors to detect clouds or low light — when triggered, the integration stops sun tracking and optionally moves covers to a parked position. Prevents unnecessary cover movement on overcast days.\n\nAny of the four inputs (weather state, lux sensor, irradiance sensor, cloud-coverage sensor) can be used individually or together — any single match is enough to suppress tracking. The optional **cloudy position** moves covers to a specific position when suppression fires; leave it blank to hold the current position instead.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_entity": "Weather entity (optional)",
           "lux_entity": "Lux sensor (optional)",
@@ -442,7 +443,7 @@
       },
       "temperature_climate": {
         "title": "Temperature & Climate Mode",
-        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.",
+        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.\n\n[Learn more]({learn_more})",
         "data": {
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",
@@ -475,6 +476,7 @@
   "options": {
     "step": {
       "init": {
+        "description": "Configuring: **{instance_name}**",
         "menu_options": {
           "cover_entities": "🪟 Covers & Device",
           "geometry": "📐 Cover Geometry",
@@ -501,7 +503,7 @@
       },
       "automation": {
         "title": "Schedule & Timing",
-        "description": "Configure automation timing, position change thresholds, and active hours for automatic control.",
+        "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
@@ -523,7 +525,7 @@
       },
       "cover_entities": {
         "title": "Covers & Device",
-        "description": "Select the cover entities this instance will control.",
+        "description": "Select the covers this instance controls and optionally attach them to a physical device in HA. Multiple covers can share one instance — they use the same settings and move independently. To control covers with different window orientations, create a separate instance for each.\n\n[Learn more]({learn_more})",
         "data": {
           "group": "Cover Entities",
           "linked_device_id": "Attach to Device"
@@ -535,7 +537,7 @@
       },
       "geometry": {
         "title": "Cover Geometry",
-        "description": "Configure cover dimensions.",
+        "description": "Enter your cover and window measurements. The integration uses these to calculate exactly how far to lower or extend the cover to block direct sunlight while maximising natural light.\n\n**Window height** and **shaded area** are required for vertical blinds and awnings. **Reveal depth** and **sill height** improve geometric accuracy for windows set back into the wall. **Awning span** and **angle** apply to horizontal awnings. **Slat depth** and **spacing** are required for tilt/venetian covers.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Window Height",
           "distance_shaded_area": "Shaded area",
@@ -561,7 +563,7 @@
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Configure window orientation and sun tracking angles.",
+        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
           "set_azimuth": "Window Azimuth",
@@ -587,7 +589,7 @@
       },
       "position": {
         "title": "Position Settings",
-        "description": "Configure cover position limits, defaults, and sunset behavior.",
+        "description": "Set position limits, the default resting position, and sunset behaviour.\n\nThe **default position** is where covers go when the sun is outside the tracking window or no override is active. **Min/max limits** cap the range the integration will command — the \"apply during sun tracking only\" toggle controls whether each limit is enforced all day or only while sun tracking is active. **Sunset position** moves covers to a specific position at end-time; leave it blank to use the default position instead.\n\n[Learn more]({learn_more})",
         "data": {
           "default_percentage": "Default Position",
           "max_position": "Maximum Position",
@@ -621,7 +623,7 @@
       },
       "manual_override": {
         "title": "Manual Override",
-        "description": "Configure how manual position changes interact with automatic control.",
+        "description": "Control what happens after someone manually moves a cover. Automatic control pauses for the configured duration then resumes.\n\n**Override duration** is how long (in minutes) ACP waits before retaking control. **Reset on each adjustment** restarts the timer every time the cover is touched — useful if someone adjusts a cover several times in a row. **Threshold** is the minimum position change that counts as a manual move; raise it slightly if motor position drift causes false overrides. **Transit timeout** tells ACP how long to wait for a moving cover to stop before treating its final position as intentional.\n\n[Learn more]({learn_more})",
         "data": {
           "manual_override_duration": "Duration of manual override",
           "manual_override_reset": "Reset Manual override duration",
@@ -639,7 +641,7 @@
       },
       "force_override": {
         "title": "Force Override",
-        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.",
+        "description": "Configure binary sensors that unconditionally override automatic control and move covers to a fixed position. Force override remains active even when the Automatic Control switch is off — covers will still be moved to the configured position when any sensor is triggered.\n\n[Learn more]({learn_more})",
         "data": {
           "force_override_sensors": "Force override sensors",
           "force_override_position": "Force override position",
@@ -653,7 +655,7 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.",
+        "description": "Configure binary sensors that set the cover to specific positions when active. Each slot has its own sensor, target position, and pipeline priority. Each active slot is evaluated independently — the highest-priority active slot wins. Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})",
         "data": {
           "custom_position_sensor_1": "Sensor 1",
           "custom_position_1": "Position for Sensor 1",
@@ -701,7 +703,7 @@
       },
       "motion_override": {
         "title": "Motion Override",
-        "description": "Configure motion and occupancy sensors for presence-based automatic control.",
+        "description": "Enable occupancy-based control. When all configured sensors report no motion, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any sensor detects motion, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used. The logic is OR — any single active sensor counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
         "data": {
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
           "motion_timeout": "Motion timeout duration"
@@ -713,7 +715,7 @@
       },
       "weather_override": {
         "title": "Weather Override",
-        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.",
+        "description": "Configure weather-based safety overrides. Any configured condition triggers cover retraction. Unconfigured inputs are ignored.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Active when Automatic Control is off",
           "weather_wind_speed_sensor": "Wind speed sensor",
@@ -784,7 +786,7 @@
           "transparent_blind": "Check this if your blind is see-through (sheer/light fabric). Changes summer behavior: Transparent ON closes to 0% in summer (block heat, keep light). Transparent OFF uses calculated position. Transparent blinds reduce heat but allow light through. Leave unchecked for opaque/blackout blinds.",
           "winter_close_insulation": "Close covers in winter when the sun is not hitting the window. Provides insulation by keeping cold air out and warmth in. When the sun enters the window's field of view, covers will open for solar heating as normal."
         },
-        "description": "Configure climate-aware control for energy efficiency and comfort. These settings enable the integration to adapt cover behavior based on temperature, weather, and presence.",
+        "description": "Enable climate-aware cover control. When active, the integration opens covers in winter to capture solar heat and closes them in summer to reduce cooling load. This screen configures which light and cloud sensors determine whether the sun is currently active.\n\nTemperature thresholds, presence settings, and seasonal behaviour rules are on the next screen. Weather condition mappings follow after that. All climate sub-settings are ignored when climate mode is disabled.\n\n[Learn more]({learn_more})",
         "title": "Climate Configuration"
       },
       "weather": {
@@ -794,7 +796,8 @@
         "data_description": {
           "weather_state": "Select weather states that mean 'sun is out' for climate mode. Recommended selection (pre-filled): ☑ sunny (direct sun), ☑ partlycloudy (some sun), ☐ cloudy (no direct sun), ☐ clear (usually night). When current weather matches selection: Apply climate strategies. When no match: Use default position (no sun assumed). Most users should keep the defaults."
         },
-        "title": "Weather Conditions"
+        "title": "Weather Conditions",
+        "description": "Select the weather states that count as \"sun is out\" for climate mode. The integration compares the live weather entity state to this list — matching states enable solar-based cover control. States not in the list are treated as cloudy, so summer-close and winter-open rules only apply when the weather matches.\n\nTypical choices are \"sunny\" and \"partlycloudy\". The available states depend on your weather integration.\n\n[Learn more]({learn_more})"
       },
       "blind_spot": {
         "data": {
@@ -808,7 +811,7 @@
           "blind_spot_elevation": "Maximum sun elevation (degrees above horizon) where blind spot applies. Example: Roof overhang blocks sun only when low (< 30°) so set to 30. Higher elevation sun clears the obstacle, so blind spot doesn't apply. If obstacle blocks all elevations (tall building), set to 90 or leave high. Sun elevation: 0°=horizon, 45°=halfway up, 90°=directly overhead. Measure or estimate based on obstacle height and distance."
         },
         "title": "Blind Spot",
-        "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone."
+        "description": "Define areas where obstacles block the sun (trees, buildings, roof overhangs). These angular values are relative degrees within your field of view, where 0 is the leftmost FOV boundary. The cover will ignore sun position when it falls within this blind spot zone.\n\n[Learn more]({learn_more})"
       },
       "interp": {
         "data": {
@@ -824,11 +827,11 @@
           "interp_list_new": "Output positions for custom interpolation mapping (actual positions sent to cover). Enter corresponding real positions like: 0, 20, 40, 65, 100. These are what actually gets sent to your cover entity. Must have same length as 'Calculated positions (input)'. Example use: Make cover more aggressive in closing by mapping 50% calculated to 40% actual. Integration interpolates between your points. Leave empty for normal operation."
         },
         "title": "Position Calibration",
-        "description": "Adjust cover position mapping for non-standard covers by mapping a calculated position (input) to an actual position sent to the cover (output). Use simple 2-point calibration (map 0% and 100%) for covers with limited range (e.g., only moves between 10–90%). Use advanced list mapping for non-linear covers or to bias behavior more open/closed. Most covers don't need this — only enable if your cover doesn't respond correctly to standard 0–100% commands."
+        "description": "Adjust cover position mapping for non-standard covers by mapping a calculated position (input) to an actual position sent to the cover (output). Use simple 2-point calibration (map 0% and 100%) for covers with limited range (e.g., only moves between 10–90%). Use advanced list mapping for non-linear covers or to bias behavior more open/closed. Most covers don't need this — only enable if your cover doesn't respond correctly to standard 0–100% commands.\n\n[Learn more]({learn_more})"
       },
       "glare_zones": {
         "title": "Glare Zones",
-        "description": "Define up to 4 floor areas to protect from direct sunlight. Leave a zone name blank to skip it. Coordinates are relative to the window centre projected onto the floor.",
+        "description": "Define up to 4 floor areas to protect from direct sunlight. When the sun's angle would cast direct light onto a zone, the blind lowers to shade it. Leave a zone name blank to skip that slot.\n\nCoordinates are relative to the window centre projected onto the floor. **X** is the left/right offset (positive = right). **Y** is the distance into the room. **Radius** defines the circular protected area. Use the Lovelace companion card to visualise zone positions and verify coverage.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_glare_zones": "Enable Glare Zones",
           "glare_zone_1_name": "Zone 1 Name",
@@ -882,7 +885,7 @@
       },
       "debug": {
         "title": "Debug & Diagnostics",
-        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a diagnostic event ring buffer is kept in memory and exposed in the HA Diagnostics download.\n\n{cover_capabilities}",
+        "description": "Enable debug mode to collect detailed troubleshooting data without editing configuration.yaml. When active, selected categories are logged at INFO level and a diagnostic event ring buffer is kept in memory and exposed in the HA Diagnostics download.\n\n{cover_capabilities}\n\n[Learn more]({learn_more})",
         "data": {
           "dry_run": "Dry Run (no cover movement)",
           "debug_mode": "Enable Debug Mode",
@@ -905,7 +908,7 @@
       },
       "light_cloud": {
         "title": "Light Sensors & Cloud Suppression",
-        "description": "Configure light and weather sensors to detect when clouds block direct sunlight.",
+        "description": "Suppress glare control when sunlight is absent. Configure sensors to detect clouds or low light — when triggered, the integration stops sun tracking and optionally moves covers to a parked position. Prevents unnecessary cover movement on overcast days.\n\nAny of the four inputs (weather state, lux sensor, irradiance sensor, cloud-coverage sensor) can be used individually or together — any single match is enough to suppress tracking. The optional **cloudy position** moves covers to a specific position when suppression fires; leave it blank to hold the current position instead.\n\n[Learn more]({learn_more})",
         "data": {
           "weather_entity": "Weather entity (optional)",
           "lux_entity": "Lux sensor (optional)",
@@ -933,7 +936,7 @@
       },
       "temperature_climate": {
         "title": "Temperature & Climate Mode",
-        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.",
+        "description": "Climate mode adjusts cover position based on indoor/outdoor temperature, presence, and whether the sun is actually hitting the window. When disabled, the cover follows normal sun/glare tracking.\n\n**How the season is chosen** — The current temperature is the outside sensor if provided, otherwise the inside sensor.\n- **Winter** — current temp is below the low threshold.\n- **Summer** — current temp is above the high threshold **and** outside temp is above the outside threshold (prevents summer behavior on a cold day).\n- **Intermediate** — neither of the above; normal solar/glare tracking runs.\n\n**What each mode does**\n- **Winter + sun on window** → open fully (100%) to capture free solar heat.\n- **Winter, sun not on window**, *Winter insulation mode* on → close fully (0%) to trap heat.\n- **Summer** → close fully (0%) to block heat gain. For blinds, this only happens with presence if *Transparent blind* is on; without presence it always closes.\n- **Low light** (cloudy / dark / not sunny) → returns to the default position, overriding summer-close so covers don't close needlessly.\n- **Intermediate / sun valid with presence** → normal glare-control tracking.\n\n**Presence** gates the behavior: with nobody home, a simpler summer-closed / winter-open rule applies; with occupants present, glare tracking runs in intermediate conditions and transparent blinds still close in summer.\n\n**Tilt covers** follow the same seasonal logic but use slat angles instead of open/closed positions.\n\nLeave *Outside temperature sensor* and *Presence entity* blank to skip those checks. Climate mode runs after force/weather/manual/custom overrides but before normal solar tracking.\n\n[Learn more]({learn_more})",
         "data": {
           "climate_mode": "Enable climate mode",
           "temp_entity": "Inside temperature entity",

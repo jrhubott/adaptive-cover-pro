@@ -228,6 +228,10 @@ def _all_concrete_subclasses(cls: type) -> set[type]:
     - Classes that are themselves base classes (defined in entity_base.py) —
       these are abstract by convention even if they lack @abstractmethod.
     - Classes with inspect.isabstract() == True (have unimplemented @abstractmethod).
+    - Classes whose name starts with "_" — Pythonic convention for internal /
+      abstract-by-convention helpers (e.g. spec-driven generic classes inside
+      sensor.py). Public legacy aliases bind specs to these helpers and are
+      what users — and this completeness check — should actually cover.
     """
     _BASE_MODULE = "custom_components.adaptive_cover_pro.entity_base"
     result: set[type] = set()
@@ -237,6 +241,10 @@ def _all_concrete_subclasses(cls: type) -> set[type]:
             continue
         if sub.__module__ == _BASE_MODULE:
             # Convention-abstract base class; recurse but don't include
+            result.update(_all_concrete_subclasses(sub))
+            continue
+        if sub.__name__.startswith("_"):
+            # Internal / abstract-by-convention helper; recurse but don't include
             result.update(_all_concrete_subclasses(sub))
             continue
         result.add(sub)
