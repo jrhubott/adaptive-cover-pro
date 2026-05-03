@@ -719,6 +719,7 @@ class TestConfigurationDiagnostics:
             "motion_timeout",
             "motion_detected",
             "motion_timeout_active",
+            "motion_hold_active",
             "manual_toggle",
             "enabled_toggle",
             "cloud_suppression_enabled",
