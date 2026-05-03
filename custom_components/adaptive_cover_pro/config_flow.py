@@ -576,6 +576,16 @@ def _build_custom_position_schema_dict() -> dict:
 
 CUSTOM_POSITION_SCHEMA = vol.Schema(_build_custom_position_schema_dict())
 
+# Keys in CUSTOM_POSITION_SCHEMA that have no schema default (sensor, position,
+# priority). Voluptuous omits them from user_input when cleared, so both flow
+# handlers must call optional_entities() with this list before dict.update() --
+# otherwise the prior value survives a clear (issue #323).
+_CUSTOM_POSITION_OPTIONAL_KEYS: list[str] = [
+    slot[field]
+    for slot in CUSTOM_POSITION_SLOTS.values()
+    for field in ("sensor", "position", "priority")
+]
+
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MOTION_SENSORS, default=[]): _presence_like_selector(
@@ -2458,6 +2468,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ):
         """Configure custom position sensors."""
         if user_input is not None:
+            self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             return await self.async_step_motion_override()
         return self.async_show_form(
@@ -3040,6 +3051,7 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         """Manage custom position sensors."""
         if user_input is not None:
+            self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
