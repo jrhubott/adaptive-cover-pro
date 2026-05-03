@@ -336,9 +336,9 @@ class TestEdgeCasesLowElevation:
         position = cover.calculate_position()
 
         # Sill blocks all sun → blind fully raised (h_win = 100% open)
-        assert position == cover.h_win, (
-            f"Expected h_win={cover.h_win} (sill blocks all sun) but got {position}"
-        )
+        assert (
+            position == cover.h_win
+        ), f"Expected h_win={cover.h_win} (sill blocks all sun) but got {position}"
 
     def test_very_low_elevation_no_exception_raised(self, base_cover_params):
         """At sol_elev=2.5° with large sill_height, no exception should be raised."""
