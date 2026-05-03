@@ -153,6 +153,16 @@ class PipelineSnapshot:
     my_position_value: int | None = None
     sunset_use_my: bool = False
 
+    # Motion timeout mode:
+    #   "return_to_default" (default) — handler sends the configured default position
+    #   "hold_position" — handler emits skip_command=True so the cover stays put while
+    #     the sun is active; falls through to default when sun leaves FOV or window closes.
+    motion_timeout_mode: str = "return_to_default"
+
+    # Mean of current entity positions (int-rounded). None when no entity reports a
+    # numeric position. Read by MotionTimeoutHandler in hold_position mode only.
+    current_cover_position: int | None = None
+
 
 # ---------------------------------------------------------------------------
 # Output types
@@ -212,3 +222,8 @@ class PipelineResult:
     # (cover.stop_cover while stationary → triggers the Somfy "My" hardware preset).
     # Position-capable covers gracefully fall through to set_cover_position(position).
     use_my_position: bool = False
+
+    # When True, the coordinator must NOT issue a cover command this cycle.
+    # Used by hold-mode handlers (e.g. MotionTimeoutHandler with hold_position) to
+    # record the decision in diagnostics while leaving the cover physically untouched.
+    skip_command: bool = False

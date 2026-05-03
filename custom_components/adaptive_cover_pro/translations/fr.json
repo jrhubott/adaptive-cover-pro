@@ -220,11 +220,13 @@
         "description": "Activez le contrôle basé sur l'occupance. Lorsque tous les capteurs configurés signalent l'absence de mouvement, l'intégration arrête le suivi du soleil et déplace les protections à leur position par défaut après l'expiration du délai d'attente. Lorsqu'un capteur détecte un mouvement, le positionnement automatique reprend.\n\nN'importe quel mélange de capteurs de mouvement, d'occupance ou de présence binaire peut être utilisé. La logique est OU — n'importe quel capteur actif compte comme occupé. Ceci est utile pour les pièces où vous ne voulez pas que les protections s'ajustent lorsque personne n'est présent.\n\n[Learn more]({learn_more})",
         "data": {
           "motion_sensors": "Capteurs de mouvement/occupation pour le contrôle basé sur l'occupation",
-          "motion_timeout": "Durée du délai d'inactivité du mouvement"
+          "motion_timeout": "Durée du délai d'inactivité du mouvement",
+          "motion_timeout_mode": "Lors de l'expiration du délai de mouvement"
         },
         "data_description": {
           "motion_sensors": "Capteurs binaires qui activent/désactivent le positionnement solaire automatique en fonction de l'occupation. Quand N'IMPORTE QUEL capteur détecte le mouvement, les stores utilisent le positionnement automatique basé sur le soleil. Quand TOUS les capteurs n'indiquent aucun mouvement pendant la durée du délai, les stores retournent à la position par défaut. Laissez vide pour désactiver cette fonction.",
-          "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes)."
+          "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes).",
+          "motion_timeout_mode": "Action à effectuer lorsqu'aucun mouvement n'a été détecté pendant la durée du délai. « Retourner à la position par défaut » déplace les stores à la position par défaut. « Maintenir la position » laisse les stores où ils sont tandis que le soleil est dans le champ de vision (de sorte qu'un occupant qui revient les trouve comme il les a laissés) ; les stores retournent néanmoins à la position par défaut une fois que le soleil quitte le champ de vision ou que la fenêtre de temps se ferme."
         }
       },
       "weather_override": {
@@ -706,11 +708,13 @@
         "description": "Activez le contrôle basé sur l'occupance. Lorsque tous les capteurs configurés signalent l'absence de mouvement, l'intégration arrête le suivi du soleil et déplace les protections à leur position par défaut après l'expiration du délai d'attente. Lorsqu'un capteur détecte un mouvement, le positionnement automatique reprend.\n\nN'importe quel mélange de capteurs de mouvement, d'occupance ou de présence binaire peut être utilisé. La logique est OU — n'importe quel capteur actif compte comme occupé. Ceci est utile pour les pièces où vous ne voulez pas que les protections s'ajustent lorsque personne n'est présent.\n\n[Learn more]({learn_more})",
         "data": {
           "motion_sensors": "Capteurs de mouvement/occupation pour le contrôle basé sur l'occupation",
-          "motion_timeout": "Durée du délai d'inactivité du mouvement"
+          "motion_timeout": "Durée du délai d'inactivité du mouvement",
+          "motion_timeout_mode": "Lors de l'expiration du délai de mouvement"
         },
         "data_description": {
           "motion_sensors": "Capteurs binaires qui activent/désactivent le positionnement solaire automatique en fonction de l'occupation. Quand N'IMPORTE QUEL capteur détecte le mouvement, les stores utilisent le positionnement automatique basé sur le soleil. Quand TOUS les capteurs n'indiquent aucun mouvement pendant la durée du délai, les stores retournent à la position par défaut. Laissez vide pour désactiver cette fonction.",
-          "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes)."
+          "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes).",
+          "motion_timeout_mode": "Action à effectuer lorsqu'aucun mouvement n'a été détecté pendant la durée du délai. « Retourner à la position par défaut » déplace les stores à la position par défaut. « Maintenir la position » laisse les stores où ils sont tandis que le soleil est dans le champ de vision (de sorte qu'un occupant qui revient les trouve comme il les a laissés) ; les stores retournent néanmoins à la position par défaut une fois que le soleil quitte le champ de vision ou que la fenêtre de temps se ferme."
         }
       },
       "weather_override": {
@@ -983,7 +987,8 @@
           "motion_detected": "Mouvement détecté",
           "timeout_pending": "Délai en cours",
           "no_motion": "Aucun mouvement",
-          "waiting_for_data": "En attente de données"
+          "waiting_for_data": "En attente de données",
+          "holding": "Maintien de la position"
         }
       },
       "decision_trace": {
@@ -1098,6 +1103,12 @@
         "custom_position": "Positions personnalisées",
         "motion_override": "Dérogation mouvement",
         "weather_override": "Dérogation météo"
+      }
+    },
+    "motion_timeout_mode": {
+      "options": {
+        "return_to_default": "Retourner à la position par défaut",
+        "hold_position": "Maintenir la position actuelle"
       }
     }
   },
