@@ -534,10 +534,13 @@ update_manifest_version() {
         return 0
     fi
 
-    # Update version using jq (preserves formatting)
+    # Update version using jq, then re-format with prettier so pre-commit is a no-op
     local tmp_file="${MANIFEST_FILE}.tmp"
     jq --arg version "$new_version" '.version = $version' "$MANIFEST_FILE" > "$tmp_file"
     mv "$tmp_file" "$MANIFEST_FILE"
+    if command -v npx &> /dev/null; then
+        npx prettier --write "$MANIFEST_FILE" &> /dev/null || true
+    fi
 
     log_success "Updated $MANIFEST_FILE to version $new_version"
 }
