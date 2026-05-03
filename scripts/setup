@@ -4,8 +4,13 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-# Install development requirements
-python3 -m pip install --requirement requirements-dev.txt
+# Create venv if it doesn't exist
+if [[ ! -d "venv" ]]; then
+    python3 -m venv venv
+fi
+
+# Install development requirements into venv
+venv/bin/pip install --requirement requirements-dev.txt
 
 # Setup git commit hooks
-pre-commit install
+venv/bin/pre-commit install
