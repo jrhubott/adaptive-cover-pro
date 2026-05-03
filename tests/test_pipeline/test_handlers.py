@@ -19,9 +19,65 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 )
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
+    PipelineResult,
 )
 
 from tests.test_pipeline.conftest import make_snapshot
+
+
+# ---------------------------------------------------------------------------
+# PipelineResult.skip_command
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineResultSkipCommand:
+    """PipelineResult carries a skip_command flag for hold-mode handlers."""
+
+    def test_skip_command_defaults_false(self) -> None:
+        """skip_command is False by default — no behavior change for existing results."""
+        from custom_components.adaptive_cover_pro.enums import ControlMethod
+
+        r = PipelineResult(
+            position=42, control_method=ControlMethod.DEFAULT, reason="x"
+        )
+        assert r.skip_command is False
+
+    def test_skip_command_can_be_set_true(self) -> None:
+        """skip_command=True can be constructed for hold-mode results."""
+        from custom_components.adaptive_cover_pro.enums import ControlMethod
+
+        r = PipelineResult(
+            position=42,
+            control_method=ControlMethod.MOTION,
+            reason="hold",
+            skip_command=True,
+        )
+        assert r.skip_command is True
+
+
+# ---------------------------------------------------------------------------
+# PipelineSnapshot new fields — motion_timeout_mode / current_cover_position
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineSnapshotNewFields:
+    """PipelineSnapshot carries motion_timeout_mode and current_cover_position."""
+
+    def test_motion_timeout_mode_defaults_return_to_default(self) -> None:
+        snap = make_snapshot()
+        assert snap.motion_timeout_mode == "return_to_default"
+
+    def test_motion_timeout_mode_accepts_hold_position(self) -> None:
+        snap = make_snapshot(motion_timeout_mode="hold_position")
+        assert snap.motion_timeout_mode == "hold_position"
+
+    def test_current_cover_position_defaults_none(self) -> None:
+        snap = make_snapshot()
+        assert snap.current_cover_position is None
+
+    def test_current_cover_position_accepts_integer(self) -> None:
+        snap = make_snapshot(current_cover_position=42)
+        assert snap.current_cover_position == 42
 
 
 def test_pipeline_snapshot_is_importable() -> None:
@@ -410,6 +466,90 @@ class TestMotionTimeoutHandler:
     def test_name(self) -> None:
         """MotionTimeoutHandler name is 'motion_timeout'."""
         assert MotionTimeoutHandler.name == "motion_timeout"
+
+
+class TestMotionTimeoutHandlerHoldMode:
+    """Tests for MotionTimeoutHandler hold_position mode."""
+
+    handler = MotionTimeoutHandler()
+
+    def test_hold_fires_when_sun_active(self) -> None:
+        """hold_position + in_time_window + direct_sun_valid → skip_command=True at current pos."""
+        snap = make_snapshot(
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=42,
+            default_position=10,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.skip_command is True
+        assert result.position == 42
+        assert result.control_method == ControlMethod.MOTION
+        assert "hold" in result.reason.lower()
+
+    def test_hold_exits_when_sun_not_valid(self) -> None:
+        """hold_position + direct_sun_valid=False → fall through to default position."""
+        snap = make_snapshot(
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=False,
+            current_cover_position=42,
+            default_position=10,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.skip_command is False
+        assert result.position == 10
+
+    def test_hold_exits_outside_time_window(self) -> None:
+        """hold_position + in_time_window=False → fall through to default position."""
+        snap = make_snapshot(
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=False,
+            direct_sun_valid=True,
+            current_cover_position=42,
+            default_position=10,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.skip_command is False
+        assert result.position == 10
+
+    def test_hold_falls_back_when_position_unknown(self) -> None:
+        """hold_position + current_cover_position=None → fall through to default (safe fallback)."""
+        snap = make_snapshot(
+            motion_timeout_active=True,
+            motion_timeout_mode="hold_position",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=None,
+            default_position=10,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.skip_command is False
+        assert result.position == 10
+
+    def test_return_to_default_mode_unchanged(self) -> None:
+        """return_to_default mode is completely unchanged (regression guard)."""
+        snap = make_snapshot(
+            motion_timeout_active=True,
+            motion_timeout_mode="return_to_default",
+            in_time_window=True,
+            direct_sun_valid=True,
+            current_cover_position=42,
+            default_position=20,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.skip_command is False
+        assert result.position == 20
+        assert result.control_method == ControlMethod.MOTION
 
 
 # ---------------------------------------------------------------------------
