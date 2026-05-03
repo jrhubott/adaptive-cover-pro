@@ -2895,7 +2895,11 @@ class OptionsFlowHandler(OptionsFlow):
         # Icons are embedded directly in each translation string (e.g. "🪟 Covers & Device").
         menu_options: list[str] = keys
 
-        return self.async_show_menu(step_id="init", menu_options=menu_options)  # type: ignore[return-value]
+        return self.async_show_menu(  # type: ignore[return-value]
+            step_id="init",
+            menu_options=menu_options,
+            description_placeholders={"instance_name": self.config_entry.title},
+        )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Adjust cover entities and device association on a single combined form."""

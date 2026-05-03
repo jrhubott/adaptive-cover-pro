@@ -476,6 +476,7 @@
   "options": {
     "step": {
       "init": {
+        "description": "Configuring: **{instance_name}**",
         "menu_options": {
           "cover_entities": "🪟 Covers & Device",
           "geometry": "📐 Cover Geometry",

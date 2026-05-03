@@ -498,7 +498,8 @@
           "done": "✅ Enregistrer et fermer",
           "light_cloud": "☁️ Capteurs de lumière et nuages",
           "temperature_climate": "🌡️ Température et climat"
-        }
+        },
+        "description": "Configuration : **{instance_name}**"
       },
       "automation": {
         "title": "Horaires et synchronisation",

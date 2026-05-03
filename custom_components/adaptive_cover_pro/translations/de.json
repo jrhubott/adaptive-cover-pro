@@ -498,7 +498,8 @@
           "done": "✅ Speichern und schließen",
           "light_cloud": "☁️ Lichtsensoren und Wolken",
           "temperature_climate": "🌡️ Temperatur und Klima"
-        }
+        },
+        "description": "Konfiguration: **{instance_name}**"
       },
       "automation": {
         "title": "Zeitplan und Timing",
