@@ -1803,6 +1803,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MANUAL_IGNORE_INTERMEDIATE,
+            CONF_TRANSIT_TIMEOUT,
         }
     ),
     "force_override_values": frozenset(
