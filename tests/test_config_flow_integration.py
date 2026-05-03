@@ -1266,9 +1266,7 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
     )
     assert result["step_id"] == "custom_position"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {}
-    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] in ("form", "menu")
 
     result = await hass.config_entries.options.async_configure(
@@ -1278,14 +1276,12 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
 
     saved = result["data"]
     for slot in CUSTOM_POSITION_SLOTS.values():
-        assert saved.get(slot["sensor"]) is None, (
-            f"{slot['sensor']} should be None after clearing"
-        )
-        assert saved.get(slot["position"]) is None, (
-            f"{slot['position']} should be None after clearing"
-        )
-        assert saved.get(slot["priority"]) is None, (
-            f"{slot['priority']} should be None after clearing"
-        )
-
-
+        assert (
+            saved.get(slot["sensor"]) is None
+        ), f"{slot['sensor']} should be None after clearing"
+        assert (
+            saved.get(slot["position"]) is None
+        ), f"{slot['position']} should be None after clearing"
+        assert (
+            saved.get(slot["priority"]) is None
+        ), f"{slot['priority']} should be None after clearing"
