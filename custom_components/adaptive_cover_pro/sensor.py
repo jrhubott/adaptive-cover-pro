@@ -541,6 +541,9 @@ def _motion_status_value(s: _ACPDiagnosticSensor) -> str:
         return "not_configured"
     mgr = s.coordinator._motion_mgr  # noqa: SLF001
     if mgr._motion_timeout_active:  # noqa: SLF001
+        pr = getattr(s.coordinator, "_pipeline_result", None)
+        if pr is not None and pr.skip_command and pr.control_method.value == "motion":
+            return "holding"
         return "no_motion"
     if mgr.last_motion_time is None:
         return "waiting_for_data"

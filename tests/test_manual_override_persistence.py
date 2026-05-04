@@ -203,8 +203,16 @@ async def test_first_refresh_skips_apply_position_for_manual_cover():
 
     coordinator._cmd_svc = MagicMock()
     coordinator._cmd_svc.apply_position = _fake_apply
+    coordinator._pipeline_result = None
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator.logger = MagicMock()
+
+    # _dispatch_to_cover delegates to apply_position; wire it up so the
+    # manual-cover skip logic is exercised through the real dispatch path.
+    async def _fake_dispatch(cover, state, reason, ctx):
+        await _fake_apply(cover, state, reason, context=ctx)
+
+    coordinator._dispatch_to_cover = _fake_dispatch
 
     # Call the real method with our mock coordinator as self
     await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(

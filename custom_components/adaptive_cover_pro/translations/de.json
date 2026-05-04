@@ -220,11 +220,13 @@
         "description": "Aktivieren Sie anwesenheitsbasierte Steuerung. Wenn alle konfigurierten Sensoren keine Bewegung melden, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente nach Ablauf des Timeouts in ihre Standardposition. Wenn ein Sensor Bewegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nJede Mischung aus Bewegungs-, Anwesenheits- oder Binär-Präsenzsensoren kann verwendet werden. Die Logik ist ODER — jeder einzelne aktive Sensor zählt als anwesend. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich Beschattungselemente anpassen, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
-          "motion_timeout": "Bewegungs-Timeout-Dauer"
+          "motion_timeout": "Bewegungs-Timeout-Dauer",
+          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft"
         },
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenposititionierung aktivieren/deaktivieren, basierend auf Belegung. Wenn EIN Sensor Bewegung erkennt, verwenden Beschattungen automatische sonnenbasierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung anzeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
-          "motion_timeout": "Dauer (in Sekunden), die gewartet werden soll, nachdem die letzte Bewegung erkannt wurde, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig wechseln. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standardwert: 300 Sekunden (5 Minuten)."
+          "motion_timeout": "Dauer (in Sekunden), die gewartet werden soll, nachdem die letzte Bewegung erkannt wurde, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig wechseln. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standardwert: 300 Sekunden (5 Minuten).",
+          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet."
         }
       },
       "weather_override": {
@@ -706,11 +708,13 @@
         "description": "Aktivieren Sie anwesenheitsbasierte Steuerung. Wenn alle konfigurierten Sensoren keine Bewegung melden, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente nach Ablauf des Timeouts in ihre Standardposition. Wenn ein Sensor Bewegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nJede Mischung aus Bewegungs-, Anwesenheits- oder Binär-Präsenzsensoren kann verwendet werden. Die Logik ist ODER — jeder einzelne aktive Sensor zählt als anwesend. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich Beschattungselemente anpassen, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
-          "motion_timeout": "Bewegungs-Timeout-Dauer"
+          "motion_timeout": "Bewegungs-Timeout-Dauer",
+          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft"
         },
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenverfolgung basierend auf Anwesenheit aktivieren/deaktivieren. Wenn EIN Sensor Bewegung erkennt, verwenden Behänge automatische sonnengesteuerte Positionierung. Wenn ALLE Sensoren zeigen, dass keine Bewegung für die Timeout-Dauer vorhanden ist, kehren Behänge zu Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
-          "motion_timeout": "Dauer (in Sekunden), um nach der letzten Bewegung zu warten, bevor Behänge zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten)."
+          "motion_timeout": "Dauer (in Sekunden), um nach der letzten Bewegung zu warten, bevor Behänge zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
+          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet."
         }
       },
       "weather_override": {
@@ -983,7 +987,8 @@
           "motion_detected": "Bewegung erkannt",
           "timeout_pending": "Timeout ausstehend",
           "no_motion": "Keine Bewegung",
-          "waiting_for_data": "Warten auf Daten"
+          "waiting_for_data": "Warten auf Daten",
+          "holding": "Position wird gehalten"
         }
       },
       "decision_trace": {
@@ -1098,6 +1103,12 @@
         "custom_position": "Benutzerdefinierte Positionen",
         "motion_override": "Bewegungsübersteuerung",
         "weather_override": "Wetter-Übersteuerung"
+      }
+    },
+    "motion_timeout_mode": {
+      "options": {
+        "return_to_default": "Standardposition zurückkehren",
+        "hold_position": "Aktuelle Position halten"
       }
     }
   },

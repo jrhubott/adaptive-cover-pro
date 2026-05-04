@@ -63,6 +63,7 @@ class DiagnosticContext:
     # Motion manager state
     motion_detected: bool = True
     motion_timeout_active: bool = False
+    motion_hold_active: bool = False
 
     # Force override config
     force_override_sensors: list = field(default_factory=list)
@@ -386,7 +387,7 @@ class DiagnosticsBuilder:
             # Round temperatures to 1 decimal — presentation boundary.
             raw_temp = climate_data.get_current_temperature
             diagnostics["active_temperature"] = (
-                round(raw_temp, 1) if isinstance(raw_temp, (int, float)) else raw_temp
+                round(raw_temp, 1) if isinstance(raw_temp, int | float) else raw_temp
             )
 
             def _round_temp(val: object) -> object:
@@ -557,6 +558,7 @@ class DiagnosticsBuilder:
                 ),
                 "motion_detected": ctx.motion_detected,
                 "motion_timeout_active": ctx.motion_timeout_active,
+                "motion_hold_active": ctx.motion_hold_active,
                 "manual_toggle": ctx.manual_toggle,
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),

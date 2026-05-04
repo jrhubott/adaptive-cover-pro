@@ -59,7 +59,23 @@ def _make_options(
 def _make_blind_cover(
     direct_sun_valid=True,
 ):
-    """Build a mock cover for climate tests."""
+    """Build a mock vertical-blind cover for climate tests."""
+    cover = MagicMock()
+    cover.direct_sun_valid = direct_sun_valid
+    cover.valid = direct_sun_valid
+    cover.calculate_percentage = MagicMock(return_value=60.0)
+    cover.logger = MagicMock()
+    config = MagicMock()
+    config.min_pos = None
+    config.max_pos = None
+    config.min_pos_sun_only = False
+    config.max_pos_sun_only = False
+    cover.config = config
+    return cover
+
+
+def _make_awning_cover(direct_sun_valid=True):
+    """Build a mock horizontal-awning cover for climate tests (cover_type='cover_awning')."""
     cover = MagicMock()
     cover.direct_sun_valid = direct_sun_valid
     cover.valid = direct_sun_valid
@@ -655,3 +671,122 @@ class TestClimateHandlerContribute:
             == result.climate_data.inside_temperature
         )
         assert contrib["climate_data"].is_winter == result.climate_data.is_winter
+
+
+# ---------------------------------------------------------------------------
+# Issue #337 — Climate handler must invert 0/100 scalars for awnings
+# ---------------------------------------------------------------------------
+
+
+class TestClimateHandlerAwningSemantics:
+    """Climate handler hardcoded blind-semantic 100/0; awnings need inverse scalars.
+
+    For awnings: 100=extended=sun blocked, 0=retracted=sun allowed.
+    For blinds:  100=raised=sun allowed,   0=lowered=sun blocked.
+    Tilt covers use angle math and are unaffected.
+    """
+
+    handler = ClimateHandler()
+
+    def test_awning_winter_heating_with_presence_retracts(self) -> None:
+        """Winter + sun-in-FOV + presence + awning → retract (0%) so sun reaches window."""
+        cover = _make_awning_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_awning",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.WINTER
+        assert (
+            result.position == 0
+        ), f"Awning winter heating must retract (0%); got {result.position}"
+
+    def test_awning_winter_heating_without_presence_retracts(self) -> None:
+        """Winter + sun-in-FOV + no presence + awning → retract (0%)."""
+        cover = _make_awning_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_awning",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=False),
+            climate_options=_make_options(temp_low=18.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert (
+            result.position == 0
+        ), f"Awning winter heating (no presence) must retract (0%); got {result.position}"
+
+    def test_awning_summer_cooling_transparent_with_presence_extends(self) -> None:
+        """Summer + transparent + presence + awning → extend (100%) to block sun."""
+        cover = _make_awning_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_awning",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0, is_presence=True),
+            climate_options=_make_options(temp_high=26.0, transparent_blind=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.SUMMER
+        assert (
+            result.position == 100
+        ), f"Awning summer cooling must extend (100%); got {result.position}"
+
+    def test_awning_summer_cooling_without_presence_extends(self) -> None:
+        """Summer + no presence + awning → extend (100%) to block sun."""
+        cover = _make_awning_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_awning",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=30.0, is_presence=False),
+            climate_options=_make_options(temp_high=26.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert (
+            result.position == 100
+        ), f"Awning summer cooling (no presence) must extend (100%); got {result.position}"
+
+    def test_awning_winter_insulation_stays_at_zero(self) -> None:
+        """Winter + no sun-in-FOV + insulation + awning → 0% (retracted = closed for awnings).
+
+        0% is correct for both blinds and awnings for insulation: blind=lowered, awning=retracted.
+        This test pins the scalar so a future refactor cannot accidentally invert it.
+        """
+        cover = _make_awning_cover(direct_sun_valid=False)
+        cover.valid = False
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_awning",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0, winter_close_insulation=True),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert (
+            result.position == 0
+        ), f"Awning insulation must stay retracted (0%); got {result.position}"
+
+    def test_blind_winter_heating_still_returns_100(self) -> None:
+        """Regression guard: blind winter heating must still return 100% after the awning fix."""
+        cover = _make_blind_cover(direct_sun_valid=True)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(inside_temperature=15.0, is_presence=True),
+            climate_options=_make_options(temp_low=18.0),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert (
+            result.position == 100
+        ), f"Blind winter heating must still raise (100%) after awning fix; got {result.position}"

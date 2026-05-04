@@ -73,6 +73,10 @@ from .const import (
     CONF_MODE,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
+    CONF_MOTION_TIMEOUT_MODE,
+    DEFAULT_MOTION_TIMEOUT_MODE,
+    MOTION_TIMEOUT_MODE_HOLD,
+    MOTION_TIMEOUT_MODE_RETURN,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
@@ -602,6 +606,15 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
                 unit_of_measurement="seconds",
             )
         ),
+        vol.Optional(
+            CONF_MOTION_TIMEOUT_MODE, default=DEFAULT_MOTION_TIMEOUT_MODE
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[MOTION_TIMEOUT_MODE_RETURN, MOTION_TIMEOUT_MODE_HOLD],
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="motion_timeout_mode",
+            )
+        ),
     }
 )
 
@@ -931,7 +944,7 @@ def _format_duration(dur: dict | int | float | None) -> str:
     """
     if dur is None:
         return ""
-    if isinstance(dur, (int, float)):
+    if isinstance(dur, int | float):
         return f"{int(dur)} min"
     h = int(dur.get("hours", 0) or 0)
     m = int(dur.get("minutes", 0) or 0)
@@ -1397,13 +1410,25 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
 
     # Motion timeout (75)
+    timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
     if has_motion:
         n = len(config.get(CONF_MOTION_SENSORS) or [])
         sensor_word = "sensor" if n == 1 else "sensors"
+        if timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
+            action = (
+                "covers hold current position (return to default when sun leaves FOV)"
+            )
+        else:
+            action = f"covers return to default ({default_pos}%)"
         lines.append(
             f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
-            f"({n} {sensor_word}) → covers return to default ({default_pos}%)"
+            f"({n} {sensor_word}) → {action}"
             f"{_badge(75)}"
+        )
+    elif timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
+        lines.append(
+            "⚠️ hold_position mode is set but no motion sensors are configured "
+            "— the setting has no effect until sensors are added"
         )
 
     # Cloud suppression (60)
@@ -1850,6 +1875,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "motion_override_values": frozenset(
         {
             CONF_MOTION_TIMEOUT,
+            CONF_MOTION_TIMEOUT_MODE,
         }
     ),
     "motion_override_sensors": frozenset(
@@ -1862,6 +1888,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         {
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
+            CONF_MOTION_TIMEOUT_MODE,
         }
     ),
     "weather_override_values": frozenset(

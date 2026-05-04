@@ -73,6 +73,15 @@ def _make_coordinator(
     coordinator._cmd_svc.apply_position = AsyncMock(
         return_value=("sent", "set_cover_position")
     )
+
+    # _dispatch_to_cover wraps apply_position; mock it to delegate so tests that
+    # assert on apply_position continue to work unchanged.
+    async def _dispatch_side_effect(cover, state, reason, ctx):
+        return await coordinator._cmd_svc.apply_position(
+            cover, state, reason, context=ctx
+        )
+
+    coordinator._dispatch_to_cover = AsyncMock(side_effect=_dispatch_side_effect)
     # Default: cold-start (not a reload).  Tests that want reload behaviour
     # must set coordinator._is_reload = True explicitly.
     coordinator._is_reload = False

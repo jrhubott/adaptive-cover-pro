@@ -17,7 +17,9 @@ from custom_components.adaptive_cover_pro.config_context_adapter import (
 )
 
 
-def make_snapshot_for_cover(cover, default_position: int = 0) -> SimpleNamespace:
+def make_snapshot_for_cover(
+    cover, default_position: int = 0, cover_type: str = "cover_blind"
+) -> SimpleNamespace:
     """Create a minimal PipelineSnapshot-compatible namespace for ClimateCoverState tests.
 
     ``ClimateCoverState`` now takes a full ``PipelineSnapshot`` instead of
@@ -29,15 +31,17 @@ def make_snapshot_for_cover(cover, default_position: int = 0) -> SimpleNamespace
     Args:
         cover:            An ``AdaptiveGeneralCover`` (or mock) instance.
         default_position: Effective default position (sunset-aware int).
+        cover_type:       Cover type string (default ``"cover_blind"``).
 
     Returns:
-        SimpleNamespace with ``cover``, ``config``, ``default_position``,
-        and ``is_sunset_active`` set.
+        SimpleNamespace with ``cover``, ``config``, ``cover_type``,
+        ``default_position``, and ``is_sunset_active`` set.
 
     """
     return SimpleNamespace(
         cover=cover,
         config=cover.config,
+        cover_type=cover_type,
         default_position=default_position,
         is_sunset_active=False,
     )
