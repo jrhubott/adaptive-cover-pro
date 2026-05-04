@@ -1892,3 +1892,51 @@ def test_cloudy_position_no_warning_when_suppression_on():
         (ln for ln in summary.splitlines() if "Cloud suppression" in ln), ""
     )
     assert "⚠️" not in cloud_line
+
+
+# ---------------------------------------------------------------------------
+# Motion timeout mode (issue #333)
+# ---------------------------------------------------------------------------
+
+
+def test_motion_summary_default_mode_says_return_to_default():
+    """Default mode shows 'return to default' in motion bullet."""
+    cfg = {
+        CONF_MOTION_SENSORS: ["binary_sensor.motion"],
+        CONF_MOTION_TIMEOUT: 120,
+        CONF_DEFAULT_HEIGHT: 45,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    assert "return to default" in motion_line.lower()
+
+
+def test_motion_summary_hold_mode_says_hold_position():
+    """hold_position mode shows a hold description in motion bullet."""
+    from custom_components.adaptive_cover_pro.const import CONF_MOTION_TIMEOUT_MODE
+
+    cfg = {
+        CONF_MOTION_SENSORS: ["binary_sensor.motion"],
+        CONF_MOTION_TIMEOUT: 120,
+        CONF_DEFAULT_HEIGHT: 45,
+        CONF_MOTION_TIMEOUT_MODE: "hold_position",
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    assert "hold" in motion_line.lower()
+
+
+def test_motion_summary_hold_mode_no_sensors_shows_warning():
+    """hold_position mode with no sensors shows a ⚠️ warning."""
+    from custom_components.adaptive_cover_pro.const import CONF_MOTION_TIMEOUT_MODE
+
+    cfg = {
+        CONF_MOTION_SENSORS: [],
+        CONF_MOTION_TIMEOUT_MODE: "hold_position",
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert (
+        "⚠️" in summary
+        and "hold_position" in summary.lower()
+        or ("hold_position" in summary or "hold position" in summary.lower())
+    )

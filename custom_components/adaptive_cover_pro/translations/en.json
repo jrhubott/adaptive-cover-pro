@@ -220,11 +220,13 @@
         "description": "Enable occupancy-based control. When all configured sensors report no motion, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any sensor detects motion, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used. The logic is OR — any single active sensor counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
         "data": {
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
-          "motion_timeout": "Motion timeout duration"
+          "motion_timeout": "Motion timeout duration",
+          "motion_timeout_mode": "When motion times out"
         },
         "data_description": {
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
-          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
+          "motion_timeout_mode": "What to do when motion has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
         }
       },
       "weather_override": {
@@ -706,11 +708,13 @@
         "description": "Enable occupancy-based control. When all configured sensors report no motion, the integration stops sun tracking and moves covers to their default position after the timeout expires. When any sensor detects motion, automatic positioning resumes.\n\nAny mix of motion, occupancy, or binary presence sensors can be used. The logic is OR — any single active sensor counts as occupied. This is useful for rooms where you don't want covers adjusting when nobody is present.\n\n[Learn more]({learn_more})",
         "data": {
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
-          "motion_timeout": "Motion timeout duration"
+          "motion_timeout": "Motion timeout duration",
+          "motion_timeout_mode": "When motion times out"
         },
         "data_description": {
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
-          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes)."
+          "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
+          "motion_timeout_mode": "What to do when motion has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
         }
       },
       "weather_override": {
@@ -983,6 +987,7 @@
           "motion_detected": "Motion Detected",
           "timeout_pending": "Timeout Pending",
           "no_motion": "No Motion",
+          "holding": "Holding Position",
           "waiting_for_data": "Waiting for Data"
         }
       },
@@ -1098,6 +1103,12 @@
         "custom_position": "Custom Positions",
         "motion_override": "Motion Override",
         "weather_override": "Weather Override"
+      }
+    },
+    "motion_timeout_mode": {
+      "options": {
+        "return_to_default": "Return to default position",
+        "hold_position": "Hold current position"
       }
     }
   },

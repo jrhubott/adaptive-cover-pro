@@ -205,6 +205,10 @@ MAX_TRANSIT_TIMEOUT = 600
 
 # Motion control constants
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes default timeout for no-motion detection
+CONF_MOTION_TIMEOUT_MODE = "motion_timeout_mode"
+MOTION_TIMEOUT_MODE_RETURN = "return_to_default"
+MOTION_TIMEOUT_MODE_HOLD = "hold_position"
+DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN
 
 # Weather override constants
 DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = (

@@ -15,6 +15,7 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
     DiagnosticContext,
     DiagnosticsBuilder,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import DecisionStep
 from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
@@ -774,3 +775,56 @@ class TestTrackActionEnrichment:
         )
         svc._track_action("cover.test", "set_cover_position", 50, True)
         assert svc.last_cover_action["timestamp"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Motion hold diagnostics (issue #333)
+# ---------------------------------------------------------------------------
+
+
+class TestMotionHoldDiagnostics:
+    """DiagnosticContext and builder correctly surface hold_position mode state."""
+
+    def test_motion_hold_active_defaults_false(self):
+        """motion_hold_active defaults to False on DiagnosticContext."""
+        ctx = _base_ctx()
+        assert ctx.motion_hold_active is False
+
+    def test_motion_hold_active_can_be_set_true(self):
+        """motion_hold_active can be set True when pipeline is in hold mode."""
+        ctx = _base_ctx(motion_hold_active=True)
+        assert ctx.motion_hold_active is True
+
+    def test_build_configuration_emits_motion_hold_active_false(self):
+        """_build_configuration includes motion_hold_active=False by default."""
+        ctx = _base_ctx(motion_hold_active=False)
+        result, _ = DiagnosticsBuilder().build(ctx)
+        assert result["configuration"]["motion_hold_active"] is False
+
+    def test_build_configuration_emits_motion_hold_active_true(self):
+        """_build_configuration includes motion_hold_active=True when hold is active."""
+        ctx = _base_ctx(motion_hold_active=True)
+        result, _ = DiagnosticsBuilder().build(ctx)
+        assert result["configuration"]["motion_hold_active"] is True
+
+    def test_decision_trace_captures_hold_reason(self):
+        """Decision trace reason string is preserved verbatim from PipelineResult."""
+        hold_pr = PipelineResult(
+            position=42,
+            control_method=ControlMethod.MOTION,
+            reason="motion timeout — holding position 42% (sun in FOV)",
+            skip_command=True,
+            decision_trace=[
+                DecisionStep(
+                    handler="motion_timeout",
+                    matched=True,
+                    reason="motion timeout — holding position 42% (sun in FOV)",
+                    position=42,
+                )
+            ],
+        )
+        ctx = _base_ctx(pipeline_result=hold_pr)
+        result, _ = DiagnosticsBuilder().build(ctx)
+        trace = result["decision_trace"]
+        motion_step = next(s for s in trace if s["handler"] == "motion_timeout")
+        assert "holding" in motion_step["reason"].lower()

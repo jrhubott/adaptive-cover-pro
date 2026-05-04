@@ -55,6 +55,8 @@ from .const import (
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
+    CONF_MOTION_TIMEOUT_MODE,
+    DEFAULT_MOTION_TIMEOUT_MODE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
@@ -1103,6 +1105,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             my_position_value=options.get(CONF_MY_POSITION_VALUE),
             sunset_use_my=bool(options.get(CONF_SUNSET_USE_MY, False)),
             enable_sun_tracking=bool(options.get(CONF_ENABLE_SUN_TRACKING, True)),
+            motion_timeout_mode=options.get(
+                CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
+            ),
+            current_cover_position=self._compute_mean_cover_position(),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -1299,6 +1305,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             diagnostics=diagnostics,
         )
 
+    def _compute_mean_cover_position(self) -> int | None:
+        """Return integer mean of current entity positions, or None if none are available.
+
+        Used to populate PipelineSnapshot.current_cover_position so the
+        MotionTimeoutHandler can hold covers at their current physical position
+        in hold_position mode.
+        """
+        if self._snapshot is None:
+            return None
+        positions = [
+            p
+            for p in self._snapshot.cover_positions.values()
+            if isinstance(p, int | float)
+        ]
+        if not positions:
+            return None
+        return int(round(sum(positions) / len(positions)))
+
     def _build_position_context(
         self,
         entity: str,
@@ -1356,6 +1380,38 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 else False
             ),
         )
+
+    async def _dispatch_to_cover(
+        self,
+        cover: str,
+        state: int,
+        reason: str,
+        ctx,
+    ) -> tuple[str, str] | None:
+        """Send a position command or record a hold-mode skip.
+
+        When the active pipeline result has skip_command=True (hold_position
+        mode during motion timeout), no command is issued. A motion_hold skip
+        record is written instead so diagnostics show why the cover didn't move.
+        All other callers (forced transitions, override clears, window events)
+        bypass this helper and call apply_position directly so they are never
+        blocked by hold mode.
+        """
+        if self._pipeline_result is not None and self._pipeline_result.skip_command:
+            self._cmd_svc.record_skipped_action(
+                cover,
+                "motion_hold",
+                state,
+                trigger=reason,
+                inverse_state=self._inverse_state,
+                extras={
+                    "held_position": self._pipeline_result.position,
+                    "would_be_position": state,
+                    "motion_timeout_mode": "hold_position",
+                },
+            )
+            return None
+        return await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
 
     async def _async_send_after_override_clear(
         self,
@@ -1492,7 +1548,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 is_safety=is_safety,
                 sun_just_appeared=sun_just_appeared,
             )
-            await self._cmd_svc.apply_position(cover, state, reason, context=ctx)
+            await self._dispatch_to_cover(cover, state, reason, ctx)
         self.state_change = False
         self.logger.debug("State change handled")
 
@@ -1611,7 +1667,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 is_safety=is_safety,
                 sun_just_appeared=sun_just_appeared,
             )
-            await self._cmd_svc.apply_position(cover, state, "startup", context=ctx)
+            await self._dispatch_to_cover(cover, state, "startup", ctx)
         self.first_refresh = False
         self._is_reload = False
         self.logger.debug("First refresh handled")
@@ -2001,6 +2057,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             config_options=dict(self.config_entry.options),
             motion_detected=self.is_motion_detected,
             motion_timeout_active=self._motion_mgr._motion_timeout_active,
+            motion_hold_active=(
+                self._pipeline_result is not None
+                and self._pipeline_result.skip_command
+                and self._pipeline_result.control_method == ControlMethod.MOTION
+            ),
             force_override_sensors=self.config_entry.options.get(
                 CONF_FORCE_OVERRIDE_SENSORS, []
             ),

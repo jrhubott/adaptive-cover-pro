@@ -25,6 +25,26 @@ class MotionTimeoutHandler(OverrideHandler):
             return None
         if not snapshot.motion_timeout_active:
             return None
+
+        # Hold-position mode: freeze the cover at its current physical position
+        # while the sun is actively in the FOV. When the sun leaves (or the time
+        # window closes), fall through to the return_to_default branch below so
+        # the cover returns to default without requiring motion re-detection.
+        if (
+            snapshot.motion_timeout_mode == "hold_position"
+            and snapshot.in_time_window
+            and snapshot.cover.direct_sun_valid
+            and snapshot.current_cover_position is not None
+        ):
+            held = snapshot.current_cover_position
+            return PipelineResult(
+                position=held,
+                control_method=ControlMethod.MOTION,
+                reason=f"motion timeout — holding position {held}% (sun in FOV)",
+                skip_command=True,
+                raw_calculated_position=compute_raw_calculated_position(snapshot),
+            )
+
         position = compute_default_position(snapshot)
         pos_label = (
             "sunset position" if snapshot.is_sunset_active else "default position"

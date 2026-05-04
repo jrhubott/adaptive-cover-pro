@@ -341,8 +341,16 @@ def _make_state_change_coordinator(
     coordinator._pipeline_bypasses_auto_control = bypass_auto_control
     coordinator._pipeline_is_safety_handler = bypass_auto_control
     coordinator._pipeline_result = MagicMock()
+    coordinator._pipeline_result.skip_command = False
     coordinator._pipeline_result.control_method.value = "force"
     coordinator.state_change = True
+
+    async def _dispatch_side_effect(cover, state, reason, ctx):
+        return await coordinator._cmd_svc.apply_position(
+            cover, state, reason, context=ctx
+        )
+
+    coordinator._dispatch_to_cover = AsyncMock(side_effect=_dispatch_side_effect)
     return coordinator
 
 
