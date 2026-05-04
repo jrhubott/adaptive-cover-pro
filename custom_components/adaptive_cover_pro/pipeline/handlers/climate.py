@@ -16,6 +16,7 @@ from ...const import (
     CLIMATE_DEFAULT_TILT_ANGLE,
     CLIMATE_SUMMER_TILT_ANGLE,
     POSITION_CLOSED,
+    POSITION_OPEN,
 )
 from ...engine.covers import AdaptiveTiltCover
 from ...enums import ClimateStrategy, ControlMethod, CoverType, TiltMode
@@ -26,6 +27,26 @@ from ..helpers import (
     compute_solar_position,
 )
 from ..types import PipelineResult, PipelineSnapshot
+
+# ---------------------------------------------------------------------------
+# Cover-type-aware intent helper
+# ---------------------------------------------------------------------------
+
+
+def _position_for_intent(cover_type: str, *, sun_through: bool) -> int:
+    """Map a semantic intent to the correct numeric position for this cover type.
+
+    sun_through=True  → "let sun reach the window" (winter heating)
+    sun_through=False → "block sun" (summer cooling)
+
+    Blind/tilt: POSITION_OPEN=100 means raised=sun in; POSITION_CLOSED=0 means lowered=sun out.
+    Awning:     POSITION_OPEN=100 means extended=sun blocked; POSITION_CLOSED=0 means retracted=sun in.
+    """
+    is_awning = cover_type == CoverType.AWNING or cover_type == CoverType.AWNING.value
+    if sun_through:
+        return POSITION_CLOSED if is_awning else POSITION_OPEN
+    return POSITION_OPEN if is_awning else POSITION_CLOSED
+
 
 # ---------------------------------------------------------------------------
 # Climate data container (moved from calculation.py)
@@ -167,11 +188,12 @@ class ClimateCoverState:
         is_summer = self.climate_data.is_summer
         if self.climate_data.is_winter and self.cover.valid:
             self.climate_strategy = ClimateStrategy.WINTER_HEATING
-            return 100
+            return _position_for_intent(self.snapshot.cover_type, sun_through=True)
         # Close for insulation when in winter and sun not hitting window.
         if self.climate_data.is_winter and self.climate_data.winter_close_insulation:
             self.climate_strategy = ClimateStrategy.WINTER_INSULATION
-            return 0
+            # 0 is correct for both blinds (lowered) and awnings (retracted).
+            return POSITION_CLOSED
         # Low-light check applies in ALL seasons — if irradiance/lux indicates
         # no real sun (even in summer), use default position rather than closing.
         if (
@@ -183,7 +205,7 @@ class ClimateCoverState:
             return self.default_position
         if is_summer and self.climate_data.transparent_blind and self.cover.valid:
             self.climate_strategy = ClimateStrategy.SUMMER_COOLING
-            return 0
+            return _position_for_intent(self.snapshot.cover_type, sun_through=False)
         self.climate_strategy = ClimateStrategy.GLARE_CONTROL
         return None
 
@@ -201,14 +223,15 @@ class ClimateCoverState:
                 return self.default_position
             if self.climate_data.is_summer:
                 self.climate_strategy = ClimateStrategy.SUMMER_COOLING
-                return 0
+                return _position_for_intent(self.snapshot.cover_type, sun_through=False)
             if self.climate_data.is_winter:
                 self.climate_strategy = ClimateStrategy.WINTER_HEATING
-                return 100
+                return _position_for_intent(self.snapshot.cover_type, sun_through=True)
         # Close for insulation when in winter and sun not hitting window.
         if self.climate_data.is_winter and self.climate_data.winter_close_insulation:
             self.climate_strategy = ClimateStrategy.WINTER_INSULATION
-            return 0
+            # 0 is correct for both blinds (lowered) and awnings (retracted).
+            return POSITION_CLOSED
         self.climate_strategy = ClimateStrategy.LOW_LIGHT
         return self.default_position
 

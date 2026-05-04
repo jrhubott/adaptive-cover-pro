@@ -1072,7 +1072,7 @@ class TestHorizontalAwningWithClimateMode:
     """Horizontal awning with climate mode: covers awning-specific calculation."""
 
     def test_horizontal_awning_winter_heating(self):
-        """Cold temp + sun in FOV → ClimateHandler opens awning fully (100%)."""
+        """Cold temp + sun in FOV → ClimateHandler retracts awning fully (0%) so sun reaches window."""
         logger = _make_logger()
         sun_data = _make_sun_data()
 
@@ -1132,7 +1132,10 @@ class TestHorizontalAwningWithClimateMode:
             result = pipeline.evaluate(snapshot)
 
             assert result.control_method == ControlMethod.WINTER
-            assert result.position == 100
+            assert result.position == 0, (
+                "Horizontal awning winter heating must retract (0%) so sun reaches the "
+                "window for solar gain — extending (100%) blocks the heating sun. (#337)"
+            )
 
             diag_ctx = _build_diagnostic_context(cover, result, climate_mode=True)
             diag_dict, _ = DiagnosticsBuilder().build(diag_ctx)
