@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import datetime as dt
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
+    PositionContext,
     build_special_positions,
 )
 
@@ -182,7 +183,12 @@ def test_check_position_delta_from_special_bypass(cmd_svc):
 
 
 def test_check_position_delta_none_position(cmd_svc):
-    """Returns True (send command) when position is unavailable."""
+    """Returns True for the loaded-but-unknown-position case (e.g. Z-Wave covers).
+
+    The unloaded-entity case is gated upstream in apply_position via the
+    cover_unavailable skip code, so a None here means the entity IS registered
+    but its current_position attribute is unknown.
+    """
     with patch.object(cmd_svc, "_get_current_position", return_value=None):
         assert cmd_svc._check_position_delta("cover.test", 50, 20, [0, 100]) is True
 
@@ -528,3 +534,91 @@ def test_read_position_tilt_only_under_cover_blind(mock_hass, logger, grace_mgr)
         "cover.tilt_only_blind", caps, state_obj
     )
     assert result == 60
+
+
+# --- apply_position cover_unavailable gate (issue #342) ---
+
+
+def _ctx() -> PositionContext:
+    """Build a PositionContext that passes every gate downstream of cover_unavailable."""
+    return PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=5,
+        time_threshold=0,
+        special_positions=[0, 100],
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_position_skips_when_entity_state_missing(cmd_svc, mock_hass):
+    """Issue #342: skip with cover_unavailable when hass.states.get returns None.
+
+    On HA restart, cover entities may not yet be registered in the state machine.
+    Issuing a service call against an unregistered entity emits a HA warning
+    and (on platforms that queue commands) executes once the entity loads,
+    moving the cover to the wrong position.
+    """
+    mock_hass.states.get.return_value = None
+    mock_hass.services.async_call = AsyncMock()
+
+    outcome, reason = await cmd_svc.apply_position(
+        "cover.unloaded", 100, "startup", _ctx()
+    )
+
+    assert (outcome, reason) == ("skipped", "cover_unavailable")
+    mock_hass.services.async_call.assert_not_called()
+    assert cmd_svc.last_skipped_action["reason"] == "cover_unavailable"
+    assert cmd_svc.last_skipped_action["entity_id"] == "cover.unloaded"
+
+
+@pytest.mark.asyncio
+async def test_apply_position_skips_when_entity_state_unavailable(cmd_svc, mock_hass):
+    """Issue #342: skip with cover_unavailable when state.state == 'unavailable'.
+
+    Some platforms (e.g. Homematic IP) register the entity early but report
+    unavailable until the device is reachable; commands against it are queued
+    and replayed once available, producing the same wrong-position symptom.
+    """
+    mock_hass.states.get.return_value = MagicMock(state="unavailable", attributes={})
+    mock_hass.services.async_call = AsyncMock()
+
+    outcome, reason = await cmd_svc.apply_position(
+        "cover.unavailable", 100, "startup", _ctx()
+    )
+
+    assert (outcome, reason) == ("skipped", "cover_unavailable")
+    mock_hass.services.async_call.assert_not_called()
+    assert cmd_svc.last_skipped_action["reason"] == "cover_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_apply_position_proceeds_when_state_loaded_with_unknown_position(
+    cmd_svc, mock_hass
+):
+    """Loaded entity with current_position=None must NOT trigger cover_unavailable.
+
+    Z-Wave covers commonly report a real state (open/closed) without a numeric
+    current_position attribute. The new gate must only short-circuit when the
+    entity itself is unloaded or marked unavailable — not for unknown position.
+    """
+    mock_hass.states.get.return_value = MagicMock(
+        state="open",
+        attributes={"current_position": None, "supported_features": 15},
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+
+    with (
+        patch.object(cmd_svc, "_get_current_position", return_value=None),
+        patch.object(cmd_svc, "_check_position_delta", return_value=True),
+        patch.object(cmd_svc, "_check_time_delta", return_value=True),
+        patch.object(
+            cmd_svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.zw"}, True),
+        ),
+    ):
+        outcome, reason = await cmd_svc.apply_position("cover.zw", 50, "solar", _ctx())
+
+    assert reason != "cover_unavailable"

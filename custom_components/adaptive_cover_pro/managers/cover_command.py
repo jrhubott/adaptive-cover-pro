@@ -13,6 +13,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_SET_COVER_POSITION,
     SERVICE_SET_COVER_TILT_POSITION,
+    STATE_UNAVAILABLE,
 )
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -878,6 +879,25 @@ class CoverCommandService:
         #     auto_control (issue #293)
         _trigger = reason
         _inverse = context.inverse_state
+
+        # Cover-loaded boundary check (issue #342). HA may register the
+        # integration before the underlying cover platform finishes loading
+        # (e.g. Homematic IP) — issuing set_cover_position before the entity
+        # exists triggers a HA warning and, on platforms that queue commands,
+        # replays the wrong target once the entity comes online. Bypasses none
+        # of the other gates: even is_safety / force=True must wait for the
+        # entity to register.
+        state_obj = self._hass.states.get(entity_id)
+        if state_obj is None or state_obj.state == STATE_UNAVAILABLE:
+            return self._skip(
+                entity_id,
+                "cover_unavailable",
+                position,
+                trigger=_trigger,
+                inverse_state=_inverse,
+                current_position=None,
+            )
+
         _current = self._get_current_position(entity_id)
 
         # Hard kill switch — blocks ALL commands, including safety overrides and
@@ -1516,6 +1536,10 @@ class CoverCommandService:
         """Send command directly, bypassing gate checks (reconciliation use only).
 
         Does NOT reset the retry count — the caller (_reconcile) owns that.
+
+        NB: callers are responsible for entity-loaded-ness. Reconciliation only
+        runs for entities that already passed the cover_unavailable gate in
+        ``apply_position`` (issue #342), so no duplicate gate is needed here.
         """
         service, service_data, _ = self._prepare_service_call(
             entity_id, target, reset_retries=False

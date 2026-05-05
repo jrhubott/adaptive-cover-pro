@@ -469,7 +469,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug("Cover state change")
         data = event.data
         if data["old_state"] is None:
-            self.logger.debug("Old state is None")
+            # Issue #342: a cover transitioning from "not registered yet" to a
+            # real state is the cue that the platform finished loading. The
+            # initial first_refresh likely skipped this entity with
+            # cover_unavailable; recompute now that it's reachable.
+            new_state = data["new_state"]
+            if new_state is not None and new_state.state not in (
+                "unavailable",
+                "unknown",
+            ):
+                self.logger.debug(
+                    "Cover %s came online (%s); requesting refresh",
+                    data["entity_id"],
+                    new_state.state,
+                )
+                await self.async_request_refresh()
+            else:
+                self.logger.debug("Old state is None")
             return
         self.state_change_data = StateChangedData(
             data["entity_id"], data["old_state"], data["new_state"]

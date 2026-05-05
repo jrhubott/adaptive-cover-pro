@@ -368,6 +368,52 @@ class TestFirstRefreshSendsStartupCommands:
         assert coordinator.first_refresh is False
 
     @pytest.mark.asyncio
+    async def test_first_refresh_skips_unloaded_cover_entity(self):
+        """Issue #342: first refresh must not call set_cover_position on unloaded covers.
+
+        On HA restart, the cover platform may not finish loading before the
+        integration's first refresh runs. The cover_unavailable gate in
+        apply_position must short-circuit so HA never sees the service call
+        (which would otherwise emit a "missing or not currently available"
+        warning and, on platforms that queue commands, replay it later).
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+        from custom_components.adaptive_cover_pro.managers.cover_command import (
+            CoverCommandService,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.unloaded"])
+        coordinator.first_refresh = True
+
+        real_hass = MagicMock()
+        real_hass.states.get.return_value = None
+        real_hass.services.async_call = AsyncMock()
+
+        real_svc = CoverCommandService(
+            hass=real_hass,
+            logger=MagicMock(),
+            cover_type="cover_blind",
+            grace_mgr=MagicMock(),
+            open_close_threshold=50,
+        )
+        coordinator._cmd_svc = real_svc
+
+        async def _delegate(cover, state, reason, ctx):
+            return await real_svc.apply_position(cover, state, reason, ctx)
+
+        coordinator._dispatch_to_cover = AsyncMock(side_effect=_delegate)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_first_refresh(
+            coordinator, state=100, options={}
+        )
+
+        real_hass.services.async_call.assert_not_called()
+        assert real_svc.last_skipped_action["reason"] == "cover_unavailable"
+        assert real_svc.last_skipped_action["entity_id"] == "cover.unloaded"
+
+    @pytest.mark.asyncio
     async def test_reload_during_time_window_does_not_move_covers(self):
         """On config-entry reload, first-refresh must NOT move non-safety covers.
 
@@ -910,3 +956,79 @@ class TestTargetJustReachedSkipsManualOverride:
 
         # "cover.other" is NOT in _target_just_reached → detection runs normally
         coordinator.manager.handle_state_change.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Step 8: Cover-online transition retriggers refresh (issue #342)
+# ---------------------------------------------------------------------------
+
+
+class TestCoverOnlineTransitionRetrigger:
+    """When a tracked cover transitions from unavailable to a real state, the
+    coordinator must run another refresh so the correct position is recomputed
+    and dispatched (the original startup pass was skipped via cover_unavailable).
+    """
+
+    def _make_event(self, entity_id: str, new_state_value):
+        event = MagicMock()
+        new_state = (
+            MagicMock(state=new_state_value) if new_state_value is not None else None
+        )
+        event.data = {
+            "entity_id": entity_id,
+            "old_state": None,
+            "new_state": new_state,
+        }
+        return event
+
+    @pytest.mark.asyncio
+    async def test_cover_online_transition_triggers_refresh(self):
+        """old_state=None + new_state has a real value → schedule a refresh."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.late"])
+        coordinator.async_request_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.late", "open")
+        )
+
+        coordinator.async_request_refresh.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cover_online_to_unavailable_does_not_retrigger(self):
+        """old_state=None + new_state.state=='unavailable' must NOT refresh.
+
+        Cover platform registered the entity but it's still not reachable —
+        another refresh now would just re-skip with cover_unavailable.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.late"])
+        coordinator.async_request_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.late", "unavailable")
+        )
+
+        coordinator.async_request_refresh.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cover_online_to_unknown_does_not_retrigger(self):
+        """old_state=None + new_state.state=='unknown' must NOT refresh."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.late"])
+        coordinator.async_request_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.late", "unknown")
+        )
+
+        coordinator.async_request_refresh.assert_not_awaited()
