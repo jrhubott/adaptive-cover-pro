@@ -126,6 +126,46 @@ async def test_apply_skips_time_delta_too_small(svc):
 
 
 @pytest.mark.asyncio
+async def test_apply_force_bypasses_time_delta_for_custom_position(svc, mock_hass):
+    """Issue #348: force=True bypasses the time-delta gate for custom-position edge-triggers."""
+    _patch_position(svc, 30)
+    recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10)
+    with (
+        _patch_caps(),
+        patch(
+            "custom_components.adaptive_cover_pro.managers.cover_command.get_last_updated",
+            return_value=recent,
+        ),
+    ):
+        outcome, _ = await svc.apply_position(
+            "cover.test",
+            60,
+            "custom_position",
+            context=_ctx(time_threshold=5, force=True, auto_control=True),
+        )
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_force_same_position_still_skipped_for_custom_position(
+    svc, mock_hass
+):
+    """PR #300 invariant: force=True with same position is still skipped."""
+    _patch_position(svc, 60)
+    with _patch_caps():
+        outcome, detail = await svc.apply_position(
+            "cover.test",
+            60,
+            "custom_position",
+            context=_ctx(force=True, auto_control=True),
+        )
+    assert outcome == "skipped"
+    assert detail == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_apply_skips_manual_override(svc):
     _patch_position(svc, 30)
     with patch(

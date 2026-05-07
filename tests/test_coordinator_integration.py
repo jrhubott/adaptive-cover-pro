@@ -68,6 +68,7 @@ def _make_coordinator(
     )
 
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
+    coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._cmd_svc = MagicMock()
     coordinator._cmd_svc.apply_position = AsyncMock(
@@ -285,6 +286,111 @@ class TestCustomPositionNoRedundantCommands:
             is_safety=False,
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
+
+
+# ---------------------------------------------------------------------------
+# Step 5: Custom-position sensor edge-trigger bypasses time-delta gate
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPositionSensorEdgeTriggerBypassesGate:
+    """Sensor toggle triggers force=True; solar refresh keeps force=False.
+
+    Issue #348: a custom-position sensor toggling within delta_time of the last
+    cover move must NOT be throttled.  The same-position short-circuit (PR #300)
+    still prevents redundant re-sends when the sensor stays active across solar
+    refreshes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_custom_position_sensor_edge_trigger_uses_force_context(self):
+        """Sensor-triggered custom position must call _build_position_context with force=True."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=60,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            bypass_auto_control=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=True)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=60, options={}
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=True,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
+    async def test_custom_position_sun_driven_refresh_does_not_use_force_context(self):
+        """Solar-cycle refresh with active custom position keeps force=False (PR #300 invariant)."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=60,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            bypass_auto_control=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=60, options={}
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=False,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+
+class TestCustomPositionTriggerEntityRecording:
+    """async_check_entity_state_change records the triggering entity_id."""
+
+    @pytest.mark.asyncio
+    async def test_async_check_entity_state_change_records_trigger_entity(self):
+        """Trigger entity_id is stored as _last_state_change_entity for use in async_handle_state_change."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+        coordinator.state_change = False
+        coordinator._last_state_change_entity = None
+        coordinator.logger = MagicMock()
+
+        event = MagicMock()
+        event.data = {
+            "entity_id": "binary_sensor.movie_time",
+            "old_state": MagicMock(state="off"),
+            "new_state": MagicMock(state="on"),
+        }
+
+        await AdaptiveDataUpdateCoordinator.async_check_entity_state_change(
+            coordinator, event
+        )
+
+        assert coordinator._last_state_change_entity == "binary_sensor.movie_time"
 
 
 # ---------------------------------------------------------------------------

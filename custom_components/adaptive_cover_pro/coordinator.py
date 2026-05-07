@@ -222,6 +222,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
+        self._last_state_change_entity: str | None = None
         # Set to True when the coordinator is created during a config-entry reload
         # (HA already running) vs. a cold HA boot.  On reload, first-refresh dispatch
         # is suppressed for non-safety handlers to avoid disturbing covers that the
@@ -459,6 +460,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.debug(
             "Entity state change: %s (%s → %s)", entity_id, old_val, new_val
         )
+        self._last_state_change_entity = entity_id
         self.state_change = True
         await self.async_refresh()
 
@@ -1533,16 +1535,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # (solar, climate, cloud, default) must not reposition covers before
         # the user's start time or after the end time.  The pipeline still
         # evaluates so diagnostics/sensor state remain correct.
+        custom_position_sensor_triggered = self._is_custom_position_sensor_trigger()
+
         if (
             not self.check_adaptive_time
             and not is_safety
             and not force_override_released
+            and not custom_position_sensor_triggered
         ):
             self.state_change = False
+            self._last_state_change_entity = None
             self.logger.debug("Outside time window — skipping position update")
             return
 
-        use_force = is_safety or force_override_released
+        use_force = (
+            is_safety or force_override_released or custom_position_sensor_triggered
+        )
         if force_override_released:
             reason = "force_override_cleared"
             self.logger.debug(
@@ -1566,6 +1574,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             await self._dispatch_to_cover(cover, state, reason, ctx)
         self.state_change = False
+        self._last_state_change_entity = None
         self.logger.debug("State change handled")
 
     async def async_handle_cover_state_change(self, state: int):
@@ -2236,6 +2245,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return self._pipeline_result.control_method in (
             ControlMethod.FORCE,
             ControlMethod.WEATHER,
+        )
+
+    def _is_custom_position_sensor_trigger(self) -> bool:
+        """Return True when this refresh was edge-triggered by a custom-position slot's own sensor.
+
+        When a sensor toggles, the cover may be at a completely different position
+        (e.g. solar tracking just moved it).  Passing force=True lets the command
+        bypass the time-delta gate so the slot's position is actually applied.
+        The same-position short-circuit (PR #300) still suppresses redundant
+        re-sends when the sensor stays active across subsequent solar refreshes.
+        """
+        if self._pipeline_result is None:
+            return False
+        if self._pipeline_result.control_method is not ControlMethod.CUSTOM_POSITION:
+            return False
+        trigger = self._last_state_change_entity
+        if trigger is None:
+            return False
+        options = self.config_entry.options
+        return any(
+            options.get(slot_keys["sensor"]) == trigger
+            for slot_keys in CUSTOM_POSITION_SLOTS.values()
         )
 
     @property

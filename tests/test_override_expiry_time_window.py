@@ -37,6 +37,7 @@ def _make_coordinator(*, check_adaptive_time: bool, automatic_control: bool = Tr
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
+    coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._cmd_svc = MagicMock()
     coordinator._cmd_svc.apply_position = AsyncMock(
@@ -333,6 +334,7 @@ def _make_state_change_coordinator(
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
+    coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())
     coordinator._cmd_svc = MagicMock()
     coordinator._cmd_svc.apply_position = AsyncMock(
