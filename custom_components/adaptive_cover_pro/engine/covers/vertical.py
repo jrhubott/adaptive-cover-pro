@@ -194,12 +194,33 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             )
             effective_distance -= sill_offset
 
-        # When the sill alone blocks all sun penetration to the protected zone,
-        # the blind is not needed — return h_win (fully raised = 100% open).
-        # Issue #304: previously clamped to 0, producing 0% (fully closed) —
-        # the opposite of the correct geometric answer.
-        if self.sill_height > 0 and effective_distance <= 0:
-            return self.h_win
+        # ── Sill geometry — why negative effective_distance means FULLY CLOSED ────────
+        # "Position" = exposed glass from the bottom (0 = fully closed, h_win = open).
+        # A ray entering the glass at height h from the floor travels into the room at
+        # angle θ (sun elevation). At horizontal distance d from the window the ray is
+        # at height  h − d·tan(θ).
+        #
+        # At d = shaded_distance (the protected-zone boundary):
+        #   • h > shaded_distance·tan(θ):  ray is ABOVE the floor at the boundary —
+        #     it has not hit anything and keeps travelling deeper into the room.
+        #     This counts as sun penetration past the protected zone.
+        #   • h ≤ shaded_distance·tan(θ):  ray hits the floor at or before the boundary.
+        #
+        # To stop ALL rays at the boundary, the top of exposed glass must satisfy
+        #   h_top ≤ shaded_distance·tan(θ)
+        # giving  position = clip(shaded_distance·tan(θ) − sill_height, 0, h_win),
+        # equivalently  effective_distance = max(distance − sill_offset, 0)
+        #               position           = effective_distance·tan(θ) / cos(γ)
+        #
+        # When effective_distance ≤ 0, even the LOWEST glass entry (at sill_height)
+        # produces a ray that is still above the floor at the boundary. Every higher
+        # entry is worse. The blind must be FULLY CLOSED (position=0).
+        #
+        # Issue #304 short-circuited here with `return h_win` (fully open), which is
+        # the geometric inverse of the correct answer. Issue #358 restores the clamp so
+        # the normal path below naturally produces position=0 when effective_distance=0.
+        if effective_distance < 0:
+            effective_distance = 0.0
 
         # Base calculation: project to vertical blind height.
         cos_gamma = float(cos(rad(self.gamma)))

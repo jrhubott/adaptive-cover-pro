@@ -7,6 +7,10 @@ penetration for free, so the effective distance the blind needs to cover is
 reduced. This means the blind can be raised higher (smaller blind height needed).
 
 Implementation: effective_distance -= sill_height / max(tan(elevation), 0.05)
+
+When effective_distance goes negative (sill shadow deeper than shaded distance),
+the blind must be FULLY CLOSED (position=0), not fully open. See the geometry
+explanation in TestRaysAbovefloorAtShadedBoundary and vertical.py for details.
 """
 
 import math
@@ -137,8 +141,8 @@ class TestGeometrySillHeightEffect:
       - base_height = effective_distance * tan(elevation) / cos(gamma)
       - base_height DECREASES with sill_height (blind can be raised higher)
 
-    The np.clip(adjusted_height, 0, h_win) at the end correctly clamps negative
-    effective_distance to 0 (sill already blocks all sun penetration).
+    When effective_distance goes negative (sill shadow deeper than shaded distance),
+    it is clamped to 0 → blind fully closed. See TestRaysAbovefloorAtShadedBoundary.
     """
 
     def test_sill_height_decreases_position_low_elevation(self, base_cover_params):
@@ -224,12 +228,13 @@ class TestGeometrySillHeightEffect:
                 positions[i] >= positions[i + 1]
             ), f"Expected monotonic decrease: sill_heights={sill_heights}, positions={positions}"
 
-        # Once sill_offset >= distance (sill_height=0.5 at 45°), the sill blocks all
-        # sun → blind not needed → position jumps to h_win (fully raised), not 0.
+        # Once sill_offset >= distance (sill_height=0.5 at 45°), even the lowest
+        # glass entry produces a ray above the floor at the shaded boundary →
+        # blind must be fully closed (position=0), not open. Issue #358.
         clip_case = make_vertical_cover(
             base_cover_params, gamma=0.0, sol_elev=45.0, sill_height=0.5
         )
-        assert clip_case.calculate_position() == clip_case.h_win
+        assert clip_case.calculate_position() == 0.0
 
 
 class TestMathVerification:
@@ -321,11 +326,15 @@ class TestMathVerification:
 class TestEdgeCasesLowElevation:
     """Tests for edge cases at low sun elevation angles."""
 
-    def test_very_low_elevation_large_sill_returns_h_win(self, base_cover_params):
-        """At sol_elev=2.5° with large sill_height, sill blocks all sun → blind not needed.
+    def test_very_low_elevation_large_sill_returns_zero(self, base_cover_params):
+        """At sol_elev=2.5° with large sill_height, sill shadow deeply exceeds shaded distance.
 
         tan(2.5°) ≈ 0.0437 < 0.05 guard → sill_offset = 3.0 / 0.05 = 60.0
-        effective_distance = 0.5 - 60.0 = -59.5 → sill blocks sun → h_win (fully raised).
+        effective_distance = 0.5 - 60.0 = -59.5 → clamped to 0 → position = 0 (fully closed).
+
+        The sill shadow passes the shaded boundary, but sun still enters through the glass
+        above the sill and those rays are above the floor at the boundary. Blind must close.
+        Issue #358 (reverts inverted #304 logic).
         """
         cover = make_vertical_cover(
             base_cover_params,
@@ -335,10 +344,9 @@ class TestEdgeCasesLowElevation:
         )
         position = cover.calculate_position()
 
-        # Sill blocks all sun → blind fully raised (h_win = 100% open)
         assert (
-            position == cover.h_win
-        ), f"Expected h_win={cover.h_win} (sill blocks all sun) but got {position}"
+            position == 0.0
+        ), f"Expected position=0.0 (blind fully closed) but got {position}"
 
     def test_very_low_elevation_no_exception_raised(self, base_cover_params):
         """At sol_elev=2.5° with large sill_height, no exception should be raised."""
@@ -356,8 +364,7 @@ class TestEdgeCasesLowElevation:
         """At sol_elev=2.5° with moderate sill_height, guard clamps the tan denominator.
 
         tan(2.5°) ≈ 0.0437 < 0.05 guard → sill_offset = 1.0 / 0.05 = 20.0
-        effective_distance = 0.5 - 20.0 = -19.5 → clips to 0 (sill blocks all sun)
-        Position = 0 (blind fully raised — the large sill provides complete protection).
+        effective_distance = 0.5 - 20.0 = -19.5 → clamped to 0 → position = 0 (fully closed).
         """
         cover = make_vertical_cover(
             base_cover_params,
@@ -586,40 +593,229 @@ class TestHorizontalCoverSillHeight:
         assert fields["sill_height"].default == 0.0
 
 
-class TestIssue304SillBlocksSun:
-    """Regression: when sill geometry blocks all sun penetration to the
-    protected zone, the blind must be fully raised (h_win → 100% open),
-    not fully lowered (0 → 0% closed). Issue #304.
+class TestIssue358SillBlocksSunFullyCloses:
+    """Regression for issue #358: when the sill shadow depth exceeds the shaded
+    distance, every ray entering the glass is still above the floor at the shaded
+    boundary and keeps traveling deeper into the room. The blind must be FULLY CLOSED
+    (position=0), not fully open.
+
+    Geometry: a ray entering at height h is at h - d*tan(θ) at horizontal distance d.
+    When sill/tan(θ) >= shaded_distance, even the lowest glass entry (at sill_height)
+    is at height sill_height - d*tan(θ) > 0 at the boundary — it hasn't hit the floor
+    and keeps penetrating. All higher entries are worse. Blind must be fully closed.
+
+    (Issue #304 had this inverted — it returned h_win (fully open). Issue #358 corrects
+    it by clamping effective_distance to 0 and letting the normal path produce position=0.)
     """
 
-    def test_sill_blocks_sun_returns_h_win_low_elevation(self, base_cover_params):
+    def test_sill_blocks_sun_returns_zero_low_elevation(self, base_cover_params):
         """sol_elev=20°, sill=0.5, distance=0.5: sill_offset≈1.37m exceeds distance.
-        Sun cannot reach the protected zone. Blind not needed → position must be h_win.
+        Every ray through the glass is still above the floor at the boundary.
+        Blind must be fully closed → position=0.
         """
         cover = make_vertical_cover(
             base_cover_params, gamma=0.0, sol_elev=20.0, sill_height=0.5
         )
         position = cover.calculate_position()
-        assert position == cover.h_win, (
-            f"Sill blocks sun → blind should be fully raised (h_win={cover.h_win}), "
+        assert position == 0.0, (
+            f"Sill shadow exceeds shaded distance → blind must be fully closed (0.0), "
             f"got {position}"
         )
 
-    def test_sill_blocks_sun_returns_h_win_exact_clip(self, base_cover_params):
+    def test_sill_blocks_sun_returns_zero_exact_clip(self, base_cover_params):
         """sol_elev=45°, sill=0.5, distance=0.5: sill_offset=0.5 exactly cancels distance.
-        effective_distance=0 → sun cannot penetrate to zone. Position must be h_win.
+        effective_distance=0 → lowest glass entry ray is exactly at floor at boundary.
+        Position must be 0 (fully closed — no glass can be safely exposed).
         """
         cover = make_vertical_cover(
             base_cover_params, gamma=0.0, sol_elev=45.0, sill_height=0.5
         )
-        assert cover.calculate_position() == cover.h_win
+        assert cover.calculate_position() == 0.0
 
-    def test_sill_blocks_sun_percentage_is_100(self, base_cover_params):
-        """HA-facing percentage must be 100 (open) not 0 (closed) when sill blocks sun."""
+    def test_sill_blocks_sun_percentage_is_zero(self, base_cover_params):
+        """HA-facing percentage must be 0 (closed) when sill shadow exceeds shaded distance."""
         cover = make_vertical_cover(
             base_cover_params, gamma=0.0, sol_elev=20.0, sill_height=0.5
         )
-        assert cover.calculate_percentage() == 100
+        assert cover.calculate_percentage() == 0
+
+
+class TestIssue358ReporterRegression:
+    """Exact reproduction of the reporter's values from issue #358.
+
+    Reporter config: sill_height=1.6m, h_win=0.55m, distance=1.0m,
+    sol_elev=47.4°, gamma≈35.8°.
+
+    Geometry: sill_offset = 1.6 / tan(47.4°) ≈ 1.467m
+    effective_distance = 1.0 - 1.467 = -0.467 (< 0 → clamp to 0 → position=0)
+
+    The sun enters through 0.55m of glass above the sill and every ray through
+    that glass is still above the floor at the 1.0m shaded boundary. The blind
+    must be fully closed.
+    """
+
+    def test_reporter_values_position_is_zero(self, base_cover_params):
+        """Reporter's geometry must produce position=0 (fully closed)."""
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=35.8,
+            sol_elev=47.4,
+            sill_height=1.6,
+            h_win=0.55,
+            distance=1.0,
+        )
+        assert cover.calculate_position() == 0.0, (
+            f"Reporter's geometry should produce fully closed blind (position=0), "
+            f"got {cover.calculate_position()}"
+        )
+
+    def test_reporter_values_percentage_is_zero(self, base_cover_params):
+        """Reporter's geometry must produce percentage=0 (HA shows 0% = fully closed)."""
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=35.8,
+            sol_elev=47.4,
+            sill_height=1.6,
+            h_win=0.55,
+            distance=1.0,
+        )
+        assert cover.calculate_percentage() == 0, (
+            f"Reporter's geometry should produce percentage=0, "
+            f"got {cover.calculate_percentage()}"
+        )
+
+
+class TestRaysAbovefloorAtShadedBoundary:
+    """Tests for the regime where sill shadow exceeds shaded distance.
+
+    When sill/tan(θ) > shaded_distance, a ray entering at the sill (lowest glass point)
+    is at height sill - d*tan(θ) > 0 at horizontal distance d = shaded_distance. That
+    ray is above the floor and keeps travelling into the room. Every higher entry is
+    worse. The blind must be fully closed (position=0).
+
+    This is NOT the same as "the sill blocks all sun." The sill creates a shadow zone
+    close to the window, but sun enters through the glass above the sill and illuminates
+    the room past the shaded distance. The blind is needed to stop it.
+    """
+
+    def test_tall_sill_high_elevation(self, base_cover_params):
+        """sill=1.6, dist=1.0, elev=47.4°: sill_offset≈1.47m > 1.0m → position=0."""
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=0.0,
+            sol_elev=47.4,
+            sill_height=1.6,
+            distance=1.0,
+            h_win=0.55,
+        )
+        assert cover.calculate_position() == 0.0
+        assert cover.calculate_percentage() == 0
+
+    def test_moderate_sill_low_elevation(self, base_cover_params):
+        """sill=0.5, dist=0.5, elev=20°: sill_offset≈1.37m > 0.5m → position=0."""
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=0.0,
+            sol_elev=20.0,
+            sill_height=0.5,
+            distance=0.5,
+        )
+        assert cover.calculate_position() == 0.0
+        assert cover.calculate_percentage() == 0
+
+    def test_exact_zero_boundary(self, base_cover_params):
+        """sill=0.5, dist=0.5, elev=45°: sill_offset=0.5 exactly equals distance.
+        effective_distance=0 → position=0 (lowest entry ray hits the floor right at
+        the boundary — no glass can be safely exposed).
+        """
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=0.0,
+            sol_elev=45.0,
+            sill_height=0.5,
+            distance=0.5,
+        )
+        assert cover.calculate_position() == 0.0
+        assert cover.calculate_percentage() == 0
+
+
+class TestSillGeometryInvariant:
+    """Parametrized invariant: whenever analytical effective_distance < 0, position==0.
+
+    Sweeps a grid of (sill, distance, sol_elev, gamma) values. Any combination where
+    sill_offset = sill/tan(elev) exceeds shaded_distance analytically must produce
+    position=0 from calculate_position(). This guard makes any future "return h_win
+    when effective_distance <= 0" regression break dozens of cases at once.
+    """
+
+    @pytest.mark.parametrize(
+        "sill_height,distance,sol_elev,gamma",
+        [
+            # Reporter's exact values
+            (1.6, 1.0, 47.4, 35.8),
+            (1.6, 1.0, 47.4, 0.0),
+            # Low elevation (uses MIN_TAN_ELEVATION_CLAMP=0.05)
+            (3.0, 0.5, 2.5, 0.0),
+            (1.0, 0.5, 2.5, 0.0),
+            # Various sill/distance combos at mid elevations
+            (0.5, 0.5, 20.0, 0.0),
+            (0.5, 0.5, 20.0, 30.0),
+            (0.5, 0.5, 20.0, -30.0),
+            (1.0, 0.5, 30.0, 0.0),
+            (1.0, 0.5, 45.0, 0.0),
+            (2.0, 1.0, 30.0, 0.0),
+            (2.0, 1.0, 45.0, 0.0),
+            (2.0, 1.0, 60.0, 0.0),
+            # Exact boundary: sill_offset == distance (effective_distance == 0)
+            (0.5, 0.5, 45.0, 0.0),  # sill_offset = 0.5/tan(45°) = 0.5 = distance
+            (1.0, 1.0, 45.0, 0.0),
+            # Non-zero gamma
+            (0.5, 0.5, 20.0, 60.0),
+            (1.6, 1.0, 47.4, -35.8),
+            (1.0, 0.5, 30.0, 45.0),
+            (1.0, 0.5, 30.0, -45.0),
+        ],
+    )
+    def test_negative_effective_distance_implies_position_zero(
+        self,
+        base_cover_params,
+        sill_height: float,
+        distance: float,
+        sol_elev: float,
+        gamma: float,
+    ):
+        """Any (sill, dist, elev, gamma) where effective_distance <= 0 must yield position=0.
+
+        effective_distance = distance - sill_height / max(tan(sol_elev), 0.05)
+        When <= 0, every ray through the glass is above the floor at the shaded
+        boundary. Blind must be fully closed.
+        """
+        import math
+
+        tan_elev = max(math.tan(math.radians(sol_elev)), 0.05)
+        sill_offset = sill_height / tan_elev
+        analytical_effective_distance = distance - sill_offset
+
+        # Only run the assertion for cases that analytically trigger the clamp
+        if analytical_effective_distance > 0:
+            pytest.skip(
+                f"effective_distance={analytical_effective_distance:.4f} > 0, "
+                "skipping (not in clamp regime)"
+            )
+
+        cover = make_vertical_cover(
+            base_cover_params,
+            gamma=gamma,
+            sol_elev=sol_elev,
+            sill_height=sill_height,
+            distance=distance,
+        )
+        position = cover.calculate_position()
+        assert position == 0.0, (
+            f"sill={sill_height}, dist={distance}, elev={sol_elev}°, gamma={gamma}°: "
+            f"effective_distance={analytical_effective_distance:.4f} ≤ 0 → "
+            f"expected position=0.0, got {position}"
+        )
 
 
 class TestNumericalStability:

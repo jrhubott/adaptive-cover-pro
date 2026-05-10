@@ -564,13 +564,15 @@ class TestSillHeight:
         assert with_sill.calculate_position() < no_sill.calculate_position()
 
     @pytest.mark.unit
-    def test_large_sill_returns_h_win_when_blocking_all_sun(
+    def test_large_sill_returns_zero_when_shadow_exceeds_distance(
         self, mock_sun_data, mock_logger
     ):
-        """A sill larger than effective distance means the sill blocks all sun.
-        The blind is not needed → fully raised (h_win = 100% open). Issue #304.
+        """A sill whose shadow exceeds the shaded distance means every ray through the
+        glass is still above the floor at the boundary. Blind must be fully closed
+        (position=0). Issue #358 (corrects inverted #304 logic).
 
         sol_elev=30°: tan(30°)≈0.577; sill_offset = 3.0/0.577 ≈ 5.2m >> 1m distance.
+        effective_distance = 1.0 - 5.2 = -4.2 → clamped to 0 → position=0.
         """
         cover = build_vertical_cover(
             **_common_kwargs(mock_sun_data, mock_logger, sol_elev=30.0),
@@ -579,7 +581,9 @@ class TestSillHeight:
             sill_height=3.0,
         )
         result = cover.calculate_position()
-        assert result == pytest.approx(2.0)  # h_win — fully raised, sun blocked by sill
+        assert result == pytest.approx(
+            0.0
+        )  # fully closed — rays still above floor at boundary
 
     @pytest.mark.unit
     def test_sill_height_result_always_non_negative(self, mock_sun_data, mock_logger):
