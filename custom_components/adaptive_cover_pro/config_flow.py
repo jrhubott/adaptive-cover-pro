@@ -2316,7 +2316,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 first_entity_id = user_input[CONF_ENTITIES][0]
                 entity_reg = er.async_get(self.hass)
                 entity_entry = entity_reg.async_get(first_entity_id)
-                if entity_entry:
+                if entity_entry and not self.config.get("name"):
                     entity_name = (
                         entity_entry.original_name
                         or entity_entry.name
