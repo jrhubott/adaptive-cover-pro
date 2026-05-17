@@ -118,7 +118,7 @@ class TestSummaryGeometryLines:
             "mode: position and tilt",
             "min tilt 0%",
             "max tilt 100%",
-            "post-settle hold 2.0s",
+            "post-settle hold 3.0s",
         ]
 
     def test_empty_config_renders_nothing(self):
@@ -132,7 +132,7 @@ class TestSummaryGeometryLines:
             "mode: position and tilt",
             "min tilt 0%",
             "max tilt 100%",
-            "post-settle hold 2.0s",
+            "post-settle hold 3.0s",
         ]
 
     def test_venetian_summary_shows_inverse_tilt_when_set(self):

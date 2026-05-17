@@ -103,6 +103,57 @@ class TestSuppressionWindow:
         assert seq.is_in_suppression("cover.x") is False
 
 
+@pytest.mark.unit
+class TestSuppressionDeltaCap:
+    """``is_in_suppression_with_cap`` adds a delta gate on top of the window.
+
+    The cap is the venetian-side policy that protects against user moves
+    inside the back-rotate window from being silently swallowed as motor drift
+    (issue #33 follow-on).
+    """
+
+    def test_suppressed_small_delta_returns_true(self):
+        _, seq = _build_sequencer()
+        seq.stamp_position_command("cover.x")
+        assert seq.is_in_suppression_with_cap("cover.x", delta=10.0) is True
+
+    def test_suppressed_large_delta_returns_false(self):
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
+        )
+
+        _, seq = _build_sequencer()
+        seq.stamp_position_command("cover.x")
+        big = VENETIAN_BACKROTATE_MAX_DELTA_PERCENT + 1
+        assert seq.is_in_suppression_with_cap("cover.x", delta=float(big)) is False
+
+    def test_suppressed_delta_at_cap_boundary_returns_true(self):
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
+        )
+
+        _, seq = _build_sequencer()
+        seq.stamp_position_command("cover.x")
+        # Cap is inclusive — delta == cap is still motor back-drive.
+        assert (
+            seq.is_in_suppression_with_cap(
+                "cover.x", delta=float(VENETIAN_BACKROTATE_MAX_DELTA_PERCENT)
+            )
+            is True
+        )
+
+    def test_no_stamp_means_not_suppressed_regardless_of_delta(self):
+        _, seq = _build_sequencer()
+        assert seq.is_in_suppression_with_cap("cover.x", delta=1.0) is False
+
+    def test_stale_stamp_expires_regardless_of_delta(self):
+        _, seq = _build_sequencer()
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_TILT_SUPPRESSION_SECONDS + 1
+        )
+        assert seq.is_in_suppression_with_cap("cover.x", delta=1.0) is False
+
+
 @pytest.mark.asyncio
 class TestSettleAndTilt:
     """Settle-loop and tilt-service-call branches of ``run_sequence``."""
@@ -275,6 +326,46 @@ class TestPostTiltRebase:
             sleep_calls[0] == 0.5
         ), f"Expected post-settle hold (0.5 s) to be first sleep, got {sleep_calls}"
 
+    async def test_settle_timeout_with_user_open_does_not_rebase(self, monkeypatch):
+        """Issue #33 follow-on regression seal: settle timeout + user-open does not strand the target.
+
+        Reproduces the diagnostic timeline from
+        ``/tmp/issue33-last-diag.json`` in miniature: pipeline wants
+        position=0, but the cover is at 100 because the user opened it during
+        the back-rotate suppression window. The real settle loop hits the
+        stall budget without progress, and the rebase MUST refuse to absorb
+        the 100-pt drift.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_REBASE_MAX_DRIFT_PERCENT,
+        )
+
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer."
+            "VENETIAN_POSITION_SETTLE_POLL_SECONDS",
+            0,
+        )
+
+        set_cmd_pos = MagicMock()
+        hass, seq = _build_sequencer(
+            set_commanded_position=set_cmd_pos,
+            get_state=lambda _eid: "open",  # not moving → stall path fires
+        )
+        seq._get_current_position = lambda _eid: 100
+
+        await seq.run_sequence(
+            "cover.x", position_target=0, tilt_target=80, reason="solar"
+        )
+
+        # The seal: target_call NOT mutated to the user's 100.
+        set_cmd_pos.assert_not_called()
+        # Belt-and-braces: even if the settle gate slipped, the drift cap
+        # would catch this drift.
+        assert abs(100 - 0) > VENETIAN_REBASE_MAX_DRIFT_PERCENT
+        # Tilt is still attempted on settle failure — the fix scope is rebase,
+        # not tilt delivery. Real motors that stall briefly still get tilt.
+        assert hass.services.async_call.call_count == 1
+
     async def test_does_not_rebase_when_tilt_service_fails(self):
         """If the tilt service call raises, rebase must not run."""
         from homeassistant.exceptions import HomeAssistantError
@@ -289,6 +380,74 @@ class TestPostTiltRebase:
             "cover.x", position_target=50, tilt_target=80, reason="solar"
         )
         set_cmd_pos.assert_not_called()
+
+    async def test_does_not_rebase_when_drift_exceeds_max_cap(self):
+        """Drift > VENETIAN_REBASE_MAX_DRIFT_PERCENT must NOT be absorbed.
+
+        Belt-and-braces guard: even if settle reports success (intentionally
+        mocked True here), the cap stands on its own. Real motor back-drive is
+        single-digit percent; a 100 % delta is the user opening the blind.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            VENETIAN_REBASE_MAX_DRIFT_PERCENT,
+        )
+
+        set_cmd_pos = MagicMock()
+        _, seq = _build_sequencer(set_commanded_position=set_cmd_pos)
+        seq._get_current_position = lambda _eid: 100
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 100))
+        await seq.run_sequence(
+            "cover.x", position_target=0, tilt_target=80, reason="solar"
+        )
+        set_cmd_pos.assert_not_called()
+        # The cap MUST be smaller than the drift we just refused to absorb.
+        assert abs(100 - 0) > VENETIAN_REBASE_MAX_DRIFT_PERCENT
+
+    async def test_rebases_when_drift_between_tolerance_and_cap(self):
+        """Drift in the small-back-drive band (tolerance < d ≤ cap) still rebases."""
+        set_cmd_pos = MagicMock()
+        _, seq = _build_sequencer(set_commanded_position=set_cmd_pos)
+        # target=50, actual=60 → drift=10 > tolerance(5) and ≤ cap(15).
+        seq._get_current_position = lambda _eid: 60
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 50))
+        await seq.run_sequence(
+            "cover.x", position_target=50, tilt_target=80, reason="solar"
+        )
+        set_cmd_pos.assert_called_once_with("cover.x", 60)
+
+    async def test_run_sequence_stamps_suppression_window(self):
+        """The position-axis path must still stamp — the window protects
+        post-position back-drive state events.
+        """
+        set_cmd_pos = MagicMock()
+        _, seq = _build_sequencer(set_commanded_position=set_cmd_pos)
+        seq._get_current_position = lambda _eid: 60
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 60))
+        assert seq.is_in_suppression("cover.x") is False
+        await seq.run_sequence(
+            "cover.x", position_target=60, tilt_target=80, reason="solar"
+        )
+        assert seq.is_in_suppression("cover.x") is True
+
+    async def test_does_not_rebase_when_settle_returns_false(self):
+        """Settle timeout / stall must NOT rebase the commanded position.
+
+        Reproduces the issue-33 trail: pipeline wants position=0 but the user
+        has opened the blind to 100. The settle loop times out without progress
+        and the unbounded rebase silently absorbs 100 as the new target,
+        stranding the cover.
+        """
+        set_cmd_pos = MagicMock()
+        hass, seq = _build_sequencer(set_commanded_position=set_cmd_pos)
+        seq._get_current_position = lambda _eid: 100
+        seq._wait_for_position_settle = AsyncMock(return_value=(False, 100))
+        await seq.run_sequence(
+            "cover.x", position_target=0, tilt_target=80, reason="solar"
+        )
+        set_cmd_pos.assert_not_called()
+        # Tilt is still attempted — fix scope is rebase only.
+        assert seq.last_tilt_target("cover.x") == 80
+        assert hass.services.async_call.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -336,12 +495,35 @@ class TestUpdateTiltOnly:
         assert hass.services.async_call.call_count == 1
         assert hass.services.async_call.call_args.args[1] == "set_cover_tilt_position"
 
-    async def test_stamps_suppression_after_send(self):
+    async def test_does_not_stamp_suppression_after_send(self):
+        """Tilt-only sends must NOT (re)stamp the back-rotate window.
+
+        The window covers a position command's mechanical back-drive. A tilt-only
+        update from ``maybe_update_tilt_only`` / ``auto_control_on`` doesn't move
+        the carriage and shouldn't reset the timer (issue #33 follow-on: the
+        re-stamp kept the suppression window open long enough to silently
+        consume the user's manual open).
+        """
         _, seq = _build_sequencer()
         await seq.update_tilt_only(
             "cover.x", tilt_target=70, current_position=40, reason="solar"
         )
-        assert seq.is_in_suppression("cover.x") is True
+        assert seq.is_in_suppression("cover.x") is False
+
+    async def test_update_tilt_only_does_not_extend_existing_suppression_window(self):
+        """A tilt-only send must NOT push the existing stamp forward.
+
+        Reproduces the diagnostic: a position command from 60s ago has 30s of
+        window remaining. A tilt-only update at this point must preserve the
+        original stamp, not refresh it to "now" and grant another 90 seconds.
+        """
+        _, seq = _build_sequencer()
+        past = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=60)
+        seq._suppression_at["cover.x"] = past
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=70, current_position=40, reason="solar"
+        )
+        assert seq._suppression_at["cover.x"] == past
 
     async def test_short_circuits_when_target_unchanged(self):
         hass, seq = _build_sequencer()

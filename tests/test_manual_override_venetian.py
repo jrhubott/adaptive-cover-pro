@@ -53,7 +53,7 @@ def _tilt_check(*, expected: int = 70, suppressed: bool) -> SecondaryAxisCheck:
         expected=expected,
         attribute="current_tilt_position",
         label="tilt",
-        suppression=lambda _eid: suppressed,
+        suppression=lambda _eid, _delta: suppressed,
     )
 
 

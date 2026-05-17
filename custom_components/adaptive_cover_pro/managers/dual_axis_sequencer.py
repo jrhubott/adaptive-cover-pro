@@ -29,10 +29,12 @@ from homeassistant.exceptions import HomeAssistantError
 from ..const import (
     ATTR_TILT_POSITION,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+    VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
     VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES,
     VENETIAN_POSITION_SETTLE_POLL_SECONDS,
     VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
     VENETIAN_POST_TILT_REBASE_DELAY_SECONDS,
+    VENETIAN_REBASE_MAX_DRIFT_PERCENT,
     VENETIAN_TILT_SUPPRESSION_SECONDS,
     VENETIAN_TILT_VERIFY_TOLERANCE,
 )
@@ -52,6 +54,9 @@ _TILT_SKIP_DRY_RUN = "dry_run"
 _TILT_SKIP_TARGET_UNCHANGED = "target_unchanged"
 _TILT_SKIP_SERVICE_FAILED = "service_call_failed"
 _TILT_SKIP_DELTA_TOO_SMALL = "delta_too_small"
+
+# Reason codes for rebase_skipped events.
+_REBASE_SKIP_SETTLE_FAILED = "settle_failed"
 
 # Anchor sources for the tilt min-delta gate (issue #33). The gate compares
 # the new target against either the live actuator reading (preferred) or the
@@ -152,6 +157,17 @@ class DualAxisSequencer:
         elapsed = (dt.datetime.now(dt.UTC) - ts).total_seconds()
         return elapsed < VENETIAN_TILT_SUPPRESSION_SECONDS
 
+    def is_in_suppression_with_cap(self, entity_id: str, delta: float) -> bool:
+        """Suppress back-rotate drift only when the delta is plausibly motor drift.
+
+        Slat geometry bounds back-rotation magnitude; a large delta inside the
+        window is a user move, not motor drift, so the manual-override path
+        runs and the user's command is recorded (issue #33 follow-on).
+        """
+        if not self.is_in_suppression(entity_id):
+            return False
+        return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
+
     # -- tilt sequence ----------------------------------------------------- #
 
     def last_tilt_target(self, entity_id: str) -> int | None:
@@ -177,13 +193,20 @@ class DualAxisSequencer:
         reason: str,
     ) -> None:
         """Wait for vertical motion to settle, then send the tilt command."""
-        await self._wait_for_position_settle(entity_id, position_target)
+        settled, _last = await self._wait_for_position_settle(
+            entity_id, position_target
+        )
         await asyncio.sleep(self._post_settle_hold_seconds)
+        # The window protects the position-axis settle + tilt-induced back-drive.
+        # Only the position-sequence path owns this stamp; tilt-only sends from
+        # update_tilt_only must not extend it (issue #33 follow-on).
+        self.stamp_position_command(entity_id)
         await self._send_tilt_command(
             entity_id,
             tilt_target=tilt_target,
             position_target=position_target,
             reason=reason,
+            position_settled=settled,
         )
 
     async def _send_tilt_command(
@@ -194,6 +217,7 @@ class DualAxisSequencer:
         position_target: int,
         reason: str,
         force: bool = False,
+        position_settled: bool = True,
     ) -> None:
         """Emit ``set_cover_tilt_position`` and rebase the commanded position.
 
@@ -262,13 +286,6 @@ class DualAxisSequencer:
             position_target,
         )
 
-        # Open the back-rotate suppression window so tilt-axis state events
-        # produced by slat settle aren't read as user-initiated manual override.
-        # Both run_sequence and update_tilt_only paths need this stamp here;
-        # the early stamp in VenetianPolicy.after_position_command only covers
-        # state events that fire during the position-axis settle wait.
-        self.stamp_position_command(entity_id)
-
         try:
             await self._hass.services.async_call(
                 COVER_DOMAIN,
@@ -313,7 +330,16 @@ class DualAxisSequencer:
         # recorded target so the next update_tilt_only cycle retries.
         self._verify_and_record_tilt(entity_id, tilt_target)
 
-        self._rebase_commanded_position(entity_id, position_target)
+        if position_settled:
+            self._rebase_commanded_position(entity_id, position_target)
+        else:
+            self._record_event(
+                "rebase_skipped",
+                reason=_REBASE_SKIP_SETTLE_FAILED,
+                entity_id=entity_id,
+                position_target=position_target,
+                trigger=reason,
+            )
 
     async def update_tilt_only(
         self,
@@ -359,7 +385,27 @@ class DualAxisSequencer:
         actual = self._get_current_position(entity_id)
         if actual is None:
             return
-        if abs(actual - position_target) <= self._position_tolerance:
+        drift = abs(actual - position_target)
+        if drift <= self._position_tolerance:
+            return
+        if drift > VENETIAN_REBASE_MAX_DRIFT_PERCENT:
+            self._logger.warning(
+                "Venetian rebase refused for %s: drift %s%% exceeds max %s%% "
+                "(commanded %s%%, actual %s%%)",
+                entity_id,
+                drift,
+                VENETIAN_REBASE_MAX_DRIFT_PERCENT,
+                position_target,
+                actual,
+            )
+            self._record_event(
+                "rebase_refused_drift_too_large",
+                entity_id=entity_id,
+                position_target=position_target,
+                actual_position=actual,
+                drift=drift,
+                max_drift=VENETIAN_REBASE_MAX_DRIFT_PERCENT,
+            )
             return
         self._logger.debug(
             "Venetian post-tilt rebase: %s commanded %s%% → actual %s%% "

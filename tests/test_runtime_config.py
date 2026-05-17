@@ -184,7 +184,7 @@ def test_runtime_config_venetian_slice_defaults() -> None:
         rc.venetian.post_settle_hold_seconds
         == DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
     )
-    assert rc.venetian.post_settle_hold_seconds == 2.0
+    assert rc.venetian.post_settle_hold_seconds == 3.0
     assert rc.venetian.tilt_skip_above == DEFAULT_VENETIAN_TILT_SKIP_ABOVE
     assert rc.venetian.tilt_skip_above == 95
     assert rc.venetian.venetian_mode == DEFAULT_VENETIAN_MODE

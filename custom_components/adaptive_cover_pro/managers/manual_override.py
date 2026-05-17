@@ -46,7 +46,7 @@ class SecondaryAxisCheck:
     expected: int
     attribute: str  # e.g. "current_tilt_position"
     label: str  # e.g. "tilt" — flavours the rejection-reason text
-    suppression: Callable[[str], bool] | None = None
+    suppression: Callable[[str, float], bool] | None = None
 
     def evaluate(
         self,
@@ -70,7 +70,7 @@ class SecondaryAxisCheck:
         # exactly on target while the position axis still shows back-drive drift.
         # Returning consumed=False here would let the position-axis check run and
         # falsely trip manual override on that drift.
-        if self.suppression is not None and self.suppression(entity_id):
+        if self.suppression is not None and self.suppression(entity_id, delta):
             return SecondaryAxisResult(
                 consumed=True,
                 event_name="manual_override_rejected_tilt_suppression",

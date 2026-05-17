@@ -318,9 +318,9 @@ def test_geometry_venetian_shows_min_tilt_custom():
 
 
 def test_geometry_venetian_shows_post_settle_hold_default():
-    """Venetian summary includes post-settle hold at the default value (2.0 s)."""
+    """Venetian summary includes post-settle hold at the default value (3.0 s)."""
     summary = _build_config_summary({}, SensorType.VENETIAN)
-    assert "post-settle hold 2.0s" in summary
+    assert "post-settle hold 3.0s" in summary
 
 
 def test_geometry_venetian_shows_post_settle_hold_custom():

@@ -336,11 +336,16 @@ class VenetianPolicy(CoverTypePolicy):
         """Expose the sequencer for diagnostics / tests."""
         return self._sequencer
 
-    def is_in_tilt_suppression(self, entity_id: str) -> bool:
-        """Return whether the venetian back-rotate suppression window is open."""
+    def is_in_tilt_suppression(self, entity_id: str, delta: float) -> bool:
+        """Suppress back-rotate drift only when ``delta`` is plausibly motor drift.
+
+        Delegates to the sequencer's delta-aware gate. Large deltas inside the
+        window are user moves, not motor drift, and fall through to the
+        manual-override numeric path (issue #33 follow-on).
+        """
         if self._sequencer is None:
             return False
-        return self._sequencer.is_in_suppression(entity_id)
+        return self._sequencer.is_in_suppression_with_cap(entity_id, delta)
 
     def _resolve_skip_above_tilt(
         self, position: int | None, fallback_tilt: int | None

@@ -27,7 +27,9 @@ def _check(*, expected: int = 70, suppressed: bool = False) -> SecondaryAxisChec
         expected=expected,
         attribute="current_tilt_position",
         label="tilt",
-        suppression=(lambda _eid: suppressed) if suppressed is not None else None,
+        suppression=(
+            (lambda _eid, _delta: suppressed) if suppressed is not None else None
+        ),
     )
 
 
@@ -61,19 +63,59 @@ class TestNoOpPaths:
 
 @pytest.mark.unit
 class TestSuppressed:
-    """Suppressed drift records a rejection event and falls through."""
+    """Suppression predicate decides whether back-rotate drift is consumed.
+
+    The predicate is the venetian-side seam — it knows both the back-rotate
+    window and the delta cap. Small deltas inside the window return True
+    (consumed). Large deltas during the window return False (fall through to
+    the numeric path which records the user's move).
+    """
 
     def test_suppressed_consumes_both_axes(self):
-        # Suppression window is open: both tilt AND position axes are blocked so
-        # the motor's back-drive cannot trigger a false manual override.
+        # Predicate returns True (small delta inside window) — back-drive is
+        # suppressed; both tilt AND position checks are short-circuited.
         res = _check(expected=70, suppressed=True).evaluate(
-            "cover.x", _state({"current_tilt_position": 20}), manual_threshold=5
+            "cover.x", _state({"current_tilt_position": 68}), manual_threshold=5
         )
         assert res.consumed is True  # blocks position-axis fall-through
         assert res.is_manual is False
         assert res.event_name == "manual_override_rejected_tilt_suppression"
         assert res.event_kwargs["our_state"] == 70
+        assert res.event_kwargs["new_position"] == 68
+
+    def test_predicate_rejects_falls_through_to_numeric_path(self):
+        # Predicate returns False (delta cap exceeded inside window). The common
+        # manager must continue past the suppression branch and the existing
+        # numeric path records the user's move as `manual_override_set`.
+        res = _check(expected=70, suppressed=False).evaluate(
+            "cover.x", _state({"current_tilt_position": 20}), manual_threshold=5
+        )
+        assert res.consumed is True
+        assert res.is_manual is True
+        assert res.event_name == "manual_override_set"
+        assert res.event_kwargs["our_state"] == 70
         assert res.event_kwargs["new_position"] == 20
+        # The numeric path's reason text wins — no "back-rotate" wording.
+        assert res.event_kwargs["reason"].startswith("tilt delta 50.0% >= threshold")
+
+    def test_predicate_called_with_entity_and_delta(self):
+        # Verify the widened signature is actually used.
+        seen: list[tuple[str, float]] = []
+
+        def _predicate(entity_id: str, delta: float) -> bool:
+            seen.append((entity_id, delta))
+            return False
+
+        check = SecondaryAxisCheck(
+            expected=70,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=_predicate,
+        )
+        check.evaluate(
+            "cover.kitchen", _state({"current_tilt_position": 30}), manual_threshold=5
+        )
+        assert seen == [("cover.kitchen", 40.0)]
 
 
 @pytest.mark.unit

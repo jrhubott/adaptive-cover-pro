@@ -484,6 +484,16 @@ VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES = 3  # samples → "settled"
 # vertically, and that drift would otherwise read as a user touch.
 VENETIAN_TILT_SUPPRESSION_SECONDS = 90.0  # tilt-axis override-suppression window
 
+# Refuse to absorb post-tilt drift larger than this many percent. Real-motor
+# back-drive is single-digit percent; a large delta (e.g. user opened the blind
+# during settle) must not be silently adopted as the new commanded target.
+VENETIAN_REBASE_MAX_DRIFT_PERCENT = 15
+
+# Cap the tilt delta the back-rotate suppression window will swallow. Slat
+# geometry bounds mechanical back-rotation; a delta above this is a user move,
+# so the manual-override path runs even inside the suppression window.
+VENETIAN_BACKROTATE_MAX_DELTA_PERCENT = 30
+
 # After set_cover_tilt_position returns, real motors keep back-driving the
 # vertical axis briefly. Wait this many seconds before reading current_position
 # for the post-tilt rebase so the rebase captures the actual settled position
@@ -501,7 +511,7 @@ VENETIAN_TILT_VERIFY_TOLERANCE = 5  # percent — tilt-verification tolerance
 # The value is configurable per-instance; the module-level default is consumed
 # only when no instance config is available (e.g. unit tests).
 CONF_VENETIAN_POST_SETTLE_HOLD = "venetian_post_settle_hold"  # s, 0.0-10.0
-DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS = 2.0  # default post-settle hold
+DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS = 3.0  # default post-settle hold
 
 # Skip the tilt command when the commanded position exceeds this threshold —
 # at high positions the slats are retracted into the housing and tilting is

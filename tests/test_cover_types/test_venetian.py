@@ -40,7 +40,7 @@ def test_geometry_schema_accepts_post_settle_hold() -> None:
         GEOMETRY_VENETIAN_SCHEMA,
     )
 
-    # Empty dict → default 2.0
+    # Empty dict → default DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
     result_default = GEOMETRY_VENETIAN_SCHEMA({})
     assert (
         result_default[CONF_VENETIAN_POST_SETTLE_HOLD]
@@ -67,7 +67,7 @@ def test_post_settle_hold_constants_exist() -> None:
     )
 
     assert CONF_VENETIAN_POST_SETTLE_HOLD == "venetian_post_settle_hold"
-    assert DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS == 2.0
+    assert DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS == 3.0
     assert OPTION_RANGES[CONF_VENETIAN_POST_SETTLE_HOLD] == (0.0, 10.0)
 
 
@@ -547,15 +547,17 @@ def test_sequencer_property_exposes_attached_sequencer() -> None:
 def test_is_in_tilt_suppression_false_without_sequencer() -> None:
     """No sequencer attached → suppression check short-circuits to False."""
     policy = VenetianPolicy()
-    assert policy.is_in_tilt_suppression("cover.any") is False
+    assert policy.is_in_tilt_suppression("cover.any", delta=10.0) is False
 
 
 def test_is_in_tilt_suppression_delegates_to_sequencer() -> None:
-    """With a sequencer, is_in_tilt_suppression delegates to it."""
+    """With a sequencer, is_in_tilt_suppression delegates to the delta-aware gate."""
     policy = _make_policy()
-    policy._sequencer.is_in_suppression = MagicMock(return_value=True)
-    assert policy.is_in_tilt_suppression("cover.x") is True
-    policy._sequencer.is_in_suppression.assert_called_once_with("cover.x")
+    policy._sequencer.is_in_suppression_with_cap = MagicMock(return_value=True)
+    assert policy.is_in_tilt_suppression("cover.x", delta=10.0) is True
+    policy._sequencer.is_in_suppression_with_cap.assert_called_once_with(
+        "cover.x", 10.0
+    )
 
 
 def test_secondary_axis_check_returns_none_without_tilt() -> None:
