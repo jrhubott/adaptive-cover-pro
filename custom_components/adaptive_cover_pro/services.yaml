@@ -43,6 +43,29 @@ export_config:
         config_entry:
           integration: adaptive_cover_pro
 
+set_position:
+  name: Set position
+  description: >-
+    Move the targeted covers to an explicit position. Clamps up to the highest
+    active custom-position minimum-mode floor across all slots, and sends with
+    force=True so manual override does not block the command. Tilt is not
+    affected; on venetian instances only the primary axis is moved.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    position:
+      name: Position
+      description: "Target position (0–100%)."
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+
 set_position_limits:
   name: Set position limits
   description: >-
