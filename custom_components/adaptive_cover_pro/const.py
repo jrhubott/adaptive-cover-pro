@@ -182,6 +182,11 @@ CONF_SUNRISE_OFFSET = "sunrise_offset"  # minutes ±120 from sunrise to resume
 CONF_RETURN_SUNSET = "return_sunset"  # True: force-send default at end_time
 # If True, sunset position uses CONF_MY_POSITION_VALUE instead of CONF_SUNSET_POS.
 CONF_SUNSET_USE_MY = "sunset_use_my"
+# Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
+CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
+CONF_SUNSET_TILT = (
+    "sunset_tilt"  # tilt during sunset window (falls back to default_tilt)
+)
 
 
 # =============================================================================
@@ -284,13 +289,14 @@ CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3, 4)  # supported indice
 
 
 def _custom_position_slot_keys(n: int) -> dict[str, str]:
-    """Return the five wire-format option keys for slot *n*."""
+    """Return the six wire-format option keys for slot *n*."""
     return {
         "sensor": f"custom_position_sensor_{n}",
         "position": f"custom_position_{n}",
         "priority": f"custom_position_priority_{n}",
         "min_mode": f"custom_position_min_mode_{n}",
         "use_my": f"custom_position_use_my_{n}",
+        "tilt": f"custom_position_tilt_{n}",
     }
 
 
@@ -691,6 +697,7 @@ _RANGE_MANUAL_THRESHOLD = (0, 99)  # CONF_MANUAL_THRESHOLD, percent
 _RANGE_FORCE_POSITION = (0, 100)  # CONF_FORCE_OVERRIDE_POSITION, percent
 _RANGE_CUSTOM_POSITION = (0, 100)  # per-slot custom position, percent
 _RANGE_CUSTOM_PRIORITY = (1, 99)  # per-slot custom priority
+_RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
@@ -767,10 +774,14 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_VENETIAN_POST_SETTLE_HOLD: _RANGE_VENETIAN_POST_SETTLE_HOLD,
         CONF_VENETIAN_TILT_SKIP_ABOVE: _RANGE_VENETIAN_TILT_SKIP_ABOVE,
     }
-    # Custom-position slots: per-slot position (0–100) and priority (1–99).
+    # Custom-position slots: per-slot position (0–100), priority (1–99), tilt (0–100).
     for slot_keys in CUSTOM_POSITION_SLOTS.values():
         ranges[slot_keys["position"]] = _RANGE_CUSTOM_POSITION
         ranges[slot_keys["priority"]] = _RANGE_CUSTOM_PRIORITY
+        ranges[slot_keys["tilt"]] = _RANGE_TILT
+    # Global default and sunset tilt (venetian only).
+    ranges[CONF_DEFAULT_TILT] = _RANGE_TILT
+    ranges[CONF_SUNSET_TILT] = _RANGE_TILT
     return ranges
 
 

@@ -2073,3 +2073,50 @@ def test_config_summary_warns_when_proxy_enabled_without_min_mode_slot():
     assert any(
         "⚠" in ln for ln in proxy_block
     ), f"expected ⚠ warning near proxy line; got: {proxy_block}"
+
+
+# ---------------------------------------------------------------------------
+# Tilt in config summary (Step 14)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_shows_default_tilt_when_set():
+    """CONF_DEFAULT_TILT appears in summary when set for venetian cover."""
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_TILT
+
+    cfg = _minimal_vertical()
+    cfg[CONF_DEFAULT_TILT] = 40
+    summary = _build_config_summary(cfg, SensorType.VENETIAN)
+    assert "40" in summary, "default_tilt value should appear in summary"
+    assert any(
+        "tilt" in line.lower() and "40" in line for line in summary.splitlines()
+    ), "Expected a tilt line with value 40 in summary"
+
+
+def test_summary_shows_sunset_tilt_when_set():
+    """CONF_SUNSET_TILT appears in summary when set for venetian cover."""
+    from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TILT
+
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_TILT] = 80
+    summary = _build_config_summary(cfg, SensorType.VENETIAN)
+    assert "80" in summary, "sunset_tilt value should appear in summary"
+    assert any(
+        "tilt" in line.lower() and "80" in line for line in summary.splitlines()
+    ), "Expected a tilt line with value 80 in summary"
+
+
+def test_summary_shows_custom_slot_tilt_when_set():
+    """Per-slot tilt value appears in summary when set for venetian custom position."""
+    from custom_components.adaptive_cover_pro.const import CUSTOM_POSITION_SLOTS
+
+    cfg = _minimal_vertical()
+    tilt_key = CUSTOM_POSITION_SLOTS[1]["tilt"]
+    cfg["custom_position_sensor_1"] = "binary_sensor.evening"
+    cfg["custom_position_1"] = 50
+    cfg[tilt_key] = 35
+    summary = _build_config_summary(cfg, SensorType.VENETIAN)
+    assert "35" in summary, "custom slot tilt value should appear in summary"
+    assert any(
+        "tilt" in line.lower() and "35" in line for line in summary.splitlines()
+    ), "Expected a tilt line with value 35 in summary"

@@ -38,8 +38,10 @@ from .const import (
     CONF_BLIND_SPOT_ELEVATION,
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
+    CONF_DEFAULT_TILT,
     CONF_ENTITIES,
     CONF_MY_POSITION_VALUE,
+    CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -1786,12 +1788,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     options.get(slot_keys["priority"])
                     or DEFAULT_CUSTOM_POSITION_PRIORITY
                 )
+                raw_tilt = options.get(slot_keys["tilt"])
+                tilt = int(raw_tilt) if raw_tilt is not None else None
                 custom_handlers.append(
                     CustomPositionHandler(
                         slot=slot,
                         entity_id=sensor,
                         position=int(position),
                         priority=priority,
+                        tilt=tilt,
                     )
                 )
 
@@ -2041,6 +2046,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 min_mode = bool(options.get(slot_keys["min_mode"], False))
                 use_my = bool(options.get(slot_keys["use_my"], False))
+                raw_tilt = options.get(slot_keys["tilt"])
+                tilt = int(raw_tilt) if raw_tilt is not None else None
                 result.append(
                     CustomPositionSensorState(
                         entity_id=sensor,
@@ -2049,6 +2056,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         priority=priority,
                         min_mode=min_mode,
                         use_my=use_my,
+                        tilt=tilt,
                     )
                 )
         return result
@@ -2157,6 +2165,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             current_cover_position=self._compute_mean_cover_position(),
             policy=self._policy,
+            default_tilt=options.get(CONF_DEFAULT_TILT),
+            sunset_tilt=options.get(CONF_SUNSET_TILT),
         )
 
     async def async_apply_user_position(

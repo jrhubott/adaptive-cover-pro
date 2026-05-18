@@ -27,6 +27,7 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
+    CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_DEVICE_ID,
@@ -92,6 +93,7 @@ from .const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TILT,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
@@ -482,8 +484,14 @@ def _priority_slider() -> selector.NumberSelector:
     )
 
 
-def _build_custom_position_schema_dict() -> dict:
-    """Compose the full custom-position schema by iterating CUSTOM_POSITION_SLOTS."""
+def _build_custom_position_schema_dict(sensor_type: str | None = None) -> dict:
+    """Compose the full custom-position schema by iterating CUSTOM_POSITION_SLOTS.
+
+    When sensor_type is ``SensorType.VENETIAN``, per-slot tilt sliders and
+    global default/sunset tilt sliders are added.  All other cover types omit
+    them since tilt is not applicable.
+    """
+    is_venetian = sensor_type == SensorType.VENETIAN
     schema: dict = {}
     for slot_keys in CUSTOM_POSITION_SLOTS.values():
         schema[vol.Optional(slot_keys["sensor"])] = _binary_on_selector()
@@ -495,6 +503,11 @@ def _build_custom_position_schema_dict() -> dict:
         schema[vol.Optional(slot_keys["use_my"], default=False)] = (
             selector.BooleanSelector()
         )
+        if is_venetian:
+            schema[vol.Optional(slot_keys["tilt"])] = _position_slider()
+    if is_venetian:
+        schema[vol.Optional(CONF_DEFAULT_TILT)] = _position_slider()
+        schema[vol.Optional(CONF_SUNSET_TILT)] = _position_slider()
     return schema
 
 
@@ -507,8 +520,8 @@ CUSTOM_POSITION_SCHEMA = vol.Schema(_build_custom_position_schema_dict())
 _CUSTOM_POSITION_OPTIONAL_KEYS: list[str] = [
     slot[field]
     for slot in CUSTOM_POSITION_SLOTS.values()
-    for field in ("sensor", "position", "priority")
-]
+    for field in ("sensor", "position", "priority", "tilt")
+] + [CONF_DEFAULT_TILT, CONF_SUNSET_TILT]
 
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
@@ -1119,8 +1132,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         ]
     )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
-    # Build per-slot custom position data: list of (slot, entity_id, position, priority, use_my)
-    _custom_slots: list[tuple[int, str, int, int, bool]] = []
+    # Build per-slot custom position data: list of (slot, entity_id, position, priority, use_my, tilt)
+    _custom_slots: list[tuple[int, str, int, int, bool, int | None]] = []
     for _i in range(1, 5):
         _sensor = config.get(f"custom_position_sensor_{_i}")
         _pos = config.get(f"custom_position_{_i}")
@@ -1130,7 +1143,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 or DEFAULT_CUSTOM_POSITION_PRIORITY
             )
             _use_my = bool(config.get(f"custom_position_use_my_{_i}"))
-            _custom_slots.append((_i, _sensor, int(_pos), _pri, _use_my))
+            _slot_tilt = config.get(f"custom_position_tilt_{_i}")
+            _custom_slots.append((_i, _sensor, int(_pos), _pri, _use_my, _slot_tilt))
     has_custom_position = bool(_custom_slots)
     my_pos = config.get(CONF_MY_POSITION_VALUE)  # None = not configured
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
@@ -1289,15 +1303,16 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
 
     # Custom positions — each slot at its own configured priority
     if has_custom_position:
-        for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
+        for _slot, _eid, _pos, _pri, _use_my, _slot_tilt in _custom_slots:
             target = _pos_label(_pos, _use_my)
             cp_min = (
                 " (as minimum)"
                 if config.get(f"custom_position_min_mode_{_slot}")
                 else ""
             )
+            tilt_note = f", tilt {_slot_tilt}%" if _slot_tilt is not None else ""
             lines.append(
-                f"🎯 Custom #{_slot}: if {_eid} is on → {target}{cp_min}"
+                f"🎯 Custom #{_slot}: if {_eid} is on → {target}{cp_min}{tilt_note}"
                 f" — bypasses delta gates and auto-control"
                 f"{_badge(_pri)}"
             )
@@ -1543,6 +1558,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
 
     # Default fallback (priority 0) — shown as the final row of the chain
     lines.append(f"🌙 Default (no rule matches) → {default_pos}%{_badge(0)}")
+    # Explicit tilt for venetian covers (solar-computed when absent)
+    _default_tilt = config.get(CONF_DEFAULT_TILT)
+    _sunset_tilt = config.get(CONF_SUNSET_TILT)
+    if _default_tilt is not None:
+        lines.append(
+            f"  ↳ Default tilt: {_default_tilt}% (explicit; overrides solar-computed)"
+        )
+    if _sunset_tilt is not None:
+        lines.append(
+            f"  ↳ Sunset tilt: {_sunset_tilt}% (explicit; overrides solar-computed)"
+        )
 
     # =========================================================================
     # Section 3: Position Limits
@@ -1638,7 +1664,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     if summary_policy.supports_glare_zones:
         _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
-    for _slot, _eid, _pos, _pri, _use_my in _custom_slots:
+    for _slot, _eid, _pos, _pri, _use_my, _slot_tilt in _custom_slots:
         _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
     # Sort highest priority first
     _chain_entries.sort(key=lambda e: e[0], reverse=True)
@@ -2466,9 +2492,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             return await self.async_step_motion_override()
+        schema = vol.Schema(
+            _build_custom_position_schema_dict(sensor_type=self.type_blind)
+        )
         return self.async_show_form(
             step_id="custom_position",
-            data_schema=CUSTOM_POSITION_SCHEMA,
+            data_schema=schema,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
             },
@@ -3100,10 +3129,12 @@ class OptionsFlowHandler(OptionsFlow):
             self.optional_entities(_CUSTOM_POSITION_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
+        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        schema = vol.Schema(_build_custom_position_schema_dict(sensor_type=sensor_type))
         return self.async_show_form(
             step_id="custom_position",
             data_schema=self.add_suggested_values_to_schema(
-                CUSTOM_POSITION_SCHEMA, user_input or self.options
+                schema, user_input or self.options
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"

@@ -474,3 +474,150 @@ async def test_window_close_sends_reposition_when_auto_control_on():
 
     cmd_svc.apply_position.assert_called_once()
     assert cmd_svc.apply_position.call_args[0][2] == "end_time_default"
+
+
+# ---------------------------------------------------------------------------
+# _build_pipeline: tilt threaded from options to CustomPositionHandler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_build_pipeline_custom_position_tilt_threaded():
+    """_build_pipeline passes tilt from options into CustomPositionHandler._tilt."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CUSTOM_POSITION_SENSOR_1,
+        CONF_CUSTOM_POSITION_1,
+        CUSTOM_POSITION_SLOTS,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+        CustomPositionHandler,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+
+    tilt_key = CUSTOM_POSITION_SLOTS[1]["tilt"]
+    options = {
+        CONF_CUSTOM_POSITION_SENSOR_1: "binary_sensor.custom",
+        CONF_CUSTOM_POSITION_1: 50,
+        tilt_key: 35,
+    }
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    registry = coord._build_pipeline()
+
+    custom_handlers = [
+        h for h in registry._handlers if isinstance(h, CustomPositionHandler)
+    ]
+    assert len(custom_handlers) == 1
+    assert custom_handlers[0]._tilt == 35
+
+
+@pytest.mark.unit
+def test_build_pipeline_custom_position_tilt_none_when_absent():
+    """_build_pipeline sets tilt=None when tilt key not in options."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CUSTOM_POSITION_SENSOR_1,
+        CONF_CUSTOM_POSITION_1,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+        CustomPositionHandler,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+
+    options = {
+        CONF_CUSTOM_POSITION_SENSOR_1: "binary_sensor.custom",
+        CONF_CUSTOM_POSITION_1: 50,
+        # no tilt key
+    }
+    config_entry = MagicMock()
+    config_entry.options = options
+    coord.config_entry = config_entry
+
+    registry = coord._build_pipeline()
+
+    custom_handlers = [
+        h for h in registry._handlers if isinstance(h, CustomPositionHandler)
+    ]
+    assert len(custom_handlers) == 1
+    assert custom_handlers[0]._tilt is None
+
+
+@pytest.mark.unit
+def test_read_custom_position_sensor_states_tilt_threaded():
+    """_read_custom_position_sensor_states reads tilt from options into the state."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CUSTOM_POSITION_SENSOR_1,
+        CONF_CUSTOM_POSITION_1,
+        CUSTOM_POSITION_SLOTS,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+
+    mock_state = MagicMock()
+    mock_state.state = "on"
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+    coord.hass = mock_hass
+
+    tilt_key = CUSTOM_POSITION_SLOTS[1]["tilt"]
+    options = {
+        CONF_CUSTOM_POSITION_SENSOR_1: "binary_sensor.custom_pos",
+        CONF_CUSTOM_POSITION_1: 42,
+        tilt_key: 65,
+    }
+
+    result = coord._read_custom_position_sensor_states(options)
+
+    assert len(result) == 1
+    assert result[0].tilt == 65
+
+
+@pytest.mark.unit
+def test_read_custom_position_sensor_states_tilt_none_when_absent():
+    """_read_custom_position_sensor_states sets tilt=None when not configured."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_CUSTOM_POSITION_SENSOR_1,
+        CONF_CUSTOM_POSITION_1,
+    )
+
+    coord = object.__new__(AdaptiveDataUpdateCoordinator)
+    coord.logger = MagicMock()
+    coord._toggles = ToggleManager()
+
+    mock_state = MagicMock()
+    mock_state.state = "off"
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+    coord.hass = mock_hass
+
+    options = {
+        CONF_CUSTOM_POSITION_SENSOR_1: "binary_sensor.custom_pos",
+        CONF_CUSTOM_POSITION_1: 42,
+        # no tilt
+    }
+
+    result = coord._read_custom_position_sensor_states(options)
+
+    assert len(result) == 1
+    assert result[0].tilt is None

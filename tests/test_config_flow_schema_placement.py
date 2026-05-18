@@ -46,3 +46,92 @@ def test_venetian_mode_in_geometry_venetian_schema() -> None:
 
     keys = _schema_keys(GEOMETRY_VENETIAN_SCHEMA)
     assert CONF_VENETIAN_MODE in keys
+
+
+# ---------------------------------------------------------------------------
+# Per-slot tilt slider — venetian only (Step 12)
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_schema_venetian_includes_tilt_slots() -> None:
+    """_build_custom_position_schema_dict(sensor_type='cover_venetian') includes tilt keys."""
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        SensorType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.VENETIAN)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert slot_keys["tilt"] in keys, f"{slot_keys['tilt']} missing for venetian"
+
+
+def test_custom_position_schema_blind_excludes_tilt_slots() -> None:
+    """_build_custom_position_schema_dict(sensor_type='cover_blind') must not include tilt keys."""
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        SensorType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.BLIND)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert (
+            slot_keys["tilt"] not in keys
+        ), f"{slot_keys['tilt']} should not be in blind"
+
+
+def test_custom_position_schema_awning_excludes_tilt_slots() -> None:
+    """Awning schema must not include tilt keys."""
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        SensorType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.AWNING)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert (
+            slot_keys["tilt"] not in keys
+        ), f"{slot_keys['tilt']} should not be in awning"
+
+
+# ---------------------------------------------------------------------------
+# Default/sunset tilt sliders — venetian only (Step 13)
+# ---------------------------------------------------------------------------
+
+
+def test_default_tilt_in_venetian_custom_position_schema() -> None:
+    """CONF_DEFAULT_TILT must be in the venetian custom_position schema."""
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_TILT, SensorType
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.VENETIAN)
+    keys = {str(k) for k in schema}
+    assert CONF_DEFAULT_TILT in keys, "default_tilt missing from venetian schema"
+
+
+def test_sunset_tilt_in_venetian_custom_position_schema() -> None:
+    """CONF_SUNSET_TILT must be in the venetian custom_position schema."""
+    from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TILT, SensorType
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.VENETIAN)
+    keys = {str(k) for k in schema}
+    assert CONF_SUNSET_TILT in keys, "sunset_tilt missing from venetian schema"
+
+
+def test_default_tilt_absent_in_blind_schema() -> None:
+    """CONF_DEFAULT_TILT must not appear in the blind schema."""
+    from custom_components.adaptive_cover_pro.const import CONF_DEFAULT_TILT, SensorType
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.BLIND)
+    keys = {str(k) for k in schema}
+    assert CONF_DEFAULT_TILT not in keys, "default_tilt should not be in blind schema"
+
+
+def test_sunset_tilt_absent_in_blind_schema() -> None:
+    """CONF_SUNSET_TILT must not appear in the blind schema."""
+    from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TILT, SensorType
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=SensorType.BLIND)
+    keys = {str(k) for k in schema}
+    assert CONF_SUNSET_TILT not in keys, "sunset_tilt should not be in blind schema"

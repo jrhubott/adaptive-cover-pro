@@ -204,7 +204,13 @@
           "custom_position_4": "Position for Sensor 4",
           "custom_position_priority_4": "Priority for Slot 4",
           "custom_position_min_mode_4": "Minimum mode for Slot 4",
-          "custom_position_use_my_4": "Slot 4: use My position"
+          "custom_position_use_my_4": "Slot 4: use My position",
+          "custom_position_tilt_1": "Tilt for Slot 1",
+          "custom_position_tilt_2": "Tilt for Slot 2",
+          "custom_position_tilt_3": "Tilt for Slot 3",
+          "custom_position_tilt_4": "Tilt for Slot 4",
+          "default_tilt": "Default Tilt",
+          "sunset_tilt": "Sunset Tilt"
         },
         "data_description": {
           "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
@@ -212,21 +218,27 @@
           "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
           "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_1": "When slot 1's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_1": "Tilt angle (0-100%) to set when Slot 1's sensor is active. Venetian covers only — ignored for other cover types. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
           "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
           "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
           "custom_position_min_mode_2": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_2": "When slot 2's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_2": "Tilt angle (0-100%) to set when Slot 2's sensor is active. Venetian covers only. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
           "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
           "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
           "custom_position_min_mode_3": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_3": "When slot 3's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_3": "Tilt angle (0-100%) to set when Slot 3's sensor is active. Venetian covers only. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
           "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
           "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77).",
           "custom_position_min_mode_4": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
-          "custom_position_use_my_4": "When slot 4's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set."
+          "custom_position_use_my_4": "When slot 4's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_4": "Tilt angle (0-100%) to set when Slot 4's sensor is active. Venetian covers only. Leave unset to let the engine calculate tilt automatically.",
+          "default_tilt": "Default tilt angle (0-100%) for venetian covers when no other handler overrides tilt. Applied whenever the default position handler is active. Leave unset to let the engine calculate tilt from sun geometry.",
+          "sunset_tilt": "Tilt angle (0-100%) for venetian covers during the sunset window. Overrides default_tilt when the sunset time window is active. Leave unset to fall back to default_tilt."
         }
       },
       "motion_override": {
@@ -708,7 +720,13 @@
           "custom_position_4": "Position for Sensor 4",
           "custom_position_priority_4": "Priority for Slot 4",
           "custom_position_min_mode_4": "Minimum mode for Slot 4",
-          "custom_position_use_my_4": "Slot 4: use My position"
+          "custom_position_use_my_4": "Slot 4: use My position",
+          "custom_position_tilt_1": "Tilt for Slot 1",
+          "custom_position_tilt_2": "Tilt for Slot 2",
+          "custom_position_tilt_3": "Tilt for Slot 3",
+          "custom_position_tilt_4": "Tilt for Slot 4",
+          "default_tilt": "Default Tilt",
+          "sunset_tilt": "Sunset Tilt"
         },
         "data_description": {
           "custom_position_sensor_1": "Binary sensor that, when 'on', moves the cover to its configured position. Leave empty to skip this slot.",
@@ -716,21 +734,27 @@
           "custom_position_priority_1": "Pipeline priority (1-99). Higher = evaluated before lower-priority handlers. Default 77 sits between Manual Override (80) and Motion Timeout (75). Set above 80 to override manual moves; set below 40 to only apply when sun tracking is inactive.",
           "custom_position_min_mode_1": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_1": "When slot 1's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_1": "Tilt angle (0-100%) to set when Slot 1's sensor is active. Venetian covers only — ignored for other cover types. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_sensor_2": "Binary sensor for slot 2. Leave empty to skip.",
           "custom_position_2": "Position (0-100%) to move covers to when Sensor 2 is active.",
           "custom_position_priority_2": "Pipeline priority for slot 2 (1-99, default 77).",
           "custom_position_min_mode_2": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_2": "When slot 2's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_2": "Tilt angle (0-100%) to set when Slot 2's sensor is active. Venetian covers only. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_sensor_3": "Binary sensor for slot 3. Leave empty to skip.",
           "custom_position_3": "Position (0-100%) to move covers to when Sensor 3 is active.",
           "custom_position_priority_3": "Pipeline priority for slot 3 (1-99, default 77).",
           "custom_position_min_mode_3": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
           "custom_position_use_my_3": "When slot 3's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_3": "Tilt angle (0-100%) to set when Slot 3's sensor is active. Venetian covers only. Leave unset to let the engine calculate tilt automatically.",
           "custom_position_sensor_4": "Binary sensor for slot 4. Leave empty to skip.",
           "custom_position_4": "Position (0-100%) to move covers to when Sensor 4 is active.",
           "custom_position_priority_4": "Pipeline priority for slot 4 (1-99, default 77).",
           "custom_position_min_mode_4": "When enabled, the position acts as a minimum floor — higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact configured position.",
-          "custom_position_use_my_4": "When slot 4's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set."
+          "custom_position_use_my_4": "When slot 4's sensor is active, trigger the cover's My preset instead of the slot's numeric position. Requires My position value to be set.",
+          "custom_position_tilt_4": "Tilt angle (0-100%) to set when Slot 4's sensor is active. Venetian covers only. Leave unset to let the engine calculate tilt automatically.",
+          "default_tilt": "Default tilt angle (0-100%) for venetian covers when no other handler overrides tilt. Applied whenever the default position handler is active. Leave unset to let the engine calculate tilt from sun geometry.",
+          "sunset_tilt": "Tilt angle (0-100%) for venetian covers during the sunset window. Overrides default_tilt when the sunset time window is active. Leave unset to fall back to default_tilt."
         }
       },
       "motion_override": {

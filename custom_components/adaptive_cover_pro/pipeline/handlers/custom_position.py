@@ -28,7 +28,14 @@ class CustomPositionHandler(OverrideHandler):
     ``is_on=True`` it claims the position; otherwise it passes through.
     """
 
-    def __init__(self, slot: int, entity_id: str, position: int, priority: int) -> None:
+    def __init__(
+        self,
+        slot: int,
+        entity_id: str,
+        position: int,
+        priority: int,
+        tilt: int | None = None,
+    ) -> None:
         """Create a handler for one custom position slot.
 
         Args:
@@ -36,11 +43,13 @@ class CustomPositionHandler(OverrideHandler):
             entity_id: Binary sensor entity ID that activates this position.
             position:  Cover position (0–100 %) to apply when the sensor is on.
             priority:  Pipeline evaluation priority (1–99).  Higher = evaluated first.
+            tilt:      Explicit tilt (0–100 %) for venetian covers. None = solar tilt.
 
         """
         self._slot = slot
         self._entity_id = entity_id
         self._position = position
+        self._tilt = tilt
         self.priority = priority  # instance attribute overrides any class-level default
         # min_mode is read from the snapshot at evaluate() time, not stored here,
         # since snapshot is the single source of truth for per-cycle config.
@@ -64,6 +73,7 @@ class CustomPositionHandler(OverrideHandler):
                         pos = snapshot.my_position_value
                         return PipelineResult(
                             position=pos,
+                            tilt=self._tilt,
                             use_my_position=True,
                             bypass_auto_control=True,
                             control_method=ControlMethod.CUSTOM_POSITION,
@@ -79,6 +89,7 @@ class CustomPositionHandler(OverrideHandler):
                     )
                     return PipelineResult(
                         position=pos,
+                        tilt=self._tilt,
                         bypass_auto_control=True,
                         control_method=ControlMethod.CUSTOM_POSITION,
                         reason=(

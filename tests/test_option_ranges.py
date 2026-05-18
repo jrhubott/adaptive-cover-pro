@@ -15,11 +15,13 @@ import voluptuous as vol
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
+    CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_FOV_LEFT,
     CONF_HEIGHT_WIN,
     CONF_MOTION_TIMEOUT,
+    CONF_SUNSET_TILT,
     CUSTOM_POSITION_SLOTS,
     OPTION_RANGES,
 )
@@ -106,3 +108,26 @@ def test_custom_position_slots_have_ranges() -> None:
             assert (
                 key in OPTION_RANGES
             ), f"{key} ({sub} slot) missing from OPTION_RANGES"
+
+
+@pytest.mark.unit
+def test_custom_position_tilt_slots_have_ranges() -> None:
+    """Each of the four custom-position slots has a tilt range in OPTION_RANGES."""
+    for n, slot_keys in CUSTOM_POSITION_SLOTS.items():
+        key = slot_keys["tilt"]
+        assert key in OPTION_RANGES, f"{key} (tilt slot {n}) missing from OPTION_RANGES"
+        assert OPTION_RANGES[key] == (0, 100), f"{key} range should be (0, 100)"
+
+
+@pytest.mark.unit
+def test_default_tilt_in_option_ranges() -> None:
+    """CONF_DEFAULT_TILT must appear in OPTION_RANGES with (0, 100)."""
+    assert CONF_DEFAULT_TILT in OPTION_RANGES, "default_tilt missing from OPTION_RANGES"
+    assert OPTION_RANGES[CONF_DEFAULT_TILT] == (0, 100)
+
+
+@pytest.mark.unit
+def test_sunset_tilt_in_option_ranges() -> None:
+    """CONF_SUNSET_TILT must appear in OPTION_RANGES with (0, 100)."""
+    assert CONF_SUNSET_TILT in OPTION_RANGES, "sunset_tilt missing from OPTION_RANGES"
+    assert OPTION_RANGES[CONF_SUNSET_TILT] == (0, 100)

@@ -84,6 +84,8 @@ def make_snapshot(
     enable_sun_tracking: bool = True,
     motion_timeout_mode: str = "return_to_default",
     current_cover_position: int | None = None,
+    default_tilt: int | None = None,
+    sunset_tilt: int | None = None,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -130,4 +132,6 @@ def make_snapshot(
         enable_sun_tracking=enable_sun_tracking,
         motion_timeout_mode=motion_timeout_mode,
         current_cover_position=current_cover_position,
+        default_tilt=default_tilt,
+        sunset_tilt=sunset_tilt,
     )

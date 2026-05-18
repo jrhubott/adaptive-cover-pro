@@ -204,7 +204,13 @@
           "custom_position_4": "Position für Sensor 4",
           "custom_position_priority_4": "Priorität für Slot 4",
           "custom_position_min_mode_4": "Minimaler Modus für Slot 4",
-          "custom_position_use_my_4": "Slot 4: Meine Position verwenden"
+          "custom_position_use_my_4": "Slot 4: Meine Position verwenden",
+          "custom_position_tilt_1": "Neigung für Slot 1",
+          "custom_position_tilt_2": "Neigung für Slot 2",
+          "custom_position_tilt_3": "Neigung für Slot 3",
+          "custom_position_tilt_4": "Neigung für Slot 4",
+          "default_tilt": "Standard-Neigung",
+          "sunset_tilt": "Sonnenuntergang-Neigung"
         },
         "data_description": {
           "custom_position_sensor_1": "Binärer Sensor, der bei „ein“ die Beschattung in ihre konfigurierte Position bewegt. Lassen Sie leer, um diesen Slot zu überspringen.",
@@ -226,7 +232,13 @@
           "custom_position_4": "Position (0–100%), in die sich die Beschattung bewegt, wenn Sensor 4 aktiv ist.",
           "custom_position_priority_4": "Pipeline-Priorität für Slot 4 (1–99, Standard 77).",
           "custom_position_min_mode_4": "Wenn aktiviert, fungiert die Position als Mindestgrenze – höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird die Beschattung immer auf die exakt konfigurierte Position eingestellt.",
-          "custom_position_use_my_4": "Wenn der Sensor von Slot 4 aktiv ist, lösen Sie die „Meine“-Voreinstellung der Beschattung aus anstelle der numerischen Position des Slots. Erfordert, dass der „Meine“-Positionswert eingestellt ist."
+          "custom_position_use_my_4": "Wenn der Sensor von Slot 4 aktiv ist, lösen Sie die „Meine“-Voreinstellung der Beschattung aus anstelle der numerischen Position des Slots. Erfordert, dass der „Meine“-Positionswert eingestellt ist.",
+          "custom_position_tilt_1": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 1 aktiv ist. Nur für Jalousien — wird bei anderen Beschattungstypen ignoriert. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "custom_position_tilt_2": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 2 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "custom_position_tilt_3": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 3 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "custom_position_tilt_4": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 4 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "default_tilt": "Standard-Neigungswinkel (0–100 %) für Jalousien, wenn kein anderer Handler die Neigung überschreibt. Wird immer dann angewendet, wenn der Standard-Positionshandler aktiv ist. Nicht setzen, damit die Engine die Neigung aus der Sonnengeometrie berechnet.",
+          "sunset_tilt": "Neigungswinkel (0–100 %) für Jalousien während des Sonnenuntergangsfensters. Überschreibt die Standard-Neigung, wenn das Sonnenuntergangs-Zeitfenster aktiv ist. Nicht setzen, um auf die Standard-Neigung zurückzufallen."
         }
       },
       "motion_override": {
@@ -708,7 +720,13 @@
           "custom_position_4": "Position für Sensor 4",
           "custom_position_priority_4": "Priorität für Slot 4",
           "custom_position_min_mode_4": "Minimaler Modus für Slot 4",
-          "custom_position_use_my_4": "Slot 4: Meine Position verwenden"
+          "custom_position_use_my_4": "Slot 4: Meine Position verwenden",
+          "custom_position_tilt_1": "Neigung für Slot 1",
+          "custom_position_tilt_2": "Neigung für Slot 2",
+          "custom_position_tilt_3": "Neigung für Slot 3",
+          "custom_position_tilt_4": "Neigung für Slot 4",
+          "default_tilt": "Standard-Neigung",
+          "sunset_tilt": "Sonnenuntergang-Neigung"
         },
         "data_description": {
           "custom_position_sensor_1": "Binärsensor, der die Abdeckung bei Aktivierung (An) zu ihrer konfigurierten Position verschiebt. Lassen Sie leer, um diesen Slot zu überspringen.",
@@ -730,7 +748,13 @@
           "custom_position_4": "Position (0-100%), um die Abdeckung zu verschieben, wenn Sensor 4 aktiv ist.",
           "custom_position_priority_4": "Pipeline-Priorität für Slot 4 (1-99, Standard 77).",
           "custom_position_min_mode_4": "Bei Aktivierung fungiert die Position als Mindestgrenze — höhere Positionen von Sonnenverfolgung oder anderen Berechnungen können hindurchgelassen werden. Bei Deaktivierung (Standard) wird die Abdeckung immer auf die genaue konfigurierte Position eingestellt.",
-          "custom_position_use_my_4": "Wenn der Sensor von Slot 4 aktiv ist, triggern Sie die Meine-Voreinstellung der Abdeckung anstelle der numerischen Position des Slots. Erfordert, dass der Wert Meine Position gesetzt wird."
+          "custom_position_use_my_4": "Wenn der Sensor von Slot 4 aktiv ist, triggern Sie die Meine-Voreinstellung der Abdeckung anstelle der numerischen Position des Slots. Erfordert, dass der Wert Meine Position gesetzt wird.",
+          "custom_position_tilt_1": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 1 aktiv ist. Nur für Jalousien — wird bei anderen Beschattungstypen ignoriert. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "custom_position_tilt_2": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 2 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "custom_position_tilt_3": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 3 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "custom_position_tilt_4": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 4 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
+          "default_tilt": "Standard-Neigungswinkel (0–100 %) für Jalousien, wenn kein anderer Handler die Neigung überschreibt. Wird immer dann angewendet, wenn der Standard-Positionshandler aktiv ist. Nicht setzen, damit die Engine die Neigung aus der Sonnengeometrie berechnet.",
+          "sunset_tilt": "Neigungswinkel (0–100 %) für Jalousien während des Sonnenuntergangsfensters. Überschreibt die Standard-Neigung, wenn das Sonnenuntergangs-Zeitfenster aktiv ist. Nicht setzen, um auf die Standard-Neigung zurückzufallen."
         }
       },
       "motion_override": {

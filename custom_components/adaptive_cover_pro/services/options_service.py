@@ -28,6 +28,7 @@ from ..const import (
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
+    CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
     CONF_DELTA_TIME,
     CONF_DEVICE_ID,
@@ -80,6 +81,7 @@ from ..const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -228,6 +230,9 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_SUNRISE_OFFSET: _range(CONF_SUNRISE_OFFSET),
     CONF_OPEN_CLOSE_THRESHOLD: _range(CONF_OPEN_CLOSE_THRESHOLD),
     CONF_INVERSE_STATE: _bool_v(),
+    # Explicit tilt (venetian only) — None means use solar-computed tilt.
+    CONF_DEFAULT_TILT: _range(CONF_DEFAULT_TILT),
+    CONF_SUNSET_TILT: _range(CONF_SUNSET_TILT),
     CONF_INTERP: _bool_v(),
     # Interpolation
     CONF_INTERP_START: _range(CONF_INTERP_START),
@@ -268,6 +273,10 @@ FIELD_VALIDATORS: dict[str, Any] = {
         slot_keys["min_mode"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },
     **{slot_keys["use_my"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
+    **{
+        slot_keys["tilt"]: _range(slot_keys["tilt"])
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
     # Motion
     CONF_MOTION_SENSORS: _entities_v(),
     CONF_MOTION_TIMEOUT: _range(CONF_MOTION_TIMEOUT),

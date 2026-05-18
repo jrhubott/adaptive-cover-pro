@@ -48,6 +48,7 @@ class CustomPositionSensorState:
     priority: int
     min_mode: bool
     use_my: bool
+    tilt: int | None = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,12 @@ class PipelineSnapshot:
     #   the normal open/close threshold fallback (for non-position-capable covers).
     my_position_value: int | None = None
     sunset_use_my: bool = False
+
+    # Explicit tilt for venetian covers. None = use solar-computed tilt.
+    default_tilt: int | None = None  # tilt when no active handler fires
+    sunset_tilt: int | None = (
+        None  # tilt during sunset window; falls back to default_tilt
+    )
 
     # Motion timeout mode:
     #   "return_to_default" (default) — handler sends the configured default position

@@ -262,6 +262,40 @@ class VenetianPolicy(CoverTypePolicy):
         if self._tilt_suppressed(result, cover):
             self._clear_last_tilt()
             return replace(result, tilt=None)
+
+        # If a handler already set an explicit tilt, honor it — skip the engine.
+        if result.tilt is not None:
+            handler_tilt = result.tilt
+            position = result.position
+            trace = list(result.decision_trace)
+            if self._venetian_mode == VENETIAN_MODE_TILT_ONLY:
+                trace.append(
+                    DecisionStep(
+                        handler="venetian_mode",
+                        matched=True,
+                        reason=(
+                            f"tilt-only mode: position {position}% → {POSITION_CLOSED}% "
+                            "(closed); tilt drives the slats"
+                        ),
+                        position=POSITION_CLOSED,
+                        tilt=handler_tilt,
+                    )
+                )
+                position = POSITION_CLOSED
+            trace.append(
+                DecisionStep(
+                    handler="venetian_handler_tilt",
+                    matched=True,
+                    reason=f"handler-supplied tilt {handler_tilt}% honored",
+                    position=position,
+                    tilt=handler_tilt,
+                )
+            )
+            self._last_tilt = handler_tilt
+            return replace(
+                result, position=position, tilt=handler_tilt, decision_trace=trace
+            )
+
         venetian_calc = VenetianCoverCalculation(
             config=config,
             vert_config=config_service.get_vertical_data(options),

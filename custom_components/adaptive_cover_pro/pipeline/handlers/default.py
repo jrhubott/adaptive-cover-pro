@@ -22,6 +22,18 @@ class DefaultHandler(OverrideHandler):
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult:
         """Return the default position as the final fallback."""
         position = compute_default_position(snapshot)
+        # Resolve tilt: sunset_tilt takes precedence during the sunset window,
+        # then fall back to default_tilt. None means the venetian policy will
+        # use solar-computed tilt instead.
+        tilt: int | None
+        if snapshot.is_sunset_active:
+            tilt = (
+                snapshot.sunset_tilt
+                if snapshot.sunset_tilt is not None
+                else snapshot.default_tilt
+            )
+        else:
+            tilt = snapshot.default_tilt
         # "Use My at sunset" path: route through the cover's hardware-stored My preset
         # when the sunset window is active and the user has opted in.
         if (
@@ -32,6 +44,7 @@ class DefaultHandler(OverrideHandler):
             pos = snapshot.my_position_value
             return PipelineResult(
                 position=pos,
+                tilt=tilt,
                 use_my_position=True,
                 control_method=ControlMethod.DEFAULT,
                 reason=f"sunset position — use My position ({pos}%)",
@@ -42,6 +55,7 @@ class DefaultHandler(OverrideHandler):
         )
         return PipelineResult(
             position=position,
+            tilt=tilt,
             control_method=ControlMethod.DEFAULT,
             reason=f"no active condition — {pos_label} {position}%",
             raw_calculated_position=position,

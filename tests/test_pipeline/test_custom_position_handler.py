@@ -26,6 +26,7 @@ def _handler(
     entity_id: str = _ENTITY,
     position: int = 50,
     priority: int = _DEFAULT_PRIORITY,
+    tilt: int | None = None,
 ) -> CustomPositionHandler:
     """Create a CustomPositionHandler with sensible defaults."""
     return CustomPositionHandler(
@@ -33,6 +34,7 @@ def _handler(
         entity_id=entity_id,
         position=position,
         priority=priority,
+        tilt=tilt,
     )
 
 
@@ -425,3 +427,129 @@ class TestBypassAutoControl:
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# CustomPositionSensorState.tilt field
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPositionSensorStateTilt:
+    """CustomPositionSensorState must carry an optional tilt value."""
+
+    def test_default_tilt_is_none(self) -> None:
+        """Tilt defaults to None when not supplied."""
+        state = CustomPositionSensorState(
+            entity_id=_ENTITY,
+            is_on=True,
+            position=50,
+            priority=77,
+            min_mode=False,
+            use_my=False,
+        )
+        assert state.tilt is None
+
+    def test_tilt_can_be_set_to_int(self) -> None:
+        """Tilt accepts an integer value."""
+        state = CustomPositionSensorState(
+            entity_id=_ENTITY,
+            is_on=True,
+            position=50,
+            priority=77,
+            min_mode=False,
+            use_my=False,
+            tilt=35,
+        )
+        assert state.tilt == 35
+
+    def test_tilt_zero_accepted(self) -> None:
+        """tilt=0 is a valid value."""
+        state = CustomPositionSensorState(
+            entity_id=_ENTITY,
+            is_on=True,
+            position=50,
+            priority=77,
+            min_mode=False,
+            use_my=False,
+            tilt=0,
+        )
+        assert state.tilt == 0
+
+    def test_tilt_hundred_accepted(self) -> None:
+        """tilt=100 is a valid value."""
+        state = CustomPositionSensorState(
+            entity_id=_ENTITY,
+            is_on=True,
+            position=50,
+            priority=77,
+            min_mode=False,
+            use_my=False,
+            tilt=100,
+        )
+        assert state.tilt == 100
+
+
+# ---------------------------------------------------------------------------
+# Handler stamps tilt on PipelineResult (Steps 4-5)
+# ---------------------------------------------------------------------------
+
+
+class TestHandlerTilt:
+    """CustomPositionHandler must stamp tilt=self._tilt on every result path."""
+
+    def test_tilt_none_by_default_normal_path(self) -> None:
+        """Handler with no tilt configured stamps tilt=None on normal path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt is None
+
+    def test_tilt_stamped_on_normal_path(self) -> None:
+        """Handler with tilt=35 stamps result.tilt=35 on normal path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
+        )
+        result = _handler(entity_id=_ENTITY, position=50, tilt=35).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt == 35
+
+    def test_tilt_zero_stamped(self) -> None:
+        """tilt=0 is stamped on result (not treated as falsy None)."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, False)]
+        )
+        result = _handler(entity_id=_ENTITY, position=50, tilt=0).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt == 0
+
+    def test_tilt_stamped_on_use_my_path(self) -> None:
+        """Handler with tilt=80 stamps result.tilt=80 on use-My path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, True)],
+            my_position_value=30,
+        )
+        result = _handler(entity_id=_ENTITY, position=50, tilt=80).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt == 80
+
+    def test_tilt_none_on_use_my_path_when_not_set(self) -> None:
+        """Handler with no tilt stamps None on use-My path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[_make_state(_ENTITY, True, 50, 77, False, True)],
+            my_position_value=30,
+        )
+        result = _handler(entity_id=_ENTITY, position=50).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt is None
+
+    def test_tilt_stamped_on_min_mode_path(self) -> None:
+        """Handler with tilt=60 stamps result.tilt=60 on min-mode path."""
+        snapshot = make_snapshot(
+            custom_position_sensors=[_make_state(_ENTITY, True, 30, 77, True, False)],
+            calculate_percentage_return=50.0,
+        )
+        result = _handler(entity_id=_ENTITY, position=30, tilt=60).evaluate(snapshot)
+        assert result is not None
+        assert result.tilt == 60

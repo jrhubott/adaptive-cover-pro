@@ -711,6 +711,48 @@ class TestDefaultHandler:
         assert isinstance(reason, str)
         assert len(reason) > 0
 
+    def test_tilt_none_when_not_configured(self) -> None:
+        """result.tilt is None when neither default_tilt nor sunset_tilt is set."""
+        snap = make_snapshot()
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt is None
+
+    def test_default_tilt_stamped(self) -> None:
+        """default_tilt=25 stamps result.tilt=25 on the non-sunset path."""
+        snap = make_snapshot(default_tilt=25)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 25
+
+    def test_sunset_tilt_stamped_when_sunset_active(self) -> None:
+        """sunset_tilt=80 stamps result.tilt=80 when is_sunset_active=True."""
+        snap = make_snapshot(is_sunset_active=True, sunset_tilt=80)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 80
+
+    def test_sunset_tilt_falls_back_to_default_tilt_when_none(self) -> None:
+        """When sunset_tilt is None and sunset active, falls back to default_tilt."""
+        snap = make_snapshot(is_sunset_active=True, default_tilt=40)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 40
+
+    def test_default_tilt_not_used_when_sunset_tilt_set(self) -> None:
+        """sunset_tilt takes precedence over default_tilt when sunset is active."""
+        snap = make_snapshot(is_sunset_active=True, sunset_tilt=90, default_tilt=20)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 90
+
+    def test_sunset_tilt_ignored_when_not_sunset(self) -> None:
+        """sunset_tilt is not used when is_sunset_active=False; default_tilt applies."""
+        snap = make_snapshot(is_sunset_active=False, sunset_tilt=80, default_tilt=20)
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.tilt == 20
+
 
 # ---------------------------------------------------------------------------
 # Handler result structure

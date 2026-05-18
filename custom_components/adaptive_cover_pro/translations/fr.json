@@ -204,7 +204,13 @@
           "custom_position_4": "Position pour le capteur 4",
           "custom_position_priority_4": "Priorité pour l'emplacement 4",
           "custom_position_min_mode_4": "Mode minimum pour l'emplacement 4",
-          "custom_position_use_my_4": "Emplacement 4 : utiliser Ma position"
+          "custom_position_use_my_4": "Emplacement 4 : utiliser Ma position",
+          "custom_position_tilt_1": "Inclinaison pour le créneau 1",
+          "custom_position_tilt_2": "Inclinaison pour le créneau 2",
+          "custom_position_tilt_3": "Inclinaison pour le créneau 3",
+          "custom_position_tilt_4": "Inclinaison pour le créneau 4",
+          "default_tilt": "Inclinaison par défaut",
+          "sunset_tilt": "Inclinaison au coucher du soleil"
         },
         "data_description": {
           "custom_position_sensor_1": "Capteur binaire que, quand « activé », déplace le store à sa position configurée. Laissez vide pour sauter cet emplacement.",
@@ -226,7 +232,13 @@
           "custom_position_4": "Position (0-100%) pour déplacer les stores quand le capteur 4 est actif.",
           "custom_position_priority_4": "Priorité de pipeline pour l'emplacement 4 (1-99, par défaut 77).",
           "custom_position_min_mode_4": "Quand activé, la position agit comme un plancher minimum — les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position configurée exacte.",
-          "custom_position_use_my_4": "Quand le capteur de l'emplacement 4 est actif, déclenchez le préset Ma du store au lieu de la position numérique de l'emplacement. Nécessite que la valeur Ma position soit définie."
+          "custom_position_use_my_4": "Quand le capteur de l'emplacement 4 est actif, déclenchez le préset Ma du store au lieu de la position numérique de l'emplacement. Nécessite que la valeur Ma position soit définie.",
+          "custom_position_tilt_1": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 1 est actif. Stores vénitiens uniquement — ignoré pour les autres types de stores. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "custom_position_tilt_2": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 2 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "custom_position_tilt_3": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 3 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "custom_position_tilt_4": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 4 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "default_tilt": "Angle d'inclinaison par défaut (0–100 %) pour les stores vénitiens lorsqu'aucun autre gestionnaire ne remplace l'inclinaison. Appliqué chaque fois que le gestionnaire de position par défaut est actif. Laisser vide pour laisser le moteur calculer l'inclinaison à partir de la géométrie solaire.",
+          "sunset_tilt": "Angle d'inclinaison (0–100 %) pour les stores vénitiens pendant la fenêtre du coucher du soleil. Remplace l'inclinaison par défaut lorsque la fenêtre horaire du coucher du soleil est active. Laisser vide pour revenir à l'inclinaison par défaut."
         }
       },
       "motion_override": {
@@ -708,7 +720,13 @@
           "custom_position_4": "Position pour le capteur 4",
           "custom_position_priority_4": "Priorité pour l'emplacement 4",
           "custom_position_min_mode_4": "Mode minimum pour l'emplacement 4",
-          "custom_position_use_my_4": "Emplacement 4 : utiliser Ma position"
+          "custom_position_use_my_4": "Emplacement 4 : utiliser Ma position",
+          "custom_position_tilt_1": "Inclinaison pour le créneau 1",
+          "custom_position_tilt_2": "Inclinaison pour le créneau 2",
+          "custom_position_tilt_3": "Inclinaison pour le créneau 3",
+          "custom_position_tilt_4": "Inclinaison pour le créneau 4",
+          "default_tilt": "Inclinaison par défaut",
+          "sunset_tilt": "Inclinaison au coucher du soleil"
         },
         "data_description": {
           "custom_position_sensor_1": "Capteur binaire que, quand « activé », déplace le store à sa position configurée. Laissez vide pour sauter cet emplacement.",
@@ -730,7 +748,13 @@
           "custom_position_4": "Position (0-100%) pour déplacer les stores quand le capteur 4 est actif.",
           "custom_position_priority_4": "Priorité de pipeline pour l'emplacement 4 (1-99, par défaut 77).",
           "custom_position_min_mode_4": "Quand activé, la position agit comme un plancher minimum — les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position configurée exacte.",
-          "custom_position_use_my_4": "Quand le capteur de l'emplacement 4 est actif, déclenchez le préset Ma du store au lieu de la position numérique de l'emplacement. Nécessite que la valeur Ma position soit définie."
+          "custom_position_use_my_4": "Quand le capteur de l'emplacement 4 est actif, déclenchez le préset Ma du store au lieu de la position numérique de l'emplacement. Nécessite que la valeur Ma position soit définie.",
+          "custom_position_tilt_1": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 1 est actif. Stores vénitiens uniquement — ignoré pour les autres types de stores. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "custom_position_tilt_2": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 2 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "custom_position_tilt_3": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 3 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "custom_position_tilt_4": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 4 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
+          "default_tilt": "Angle d'inclinaison par défaut (0–100 %) pour les stores vénitiens lorsqu'aucun autre gestionnaire ne remplace l'inclinaison. Appliqué chaque fois que le gestionnaire de position par défaut est actif. Laisser vide pour laisser le moteur calculer l'inclinaison à partir de la géométrie solaire.",
+          "sunset_tilt": "Angle d'inclinaison (0–100 %) pour les stores vénitiens pendant la fenêtre du coucher du soleil. Remplace l'inclinaison par défaut lorsque la fenêtre horaire du coucher du soleil est active. Laisser vide pour revenir à l'inclinaison par défaut."
         }
       },
       "motion_override": {

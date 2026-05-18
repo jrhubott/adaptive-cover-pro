@@ -261,3 +261,84 @@ class TestPostPipelineResolveClearsLastTilt:
         policy._last_tilt = 42
         policy.post_pipeline_resolve(None, **_non_solar_kwargs())
         assert policy._last_tilt == 42
+
+
+class TestPostPipelineResolveHandlerTilt:
+    """Steps 9-10-11: when result.tilt is set by a handler, venetian policy honors it
+    (only when SOLAR + direct_sun_valid — suppression check runs first).
+    """
+
+    def test_handler_tilt_honored_for_solar_with_direct_sun(self):
+        """SOLAR + direct_sun_valid + result.tilt=35 → resolved.tilt=35 (not engine tilt)."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            tilt=35,
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        assert out.tilt == 35
+
+    def test_handler_tilt_zero_honored_for_solar(self):
+        """tilt=0 is a valid explicit value — not treated as falsy None."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            tilt=0,
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        assert out.tilt == 0
+
+    def test_handler_tilt_trace_step_on_solar_path(self):
+        """SOLAR + direct_sun_valid + handler tilt → trace has 'venetian_handler_tilt'."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            tilt=35,
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        handler_names = [s.handler for s in out.decision_trace]
+        assert "venetian_handler_tilt" in handler_names
+
+    def test_suppression_clears_handler_tilt_for_non_solar(self):
+        """Non-SOLAR: suppression fires first → handler tilt is cleared to None."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.DEFAULT,
+            reason="test",
+            tilt=35,
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        assert out.tilt is None
+
+    def test_engine_tilt_used_when_result_tilt_is_none_on_solar(self):
+        """SOLAR + direct_sun_valid + result.tilt=None → engine computes tilt (not None)."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            tilt=None,
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        assert out.tilt is not None
+
+    def test_engine_trace_step_used_when_result_tilt_is_none_on_solar(self):
+        """When no handler tilt, 'venetian_engine' trace step is emitted (not handler_tilt)."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            tilt=None,
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        handler_names = [s.handler for s in out.decision_trace]
+        assert "venetian_engine" in handler_names
+        assert "venetian_handler_tilt" not in handler_names
