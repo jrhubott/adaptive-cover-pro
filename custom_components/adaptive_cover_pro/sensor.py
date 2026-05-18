@@ -716,6 +716,10 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         attrs["configured_sunset_pos"] = result.configured_sunset_pos
         if result.tilt is not None:
             attrs["tilt"] = result.tilt
+        if result.control_method == ControlMethod.WEATHER:
+            weather_mgr = s.coordinator._weather_mgr  # noqa: SLF001
+            attrs["weather_active_conditions"] = weather_mgr.active_conditions
+            attrs["weather_in_clear_delay"] = weather_mgr.in_clear_delay
 
     attrs["in_time_window"] = s.coordinator.check_adaptive_time
     attrs["enabled_handlers"] = _configured_handlers(s.config_entry.options)

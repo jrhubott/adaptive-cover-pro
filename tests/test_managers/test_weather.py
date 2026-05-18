@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.managers.weather import WeatherManager
+from custom_components.adaptive_cover_pro.managers.weather import (
+    WeatherManager,
+    _COND_IS_RAINING,
+    _COND_RAIN_RATE,
+    _COND_SEVERE,
+    _COND_WIND_SPEED,
+)
 
 
 @pytest.fixture
@@ -795,3 +801,86 @@ def test_reconcile_noop_when_no_sensors_configured(mock_hass, logger):
     )
     m._override_active = True
     assert m.reconcile() is None
+
+
+# --- active_conditions ---
+
+
+def test_active_conditions_wind_speed_only(mock_hass, logger):
+    """Returns ['wind_speed'] when only wind speed sensor is active."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+    )
+    mock_hass.states.get.return_value = _make_state("75.0")
+    assert m.active_conditions == [_COND_WIND_SPEED]
+
+
+def test_active_conditions_rain_and_is_raining(mock_hass, logger):
+    """Returns rain_rate and is_raining labels; wind_speed and severe absent."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor=None,
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor="sensor.rain",
+        rain_threshold=1.0,
+        is_raining_sensor="binary_sensor.raining",
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+    )
+
+    def get_state(entity_id):
+        if entity_id == "sensor.rain":
+            return _make_state("5.0")
+        if entity_id == "binary_sensor.raining":
+            return _make_state("on")
+        return None
+
+    mock_hass.states.get.side_effect = get_state
+    conditions = m.active_conditions
+    assert _COND_RAIN_RATE in conditions
+    assert _COND_IS_RAINING in conditions
+    assert _COND_WIND_SPEED not in conditions
+    assert _COND_SEVERE not in conditions
+
+
+def test_active_conditions_empty_when_no_conditions(mgr):
+    """Returns empty list when no conditions active."""
+    assert mgr.active_conditions == []
+
+
+# --- in_clear_delay ---
+
+
+def test_in_clear_delay_false_when_no_task(mgr):
+    """Returns False when no timeout task is running."""
+    assert mgr.in_clear_delay is False
+
+
+def test_in_clear_delay_true_when_timeout_running(mgr):
+    """Returns True when a pending timeout task exists."""
+    mgr._timeout_task = MagicMock()
+    mgr._timeout_task.done.return_value = False
+    assert mgr.in_clear_delay is True
+
+
+def test_active_conditions_empty_but_in_clear_delay(mgr):
+    """No live conditions + pending timeout → active_conditions empty, in_clear_delay True."""
+    mgr._timeout_task = MagicMock()
+    mgr._timeout_task.done.return_value = False
+    assert mgr.active_conditions == []
+    assert mgr.in_clear_delay is True

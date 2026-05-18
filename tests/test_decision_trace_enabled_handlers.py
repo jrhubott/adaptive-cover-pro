@@ -25,6 +25,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_ENTITY,
     SensorType,
 )
+from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverDecisionTraceSensor
 
 
@@ -231,6 +232,84 @@ def test_full_configuration_enables_everything():
 def test_minimal_configuration_enables_only_always_on():
     enabled = _enabled({CONF_ENABLE_SUN_TRACKING: False})
     assert enabled == {"manual", "default"}
+
+
+# ---------------------------------------------------------------------------
+# weather_active_conditions / weather_in_clear_delay attrs
+# ---------------------------------------------------------------------------
+
+
+def _make_pipeline_result(control_method: ControlMethod):
+    """Return a minimal mock pipeline result with the given control_method."""
+    result = MagicMock()
+    result.control_method = control_method
+    result.decision_trace = []
+    result.reason = "test"
+    result.bypass_auto_control = False
+    result.default_position = 0
+    result.is_sunset_active = False
+    result.configured_default = 0
+    result.configured_sunset_pos = None
+    result.tilt = None
+    return result
+
+
+def test_weather_active_conditions_present_when_weather_override():
+    """weather_active_conditions and weather_in_clear_delay present when WEATHER."""
+    coordinator = _make_coordinator()
+    coordinator._pipeline_result = _make_pipeline_result(ControlMethod.WEATHER)
+    coordinator._weather_mgr = MagicMock()
+    coordinator._weather_mgr.active_conditions = ["wind_speed"]
+    coordinator._weather_mgr.in_clear_delay = False
+
+    sensor = AdaptiveCoverDecisionTraceSensor(
+        "test_enabled_handlers_entry",
+        _make_hass(),
+        _make_config_entry(),
+        "Test",
+        coordinator,
+    )
+    attrs = sensor.extra_state_attributes or {}
+    assert attrs["weather_active_conditions"] == ["wind_speed"]
+    assert attrs["weather_in_clear_delay"] is False
+
+
+def test_weather_in_clear_delay_true_when_timeout_running():
+    """weather_in_clear_delay is True when timeout task pending."""
+    coordinator = _make_coordinator()
+    coordinator._pipeline_result = _make_pipeline_result(ControlMethod.WEATHER)
+    coordinator._weather_mgr = MagicMock()
+    coordinator._weather_mgr.active_conditions = []
+    coordinator._weather_mgr.in_clear_delay = True
+
+    sensor = AdaptiveCoverDecisionTraceSensor(
+        "test_enabled_handlers_entry",
+        _make_hass(),
+        _make_config_entry(),
+        "Test",
+        coordinator,
+    )
+    attrs = sensor.extra_state_attributes or {}
+    assert attrs["weather_active_conditions"] == []
+    assert attrs["weather_in_clear_delay"] is True
+
+
+def test_weather_keys_absent_when_not_weather_override():
+    """weather_active_conditions and weather_in_clear_delay absent for non-WEATHER override."""
+    coordinator = _make_coordinator()
+    coordinator._pipeline_result = _make_pipeline_result(ControlMethod.SOLAR)
+    coordinator._weather_mgr = MagicMock()
+
+    sensor = AdaptiveCoverDecisionTraceSensor(
+        "test_enabled_handlers_entry",
+        _make_hass(),
+        _make_config_entry(),
+        "Test",
+        coordinator,
+    )
+    attrs = sensor.extra_state_attributes or {}
+    assert "weather_active_conditions" not in attrs
+    assert "weather_in_clear_delay" not in attrs
 
 
 def test_handler_names_match_card_normalized_form():

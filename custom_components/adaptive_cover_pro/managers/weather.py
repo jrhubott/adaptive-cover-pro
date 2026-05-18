@@ -18,6 +18,13 @@ from ..const import (
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+# Condition label constants — used in active_conditions list
+_COND_WIND_SPEED = "wind_speed"
+_COND_RAIN_RATE = "rain_rate"
+_COND_IS_RAINING = "is_raining"
+_COND_IS_WINDY = "is_windy"
+_COND_SEVERE = "severe_weather"
+
 
 class WeatherManager:
     """Manage weather-based safety overrides for cover control.
@@ -157,6 +164,27 @@ class WeatherManager:
     def is_timeout_running(self) -> bool:
         """Return True when a clear-delay timeout task is pending."""
         return self._timeout_task is not None and not self._timeout_task.done()
+
+    @property
+    def in_clear_delay(self) -> bool:
+        """Return True when override is held active by the clear-delay timer."""
+        return self.is_timeout_running
+
+    @property
+    def active_conditions(self) -> list[str]:
+        """Return labels of currently active weather conditions."""
+        result = []
+        if self._is_wind_active():
+            result.append(_COND_WIND_SPEED)
+        if self._is_rain_active():
+            result.append(_COND_RAIN_RATE)
+        if self._is_binary_on(self._is_raining_sensor):
+            result.append(_COND_IS_RAINING)
+        if self._is_binary_on(self._is_windy_sensor):
+            result.append(_COND_IS_WINDY)
+        if self._is_any_severe_active():
+            result.append(_COND_SEVERE)
+        return result
 
     # --- Condition evaluation helpers ---
 
