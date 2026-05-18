@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
+    CoverState,
 )
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
@@ -124,18 +125,34 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
 
     # ---- availability + mirroring -------------------------------------- #
 
+    def _source_state(self) -> Any:
+        """Return the current HA state object for the source entity, or None."""
+        return self.hass.states.get(self._source_entity_id)
+
     @property
     def available(self) -> bool:
         """Mirror source availability."""
-        state = self.hass.states.get(self._source_entity_id)
+        state = self._source_state()
         if state is None:
             return False
         return state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
     @property
+    def is_opening(self) -> bool:
+        """True when the source cover reports it is opening."""
+        state = self._source_state()
+        return state is not None and state.state == CoverState.OPENING
+
+    @property
+    def is_closing(self) -> bool:
+        """True when the source cover reports it is closing."""
+        state = self._source_state()
+        return state is not None and state.state == CoverState.CLOSING
+
+    @property
     def current_cover_position(self) -> int | None:
         """Mirror source current_position verbatim (no inverse transform)."""
-        state = self.hass.states.get(self._source_entity_id)
+        state = self._source_state()
         if state is None:
             return None
         value = state.attributes.get(STATE_ATTR_POSITION)
@@ -144,7 +161,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
     @property
     def current_cover_tilt_position(self) -> int | None:
         """Mirror source current_tilt_position verbatim."""
-        state = self.hass.states.get(self._source_entity_id)
+        state = self._source_state()
         if state is None:
             return None
         value = state.attributes.get(STATE_ATTR_TILT_POSITION)
@@ -153,7 +170,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
     @property
     def supported_features(self) -> CoverEntityFeature:
         """Mirror source supported_features."""
-        state = self.hass.states.get(self._source_entity_id)
+        state = self._source_state()
         if state is None:
             return CoverEntityFeature(0)
         return CoverEntityFeature(int(state.attributes.get("supported_features", 0)))

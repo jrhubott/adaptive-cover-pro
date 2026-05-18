@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from homeassistant.components.cover import CoverState
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
@@ -158,3 +161,131 @@ async def test_proxy_does_not_double_invert_position(hass) -> None:
     )
     state = hass.states.get(proxy_eid)
     assert state.attributes.get("current_position") == 30
+
+
+# ---- transient-state tests (is_opening / is_closing) ------------------- #
+
+
+def _get_proxy_entity(hass, proxy_eid):
+    """Return the AdaptiveProxyCover entity object for the given entity_id."""
+    cover_component = hass.data.get("entity_components", {}).get("cover")
+    if cover_component is not None:
+        return cover_component.get_entity(proxy_eid)
+    return None
+
+
+async def test_proxy_is_opening_when_source_is_opening(hass) -> None:
+    """``is_opening`` is True and ``is_closing`` is False when source is opening."""
+    _, proxy_eid = await _setup_single(
+        hass,
+        state=CoverState.OPENING,
+        attrs={"current_position": 50, "supported_features": 143},
+        entry_id="proxy_opening_test",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert entity_obj.is_opening is True
+    assert entity_obj.is_closing is False
+
+
+async def test_proxy_is_closing_when_source_is_closing(hass) -> None:
+    """``is_closing`` is True and ``is_opening`` is False when source is closing."""
+    _, proxy_eid = await _setup_single(
+        hass,
+        state=CoverState.CLOSING,
+        attrs={"current_position": 50, "supported_features": 143},
+        entry_id="proxy_closing_test",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert entity_obj.is_closing is True
+    assert entity_obj.is_opening is False
+
+
+async def test_proxy_is_not_opening_or_closing_when_source_is_open(hass) -> None:
+    """Both transient properties are False when source is open (steady state)."""
+    _, proxy_eid = await _setup_single(
+        hass,
+        state=CoverState.OPEN,
+        attrs={"current_position": 100, "supported_features": 143},
+        entry_id="proxy_open_not_transient",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert entity_obj.is_opening is False
+    assert entity_obj.is_closing is False
+
+
+async def test_proxy_is_not_opening_or_closing_when_source_is_closed(hass) -> None:
+    """Both transient properties are False when source is closed (steady state)."""
+    _, proxy_eid = await _setup_single(
+        hass,
+        state=CoverState.CLOSED,
+        attrs={"current_position": 0, "supported_features": 143},
+        entry_id="proxy_closed_not_transient",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert entity_obj.is_opening is False
+    assert entity_obj.is_closing is False
+
+
+async def test_proxy_state_transitions_through_opening(hass) -> None:
+    """Proxy state string tracks source through closed → opening → open."""
+    source_id = "cover.transition_source"
+    _, proxy_eid = await _setup_single(
+        hass,
+        source=source_id,
+        state=CoverState.CLOSED,
+        attrs={"current_position": 0, "supported_features": 143},
+        entry_id="proxy_transition_test",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert hass.states.get(proxy_eid).state == CoverState.CLOSED
+
+    # Transition to opening
+    hass.states.async_set(
+        source_id,
+        CoverState.OPENING,
+        {"current_position": 50, "supported_features": 143},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(proxy_eid).state == CoverState.OPENING
+
+    # Transition to open
+    hass.states.async_set(
+        source_id,
+        CoverState.OPEN,
+        {"current_position": 100, "supported_features": 143},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(proxy_eid).state == CoverState.OPEN
+
+
+async def test_proxy_is_opening_false_when_source_unavailable(hass) -> None:
+    """Both transient properties are False when source is unavailable."""
+    _, proxy_eid = await _setup_single(
+        hass,
+        state=STATE_UNAVAILABLE,
+        attrs={},
+        entry_id="proxy_unavail_transient",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert entity_obj.is_opening is False
+    assert entity_obj.is_closing is False
+
+
+async def test_proxy_is_opening_false_when_source_unknown(hass) -> None:
+    """Both transient properties are False when source is unknown."""
+    _, proxy_eid = await _setup_single(
+        hass,
+        state=STATE_UNKNOWN,
+        attrs={},
+        entry_id="proxy_unknown_transient",
+    )
+    entity_obj = _get_proxy_entity(hass, proxy_eid)
+    assert entity_obj is not None
+    assert entity_obj.is_opening is False
+    assert entity_obj.is_closing is False
