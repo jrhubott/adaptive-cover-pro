@@ -13,9 +13,13 @@ Wired through ``SecondaryAxisCheck`` — a per-cover-type plug supplied by
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.managers.dual_axis_sequencer import (
+    DualAxisSequencer,
+)
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     SecondaryAxisCheck,
@@ -55,6 +59,32 @@ def _tilt_check(*, expected: int = 70, suppressed: bool) -> SecondaryAxisCheck:
         label="tilt",
         suppression=lambda _eid, _delta: suppressed,
     )
+
+
+def _make_sequencer_suppression(
+    *, entity_id: str, state: str
+) -> Callable[[str, float], bool]:
+    """Build a real ``DualAxisSequencer`` and return its bound delta-cap gate.
+
+    Closes the integration gap the lambda-stub helpers leave open (issue #33
+    follow-on): wires ``stamp_position_command`` and the ``_get_state``
+    callback together so the cap behaves exactly as ``VenetianPolicy.is_in_tilt_suppression``
+    does in production. ``state`` should be ``"opening"``/``"closing"`` to
+    model an in-transit cycle, or ``"stopped"`` to model a settled cycle.
+    """
+    hass = MagicMock()
+    seq = DualAxisSequencer(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        get_state=lambda _eid: state,
+    )
+    seq.stamp_position_command(entity_id)
+    return seq.is_in_suppression_with_cap
 
 
 def test_tilt_drift_inside_suppression_window_is_ignored() -> None:
@@ -204,6 +234,102 @@ def test_position_drift_outside_tilt_suppression_trips_override() -> None:
         is_waiting=lambda _eid: False,
         manual_threshold=5,
         secondary_axis_check=_tilt_check(suppressed=False),
+    )
+
+    assert mgr.is_cover_manual(entity_id)
+
+
+def test_tilt_drift_during_in_transit_close_is_ignored_regardless_of_delta() -> None:
+    """Issue #33: motor back-rotate during a closing carriage can exceed the cap.
+
+    Report 1 timeline: ``set_cover_position(86)`` stamps suppression at T+0;
+    while ``cover.state == "closing"`` the actuator reports
+    ``current_tilt_position=0`` against ``our_state=100`` — a 100% delta that
+    blows past the 30% ``VENETIAN_BACKROTATE_MAX_DELTA_PERCENT`` cap. The cap
+    must NOT defeat suppression while the carriage is still mid-travel; this
+    is real motor drift, not a user move.
+    """
+    entity_id = "cover.venetian_kitchen_close"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    suppression = _make_sequencer_suppression(entity_id=entity_id, state="closing")
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=86, tilt=0),
+        our_state=100,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        secondary_axis_check=SecondaryAxisCheck(
+            expected=100,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=suppression,
+        ),
+    )
+
+    assert not mgr.is_cover_manual(entity_id)
+
+
+def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> None:
+    """Issue #33: same fault on the opening side (Report 2, fnep).
+
+    Diagnostic timeline: at T+0 ``set_cover_position(17)`` stamps suppression;
+    while ``cover.state == "opening"`` the actuator reports
+    ``current_tilt_position=100`` against ``our_state=60`` — a 40% delta past
+    the 30% cap. Suppression must hold; the 60→100 mismatch is the actuator
+    landing wrong during travel, not a user touch.
+    """
+    entity_id = "cover.venetian_office_open"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    suppression = _make_sequencer_suppression(entity_id=entity_id, state="opening")
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=17, tilt=100),
+        our_state=60,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        secondary_axis_check=SecondaryAxisCheck(
+            expected=60,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=suppression,
+        ),
+    )
+
+    assert not mgr.is_cover_manual(entity_id)
+
+
+def test_tilt_drift_after_settle_with_large_delta_still_trips_override() -> None:
+    """The in-transit cap bypass must NOT swallow a genuine post-settle user move.
+
+    Once ``cover.state`` leaves the moving set, the geometry-bounded cap
+    reasserts: a delta > 30% with state=``stopped`` is a user grabbing the
+    slats, not motor drift, and must still trip manual override even inside
+    the 90s suppression window.
+    """
+    entity_id = "cover.venetian_post_settle_user_move"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    suppression = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        secondary_axis_check=SecondaryAxisCheck(
+            expected=80,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=suppression,
+        ),
     )
 
     assert mgr.is_cover_manual(entity_id)

@@ -106,6 +106,12 @@ class DualAxisSequencer:
         # dual-axis state at all.
         self._suppression_at: dict[str, dt.datetime] = {}
         self._tilt_targets: dict[str, int] = {}
+        # Entities whose last stored target has been verified against the
+        # actuator. Dedup at _send_tilt_command only fires when the target
+        # matches AND the entity is in this set — a verify=False fire-and-
+        # forget send stores the target but does not mark verified, so the
+        # subsequent verifying send still runs (issue #33).
+        self._tilt_targets_verified: set[str] = set()
         self._tilt_sent_at: dict[str, dt.datetime] = {}
 
     # -- tilt inversion ---------------------------------------------------- #
@@ -162,12 +168,24 @@ class DualAxisSequencer:
     def is_in_suppression_with_cap(self, entity_id: str, delta: float) -> bool:
         """Suppress back-rotate drift only when the delta is plausibly motor drift.
 
-        Slat geometry bounds back-rotation magnitude; a large delta inside the
-        window is a user move, not motor drift, so the manual-override path
-        runs and the user's command is recorded (issue #33 follow-on).
+        Slat geometry bounds back-rotation magnitude post-settle; a large delta
+        once the carriage has stopped is a user move, not motor drift, so the
+        manual-override path runs and the user's command is recorded (issue #33
+        follow-on).
+
+        While the carriage is still mid-travel (HA cover state ``opening`` or
+        ``closing``) the cap is bypassed: real-world venetian actuators (KNX,
+        Shelly 2PM, FGR223) back-retract the slats by well over the cap during
+        carriage motion, so an arbitrarily large delta is still motor drift
+        until ``cover.state`` settles. The cap reasserts once state leaves the
+        moving set.
         """
         if not self.is_in_suppression(entity_id):
             return False
+        if self._get_state is not None:
+            state = self._get_state(entity_id)
+            if state in _COVER_MOVING_STATES:
+                return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
 
     # -- tilt sequence ----------------------------------------------------- #
@@ -185,6 +203,7 @@ class DualAxisSequencer:
         cache.
         """
         self._tilt_targets.clear()
+        self._tilt_targets_verified.clear()
 
     async def run_sequence(
         self,
@@ -236,7 +255,16 @@ class DualAxisSequencer:
         matches and the caller didn't pass ``force=True``, no service call
         fires. That keeps ``run_sequence``'s post-settle tilt from re-sending
         a tilt that ``before_position_command`` already sent for the same
-        opening transition (issue #33 tilt-first path).
+        opening transition — total service-call count for an opening
+        transition remains 2 (tilt + position).
+
+        But the dedup branch still runs the verify step when the stored
+        target hasn't yet been confirmed against the actuator (issue #33
+        tilt-first path). Otherwise a misbehaving actuator that lands at
+        the wrong tilt during the carriage travel is never noticed: no
+        drift event, no ``_tilt_targets`` pop, no retry on the next cycle.
+        ``_tilt_targets_verified`` tracks which stored targets have already
+        been confirmed so the verify only fires once per target.
 
         ``verify=False`` is the fire-and-forget mode used by
         ``before_position_command``: the service call dispatches and the
@@ -254,6 +282,9 @@ class DualAxisSequencer:
                 position_target=position_target,
                 trigger=reason,
             )
+            if verify and entity_id not in self._tilt_targets_verified:
+                await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
+                await self._verify_and_record_tilt(entity_id, tilt_target)
             return
 
         if not force and self._get_min_change is not None:
@@ -298,6 +329,10 @@ class DualAxisSequencer:
             return
 
         self._tilt_targets[entity_id] = tilt_target  # store logical value
+        # A freshly-sent target is unverified until _verify_and_record_tilt
+        # confirms it lands on the actuator (issue #33). Discard preemptively
+        # in case a prior cycle marked the entity verified.
+        self._tilt_targets_verified.discard(entity_id)
         self._tilt_sent_at[entity_id] = dt.datetime.now(dt.UTC)
         # Restart the grace window so the tilt-axis change isn't read as a
         # user touch by manual_override detection.
@@ -547,6 +582,10 @@ class DualAxisSequencer:
             actual = self._to_wire(actual_wire)
             delta = abs(actual - tilt_target)
             if delta <= VENETIAN_TILT_VERIFY_TOLERANCE:
+                # Stored target now matches the actuator — mark verified so
+                # the dedup gate in _send_tilt_command can safely skip a
+                # subsequent send for the same target (issue #33).
+                self._tilt_targets_verified.add(entity_id)
                 self._record_event(
                     "tilt_command_verified",
                     entity_id=entity_id,
@@ -576,3 +615,4 @@ class DualAxisSequencer:
             tolerance=VENETIAN_TILT_VERIFY_TOLERANCE,
         )
         self._tilt_targets.pop(entity_id, None)
+        self._tilt_targets_verified.discard(entity_id)

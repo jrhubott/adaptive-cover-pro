@@ -970,6 +970,106 @@ class TestSendTiltCommandDedup:
         )
         assert hass.services.async_call.call_count == 2
 
+    async def test_dedup_after_unverified_send_still_runs_verify(self):
+        """Issue #33: dedup must not silence drift detection on an unverified target.
+
+        ``before_position_command`` sends tilt pre-position with ``verify=False,
+        force=True``; the post-settle ``run_sequence`` reaches the dedup gate
+        with the same target stored. The service-call dedup is preserved
+        (count stays at 1), but verify still runs against the actuator —
+        otherwise a wrong landing is never noticed and ``_tilt_targets``
+        is never popped to re-arm the next cycle's retry.
+        """
+        buf = EventBuffer(maxlen=16)
+        hass, seq = _build_sequencer(
+            get_current_tilt_position=lambda _eid: 0, event_buffer=buf
+        )
+        await seq._send_tilt_command(
+            "cover.x",
+            tilt_target=60,
+            position_target=17,
+            reason="auto_control_on",
+            force=True,
+            verify=False,
+        )
+        assert hass.services.async_call.call_count == 1
+        await seq._send_tilt_command(
+            "cover.x", tilt_target=60, position_target=17, reason="solar"
+        )
+        # Second send dedups (preserves opening-cycle service-call count) but
+        # the verify path runs because the prior send was unverified.
+        assert hass.services.async_call.call_count == 1
+        drift = [e for e in buf.snapshot() if e["event"] == "tilt_command_drift"]
+        assert len(drift) == 1
+        # Drift clears the stored target so the next update_tilt_only retries.
+        assert seq.last_tilt_target("cover.x") is None
+
+
+@pytest.mark.asyncio
+class TestTiltFirstThenSequenceVerify:
+    """Integration-shaped guard for the tilt-first opening path (issue #33).
+
+    Report 2 timeline: ``before_position_command`` fires tilt=60 pre-position
+    (``verify=False, force=True``); the carriage opens; ``run_sequence`` waits
+    for settle, then re-enters ``_send_tilt_command(verify=True)`` with the
+    same target. Service-call dedup is preserved (cycle stays at 2 tilt+pos
+    calls) but verify MUST run on the deduped branch — otherwise a wrong
+    landing is never noticed and the cover sits at the wrong tilt forever.
+    """
+
+    async def test_run_sequence_after_tilt_first_runs_verify_on_dedup(self):
+        """End-to-end: tilt-first then run_sequence with divergent actuator.
+
+        Produces a single tilt service call AND a tilt_command_drift event.
+        """
+        buf = EventBuffer(maxlen=32)
+        # Actuator reports the wrong tilt (0) for every verify sample — the
+        # fix's verify path should observe this and emit tilt_command_drift.
+        hass, seq = _build_sequencer(
+            get_current_tilt_position=lambda _eid: 0,
+            event_buffer=buf,
+        )
+        # Stub the settle loop so run_sequence completes synchronously.
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 17))
+
+        # Step 1: before_position_command fires tilt pre-position.
+        await seq._send_tilt_command(
+            "cover.x",
+            tilt_target=60,
+            position_target=17,
+            reason="auto_control_on",
+            force=True,
+            verify=False,
+        )
+        # Step 2: position command would fire here; we skip it (separate path).
+        # Step 3: after_position_command runs run_sequence which re-enters
+        # _send_tilt_command with the default verify=True.
+        await seq.run_sequence(
+            "cover.x",
+            position_target=17,
+            tilt_target=60,
+            reason="solar",
+        )
+
+        # Service-call dedup preserved: still just the pre-tilt call.
+        assert hass.services.async_call.call_count == 1
+
+        events = buf.snapshot()
+        # The dedup branch DID run verify, and verify saw the wrong landing.
+        # Pre-fix: no verify event at all (verify was wholly skipped).
+        drift = [e for e in events if e["event"] == "tilt_command_drift"]
+        assert len(drift) == 1
+        # Dedup itself was recorded.
+        skipped = [
+            e
+            for e in events
+            if e["event"] == "tilt_command_skipped"
+            and e.get("reason") == "target_unchanged"
+        ]
+        assert len(skipped) == 1
+        # Drift cleared the stored target so update_tilt_only re-fires next cycle.
+        assert seq.last_tilt_target("cover.x") is None
+
 
 @pytest.mark.asyncio
 class TestTiltVerifyWithRetry:
