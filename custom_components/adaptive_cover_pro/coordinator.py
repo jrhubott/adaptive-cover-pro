@@ -1560,8 +1560,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             not self.check_adaptive_time
             and not is_safety
             and not force_override_released
-            and not custom_position_sensor_triggered
-            and not custom_position_released
         ):
             self.state_change = False
             self._last_state_change_entity = None

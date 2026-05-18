@@ -362,6 +362,38 @@ class TestCustomPositionSensorEdgeTriggerBypassesGate:
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
+    @pytest.mark.asyncio
+    async def test_trigger_outside_window_pre_start_no_command(self):
+        """Custom-position sensor trigger outside time window (before start_time) must NOT send a command.
+
+        Issue #383: custom_position_sensor_triggered must not bypass the time-window gate.
+        A sensor toggle before the user's start_time should be suppressed — the same
+        rule that applies to solar / climate / default handlers.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=60,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            bypass_auto_control=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator.check_adaptive_time = (
+            False  # outside time window — before start_time
+        )
+        coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=True)
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=60, options={}
+        )
+
+        coordinator._cmd_svc.apply_position.assert_not_called()
+
 
 class TestCustomPositionSensorReleaseEdgeBypassesGate:
     """Custom-position sensor release-edge mirrors force-override release (#365).
@@ -498,20 +530,22 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
         )
 
     @pytest.mark.asyncio
-    async def test_release_bypasses_time_window_gate(self):
-        """Release fires even when outside the configured time window.
+    async def test_release_outside_window_after_end_time_no_command(self):
+        """Custom-position release outside time window (after end_time) must NOT send a command.
 
-        Symmetric to force_override_released, which already overrides the
-        time-window gate at coordinator.py:1547-1552.  Otherwise a sensor that
-        flips off after end_time would leave covers stuck at the slot's
-        position with no way to return to the calculated value.
+        Issue #383: custom_position_released must not bypass the time-window gate.
+        The time-window gate applies uniformly outside the configured window — before
+        start_time and after end_time alike. Only force-override and weather (safety
+        handlers) are permitted to move covers outside the window. A sensor release
+        outside the window leaves the cover at its current position; the sunset
+        dispatch path (_check_sunset_window_transition) owns any sunset_pos movement.
         """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
         coordinator = self._make_release_coordinator()
-        coordinator.check_adaptive_time = False  # outside time window
+        coordinator.check_adaptive_time = False  # outside time window — after end_time
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator,
@@ -521,13 +555,62 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
-        coordinator._build_position_context.assert_called_once_with(
-            "cover.test",
-            {},
-            force=True,
-            is_safety=False,
-            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        coordinator._cmd_svc.apply_position.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_release_outside_window_pre_start_no_command(self):
+        """Custom-position release outside time window (before start_time) must NOT send a command.
+
+        Issue #383: custom_position_released must not bypass the time-window gate.
+        The release edge happens before the user's start_time, so no cover command
+        should be issued — the same rule that applies to solar / climate / default.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
         )
+
+        coordinator = self._make_release_coordinator()
+        coordinator.check_adaptive_time = (
+            False  # outside time window — before start_time
+        )
+        coordinator._last_state_change_entity = "binary_sensor.movie_time"
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=55,
+            options={},
+            prev_force_override=False,
+            custom_position_released_entities={"binary_sensor.movie_time"},
+        )
+
+        coordinator._cmd_svc.apply_position.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_release_outside_window_sunset_active_no_command(self):
+        """Custom-position release outside time window during sunset window must NOT send a command.
+
+        Issue #383: the time-window gate applies even when the sunset window is active.
+        _check_sunset_window_transition owns the sunset_pos dispatch — async_handle_state_change
+        must not send any command when check_adaptive_time is False, regardless of whether
+        the sunset window is currently open.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = self._make_release_coordinator()
+        coordinator.check_adaptive_time = False  # outside time window — sunset active
+        coordinator._last_state_change_entity = "binary_sensor.movie_time"
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=40,
+            options={},
+            prev_force_override=False,
+            custom_position_released_entities={"binary_sensor.movie_time"},
+        )
+
+        coordinator._cmd_svc.apply_position.assert_not_called()
 
 
 class TestCustomPositionTriggerEntityRecording:
