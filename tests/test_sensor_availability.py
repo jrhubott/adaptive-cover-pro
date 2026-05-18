@@ -47,6 +47,7 @@ import custom_components.adaptive_cover_pro.sensor  # noqa: F401
 import custom_components.adaptive_cover_pro.binary_sensor  # noqa: F401
 import custom_components.adaptive_cover_pro.switch  # noqa: F401
 import custom_components.adaptive_cover_pro.button  # noqa: F401
+import custom_components.adaptive_cover_pro.cover  # noqa: F401
 
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
@@ -68,6 +69,7 @@ from custom_components.adaptive_cover_pro.binary_sensor import (
 )
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+from custom_components.adaptive_cover_pro.cover import AdaptiveProxyCover
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -77,6 +79,13 @@ from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
 def _make_hass():
     hass = MagicMock()
     hass.config.units.temperature_unit = "°C"
+    return hass
+
+
+def _make_hass_no_states():
+    """Hass mock whose states.get() returns None — proxy/source-mirroring entities."""
+    hass = _make_hass()
+    hass.states.get = MagicMock(return_value=None)
     return hass
 
 
@@ -212,6 +221,17 @@ ENTITY_FACTORIES: dict[type, object] = {
         hass=_make_hass(),
         config_entry=_make_config_entry(),
         coordinator=_make_coordinator(),
+    ),
+    # --- cover.py ---
+    # Proxy mirrors source-cover availability via hass.states.get(); a hass
+    # mock that returns None for states.get yields available=False naturally.
+    AdaptiveProxyCover: lambda: AdaptiveProxyCover(
+        entry_id="test_avail_entry",
+        hass=_make_hass_no_states(),
+        config_entry=_make_config_entry(),
+        coordinator=_make_coordinator(),
+        source_entity_id="cover.test_source",
+        multi=False,
     ),
 }
 
