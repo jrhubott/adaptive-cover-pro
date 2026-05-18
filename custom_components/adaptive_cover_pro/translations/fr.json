@@ -26,7 +26,7 @@
         "data_description": {
           "group": "Sélectionnez les entités de store à contrôler via cette instance d'intégration. Vous pouvez sélectionner plusieurs stores pour les contrôler ensemble (tous recevront les mêmes commandes de position). Ne sélectionnez que les stores qui servent cette fenêtre particulière - créez des instances d'intégration séparées pour différentes fenêtres.",
           "linked_device_id": "Sélectionnez un appareil physique pour fusionner les entités de cette intégration. Les capteurs, commutateurs et boutons de l'intégration apparaîtront directement sous cet appareil dans Home Assistant. Sélectionnez « Aucun (appareil autonome) » pour revenir à un appareil Adaptive Cover virtuel séparé. Seuls les appareils qui possèdent les entités de store sélectionnées sont affichés.",
-          "enable_proxy_cover": "Expose une entité de couverture proxy par protection physique. Utilisez ceci sur les tableaux de bord à la place de la protection physique afin que le curseur respecte les seuils minimum. Par défaut : désactivé."
+          "enable_proxy_cover": "Expose une entité de couverture proxy par protection physique. Utilisez ceci sur les tableaux de bord à la place de la protection physique afin que les commandes manuelles respectent les positions minimales. Par défaut : désactivé."
         }
       },
       "geometry": {
@@ -552,7 +552,7 @@
         "data_description": {
           "group": "Sélectionnez les entités de store à contrôler via cette instance d'intégration. Vous pouvez sélectionner plusieurs stores pour les contrôler ensemble (tous recevront les mêmes commandes de position). Ne sélectionnez que les stores qui servent cette fenêtre particulière - créez des instances d'intégration séparées pour différentes fenêtres.",
           "linked_device_id": "Sélectionnez un appareil physique pour fusionner les entités de cette intégration. Les capteurs, commutateurs et boutons de l'intégration apparaîtront directement sous cet appareil dans Home Assistant. Sélectionnez « Aucun (appareil autonome) » pour revenir à un appareil Adaptive Cover virtuel séparé. Seuls les appareils qui possèdent les entités de store sélectionnées sont affichés.",
-          "enable_proxy_cover": "Expose une entité de couverture proxy par protection physique. Utilisez ceci sur les tableaux de bord à la place de la protection physique afin que le curseur respecte les seuils minimum. Par défaut : désactivé."
+          "enable_proxy_cover": "Expose une entité de couverture proxy par protection physique. Utilisez ceci sur les tableaux de bord à la place de la protection physique afin que les commandes manuelles respectent les positions minimales. Par défaut : désactivé."
         }
       },
       "geometry": {

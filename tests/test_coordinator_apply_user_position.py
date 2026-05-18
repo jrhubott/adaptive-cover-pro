@@ -126,10 +126,10 @@ async def test_async_apply_user_position_passes_above_floor_unchanged() -> None:
     """Requested > floor → passes through unchanged."""
     coord, ctx = _make_coord([_slot(40, is_on=True, min_mode=True)])
 
-    await coord.async_apply_user_position("cover.test", 80, trigger="proxy_slider")
+    await coord.async_apply_user_position("cover.test", 80, trigger="proxy_managed")
 
     coord._cmd_svc.apply_position.assert_awaited_once_with(
-        "cover.test", 80, "proxy_slider", ctx
+        "cover.test", 80, "proxy_managed", ctx
     )
 
 
@@ -199,14 +199,14 @@ async def test_default_engages_manual_override_when_no_preemption() -> None:
     coord, ctx = _make_coord([], winner_name="solar", winner_priority=40)
 
     outcome = await coord.async_apply_user_position(
-        "cover.test", 50, trigger="proxy_slider"
+        "cover.test", 50, trigger="proxy_managed"
     )
 
     coord.manager.mark_user_command.assert_called_once_with(
-        "cover.test", reason="proxy_slider"
+        "cover.test", reason="proxy_managed"
     )
     coord._cmd_svc.apply_position.assert_awaited_once_with(
-        "cover.test", 50, "proxy_slider", ctx
+        "cover.test", 50, "proxy_managed", ctx
     )
     assert outcome == ("sent", "set_cover_position")
 
@@ -217,14 +217,14 @@ async def test_default_skipped_when_force_override_active() -> None:
     coord, _ctx = _make_coord([], winner_name="force_override", winner_priority=100)
 
     outcome = await coord.async_apply_user_position(
-        "cover.test", 50, trigger="proxy_slider"
+        "cover.test", 50, trigger="proxy_managed"
     )
 
     assert outcome == ("skipped", "preempted_by_force_override")
     coord._cmd_svc.apply_position.assert_not_awaited()
     coord.manager.mark_user_command.assert_not_called()
     coord._cmd_svc.record_preempted_skip.assert_called_once_with(
-        "cover.test", 50, trigger="proxy_slider", winner_name="force_override"
+        "cover.test", 50, trigger="proxy_managed", winner_name="force_override"
     )
 
 
@@ -250,13 +250,13 @@ async def test_default_not_blocked_by_cloud_suppression() -> None:
     """cloud_suppression (60) does NOT preempt — command dispatched + manual override engaged."""
     coord, ctx = _make_coord([], winner_name="cloud_suppression", winner_priority=60)
 
-    await coord.async_apply_user_position("cover.test", 50, trigger="proxy_slider")
+    await coord.async_apply_user_position("cover.test", 50, trigger="proxy_managed")
 
     coord.manager.mark_user_command.assert_called_once_with(
-        "cover.test", reason="proxy_slider"
+        "cover.test", reason="proxy_managed"
     )
     coord._cmd_svc.apply_position.assert_awaited_once_with(
-        "cover.test", 50, "proxy_slider", ctx
+        "cover.test", 50, "proxy_managed", ctx
     )
 
 
@@ -265,13 +265,13 @@ async def test_default_not_blocked_by_solar() -> None:
     """Solar (40) does NOT preempt — command dispatched + manual override engaged."""
     coord, ctx = _make_coord([], winner_name="solar", winner_priority=40)
 
-    await coord.async_apply_user_position("cover.test", 50, trigger="proxy_slider")
+    await coord.async_apply_user_position("cover.test", 50, trigger="proxy_managed")
 
     coord.manager.mark_user_command.assert_called_once_with(
-        "cover.test", reason="proxy_slider"
+        "cover.test", reason="proxy_managed"
     )
     coord._cmd_svc.apply_position.assert_awaited_once_with(
-        "cover.test", 50, "proxy_slider", ctx
+        "cover.test", 50, "proxy_managed", ctx
     )
 
 
@@ -315,7 +315,7 @@ async def test_snapshot_passed_to_pipeline_has_manual_override_false() -> None:
     coord, _ctx = _make_coord([], winner_name="solar", winner_priority=40)
     coord.manager.binary_cover_manual = True  # stale flag set
 
-    await coord.async_apply_user_position("cover.test", 50, trigger="proxy_slider")
+    await coord.async_apply_user_position("cover.test", 50, trigger="proxy_managed")
 
     coord._build_pipeline_snapshot.assert_called_once()
     _, kwargs = coord._build_pipeline_snapshot.call_args
@@ -327,10 +327,10 @@ async def test_preempted_skip_recorded_in_last_skipped_action() -> None:
     """When preempted, record_preempted_skip is called with the winner name."""
     coord, _ctx = _make_coord([], winner_name="force_override", winner_priority=100)
 
-    await coord.async_apply_user_position("cover.test", 42, trigger="proxy_slider")
+    await coord.async_apply_user_position("cover.test", 42, trigger="proxy_managed")
 
     coord._cmd_svc.record_preempted_skip.assert_called_once_with(
-        "cover.test", 42, trigger="proxy_slider", winner_name="force_override"
+        "cover.test", 42, trigger="proxy_managed", winner_name="force_override"
     )
 
 

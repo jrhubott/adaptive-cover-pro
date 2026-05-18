@@ -1,7 +1,7 @@
 """Proxy cover preemption + manual-override engagement (integration).
 
 Covers the contract added to ``Coordinator.async_apply_user_position`` when
-the proxy slider is moved:
+the proxy managed cover is moved:
 
 - A higher-priority pipeline winner (force_override, weather) silently
   drops the move and records into ``last_skipped_action``.
@@ -69,7 +69,7 @@ async def _setup_proxy(hass, *, source: str = "cover.living_room"):
     return entry, coordinator, proxy_eid
 
 
-async def test_proxy_slider_blocked_when_force_override_active(hass) -> None:
+async def test_proxy_managed_blocked_when_force_override_active(hass) -> None:
     """force_override (priority 100) wins → no cover command, no manual override."""
     _, coord, proxy_eid = await _setup_proxy(hass)
 
@@ -108,8 +108,8 @@ async def test_proxy_slider_blocked_when_force_override_active(hass) -> None:
     assert coord._cmd_svc.last_skipped_action.get("winner") == "force_override"
 
 
-async def test_proxy_slider_engages_manual_override_on_success(hass) -> None:
-    """A successful proxy slider move marks the source cover as manually overridden."""
+async def test_proxy_managed_engages_manual_override_on_success(hass) -> None:
+    """A successful proxy managed cover move marks the source cover as manually overridden."""
     _, coord, proxy_eid = await _setup_proxy(hass)
 
     # Pipeline winner: solar (priority 40 < ManualOverride priority 80).

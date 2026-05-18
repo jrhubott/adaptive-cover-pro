@@ -26,7 +26,7 @@
         "data_description": {
           "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
           "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown.",
-          "enable_proxy_cover": "Expose a proxy cover entity per physical cover. Use this on dashboards instead of the physical cover so the slider respects min-mode floors. Default: off."
+          "enable_proxy_cover": "Expose a proxy cover entity per physical cover. Use this on dashboards instead of the physical cover so manual commands respect min-mode floors. Default: off."
         }
       },
       "geometry": {
@@ -552,7 +552,7 @@
         "data_description": {
           "group": "Select the cover entities to control via this integration instance. You can select multiple covers to control them as a group (all will receive the same position commands). Only select covers that serve this particular window - create separate integration instances for different windows.",
           "linked_device_id": "Select a physical device to merge this integration's entities into. The integration's sensors, switches, and buttons will appear directly under that device in Home Assistant. Select 'None (standalone device)' to revert to a separate virtual Adaptive Cover device. Only devices that own the selected cover entities are shown.",
-          "enable_proxy_cover": "Expose a proxy cover entity per physical cover. Use this on dashboards instead of the physical cover so the slider respects min-mode floors. Default: off."
+          "enable_proxy_cover": "Expose a proxy cover entity per physical cover. Use this on dashboards instead of the physical cover so manual commands respect min-mode floors. Default: off."
         }
       },
       "geometry": {

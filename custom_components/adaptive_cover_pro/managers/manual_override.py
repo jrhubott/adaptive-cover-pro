@@ -507,7 +507,7 @@ class AdaptiveCoverManager:
         Args:
             entity_id: Cover entity ID to mark as manually overridden.
             reason: Short label recorded into the diagnostic event buffer
-                (e.g. ``"proxy_slider"``, ``"set_position"``).
+                (e.g. ``"proxy_managed"``, ``"set_position"``).
 
         """
         self.manual_control[entity_id] = True

@@ -89,12 +89,12 @@ async def test_set_cover_position_routes_through_async_apply_user_position(
         blocking=True,
     )
     coord.async_apply_user_position.assert_awaited_once_with(
-        "cover.living_room", 42, trigger="proxy_slider"
+        "cover.living_room", 42, trigger="proxy_managed"
     )
 
 
-async def test_set_cover_position_uses_proxy_slider_trigger(hass) -> None:
-    """The trigger label for a slider command is ``proxy_slider``."""
+async def test_set_cover_position_uses_proxy_managed_trigger(hass) -> None:
+    """The trigger label for a managed cover command is ``proxy_managed``."""
     entry, coord, proxy_eid = await _setup_proxy(hass, entry_id="proxy_cmd_trig")
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
 
@@ -105,7 +105,7 @@ async def test_set_cover_position_uses_proxy_slider_trigger(hass) -> None:
         blocking=True,
     )
     args, kwargs = coord.async_apply_user_position.await_args
-    assert kwargs.get("trigger") == "proxy_slider"
+    assert kwargs.get("trigger") == "proxy_managed"
 
 
 async def test_open_cover_calls_apply_user_position_with_100(hass) -> None:

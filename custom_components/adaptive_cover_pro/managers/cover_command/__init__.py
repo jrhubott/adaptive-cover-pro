@@ -1272,8 +1272,8 @@ class CoverCommandService:
 
         Surfaces a "preempted_by_handler" skip in ``last_skipped_action`` so
         the existing Skipped Action diagnostic sensor labels the reason
-        (e.g. "Proxy slider to 30 preempted by weather override"). Used by
-        :meth:`Coordinator.async_apply_user_position` when the proxy slider
+        (e.g. "Proxy managed to 30 preempted by weather override"). Used by
+        :meth:`Coordinator.async_apply_user_position` when the proxy cover
         or ``set_position`` service is overruled by force_override / weather
         / a custom-position slot with priority > 80.
         """

@@ -26,7 +26,7 @@
         "data_description": {
           "group": "Wählen Sie die Beschattungsentitäten, die diese Integrationsinstanz steuern soll. Sie können mehrere Beschattungen auswählen, um sie als Gruppe zu steuern (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Beschattungen aus, die diesem bestimmten Fenster dienen – erstellen Sie separate Integrationsinstanzen für verschiedene Fenster.",
           "linked_device_id": "Wählen Sie ein physisches Gerät, in das die Entitäten dieser Integration zusammengeführt werden. Die Sensoren, Schalter und Schaltflächen der Integration werden direkt unter diesem Gerät in Home Assistant angezeigt. Wählen Sie „Keine (eigenständiges Gerät)“, um zu einem separaten virtuellen Adaptive Cover-Gerät zurückzukehren. Es werden nur Geräte angezeigt, die die ausgewählten Beschattungsentitäten besitzen.",
-          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit der Schieberegler Mindeststellungen respektiert. Standard: aus."
+          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit manuelle Befehle die Mindestpositionen respektieren. Standard: aus."
         }
       },
       "geometry": {
@@ -552,7 +552,7 @@
         "data_description": {
           "group": "Wählen Sie die Cover-Entitäten aus, die von dieser Integrationsinstanz gesteuert werden sollen. Sie können mehrere Abdeckungen auswählen, um sie als Gruppe zu steuern (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Abdeckungen aus, die diesem bestimmten Fenster dienen - erstellen Sie separate Integrationsinstanzen für verschiedene Fenster.",
           "linked_device_id": "Wählen Sie ein physisches Gerät aus, um die Entitäten dieser Integration zusammenzuführen. Die Sensoren, Schalter und Schaltflächen der Integration werden direkt unter diesem Gerät in Home Assistant angezeigt. Wählen Sie „Keine (eigenständiges Gerät)“, um auf ein separates virtuelles Adaptive Cover-Gerät zurückzukehren. Nur Geräte, die die ausgewählten Cover-Entitäten besitzen, werden angezeigt.",
-          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit der Schieberegler Mindeststellungen respektiert. Standard: aus."
+          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit manuelle Befehle die Mindestpositionen respektieren. Standard: aus."
         }
       },
       "geometry": {

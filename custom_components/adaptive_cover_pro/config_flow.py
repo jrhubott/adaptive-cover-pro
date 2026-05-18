@@ -1613,7 +1613,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if not _any_min_mode:
             lines.append(
                 "⚠️ Proxy cover is enabled but no custom-position slot has "
-                "Use as minimum on — the slider will not clamp."
+                "Use as minimum on — the managed cover will not clamp."
             )
 
     # =========================================================================

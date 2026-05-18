@@ -101,7 +101,7 @@ async def test_proxy_unique_id_format(hass) -> None:
 
 
 async def test_proxy_name_single_cover(hass) -> None:
-    """Single-cover proxy name is ``f'{title} Slider'``."""
+    """Single-cover proxy name is ``f'{title} Managed'``."""
     sources = ["cover.living_room"]
     entry = await _setup_with_proxy(
         hass,
@@ -113,7 +113,7 @@ async def test_proxy_name_single_cover(hass) -> None:
     proxies = _proxy_states(hass, entry.entry_id)
     assert len(proxies) == 1
     # Friendly name is on the state object
-    assert proxies[0].attributes.get("friendly_name") == "Living Blinds Slider"
+    assert proxies[0].attributes.get("friendly_name") == "Living Blinds Managed"
 
 
 async def test_proxy_name_multiple_covers_includes_friendly_name(hass) -> None:
@@ -131,7 +131,7 @@ async def test_proxy_name_multiple_covers_includes_friendly_name(hass) -> None:
     assert len(proxies) == 2
     names = {p.attributes.get("friendly_name") for p in proxies}
     # Each name starts with the base title and includes the source label
-    assert all(n.startswith("Whole House Slider (") for n in names), names
+    assert all(n.startswith("Whole House Managed (") for n in names), names
     # Both source segments are present
     joined = " | ".join(names)
     assert "living_room" in joined.replace(" ", "_") or "Living" in joined

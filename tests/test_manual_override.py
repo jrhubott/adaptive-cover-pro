@@ -434,7 +434,7 @@ def test_mark_user_command_sets_flag_and_timestamp():
     )
     manager.add_covers(["cover.test"])
 
-    manager.mark_user_command("cover.test", reason="proxy_slider")
+    manager.mark_user_command("cover.test", reason="proxy_managed")
 
     assert manager.is_cover_manual("cover.test")
     assert "cover.test" in manager.manual_control_time
@@ -478,7 +478,7 @@ def test_mark_user_command_works_for_entity_not_in_covers():
     )
     # Intentionally not calling add_covers(["cover.test"])
 
-    manager.mark_user_command("cover.test", reason="proxy_slider")
+    manager.mark_user_command("cover.test", reason="proxy_managed")
 
     assert manager.is_cover_manual("cover.test")
 

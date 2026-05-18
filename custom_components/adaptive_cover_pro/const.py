@@ -108,6 +108,10 @@ CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 CONF_ENTITIES = "group"  # list of HA cover entity_ids controlled
 CONF_ENABLE_PROXY_COVER = "enable_proxy_cover"  # opt-in proxy cover platform
 DEFAULT_ENABLE_PROXY_COVER = False
+TRIGGER_PROXY_POSITION = "proxy_managed"
+TRIGGER_PROXY_OPEN = "proxy_open"
+TRIGGER_PROXY_CLOSE = "proxy_close"
+TRIGGER_PROXY_TILT = "proxy_tilt"
 
 
 # =============================================================================

@@ -27,6 +27,10 @@ from .const import (
     CONF_ENTITIES,
     DEFAULT_ENABLE_PROXY_COVER,
     DOMAIN,
+    TRIGGER_PROXY_CLOSE,
+    TRIGGER_PROXY_OPEN,
+    TRIGGER_PROXY_POSITION,
+    TRIGGER_PROXY_TILT,
 )
 from .cover_types.base import (
     CAP_HAS_SET_TILT_POSITION,
@@ -114,9 +118,9 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         title = config_entry.title or config_entry.data.get("name") or "Adaptive"
         if multi:
             label = _source_friendly_label(hass, source_entity_id)
-            self._attr_name = f"{title} Slider ({label})"
+            self._attr_name = f"{title} Managed ({label})"
         else:
-            self._attr_name = f"{title} Slider"
+            self._attr_name = f"{title} Managed"
 
     # ---- availability + mirroring -------------------------------------- #
 
@@ -206,7 +210,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
             return
         position = int(kwargs["position"])
         await self.coordinator.async_apply_user_position(
-            self._source_entity_id, position, trigger="proxy_slider"
+            self._source_entity_id, position, trigger=TRIGGER_PROXY_POSITION
         )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
@@ -214,7 +218,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         if not self._source_available():
             return
         await self.coordinator.async_apply_user_position(
-            self._source_entity_id, 100, trigger="proxy_open"
+            self._source_entity_id, 100, trigger=TRIGGER_PROXY_OPEN
         )
 
     async def async_close_cover(self, **kwargs: Any) -> None:
@@ -222,7 +226,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         if not self._source_available():
             return
         await self.coordinator.async_apply_user_position(
-            self._source_entity_id, 0, trigger="proxy_close"
+            self._source_entity_id, 0, trigger=TRIGGER_PROXY_CLOSE
         )
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
@@ -233,7 +237,7 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
             return
         position = int(kwargs["tilt_position"])
         await self.coordinator.async_apply_user_position(
-            self._source_entity_id, position, trigger="proxy_tilt"
+            self._source_entity_id, position, trigger=TRIGGER_PROXY_TILT
         )
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
