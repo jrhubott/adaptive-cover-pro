@@ -305,8 +305,48 @@ class TestPostPipelineResolveHandlerTilt:
         handler_names = [s.handler for s in out.decision_trace]
         assert "venetian_handler_tilt" in handler_names
 
-    def test_suppression_clears_handler_tilt_for_non_solar(self):
-        """Non-SOLAR: suppression fires first → handler tilt is cleared to None."""
+    def test_handler_tilt_honored_for_custom_position(self):
+        """Handler-supplied tilt on CUSTOM_POSITION must survive (issue #369 regression)."""
+        policy = _make_policy()
+        for handler_tilt in (42, 0):
+            result = PipelineResult(
+                position=50,
+                control_method=ControlMethod.CUSTOM_POSITION,
+                reason="test",
+                tilt=handler_tilt,
+            )
+            out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+            assert out.tilt == handler_tilt
+
+    def test_handler_tilt_honored_for_default_path(self):
+        """Handler-supplied tilt on DEFAULT (default_tilt / sunset_tilt) must survive."""
+        policy = _make_policy()
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.DEFAULT,
+            reason="test",
+            tilt=30,
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        assert out.tilt == 30
+
+    def test_handler_tilt_honored_when_direct_sun_invalid(self):
+        """Explicit handler tilt bypasses the direct_sun_valid gate."""
+        policy = _make_policy()
+        cover = _make_cover(direct_sun_valid=False)
+        kwargs = _solar_kwargs()
+        kwargs["cover"] = cover
+        result = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="test",
+            tilt=50,
+        )
+        out = policy.post_pipeline_resolve(result, **kwargs)
+        assert out.tilt == 50
+
+    def test_handler_tilt_survives_non_solar_suppression(self):
+        """Non-SOLAR with handler-supplied tilt must honor it (was the bug in #369)."""
         policy = _make_policy()
         result = PipelineResult(
             position=50,
@@ -315,7 +355,7 @@ class TestPostPipelineResolveHandlerTilt:
             tilt=35,
         )
         out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
-        assert out.tilt is None
+        assert out.tilt == 35
 
     def test_engine_tilt_used_when_result_tilt_is_none_on_solar(self):
         """SOLAR + direct_sun_valid + result.tilt=None → engine computes tilt (not None)."""

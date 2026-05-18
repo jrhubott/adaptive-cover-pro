@@ -220,14 +220,18 @@ class VenetianPolicy(CoverTypePolicy):
             vert_config=config_service.get_vertical_data(options),
         )
 
-    def _tilt_suppressed(self, result: PipelineResult, cover) -> bool:
-        """Return True when tilt synthesis must be skipped this cycle.
+    def _engine_tilt_suppressed(self, result: PipelineResult, cover) -> bool:
+        """Return True when the solar engine should NOT compute a tilt.
 
-        Tilt is meaningful only when (a) the pipeline emitted ControlMethod.SOLAR
-        AND (b) the cover engine confirms direct sun is hitting the window. The
-        climate handler can emit SOLAR on its low-light branch even when the sun
-        is below the horizon (issue #33), so direct_sun_valid is the authoritative
-        signal.
+        Applies only to the engine-fallback path; handler-supplied tilts
+        (``result.tilt is not None`` on entry to ``post_pipeline_resolve``)
+        bypass this gate entirely.
+
+        Engine tilt is meaningful only when (a) the pipeline emitted
+        ControlMethod.SOLAR AND (b) the cover engine confirms direct sun is
+        hitting the window. The climate handler can emit SOLAR on its low-light
+        branch even when the sun is below the horizon (issue #33), so
+        direct_sun_valid is the authoritative signal.
         """
         from ..enums import ControlMethod
 
@@ -259,11 +263,7 @@ class VenetianPolicy(CoverTypePolicy):
         if result is None:
             return result
 
-        if self._tilt_suppressed(result, cover):
-            self._clear_last_tilt()
-            return replace(result, tilt=None)
-
-        # If a handler already set an explicit tilt, honor it — skip the engine.
+        # Handler-supplied tilt is explicit user intent — honor it unconditionally.
         if result.tilt is not None:
             handler_tilt = result.tilt
             position = result.position
@@ -295,6 +295,11 @@ class VenetianPolicy(CoverTypePolicy):
             return replace(
                 result, position=position, tilt=handler_tilt, decision_trace=trace
             )
+
+        # No handler tilt: engine fallback runs only when SOLAR + direct sun.
+        if self._engine_tilt_suppressed(result, cover):
+            self._clear_last_tilt()
+            return replace(result, tilt=None)
 
         venetian_calc = VenetianCoverCalculation(
             config=config,

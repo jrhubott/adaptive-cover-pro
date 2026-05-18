@@ -151,12 +151,12 @@ class TestCustomPositionTiltEndToEnd:
         result = registry.evaluate(snap)
         assert result.tilt == 0
 
-    def test_custom_handler_tilt_suppressed_by_venetian_for_non_solar(self):
-        """VenetianPolicy suppresses handler tilt for CUSTOM_POSITION control method.
+    def test_custom_handler_tilt_honored_by_venetian_for_non_solar(self):
+        """VenetianPolicy honors handler tilt for CUSTOM_POSITION (issue #369).
 
-        The suppression check (non-SOLAR → clear tilt) runs before the
-        handler-tilt honor path, so the resolved tilt is None even when the
-        pipeline result carries tilt=40.
+        The handler-tilt honor path runs before engine suppression, so a
+        custom-position handler that supplies tilt=40 survives end-to-end even
+        when ControlMethod is non-SOLAR.
         """
         from custom_components.adaptive_cover_pro.cover_types.venetian import (
             VenetianPolicy,
@@ -169,12 +169,11 @@ class TestCustomPositionTiltEndToEnd:
         )
         pipeline_result = registry.evaluate(snap)
         assert pipeline_result.control_method == ControlMethod.CUSTOM_POSITION
-        assert pipeline_result.tilt == 40  # raw pipeline carries the handler tilt
+        assert pipeline_result.tilt == 40
 
         policy = VenetianPolicy()
         resolved = policy.post_pipeline_resolve(pipeline_result, **_solar_kwargs())
-        # CUSTOM_POSITION is not SOLAR — suppression clears tilt
-        assert resolved.tilt is None
+        assert resolved.tilt == 40
 
     def test_solar_handler_tilt_honored_by_venetian(self):
         """A PipelineResult with SOLAR control_method + tilt → venetian honors it.
@@ -197,8 +196,8 @@ class TestCustomPositionTiltEndToEnd:
         resolved = policy.post_pipeline_resolve(result, **_solar_kwargs())
         assert resolved.tilt == 42
 
-    def test_default_handler_tilt_suppressed_by_venetian(self):
-        """DEFAULT control method → venetian suppresses, tilt becomes None."""
+    def test_default_handler_tilt_honored_by_venetian(self):
+        """DEFAULT control method with handler tilt → venetian honors it (issue #369)."""
         from custom_components.adaptive_cover_pro.cover_types.venetian import (
             VenetianPolicy,
         )
@@ -211,7 +210,7 @@ class TestCustomPositionTiltEndToEnd:
         )
         policy = VenetianPolicy()
         resolved = policy.post_pipeline_resolve(result, **_solar_kwargs())
-        assert resolved.tilt is None
+        assert resolved.tilt == 70
 
 
 # ---------------------------------------------------------------------------
