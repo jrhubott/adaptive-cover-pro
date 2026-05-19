@@ -111,8 +111,7 @@ class SecondaryAxisCheck:
                     "new_position": new_value,
                     "effective_threshold": effective_threshold,
                     "reason": (
-                        f"{self.label} delta {delta:.1f}% >= threshold "
-                        f"{effective_threshold}% (no recent position cmd)"
+                        f"{self.label} delta {delta:.1f}% >= threshold {effective_threshold}%"
                     ),
                 },
             )

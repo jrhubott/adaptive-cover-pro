@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_TILT_SUPPRESSION_SECONDS,
 )
 from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
@@ -125,13 +126,16 @@ class TestSuppressionDeltaCap:
         seq.stamp_position_command("cover.x")
         assert seq.is_in_suppression_with_cap("cover.x", delta=10.0) is True
 
-    def test_suppressed_large_delta_returns_false(self):
+    def test_suppressed_large_delta_past_grace_returns_false(self):
         from custom_components.adaptive_cover_pro.const import (
             VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
         )
 
         _, seq = _build_sequencer()
         seq.stamp_position_command("cover.x")
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
         big = VENETIAN_BACKROTATE_MAX_DELTA_PERCENT + 1
         assert seq.is_in_suppression_with_cap("cover.x", delta=float(big)) is False
 
@@ -160,6 +164,46 @@ class TestSuppressionDeltaCap:
             seconds=VENETIAN_TILT_SUPPRESSION_SECONDS + 1
         )
         assert seq.is_in_suppression_with_cap("cover.x", delta=1.0) is False
+
+    def test_suppressed_large_delta_with_settled_state_inside_grace_returns_true(
+        self,
+    ) -> None:
+        """Large delta inside the post-settle grace window should suppress.
+
+        Regression for issue #33: real KNX/Shelly actuators publish tilt-walk
+        bursts AFTER ``cover.state`` has already settled to "open". Without a
+        grace tail, the cap rejects deltas >30 even microseconds after the
+        carriage settles, latching false manual override.
+        """
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq.stamp_position_command("cover.x")
+        assert seq.is_in_suppression_with_cap("cover.x", delta=100.0) is True
+
+    def test_suppressed_large_delta_with_settled_state_past_grace_returns_false(
+        self,
+    ) -> None:
+        """Once the post-settle grace tail expires, the cap reasserts."""
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq.stamp_position_command("cover.x")
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        assert seq.is_in_suppression_with_cap("cover.x", delta=100.0) is False
+
+    def test_suppressed_large_delta_while_cover_moving_returns_true(self) -> None:
+        """In-motion bypass: any delta is motor drift while cover.state is moving."""
+        _, seq = _build_sequencer(get_state=lambda _eid: "closing")
+        seq.stamp_position_command("cover.x")
+        assert seq.is_in_suppression_with_cap("cover.x", delta=100.0) is True
+
+    def test_suppressed_small_delta_settled_state_past_grace_returns_true(self) -> None:
+        """Cap path still suppresses sub-cap deltas after grace expires."""
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq.stamp_position_command("cover.x")
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        assert seq.is_in_suppression_with_cap("cover.x", delta=10.0) is True
 
 
 @pytest.mark.asyncio

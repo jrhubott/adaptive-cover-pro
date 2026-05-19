@@ -62,7 +62,7 @@ def _tilt_check(*, expected: int = 70, suppressed: bool) -> SecondaryAxisCheck:
 
 
 def _make_sequencer_suppression(
-    *, entity_id: str, state: str
+    *, entity_id: str, state: str, stamp_age_seconds: float = 0.0
 ) -> Callable[[str, float], bool]:
     """Build a real ``DualAxisSequencer`` and return its bound delta-cap gate.
 
@@ -71,6 +71,10 @@ def _make_sequencer_suppression(
     callback together so the cap behaves exactly as ``VenetianPolicy.is_in_tilt_suppression``
     does in production. ``state`` should be ``"opening"``/``"closing"`` to
     model an in-transit cycle, or ``"stopped"`` to model a settled cycle.
+
+    ``stamp_age_seconds`` backdates the suppression stamp so callers can land
+    outside the post-settle cap-grace tail while still inside the overall
+    suppression window.
     """
     hass = MagicMock()
     seq = DualAxisSequencer(
@@ -84,6 +88,8 @@ def _make_sequencer_suppression(
         get_state=lambda _eid: state,
     )
     seq.stamp_position_command(entity_id)
+    if stamp_age_seconds > 0:
+        seq._suppression_at[entity_id] -= dt.timedelta(seconds=stamp_age_seconds)
     return seq.is_in_suppression_with_cap
 
 
@@ -304,18 +310,50 @@ def test_tilt_drift_during_in_transit_open_is_ignored_regardless_of_delta() -> N
     assert not mgr.is_cover_manual(entity_id)
 
 
-def test_tilt_drift_after_settle_with_large_delta_still_trips_override() -> None:
-    """The in-transit cap bypass must NOT swallow a genuine post-settle user move.
+def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
+    """Within the 5s grace tail after settle, even a large delta is motor drift.
 
-    Once ``cover.state`` leaves the moving set, the geometry-bounded cap
-    reasserts: a delta > 30% with state=``stopped`` is a user grabbing the
-    slats, not motor drift, and must still trip manual override even inside
-    the 90s suppression window.
+    KNX/Shelly actuators publish their tilt-walk burst AFTER ``cover.state``
+    has already settled to ``open``/``closed``. The post-settle cap grace
+    keeps suppression on for this brief tail so the burst isn't misread as a
+    user grab (issue #33).
+    """
+    entity_id = "cover.venetian_post_settle_grace"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    suppression = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=50, tilt=0),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        secondary_axis_check=SecondaryAxisCheck(
+            expected=80,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=suppression,
+        ),
+    )
+
+    assert not mgr.is_cover_manual(entity_id)
+
+
+def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None:
+    """Once the 5s grace tail elapses, the geometry-bounded cap reasserts.
+
+    A delta > 30% with state=``stopped`` and stamp older than the grace tail
+    is a user grabbing the slats, not motor drift, and must still trip
+    manual override even inside the 90s suppression window.
     """
     entity_id = "cover.venetian_post_settle_user_move"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
-    suppression = _make_sequencer_suppression(entity_id=entity_id, state="stopped")
+    suppression = _make_sequencer_suppression(
+        entity_id=entity_id, state="stopped", stamp_age_seconds=10.0
+    )
 
     mgr.handle_state_change(
         states_data=_make_event(entity_id, position=50, tilt=0),

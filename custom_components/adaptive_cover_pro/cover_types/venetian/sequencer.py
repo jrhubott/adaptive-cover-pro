@@ -40,6 +40,7 @@ from ...const import (
     VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES,
     VENETIAN_POSITION_SETTLE_POLL_SECONDS,
     VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
+    VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_POST_TILT_REBASE_DELAY_SECONDS,
     VENETIAN_REBASE_MAX_DRIFT_PERCENT,
     VENETIAN_TILT_SUPPRESSION_SECONDS,
@@ -186,12 +187,23 @@ class DualAxisSequencer:
         carriage motion, so an arbitrarily large delta is still motor drift
         until ``cover.state`` settles. The cap reasserts once state leaves the
         moving set.
+
+        A post-settle grace tail (``VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS``)
+        also bypasses the cap: KNX/Shelly actuators publish their tilt-walk
+        burst after ``cover.state`` already reads ``open``/``closed``, so the
+        cap would reject legitimate motor drift as a user move without this
+        window (issue #33).
         """
         if not self.is_in_suppression(entity_id):
             return False
         if self._get_state is not None:
             state = self._get_state(entity_id)
             if state in _COVER_MOVING_STATES:
+                return True
+        stamp = self._suppression_at.get(entity_id)
+        if stamp is not None:
+            elapsed = (dt.datetime.now(dt.UTC) - stamp).total_seconds()
+            if elapsed < VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS:
                 return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
 

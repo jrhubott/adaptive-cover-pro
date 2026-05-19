@@ -506,6 +506,12 @@ VENETIAN_REBASE_MAX_DRIFT_PERCENT = 15
 # so the manual-override path runs even inside the suppression window.
 VENETIAN_BACKROTATE_MAX_DELTA_PERCENT = 30
 
+# Grace tail after stamp_position_command: even when cover.state has already
+# settled to "open"/"closed", bypass the backrotate cap for this many seconds.
+# Real actuators publish their tilt-walk burst AFTER the carriage reports open,
+# so the cap must stay suspended until the HA state machine has fully drained.
+VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS = 5.0
+
 # After set_cover_tilt_position returns, real motors keep back-driving the
 # vertical axis briefly. Wait this many seconds before reading current_position
 # for the post-tilt rebase so the rebase captures the actual settled position
