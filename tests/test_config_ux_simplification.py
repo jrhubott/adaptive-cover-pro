@@ -15,14 +15,23 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
+import pytest
+import voluptuous as vol
+
 from custom_components.adaptive_cover_pro.config_flow import (
     ConfigFlowHandler,
     LIGHT_CLOUD_SCHEMA,
     SYNC_CATEGORIES,
     TEMPERATURE_CLIMATE_SCHEMA,
+    WEATHER_OVERRIDE_SCHEMA,
     _build_config_summary,
+    _build_custom_position_schema_dict,
+    _CUSTOM_POSITION_OPTIONAL_KEYS,
     _extract_shared_options,
+    _LIGHT_CLOUD_OPTIONAL_KEYS,
     _SYNC_UI_CATEGORIES,
+    _TEMPERATURE_CLIMATE_OPTIONAL_KEYS,
+    _WEATHER_OVERRIDE_OPTIONAL_KEYS,
 )
 from custom_components.adaptive_cover_pro.const import (
     CONF_AZIMUTH,
@@ -562,4 +571,63 @@ class TestSelectorDomains:
         """outside_temp (outsidetemp_entity) accepts numeric domains."""
         assert (
             _domain_for(TEMPERATURE_CLIMATE_SCHEMA, "outside_temp") == _NUMERIC_EXPECTED
+        )
+
+
+# ---------------------------------------------------------------------------
+# Schema-walking guard: _*_OPTIONAL_KEYS must exactly match the vol.Optional
+# keys with default=vol.UNDEFINED in their paired schema. Catches the #323 /
+# #377 bug class (key added to schema with no default but not added to the
+# constant — value silently survives a user clear).
+# ---------------------------------------------------------------------------
+
+
+_SCHEMA_OPTIONAL_KEY_PAIRS = [
+    ("WEATHER_OVERRIDE", WEATHER_OVERRIDE_SCHEMA, _WEATHER_OVERRIDE_OPTIONAL_KEYS),
+    ("LIGHT_CLOUD", LIGHT_CLOUD_SCHEMA, _LIGHT_CLOUD_OPTIONAL_KEYS),
+    ("TEMPERATURE_CLIMATE", TEMPERATURE_CLIMATE_SCHEMA, _TEMPERATURE_CLIMATE_OPTIONAL_KEYS),
+    # CUSTOM_POSITION's constant covers the venetian-augmented variant (with
+    # tilt fields), not the bare module-level schema — build that variant for
+    # the guard.
+    (
+        "CUSTOM_POSITION",
+        vol.Schema(_build_custom_position_schema_dict(sensor_type="cover_venetian")),
+        _CUSTOM_POSITION_OPTIONAL_KEYS,
+    ),
+]
+
+
+def _schema_undefined_optional_keys(schema: vol.Schema) -> set[str]:
+    """Return string keys of every vol.Optional marker whose default is vol.UNDEFINED.
+
+    Covers both vol.Optional(KEY, default=vol.UNDEFINED) and bare
+    vol.Optional(KEY) — the latter's default is also vol.UNDEFINED.
+    """
+    return {
+        str(key)
+        for key in schema.schema
+        if isinstance(key, vol.Optional) and key.default is vol.UNDEFINED
+    }
+
+
+class TestOptionalKeyConstants:
+    """_*_OPTIONAL_KEYS must exactly equal the set of vol.Optional keys whose
+    default is vol.UNDEFINED in the paired schema.
+    """
+
+    @pytest.mark.parametrize(
+        "label,schema,constant", _SCHEMA_OPTIONAL_KEY_PAIRS
+    )
+    def test_optional_keys_match_schema(self, label, schema, constant):
+        from_schema = _schema_undefined_optional_keys(schema)
+        from_constant = set(constant)
+        missing = from_schema - from_constant
+        extra = from_constant - from_schema
+        assert not missing, (
+            f"{label}: schema has UNDEFINED-default keys missing from constant: "
+            f"{sorted(missing)}"
+        )
+        assert not extra, (
+            f"{label}: constant has keys that are not UNDEFINED in schema "
+            f"(stale): {sorted(extra)}"
         )

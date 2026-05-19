@@ -671,6 +671,18 @@ WEATHER_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
+# Keys in WEATHER_OVERRIDE_SCHEMA with default=vol.UNDEFINED. Voluptuous omits
+# them from user_input when cleared, so both flow handlers must call
+# optional_entities() with this list before dict.update() -- otherwise the prior
+# value survives a clear (issue #323).
+_WEATHER_OVERRIDE_OPTIONAL_KEYS: list[str] = [
+    CONF_WEATHER_WIND_SPEED_SENSOR,
+    CONF_WEATHER_WIND_DIRECTION_SENSOR,
+    CONF_WEATHER_RAIN_SENSOR,
+    CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_WINDY_SENSOR,
+]
+
 # --- Light & Cloud (works without climate mode) ---
 LIGHT_CLOUD_SCHEMA = vol.Schema(
     {
@@ -747,6 +759,19 @@ LIGHT_CLOUD_SCHEMA = vol.Schema(
     }
 )
 
+# Keys in LIGHT_CLOUD_SCHEMA with default=vol.UNDEFINED (entity fields use
+# explicit UNDEFINED; CONF_CLOUDY_POSITION uses bare vol.Optional which also
+# produces default=vol.UNDEFINED). Both flow handlers must call
+# optional_entities() with this list before dict.update() -- see #323 and #392.
+_LIGHT_CLOUD_OPTIONAL_KEYS: list[str] = [
+    CONF_CLOUDY_POSITION,
+    CONF_WEATHER_ENTITY,
+    CONF_IS_SUNNY_SENSOR,
+    CONF_LUX_ENTITY,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_CLOUD_COVERAGE_ENTITY,
+]
+
 # --- Temperature Climate Mode ---
 TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
     {
@@ -792,6 +817,15 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
         ): selector.BooleanSelector(),
     }
 )
+
+# Keys in TEMPERATURE_CLIMATE_SCHEMA with default=vol.UNDEFINED (CONF_TEMP_ENTITY
+# is a bare vol.Optional). Both flow handlers must call optional_entities() with
+# this list before dict.update() -- see #323.
+_TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
+    CONF_TEMP_ENTITY,
+    CONF_OUTSIDETEMP_ENTITY,
+    CONF_PRESENCE_ENTITY,
+]
 
 WEATHER_OPTIONS = vol.Schema(
     {
@@ -2520,16 +2554,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ):
         """Configure weather-based safety overrides."""
         if user_input is not None:
-            self.optional_entities(
-                [
-                    CONF_WEATHER_WIND_SPEED_SENSOR,
-                    CONF_WEATHER_WIND_DIRECTION_SENSOR,
-                    CONF_WEATHER_RAIN_SENSOR,
-                    CONF_WEATHER_IS_RAINING_SENSOR,
-                    CONF_WEATHER_IS_WINDY_SENSOR,
-                ],
-                user_input,
-            )
+            self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             return await self.async_step_light_cloud()
         return self.async_show_form(
@@ -2543,16 +2568,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
         """Configure light sensors, weather conditions, and cloud suppression."""
         if user_input is not None:
-            self.optional_entities(
-                [
-                    CONF_WEATHER_ENTITY,
-                    CONF_LUX_ENTITY,
-                    CONF_IRRADIANCE_ENTITY,
-                    CONF_CLOUD_COVERAGE_ENTITY,
-                    CONF_IS_SUNNY_SENSOR,
-                ],
-                user_input,
-            )
+            self.optional_entities(_LIGHT_CLOUD_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             return await self.async_step_temperature_climate()
         return self.async_show_form(
@@ -2568,12 +2584,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     ):
         """Configure temperature-based climate mode."""
         if user_input is not None:
-            entities = [
-                CONF_TEMP_ENTITY,
-                CONF_OUTSIDETEMP_ENTITY,
-                CONF_PRESENCE_ENTITY,
-            ]
-            self.optional_entities(entities, user_input)
+            self.optional_entities(_TEMPERATURE_CLIMATE_OPTIONAL_KEYS, user_input)
             if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
                 CONF_TEMP_ENTITY
             ):
@@ -3126,16 +3137,7 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         """Manage weather-based safety overrides."""
         if user_input is not None:
-            self.optional_entities(
-                [
-                    CONF_WEATHER_WIND_SPEED_SENSOR,
-                    CONF_WEATHER_WIND_DIRECTION_SENSOR,
-                    CONF_WEATHER_RAIN_SENSOR,
-                    CONF_WEATHER_IS_RAINING_SENSOR,
-                    CONF_WEATHER_IS_WINDY_SENSOR,
-                ],
-                user_input,
-            )
+            self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
@@ -3372,16 +3374,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
         """Manage light sensors, weather conditions, and cloud suppression."""
         if user_input is not None:
-            self.optional_entities(
-                [
-                    CONF_WEATHER_ENTITY,
-                    CONF_LUX_ENTITY,
-                    CONF_IRRADIANCE_ENTITY,
-                    CONF_CLOUD_COVERAGE_ENTITY,
-                    CONF_IS_SUNNY_SENSOR,
-                ],
-                user_input,
-            )
+            self.optional_entities(_LIGHT_CLOUD_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
@@ -3399,12 +3392,7 @@ class OptionsFlowHandler(OptionsFlow):
     ):
         """Manage temperature-based climate mode."""
         if user_input is not None:
-            entities = [
-                CONF_TEMP_ENTITY,
-                CONF_OUTSIDETEMP_ENTITY,
-                CONF_PRESENCE_ENTITY,
-            ]
-            self.optional_entities(entities, user_input)
+            self.optional_entities(_TEMPERATURE_CLIMATE_OPTIONAL_KEYS, user_input)
             if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
                 CONF_TEMP_ENTITY
             ):
