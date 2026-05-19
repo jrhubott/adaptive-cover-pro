@@ -1,5 +1,6 @@
 """Tests for motion-based automatic control feature."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
@@ -162,7 +163,7 @@ def test_is_motion_timeout_active_with_sensors():
     coordinator, _ = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
-    coordinator._motion_mgr._motion_timeout_active = True
+    coordinator._motion_mgr.set_no_motion()  # flip active flag via public path
 
     result = AdaptiveDataUpdateCoordinator.is_motion_timeout_active.fget(coordinator)
     assert result is True
@@ -170,7 +171,7 @@ def test_is_motion_timeout_active_with_sensors():
 
 @pytest.mark.asyncio
 async def test_motion_timeout_handler_sets_active_flag():
-    """Test that motion timeout handler sets the active flag."""
+    """Test that the on-expire body sets the active flag and runs the refresh."""
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
@@ -181,9 +182,9 @@ async def test_motion_timeout_handler_sets_active_flag():
     MotionManager.is_motion_detected = property(lambda self: False)
     try:
         refresh = AsyncMock()
-        await mgr._motion_timeout_handler(0.01, refresh)
+        await mgr._on_motion_timeout_expired(0, refresh)
 
-        assert mgr._motion_timeout_active is True
+        assert mgr.is_motion_timeout_active is True
         refresh.assert_called_once()
     finally:
         MotionManager.is_motion_detected = original_prop
@@ -191,7 +192,7 @@ async def test_motion_timeout_handler_sets_active_flag():
 
 @pytest.mark.asyncio
 async def test_motion_timeout_handler_cancels_if_motion_detected():
-    """Test that motion timeout handler cancels if motion detected during timeout."""
+    """Test that the on-expire body short-circuits when motion returned."""
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
@@ -202,33 +203,32 @@ async def test_motion_timeout_handler_cancels_if_motion_detected():
     MotionManager.is_motion_detected = property(lambda self: True)
     try:
         refresh = AsyncMock()
-        await mgr._motion_timeout_handler(0.01, refresh)
+        await mgr._on_motion_timeout_expired(0, refresh)
 
-        assert mgr._motion_timeout_active is False
+        assert mgr.is_motion_timeout_active is False
         refresh.assert_not_called()
     finally:
         MotionManager.is_motion_detected = original_prop
 
 
-def test_cancel_motion_timeout():
-    """Test canceling motion timeout task."""
+@pytest.mark.asyncio
+async def test_cancel_motion_timeout():
+    """Test canceling a pending motion timeout via coordinator delegate."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator, _ = _make_coordinator_with_motion_mgr()
+    coordinator, _ = _make_coordinator_with_motion_mgr(
+        sensors=["binary_sensor.motion_living_room"]
+    )
 
-    # Create a mock task on the manager
-    task = MagicMock()
-    task.done.return_value = False
-    coordinator._motion_mgr._motion_timeout_task = task
+    # Spin up a real (long) pending timer via the public API.
+    coordinator._motion_mgr.start_motion_timeout(AsyncMock())
+    assert coordinator._motion_mgr.has_pending_timeout is True
 
-    # Cancel timeout via coordinator delegate
     AdaptiveDataUpdateCoordinator._cancel_motion_timeout(coordinator)
 
-    # Verify task was canceled and cleared
-    task.cancel.assert_called_once()
-    assert coordinator._motion_mgr._motion_timeout_task is None
+    assert coordinator._motion_mgr.has_pending_timeout is False
 
 
 def test_cancel_motion_timeout_no_task():
@@ -238,32 +238,40 @@ def test_cancel_motion_timeout_no_task():
     )
 
     coordinator, _ = _make_coordinator_with_motion_mgr()
-    coordinator._motion_mgr._motion_timeout_task = None
+    # No timer running.
+    assert coordinator._motion_mgr.has_pending_timeout is False
 
-    # Should not raise an error
+    # Should not raise an error.
     AdaptiveDataUpdateCoordinator._cancel_motion_timeout(coordinator)
-    assert coordinator._motion_mgr._motion_timeout_task is None
+    assert coordinator._motion_mgr.has_pending_timeout is False
 
 
-def test_cancel_motion_timeout_task_done():
-    """Test canceling motion timeout when task is already done."""
+@pytest.mark.asyncio
+async def test_cancel_motion_timeout_task_done():
+    """A completed-but-not-cleared timer must still cancel cleanly via the delegate."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator, _ = _make_coordinator_with_motion_mgr()
+    coordinator, _ = _make_coordinator_with_motion_mgr(
+        sensors=["binary_sensor.motion_living_room"]
+    )
 
-    # Create a mock task that's done
-    task = MagicMock()
-    task.done.return_value = True
-    coordinator._motion_mgr._motion_timeout_task = task
+    # Drive a real timer to completion so the controller sees a done task.
+    original_prop = MotionManager.is_motion_detected
+    MotionManager.is_motion_detected = property(lambda self: True)
+    try:
+        coordinator._motion_mgr.start_motion_timeout(AsyncMock())
+        for _ in range(5):
+            if not coordinator._motion_mgr.has_pending_timeout:
+                break
+            await asyncio.sleep(0)
+    finally:
+        MotionManager.is_motion_detected = original_prop
 
-    # Cancel timeout
+    # Cancel must be a no-op now that the timer has settled.
     AdaptiveDataUpdateCoordinator._cancel_motion_timeout(coordinator)
-
-    # Task should not be canceled (already done), but should be cleared
-    task.cancel.assert_not_called()
-    assert coordinator._motion_mgr._motion_timeout_task is None
+    assert coordinator._motion_mgr.has_pending_timeout is False
 
 
 @pytest.mark.asyncio
@@ -276,7 +284,7 @@ async def test_async_check_motion_state_change_on():
     coordinator, _ = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
-    coordinator._motion_mgr._motion_timeout_active = True
+    coordinator._motion_mgr.set_no_motion()  # active flag on, no timer pending
     coordinator.state_change = False
     coordinator.async_refresh = AsyncMock()
 
@@ -296,7 +304,7 @@ async def test_async_check_motion_state_change_on():
     assert coordinator._motion_mgr.last_motion_time is not None
 
     # Verify motion timeout was deactivated and refresh was called
-    assert coordinator._motion_mgr._motion_timeout_active is False
+    assert coordinator._motion_mgr.is_motion_timeout_active is False
     assert coordinator.state_change is True
     coordinator.async_refresh.assert_called_once()
 
@@ -316,11 +324,10 @@ async def test_async_check_motion_state_change_on_during_timeout_pending():
     coordinator, _ = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
-    # Timeout is PENDING: task is running but has NOT expired yet
-    coordinator._motion_mgr._motion_timeout_active = False
-    pending_task = MagicMock()
-    pending_task.done.return_value = False
-    coordinator._motion_mgr._motion_timeout_task = pending_task
+    # Timer is PENDING: started but has NOT expired yet (long timeout).
+    coordinator._motion_mgr.start_motion_timeout(AsyncMock())
+    assert coordinator._motion_mgr.has_pending_timeout is True
+    assert coordinator._motion_mgr.is_motion_timeout_active is False
 
     coordinator.state_change = False
     coordinator.async_refresh = AsyncMock()
@@ -335,16 +342,15 @@ async def test_async_check_motion_state_change_on_during_timeout_pending():
         coordinator, event
     )
 
-    # Timeout task must be cancelled
-    pending_task.cancel.assert_called_once()
-    assert coordinator._motion_mgr._motion_timeout_task is None
+    # Timer must have been cancelled.
+    assert coordinator._motion_mgr.has_pending_timeout is False
 
-    # Refresh must be triggered even though _motion_timeout_active was False
+    # Refresh must be triggered even though the timer never expired.
     assert coordinator.state_change is True
     coordinator.async_refresh.assert_called_once()
 
-    # Active flag must remain False (timeout never expired)
-    assert coordinator._motion_mgr._motion_timeout_active is False
+    # Active flag must remain False (timer never expired).
+    assert coordinator._motion_mgr.is_motion_timeout_active is False
 
 
 @pytest.mark.asyncio
@@ -361,9 +367,9 @@ async def test_async_check_motion_state_change_on_no_timeout_no_refresh():
     coordinator, _ = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
-    # Neither timeout active nor pending — already in motion_detected state
-    coordinator._motion_mgr._motion_timeout_active = False
-    coordinator._motion_mgr._motion_timeout_task = None
+    # Neither timer pending nor fallback active — already in motion_detected state.
+    assert coordinator._motion_mgr.has_pending_timeout is False
+    assert coordinator._motion_mgr.is_motion_timeout_active is False
     coordinator._motion_mgr._last_motion_time = 1700000000.0  # prior motion recorded
 
     coordinator.state_change = False
@@ -393,64 +399,44 @@ def test_record_motion_detected_returns_true_when_timeout_active():
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
-    mgr._motion_timeout_active = True
-    mgr._motion_timeout_task = None
+    mgr.set_no_motion()  # fallback state activated, no pending timer
 
     result = mgr.record_motion_detected()
 
     assert result is True
-    assert mgr._motion_timeout_active is False
+    assert mgr.is_motion_timeout_active is False
 
 
-def test_record_motion_detected_returns_true_when_task_pending():
-    """record_motion_detected returns True when timeout task was still running."""
+@pytest.mark.asyncio
+async def test_record_motion_detected_returns_true_when_task_pending():
+    """record_motion_detected returns True when a timer is in flight."""
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
-    mgr._motion_timeout_active = False
-    task = MagicMock()
-    task.done.return_value = False
-    mgr._motion_timeout_task = task
+    mgr.start_motion_timeout(AsyncMock())
+    assert mgr.has_pending_timeout is True
+    assert mgr.is_motion_timeout_active is False
 
     result = mgr.record_motion_detected()
 
     assert result is True
-    assert mgr._motion_timeout_active is False
-    assert mgr._motion_timeout_task is None
-    task.cancel.assert_called_once()
+    assert mgr.is_motion_timeout_active is False
+    assert mgr.has_pending_timeout is False
 
 
 def test_record_motion_detected_returns_false_when_no_timeout():
-    """record_motion_detected returns False when no timeout was pending or active."""
+    """record_motion_detected returns False when no timer or fallback is active."""
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
-    mgr._motion_timeout_active = False
-    mgr._motion_timeout_task = None
+    # Fresh manager — neither flag nor pending timer.
 
     result = mgr.record_motion_detected()
 
     assert result is False
     assert mgr.last_motion_time is not None
-
-
-def test_record_motion_detected_returns_false_when_task_done():
-    """record_motion_detected returns False when timeout task had already completed."""
-    hass = MagicMock()
-    logger = MagicMock()
-    mgr = MotionManager(hass=hass, logger=logger)
-    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
-    mgr._motion_timeout_active = False
-    task = MagicMock()
-    task.done.return_value = True  # task completed but flag somehow not set
-    mgr._motion_timeout_task = task
-
-    result = mgr.record_motion_detected()
-
-    # done() task is treated the same as no task — not pending
-    assert result is False
 
 
 @pytest.mark.asyncio
@@ -727,16 +713,32 @@ async def test_async_shutdown_cancels_motion_timeout():
 
 
 def _make_motion_mgr(
-    last_motion_time=None, timeout_active=False, timeout_task=None, timeout_seconds=300
+    last_motion_time=None,
+    timeout_active=False,
+    timeout_pending=False,
+    timeout_seconds=300,
 ):
-    """Create a MotionManager with pre-set internal state."""
+    """Create a MotionManager configured for a specific state combination.
+
+    Drives all observable state through the public API: ``set_no_motion``
+    for the fallback-active flag, ``start_motion_timeout`` (long timeout)
+    for the "timer in flight" case. A sentinel sensor is always
+    registered so ``is_motion_timeout_active`` is not gated off by the
+    "no sensors → feature disabled" guard. Internal field assignment is
+    reserved for ``last_motion_time`` (no public setter; diagnostic).
+
+    Note: ``timeout_pending=True`` requires an active asyncio loop —
+    callers must be marked ``@pytest.mark.asyncio``.
+    """
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
-    mgr.update_config(sensors=[], timeout_seconds=timeout_seconds)
+    mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=timeout_seconds)
     mgr._last_motion_time = last_motion_time
-    mgr._motion_timeout_active = timeout_active
-    mgr._motion_timeout_task = timeout_task
+    if timeout_active:
+        mgr.set_no_motion()
+    if timeout_pending:
+        mgr.start_motion_timeout(AsyncMock())
     return mgr
 
 
@@ -788,7 +790,6 @@ def test_motion_status_sensor_motion_detected():
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1700000000.0,
         timeout_active=False,
-        timeout_task=None,
     )
     type(coordinator).is_motion_detected = property(lambda self: True)
 
@@ -796,16 +797,14 @@ def test_motion_status_sensor_motion_detected():
     assert sensor.native_value == "motion_detected"
 
 
-def test_motion_status_sensor_timeout_pending():
+@pytest.mark.asyncio
+async def test_motion_status_sensor_timeout_pending():
     """Sensor returns timeout_pending when countdown task is running."""
-    task = MagicMock()
-    task.done.return_value = False
-
     coordinator = MagicMock()
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1700000000.0,
         timeout_active=False,
-        timeout_task=task,
+        timeout_pending=True,
     )
     type(coordinator).is_motion_detected = property(lambda self: False)
 
@@ -819,7 +818,6 @@ def test_motion_status_sensor_no_motion():
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1700000000.0,
         timeout_active=True,
-        timeout_task=None,
     )
     type(coordinator).is_motion_detected = property(lambda self: False)
 
@@ -828,15 +826,16 @@ def test_motion_status_sensor_no_motion():
 
 
 def test_motion_status_sensor_waiting_for_data_fallback():
-    """Sensor returns waiting_for_data when no state matches (e.g. after task completes but flag not set)."""
-    task = MagicMock()
-    task.done.return_value = True
+    """Sensor returns waiting_for_data when neither active nor pending.
 
+    Post-TimeoutController the "stale completed task" state can't occur
+    (the handle auto-nulls), so the genuine fallback is "no flags set".
+    """
     coordinator = MagicMock()
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1700000000.0,
         timeout_active=False,
-        timeout_task=task,
+        timeout_pending=False,
     )
     type(coordinator).is_motion_detected = property(lambda self: False)
 
@@ -844,16 +843,14 @@ def test_motion_status_sensor_waiting_for_data_fallback():
     assert sensor.native_value == "waiting_for_data"
 
 
-def test_motion_status_sensor_attributes_with_timeout():
+@pytest.mark.asyncio
+async def test_motion_status_sensor_attributes_with_timeout():
     """Attributes include motion_timeout_end_time when timeout is pending."""
-    task = MagicMock()
-    task.done.return_value = False
-
     coordinator = MagicMock()
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1700000000.0,
         timeout_active=False,
-        timeout_task=task,
+        timeout_pending=True,
         timeout_seconds=300,
     )
 
@@ -871,7 +868,6 @@ def test_motion_status_sensor_attributes_no_timeout():
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1700000000.0,
         timeout_active=False,
-        timeout_task=None,
         timeout_seconds=300,
     )
 
@@ -917,7 +913,7 @@ def test_motion_status_sensor_no_timestamp_device_class():
 
 
 def test_set_no_motion_activates_immediately():
-    """set_no_motion() sets _motion_timeout_active without starting a task."""
+    """set_no_motion() activates the fallback state without starting a timer."""
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
@@ -925,25 +921,24 @@ def test_set_no_motion_activates_immediately():
 
     mgr.set_no_motion()
 
-    assert mgr._motion_timeout_active is True
-    assert mgr._motion_timeout_task is None
+    assert mgr.is_motion_timeout_active is True
+    assert mgr.has_pending_timeout is False
 
 
-def test_set_no_motion_cancels_pending_timeout():
+@pytest.mark.asyncio
+async def test_set_no_motion_cancels_pending_timeout():
     """set_no_motion() cancels any running timeout task."""
     hass = MagicMock()
     logger = MagicMock()
     mgr = MotionManager(hass=hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion"], timeout_seconds=300)
-
-    task = MagicMock()
-    task.done.return_value = False
-    mgr._motion_timeout_task = task
+    mgr.start_motion_timeout(AsyncMock())
+    assert mgr.has_pending_timeout is True
 
     mgr.set_no_motion()
 
-    task.cancel.assert_called_once()
-    assert mgr._motion_timeout_active is True
+    assert mgr.has_pending_timeout is False
+    assert mgr.is_motion_timeout_active is True
 
 
 def test_check_initial_motion_state_all_off_sets_no_motion():
@@ -1016,7 +1011,7 @@ def test_check_initial_motion_state_sensor_on_sets_last_motion_time():
     mgr.record_motion_detected()
 
     assert mgr.last_motion_time is not None
-    assert mgr._motion_timeout_active is False
+    assert mgr.is_motion_timeout_active is False
     assert mgr.is_motion_detected is True  # still reads live sensor
 
 
@@ -1031,7 +1026,6 @@ def test_motion_status_sensor_shows_motion_detected_after_reload():
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=1000.0,
         timeout_active=False,
-        timeout_task=None,
     )
     type(coordinator).is_motion_detected = property(lambda self: True)
 
@@ -1042,15 +1036,14 @@ def test_motion_status_sensor_shows_motion_detected_after_reload():
 def test_motion_status_sensor_startup_no_motion():
     """Sensor shows no_motion at startup when sensors are configured but all off.
 
-    set_no_motion() sets _motion_timeout_active=True without last_motion_time.
-    The sensor must check _motion_timeout_active before last_motion_time so it
-    shows no_motion rather than waiting_for_data.
+    set_no_motion() sets the fallback-active flag without last_motion_time.
+    The sensor must check is_motion_timeout_active before last_motion_time
+    so it shows no_motion rather than waiting_for_data.
     """
     coordinator = MagicMock()
     coordinator._motion_mgr = _make_motion_mgr(
         last_motion_time=None,
         timeout_active=True,
-        timeout_task=None,
     )
     type(coordinator).is_motion_detected = property(lambda self: False)
 

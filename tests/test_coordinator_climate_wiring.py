@@ -1,13 +1,14 @@
-"""Coordinator → ClimateProvider wiring tests.
+"""PipelineSnapshotBuilder → ClimateProvider wiring tests.
 
 These tests guard against the regression introduced in v2.12.0 (Issue #134) where
-the refactor from climate_mode_data() to _read_climate_state() silently dropped
-temp_entity, outside_entity, and presence_entity from the ClimateProvider.read()
-call — causing inside_temperature, outside_temperature, and is_presence to always
-be None/True regardless of configuration.
+the refactor from climate_mode_data() to the per-cycle climate-read step silently
+dropped temp_entity, outside_entity, and presence_entity from the
+``ClimateProvider.read()`` call — causing inside_temperature, outside_temperature,
+and is_presence to always be None/True regardless of configuration.
 
-The tests here verify the coordinator passes every config key to ClimateProvider.read()
-and will fail immediately if a future refactor drops a parameter.
+Phase D moved the climate-read step onto :class:`PipelineSnapshotBuilder`; these
+tests now drive the builder directly via its public surface.  The wiring contract
+(every option key reaches ``ClimateProvider.read``) is unchanged.
 """
 
 from __future__ import annotations
@@ -33,6 +34,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
 )
+from custom_components.adaptive_cover_pro.pipeline.snapshot_builder import (
+    PipelineSnapshotBuilder,
+)
 from custom_components.adaptive_cover_pro.state.climate_provider import (
     ClimateProvider,
     ClimateReadings,
@@ -53,29 +57,53 @@ _DUMMY_READINGS = ClimateReadings(
 )
 
 
-def _make_coordinator():
-    """Build a minimal AdaptiveDataUpdateCoordinator with mocked dependencies.
+def _make_builder(
+    *,
+    lux_toggle: bool | None = False,
+    irradiance_toggle: bool | None = False,
+    temp_toggle: bool = False,
+):
+    """Build a :class:`PipelineSnapshotBuilder` with mocked collaborators."""
+    climate_provider = MagicMock(spec=ClimateProvider)
+    climate_provider.read.return_value = _DUMMY_READINGS
 
-    We only need the pieces used by _read_climate_state():
-      - self._climate_provider  (ClimateProvider mock)
-      - self._toggles           (toggles mock)
-    """
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
-    )
-
-    coord = object.__new__(AdaptiveDataUpdateCoordinator)
-    coord._climate_provider = MagicMock(spec=ClimateProvider)
-    coord._climate_provider.read.return_value = _DUMMY_READINGS
-    coord._weather_readings = None
-
-    # Toggles: all feature flags off by default
     toggles = MagicMock()
-    toggles.lux_toggle = False
-    toggles.irradiance_toggle = False
-    coord._toggles = toggles
+    toggles.lux_toggle = lux_toggle
+    toggles.irradiance_toggle = irradiance_toggle
+    toggles.temp_toggle = temp_toggle
 
-    return coord
+    builder = PipelineSnapshotBuilder(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        climate_provider=climate_provider,
+        toggles=toggles,
+        policy=MagicMock(),
+        config_service=MagicMock(),
+    )
+    return builder, climate_provider
+
+
+def _make_coordinator():
+    """Backward-compat shim used by the original test bodies.
+
+    Returns an object exposing ``_climate_provider`` and ``_read_climate_state``
+    so the call-sites below stay readable.  The implementation routes through
+    the builder under test.
+    """
+
+    class _Shim:
+        def __init__(self):
+            self._builder, self._climate_provider = _make_builder()
+            self._weather_readings = None
+
+        def _read_climate_state(self, options):
+            self._weather_readings = self._builder.read_climate(options)
+
+        @property
+        def _toggles(self):
+            return self._builder._toggles  # noqa: SLF001 — internal mock view
+
+    return _Shim()
 
 
 # ---------------------------------------------------------------------------
@@ -458,16 +486,17 @@ class TestCloudSuppressionWiring:
 
 
 def _make_coordinator_with_toggles():
-    """Build a coordinator with temp_toggle for _build_climate_options tests."""
-    from custom_components.adaptive_cover_pro.coordinator import (
-        AdaptiveDataUpdateCoordinator,
-    )
+    """Shim for the cloudy-position tests: exposes ``_build_climate_options``."""
+    builder, _ = _make_builder()
 
-    coord = object.__new__(AdaptiveDataUpdateCoordinator)
-    toggles = MagicMock()
-    toggles.temp_toggle = False
-    coord._toggles = toggles
-    return coord
+    class _Shim:
+        def __init__(self):
+            self._builder = builder
+
+        def _build_climate_options(self, options):
+            return self._builder.build_climate_options(options)
+
+    return _Shim()
 
 
 class TestCloudyPositionWiring:

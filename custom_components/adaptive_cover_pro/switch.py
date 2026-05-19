@@ -26,6 +26,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
+from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
 
 
@@ -70,8 +71,14 @@ def _has_climate_irradiance(entry: ConfigEntry) -> bool:
     return _has_climate_mode(entry) and bool(entry.options.get(CONF_IRRADIANCE_ENTITY))
 
 
-def _is_vertical_or_horizontal(entry: ConfigEntry) -> bool:
-    return entry.data.get(CONF_SENSOR_TYPE) in ("cover_awning", "cover_blind")
+def _supports_return_to_default_switch(entry: ConfigEntry) -> bool:
+    """Whether the "Return to default when disabled" switch applies to this cover.
+
+    The answer is a per-cover-type semantic, owned by the ``CoverTypePolicy``.
+    """
+    return get_policy(
+        entry.data.get(CONF_SENSOR_TYPE)
+    ).supports_return_to_default_switch
 
 
 def _has_motion_sensors(entry: ConfigEntry) -> bool:
@@ -102,7 +109,7 @@ _SWITCH_SPECS: tuple[_SwitchSpec, ...] = (
         switch_name="Return to default when disabled",
         key="return_to_default_toggle",
         initial_state=False,
-        enabled_when=_is_vertical_or_horizontal,
+        enabled_when=_supports_return_to_default_switch,
     ),
     _SwitchSpec(
         switch_name="Motion Control",

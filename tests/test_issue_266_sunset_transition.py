@@ -39,7 +39,6 @@ def _make_coord(
     coord.automatic_control = automatic_control
     coord._track_end_time = track_end_time
     coord._inverse_state = inverse_state
-    coord._prev_sunset_active: bool | None = None
 
     entities = [MagicMock() for _ in range(n_entities)]
     coord.entities = entities
@@ -78,8 +77,20 @@ def _make_coord(
     from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
         EventBuffer,
     )
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
 
     coord._event_buffer = EventBuffer(maxlen=50)
+    # Phase E: sunset-window state lives on the WindowTransitionTracker.  Each
+    # test reseeds via _seed_sunset_state below.
+    coord._compute_current_effective_default = MagicMock(return_value=(0, False))
+    coord._window_tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=coord._event_buffer,
+        effective_default_fn=coord._compute_current_effective_default,
+    )
 
     return coord
 
@@ -87,10 +98,13 @@ def _make_coord(
 def _seed_sunset_state(
     coord, *, prev: bool | None, current_is_sunset: bool, pos: int = 0
 ):
-    """Seed _prev_sunset_active and mock _compute_current_effective_default."""
-    coord._prev_sunset_active = prev
+    """Seed the tracker's prior-sunset state and what the next effective-default lookup returns."""
+    coord._window_tracker._prev_sunset_active = prev
     coord._compute_current_effective_default = MagicMock(
         return_value=(pos, current_is_sunset)
+    )
+    coord._window_tracker._effective_default_fn = (
+        coord._compute_current_effective_default
     )
 
 
@@ -159,7 +173,7 @@ async def test_no_dispatch_when_sunset_pos_not_configured():
     """No dispatch when sunset_pos is not configured (None)."""
     coord = _make_coord(sunset_pos=None)
     # _compute_current_effective_default won't be called because we return early
-    coord._prev_sunset_active = False
+    coord._window_tracker._prev_sunset_active = False
     # No sunset_pos in options → return early before checking transition
 
     await coord._check_sunset_window_transition()
@@ -212,14 +226,17 @@ async def test_prev_sunset_active_initial_none_does_not_dispatch():
     """
     coord = _make_coord(sunset_pos=0)
     # _prev_sunset_active starts as None (fresh coordinator)
-    assert coord._prev_sunset_active is None
+    assert coord._window_tracker._prev_sunset_active is None
     coord._compute_current_effective_default = MagicMock(return_value=(0, True))
+    coord._window_tracker._effective_default_fn = (
+        coord._compute_current_effective_default
+    )
 
     await coord._check_sunset_window_transition()
 
     coord._cmd_svc.apply_position.assert_not_called()
     # State should be initialized
-    assert coord._prev_sunset_active is True
+    assert coord._window_tracker._prev_sunset_active is True
 
 
 @pytest.mark.asyncio

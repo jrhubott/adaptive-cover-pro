@@ -7,6 +7,7 @@ import datetime as dt
 from typing import TYPE_CHECKING
 
 from ..const import COMMAND_GRACE_PERIOD_SECONDS, STARTUP_GRACE_PERIOD_SECONDS
+from .common import TimeoutController
 
 if TYPE_CHECKING:
     from ..diagnostics.event_buffer import EventBuffer
@@ -42,10 +43,14 @@ class GracePeriodManager:
         self._command_grace_seconds = command_grace_seconds
         self._startup_grace_seconds = startup_grace_seconds
 
+        # Per-entity command grace: raw dict-keyed tasks. The per-entity
+        # nature doesn't fit a single-task TimeoutController; keeping it
+        # bespoke avoids per-entity controller bookkeeping for ~5s timers.
         self._command_timestamps: dict[str, float] = {}
         self._grace_period_tasks: dict[str, asyncio.Task] = {}
+        # Startup grace: single timer, fits the controller cleanly.
         self._startup_timestamp: float | None = None
-        self._startup_grace_period_task: asyncio.Task | None = None
+        self._startup_timer = TimeoutController(logger, label="startup grace")
 
     # --- Command grace period ---
 
@@ -152,16 +157,9 @@ class GracePeriodManager:
         respond slowly due to system initialization.
 
         """
-        if (
-            self._startup_grace_period_task
-            and not self._startup_grace_period_task.done()
-        ):
-            self._startup_grace_period_task.cancel()
-
         self._startup_timestamp = dt.datetime.now().timestamp()
-
-        self._startup_grace_period_task = asyncio.create_task(
-            self._startup_grace_period_timeout()
+        self._startup_timer.start(
+            self._startup_grace_seconds, self._on_startup_grace_expired
         )
 
         self._logger.info(
@@ -169,15 +167,9 @@ class GracePeriodManager:
             self._startup_grace_seconds,
         )
 
-    async def _startup_grace_period_timeout(self) -> None:
-        """Clear startup grace period after timeout."""
-        try:
-            await asyncio.sleep(self._startup_grace_seconds)
-        except asyncio.CancelledError:
-            return
-
+    async def _on_startup_grace_expired(self) -> None:
+        """Body that runs after the startup grace sleep completes."""
         self._startup_timestamp = None
-        self._startup_grace_period_task = None
 
         self._logger.debug("Startup grace period expired")
         if self._event_buffer is not None:
@@ -200,10 +192,5 @@ class GracePeriodManager:
         for entity_id in list(self._grace_period_tasks.keys()):
             self.cancel_command_grace_period(entity_id)
 
-        if (
-            self._startup_grace_period_task
-            and not self._startup_grace_period_task.done()
-        ):
-            self._startup_grace_period_task.cancel()
-            self._startup_grace_period_task = None
-            self._startup_timestamp = None
+        self._startup_timer.cancel()
+        self._startup_timestamp = None

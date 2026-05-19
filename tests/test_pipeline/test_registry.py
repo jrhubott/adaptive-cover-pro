@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
@@ -313,7 +314,7 @@ def _make_custom_position_handler() -> CustomPositionHandler:
         slot=1,
         entity_id="binary_sensor.custom",
         position=50,
-        priority=77,
+        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
     )
 
 
@@ -338,7 +339,7 @@ def test_climate_data_populated_when_custom_position_wins() -> None:
                 entity_id="binary_sensor.custom",
                 is_on=True,
                 position=50,
-                priority=77,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                 min_mode=False,
                 use_my=False,
             ),
@@ -419,7 +420,7 @@ def test_outprioritized_handler_trace_has_descriptive_reason() -> None:
                 entity_id="binary_sensor.custom",
                 is_on=True,
                 position=50,
-                priority=77,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                 min_mode=False,
                 use_my=False,
             ),

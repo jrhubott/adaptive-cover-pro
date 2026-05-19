@@ -10,6 +10,13 @@ once, after vertical motion has finished.
 
 Owned by ``VenetianPolicy``; constructed when the policy is attached to
 the coordinator. Other cover-type policies have no sequencer at all.
+
+Co-located with ``policy.py`` under ``cover_types/venetian/`` so the
+venetian-only state (back-rotate window, tilt targets, verify cache)
+lives alongside the policy that owns it. Per CODING_GUIDELINES.md
+"Managers Hold State, Policies Hold Behavior", cover-type-bound
+machinery belongs next to its policy, not in the cover-type-agnostic
+``managers/`` package.
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from homeassistant.const import (
 )
 from homeassistant.exceptions import HomeAssistantError
 
-from ..const import (
+from ...const import (
     ATTR_TILT_POSITION,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
@@ -40,13 +47,13 @@ from ..const import (
     VENETIAN_TILT_VERIFY_POLL_SECONDS,
     VENETIAN_TILT_VERIFY_TOLERANCE,
 )
-from .cover_command.gates import check_position_delta
-from .manual_override import inverse_state
+from ...managers.cover_command.gates import check_position_delta
+from ...managers.manual_override import inverse_state
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from ..diagnostics.event_buffer import EventBuffer
+    from ...diagnostics.event_buffer import EventBuffer
 
 # HA cover states that indicate the motor is still mid-travel.
 _COVER_MOVING_STATES = frozenset({"opening", "closing"})
@@ -101,7 +108,7 @@ class DualAxisSequencer:
         self._invert_tilt = invert_tilt
         self._get_min_change = get_min_change
         self._post_settle_hold_seconds = post_settle_hold_seconds
-        # Per-entity timestamps. Keep these in the sequencer (rather than on
+        # Per-entity timestamps. Keep these on the sequencer (rather than on
         # CoverCommandService.PerEntityState) so non-venetian covers carry no
         # dual-axis state at all.
         self._suppression_at: dict[str, dt.datetime] = {}

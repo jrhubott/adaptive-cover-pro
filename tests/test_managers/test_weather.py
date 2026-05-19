@@ -94,12 +94,15 @@ def test_configured_sensors_includes_all(mock_hass, logger):
 
 def test_not_active_when_no_sensors(mgr):
     """Feature disabled when no sensors configured."""
-    mgr._override_active = True  # Even if flag set, no sensors → False
+    # Even if the underlying flag would otherwise be set, the property gates
+    # off when no sensors are configured. We drive the public path
+    # (record_conditions_active) and check the gate still wins.
+    mgr.record_conditions_active()
     assert mgr.is_weather_override_active is False
 
 
 def test_active_when_flag_set_and_sensors_configured(mock_hass, logger):
-    """Returns True when _override_active is True and sensors configured."""
+    """Returns True after record_conditions_active when sensors are configured."""
     m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
@@ -114,7 +117,7 @@ def test_active_when_flag_set_and_sensors_configured(mock_hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    m._override_active = True
+    m.record_conditions_active()
     assert m.is_weather_override_active is True
 
 
@@ -505,7 +508,7 @@ def test_or_logic_single_condition_sufficient(mock_hass, logger):
 
 
 def test_record_conditions_active_sets_flag(mock_hass, logger):
-    """record_conditions_active sets _override_active to True."""
+    """record_conditions_active flips the override-active state to True."""
     m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
@@ -521,10 +524,11 @@ def test_record_conditions_active_sets_flag(mock_hass, logger):
         timeout_seconds=300,
     )
     m.record_conditions_active()
-    assert m._override_active is True
+    assert m.is_weather_override_active is True
 
 
-def test_record_conditions_active_cancels_timeout(mock_hass, logger):
+@pytest.mark.asyncio
+async def test_record_conditions_active_cancels_timeout(mock_hass, logger):
     """record_conditions_active cancels a running clear-delay timeout."""
     m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
@@ -540,57 +544,20 @@ def test_record_conditions_active_cancels_timeout(mock_hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    task = MagicMock()
-    task.done.return_value = False
-    m._timeout_task = task
+    m.start_weather_timeout(AsyncMock())
+    assert m.is_timeout_running is True
 
     m.record_conditions_active()
 
-    task.cancel.assert_called_once()
-    assert m._timeout_task is None
+    assert m.is_timeout_running is False
 
 
 # --- cancel_weather_timeout ---
 
 
-def test_cancel_timeout_cancels_task(mock_hass, logger):
-    """cancel_weather_timeout cancels running task and clears reference."""
-    m = WeatherManager(hass=mock_hass, logger=logger)
-    task = MagicMock()
-    task.done.return_value = False
-    m._timeout_task = task
-
-    m.cancel_weather_timeout()
-
-    task.cancel.assert_called_once()
-    assert m._timeout_task is None
-
-
-def test_cancel_timeout_no_task_safe(mgr):
-    """cancel_weather_timeout does not raise when no task."""
-    mgr.cancel_weather_timeout()
-    assert mgr._timeout_task is None
-
-
-def test_cancel_timeout_already_done(mock_hass, logger):
-    """Does not call cancel on an already-done task."""
-    m = WeatherManager(hass=mock_hass, logger=logger)
-    task = MagicMock()
-    task.done.return_value = True
-    m._timeout_task = task
-
-    m.cancel_weather_timeout()
-
-    task.cancel.assert_not_called()
-    assert m._timeout_task is None
-
-
-# --- _weather_timeout_handler ---
-
-
 @pytest.mark.asyncio
-async def test_timeout_handler_deactivates_when_clear(mock_hass, logger):
-    """Timeout handler deactivates override and calls refresh when conditions clear."""
+async def test_cancel_timeout_cancels_task(mock_hass, logger):
+    """cancel_weather_timeout cancels a running task."""
     m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
@@ -605,16 +572,50 @@ async def test_timeout_handler_deactivates_when_clear(mock_hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    m._override_active = True
+    m.start_weather_timeout(AsyncMock())
+    assert m.is_timeout_running is True
+
+    m.cancel_weather_timeout()
+
+    assert m.is_timeout_running is False
+
+
+def test_cancel_timeout_no_task_safe(mgr):
+    """cancel_weather_timeout does not raise when no task is pending."""
+    mgr.cancel_weather_timeout()
+    assert mgr.is_timeout_running is False
+
+
+# --- timeout expiry body ---
+
+
+@pytest.mark.asyncio
+async def test_timeout_handler_deactivates_when_clear(mock_hass, logger):
+    """On-expire body deactivates override and calls refresh when conditions clear."""
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=300,
+    )
+    m.record_conditions_active()  # override is currently active
 
     # Patch is_any_condition_active to return False (conditions cleared)
     original_prop = WeatherManager.is_any_condition_active
     WeatherManager.is_any_condition_active = property(lambda self: False)
     try:
         callback = AsyncMock()
-        await m._weather_timeout_handler(0.01, callback)
+        await m._on_weather_timeout_expired(0, callback)
 
-        assert m._override_active is False
+        assert m.is_weather_override_active is False
         callback.assert_called_once()
     finally:
         WeatherManager.is_any_condition_active = original_prop
@@ -622,7 +623,7 @@ async def test_timeout_handler_deactivates_when_clear(mock_hass, logger):
 
 @pytest.mark.asyncio
 async def test_timeout_handler_stays_active_if_conditions_return(mock_hass, logger):
-    """Timeout handler keeps override active if conditions return during sleep."""
+    """On-expire body keeps override active when conditions returned during the sleep."""
     m = WeatherManager(hass=mock_hass, logger=logger)
     m.update_config(
         wind_speed_sensor="sensor.wind",
@@ -637,16 +638,16 @@ async def test_timeout_handler_stays_active_if_conditions_return(mock_hass, logg
         severe_sensors=[],
         timeout_seconds=300,
     )
-    m._override_active = True
+    m.record_conditions_active()
 
     # Patch is_any_condition_active to return True (conditions returned)
     original_prop = WeatherManager.is_any_condition_active
     WeatherManager.is_any_condition_active = property(lambda self: True)
     try:
         callback = AsyncMock()
-        await m._weather_timeout_handler(0.01, callback)
+        await m._on_weather_timeout_expired(0, callback)
 
-        assert m._override_active is True
+        assert m.is_weather_override_active is True
         callback.assert_not_called()
     finally:
         WeatherManager.is_any_condition_active = original_prop
@@ -692,30 +693,39 @@ def test_is_timeout_running_false_when_no_task(mgr):
 
 @pytest.mark.asyncio
 async def test_is_timeout_running_true_when_task_pending(mgr):
-    import asyncio
-
-    async def _long_sleep():
-        await asyncio.sleep(9999)
-
-    task = asyncio.create_task(_long_sleep())
-    mgr._timeout_task = task
+    mgr.start_weather_timeout(AsyncMock())
     try:
         assert mgr.is_timeout_running is True
     finally:
-        task.cancel()
+        mgr.cancel_weather_timeout()
 
 
 @pytest.mark.asyncio
-async def test_is_timeout_running_false_when_task_done(mgr):
+async def test_is_timeout_running_false_when_task_done(mock_hass, logger):
+    """The handle nulls automatically when the timer expires."""
     import asyncio
 
-    async def _noop():
-        pass
-
-    task = asyncio.create_task(_noop())
-    await task
-    mgr._timeout_task = task
-    assert mgr.is_timeout_running is False
+    m = WeatherManager(hass=mock_hass, logger=logger)
+    m.update_config(
+        wind_speed_sensor="sensor.wind",
+        wind_direction_sensor=None,
+        wind_speed_threshold=50.0,
+        wind_direction_tolerance=45,
+        win_azi=180,
+        rain_sensor=None,
+        rain_threshold=1.0,
+        is_raining_sensor=None,
+        is_windy_sensor=None,
+        severe_sensors=[],
+        timeout_seconds=0,  # expire immediately
+    )
+    m.start_weather_timeout(AsyncMock())
+    # Drain the loop until the controller settles.
+    for _ in range(5):
+        if not m.is_timeout_running:
+            break
+        await asyncio.sleep(0)
+    assert m.is_timeout_running is False
 
 
 # --- reconcile ---
@@ -746,41 +756,34 @@ def _make_simple_wind_mgr(
 def test_reconcile_signals_start_when_flag_stuck_and_clear(mock_hass, logger):
     """G1: override flag True, conditions clear, no timer → should_start_timeout."""
     m = _make_simple_wind_mgr(mock_hass, logger, speed="10.0")
-    m._override_active = True
+    m.record_conditions_active()
     assert m.reconcile() == "should_start_timeout"
 
 
 def test_reconcile_noop_when_conditions_still_active(mock_hass, logger):
     """G2: override flag True, conditions active → None."""
     m = _make_simple_wind_mgr(mock_hass, logger, speed="75.0")
-    m._override_active = True
+    m.record_conditions_active()
     assert m.reconcile() is None
 
 
 def test_reconcile_noop_when_flag_not_set(mock_hass, logger):
     """G3: override flag False, conditions clear → None."""
     m = _make_simple_wind_mgr(mock_hass, logger, speed="10.0")
-    m._override_active = False
+    # Fresh manager — no record_conditions_active call.
     assert m.reconcile() is None
 
 
 @pytest.mark.asyncio
 async def test_reconcile_noop_when_timer_already_running(mock_hass, logger):
     """G4: override flag True, conditions clear, timer pending → None."""
-    import asyncio
-
     m = _make_simple_wind_mgr(mock_hass, logger, speed="10.0")
-    m._override_active = True
-
-    async def _long_sleep():
-        await asyncio.sleep(9999)
-
-    task = asyncio.create_task(_long_sleep())
-    m._timeout_task = task
+    m.record_conditions_active()
+    m.start_weather_timeout(AsyncMock())
     try:
         assert m.reconcile() is None
     finally:
-        task.cancel()
+        m.cancel_weather_timeout()
 
 
 def test_reconcile_noop_when_no_sensors_configured(mock_hass, logger):
@@ -799,7 +802,7 @@ def test_reconcile_noop_when_no_sensors_configured(mock_hass, logger):
         severe_sensors=[],
         timeout_seconds=300,
     )
-    m._override_active = True
+    m.record_conditions_active()
     assert m.reconcile() is None
 
 
@@ -871,16 +874,22 @@ def test_in_clear_delay_false_when_no_task(mgr):
     assert mgr.in_clear_delay is False
 
 
-def test_in_clear_delay_true_when_timeout_running(mgr):
+@pytest.mark.asyncio
+async def test_in_clear_delay_true_when_timeout_running(mgr):
     """Returns True when a pending timeout task exists."""
-    mgr._timeout_task = MagicMock()
-    mgr._timeout_task.done.return_value = False
-    assert mgr.in_clear_delay is True
+    mgr.start_weather_timeout(AsyncMock())
+    try:
+        assert mgr.in_clear_delay is True
+    finally:
+        mgr.cancel_weather_timeout()
 
 
-def test_active_conditions_empty_but_in_clear_delay(mgr):
+@pytest.mark.asyncio
+async def test_active_conditions_empty_but_in_clear_delay(mgr):
     """No live conditions + pending timeout → active_conditions empty, in_clear_delay True."""
-    mgr._timeout_task = MagicMock()
-    mgr._timeout_task.done.return_value = False
-    assert mgr.active_conditions == []
-    assert mgr.in_clear_delay is True
+    mgr.start_weather_timeout(AsyncMock())
+    try:
+        assert mgr.active_conditions == []
+        assert mgr.in_clear_delay is True
+    finally:
+        mgr.cancel_weather_timeout()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
@@ -18,7 +19,7 @@ from .conftest import make_snapshot
 # ---------------------------------------------------------------------------
 
 _ENTITY = "binary_sensor.scene_a"
-_DEFAULT_PRIORITY = 77
+_DEFAULT_PRIORITY = DEFAULT_CUSTOM_POSITION_PRIORITY
 
 
 def _handler(
@@ -443,7 +444,7 @@ class TestCustomPositionSensorStateTilt:
             entity_id=_ENTITY,
             is_on=True,
             position=50,
-            priority=77,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
         )
@@ -455,7 +456,7 @@ class TestCustomPositionSensorStateTilt:
             entity_id=_ENTITY,
             is_on=True,
             position=50,
-            priority=77,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
             tilt=35,
@@ -468,7 +469,7 @@ class TestCustomPositionSensorStateTilt:
             entity_id=_ENTITY,
             is_on=True,
             position=50,
-            priority=77,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
             tilt=0,
@@ -481,7 +482,7 @@ class TestCustomPositionSensorStateTilt:
             entity_id=_ENTITY,
             is_on=True,
             position=50,
-            priority=77,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
             tilt=100,

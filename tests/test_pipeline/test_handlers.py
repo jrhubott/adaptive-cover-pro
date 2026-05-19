@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
@@ -350,7 +351,10 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
 
     def _make_handler(self) -> CustomPositionHandler:
         return CustomPositionHandler(
-            slot=1, entity_id="binary_sensor.cp1", position=80, priority=77
+            slot=1,
+            entity_id="binary_sensor.cp1",
+            position=80,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
         )
 
     def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
@@ -362,7 +366,7 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
                     entity_id="binary_sensor.cp1",
                     is_on=True,
                     position=80,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=True,
                     use_my=False,
                 )
@@ -385,7 +389,7 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
                     entity_id="binary_sensor.cp1",
                     is_on=True,
                     position=80,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=True,
                     use_my=False,
                 )

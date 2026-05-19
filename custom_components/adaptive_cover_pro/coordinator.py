@@ -37,24 +37,16 @@ from .const import (
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_CLIMATE_MODE,
+    CONF_CLOUDY_POSITION,
+    CONF_DEBUG_CATEGORIES,
+    CONF_DEBUG_EVENT_BUFFER_SIZE,
+    CONF_DEBUG_MODE,
     CONF_DEFAULT_HEIGHT,
-    CONF_DEFAULT_TILT,
+    CONF_DRY_RUN,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_ENTITIES,
-    CONF_MY_POSITION_VALUE,
-    CONF_SUNSET_TILT,
-    CONF_SUNSET_USE_MY,
-    CUSTOM_POSITION_SLOTS,
-    DEFAULT_CUSTOM_POSITION_PRIORITY,
-    CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
-    CONF_MOTION_SENSORS,
-    CONF_MOTION_TIMEOUT_MODE,
-    DEFAULT_MOTION_TIMEOUT_MODE,
-    CONF_WEATHER_OVERRIDE_MIN_MODE,
-    CONF_WEATHER_OVERRIDE_POSITION,
-    CONF_WEATHER_BYPASS_AUTO_CONTROL,
-    CONF_ENABLE_SUN_TRACKING,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -63,40 +55,21 @@ from .const import (
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
+    CONF_MOTION_SENSORS,
+    CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_RETURN_SUNSET,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
-    CONF_TEMP_ENTITY,
-    CONF_TEMP_LOW,
-    CONF_TEMP_HIGH,
-    CONF_OUTSIDETEMP_ENTITY,
-    CONF_PRESENCE_ENTITY,
-    CONF_WEATHER_ENTITY,
-    CONF_WEATHER_STATE,
-    CONF_OUTSIDE_THRESHOLD,
-    CONF_TRANSPARENT_BLIND,
-    CONF_WINTER_CLOSE_INSULATION,
-    CONF_CLOUD_SUPPRESSION,
-    CONF_CLOUDY_POSITION,
-    CONF_CLOUD_COVERAGE_ENTITY,
-    CONF_CLOUD_COVERAGE_THRESHOLD,
-    CONF_IS_SUNNY_SENSOR,
-    CONF_LUX_ENTITY,
-    CONF_IRRADIANCE_ENTITY,
-    CONF_LUX_THRESHOLD,
-    CONF_IRRADIANCE_THRESHOLD,
-    CONF_DEBUG_CATEGORIES,
-    CONF_DEBUG_EVENT_BUFFER_SIZE,
-    CONF_DEBUG_MODE,
-    CONF_DRY_RUN,
     CONF_TRANSIT_TIMEOUT,
+    CUSTOM_POSITION_SLOTS,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
-    POSITION_TOLERANCE_PERCENT,
     DOMAIN,
     LOGGER,
+    POSITION_TOLERANCE_PERCENT,
     STARTUP_GRACE_PERIOD_SECONDS,
 )
 from .diagnostics.builder import DiagnosticContext, DiagnosticsBuilder
@@ -126,16 +99,13 @@ from .pipeline.handlers import (
     WeatherOverrideHandler,
 )
 from .pipeline.registry import PipelineRegistry
-from .pipeline.types import (
-    ClimateOptions,
-    CustomPositionSensorState,
-    PipelineSnapshot,
-)
+from .pipeline.snapshot_builder import PipelineSnapshotBuilder
 from .enums import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
 from .state.sun_provider import SunProvider
+from .state.window_transition_tracker import WindowTransitionTracker
 
 _MANIFEST_VERSION: str = json.loads(
     (pathlib.Path(__file__).parent / "manifest.json").read_text()
@@ -293,6 +263,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Cover entity state provider
         self._cover_provider = CoverProvider(hass=self.hass, logger=self.logger)
 
+        # Pipeline snapshot builder — owns the HA reads + assembly for each
+        # PipelineSnapshot.  Coordinator drives it once per cycle in
+        # _calculate_cover_state and again from async_apply_user_position for
+        # the preemption check.
+        self._snapshot_builder = PipelineSnapshotBuilder(
+            hass=self.hass,
+            logger=self.logger,
+            climate_provider=self._climate_provider,
+            toggles=self._toggles,
+            policy=self._policy,
+            config_service=self._config_service,
+        )
+
         # Current state snapshot (built at start of each update cycle)
         self._snapshot: CoverStateSnapshot | None = None
 
@@ -328,6 +311,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
             event_buffer=self._event_buffer,
+            # Routes manual-override classifier debug lines through the
+            # coordinator's debug-categories gate (INFO when debug_mode +
+            # category enabled, otherwise DEBUG).
+            debug_log=self._debug_log,
         )
 
         # Late-bind cover-type policy dependencies (e.g. VenetianPolicy
@@ -359,12 +346,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             hass=self.hass, logger=self.logger, event_buffer=self._event_buffer
         )
 
-        # Track sun validity transitions (for responsive sun in-front detection)
-        self._last_sun_validity_state: bool | None = None
-
-        # Track sunset-window transitions so covers reposition when the
-        # astronomical sunset window opens after the user's end_time (issue #266).
-        self._prev_sunset_active: bool | None = None
+        # Window-transition tracker — owns sun-visibility and astronomical
+        # sunset-window transition state (extracted from coordinator in Phase E).
+        self._window_tracker = WindowTransitionTracker(
+            hass=self.hass,
+            logger=self.logger,
+            event_buffer=self._event_buffer,
+            effective_default_fn=self._compute_current_effective_default,
+        )
 
         # Time of the last successful _async_update_data() completion.
         # HA's DataUpdateCoordinator only exposes last_update_success (bool);
@@ -391,7 +380,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             True if any configured force override sensor is in "on" state
 
         """
-        return any(self._read_force_sensor_states(self.config_entry.options).values())
+        return any(
+            self._snapshot_builder.read_force_sensors(
+                self.config_entry.options
+            ).values()
+        )
+
+    def _is_glare_zone_enabled(self, idx: int) -> bool:
+        """Return the per-instance glare-zone switch for ``zone idx``.
+
+        The coordinator owns the dynamic ``glare_zone_N`` attributes the
+        switch platform writes to.  Exposed as a callable so the snapshot
+        builder can read them without reaching back into ``self``.
+        """
+        return getattr(self, f"glare_zone_{idx}", True)
 
     @property
     def is_motion_detected(self) -> bool:
@@ -592,7 +594,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         is_now_active = self._weather_mgr.is_any_condition_active
 
         if is_now_active:
-            if not self._weather_mgr._override_active:
+            if not self._weather_mgr.is_weather_override_active:
                 self.logger.info(
                     "Weather conditions active (%s) — retracting covers", entity_id
                 )
@@ -646,261 +648,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
 
     def process_entity_state_change(self):
-        """Check if cover position change was user-initiated (manual override detection)."""
-        event = self.state_change_data
-        self.logger.debug("Processing state change event: %s", event)
-        entity_id = event.entity_id
-        if self.ignore_intermediate_states and event.new_state.state in [
-            "opening",
-            "closing",
-        ]:
-            self.logger.debug("Ignoring intermediate state change for %s", entity_id)
-            return
-        if self._cmd_svc.is_waiting_for_target(entity_id):
-            # Check if still in grace period
-            if self._is_in_grace_period(entity_id):
-                self.logger.debug(
-                    "Position change for %s ignored (in grace period)", entity_id
-                )
-                return  # Ignore ALL position changes during grace period
+        """Check if cover position change was user-initiated (manual override detection).
 
-            # Grace period expired — check if cover reached target (tolerance-based)
-            caps = self._cmd_svc.get_cover_capabilities(entity_id)
-            position = self._cmd_svc.read_position_with_capabilities(
-                entity_id, caps, event.new_state
-            )
-            reached = self._cmd_svc.check_target_reached(entity_id, position)
-            if reached:
-                # Mark this entity so async_handle_cover_state_change() skips the
-                # manual override comparison for this event.  The cover has just
-                # settled at its commanded position (within position tolerance) —
-                # any small positional difference is motor rounding, not a user
-                # action.  The set is cleared at the end of that handler.
-                self._target_just_reached.add(entity_id)
-                self._debug_log(
-                    "manual_override",
-                    "Target just reached for %s — skipping manual override check for this event",
-                    entity_id,
-                )
-            else:
-                # Grace period expired but the cover is not at the commanded target.
-                # Determine whether the cover is still actively moving toward the
-                # target (integration-initiated transit) or has stopped / moved away
-                # (user action — Issue #147).
-                #
-                # HA covers report transitional states ("opening"/"closing") while
-                # moving, then a final state ("stopped"/"open"/"closed") when done.
-                # If ignore_intermediate_states is True, those transitional events
-                # are already filtered out above, so we only reach here with final
-                # states and always clear wait_for_target.
-                #
-                # However, some covers (French volet-roulant, some Zigbee rolling
-                # shutters) never emit transitional states at all — they stay "open"
-                # or "closed" throughout transit and simply update current_position.
-                # The direction/progress check therefore runs for ALL covers based
-                # on position delta, regardless of the HA state string (Issue #285).
-                cover_is_transitioning = event.new_state.state in (
-                    "opening",
-                    "closing",
-                )
-
-                old_position = (
-                    self._cmd_svc.read_position_with_capabilities(  # noqa: SLF001
-                        entity_id, caps, event.old_state
-                    )
-                )
-                target = self._cmd_svc.get_target(entity_id)
-
-                # Step-motor pause (Issue #186) takes highest priority: some covers
-                # briefly report "open"/"closed" at an intermediate position between
-                # motor pulses before resuming transit.  If the *new* state is
-                # non-transitional and the *old* state was transitional, the cover
-                # just paused mid-transit — restart grace period to let the motor
-                # resume.  This must be checked before the direction/progress block
-                # so that forward-progress detection (Issue #285) does not short-
-                # circuit the grace-period restart.
-                was_transitioning = (
-                    event.old_state is not None
-                    and event.old_state.state in ("opening", "closing")
-                )
-                if (
-                    not cover_is_transitioning
-                    and was_transitioning
-                    and target is not None
-                    and position is not None
-                    and position != target
-                ):
-                    self._start_grace_period(entity_id)
-                    self._debug_log(
-                        "manual_override",
-                        "Cover %s paused mid-transit at %s (target %s) "
-                        "— restarting grace period",
-                        entity_id,
-                        position,
-                        target,
-                    )
-                    self.logger.debug(
-                        "Wait for target: %s", self._cmd_svc.waiting_entities()
-                    )
-                    return
-
-                # Direction/progress check: runs for all covers where positions and
-                # target are known, EXCEPT when HA explicitly reports "stopped" (an
-                # unambiguous halt signal).  This extends the progress-aware backstop
-                # from Issue #271 to covers that never emit "opening"/"closing".
-                if (
-                    old_position is not None
-                    and position is not None
-                    and target is not None
-                    and event.new_state.state != "stopped"
-                ):
-                    old_distance = abs(old_position - target)
-                    new_distance = abs(position - target)
-
-                    if new_distance < old_distance:
-                        # Unambiguously moving toward target — still in transit.
-                        # Reset the progress clock so the backstop window extends.
-                        now = dt.datetime.now(dt.UTC)
-                        self._cmd_svc.record_progress(entity_id, now)  # noqa: SLF001
-                        self._debug_log(
-                            "manual_override",
-                            "Grace expired but %s still in transit toward "
-                            "target %s (was %s, now %s, state=%s) "
-                            "— keeping wait_for_target",
-                            entity_id,
-                            target,
-                            old_position,
-                            position,
-                            event.new_state.state,
-                        )
-                        self._event_buffer.record(
-                            {
-                                "ts": now.isoformat(),
-                                "event": "transit_progress_forward",
-                                "entity_id": entity_id,
-                                "old_position": old_position,
-                                "new_position": position,
-                                "target": target,
-                                "old_distance": old_distance,
-                                "new_distance": new_distance,
-                                "cover_state": event.new_state.state,
-                            }
-                        )
-                        self.logger.debug(
-                            "Wait for target: %s", self._cmd_svc.waiting_entities()
-                        )
-                        return
-
-                    # Progress-aware backstop: if no forward progress has been
-                    # observed for longer than the configured transit timeout,
-                    # the cover is stuck or stalled — clear wait_for_target so
-                    # manual override detection can run.  The clock resets each
-                    # time record_progress() is called (when new_distance <
-                    # old_distance above), so slow-but-moving covers are not
-                    # prematurely cleared.  Covers that never report intermediate
-                    # positions fall back to measuring from _sent_at.
-                    now = dt.datetime.now(dt.UTC)
-                    elapsed = self._cmd_svc.transit_elapsed_without_progress(
-                        entity_id, now
-                    )
-                    if elapsed is not None:
-                        timeout = self._cmd_svc.transit_timeout_seconds
-                        if elapsed > timeout:
-                            self._cmd_svc.set_waiting(entity_id, False)
-                            self._debug_log(
-                                "manual_override",
-                                "Transit timeout for %s (%.0fs > %ds without progress) "
-                                "— clearing wait_for_target",
-                                entity_id,
-                                elapsed,
-                                timeout,
-                            )
-                            self._event_buffer.record(
-                                {
-                                    "ts": now.isoformat(),
-                                    "event": "transit_timeout_cleared",
-                                    "entity_id": entity_id,
-                                    "elapsed_seconds": round(elapsed, 1),
-                                    "timeout_seconds": timeout,
-                                    "position": position,
-                                    "target": target,
-                                    "cover_state": event.new_state.state,
-                                }
-                            )
-                            self.logger.debug(
-                                "Wait for target: %s", self._cmd_svc.waiting_entities()
-                            )
-                            return
-
-                    if new_distance == old_distance:
-                        # Positions equal — could be startup delay or stall.
-                        # Startup delay: motor just engaged; state transitions from
-                        # non-transitional (e.g. "closed") to something else.
-                        # Stall: state didn't change and cover was already in transit;
-                        # fall through to clear (e.g. opening→opening same position).
-                        # open→open same position with no state change is also a
-                        # genuine stop — fall through (Issue #172 regression guard).
-                        old_state_str = (
-                            event.old_state.state
-                            if event.old_state is not None
-                            else None
-                        )
-                        new_state_str = event.new_state.state
-                        state_changed = old_state_str != new_state_str
-                        if (
-                            old_state_str not in ("opening", "closing")
-                            and state_changed
-                        ):
-                            self._debug_log(
-                                "manual_override",
-                                "Grace expired but %s position unchanged at %s "
-                                "(startup delay — old state was %s) "
-                                "— keeping wait_for_target",
-                                entity_id,
-                                position,
-                                old_state_str,
-                            )
-                            self._event_buffer.record(
-                                {
-                                    "ts": dt.datetime.now(dt.UTC).isoformat(),
-                                    "event": "transit_startup_delay",
-                                    "entity_id": entity_id,
-                                    "position": position,
-                                    "old_state": old_state_str,
-                                    "new_state": new_state_str,
-                                    "target": target,
-                                }
-                            )
-                            self.logger.debug(
-                                "Wait for target: %s", self._cmd_svc.waiting_entities()
-                            )
-                            return
-
-                # Clear wait_for_target to allow manual override detection.
-                self._cmd_svc.set_waiting(entity_id, False)
-                self._debug_log(
-                    "manual_override",
-                    "Grace period expired, cover %s not in transit "
-                    "— clearing wait_for_target "
-                    "(position=%s, state=%s)",
-                    entity_id,
-                    position,
-                    event.new_state.state,
-                )
-                self._event_buffer.record(
-                    {
-                        "ts": dt.datetime.now(dt.UTC).isoformat(),
-                        "event": "transit_cleared",
-                        "entity_id": entity_id,
-                        "position": position,
-                        "cover_state": event.new_state.state,
-                        "old_position": old_position,
-                        "target": target,
-                    }
-                )
-            self.logger.debug("Wait for target: %s", self._cmd_svc.waiting_entities())
-        else:
-            self.logger.debug("No wait for target call for %s", entity_id)
+        Thin shim over :meth:`CoverCommandService.classify_state_change` —
+        Phase F relocated the body into ``managers/cover_command/state_classifier.py``.
+        The ``_target_just_reached`` set is passed by reference so the
+        classifier mutates the same object that
+        :meth:`async_handle_cover_state_change` reads and clears later in
+        the same event lifecycle.
+        """
+        self._cmd_svc.classify_state_change(
+            self.state_change_data,
+            ignore_intermediate_states=self.ignore_intermediate_states,
+            target_just_reached=self._target_just_reached,
+            grace_mgr=self._grace_mgr,
+        )
 
     def _is_in_grace_period(self, entity_id: str) -> bool:
         """Check if entity is in command grace period."""
@@ -1037,7 +799,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Read all climate-related entities (temp, presence, weather, lux, irradiance, cloud).
         # The result is stored in self._weather_readings and passed to PipelineSnapshot
         # so ClimateHandler and CloudSuppressionHandler can self-evaluate.
-        self._read_climate_state(options)
+        self._weather_readings = self._snapshot_builder.read_climate(options)
 
         # Compute the effective default position from astronomical sunset/sunrise.
         # This is the single source of truth — all pipeline handlers use it via
@@ -1068,9 +830,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Store cover engine object for use by diagnostics/sensors
         self._cover_data = cover_data
 
-        snapshot = self._build_pipeline_snapshot(
+        snapshot = self._snapshot_builder.build(
             options,
             cover_data=cover_data,
+            cover_type=self._cover_type,
+            climate_readings=self._weather_readings,
+            manual_override_active=self.manager.binary_cover_manual,
+            motion_timeout_active=self.is_motion_timeout_active,
+            weather_override_active=self.is_weather_override_active,
+            in_time_window=self.check_adaptive_time,
+            current_cover_position=self._compute_mean_cover_position(),
+            is_glare_zone_enabled=self._is_glare_zone_enabled,
             effective_default=effective_default,
             is_sunset_active=is_sunset_active,
         )
@@ -1226,7 +996,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # next cycle can detect the on → off transition for the release edge.
         current_custom_position_sensors_active = {
             s.entity_id: s.is_on
-            for s in self._read_custom_position_sensor_states(options)
+            for s in self._snapshot_builder.read_custom_position_sensors(options)
         }
         self._prev_custom_position_sensors_active = (
             current_custom_position_sensors_active
@@ -1952,221 +1722,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             state_attr(self.hass, "sun.sun", "elevation"),
         ]
 
-    def _read_climate_state(self, options) -> None:
-        """Read all climate-related entities into self._weather_readings.
-
-        This is the single call to ClimateProvider.read() for each update cycle.
-        It reads temperature sensors, presence, weather, lux, irradiance, and
-        cloud coverage.  All pipeline handlers (ClimateHandler, CloudSuppressionHandler)
-        consume the result via snapshot.climate_readings.
-
-        NOTE: If ClimateProvider.read() gains new keyword parameters, they MUST
-        also be wired here from the corresponding options key.  The coordinator
-        wiring test (test_coordinator_climate_wiring.py) will catch any mismatch.
-        """
-        cloud_suppression_enabled = bool(options.get(CONF_CLOUD_SUPPRESSION, False))
-        lux_entity = options.get(CONF_LUX_ENTITY)
-        irradiance_entity = options.get(CONF_IRRADIANCE_ENTITY)
-        # Cloud suppression is documented as independent of Climate Mode, so let
-        # it read lux/irradiance even when the climate-mode toggles are off.
-        use_lux = bool(self._toggles.lux_toggle) or (
-            cloud_suppression_enabled and lux_entity is not None
-        )
-        use_irradiance = bool(self._toggles.irradiance_toggle) or (
-            cloud_suppression_enabled and irradiance_entity is not None
-        )
-        self._weather_readings = self._climate_provider.read(
-            temp_entity=options.get(CONF_TEMP_ENTITY),
-            outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
-            presence_entity=options.get(CONF_PRESENCE_ENTITY),
-            weather_entity=options.get(CONF_WEATHER_ENTITY),
-            weather_condition=options.get(CONF_WEATHER_STATE),
-            use_lux=use_lux,
-            lux_entity=lux_entity,
-            lux_threshold=options.get(CONF_LUX_THRESHOLD),
-            use_irradiance=use_irradiance,
-            irradiance_entity=irradiance_entity,
-            irradiance_threshold=options.get(CONF_IRRADIANCE_THRESHOLD),
-            use_cloud_coverage=cloud_suppression_enabled,
-            cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
-            cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
-            is_sunny_sensor=options.get(CONF_IS_SUNNY_SENSOR),
-        )
-
-    def _build_climate_options(self, options) -> ClimateOptions:
-        """Build ClimateOptions from config entry options."""
-        return ClimateOptions(
-            temp_low=options.get(CONF_TEMP_LOW),
-            temp_high=options.get(CONF_TEMP_HIGH),
-            temp_switch=bool(self._toggles.temp_toggle),
-            transparent_blind=options.get(CONF_TRANSPARENT_BLIND, False),
-            temp_summer_outside=options.get(CONF_OUTSIDE_THRESHOLD),
-            cloud_suppression_enabled=bool(options.get(CONF_CLOUD_SUPPRESSION, False)),
-            winter_close_insulation=bool(
-                options.get(CONF_WINTER_CLOSE_INSULATION, False)
-            ),
-            cloudy_position=options.get(CONF_CLOUDY_POSITION),
-        )
-
-    def _read_force_sensor_states(self, options) -> dict[str, bool]:
-        """Read force override sensor states from HA into a plain dict."""
-        sensors = options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
-        return {
-            sensor: bool(
-                (state := self.hass.states.get(sensor)) and state.state == "on"
-            )
-            for sensor in sensors
-        }
-
-    def _read_custom_position_sensor_states(
-        self, options
-    ) -> list[CustomPositionSensorState]:
-        """Read custom position sensor states from HA into an ordered list.
-
-        Returns one CustomPositionSensorState per configured slot (sensor and
-        position both set).  Priority defaults to DEFAULT_CUSTOM_POSITION_PRIORITY
-        (77) when not set so existing installations behave identically.  min_mode
-        defaults to False; use_my defaults to False (when True the slot triggers
-        the cover's hardware "My" preset via stop_cover instead of the slot's
-        numeric position).
-        """
-        result = []
-        for slot_keys in CUSTOM_POSITION_SLOTS.values():
-            sensor = options.get(slot_keys["sensor"])
-            position = options.get(slot_keys["position"])
-            if sensor and position is not None:
-                is_on = bool(
-                    (state := self.hass.states.get(sensor)) and state.state == "on"
-                )
-                priority = int(
-                    options.get(slot_keys["priority"])
-                    or DEFAULT_CUSTOM_POSITION_PRIORITY
-                )
-                min_mode = bool(options.get(slot_keys["min_mode"], False))
-                use_my = bool(options.get(slot_keys["use_my"], False))
-                raw_tilt = options.get(slot_keys["tilt"])
-                tilt = int(raw_tilt) if raw_tilt is not None else None
-                result.append(
-                    CustomPositionSensorState(
-                        entity_id=sensor,
-                        is_on=is_on,
-                        position=int(position),
-                        priority=priority,
-                        min_mode=min_mode,
-                        use_my=use_my,
-                        tilt=tilt,
-                    )
-                )
-        return result
-
-    def _build_pipeline_snapshot(
-        self,
-        options: dict,
-        *,
-        cover_data=None,
-        effective_default: int | None = None,
-        is_sunset_active: bool | None = None,
-        manual_override_active: bool | None = None,
-    ) -> PipelineSnapshot:
-        """Build a ``PipelineSnapshot`` for evaluation.
-
-        Single source of truth used by both the per-cycle update loop (which
-        passes the freshly-computed ``cover_data`` / ``effective_default`` /
-        ``is_sunset_active``) and ``async_apply_user_position`` (which falls
-        back to the most-recent stored values to evaluate a preemption check
-        outside the update cycle).
-
-        Args:
-            options: Config entry options dict.
-            cover_data: AdaptiveGeneralCover for this cycle. Defaults to
-                ``self._cover_data`` when omitted.
-            effective_default: Pre-computed effective default position.
-                Recomputed from options when omitted.
-            is_sunset_active: Pre-computed sunset-window flag. Recomputed
-                from options when omitted.
-            manual_override_active: When ``None`` (default) uses
-                ``self.manager.binary_cover_manual``. Pass ``False`` from the
-                preemption-check path so a stale manual-override flag does
-                not self-claim priority 80 and let the cover move anyway.
-
-        """
-        if cover_data is None:
-            cover_data = self._cover_data
-        if effective_default is None or is_sunset_active is None:
-            h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
-            sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-            sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-            sunrise_off = int(
-                options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
-            )
-            effective_default, is_sunset_active = compute_effective_default(
-                h_def=h_def,
-                sunset_pos=sunset_pos_cfg,
-                sun_data=cover_data.sun_data,
-                sunset_off=sunset_off,
-                sunrise_off=sunrise_off,
-            )
-
-        glare_zones_cfg = self._policy.glare_zones_config(
-            self._config_service, self.config_entry.options
-        )
-        active_zone_names: set[str] = set()
-        if glare_zones_cfg is not None:
-            for idx, zone in enumerate(glare_zones_cfg.zones):
-                if getattr(self, f"glare_zone_{idx}", True):
-                    active_zone_names.add(zone.name)
-
-        manual_active = (
-            self.manager.binary_cover_manual
-            if manual_override_active is None
-            else manual_override_active
-        )
-
-        return PipelineSnapshot(
-            cover=cover_data,
-            config=cover_data.config,
-            cover_type=self._cover_type,
-            default_position=effective_default,
-            is_sunset_active=is_sunset_active,
-            # NOTE: configured_default and configured_sunset_pos are deliberately
-            # absent from PipelineSnapshot.  They are annotated onto PipelineResult
-            # by the coordinator after evaluation so the raw config values are
-            # never accessible to pipeline handler logic.
-            climate_readings=self._weather_readings,
-            climate_mode_enabled=self._toggles.switch_mode,
-            climate_options=self._build_climate_options(options),
-            force_override_sensors=self._read_force_sensor_states(options),
-            force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
-            force_override_min_mode=bool(
-                options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False)
-            ),
-            manual_override_active=manual_active,
-            motion_timeout_active=self.is_motion_timeout_active,
-            weather_override_active=self.is_weather_override_active,
-            weather_override_position=options.get(CONF_WEATHER_OVERRIDE_POSITION, 0),
-            weather_override_min_mode=bool(
-                options.get(CONF_WEATHER_OVERRIDE_MIN_MODE, False)
-            ),
-            weather_bypass_auto_control=options.get(
-                CONF_WEATHER_BYPASS_AUTO_CONTROL, True
-            ),
-            glare_zones=glare_zones_cfg,
-            active_zone_names=frozenset(active_zone_names),
-            in_time_window=self.check_adaptive_time,
-            motion_control_enabled=self._toggles.motion_control,
-            custom_position_sensors=self._read_custom_position_sensor_states(options),
-            my_position_value=options.get(CONF_MY_POSITION_VALUE),
-            sunset_use_my=bool(options.get(CONF_SUNSET_USE_MY, False)),
-            enable_sun_tracking=bool(options.get(CONF_ENABLE_SUN_TRACKING, True)),
-            motion_timeout_mode=options.get(
-                CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE
-            ),
-            current_cover_position=self._compute_mean_cover_position(),
-            policy=self._policy,
-            default_tilt=options.get(CONF_DEFAULT_TILT),
-            sunset_tilt=options.get(CONF_SUNSET_TILT),
-        )
-
     async def async_apply_user_position(
         self,
         entity_id: str,
@@ -2196,7 +1751,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         opt in.
         """
         opts = options if options is not None else self.config_entry.options
-        states = self._read_custom_position_sensor_states(opts)
+        states = self._snapshot_builder.read_custom_position_sensors(opts)
         floors = [s.position for s in states if s.is_on and s.min_mode]
         effective_floor = max(floors) if floors else 0
         clamped = max(int(requested), effective_floor)
@@ -2216,7 +1771,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
 
         if not force:
-            snapshot = self._build_pipeline_snapshot(opts, manual_override_active=False)
+            snapshot = self._snapshot_builder.build(
+                opts,
+                cover_data=self._cover_data,
+                cover_type=self._cover_type,
+                climate_readings=self._weather_readings,
+                manual_override_active=False,
+                motion_timeout_active=self.is_motion_timeout_active,
+                weather_override_active=self.is_weather_override_active,
+                in_time_window=self.check_adaptive_time,
+                current_cover_position=self._compute_mean_cover_position(),
+                is_glare_zone_enabled=self._is_glare_zone_enabled,
+            )
             result = self._pipeline.evaluate(snapshot)
             winner_step = next((s for s in result.decision_trace if s.matched), None)
             if winner_step is not None:
@@ -2312,7 +1878,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             final_state=self.state,
             config_options=dict(self.config_entry.options),
             motion_detected=self.is_motion_detected,
-            motion_timeout_active=self._motion_mgr._motion_timeout_active,
+            motion_timeout_active=self._motion_mgr.is_motion_timeout_active,
             motion_hold_active=(
                 self._pipeline_result is not None
                 and self._pipeline_result.skip_command
@@ -2649,114 +2215,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
 
     async def _check_sunset_window_transition(self) -> None:
-        """Dispatch sunset_pos when the astronomical sunset window opens after end_time.
+        """Delegate astronomical-sunset-window transition handling to the tracker.
 
-        Handles the case where end_time fires before sunset+offset: _on_window_closed
-        sends the daytime default (is_sunset_active=False at that moment). When the
-        sunset window later opens, this detects the False→True transition and sends
-        the sunset position (issue #266).
-
-        Mirrors the _last_sun_validity_state pattern: _prev_sunset_active=None on
-        startup prevents spurious dispatch when HA restarts mid-sunset.
+        See :meth:`WindowTransitionTracker.check_sunset_window` for the
+        full contract (issue #266).
         """
-        if not self._track_end_time:
-            return
-        if not self.automatic_control:
-            self.logger.debug(
-                "Sunset window opened but automatic control is OFF — skipping reposition"
-            )
-            return
         options = self.config_entry.options
-        sunset_pos_cfg = options.get(CONF_SUNSET_POS)
-        if sunset_pos_cfg is None:
-            return
-
-        _effective_pos, is_sunset = self._compute_current_effective_default(options)
-
-        if self._prev_sunset_active is None:
-            self._prev_sunset_active = is_sunset
-            return
-
-        just_opened = (not self._prev_sunset_active) and is_sunset
-        self._prev_sunset_active = is_sunset
-
-        if not just_opened:
-            return
-
-        pos_to_send = (
-            inverse_state(int(sunset_pos_cfg))
-            if self._inverse_state
-            else int(sunset_pos_cfg)
+        await self._window_tracker.check_sunset_window(
+            track_end_time=self._track_end_time,
+            automatic_control=self.automatic_control,
+            sunset_pos_cfg=options.get(CONF_SUNSET_POS),
+            options=options,
+            inverse_state_enabled=self._inverse_state,
+            entities=self.entities,
+            is_cover_manual=self.manager.is_cover_manual,
+            build_position_context=lambda c, o: self._build_position_context(
+                c, o, force=False
+            ),
+            apply_position=self._cmd_svc.apply_position,
+            refresh=self.async_refresh,
         )
-        self.logger.info(
-            "Sunset window opened after end_time — dispatching sunset position %s%% "
-            "to %s cover(s) (issue #266)",
-            pos_to_send,
-            len(self.entities),
-        )
-        self._event_buffer.record(
-            {
-                "ts": dt.datetime.now(dt.UTC).isoformat(),
-                "event": "sunset_window_opened",
-                "position": pos_to_send,
-                "cover_count": len(self.entities),
-            }
-        )
-        for cover_entity in self.entities:
-            if self.manager.is_cover_manual(cover_entity):
-                continue
-            ctx = self._build_position_context(cover_entity, options, force=False)
-            await self._cmd_svc.apply_position(
-                cover_entity, pos_to_send, "sunset_window_opened", context=ctx
-            )
-        await self.async_refresh()
 
     def _check_sun_validity_transition(self) -> bool:
-        """Check if sun validity state has changed from False to True.
-
-        Returns True if sun just came into field of view, indicating
-        covers should immediately reposition regardless of delta checks.
-        """
-        # Need cover data to check sun validity
-        if self._cover_data is None:
-            return False
-
-        current_sun_valid = self._cover_data.direct_sun_valid
-
-        # Initialize tracking on first call
-        if self._last_sun_validity_state is None:
-            self._last_sun_validity_state = current_sun_valid
-            return False
-
-        # Detect transitions
-        sun_just_appeared = (not self._last_sun_validity_state) and current_sun_valid
-        sun_just_left = self._last_sun_validity_state and (not current_sun_valid)
-
-        # Update tracking
-        self._last_sun_validity_state = current_sun_valid
-
-        if sun_just_appeared:
-            self.logger.info(
-                "Sun visibility transition detected: OFF → ON (sun came into field of view)"
-            )
-            self._event_buffer.record(
-                {
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
-                    "event": "sun_entered_fov",
-                }
-            )
-        elif sun_just_left:
-            self.logger.debug(
-                "Sun visibility transition detected: ON → OFF (sun left field of view)"
-            )
-            self._event_buffer.record(
-                {
-                    "ts": dt.datetime.now(dt.UTC).isoformat(),
-                    "event": "sun_left_fov",
-                }
-            )
-
-        return sun_just_appeared
+        """Delegate sun-visibility transition detection to the tracker."""
+        return self._window_tracker.sun_just_appeared(self._cover_data)
 
     async def async_shutdown(self) -> None:
         """Clean up resources on shutdown.

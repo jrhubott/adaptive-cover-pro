@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -14,6 +13,7 @@ from ..const import (
     DEFAULT_WINDOW_AZIMUTH,
     DEGREES_IN_CIRCLE,
 )
+from .common import TimeoutController
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -77,7 +77,7 @@ class WeatherManager:
         self._timeout_seconds: int = DEFAULT_WEATHER_TIMEOUT
 
         # Runtime state
-        self._timeout_task: asyncio.Task | None = None
+        self._timer = TimeoutController(logger, label="weather clear-delay")
         self._override_active: bool = False
 
     # --- Configuration ---
@@ -163,7 +163,7 @@ class WeatherManager:
     @property
     def is_timeout_running(self) -> bool:
         """Return True when a clear-delay timeout task is pending."""
-        return self._timeout_task is not None and not self._timeout_task.done()
+        return self._timer.is_running
 
     @property
     def in_clear_delay(self) -> bool:
@@ -301,34 +301,26 @@ class WeatherManager:
                 normal control should resume.
 
         """
-        self.cancel_weather_timeout()
-
+        timeout_seconds = self._timeout_seconds
         self._logger.info(
             "Weather conditions cleared — starting %s second delay before resuming normal control",
-            self._timeout_seconds,
+            timeout_seconds,
         )
 
-        task = asyncio.create_task(
-            self._weather_timeout_handler(self._timeout_seconds, refresh_callback)
-        )
-        self._timeout_task = task
+        async def _on_expire() -> None:
+            await self._on_weather_timeout_expired(timeout_seconds, refresh_callback)
 
-    async def _weather_timeout_handler(
+        self._timer.start(timeout_seconds, _on_expire)
+
+    async def _on_weather_timeout_expired(
         self, timeout_seconds: int, refresh_callback: Callable
     ) -> None:
-        """Handle timeout expiration after weather conditions clear.
+        """Body that runs after the clear-delay sleep completes.
 
-        Args:
-            timeout_seconds: How long to wait before deactivating the override
-            refresh_callback: Called after timeout expires if conditions still clear
-
+        Re-checks whether weather conditions have returned during the
+        sleep — if so, the override is kept active and the refresh
+        callback is suppressed.
         """
-        try:
-            await asyncio.sleep(timeout_seconds)
-        except asyncio.CancelledError:
-            return
-
-        # Double-check: conditions may have returned during the sleep
         if self.is_any_condition_active:
             self._logger.debug(
                 "Weather conditions returned during clear-delay — keeping override active"
@@ -359,7 +351,4 @@ class WeatherManager:
 
     def cancel_weather_timeout(self) -> None:
         """Cancel the running clear-delay timeout task, if any."""
-        if self._timeout_task and not self._timeout_task.done():
-            self._logger.debug("Weather clear-delay timeout canceled")
-            self._timeout_task.cancel()
-        self._timeout_task = None
+        self._timer.cancel()

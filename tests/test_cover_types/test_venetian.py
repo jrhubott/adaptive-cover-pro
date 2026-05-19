@@ -577,7 +577,7 @@ def test_attach_forwards_post_settle_hold_to_sequencer() -> None:
     hass = MagicMock()
 
     with patch(
-        "custom_components.adaptive_cover_pro.cover_types.venetian.DualAxisSequencer"
+        "custom_components.adaptive_cover_pro.cover_types.venetian.policy.DualAxisSequencer"
     ) as MockSeq:
         MockSeq.return_value = MagicMock()
         policy.attach(

@@ -8,7 +8,7 @@ Thanks to @ZamenWolk for identifying this in GitHub issue #213.
 
 from __future__ import annotations
 
-from typing import cast
+import logging
 
 from ...cover_types import get_policy
 from ...engine.covers.vertical import (
@@ -19,6 +19,8 @@ from ...enums import ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import apply_snapshot_limits, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class GlareZoneHandler(OverrideHandler):
@@ -58,7 +60,18 @@ class GlareZoneHandler(OverrideHandler):
         if not snapshot.cover.direct_sun_valid:
             return None
 
-        cover = cast(AdaptiveVerticalCover, snapshot.cover)
+        # Belt-and-braces: ``supports_glare_zones`` is the public gate, but a
+        # future policy that flips the flag without binding a vertical engine
+        # would silently type-confuse here. Verify at runtime; skip + warn so
+        # the pipeline doesn't crash on the next attribute access.
+        if not isinstance(snapshot.cover, AdaptiveVerticalCover):
+            _LOGGER.warning(
+                "GlareZoneHandler gated on supports_glare_zones=True but cover "
+                "is %s, not AdaptiveVerticalCover — skipping",
+                type(snapshot.cover).__name__,
+            )
+            return None
+        cover = snapshot.cover
         window_half_width = snapshot.glare_zones.window_width / 2.0
         base_distance = cover.distance
 

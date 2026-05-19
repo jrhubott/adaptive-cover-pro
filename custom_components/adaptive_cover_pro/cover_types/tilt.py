@@ -67,6 +67,14 @@ class TiltPolicy(CoverTypePolicy):
     cover_type = "cover_tilt"
     axes: ClassVar[tuple[CoverAxis, ...]] = (TILT_AXIS,)
 
+    def wiki_anchor(self) -> str:
+        """Slat-tilt geometry page."""
+        return "Configuration-Tilt"
+
+    def display_label(self) -> str:
+        """User-facing label for tilt-only covers."""
+        return "Venetian / Tilt Blind"
+
     def disallowed_geometry_fields(
         self,
         *,

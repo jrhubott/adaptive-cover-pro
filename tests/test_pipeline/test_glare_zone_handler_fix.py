@@ -25,6 +25,9 @@ from custom_components.adaptive_cover_pro.config_types import (
     GlareZone,
     GlareZonesConfig,
 )
+from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+    AdaptiveVerticalCover,
+)
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
@@ -39,7 +42,7 @@ def _make_vertical_cover(
     calculate_percentage_return: float = 60.0,
 ):
     """Build a mock AdaptiveVerticalCover for GlareZoneHandler tests."""
-    cover = MagicMock()
+    cover = MagicMock(spec=AdaptiveVerticalCover)
     cover.direct_sun_valid = direct_sun_valid
     cover.distance = distance
     cover.gamma = gamma

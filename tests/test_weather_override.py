@@ -63,7 +63,7 @@ def test_is_weather_override_active_delegates_to_manager():
     )
 
     coordinator, _ = _make_coordinator_with_weather_mgr(wind_speed_sensor="sensor.wind")
-    coordinator._weather_mgr._override_active = True
+    coordinator._weather_mgr.record_conditions_active()
 
     result = AdaptiveDataUpdateCoordinator.is_weather_override_active.fget(coordinator)
     assert result is True
@@ -76,7 +76,7 @@ def test_is_weather_override_active_false_when_flag_not_set():
     )
 
     coordinator, _ = _make_coordinator_with_weather_mgr(wind_speed_sensor="sensor.wind")
-    coordinator._weather_mgr._override_active = False
+    # Fresh manager — override-active flag defaults to False.
 
     result = AdaptiveDataUpdateCoordinator.is_weather_override_active.fget(coordinator)
     assert result is False
@@ -113,7 +113,7 @@ async def test_weather_state_change_activates_on_condition_met():
         coordinator, event
     )
 
-    assert coordinator._weather_mgr._override_active is True
+    assert coordinator._weather_mgr.is_weather_override_active is True
     assert coordinator.state_change is True
     coordinator.async_refresh.assert_called_once()
 
@@ -131,7 +131,7 @@ async def test_weather_state_change_starts_timeout_when_cleared():
 
     # Wind speed dropped below threshold — conditions cleared
     hass.states.get.return_value = MagicMock(state="10.0")
-    coordinator._weather_mgr._override_active = True  # Was active
+    coordinator._weather_mgr.record_conditions_active()  # was active
 
     coordinator.async_refresh = AsyncMock()
     coordinator.state_change = False
@@ -192,7 +192,7 @@ def test_reconcile_weather_override_starts_timer_when_flag_stuck(hass=None):
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="10.0")  # below threshold
-    coordinator._weather_mgr._override_active = True
+    coordinator._weather_mgr.record_conditions_active()
     coordinator._start_weather_timeout = MagicMock()
 
     AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
@@ -210,7 +210,7 @@ def test_reconcile_weather_override_noop_when_conditions_active():
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="75.0")  # above threshold
-    coordinator._weather_mgr._override_active = True
+    coordinator._weather_mgr.record_conditions_active()
     coordinator._start_weather_timeout = MagicMock()
 
     AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
@@ -228,7 +228,7 @@ def test_reconcile_weather_override_noop_when_flag_false():
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="10.0")
-    coordinator._weather_mgr._override_active = False
+    # Fresh manager — override-active defaults to False.
     coordinator._start_weather_timeout = MagicMock()
 
     AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
@@ -239,8 +239,6 @@ def test_reconcile_weather_override_noop_when_flag_false():
 @pytest.mark.asyncio
 async def test_reconcile_weather_override_noop_when_timer_running():
     """G4: override active, conditions clear, timer already running → no second timer."""
-    import asyncio
-
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -249,26 +247,21 @@ async def test_reconcile_weather_override_noop_when_timer_running():
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="10.0")
-    coordinator._weather_mgr._override_active = True
+    coordinator._weather_mgr.record_conditions_active()
+    coordinator._weather_mgr.start_weather_timeout(AsyncMock())
     coordinator._start_weather_timeout = MagicMock()
-
-    async def _long_sleep():
-        await asyncio.sleep(9999)
-
-    task = asyncio.create_task(_long_sleep())
-    coordinator._weather_mgr._timeout_task = task
     try:
         AdaptiveDataUpdateCoordinator._reconcile_weather_override(coordinator)
         coordinator._start_weather_timeout.assert_not_called()
     finally:
-        task.cancel()
+        coordinator._weather_mgr.cancel_weather_timeout()
 
 
 # --- _recover_weather_override_on_restart ---
 
 
 def test_recover_on_restart_sets_flag_when_conditions_active():
-    """G5: on first refresh, conditions active → restores _override_active=True."""
+    """G5: on first refresh, conditions active → restores override-active state."""
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -277,11 +270,11 @@ def test_recover_on_restart_sets_flag_when_conditions_active():
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="75.0")  # above threshold
-    coordinator._weather_mgr._override_active = False  # simulates post-restart reset
+    # Fresh manager — post-restart state is "flag reset to False".
 
     AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart(coordinator)
 
-    assert coordinator._weather_mgr._override_active is True
+    assert coordinator._weather_mgr.is_weather_override_active is True
 
 
 def test_recover_on_restart_noop_when_conditions_clear():
@@ -294,11 +287,10 @@ def test_recover_on_restart_noop_when_conditions_clear():
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="10.0")  # below threshold
-    coordinator._weather_mgr._override_active = False
 
     AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart(coordinator)
 
-    assert coordinator._weather_mgr._override_active is False
+    assert coordinator._weather_mgr.is_weather_override_active is False
 
 
 def test_recover_on_restart_noop_when_no_sensors_configured():
@@ -308,11 +300,10 @@ def test_recover_on_restart_noop_when_no_sensors_configured():
     )
 
     coordinator, hass = _make_coordinator_with_weather_mgr()  # no wind sensor
-    coordinator._weather_mgr._override_active = False
 
     AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart(coordinator)
 
-    assert coordinator._weather_mgr._override_active is False
+    assert coordinator._weather_mgr.is_weather_override_active is False
     hass.states.get.assert_not_called()
 
 
@@ -333,10 +324,12 @@ async def test_restart_race_then_conditions_clear_starts_timer():
     )
     # 1. Conditions active on startup (simulates HA restart with wind still up)
     hass.states.get.return_value = MagicMock(state="75.0")
-    coordinator._weather_mgr._override_active = False
+    # Fresh manager — post-restart state is "flag reset to False".
 
     AdaptiveDataUpdateCoordinator._recover_weather_override_on_restart(coordinator)
-    assert coordinator._weather_mgr._override_active is True  # recovery worked
+    assert (
+        coordinator._weather_mgr.is_weather_override_active is True
+    )  # recovery worked
 
     # 2. Wind drops; state-change event fires
     hass.states.get.return_value = MagicMock(state="10.0")
@@ -355,16 +348,14 @@ async def test_restart_race_then_conditions_clear_starts_timer():
         coordinator, event
     )
 
-    # Without the restart recovery fix, _override_active would be False here
-    # and the else-branch would short-circuit without starting the timer.
+    # Without the restart recovery fix, the override-active flag would be False
+    # here and the else-branch would short-circuit without starting the timer.
     coordinator._start_weather_timeout.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_weather_state_change_cleared_does_not_restart_running_timer():
     """Regression: a cleared event does not restart a timer that's already running."""
-    import asyncio
-
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -374,16 +365,12 @@ async def test_weather_state_change_cleared_does_not_restart_running_timer():
         wind_speed_sensor="sensor.wind"
     )
     hass.states.get.return_value = MagicMock(state="10.0")  # conditions clear
-    coordinator._weather_mgr._override_active = True
+    coordinator._weather_mgr.record_conditions_active()
+    coordinator._weather_mgr.start_weather_timeout(AsyncMock())
     coordinator._start_weather_timeout = MagicMock()
     coordinator.async_refresh = AsyncMock()
     coordinator.state_change = False
 
-    async def _long_sleep():
-        await asyncio.sleep(9999)
-
-    task = asyncio.create_task(_long_sleep())
-    coordinator._weather_mgr._timeout_task = task
     try:
         event = MagicMock(spec=Event)
         event.data = {
@@ -395,7 +382,7 @@ async def test_weather_state_change_cleared_does_not_restart_running_timer():
         )
         coordinator._start_weather_timeout.assert_not_called()
     finally:
-        task.cancel()
+        coordinator._weather_mgr.cancel_weather_timeout()
 
 
 # --- first-refresh ordering: recovery before pipeline ---

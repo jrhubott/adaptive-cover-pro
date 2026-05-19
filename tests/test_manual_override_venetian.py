@@ -17,7 +17,7 @@ from collections.abc import Callable
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
-from custom_components.adaptive_cover_pro.managers.dual_axis_sequencer import (
+from custom_components.adaptive_cover_pro.cover_types.venetian import (
     DualAxisSequencer,
 )
 from custom_components.adaptive_cover_pro.managers.manual_override import (

@@ -17,10 +17,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+import voluptuous as vol
 from homeassistant.const import (
     SERVICE_SET_COVER_POSITION,
     SERVICE_SET_COVER_TILT_POSITION,
 )
+from homeassistant.helpers import selector
 
 from ..const import ATTR_POSITION, ATTR_TILT_POSITION, POSITION_CLOSED, POSITION_OPEN
 from ..helpers import get_open_close_state, should_use_tilt, state_attr
@@ -144,6 +146,28 @@ class CoverTypePolicy(ABC):
     # without touching every gate site.
     supports_glare_zones: ClassVar[bool] = False
 
+    # Whether the "Return to default when disabled" switch is exposed for this
+    # cover type. Currently only single-axis position covers (blind, awning)
+    # have a meaningful "default height" semantic; tilt-only covers don't, and
+    # venetian's default is driven through the dual-axis sequencer rather than
+    # a fire-and-forget position. Replaces the legacy string list at
+    # ``switch.py`` that hardcoded ``("cover_blind", "cover_awning")``.
+    supports_return_to_default_switch: ClassVar[bool] = False
+
+    # Whether the diagnostic surface exposes a dual-axis target sensor (the
+    # "Target Tilt" sensor in ``sensor.py``). Only meaningful for cover types
+    # that drive both position and tilt on a single HA entity — venetian today.
+    # Replaces the literal ``SensorType.VENETIAN ==`` lambda gate that used to
+    # live on ``sensor.py:807``.
+    exposes_dual_axis_sensor: ClassVar[bool] = False
+
+    # Whether the custom-position config-flow UI surfaces per-slot tilt sliders
+    # and the global default/sunset tilt sliders. Only meaningful for cover
+    # types whose policy can act on tilt independently — venetian today.
+    # Replaces the ``is_venetian = sensor_type == SensorType.VENETIAN`` branch
+    # in ``config_flow._build_custom_position_schema_dict``.
+    custom_position_includes_tilt: ClassVar[bool] = False
+
     @abstractmethod
     def build_calc_engine(
         self,
@@ -191,10 +215,21 @@ class CoverTypePolicy(ABC):
         """
         return
 
-    def is_in_tilt_suppression(self, entity_id: str) -> bool:  # noqa: ARG002
+    def is_in_tilt_suppression(
+        self,
+        entity_id: str,  # noqa: ARG002
+        delta: float = 0.0,  # noqa: ARG002
+    ) -> bool:
         """Return whether the tilt-axis suppression window is open.
 
-        Default ``False`` for cover types without a back-rotating tilt axis.
+        ``delta`` is the magnitude of the observed change on the suppressed
+        axis; ``VenetianPolicy`` uses it to gate small motor-drift values
+        while letting larger user moves fall through. Cover types without a
+        back-rotating tilt axis ignore the argument and return ``False``.
+
+        The signature matches the ``Callable[[str, float], bool]`` contract
+        consumed by ``SecondaryAxisCheck.suppression`` so the method can be
+        passed as that callback directly without an adapter lambda.
         """
         return False
 
@@ -342,3 +377,53 @@ class CoverTypePolicy(ABC):
         implements it explicitly so we don't silently fail open).
         """
         return []
+
+    def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
+        """Return the config-flow entity-selector filter for this cover type.
+
+        Default: the plain ``cover`` domain with no capability requirement.
+        Override only when the cover type needs to require a specific feature
+        flag at selection time (e.g. ``TiltPolicy`` filters to tilt-capable
+        entities).
+        """
+        return selector.EntityFilterSelectorConfig(domain="cover")
+
+    def geometry_schema(self) -> vol.Schema:
+        """Return the config-flow geometry sub-schema for this cover type.
+
+        Default: empty schema. Override to surface cover-type-specific
+        geometry inputs (window dimensions, awning angle, slat depth, etc.).
+        """
+        return vol.Schema({})
+
+    def summary_geometry_lines(
+        self, config: dict[str, Any]
+    ) -> list[str]:  # noqa: ARG002
+        """Return the user-facing geometry summary lines for the config flow.
+
+        Default: no geometry summary. Override to render the
+        cover-type-specific geometry block in ``_build_config_summary``.
+        """
+        return []
+
+    def wiki_anchor(self) -> str:
+        """Return the wiki page anchor for this cover type's geometry docs.
+
+        ``config_flow._geometry_wiki_link`` composes the full URL by
+        appending this fragment to the wiki base. Default is the generic
+        cover-types overview — every concrete policy overrides to its own
+        page. Replaces the legacy ``_GEOMETRY_WIKI_URL`` dict in
+        ``config_flow.py`` that mapped ``SensorType`` literals to URLs.
+        """
+        return "Cover-Types"
+
+    def display_label(self) -> str:
+        """Return the human-readable label for this cover type.
+
+        Used by ``config_flow._build_config_summary`` and any other UI
+        surface that names the cover type. Default falls back to the
+        ``cover_type`` slug for stub policies; every concrete policy
+        overrides to its user-facing name. Replaces the legacy
+        ``type_labels`` dict in ``config_flow.py``.
+        """
+        return self.cover_type.removeprefix("cover_").replace("_", " ").title()

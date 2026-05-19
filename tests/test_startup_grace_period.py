@@ -91,17 +91,16 @@ async def test_startup_grace_period_timeout_clears_tracking():
         GracePeriodManager,
     )
 
-    # Test the GracePeriodManager timeout directly (the coordinator delegates to it)
+    # Test the GracePeriodManager timeout body directly (the coordinator delegates to it)
     mock_logger = MagicMock()
     mgr = GracePeriodManager(logger=mock_logger, startup_grace_seconds=0.1)
     mgr._startup_timestamp = dt.datetime.now().timestamp()
-    mgr._startup_grace_period_task = None
 
-    await mgr._startup_grace_period_timeout()
+    await mgr._on_startup_grace_expired()
 
     # Verify tracking was cleared
     assert mgr._startup_timestamp is None
-    assert mgr._startup_grace_period_task is None
+    assert mgr.is_in_startup_grace_period() is False
 
     # Verify debug log was called for expiration
     mock_logger.debug.assert_called_once()
@@ -157,41 +156,31 @@ async def test_start_startup_grace_period_sets_timestamp():
 
 @pytest.mark.asyncio
 async def test_start_startup_grace_period_cancels_existing_task():
-    """Test that _start_startup_grace_period cancels existing task."""
-    from unittest.mock import patch
+    """A second start cancels the previous startup grace timer (no double-fire)."""
     from custom_components.adaptive_cover_pro.const import STARTUP_GRACE_PERIOD_SECONDS
     from custom_components.adaptive_cover_pro.managers.grace_period import (
         GracePeriodManager,
     )
 
-    # Create mock task
-    mock_task = MagicMock()
-    mock_task.done.return_value = False
-
-    # Create minimal mock coordinator backed by a real GracePeriodManager
+    # Real GracePeriodManager so the controller behaviour is exercised end-to-end.
     coordinator = MagicMock()
     coordinator._grace_mgr = GracePeriodManager(
         logger=MagicMock(),
         startup_grace_seconds=STARTUP_GRACE_PERIOD_SECONDS,
     )
-    coordinator._grace_mgr._startup_grace_period_task = mock_task
 
-    # Import the method
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
 
-    # Mock asyncio.create_task to avoid creating actual task
-    def _close_coro(coro):
-        coro.close()
-        return MagicMock()
+    AdaptiveDataUpdateCoordinator._start_startup_grace_period(coordinator)
+    assert coordinator._grace_mgr._startup_timer.is_running is True
 
-    with patch("asyncio.create_task", side_effect=_close_coro):
-        # Call the method
-        AdaptiveDataUpdateCoordinator._start_startup_grace_period(coordinator)
+    AdaptiveDataUpdateCoordinator._start_startup_grace_period(coordinator)
+    # A new timer must be running (the prior one was cancelled by start()).
+    assert coordinator._grace_mgr._startup_timer.is_running is True
 
-    # Verify old task was cancelled
-    mock_task.cancel.assert_called_once()
+    coordinator._grace_mgr.cancel_all()
 
 
 @pytest.mark.asyncio

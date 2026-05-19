@@ -478,7 +478,7 @@ MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 # 21. Venetian Dual-Axis Sequencing
 # =============================================================================
 # Venetian covers move both vertical position AND tilt. The dual-axis sequencer
-# (managers/dual_axis_sequencer.py) issues the position command, waits for the
+# (cover_types/venetian/sequencer.py) issues the position command, waits for the
 # carriage to settle, then issues the tilt command. Constants in this section
 # govern that handshake and the venetian-specific mode/clamp options.
 

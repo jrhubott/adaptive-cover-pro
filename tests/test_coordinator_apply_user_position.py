@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
     ManualOverrideHandler,
 )
@@ -28,7 +29,7 @@ def _slot(pos: int, *, is_on: bool, min_mode: bool) -> CustomPositionSensorState
         entity_id=f"binary_sensor.slot_{pos}",
         is_on=is_on,
         position=pos,
-        priority=77,
+        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
         min_mode=min_mode,
         use_my=False,
     )
@@ -74,7 +75,19 @@ def _make_coord(
     coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
     coord.config_entry = MagicMock()
     coord.config_entry.options = default_options if default_options is not None else {}
-    coord._read_custom_position_sensor_states.return_value = custom_states
+    # PipelineSnapshotBuilder mock — Phase D moved HA reads + snapshot
+    # assembly onto this collaborator.  Both call-sites of
+    # async_apply_user_position route through it.
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.read_custom_position_sensors.return_value = custom_states
+    snapshot_sentinel = MagicMock(name="pipeline_snapshot")
+    coord._snapshot_builder.build = MagicMock(return_value=snapshot_sentinel)
+    # Coordinator state that the builder call needs as keyword args.  These
+    # are instance attributes (set in __init__) so they aren't on the spec'd
+    # MagicMock by default — preset them explicitly.
+    coord._cover_data = MagicMock(name="cover_data")
+    coord._cover_type = "cover_blind"
+    coord._weather_readings = None
     ctx = MagicMock(name="position_context")
     coord._build_position_context.return_value = ctx
     coord._cmd_svc = MagicMock()
@@ -88,10 +101,6 @@ def _make_coord(
     coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
         winner_name, winner_priority
     )
-
-    # _build_pipeline_snapshot is stubbed — preemption check just needs an object.
-    snapshot_sentinel = MagicMock(name="pipeline_snapshot")
-    coord._build_pipeline_snapshot = MagicMock(return_value=snapshot_sentinel)
 
     # Handler lookup so the helper can resolve priority from the winner step.
     handler = MagicMock()
@@ -181,7 +190,9 @@ async def test_async_apply_user_position_uses_passed_options_when_provided() -> 
         "cover.test", 10, trigger="set_position", options=custom_options
     )
 
-    coord._read_custom_position_sensor_states.assert_called_once_with(custom_options)
+    coord._snapshot_builder.read_custom_position_sensors.assert_called_once_with(
+        custom_options
+    )
     # And the override flowed into _build_position_context too
     args, kwargs = coord._build_position_context.call_args
     # signature: (entity, options, *, force=...)
@@ -317,8 +328,8 @@ async def test_snapshot_passed_to_pipeline_has_manual_override_false() -> None:
 
     await coord.async_apply_user_position("cover.test", 50, trigger="proxy_managed")
 
-    coord._build_pipeline_snapshot.assert_called_once()
-    _, kwargs = coord._build_pipeline_snapshot.call_args
+    coord._snapshot_builder.build.assert_called_once()
+    _, kwargs = coord._snapshot_builder.build.call_args
     assert kwargs.get("manual_override_active") is False
 
 

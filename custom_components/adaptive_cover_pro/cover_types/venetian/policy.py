@@ -5,6 +5,11 @@ on a single HA entity. Position is resolved by the same pipeline handlers as
 ``cover_blind`` (using a vertical calculation engine); tilt is filled
 post-pipeline by ``VenetianCoverCalculation`` and threaded through the
 position-context so ``CoverCommandService`` can run the dual-axis sequence.
+
+The sibling ``sequencer.py`` owns the per-entity dual-axis state and the
+position-settle / tilt-verify polling. This module owns the policy decisions
+(when to send a pre-position tilt, what tilt to compute, how to thread it
+into the pipeline result).
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ import voluptuous as vol
 from homeassistant.const import SERVICE_SET_COVER_POSITION
 from homeassistant.helpers import selector
 
-from ..const import (
+from ...const import (
     CONF_INVERSE_TILT,
     CONF_MAX_TILT,
     CONF_MIN_TILT,
@@ -36,12 +41,11 @@ from ..const import (
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
 )
-from ..engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
-from ..managers.dual_axis_sequencer import DualAxisSequencer
-from ..managers.manual_override import SecondaryAxisCheck
-from ..pipeline.types import DecisionStep
-from ._helpers import window_dimensions_lines
-from .base import (
+from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
+from ...managers.manual_override import SecondaryAxisCheck
+from ...pipeline.types import DecisionStep
+from .._helpers import window_dimensions_lines
+from ..base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
     POSITION_AXIS,
@@ -50,13 +54,14 @@ from .base import (
     CoverTypePolicy,
     caps_get,
 )
-from .blind import GEOMETRY_VERTICAL_SCHEMA
-from .tilt import GEOMETRY_TILT_SCHEMA, TILT_CAPABLE_ENTITY_FILTER
+from ..blind import GEOMETRY_VERTICAL_SCHEMA
+from ..tilt import GEOMETRY_TILT_SCHEMA, TILT_CAPABLE_ENTITY_FILTER
+from .sequencer import DualAxisSequencer
 
 if TYPE_CHECKING:
-    from ..engine.covers import AdaptiveGeneralCover
-    from ..pipeline.types import PipelineResult
-    from ..services.configuration_service import ConfigurationService
+    from ...engine.covers import AdaptiveGeneralCover
+    from ...pipeline.types import PipelineResult
+    from ...services.configuration_service import ConfigurationService
 
 
 GEOMETRY_VENETIAN_SCHEMA = GEOMETRY_VERTICAL_SCHEMA.extend(
@@ -98,6 +103,16 @@ class VenetianPolicy(CoverTypePolicy):
     # the position axis. The tilt axis is filled in by ``post_pipeline_resolve``
     # and dispatched separately by the ``DualAxisSequencer``.
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS, TILT_AXIS)
+    exposes_dual_axis_sensor: ClassVar[bool] = True
+    custom_position_includes_tilt: ClassVar[bool] = True
+
+    def wiki_anchor(self) -> str:
+        """Dual-axis venetian wiki page."""
+        return "Venetian-Blinds"
+
+    def display_label(self) -> str:
+        """User-facing label for dual-axis venetians."""
+        return "Venetian Blind (Dual-Axis)"
 
     def __init__(self) -> None:
         """Initialise without a sequencer; ``attach()`` wires one up later."""
@@ -131,7 +146,7 @@ class VenetianPolicy(CoverTypePolicy):
 
     def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
         """Render window dimensions plus the slat-config block."""
-        from ..const import CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE
+        from ...const import CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE
 
         tilt_parts: list[str] = []
         if (v := config.get(CONF_TILT_DEPTH)) is not None:
@@ -233,7 +248,7 @@ class VenetianPolicy(CoverTypePolicy):
         branch even when the sun is below the horizon (issue #33), so
         direct_sun_valid is the authoritative signal.
         """
-        from ..enums import ControlMethod
+        from ...enums import ControlMethod
 
         if result.control_method != ControlMethod.SOLAR:
             return True
@@ -376,12 +391,15 @@ class VenetianPolicy(CoverTypePolicy):
         """Expose the sequencer for diagnostics / tests."""
         return self._sequencer
 
-    def is_in_tilt_suppression(self, entity_id: str, delta: float) -> bool:
+    def is_in_tilt_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
         """Suppress back-rotate drift only when ``delta`` is plausibly motor drift.
 
         Delegates to the sequencer's delta-aware gate. Large deltas inside the
         window are user moves, not motor drift, and fall through to the
-        manual-override numeric path (issue #33 follow-on).
+        manual-override numeric path (issue #33 follow-on). The ``delta``
+        default matches the base signature so the method is interchangeable
+        with other policies when passed as a ``SecondaryAxisCheck.suppression``
+        callback.
         """
         if self._sequencer is None:
             return False

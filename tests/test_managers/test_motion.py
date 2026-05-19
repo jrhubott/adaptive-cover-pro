@@ -102,10 +102,10 @@ def test_is_motion_timeout_active_no_sensors(mgr):
 
 
 def test_is_motion_timeout_active_when_set(mock_hass, logger):
-    """Returns True when _motion_timeout_active flag is True and sensors configured."""
+    """Returns True after a no-motion event has activated the fallback state."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
-    mgr._motion_timeout_active = True
+    mgr.set_no_motion()  # public path that flips the active flag without waiting
 
     assert mgr.is_motion_timeout_active is True
 
@@ -152,104 +152,92 @@ def test_last_motion_time_tracking(mgr):
 
 
 def test_record_motion_detected_clears_active_flag(mock_hass, logger):
-    """record_motion_detected() clears _motion_timeout_active."""
+    """record_motion_detected() returns the manager to the "motion present" state."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
-    mgr._motion_timeout_active = True
+    mgr.set_no_motion()
+    assert mgr.is_motion_timeout_active is True
 
     mgr.record_motion_detected()
 
-    assert mgr._motion_timeout_active is False
+    assert mgr.is_motion_timeout_active is False
 
 
-def test_record_motion_detected_cancels_task(mock_hass, logger):
-    """record_motion_detected() cancels a running timeout task."""
+@pytest.mark.asyncio
+async def test_record_motion_detected_cancels_pending_timer(mock_hass, logger):
+    """A pending no-motion timer is cancelled when motion returns."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
+    mgr.start_motion_timeout(AsyncMock())
+    assert mgr.has_pending_timeout is True
 
-    task = MagicMock()
-    task.done.return_value = False
-    mgr._motion_timeout_task = task
+    refreshed_needed = mgr.record_motion_detected()
 
-    mgr.record_motion_detected()
-
-    task.cancel.assert_called_once()
-    assert mgr._motion_timeout_task is None
+    assert mgr.has_pending_timeout is False
+    assert refreshed_needed is True  # caller should refresh — timer was in flight
 
 
 # --- cancel_motion_timeout ---
 
 
-def test_cancel_motion_timeout(mock_hass, logger):
-    """Cancels mock task and sets _motion_timeout_task to None."""
+@pytest.mark.asyncio
+async def test_cancel_motion_timeout_clears_pending(mock_hass, logger):
+    """cancel_motion_timeout idempotently clears any pending timer."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
-
-    task = MagicMock()
-    task.done.return_value = False
-    mgr._motion_timeout_task = task
-
-    mgr.cancel_motion_timeout()
-
-    task.cancel.assert_called_once()
-    assert mgr._motion_timeout_task is None
-
-
-def test_cancel_motion_timeout_no_task(mgr):
-    """Does not raise when no task exists."""
-    mgr.cancel_motion_timeout()
-    assert mgr._motion_timeout_task is None
-
-
-def test_cancel_motion_timeout_already_done(mock_hass, logger):
-    """Does not call cancel when task is already done."""
-    mgr = MotionManager(hass=mock_hass, logger=logger)
-
-    task = MagicMock()
-    task.done.return_value = True
-    mgr._motion_timeout_task = task
+    mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
+    mgr.start_motion_timeout(AsyncMock())
+    assert mgr.has_pending_timeout is True
 
     mgr.cancel_motion_timeout()
 
-    task.cancel.assert_not_called()
-    assert mgr._motion_timeout_task is None
+    assert mgr.has_pending_timeout is False
 
 
-# --- _motion_timeout_handler ---
+def test_cancel_motion_timeout_when_idle_is_noop(mgr):
+    """Cancel is safe to call when no timer is pending."""
+    mgr.cancel_motion_timeout()  # must not raise
+    assert mgr.has_pending_timeout is False
+
+
+# --- timeout expiry body ---
 
 
 @pytest.mark.asyncio
-async def test_motion_timeout_handler_sets_active(mock_hass, logger):
-    """Timeout handler sets active flag and calls refresh when motion absent."""
+async def test_timeout_expiry_sets_active_and_refreshes_when_motion_absent(
+    mock_hass, logger
+):
+    """When the timer expires with motion still absent, fallback state activates."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
-    # Patch is_motion_detected to return False (no motion after timeout)
     original_prop = MotionManager.is_motion_detected
     MotionManager.is_motion_detected = property(lambda self: False)
     try:
         callback = AsyncMock()
-        await mgr._motion_timeout_handler(0.01, callback)
+        # Drive the on-expire body directly with a known elapsed value; the
+        # body is the unit under test, not the asyncio plumbing (covered by
+        # TimeoutController tests).
+        await mgr._on_motion_timeout_expired(0, callback)
 
-        assert mgr._motion_timeout_active is True
+        assert mgr.is_motion_timeout_active is True
         callback.assert_called_once()
     finally:
         MotionManager.is_motion_detected = original_prop
 
 
 @pytest.mark.asyncio
-async def test_motion_timeout_handler_skips_if_motion(mock_hass, logger):
-    """Timeout handler does not set active flag if motion was re-detected."""
+async def test_timeout_expiry_skips_when_motion_returned(mock_hass, logger):
+    """If motion returned during the sleep, fallback must not activate."""
     mgr = MotionManager(hass=mock_hass, logger=logger)
     mgr.update_config(sensors=["binary_sensor.motion_room"], timeout_seconds=300)
 
-    # Patch is_motion_detected to return True (motion during timeout)
     original_prop = MotionManager.is_motion_detected
     MotionManager.is_motion_detected = property(lambda self: True)
     try:
         callback = AsyncMock()
-        await mgr._motion_timeout_handler(0.01, callback)
+        await mgr._on_motion_timeout_expired(0, callback)
 
-        assert mgr._motion_timeout_active is False
+        assert mgr.is_motion_timeout_active is False
         callback.assert_not_called()
     finally:
         MotionManager.is_motion_detected = original_prop

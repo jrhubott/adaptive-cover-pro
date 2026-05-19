@@ -14,6 +14,7 @@ Covers:
 
 from __future__ import annotations
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
     CloudSuppressionHandler,
@@ -62,7 +63,10 @@ def _full_registry() -> PipelineRegistry:
             WeatherOverrideHandler(),
             ManualOverrideHandler(),
             CustomPositionHandler(
-                slot=1, entity_id="binary_sensor.scene", position=55, priority=77
+                slot=1,
+                entity_id="binary_sensor.scene",
+                position=55,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             ),
             MotionTimeoutHandler(),
             CloudSuppressionHandler(),
@@ -353,7 +357,7 @@ class TestCustomPositionPriorityInteractions:
                     entity_id="binary_sensor.scene",
                     is_on=True,
                     position=55,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
                 )
@@ -376,7 +380,7 @@ class TestCustomPositionPriorityInteractions:
                     entity_id="binary_sensor.scene",
                     is_on=True,
                     position=55,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
                 )
@@ -395,7 +399,7 @@ class TestCustomPositionPriorityInteractions:
                     entity_id="binary_sensor.scene",
                     is_on=False,
                     position=55,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
                 )
@@ -417,7 +421,7 @@ class TestCustomPositionPriorityInteractions:
                     entity_id="binary_sensor.scene",
                     is_on=True,
                     position=55,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
                 )

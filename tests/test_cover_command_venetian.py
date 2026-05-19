@@ -33,7 +33,7 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
 def _zero_post_tilt_delay(monkeypatch):
     """Skip the 1.5s real-motor settle delay in unit tests."""
     monkeypatch.setattr(
-        "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer."
+        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
         "VENETIAN_POST_TILT_REBASE_DELAY_SECONDS",
         0,
     )

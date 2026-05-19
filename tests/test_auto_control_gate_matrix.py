@@ -239,7 +239,33 @@ async def _trigger_first_refresh_safety(coord):
 
 
 async def _trigger_window_close_return_sunset(coord):
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
     coord._track_end_time = True
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {}
+    coord._inverse_state = False
+    coord.entities = []
+    coord.manager = MagicMock()
+    coord._build_position_context = MagicMock()
+    event_buffer = getattr(coord, "_event_buffer", None) or EventBuffer(maxlen=10)
+    coord._event_buffer = event_buffer
+    # Phase E: _check_time_window_transition awaits the sunset-window tracker
+    # after running the closed-window callback.  Seed prev_sunset_active=True
+    # so it no-ops without redispatching.
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=event_buffer,
+        effective_default_fn=lambda _opts: (0, False),
+    )
+    tracker._prev_sunset_active = True
+    coord._window_tracker = tracker
 
     async def _invoke(track_end_time, refresh_callback, on_window_open=None):
         await refresh_callback()
@@ -256,13 +282,29 @@ async def _trigger_sunset_window_opened(coord):
     gated by automatic_control=False.  The method must return early without
     dispatching (non-bypass, gated path).
     """
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+    from custom_components.adaptive_cover_pro.state.window_transition_tracker import (
+        WindowTransitionTracker,
+    )
+
     coord._track_end_time = True
-    coord._prev_sunset_active = False
     coord.config_entry = MagicMock()
     coord.config_entry.options = {"sunset_position": 0}
     coord._inverse_state = False
     coord._compute_current_effective_default = MagicMock(return_value=(0, True))
     coord.async_refresh = AsyncMock()
+    event_buffer = getattr(coord, "_event_buffer", None) or EventBuffer(maxlen=10)
+    coord._event_buffer = event_buffer
+    tracker = WindowTransitionTracker(
+        hass=MagicMock(),
+        logger=coord.logger,
+        event_buffer=event_buffer,
+        effective_default_fn=coord._compute_current_effective_default,
+    )
+    tracker._prev_sunset_active = False
+    coord._window_tracker = tracker
     await coord._check_sunset_window_transition()
 
 
@@ -325,7 +367,8 @@ async def _trigger_async_apply_user_position(coord):
     """
     coord.config_entry = MagicMock()
     coord.config_entry.options = {}
-    coord._read_custom_position_sensor_states = MagicMock(return_value=[])
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.read_custom_position_sensors = MagicMock(return_value=[])
     await coord.async_apply_user_position(
         "cover.test", 42, trigger="set_position", force=True
     )

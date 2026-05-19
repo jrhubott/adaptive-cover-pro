@@ -13,6 +13,9 @@ from custom_components.adaptive_cover_pro.config_types import (
     GlareZone,
     GlareZonesConfig,
 )
+from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+    AdaptiveVerticalCover,
+)
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
@@ -31,8 +34,12 @@ def _make_vertical_cover(
     direct_sun_valid: bool = True,
     calculate_percentage_return: float = 60.0,
 ):
-    """Build a mock AdaptiveVerticalCover for GlareZoneHandler tests."""
-    cover = MagicMock()
+    """Build a mock AdaptiveVerticalCover for GlareZoneHandler tests.
+
+    ``spec=AdaptiveVerticalCover`` makes ``isinstance`` return True so the
+    handler's runtime type guard (the post-cast safety net) accepts the mock.
+    """
+    cover = MagicMock(spec=AdaptiveVerticalCover)
     cover.direct_sun_valid = direct_sun_valid
     cover.distance = distance
     cover.gamma = gamma
@@ -138,6 +145,34 @@ class TestGlareZoneHandlerGating:
             active_zone_names={"desk"},
         )
         assert self.handler.evaluate(snap) is None
+
+    def test_skips_with_warning_when_cover_is_not_vertical(self, caplog) -> None:
+        """Runtime guard: a non-vertical cover paired with supports_glare_zones must skip.
+
+        Replaces the pre-A.5 unchecked ``cast(AdaptiveVerticalCover, …)``.
+        Simulates a future policy that flips ``supports_glare_zones`` without
+        binding a vertical engine — the handler must not crash on the next
+        attribute access, and must surface a warning so the misconfiguration
+        is debuggable from the logs.
+        """
+        import logging
+
+        # Plain MagicMock — no spec — so isinstance(.., AdaptiveVerticalCover) is False.
+        bogus_cover = MagicMock()
+        bogus_cover.direct_sun_valid = True
+        snap = make_snapshot(
+            cover=bogus_cover,
+            cover_type="cover_blind",
+            glare_zones=_make_glare_config(),
+            active_zone_names={"desk"},
+        )
+
+        with caplog.at_level(logging.WARNING):
+            assert self.handler.evaluate(snap) is None
+
+        assert any(
+            "not AdaptiveVerticalCover" in record.message for record in caplog.records
+        ), "expected the safety-net warning to be emitted"
 
 
 class TestGlareZoneHandlerLogic:

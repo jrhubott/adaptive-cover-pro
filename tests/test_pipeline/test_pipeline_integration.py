@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
@@ -527,7 +528,10 @@ class TestCustomPositionConfigurablePriority:
             [
                 ManualOverrideHandler(),
                 CustomPositionHandler(
-                    slot=1, entity_id="binary_sensor.scene", position=45, priority=77
+                    slot=1,
+                    entity_id="binary_sensor.scene",
+                    position=45,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                 ),
                 MotionTimeoutHandler(),
                 SolarHandler(),
@@ -1035,8 +1039,16 @@ def _climate_options_intermediate() -> ClimateOptions:
 
 
 def _make_glare_climate_cover(calculate_percentage_return: float = 91.0):
-    """Mock vertical cover satisfying both GlareZoneHandler and ClimateHandler."""
-    cover = MagicMock()
+    """Mock vertical cover satisfying both GlareZoneHandler and ClimateHandler.
+
+    Specced against ``AdaptiveVerticalCover`` so the post-A.5 isinstance guard
+    in ``GlareZoneHandler.evaluate`` accepts the mock.
+    """
+    from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+        AdaptiveVerticalCover,
+    )
+
+    cover = MagicMock(spec=AdaptiveVerticalCover)
     cover.direct_sun_valid = True
     cover.valid = True
     cover.distance = 3.0

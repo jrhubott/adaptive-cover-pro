@@ -74,6 +74,15 @@ class AwningPolicy(CoverTypePolicy):
     # ``position_for_intent`` falls out of the base implementation without any
     # subclass override.
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS_OPEN_BLOCKS_SUN,)
+    supports_return_to_default_switch = True
+
+    def wiki_anchor(self) -> str:
+        """Horizontal-awning geometry page."""
+        return "Configuration-Horizontal"
+
+    def display_label(self) -> str:
+        """User-facing label for horizontal awnings."""
+        return "Horizontal Awning"
 
     def disallowed_geometry_fields(
         self,

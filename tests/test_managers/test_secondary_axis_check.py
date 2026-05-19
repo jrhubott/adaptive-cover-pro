@@ -11,9 +11,45 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import POSITION_TOLERANCE_PERCENT
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     SecondaryAxisCheck,
+    effective_manual_threshold,
 )
+
+
+@pytest.mark.unit
+class TestEffectiveManualThreshold:
+    """Single-source-of-truth for the manual-override threshold floor.
+
+    Two callers (``handle_state_change`` and ``SecondaryAxisCheck.evaluate``)
+    delegate here; pinning the contract prevents the formula from drifting
+    across the two sites the next time the floor changes.
+    """
+
+    def test_none_returns_floor(self):
+        assert effective_manual_threshold(None) == POSITION_TOLERANCE_PERCENT
+
+    def test_zero_returns_floor(self):
+        assert effective_manual_threshold(0) == POSITION_TOLERANCE_PERCENT
+
+    def test_below_floor_returns_floor(self):
+        assert (
+            effective_manual_threshold(POSITION_TOLERANCE_PERCENT - 1)
+            == POSITION_TOLERANCE_PERCENT
+        )
+
+    def test_at_floor_returns_floor(self):
+        assert (
+            effective_manual_threshold(POSITION_TOLERANCE_PERCENT)
+            == POSITION_TOLERANCE_PERCENT
+        )
+
+    def test_above_floor_returns_user_value(self):
+        assert (
+            effective_manual_threshold(POSITION_TOLERANCE_PERCENT + 7)
+            == POSITION_TOLERANCE_PERCENT + 7
+        )
 
 
 def _state(attrs: dict):

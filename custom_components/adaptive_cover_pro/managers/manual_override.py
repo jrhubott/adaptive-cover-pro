@@ -14,6 +14,22 @@ from ..diagnostics.event_buffer import EventBuffer
 from ..helpers import check_cover_features
 
 
+def effective_manual_threshold(user_threshold: int | None) -> int:
+    """Resolve the effective manual-override threshold for a delta comparison.
+
+    Floored at ``POSITION_TOLERANCE_PERCENT`` so motor rounding and reporting
+    imprecision can't trip false positives even when the user configures
+    ``manual_threshold = 0`` or leaves it unset. Both the primary-axis check
+    in ``handle_state_change`` and the secondary-axis check in
+    ``SecondaryAxisCheck.evaluate`` delegate here; keeping the two in sync
+    via a single helper prevents the formula from drifting (e.g. the day
+    ``POSITION_TOLERANCE_PERCENT`` changes).
+    """
+    return max(
+        user_threshold if user_threshold is not None else 0, POSITION_TOLERANCE_PERCENT
+    )
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class SecondaryAxisResult:
     """Outcome of evaluating a non-primary axis for manual-override drift.
@@ -59,10 +75,7 @@ class SecondaryAxisCheck:
         if new_value is None:
             return SecondaryAxisResult()
 
-        effective_threshold = max(
-            manual_threshold if manual_threshold is not None else 0,
-            POSITION_TOLERANCE_PERCENT,
-        )
+        effective_threshold = effective_manual_threshold(manual_threshold)
         delta = abs(self.expected - new_value)
 
         # Check suppression BEFORE the on-target short-circuit. When the motor
@@ -307,15 +320,11 @@ class AdaptiveCoverManager:
             return
 
         if new_position != our_state:
-            # Use the larger of the user-configured threshold and the position
-            # tolerance constant as the minimum detectable change.  This prevents
-            # motor rounding and position-reporting imprecision (up to
-            # POSITION_TOLERANCE_PERCENT) from triggering false manual overrides
-            # even when the user has not configured an explicit threshold.
-            effective_threshold = max(
-                manual_threshold if manual_threshold is not None else 0,
-                POSITION_TOLERANCE_PERCENT,
-            )
+            # Floor the threshold at POSITION_TOLERANCE_PERCENT so motor rounding
+            # / position-reporting imprecision can't trip false positives even
+            # when the user leaves manual_threshold unset. See
+            # ``effective_manual_threshold`` for the single-source-of-truth.
+            effective_threshold = effective_manual_threshold(manual_threshold)
             if abs(our_state - new_position) <= effective_threshold:
                 self.logger.debug(
                     "Position change %s%% is less than effective threshold %s%% for %s (user threshold=%s, tolerance floor=%s)",

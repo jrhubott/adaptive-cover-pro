@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.cover_types import get_policy
 from tests.conftest import make_snapshot_for_cover
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
@@ -844,7 +845,7 @@ class TestCustomPositionEndToEnd:
                         slot=1,
                         entity_id="binary_sensor.scene",
                         position=33,
-                        priority=77,
+                        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     ),
                     SolarHandler(),
                     DefaultHandler(),
@@ -872,7 +873,7 @@ class TestCustomPositionEndToEnd:
                         entity_id="binary_sensor.scene",
                         is_on=True,
                         position=33,
-                        priority=77,
+                        priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                         min_mode=False,
                         use_my=False,
                     )

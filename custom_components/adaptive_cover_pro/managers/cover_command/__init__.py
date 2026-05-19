@@ -31,6 +31,7 @@ from . import gates
 from .diagnostics import DiagnosticsRecorder
 from .position_context import PositionContextTracker
 from .routing import ServiceCallPlan, build_special_positions, route_service_call
+from .state_classifier import StateClassifier
 from .state_store import PerEntityState, PositionContext
 from .stop import StopTracker
 
@@ -86,6 +87,7 @@ class CoverCommandService:
         on_tick=None,
         *,
         event_buffer=None,
+        debug_log=None,
     ) -> None:
         """Initialize the CoverCommandService.
 
@@ -107,13 +109,18 @@ class CoverCommandService:
                 interval without an extra timer.
             event_buffer: Shared diagnostic ring buffer (optional). When provided,
                 cover_command_sent and cover_command_skipped events are appended.
+            debug_log: Optional ``(category, msg, *args) -> None`` callable used
+                by the manual-override classifier so its diagnostic lines respect
+                the coordinator's debug-categories gate.  Defaults to plain
+                ``logger.debug`` when omitted.
 
         """
-        # Local import: ``cover_types`` re-exports ``VenetianPolicy`` which
-        # imports ``DualAxisSequencer`` from this manager package, so a
-        # module-level import here would close the loop and ImportError on
-        # first load. The policy is only consulted at construction time and
-        # afterwards through ``self._policy``.
+        # Local import: ``cover_types.venetian.sequencer`` imports
+        # ``managers.cover_command.gates`` (a sibling module) for the tilt
+        # min-delta check, so a module-level ``from ...cover_types import
+        # get_policy`` here can still close a partial-init loop on first
+        # load. The policy is only consulted at construction time and
+        # afterwards through ``self._policy``, so the local import is cheap.
         from ...cover_types import get_policy
 
         self._hass = hass
@@ -190,6 +197,23 @@ class CoverCommandService:
         # events into the shared event buffer.
         self._event_buffer: EventBuffer | None = event_buffer
         self._diag = DiagnosticsRecorder(event_buffer=event_buffer)
+
+        # Manual-override state classifier — the per-event "is this our own
+        # transit or a user move" decision (issues #147, #172, #186, #271,
+        # #285).  Body was extracted verbatim from the coordinator in Phase F.
+        # ``debug_log`` defaults to a plain logger.debug; the coordinator
+        # passes its own _debug_log so debug_mode + debug_categories still
+        # gate INFO-level emission.
+        if debug_log is None:
+
+            def debug_log(_category, msg, *args):
+                logger.debug(msg, *args)
+
+        self._state_classifier = StateClassifier(
+            self,
+            event_buffer=event_buffer,
+            debug_log=debug_log,
+        )
 
         # Reconciliation timer handle (async_track_time_interval unsubscribe fn)
         self._reconcile_unsub = None
@@ -682,6 +706,35 @@ class CoverCommandService:
 
         """
         self._open_close_threshold = threshold
+
+    # ------------------------------------------------------------------ #
+    # State classification (manual-override detection)
+    # ------------------------------------------------------------------ #
+
+    def classify_state_change(
+        self,
+        event,
+        *,
+        ignore_intermediate_states: bool,
+        target_just_reached: set[str],
+        grace_mgr,
+    ) -> None:
+        """Classify a post-command cover state change.
+
+        Delegates to :class:`StateClassifier`.  Mutates
+        ``target_just_reached`` in place when the cover reaches its
+        commanded position; clears ``wait_for_target`` (via
+        :meth:`set_waiting`) when the cover has settled or stalled long
+        enough that manual-override detection should run on the next
+        event.  See the classifier's docstring for the full decision
+        tree and the issue numbers each branch closes.
+        """
+        self._state_classifier.classify(
+            event,
+            ignore_intermediate_states=ignore_intermediate_states,
+            target_just_reached=target_just_reached,
+            grace_mgr=grace_mgr,
+        )
 
     # ------------------------------------------------------------------ #
     # Capability detection

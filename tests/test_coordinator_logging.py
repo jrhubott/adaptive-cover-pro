@@ -204,40 +204,45 @@ class TestCancelMotionTimeoutLogging:
         )
         return coord
 
-    def test_logs_when_task_active(self):
+    @pytest.mark.asyncio
+    async def test_logs_when_task_active(self):
         """Logs 'Motion timeout canceled' when an active task is canceled."""
+        from unittest.mock import AsyncMock
+
         coord = self._make_coordinator()
-        mock_task = MagicMock()
-        mock_task.done.return_value = False
-        coord._motion_mgr._motion_timeout_task = mock_task
+        # Real pending timer via the public API.
+        coord._motion_mgr.update_config(
+            sensors=["binary_sensor.motion"], timeout_seconds=300
+        )
+        coord._motion_mgr.start_motion_timeout(AsyncMock())
+        assert coord._motion_mgr.has_pending_timeout is True
+        coord.logger.debug.reset_mock()
 
         coord._cancel_motion_timeout()
 
-        mock_task.cancel.assert_called_once()
-        assert coord._motion_mgr._motion_timeout_task is None
-        calls = [str(c) for c in coord.logger.debug.call_args_list]
-        assert any("Motion timeout canceled" in c for c in calls)
+        assert coord._motion_mgr.has_pending_timeout is False
+        # The TimeoutController uses lazy %-format logging; check both the
+        # format string and the label argument made it through.
+        matched = any(
+            call.args
+            and "canceled" in str(call.args[0])
+            and any("motion timeout" in str(a) for a in call.args[1:])
+            for call in coord.logger.debug.call_args_list
+        )
+        assert (
+            matched
+        ), f"expected a 'motion timeout canceled' log; got {coord.logger.debug.call_args_list}"
 
     def test_no_log_when_no_task(self):
         """Does not log when no task is active."""
         coord = self._make_coordinator()
-        coord._motion_mgr._motion_timeout_task = None
+        # Manager starts idle — no pending timer.
+        assert coord._motion_mgr.has_pending_timeout is False
 
         coord._cancel_motion_timeout()
 
         coord.logger.debug.assert_not_called()
-        assert coord._motion_mgr._motion_timeout_task is None
-
-    def test_no_log_when_task_already_done(self):
-        """Does not log when task is already done."""
-        coord = self._make_coordinator()
-        mock_task = MagicMock()
-        mock_task.done.return_value = True
-        coord._motion_mgr._motion_timeout_task = mock_task
-
-        coord._cancel_motion_timeout()
-
-        mock_task.cancel.assert_not_called()
+        assert coord._motion_mgr.has_pending_timeout is False
 
 
 # ---------------------------------------------------------------------------

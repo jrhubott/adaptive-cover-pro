@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
 )
@@ -232,7 +233,7 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
             entity_id=f"binary_sensor.cp_perf_{i}",
             is_on=False,
             position=0,
-            priority=77,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
         )

@@ -22,7 +22,7 @@ from custom_components.adaptive_cover_pro.const import (
     VENETIAN_TILT_SUPPRESSION_SECONDS,
 )
 from custom_components.adaptive_cover_pro.diagnostics.event_buffer import EventBuffer
-from custom_components.adaptive_cover_pro.managers.dual_axis_sequencer import (
+from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import (
     DualAxisSequencer,
 )
 
@@ -40,12 +40,12 @@ def _zero_post_tilt_delay(monkeypatch):
     because it is the behaviour under test.
     """
     monkeypatch.setattr(
-        "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer."
+        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
         "VENETIAN_POST_TILT_REBASE_DELAY_SECONDS",
         0,
     )
     monkeypatch.setattr(
-        "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer."
+        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
         "VENETIAN_TILT_VERIFY_POLL_SECONDS",
         0,
     )
@@ -264,7 +264,7 @@ class TestPostTiltRebase:
             sleep_calls.append(delay)
 
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer.asyncio.sleep",
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer.asyncio.sleep",
             _capture_sleep,
         )
 
@@ -302,7 +302,7 @@ class TestPostTiltRebase:
             service_call_count[0] += 1
 
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer.asyncio.sleep",
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer.asyncio.sleep",
             _capture_sleep,
         )
 
@@ -349,7 +349,7 @@ class TestPostTiltRebase:
         )
 
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer."
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
             "VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -563,7 +563,7 @@ class TestSettleStateAware:
     async def test_settle_does_not_fire_while_state_is_closing(self, monkeypatch):
         """Stall counter must stay at zero while state=closing, regardless of position."""
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -599,7 +599,7 @@ class TestSettleStateAware:
     async def test_settle_does_not_fire_while_state_is_opening(self, monkeypatch):
         """Same as closing test — opening state must also suppress the stall counter."""
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -634,7 +634,7 @@ class TestSettleStateAware:
     ):
         """Stall counter must reset if state becomes moving mid-sequence."""
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -660,7 +660,7 @@ class TestSettleStateAware:
     ):
         """When state is always open, the existing 3-sample stall still fires."""
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -691,7 +691,7 @@ class TestSettleStateAware:
         until the state is no longer moving, then return True.
         """
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -725,7 +725,7 @@ class TestSettleStateAware:
         with last position == 52.
         """
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -750,7 +750,7 @@ class TestSettleStateAware:
         waiting for any state transition.
         """
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -773,7 +773,7 @@ class TestSettleStateAware:
     async def test_settle_falls_back_when_no_get_state(self, monkeypatch):
         """No get_state injected → behaves identically to pre-fix code (stall at 3)."""
         monkeypatch.setattr(
-            "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer"
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
             0,
         )
@@ -1602,7 +1602,7 @@ async def test_run_sequence_uses_configured_post_settle_hold() -> None:
     import unittest.mock
 
     with unittest.mock.patch(
-        "custom_components.adaptive_cover_pro.managers.dual_axis_sequencer.asyncio.sleep",
+        "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer.asyncio.sleep",
         side_effect=_capture_sleep,
     ):
         _, seq = _build_sequencer(post_settle_hold_seconds=5.0)

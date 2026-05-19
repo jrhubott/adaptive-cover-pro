@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
@@ -65,7 +66,7 @@ def _registry_with_custom_tilt(tilt: int | None = None) -> PipelineRegistry:
                 entity_id="binary_sensor.scene",
                 position=60,
                 tilt=tilt,
-                priority=77,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             ),
             SolarHandler(),
             DefaultHandler(),

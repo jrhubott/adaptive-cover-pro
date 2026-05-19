@@ -17,6 +17,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
+from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
 from custom_components.adaptive_cover_pro.enums import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     DefaultHandler,
@@ -515,7 +516,10 @@ class TestCustomPositionBypass:
 
     def _handler(self, position: int = 50) -> CustomPositionHandler:
         return CustomPositionHandler(
-            slot=1, entity_id=_CP_ENTITY, position=position, priority=77
+            slot=1,
+            entity_id=_CP_ENTITY,
+            position=position,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
         )
 
     def _snapshot_on(self, position: int = 50) -> object:
@@ -525,7 +529,7 @@ class TestCustomPositionBypass:
                     entity_id=_CP_ENTITY,
                     is_on=True,
                     position=position,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
                 )
@@ -552,7 +556,7 @@ class TestCustomPositionBypass:
                     entity_id=_CP_ENTITY,
                     is_on=False,
                     position=50,
-                    priority=77,
+                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
                 )
