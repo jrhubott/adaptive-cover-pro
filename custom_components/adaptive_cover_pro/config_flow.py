@@ -793,14 +793,6 @@ TEMPERATURE_CLIMATE_SCHEMA = vol.Schema(
     }
 )
 
-# Combined schema for backward compatibility (used by SYNC_CATEGORIES)
-CLIMATE_SCHEMA = vol.Schema(
-    {
-        **dict(LIGHT_CLOUD_SCHEMA.schema.items()),
-        **dict(TEMPERATURE_CLIMATE_SCHEMA.schema.items()),
-    }
-)
-
 WEATHER_OPTIONS = vol.Schema(
     {
         vol.Optional(
@@ -2603,41 +2595,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_climate(self, user_input: dict[str, Any] | None = None):
-        """Manage climate options (combined, for backward compat with options flow)."""
-        if user_input is not None:
-            entities = [
-                CONF_TEMP_ENTITY,
-                CONF_OUTSIDETEMP_ENTITY,
-                CONF_WEATHER_ENTITY,
-                CONF_PRESENCE_ENTITY,
-                CONF_LUX_ENTITY,
-                CONF_IRRADIANCE_ENTITY,
-            ]
-            self.optional_entities(entities, user_input)
-            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
-                CONF_TEMP_ENTITY
-            ):
-                return self.async_show_form(
-                    step_id="climate",
-                    data_schema=CLIMATE_SCHEMA,
-                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
-                    },
-                )
-            self.config.update(user_input)
-            if self.config.get(CONF_WEATHER_ENTITY):
-                return await self.async_step_weather()
-            return await self.async_step_summary()
-        return self.async_show_form(
-            step_id="climate",
-            data_schema=CLIMATE_SCHEMA,
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
-            },
-        )
-
     async def async_step_weather(self, user_input: dict[str, Any] | None = None):
         """Manage weather conditions."""
         if user_input is not None:
@@ -3470,43 +3427,6 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Climate-Mode"
-            },
-        )
-
-    async def async_step_climate(self, user_input: dict[str, Any] | None = None):
-        """Manage climate options (legacy combined step, kept for backward compat)."""
-        if user_input is not None:
-            entities = [
-                CONF_TEMP_ENTITY,
-                CONF_OUTSIDETEMP_ENTITY,
-                CONF_WEATHER_ENTITY,
-                CONF_PRESENCE_ENTITY,
-                CONF_LUX_ENTITY,
-                CONF_IRRADIANCE_ENTITY,
-            ]
-            self.optional_entities(entities, user_input)
-            if user_input.get(CONF_CLIMATE_MODE) and not user_input.get(
-                CONF_TEMP_ENTITY
-            ):
-                return self.async_show_form(
-                    step_id="climate",
-                    data_schema=self.add_suggested_values_to_schema(
-                        CLIMATE_SCHEMA, user_input or self.options
-                    ),
-                    errors={CONF_TEMP_ENTITY: "Required when climate mode is enabled"},
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
-                    },
-                )
-            self.options.update(user_input)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="climate",
-            data_schema=self.add_suggested_values_to_schema(
-                CLIMATE_SCHEMA, user_input or self.options
-            ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate"
             },
         )
 

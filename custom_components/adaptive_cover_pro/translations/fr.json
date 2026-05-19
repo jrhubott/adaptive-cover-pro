@@ -289,48 +289,6 @@
           "weather_timeout": "Secondes à attendre après que TOUTES les conditions se clairent avant de reprendre le contrôle normal. Empêche le basculement rapide pendant les conditions de rafales ou intermittentes. Réglez sur 0 pour une reprise instantanée."
         }
       },
-      "climate": {
-        "data": {
-          "weather_entity": "Entité météo (optionnelle)",
-          "lux_entity": "Capteur de lux (optionnel)",
-          "lux_threshold": "Seuil de lux",
-          "irradiance_entity": "Capteur d'irradiance (optionnel)",
-          "irradiance_threshold": "Seuil d'irradiance",
-          "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
-          "cloud_coverage_threshold": "Seuil de couverture nuageuse",
-          "cloud_suppression": "Supprimer le contrôle d'éblouissement en faible lumière",
-          "climate_mode": "Activer le mode climatique",
-          "temp_entity": "Entité de température intérieure",
-          "temp_low": "Seuil de température basse",
-          "temp_high": "Seuil de température haute",
-          "outside_temp": "Capteur de température extérieure (optionnel)",
-          "presence_entity": "Entité de présence (optionnelle)",
-          "transparent_blind": "Store transparent",
-          "winter_close_insulation": "Mode isolation hivernale",
-          "cloudy_position": "Position nuageux (optionnel)"
-        },
-        "data_description": {
-          "weather_entity": "Intégration météo optionnelle pour un contrôle adapté aux nuages. Quand la météo est nuageuse/pluvieuse : l'apport solaire hivernal est ignoré (pas de soleil à capter) et le store revient à sa position par défaut (aucun risque de surchauffe). Quand la météo est ensoleillée/dégagée : les stratégies climatiques complètes s'appliquent. Laissez vide pour supposer qu'il fait toujours soleil (mode simplifié). Recommandé si vous disposez d'une intégration météo — évite les fermetures inutiles.",
-          "lux_entity": "Capteur d'intensité lumineuse optionnel pour une détection précise du soleil (intérieur ou extérieur). Mesure la lumière visible en lux. Définissez la valeur de seuil pour la condition « ensoleillé ». Valeurs typiques : 5 000-10 000 lux pour le soleil direct. Quand la valeur est inférieure au seuil : le ciel est traité comme nuageux et les stratégies climatiques sont ignorées. Laissez vide si vous ne disposez pas de ce capteur. Fonction avancée — la plupart des utilisateurs n'en ont pas besoin.",
-          "lux_threshold": "Seuil de niveau d'éclairement (à partir duquel le ciel est considéré comme « ensoleillé »). Quand le capteur dépasse cette valeur : le soleil est présent, les stratégies climatiques s'appliquent. Quand la valeur est inférieure : le ciel est traité comme nuageux et la position par défaut est utilisée. Valeurs typiques : 5 000-10 000 lux pour le soleil direct, 2 000-3 000 lux pour une lumière indirecte vive. Ajustez selon le placement du capteur et sa sensibilité.",
-          "irradiance_entity": "Capteur de rayonnement solaire optionnel pour une détection précise du soleil (extérieur). Mesure la puissance solaire en W/m². Définissez la valeur de seuil pour la condition « ensoleillé ». Valeurs typiques : 300-500 W/m² pour le soleil direct. Quand la valeur est inférieure au seuil : le ciel est traité comme nuageux et les stratégies climatiques sont ignorées. Laissez vide si vous ne disposez pas de ce capteur. Fonction avancée — la plupart des utilisateurs n'en ont pas besoin.",
-          "irradiance_threshold": "Seuil de niveau d'irradiance (à partir duquel le ciel est considéré comme « ensoleillé »). Quand le capteur dépasse cette valeur (W/m²) : le soleil est présent, les stratégies climatiques s'appliquent. Quand la valeur est inférieure : le ciel est traité comme nuageux et la position par défaut est utilisée. Valeurs typiques : 300-500 W/m² pour le soleil direct, 100-200 W/m² pour un jour nuageux. Ajustez selon votre climat et vos préférences.",
-          "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 %. Disponible via des intégrations comme Google Weather. Quand la valeur atteint ou dépasse le seuil, le contrôle de l'éblouissement est supprimé et les stores reviennent à leur position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
-          "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel le contrôle de l'éblouissement est supprimé (par ex., 75 signifie 75 % de nuages = ciel couvert). Par défaut : 75 %.",
-          "cloud_suppression": "Quand cette option est activée, le contrôle de l'éblouissement est supprimé lorsque les conditions météo, lux, irradiance ou couverture nuageuse indiquent l'absence de soleil direct — les stores reviennent à leur position par défaut au lieu de suivre le soleil. NE REQUIERT PAS l'activation du mode climatique : configurez une entité météo, un capteur de lux, d'irradiance ou de couverture nuageuse ci-dessus et cette option fonctionnera de manière autonome. Utile si vous souhaitez une suppression de l'éblouissement adaptée à la lumière sans contrôle climatique complet basé sur la température.",
-          "climate_mode": "Activer les stratégies de store basées sur la température. Quand ACTIVÉ : le comportement du store s'adapte à la température intérieure — s'ouvre complètement en hiver pour capter la chaleur solaire, se ferme complètement en été pour éviter la surchauffe. Nécessite un capteur de température intérieure. Laissez DÉSACTIVÉ si vous souhaitez uniquement le contrôle de l'éblouissement (suivi du soleil) sans comportement piloté par la température.",
-          "temp_entity": "Capteur de température pour le mode climatique (intérieur ou extérieur). Utilisé pour déterminer les stratégies hiver/été. Capteur intérieur recommandé (mesure le confort de la pièce). Capteur extérieur comme alternative (suit la météo extérieure). Thermostat : peut utiliser l'attribut current_temperature. Assurez-vous que les unités du capteur correspondent aux unités de votre système Home Assistant (°C ou °F).",
-          "temp_low": "Seuil de température pour le mode HIVER (dans vos unités système). Quand la température est inférieure à cette valeur : le store s'ouvre complètement par temps ensoleillé pour gagner de la chaleur. Valeurs recommandées : °C : 18-20 °C (65-68 °F), °F : 65-68 °F. Ajustez selon vos préférences de confort. Valeur plus basse = mode hiver moins souvent (uniquement par grand froid). Valeur plus haute = mode hiver plus souvent (privilégie l'apport solaire).",
-          "temp_high": "Seuil de température pour le mode ÉTÉ (dans vos unités système). Quand la température est supérieure à cette valeur : le store se ferme complètement pour éviter la surchauffe. Valeurs recommandées : °C : 23-25 °C (73-77 °F), °F : 73-77 °F. Ajustez selon vos préférences de rafraîchissement. Valeur plus basse = mode été plus tôt (refroidissement agressif). Valeur plus haute = mode été plus tard (tolère plus de chaleur).",
-          "outside_temp": "Capteur de température extérieure optionnel pour une meilleure détection du mode été. Quand configuré, le mode été nécessite que BOTH : la température intérieure soit supérieure au seuil haut ET la température extérieure soit supérieure au seuil extérieur. Évite de fermer les stores quand il fait frais dehors (laissez entrer la brise). Laissez vide pour n'utiliser que la température intérieure. Recommandé si vous disposez d'un capteur extérieur — améliore le confort.",
-          "presence_entity": "Capteur de présence optionnel (détection présent/absent). Types pris en charge : device_tracker, person, zone, binary_sensor. Quand ABSENT : l'été, le store se ferme complètement (économie de climatisation) ; l'hiver, il s'ouvre par temps ensoleillé (chauffage solaire passif). Quand PRÉSENT : utilise les stratégies climatiques normales avec prise en compte de la météo. Laissez vide pour supposer qu'une personne est toujours présente. Économise de l'énergie en cas d'absence, maintient le confort quand quelqu'un est là.",
-          "transparent_blind": "Cochez cette case si votre store est transparent (tissu léger ou voile). Modifie le comportement estival : Transparent ACTIVÉ ferme à 0 % en été (bloque la chaleur, laisse passer la lumière). Transparent DÉSACTIVÉ utilise la position calculée. Les stores transparents réduisent la chaleur tout en laissant passer la lumière. Laissez décoché pour les stores opaques ou occultants.",
-          "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude.",
-          "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
-        },
-        "description": "Activez le contrôle de protection conscient du climat. Lorsqu'actif, l'intégration ouvre les protections en hiver pour capturer la chaleur solaire et les ferme en été pour réduire la charge de refroidissement. Cet écran configure quels capteurs de lumière et de nuage déterminent si le soleil est actuellement actif.\n\nLes seuils de température, les paramètres de présence et les règles de comportement saisonnier se trouvent sur l'écran suivant. Les mappages de conditions météorologiques suivent ensuite. Tous les paramètres secondaires du climat sont ignorés lorsque le mode climat est désactivé.\n\n[Learn more]({learn_more})",
-        "title": "Configuration climatique"
-      },
       "weather": {
         "data": {
           "weather_state": "Conditions météorologiques"
@@ -515,7 +473,6 @@
           "glare_zones": "🔆 Zones d'éblouissement",
           "interp": "📊 Étalonnage de position",
           "automation": "⏱️ Horaires et synchronisation",
-          "climate": "Configuration climatique",
           "weather": "Conditions météorologiques",
           "manual_override": "✋ Dérogation manuelle",
           "force_override": "🚨 Dérogation forcée",
@@ -804,48 +761,6 @@
           "weather_override_min_mode": "Quand activé, la position de dérogation agit comme un plancher minimum — le store ne se fermera pas en dessous de cette position, mais les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position de dérogation exacte.",
           "weather_timeout": "Secondes à attendre après que TOUTES les conditions se clairent avant de reprendre le contrôle normal. Empêche le basculement rapide pendant les conditions de rafales ou intermittentes. Réglez sur 0 pour une reprise instantanée."
         }
-      },
-      "climate": {
-        "data": {
-          "weather_entity": "Entité météo (optionnelle)",
-          "lux_entity": "Capteur de lux (optionnel)",
-          "lux_threshold": "Seuil de lux",
-          "irradiance_entity": "Capteur d'irradiance (optionnel)",
-          "irradiance_threshold": "Seuil d'irradiance",
-          "cloud_coverage_entity": "Capteur de couverture nuageuse (optionnel)",
-          "cloud_coverage_threshold": "Seuil de couverture nuageuse",
-          "cloud_suppression": "Supprimer le contrôle d'éblouissement en faible lumière",
-          "climate_mode": "Activer le mode climatique",
-          "temp_entity": "Entité de température intérieure",
-          "temp_low": "Seuil de température basse",
-          "temp_high": "Seuil de température haute",
-          "outside_temp": "Capteur de température extérieure (optionnel)",
-          "presence_entity": "Entité de présence (optionnelle)",
-          "transparent_blind": "Store transparent",
-          "winter_close_insulation": "Mode isolation hivernale",
-          "cloudy_position": "Position nuageux (optionnel)"
-        },
-        "data_description": {
-          "weather_entity": "Intégration météo optionnelle pour un contrôle adapté aux nuages. Quand la météo est nuageuse/pluvieuse : l'apport solaire hivernal est ignoré (pas de soleil à capter) et le store revient à sa position par défaut (aucun risque de surchauffe). Quand la météo est ensoleillée/dégagée : les stratégies climatiques complètes s'appliquent. Laissez vide pour supposer qu'il fait toujours soleil (mode simplifié). Recommandé si vous disposez d'une intégration météo — évite les fermetures inutiles.",
-          "lux_entity": "Capteur d'intensité lumineuse optionnel pour une détection précise du soleil (intérieur ou extérieur). Mesure la lumière visible en lux. Définissez la valeur de seuil pour la condition « ensoleillé ». Valeurs typiques : 5 000-10 000 lux pour le soleil direct. Quand la valeur est inférieure au seuil : le ciel est traité comme nuageux et les stratégies climatiques sont ignorées. Laissez vide si vous ne disposez pas de ce capteur. Fonction avancée — la plupart des utilisateurs n'en ont pas besoin.",
-          "lux_threshold": "Seuil de niveau d'éclairement (à partir duquel le ciel est considéré comme « ensoleillé »). Quand le capteur dépasse cette valeur : le soleil est présent, les stratégies climatiques s'appliquent. Quand la valeur est inférieure : le ciel est traité comme nuageux et la position par défaut est utilisée. Valeurs typiques : 5 000-10 000 lux pour le soleil direct, 2 000-3 000 lux pour une lumière indirecte vive. Ajustez selon le placement du capteur et sa sensibilité.",
-          "irradiance_entity": "Capteur de rayonnement solaire optionnel pour une détection précise du soleil (extérieur). Mesure la puissance solaire en W/m². Définissez la valeur de seuil pour la condition « ensoleillé ». Valeurs typiques : 300-500 W/m² pour le soleil direct. Quand la valeur est inférieure au seuil : le ciel est traité comme nuageux et les stratégies climatiques sont ignorées. Laissez vide si vous ne disposez pas de ce capteur. Fonction avancée — la plupart des utilisateurs n'en ont pas besoin.",
-          "irradiance_threshold": "Seuil de niveau d'irradiance (à partir duquel le ciel est considéré comme « ensoleillé »). Quand le capteur dépasse cette valeur (W/m²) : le soleil est présent, les stratégies climatiques s'appliquent. Quand la valeur est inférieure : le ciel est traité comme nuageux et la position par défaut est utilisée. Valeurs typiques : 300-500 W/m² pour le soleil direct, 100-200 W/m² pour un jour nuageux. Ajustez selon votre climat et vos préférences.",
-          "cloud_coverage_entity": "Capteur de couverture nuageuse optionnel indiquant une valeur de 0 à 100 %. Disponible via des intégrations comme Google Weather. Quand la valeur atteint ou dépasse le seuil, le contrôle de l'éblouissement est supprimé et les stores reviennent à leur position par défaut. Laissez vide si vous ne disposez pas de ce capteur.",
-          "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel le contrôle de l'éblouissement est supprimé (par ex., 75 signifie 75 % de nuages = ciel couvert). Par défaut : 75 %.",
-          "cloud_suppression": "Quand cette option est activée, le contrôle de l'éblouissement est supprimé lorsque les conditions météo, lux, irradiance ou couverture nuageuse indiquent l'absence de soleil direct — les stores reviennent à leur position par défaut au lieu de suivre le soleil. NE REQUIERT PAS l'activation du mode climatique : configurez une entité météo, un capteur de lux, d'irradiance ou de couverture nuageuse ci-dessus et cette option fonctionnera de manière autonome. Utile si vous souhaitez une suppression de l'éblouissement adaptée à la lumière sans contrôle climatique complet basé sur la température.",
-          "climate_mode": "Activer les stratégies de store basées sur la température. Quand ACTIVÉ : le comportement du store s'adapte à la température intérieure — s'ouvre complètement en hiver pour capter la chaleur solaire, se ferme complètement en été pour éviter la surchauffe. Nécessite un capteur de température intérieure. Laissez DÉSACTIVÉ si vous souhaitez uniquement le contrôle de l'éblouissement (suivi du soleil) sans comportement piloté par la température.",
-          "temp_entity": "Capteur de température pour le mode climatique (intérieur ou extérieur). Utilisé pour déterminer les stratégies hiver/été. Capteur intérieur recommandé (mesure le confort de la pièce). Capteur extérieur comme alternative (suit la météo extérieure). Thermostat : peut utiliser l'attribut current_temperature. Assurez-vous que les unités du capteur correspondent aux unités de votre système Home Assistant (°C ou °F).",
-          "temp_low": "Seuil de température pour le mode HIVER (dans vos unités système). Quand la température est inférieure à cette valeur : le store s'ouvre complètement par temps ensoleillé pour gagner de la chaleur. Valeurs recommandées : °C : 18-20 °C (65-68 °F), °F : 65-68 °F. Ajustez selon vos préférences de confort. Valeur plus basse = mode hiver moins souvent (uniquement par grand froid). Valeur plus haute = mode hiver plus souvent (privilégie l'apport solaire).",
-          "temp_high": "Seuil de température pour le mode ÉTÉ (dans vos unités système). Quand la température est supérieure à cette valeur : le store se ferme complètement pour éviter la surchauffe. Valeurs recommandées : °C : 23-25 °C (73-77 °F), °F : 73-77 °F. Ajustez selon vos préférences de rafraîchissement. Valeur plus basse = mode été plus tôt (refroidissement agressif). Valeur plus haute = mode été plus tard (tolère plus de chaleur).",
-          "outside_temp": "Capteur de température extérieure optionnel pour une meilleure détection du mode été. Quand configuré, le mode été nécessite que BOTH : la température intérieure soit supérieure au seuil haut ET la température extérieure soit supérieure au seuil extérieur. Évite de fermer les stores quand il fait frais dehors (laissez entrer la brise). Laissez vide pour n'utiliser que la température intérieure. Recommandé si vous disposez d'un capteur extérieur — améliore le confort.",
-          "presence_entity": "Capteur de présence optionnel (détection présent/absent). Types pris en charge : device_tracker, person, zone, binary_sensor. Quand ABSENT : l'été, le store se ferme complètement (économie de climatisation) ; l'hiver, il s'ouvre par temps ensoleillé (chauffage solaire passif). Quand PRÉSENT : utilise les stratégies climatiques normales avec prise en compte de la météo. Laissez vide pour supposer qu'une personne est toujours présente. Économise de l'énergie en cas d'absence, maintient le confort quand quelqu'un est là.",
-          "transparent_blind": "Cochez cette case si votre store est transparent (tissu léger ou voile). Modifie le comportement estival : Transparent ACTIVÉ ferme à 0 % en été (bloque la chaleur, laisse passer la lumière). Transparent DÉSACTIVÉ utilise la position calculée. Les stores transparents réduisent la chaleur tout en laissant passer la lumière. Laissez décoché pour les stores opaques ou occultants.",
-          "winter_close_insulation": "Ferme les stores en hiver lorsque le soleil n'est pas en face de la fenêtre. Assure l'isolation en empêchant l'air froid d'entrer et en retenant la chaleur. Lorsque le soleil entre dans le champ de vision de la fenêtre, les stores s'ouvrent pour le chauffage solaire comme d'habitude.",
-          "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut."
-        },
-        "description": "Activez le contrôle de protection conscient du climat. Lorsqu'actif, l'intégration ouvre les protections en hiver pour capturer la chaleur solaire et les ferme en été pour réduire la charge de refroidissement. Cet écran configure quels capteurs de lumière et de nuage déterminent si le soleil est actuellement actif.\n\nLes seuils de température, les paramètres de présence et les règles de comportement saisonnier se trouvent sur l'écran suivant. Les mappages de conditions météorologiques suivent ensuite. Tous les paramètres secondaires du climat sont ignorés lorsque le mode climat est désactivé.\n\n[Learn more]({learn_more})",
-        "title": "Configuration climatique"
       },
       "weather": {
         "data": {

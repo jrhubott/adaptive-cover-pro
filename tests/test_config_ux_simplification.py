@@ -16,7 +16,6 @@ from unittest.mock import MagicMock
 
 
 from custom_components.adaptive_cover_pro.config_flow import (
-    CLIMATE_SCHEMA,
     ConfigFlowHandler,
     LIGHT_CLOUD_SCHEMA,
     SYNC_CATEGORIES,
@@ -168,15 +167,6 @@ class TestSplitSchemas:
         """TEMPERATURE_CLIMATE_SCHEMA should NOT contain lux settings."""
         keys = [str(k) for k in TEMPERATURE_CLIMATE_SCHEMA.schema]
         assert "lux_entity" not in keys
-
-    def test_combined_climate_schema_has_all_keys(self):
-        """Combined CLIMATE_SCHEMA should have all keys from both split schemas."""
-        combined_keys = {str(k) for k in CLIMATE_SCHEMA.schema}
-        light_keys = {str(k) for k in LIGHT_CLOUD_SCHEMA.schema}
-        temp_keys = {str(k) for k in TEMPERATURE_CLIMATE_SCHEMA.schema}
-        # Combined should be superset (may differ on weather_state)
-        assert light_keys - {"weather_state"} <= combined_keys
-        assert temp_keys <= combined_keys
 
 
 # ---------------------------------------------------------------------------

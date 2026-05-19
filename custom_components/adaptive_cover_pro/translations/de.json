@@ -289,48 +289,6 @@
           "weather_timeout": "Sekunden zu warten, nachdem ALLE Bedingungen geklärt sind, bevor normale Kontrolle fortgesetzt wird. Verhindert schnelles Umschalten bei böigem oder unterbrochenem Wetter. Auf 0 setzen für sofortige Fortsetzung."
         }
       },
-      "climate": {
-        "data": {
-          "weather_entity": "Wetter-Entität (optional)",
-          "lux_entity": "Luxsensor (optional)",
-          "lux_threshold": "Luxschwellwert",
-          "irradiance_entity": "Strahlungssensor (optional)",
-          "irradiance_threshold": "Strahlungsschwellwert",
-          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
-          "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
-          "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
-          "climate_mode": "Klimamodus aktivieren",
-          "temp_entity": "Innere Temperaturentität",
-          "temp_low": "Unterer Temperaturschwellwert",
-          "temp_high": "Oberer Temperaturschwellwert",
-          "outside_temp": "Außentemperatursensor (optional)",
-          "presence_entity": "Anwesenheitsentität (optional)",
-          "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winterisolationsmodus",
-          "cloudy_position": "Bewölkungsposition (optional)"
-        },
-        "data_description": {
-          "weather_entity": "Optionale Wetter-Integration für wolkenkalibrierte Steuerung. Wenn Wetter = bewölkt/regnerisch: Überspringt Winterwärmeerwerb (keine Sonne zum Erfassen), Kehrt zur Standardposition zurück (keine Überhitzungsgefahr). Wenn Wetter = sonnig/klar: Wendet vollständige Klimastrategien an. Lassen Sie leer, um immer sonnig anzunehmen (einfacher). Empfohlen, wenn Sie Wetter-Integration haben – vermeidet unnötige Schließungen.",
-          "lux_entity": "Optionaler Lichtsensor zur präzisen Sonnenerkennung (innen oder außen). Misst sichtbares Licht in Lux-Einheiten. Legen Sie Schwellwert für „sonnig“-Bedingung fest. Typisch: 5000–10000 Lux für direkte Sonne. Wenn unter Schwellwert: Behandeln Sie als bewölkt, überspringen Sie Klimastrategien. Lassen Sie leer, wenn Sie diesen Sensor nicht haben. Fortgeschrittenes Feature – die meisten Benutzer benötigen dies nicht.",
-          "lux_threshold": "Lux-Schwellwert (wann als „sonnig“ betrachten). Wenn Sensor über diesem Wert abliest: Sonne ist vorhanden, wenden Sie Klimastrategien an. Wenn darunter: Behandeln Sie als bewölkt, verwenden Sie Standardposition. Typische Werte: 5000–10000 Lux für direkte Sonneneinstrahlung, 2000–3000 Lux für helles indirektes Licht. Passen Sie basierend auf Sensorplatzierung und Empfindlichkeit an.",
-          "irradiance_entity": "Optionaler Solarstrahlungssensor für präzise Sonnenerkennung (außen). Misst Sonnenleistung in W/m²-Einheiten. Legen Sie Schwellwert für „sonnig“-Bedingung fest. Typisch: 300–500 W/m² für direkte Sonne. Wenn unter Schwellwert: Behandeln Sie als bewölkt, überspringen Sie Klimastrategien. Lassen Sie leer, wenn Sie diesen Sensor nicht haben. Fortgeschrittenes Feature – die meisten Benutzer benötigen dies nicht.",
-          "irradiance_threshold": "Bestrahlungs-Schwellwert (wann als „sonnig“ betrachten). Wenn Sensor über diesem Wert abliest (W/m²): Sonne ist vorhanden, wenden Sie Klimastrategien an. Wenn darunter: Behandeln Sie als bewölkt, verwenden Sie Standardposition. Typische Werte: 300–500 W/m² für direkte Sonneneinstrahlung, 100–200 W/m² für bewölkten Tag. Passen Sie basierend auf Ihrem Klima und Vorlieben an.",
-          "cloud_coverage_entity": "Optionaler Wolkenbedeckungssensor, der 0–100% meldet. Verfügbar von Integrationen wie Google Wetter. Wenn auf oder über dem Schwellwert: Blendungsschutz wird unterdrückt und die Beschattung kehrt zur Standardposition zurück. Lassen Sie leer, wenn Sie diesen Sensor nicht haben.",
-          "cloud_coverage_threshold": "Wolkenbedeckungsprozentsatz, bei dem oder darüber der Blendungsschutz unterdrückt wird (z. B. 75 bedeutet 75% Wolkenbedeckung = bedeckt). Standard: 75%.",
-          "cloud_suppression": "Wenn aktiviert, unterdrückt Blendungsschutz, wenn Wetter, Lux-, Bestrahlungs- oder Wolkenbedeckungsbedingungen anzeigen, dass keine echte direkte Sonne vorhanden ist – die Beschattung kehrt stattdessen zur Standardposition zurück anstatt der Sonne zu folgen. Erfordert NICHT, dass der Klimamodus aktiviert ist: Konfigurieren Sie eine Wetherentität, einen Luxsensor, einen Bestrahlungssensor oder einen Wolkenbedeckungssensor oben und diese Schaltfläche funktioniert eigenständig. Nützlich, wenn Sie lichtkalibriertes Blendungsunterdrückung ohne vollständige temperaturgesteuerte Klimakontrolle möchten.",
-          "climate_mode": "Temperaturbasierte Beschattungsstrategien aktivieren. Wenn AN: Beschattungsverhalten passt sich basierend auf Raumtemperatur an – öffnet sich vollständig im Winter zur Erfassung von Sonnenwärme, schließt sich vollständig im Sommer um Überhitzung zu verhindern. Erfordert einen Raumtemperatursensor. Lassen Sie AUS wenn Sie nur Blendungsschutz (Sonnenverfolgung) ohne temperaturgesteuerte Verhalten möchten.",
-          "temp_entity": "Temperatursensor für den Klimamodus (innen oder außen). Wird zur Bestimmung von Winter-/Sommerstrategien verwendet. Raumtemperatursensor empfohlen (misst Raumkomfort). Außentemperatursensor als Alternative (verfolgt Außenwetter). Thermostat: Kann current_temperature-Attribut verwenden. Stellen Sie sicher, dass Sensoreinheiten Ihrem Home Assistant-Einheitensystem entsprechen (°C oder °F).",
-          "temp_low": "Temperaturschwellwert für WINTERMODUS (in Ihren Systemeinheiten). Wenn Temperatur < dieser Wert: Beschattung öffnet sich vollständig an sonnigen Tagen um Wärme zu gewinnen. Empfohlene Werte: °C: 18–20°C (65–68°F), °F: 65–68°F. Passen Sie basierend auf Ihrer Komfortvorliebe an. Niedrigerer Wert = Wintermodus seltener (nur wenn sehr kalt). Höherer Wert = Wintermodus häufiger (priorisieren Sie Solarertrag).",
-          "temp_high": "Temperaturschwellwert für SOMMERMODUS (in Ihren Systemeinheiten). Wenn Temperatur > dieser Wert: Beschattung schließt sich vollständig, um Überhitzung zu verhindern. Empfohlene Werte: °C: 23–25°C (73–77°F), °F: 73–77°F. Passen Sie basierend auf Ihrer Kühlungsvorliebe an. Niedrigerer Wert = Sommermodus früher (aggressive Kühlung). Höherer Wert = Sommermodus später (tolerate mehr Wärme).",
-          "outside_temp": "Optionaler Außentemperatursensor für bessere Sommererkennung. Wenn eingestellt, erfordert der Sommermodus BEIDE: Raumtemperatur > hoher Schwellwert UND Außentemperatur > Außenschwellwert. Verhindert Schließen der Beschattung, wenn es draußen kühl ist (offen für Brise). Lassen Sie leer, um nur Raumtemperatur zu verwenden. Empfohlen, wenn Sie Außensensor haben – verbessert den Komfort.",
-          "presence_entity": "Optionaler Anwesenheitssensor (Home/Away-Erkennung). Unterstützte Typen: device_tracker, person, zone, binary_sensor. Wenn WEG: Sommer schließt vollständig (sparen auf AC), Winter öffnet sich an sonnigen Tagen (passive Solarheizung). Wenn ZUHAUSE: Verwenden Sie normale Klimastrategien mit Wetterkennung. Lassen Sie leer, um immer anzunehmen, dass jemand zuhause ist. Spart Energie wenn weg, behält Komfort bei wenn zuhause.",
-          "transparent_blind": "Aktivieren Sie dies, wenn Ihre Jalousie lichtdurchlässig ist (Voile/leichter Stoff). Ändert Sommerverhalten: Transparent AN schließt auf 0% im Sommer (blockiere Wärme, behalte Licht). Transparent AUS nutzt berechnete Position. Lichtdurchlässige Jalousien reduzieren Wärme, lassen aber Licht durch. Lassen Sie deaktiviert für undurchsichtige/Verdunkelungs-Jalousien.",
-          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne nicht das Fenster trifft. Bietet Isolierung durch Abhalten kalter Luft und Bewahrung von Wärme. Wenn die Sonne in das Sichtfeld des Fensters eintritt, öffnet sich die Beschattung wie normal zur Solarheizung.",
-          "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
-        },
-        "description": "Aktivieren Sie klimabewusste Beschattungselemente-Steuerung. Wenn aktiv, öffnet die Integration Beschattungselemente im Winter, um Solarwärme zu nutzen, und schließt sie im Sommer, um die Kühlast zu reduzieren. Dieser Bildschirm konfiguriert, welche Licht- und Wolkensensoren bestimmen, ob die Sonne derzeit aktiv ist.\n\nTemperaturgrenzen, Anwesenheitseinstellungen und saisonale Verhaltensregeln befinden sich auf dem nächsten Bildschirm. Wetterbedingungsmappings folgen danach. Alle Klima-Untereinstellungen werden ignoriert, wenn der Klimamodus deaktiviert ist.\n\n[Weitere Informationen]({learn_more})",
-        "title": "Klimakonfiguration"
-      },
       "weather": {
         "data": {
           "weather_state": "Wetterbedingungen"
@@ -515,7 +473,6 @@
           "glare_zones": "🔆 Blendungszonen",
           "interp": "📊 Positionskalibrierung",
           "automation": "⏱️ Zeitplan und Timing",
-          "climate": "Klimakonfiguration",
           "weather": "Wetterbedingungen",
           "manual_override": "✋ Manuelle Übersteuerung",
           "force_override": "🚨 Zwangsübersteuerung",
@@ -804,48 +761,6 @@
           "weather_override_min_mode": "Wenn aktiviert, fungiert die Übersteuerungsposition als Mindestgrenze – der Behang wird nicht unter diese Position schließen, aber höhere Positionen von Sonnenverfolgung oder anderen Berechnungen sind erlaubt. Wenn deaktiviert (Standard), wird der Behang auf die genaue Übersteuerungsposition gesetzt.",
           "weather_timeout": "Sekunden zu warten, nachdem ALLE Bedingungen gelöst sind, bevor normale Steuerung fortgesetzt wird. Verhindert schnelles Umschalten bei böigen oder zeitweiligen Bedingungen. Auf 0 setzen für sofortige Fortführung."
         }
-      },
-      "climate": {
-        "data": {
-          "weather_entity": "Wetter-Entität (optional)",
-          "lux_entity": "Luxsensor (optional)",
-          "lux_threshold": "Luxschwellwert",
-          "irradiance_entity": "Strahlungssensor (optional)",
-          "irradiance_threshold": "Strahlungsschwellwert",
-          "cloud_coverage_entity": "Wolkendecken-Sensor (optional)",
-          "cloud_coverage_threshold": "Wolkendecken-Schwellwert",
-          "cloud_suppression": "Blendungssteuerung bei schwachem Licht unterdrücken",
-          "climate_mode": "Klimamodus aktivieren",
-          "temp_entity": "Innere Temperaturentität",
-          "temp_low": "Unterer Temperaturschwellwert",
-          "temp_high": "Oberer Temperaturschwellwert",
-          "outside_temp": "Außentemperatursensor (optional)",
-          "presence_entity": "Anwesenheitsentität (optional)",
-          "transparent_blind": "Transparente Jalousie",
-          "winter_close_insulation": "Winterisolationsmodus",
-          "cloudy_position": "Bewölkungsposition (optional)"
-        },
-        "data_description": {
-          "weather_entity": "Optionale Wetter-Integration für bewölkungsbewusste Kontrolle. Wenn Wetter = bewölkt/regnerisch: Überspringt Wintersolareintrag (keine Sonne zum Nutzen), Kehrt zur Standardposition zurück (keine Überhitzungsgefahr). Wenn Wetter = sonnig/klar: Wendet vollständige Klimastrategien an. Lassen Sie leer, um immer sonnig anzunehmen (einfacher). Empfohlen, wenn Sie eine Wetter-Integration haben - vermeidet unnötige Schließvorgänge.",
-          "lux_entity": "Optionaler Lichtstärkensensor zur genauen Sonnenerfassung (innen oder außen). Misst das sichtbare Licht in Luxeinheiten. Legen Sie den Schwellwert für die Bedingung „sonnig“ fest. Typisch: 5000-10000 Lux für direkte Sonne. Wenn unter Schwellwert: Als bewölkt behandeln, Klimastrategien überspringen. Lassen Sie leer, wenn Sie nicht über diesen Sensor verfügen. Fortgeschrittene Funktion - die meisten Benutzer brauchen dies nicht.",
-          "lux_threshold": "Luxschwellwert (wann als „sonnig“ zu betrachten). Wenn der Sensor über diesem Wert liest: Sonne ist vorhanden, Klimastrategien anwenden. Wenn darunter: Als bewölkt behandeln, Standardposition verwenden. Typische Werte: 5000-10000 Lux für direkte Sonneneinstrahlung, 2000-3000 Lux für helles indirektes Licht. Passen Sie basierend auf Platzierung und Empfindlichkeit des Sensors an.",
-          "irradiance_entity": "Optionaler Solarstrahlungssensor zur genauen Sonnenerfassung (außen). Misst die Solarleistung in W/m²-Einheiten. Legen Sie den Schwellwert für die Bedingung „sonnig“ fest. Typisch: 300-500 W/m² für direkte Sonne. Wenn unter Schwellwert: Als bewölkt behandeln, Klimastrategien überspringen. Lassen Sie leer, wenn Sie nicht über diesen Sensor verfügen. Fortgeschrittene Funktion - die meisten Benutzer brauchen dies nicht.",
-          "irradiance_threshold": "Bestrahlungsschwellwert (wann als „sonnig“ zu betrachten). Wenn der Sensor über diesem Wert (W/m²) liest: Sonne ist vorhanden, Klimastrategien anwenden. Wenn darunter: Als bewölkt behandeln, Standardposition verwenden. Typische Werte: 300-500 W/m² für direkte Sonneneinstrahlung, 100-200 W/m² für bewölkten Tag. Passen Sie basierend auf Ihrem Klima und Ihren Vorlieben an.",
-          "cloud_coverage_entity": "Optionaler Bewölkungssensor, der 0-100% anzeigt. Verfügbar aus Integrationen wie Google Weather. Bei oder über dem Schwellwert wird die Blendkontrolle unterdrückt und die Beschattung kehrt zur Standardposition zurück. Lassen Sie leer, wenn Sie nicht über diesen Sensor verfügen.",
-          "cloud_coverage_threshold": "Bewölkungsprozentsatz bei oder über dem die Blendkontrolle unterdrückt wird (z.B. 75 bedeutet 75% Bewölkung = bedeckt). Standard: 75%.",
-          "cloud_suppression": "Bei Aktivierung wird die Blendkontrolle unterdrückt, wenn Wetter-, Lux-, Bestrahlungs- oder Bewölkungsbedingungen anzeigen, dass keine echte direkte Sonne vorhanden ist — die Beschattung kehrt stattdessen zur Standardposition zurück. Erfordert NICHT, dass der Klimamodus aktiviert ist: Konfigurieren Sie eine Wetterentität, einen Luxsensor, einen Bestrahlungssensor oder einen Bewölkungssensor oben, und dieser Umschalter funktioniert alleine. Nützlich, wenn Sie lichtalergie Blendkontrolle ohne vollständige temperaturgesteuerte Klimatisierung möchten.",
-          "climate_mode": "Temperaturbasierte Cover-Strategien aktivieren. Bei AN: Das Verhalten der Beschattung passt sich der Innentemperatur an — öffnet sich im Winter vollständig, um Sonnenwärme zu nutzen, schließt sich im Sommer vollständig, um Überhitzung zu vermeiden. Erfordert einen Raumtemperatursensor. Lassen Sie AUS, wenn Sie nur Blendkontrolle (Sonnenverfolgung) ohne temperaturgesteuerte Verhaltensweise möchten.",
-          "temp_entity": "Temperatursensor für den Klimamodus (innen oder außen). Wird zur Bestimmung von Winter-/Sommersstrategien verwendet. Raumtemperatursensor empfohlen (misst Raumkomfort). Außentemperatursensor als Alternative (verfolgt das Außenwetter). Thermostat: Kann das current_temperature-Attribut verwenden. Stellen Sie sicher, dass die Sensoreinheiten Ihrem Home Assistant-Einheitensystem entsprechen (°C oder °F).",
-          "temp_low": "Temperaturschwellwert für WINTERMODUS (in Ihren Systemeinheiten). Wenn Temperatur < dieser Wert: Die Beschattung öffnet sich an sonnigen Tagen, um Wärme zu gewinnen. Empfohlene Werte: °C: 18-20°C (65-68°F), °F: 65-68°F. Passen Sie basierend auf Ihren Komfortvorlieben an. Niedrigerer Wert = Wintermodus weniger häufig (nur bei sehr kaltem Wetter). Höherer Wert = Wintermodus häufiger (priorisieren Sie Solargewinne).",
-          "temp_high": "Temperaturschwellwert für SOMMERMODUS (in Ihren Systemeinheiten). Wenn Temperatur > dieser Wert: Die Beschattung schließt sich vollständig, um Überhitzung zu vermeiden. Empfohlene Werte: °C: 23-25°C (73-77°F), °F: 73-77°F. Passen Sie basierend auf Ihren Kühlungsvorlieben an. Niedrigerer Wert = Sommermodus früher (aggressive Kühlung). Höherer Wert = Sommermodus später (toleriere mehr Wärme).",
-          "outside_temp": "Optionaler Außentemperatursensor für bessere Sommererkennung. Bei Einstellung erfordert der Sommermodus BEIDES: Innentemperatur > hoher Schwellwert UND Außentemperatur > außerer Schwellwert. Verhindert das Schließen von Beschattung, wenn es außen kühl ist (öffnen Sie für Luftzug). Lassen Sie leer, um nur die Innentemperatur zu verwenden. Empfohlen, wenn Sie einen Außensensor haben - verbessert Komfort.",
-          "presence_entity": "Optionaler Anwesenheitssensor (Zuhause/Weg-Erkennung). Unterstützte Typen: device_tracker, person, zone, binary_sensor. Bei WEG: Sommer schließt vollständig (Klimaanlage sparen), Winter öffnet an sonnigen Tagen (passive Solarheizung). Bei ZUHAUSE: Verwenden Sie normale Klimastrategien mit Wetteralertness. Lassen Sie leer, um immer davon auszugehen, dass jemand zuhause ist. Spart Energie, wenn weg, erhält Komfort, wenn zuhause.",
-          "transparent_blind": "Aktivieren Sie dies, wenn Ihre Jalousie durchsichtig ist (Seidenstoff/Leichtgewebe). Ändert das Sommerverhalten: Transparent AN schließt im Sommer auf 0% (Wärme blockieren, Licht bewahren). Transparent AUS verwendet berechnete Position. Durchsichtige Jalousien reduzieren Wärme, aber lassen Licht durch. Lassen Sie deaktiviert für undurchsichtige/Verdunkelungsjaloussen.",
-          "winter_close_insulation": "Schließen Sie die Beschattung im Winter, wenn die Sonne das Fenster nicht trifft. Bietet Isolierung, indem kalte Luft draußen und Wärme drinnen bleibt. Wenn die Sonne das Sichtfeld des Fensters erreicht, öffnet sich die Beschattung für Solarheizung wie gewohnt.",
-          "cloudy_position": "Position (0-100%), zu der Beschattungen verschoben werden, wenn Wolkenunterdrückung aktiv ist (bewölkt / niedriges Licht). 0% = geschlossen (Jalousien heruntergelassen / Markise eingezogen), 100% = offen (Jalousien hochgezogen / Markise ausgefahren). Leer lassen, um die Standardposition zu verwenden."
-        },
-        "description": "Aktivieren Sie klimabewusste Beschattungselemente-Steuerung. Wenn aktiv, öffnet die Integration Beschattungselemente im Winter, um Solarwärme zu nutzen, und schließt sie im Sommer, um die Kühlast zu reduzieren. Dieser Bildschirm konfiguriert, welche Licht- und Wolkensensoren bestimmen, ob die Sonne derzeit aktiv ist.\n\nTemperaturgrenzen, Anwesenheitseinstellungen und saisonale Verhaltensregeln befinden sich auf dem nächsten Bildschirm. Wetterbedingungsmappings folgen danach. Alle Klima-Untereinstellungen werden ignoriert, wenn der Klimamodus deaktiviert ist.\n\n[Weitere Informationen]({learn_more})",
-        "title": "Klimakonfiguration"
       },
       "weather": {
         "data": {
