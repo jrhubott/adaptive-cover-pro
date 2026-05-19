@@ -810,6 +810,7 @@ async def test_motion_status_sensor_timeout_pending():
 
     sensor = _make_motion_status_sensor(coordinator)
     assert sensor.native_value == "timeout_pending"
+    coordinator._motion_mgr.cancel_motion_timeout()
 
 
 def test_motion_status_sensor_no_motion():
@@ -860,6 +861,7 @@ async def test_motion_status_sensor_attributes_with_timeout():
     assert attrs["motion_timeout_seconds"] == 300
     assert "motion_timeout_end_time" in attrs
     assert "last_motion_time" in attrs
+    coordinator._motion_mgr.cancel_motion_timeout()
 
 
 def test_motion_status_sensor_attributes_no_timeout():
