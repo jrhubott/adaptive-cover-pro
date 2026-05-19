@@ -2552,6 +2552,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     CONF_LUX_ENTITY,
                     CONF_IRRADIANCE_ENTITY,
                     CONF_CLOUD_COVERAGE_ENTITY,
+                    CONF_IS_SUNNY_SENSOR,
                 ],
                 user_input,
             )
@@ -3415,6 +3416,7 @@ class OptionsFlowHandler(OptionsFlow):
                     CONF_LUX_ENTITY,
                     CONF_IRRADIANCE_ENTITY,
                     CONF_CLOUD_COVERAGE_ENTITY,
+                    CONF_IS_SUNNY_SENSOR,
                 ],
                 user_input,
             )
