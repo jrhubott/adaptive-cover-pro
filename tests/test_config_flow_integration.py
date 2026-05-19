@@ -52,6 +52,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_INVERSE_STATE,
+    CONF_IS_SUNNY_SENSOR,
     CONF_WINDOW_DEPTH,
     CUSTOM_POSITION_SLOTS,
     DOMAIN,
@@ -1286,6 +1287,60 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
         assert (
             saved.get(slot["priority"]) is None
         ), f"{slot['priority']} should be None after clearing"
+
+
+# ---------------------------------------------------------------------------
+# Regression: clearing Is Sunny sensor in light_cloud step (issue #377)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_options_flow_light_cloud_clears_is_sunny_sensor(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing the Is Sunny binary sensor in options flow must set the key to None.
+
+    Regression for issue #377: submitting an empty light_cloud form while a
+    previously-saved CONF_IS_SUNNY_SENSOR exists must overwrite it with None, not
+    leave the old entity_id in place. Same class of bug as #323 — the
+    `optional_entities()` call site omitted the key.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    pre_options[CONF_IS_SUNNY_SENSOR] = "binary_sensor.sunny"
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Is Sunny Clear", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=pre_options,
+        entry_id="is_sunny_clear_01",
+        title="Is Sunny Clear",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "light_cloud"}
+    )
+    assert result["step_id"] == "light_cloud"
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] in ("form", "menu")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    assert (
+        result["data"].get(CONF_IS_SUNNY_SENSOR) is None
+    ), "CONF_IS_SUNNY_SENSOR should be None after clearing, not 'binary_sensor.sunny'"
 
 
 @pytest.mark.integration
