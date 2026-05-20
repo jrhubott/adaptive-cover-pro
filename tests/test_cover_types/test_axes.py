@@ -480,6 +480,64 @@ def test_no_cover_type_literals_outside_cover_types() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Tilt-mode-literal comparison guard (issue #373)
+# ---------------------------------------------------------------------------
+# Code outside ``cover_types/`` and the tilt calc engine must not branch on the
+# ``"mode1"`` / ``"mode2"`` tilt-mode string or compare against
+# ``TiltMode.MODE2.value``. MODE-aware behavior lives on TiltPolicy.
+
+# Compares ``something == "mode2"`` / ``"mode2" == something`` (and ``!=``).
+_BANNED_TILT_MODE_STRING_RE = re.compile(
+    r'(==|!=)\s*["\']mode[12]["\']|["\']mode[12]["\']\s*(==|!=)'
+)
+# Compares ``something == TiltMode.MODE2.value`` — the legacy string-equivalent
+# form that should be replaced by passing the enum through TiltPolicy helpers.
+_BANNED_TILT_MODE_VALUE_RE = re.compile(
+    r"TiltMode\.MODE[12]\.value\s*(==|!=)|(==|!=)\s*TiltMode\.MODE[12]\.value"
+)
+# Files allowed to branch on the tilt-mode string:
+#   - cover_types/ owns mode-specific behavior on TiltPolicy
+#   - engine/covers/tilt.py is the calc engine and reads ``mode`` from config
+_TILT_MODE_BRANCH_ALLOWED = {
+    _PRODUCTION_ROOT / "engine" / "covers" / "tilt.py",
+}
+
+
+@pytest.mark.unit
+def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
+    """Fail if any module outside cover_types/ branches on the tilt-mode string.
+
+    MODE1/MODE2 differences are a TiltPolicy concern. The climate handler used
+    to compare ``tilt_cover.mode == TiltMode.MODE2.value`` inline; that branch
+    was extracted to ``TiltPolicy.climate_tilt_percentage`` in fix for
+    issue #373.  This guard keeps the pattern out of the rest of the codebase.
+    """
+    offenders: list[str] = []
+    for path in _PRODUCTION_ROOT.rglob("*.py"):
+        if _TYPE_BOUNDARY in path.parents:
+            continue
+        if path in _TILT_MODE_BRANCH_ALLOWED:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if not (
+                _BANNED_TILT_MODE_STRING_RE.search(line)
+                or _BANNED_TILT_MODE_VALUE_RE.search(line)
+            ):
+                continue
+            stripped = line.strip()
+            if stripped.startswith(("#", '"', "'")):
+                continue
+            rel = path.relative_to(_REPO_ROOT)
+            offenders.append(f"{rel}:{lineno}: {stripped}")
+    assert not offenders, (
+        "Tilt-mode string/value comparisons found outside cover_types/ — "
+        "MODE1/MODE2 differences live on TiltPolicy (see "
+        "climate_tilt_percentage):\n  " + "\n  ".join(offenders)
+    )
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("cover_type", "expected"),

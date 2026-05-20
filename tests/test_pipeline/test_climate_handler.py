@@ -866,3 +866,86 @@ class TestClimateHandlerControlMethodOnLowLightBranch:
         assert (
             result.control_method == ControlMethod.DEFAULT
         ), f"Lux-below-threshold branch must emit DEFAULT, not {result.control_method}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 — full-pipeline coverage for tilt MODE2 + min_pos=50 GLARE_CONTROL
+# ---------------------------------------------------------------------------
+
+
+def _make_tilt_mode2_cover(*, gamma_deg: float, valid: bool, min_pos: int):
+    """Mock AdaptiveTiltCover for the issue-#373 GLARE_CONTROL pipeline test."""
+    from custom_components.adaptive_cover_pro.engine.covers import AdaptiveTiltCover
+
+    cover = MagicMock(spec=AdaptiveTiltCover)
+    cover.direct_sun_valid = valid
+    cover.valid = valid
+    cover.calculate_percentage = MagicMock(return_value=50.0)
+    cover.calculate_position = MagicMock(return_value=90.0)
+    cover.gamma = gamma_deg  # SunGeometry.gamma is in degrees
+    cover.beta = 0.0
+    cover.mode = "mode2"
+    config = MagicMock()
+    config.min_pos = min_pos
+    config.max_pos = 100
+    config.min_pos_sun_only = False  # always enforce
+    config.max_pos_sun_only = False
+    cover.config = config
+    return cover
+
+
+class TestIssue373PipelineGlareControl:
+    """End-to-end ClimateHandler verification for tilt MODE2 + min_pos=50."""
+
+    handler = ClimateHandler()
+
+    def test_climate_tilt_mode2_glare_control_with_inverse_state_min_pos_50(
+        self,
+    ) -> None:
+        """Tilt MODE2 + min_pos=50 + sun out of FOV + summer climate → GLARE_CONTROL.
+
+        Pre-fix the raw helper output was 44 → clamped to 50 (horizontal floor).
+        Post-fix with positive gamma the helper returns (180-80)/180*100 ≈ 56,
+        which survives the clamp and yields a meaningful blocking position.
+
+        ``inverse_state`` is applied above the handler in coordinator.py, so
+        this test asserts the un-inverted handler output.  The companion
+        regression in tests/test_climate_cover_state.py covers the same code
+        path at the ``ClimateCoverState`` layer; this one anchors the same
+        invariant at the ``ClimateHandler.evaluate()`` boundary so a future
+        snapshot/handler refactor can't silently regress it.
+        """
+        from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+
+        cover = _make_tilt_mode2_cover(gamma_deg=90.0, valid=False, min_pos=50)
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_tilt",
+            climate_mode_enabled=True,
+            climate_readings=_make_readings(
+                outside_temperature=30.0,
+                inside_temperature=27.0,
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=False,
+                lux_below_threshold=False,
+            ),
+            climate_options=_make_options(
+                temp_low=18.0,
+                temp_high=26.0,
+                temp_summer_outside=22.0,
+            ),
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        # Post-fix: helper returns 56 (positive hemisphere, MODE2 GLARE_CONTROL
+        # for angle=80, gamma>=0). 56 > 50 so the min_pos=50 clamp doesn't fire.
+        assert result.position != 50, (
+            f"Position must escape the horizontal floor (50%) — pre-fix was "
+            f"clamped here. Got {result.position}."
+        )
+        assert result.position > 50, (
+            f"Positive-gamma hemisphere must yield > 50 (blocking direction), "
+            f"got {result.position}."
+        )
+        assert result.climate_strategy == ClimateStrategy.GLARE_CONTROL

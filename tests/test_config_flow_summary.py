@@ -1979,6 +1979,58 @@ def test_cloudy_position_no_warning_when_suppression_on():
 
 
 # ---------------------------------------------------------------------------
+# Tilt MODE2 + min_position footgun warning (issue #373)
+# ---------------------------------------------------------------------------
+
+
+def _mode2_warning_markers_present(summary: str) -> bool:
+    """Look for the MODE2-min-position footgun warning by its diagnostic markers."""
+    lower = summary.lower()
+    return (
+        "⚠️" in summary
+        and "mode2" in lower
+        and "min position" in lower
+        and "open" in lower
+    )
+
+
+def test_tilt_mode2_with_high_min_position_shows_warning():
+    """MODE2 + min_position ≥ 50 surfaces the footgun (issue #373)."""
+    cfg = {CONF_TILT_MODE: "mode2", CONF_MIN_POSITION: 50}
+    summary = _build_config_summary(cfg, SensorType.TILT)
+    assert _mode2_warning_markers_present(
+        summary
+    ), f"Expected MODE2-min-pos warning markers in summary, got:\n{summary}"
+
+
+def test_tilt_mode1_with_high_min_position_no_warning():
+    """MODE1 + min_position ≥ 50 must NOT surface the MODE2-specific warning."""
+    cfg = {CONF_TILT_MODE: "mode1", CONF_MIN_POSITION: 50}
+    summary = _build_config_summary(cfg, SensorType.TILT)
+    assert not _mode2_warning_markers_present(
+        summary
+    ), f"MODE1 must not trigger MODE2 warning, got:\n{summary}"
+
+
+def test_tilt_mode2_min_position_zero_no_warning():
+    """MODE2 + min_position 0 leaves the open band alone, no warning."""
+    cfg = {CONF_TILT_MODE: "mode2", CONF_MIN_POSITION: 0}
+    summary = _build_config_summary(cfg, SensorType.TILT)
+    assert not _mode2_warning_markers_present(
+        summary
+    ), f"MODE2 + min_pos 0 must not warn, got:\n{summary}"
+
+
+def test_venetian_mode2_with_high_min_position_shows_warning():
+    """Venetian MODE2 + min_position ≥ 50 surfaces the same footgun."""
+    cfg = {CONF_TILT_MODE: "mode2", CONF_MIN_POSITION: 50}
+    summary = _build_config_summary(cfg, SensorType.VENETIAN)
+    assert _mode2_warning_markers_present(
+        summary
+    ), f"Expected MODE2-min-pos warning for venetian, got:\n{summary}"
+
+
+# ---------------------------------------------------------------------------
 # Motion timeout mode (issue #333)
 # ---------------------------------------------------------------------------
 

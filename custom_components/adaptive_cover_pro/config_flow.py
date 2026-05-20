@@ -137,6 +137,7 @@ from .const import (
     MAX_DEBUG_EVENT_BUFFER_SIZE,
     MAX_TRANSIT_TIMEOUT,
     MIN_TRANSIT_TIMEOUT,
+    MODE2_OPEN_HORIZONTAL_PERCENT,
     DOMAIN,
     SensorType,
 )
@@ -187,7 +188,12 @@ CONFIG_SCHEMA = vol.Schema(
 
 # Geometry schemas live next to each cover-type policy. Re-exported here so
 # in-tree consumers (tests, sync coverage) keep their existing import paths.
-from .cover_types import POLICY_REGISTRY, BlindPolicy, get_policy  # noqa: E402
+from .cover_types import (  # noqa: E402
+    POLICY_REGISTRY,
+    BlindPolicy,
+    TiltPolicy,
+    get_policy,
+)
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
 from .cover_types.tilt import GEOMETRY_TILT_SCHEMA  # noqa: E402, F401
@@ -1646,6 +1652,24 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         lines.append("")
         lines.append("**Position Limits**")
         lines.append(" · ".join(limit_parts))
+
+    # MODE2 + min_position footgun warning (issue #373).
+    # In MODE2 the OPEN (horizontal) slat angle IS 50%, so any min_position
+    # >= 50% collapses every climate/glare-control decision to the floor and
+    # the cover stops blocking heat or glare. Surface this as a ⚠️ line so
+    # users see it before saving the config.
+    if (
+        sensor_type in (SensorType.TILT, SensorType.VENETIAN)
+        and TiltPolicy.is_mode2(config.get(CONF_TILT_MODE))
+        and min_pos is not None
+        and min_pos >= MODE2_OPEN_HORIZONTAL_PERCENT
+    ):
+        lines.append(
+            f"⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open "
+            "(horizontal) slat angle IS 50%, so any min position ≥ 50 "
+            "collapses every climate/glare-control decision to the floor "
+            "and the cover stops blocking heat."
+        )
 
     # Somfy My preset info / warning
     _any_use_my = bool(config.get(CONF_SUNSET_USE_MY)) or any(

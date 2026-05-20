@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
+from custom_components.adaptive_cover_pro.enums import ClimateStrategy
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,
@@ -662,7 +663,7 @@ class TestClimateCoverState:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_with_presence(90)
+            result = state_handler.tilt_with_presence()
 
             # Winter mode with sun valid → uses _solar_position() → calculate_percentage()
             default_80_degrees = 80 / 90 * 100  # ~88.9%
@@ -998,7 +999,7 @@ class TestIssue71IrradianceSummerFix:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_with_presence(90)
+            result = state_handler.tilt_with_presence()
 
             # Low irradiance → LOW_LIGHT solar position (not summer cooling angle)
             summer_cooling_pos = round((45 / 90) * 100)  # CLIMATE_SUMMER_TILT_ANGLE=45
@@ -1050,7 +1051,7 @@ class TestIssue71IrradianceSummerFix:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_with_presence(90)
+            result = state_handler.tilt_with_presence()
 
             # High irradiance + summer → summer cooling angle
             from custom_components.adaptive_cover_pro.const import (
@@ -1109,7 +1110,7 @@ class TestIssue71IrradianceSummerFix:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_without_presence(90)
+            result = state_handler.tilt_without_presence()
 
             # Low irradiance → LOW_LIGHT (solar position), not POSITION_CLOSED
             assert result != 0  # Not fully closed
@@ -1158,7 +1159,7 @@ class TestIssue71IrradianceSummerFix:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_without_presence(90)
+            result = state_handler.tilt_without_presence()
 
             from custom_components.adaptive_cover_pro.const import POSITION_CLOSED
 
@@ -1216,7 +1217,7 @@ class TestIssue373Mode2SummerTiltHemisphere:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_with_presence(180)
+            result = state_handler.tilt_with_presence()
 
             assert result > 50, f"Expected >50 (blocking hemisphere) but got {result}"
             assert result >= 75, f"Expected >=75 but got {result}"
@@ -1264,7 +1265,7 @@ class TestIssue373Mode2SummerTiltHemisphere:
                 ),
                 climate_data,
             )
-            result = state_handler.tilt_with_presence(90)
+            result = state_handler.tilt_with_presence()
 
             from custom_components.adaptive_cover_pro.const import (
                 CLIMATE_SUMMER_TILT_ANGLE,
@@ -1347,3 +1348,241 @@ class TestIssue373Mode2SummerTiltHemisphere:
                 result > 50
             ), f"Expected result >50 (not clamped to horizontal) but got {result}"
             assert result == 75, f"Expected 75 but got {result}"
+
+    # ------------------------------------------------------------------
+    # 1d — Issue #373 E2E: MODE2 + min_pos=50 + out-of-FOV must not clamp
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    def test_tilt_glare_control_mode2_min_pos_50_blocks_heat_issue_373(
+        self, mock_logger, mock_sun_data
+    ):
+        """Issue #373 GLARE_CONTROL repro: MODE2 + min_pos=50 + sun out-of-FOV.
+
+        Inputs mirror the user-reported scenario:
+        - tilt MODE2 (0=closed-one-way, 50=horizontal/open, 100=closed-other-way)
+        - min_position=50, enable_min_position=False (always enforce)
+        - sun outside FOV (so cover.valid is False, climate falls to GLARE_CONTROL)
+        - summer-ish climate with presence
+
+        Pre-fix: GLARE_CONTROL fallback returns round(80/180*100) = 44, then
+        apply_limits clamps up to 50 — the cover sits horizontal and does nothing.
+
+        Post-fix: helper is gamma-aware. For positive gamma (sun east of normal
+        per ACP's gamma sign convention: gamma = win_azi - sol_azi mod 360), the
+        MODE2 closed-positive hemisphere gives raw 56% → survives the min_pos=50
+        clamp → final 56%, no longer stuck at horizontal.
+
+        The complementary negative-gamma case (raw 44 → still clamped to 50) is
+        addressed by the config-summary ⚠️ warning that teaches users to avoid
+        min_position ≥ 50 in MODE2.
+        """
+        tilt = build_tilt_cover(
+            logger=mock_logger,
+            sol_azi=90.0,  # east → gamma ≈ +90° from win_azi=180, out of FOV
+            sol_elev=30.0,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            sun_data=mock_sun_data,
+            fov_left=45,
+            fov_right=45,
+            win_azi=180,
+            h_def=50,
+            max_pos=100,
+            min_pos=50,
+            max_pos_bool=False,
+            min_pos_bool=False,  # always enforce (not sun-only)
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            slat_distance=0.03,
+            depth=0.02,
+            mode="mode2",
+        )
+
+        climate_data = _make_climate(
+            inside_temperature="73.0",
+            outside_temperature="80.0",
+            temp_low=65.0,
+            temp_high=73.0,
+            temp_summer_outside=70.0,
+            temp_switch=False,
+            policy=get_policy("cover_tilt"),
+            is_presence=True,
+            is_sunny=True,
+            irradiance_below_threshold=False,
+            lux_below_threshold=False,
+            winter_close_insulation=False,
+        )
+
+        state_handler = ClimateCoverState(
+            make_snapshot_for_cover(tilt, tilt.config.h_def),
+            climate_data,
+        )
+        # get_state() runs tilt_state() then apply_snapshot_limits — this is
+        # exactly what the pipeline does and what reproduces the issue.
+        result = state_handler.get_state()
+
+        assert (
+            result != 50
+        ), f"Expected result != 50 (horizontal floor footgun) but got {result}"
+        # Positive-gamma case: raw 56% (helper returns (180-80)/180*100 ≈ 56)
+        # survives the min_pos=50 clamp.  Pre-fix returned 44 → clamped to 50.
+        assert (
+            result > 50
+        ), f"Expected result > 50 (positive closed hemisphere) but got {result}"
+        assert state_handler.climate_strategy == ClimateStrategy.GLARE_CONTROL
+
+    # ------------------------------------------------------------------
+    # 2a — MODE2 summer + presence + negative gamma: pick OTHER hemisphere
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    def test_tilt_summer_mode2_with_presence_negative_gamma_picks_other_hemisphere(
+        self, mock_logger, mock_sun_data
+    ):
+        """MODE2 summer with negative gamma must tilt to the negative hemisphere (25%).
+
+        With gamma ≈ −40° (sun west of window normal under ACP's gamma sign
+        convention), the open/blocking direction flips compared to positive gamma —
+        the slat must tilt to the OTHER side of horizontal.  Pre-fix the code
+        always returned 75% regardless of sun side.
+
+        Note: SunGeometry.gamma = (win_azi - sol_azi + 180) % 360 - 180, so
+        win_azi=180 + sol_azi=220 gives gamma ≈ -40°.
+        """
+        tilt = build_tilt_cover(
+            logger=mock_logger,
+            sol_azi=220.0,  # gamma ≈ -40° from win_azi=180
+            sol_elev=45.0,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            sun_data=mock_sun_data,
+            fov_left=60,
+            fov_right=60,
+            win_azi=180,
+            h_def=50,
+            max_pos=100,
+            min_pos=0,
+            max_pos_bool=False,
+            min_pos_bool=False,
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            slat_distance=0.03,
+            depth=0.02,
+            mode="mode2",
+        )
+
+        with (
+            patch.object(type(tilt), "valid", new_callable=PropertyMock) as mock_valid,
+            patch.object(
+                type(tilt), "direct_sun_valid", new_callable=PropertyMock
+            ) as mock_dsv,
+        ):
+            mock_valid.return_value = True
+            mock_dsv.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                policy=get_policy("cover_tilt"),
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=False,
+                lux_below_threshold=False,
+                winter_close_insulation=False,
+            )
+
+            state_handler = ClimateCoverState(
+                make_snapshot_for_cover(tilt, tilt.config.h_def),
+                climate_data,
+            )
+            result = state_handler.tilt_with_presence()
+
+            assert result == 25, f"Expected 25 (negative hemisphere) but got {result}"
+            assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING
+
+    # ------------------------------------------------------------------
+    # 2b — MODE2 summer + presence + positive gamma: keep 75% (canary)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.unit
+    def test_tilt_summer_mode2_with_presence_positive_gamma_picks_75(
+        self, mock_logger, mock_sun_data
+    ):
+        """MODE2 summer with positive gamma keeps the existing 75% answer.
+
+        Canary for the positive-side hemisphere — the fix must not regress this
+        path (which today returns 75%, the correct blocking-hemisphere answer).
+
+        Note: SunGeometry.gamma = (win_azi - sol_azi + 180) % 360 - 180, so
+        win_azi=180 + sol_azi=140 gives gamma ≈ +40°.
+        """
+        tilt = build_tilt_cover(
+            logger=mock_logger,
+            sol_azi=140.0,  # gamma ≈ +40° from win_azi=180
+            sol_elev=45.0,
+            sunset_pos=0,
+            sunset_off=0,
+            sunrise_off=0,
+            sun_data=mock_sun_data,
+            fov_left=60,
+            fov_right=60,
+            win_azi=180,
+            h_def=50,
+            max_pos=100,
+            min_pos=0,
+            max_pos_bool=False,
+            min_pos_bool=False,
+            blind_spot_left=None,
+            blind_spot_right=None,
+            blind_spot_elevation=None,
+            blind_spot_on=False,
+            min_elevation=None,
+            max_elevation=None,
+            slat_distance=0.03,
+            depth=0.02,
+            mode="mode2",
+        )
+
+        with (
+            patch.object(type(tilt), "valid", new_callable=PropertyMock) as mock_valid,
+            patch.object(
+                type(tilt), "direct_sun_valid", new_callable=PropertyMock
+            ) as mock_dsv,
+        ):
+            mock_valid.return_value = True
+            mock_dsv.return_value = True
+
+            climate_data = _make_climate(
+                inside_temperature="27.0",
+                outside_temperature="30.0",
+                temp_high=25.0,
+                temp_summer_outside=22.0,
+                policy=get_policy("cover_tilt"),
+                is_presence=True,
+                is_sunny=True,
+                irradiance_below_threshold=False,
+                lux_below_threshold=False,
+                winter_close_insulation=False,
+            )
+
+            state_handler = ClimateCoverState(
+                make_snapshot_for_cover(tilt, tilt.config.h_def),
+                climate_data,
+            )
+            result = state_handler.tilt_with_presence()
+
+            assert result == 75, f"Expected 75 (positive hemisphere) but got {result}"
+            assert state_handler.climate_strategy == ClimateStrategy.SUMMER_COOLING

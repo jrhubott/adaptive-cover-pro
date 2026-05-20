@@ -244,6 +244,15 @@ STRATEGY_MODES = [
 CLIMATE_SUMMER_TILT_ANGLE = 45  # degrees — slat tilt under summer cooling
 CLIMATE_DEFAULT_TILT_ANGLE = 80  # degrees — tilt when no climate signal
 
+# Tilt MODE2 (0–180° range) uses the same percentage scale for both
+# closed-one-way (0%) and closed-other-way (100%); the open horizontal
+# slat angle (90°) maps to 50%. The negative-gamma branch flips the angle
+# by subtracting an offset of 90° before scaling so that the result lands
+# in the OTHER closed hemisphere. See engine/covers/tilt.py:120-121 for
+# the geometry-side scale derivation.
+MODE2_OPEN_HORIZONTAL_PERCENT = 50  # MODE2: 50% == horizontal/open slat
+CLIMATE_TILT_PCT_NEGATIVE_HEMISPHERE_OFFSET = 90  # MODE2 hemisphere-flip offset
+
 
 # =============================================================================
 # 12. Light & Cloud Sensing
