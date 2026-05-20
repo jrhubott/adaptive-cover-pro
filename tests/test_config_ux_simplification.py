@@ -585,7 +585,11 @@ class TestSelectorDomains:
 _SCHEMA_OPTIONAL_KEY_PAIRS = [
     ("WEATHER_OVERRIDE", WEATHER_OVERRIDE_SCHEMA, _WEATHER_OVERRIDE_OPTIONAL_KEYS),
     ("LIGHT_CLOUD", LIGHT_CLOUD_SCHEMA, _LIGHT_CLOUD_OPTIONAL_KEYS),
-    ("TEMPERATURE_CLIMATE", TEMPERATURE_CLIMATE_SCHEMA, _TEMPERATURE_CLIMATE_OPTIONAL_KEYS),
+    (
+        "TEMPERATURE_CLIMATE",
+        TEMPERATURE_CLIMATE_SCHEMA,
+        _TEMPERATURE_CLIMATE_OPTIONAL_KEYS,
+    ),
     # CUSTOM_POSITION's constant covers the venetian-augmented variant (with
     # tilt fields), not the bare module-level schema — build that variant for
     # the guard.
@@ -615,9 +619,7 @@ class TestOptionalKeyConstants:
     default is vol.UNDEFINED in the paired schema.
     """
 
-    @pytest.mark.parametrize(
-        "label,schema,constant", _SCHEMA_OPTIONAL_KEY_PAIRS
-    )
+    @pytest.mark.parametrize("label,schema,constant", _SCHEMA_OPTIONAL_KEY_PAIRS)
     def test_optional_keys_match_schema(self, label, schema, constant):
         from_schema = _schema_undefined_optional_keys(schema)
         from_constant = set(constant)
