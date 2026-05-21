@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import (
+    VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_TILT_SUPPRESSION_SECONDS,
 )
@@ -127,6 +128,13 @@ class TestSuppressionDeltaCap:
         assert seq.is_in_suppression_with_cap("cover.x", delta=10.0) is True
 
     def test_suppressed_large_delta_past_grace_returns_false(self):
+        """Past both the cap-grace and publish-lag windows, the cap reasserts.
+
+        The publish-lag window (issue #33 Track A) was added in front of the
+        legacy cap path. To reach the cap-reasserts behavior the test
+        backdates both ``_suppression_at`` past the cap grace and
+        ``_settled_at`` past the publish lag.
+        """
         from custom_components.adaptive_cover_pro.const import (
             VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
         )
@@ -135,6 +143,9 @@ class TestSuppressionDeltaCap:
         seq.stamp_position_command("cover.x")
         seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
             seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        seq._settled_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 1.0
         )
         big = VENETIAN_BACKROTATE_MAX_DELTA_PERCENT + 1
         assert seq.is_in_suppression_with_cap("cover.x", delta=float(big)) is False
@@ -182,11 +193,20 @@ class TestSuppressionDeltaCap:
     def test_suppressed_large_delta_with_settled_state_past_grace_returns_false(
         self,
     ) -> None:
-        """Once the post-settle grace tail expires, the cap reasserts."""
+        """Once both the cap-grace and publish-lag windows expire, the cap reasserts.
+
+        The publish-lag window (issue #33 Track A) was added in front of the
+        legacy cap path. Both ``_suppression_at`` (cap-grace anchor) and
+        ``_settled_at`` (publish-lag anchor) must be backdated for the cap
+        path to run.
+        """
         _, seq = _build_sequencer(get_state=lambda _eid: "open")
         seq.stamp_position_command("cover.x")
         seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
             seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        seq._settled_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 1.0
         )
         assert seq.is_in_suppression_with_cap("cover.x", delta=100.0) is False
 
@@ -204,6 +224,68 @@ class TestSuppressionDeltaCap:
             seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
         )
         assert seq.is_in_suppression_with_cap("cover.x", delta=10.0) is True
+
+    def test_large_delta_inside_publish_lag_after_settled_returns_true(self) -> None:
+        """Inside the post-settle publish-lag window, any delta is motor drift.
+
+        Track A in issue #33: Somfy IO actuators republish their back-rotate
+        tilt burst tens of seconds after ``cover.state`` reports settled —
+        well past the small (5 s) post-settle cap grace. Anchoring a longer
+        publish-lag window to the ``moving → settled`` transition the
+        sequencer observed in its settle loop bypasses the back-rotate cap
+        for that full window, so the late burst doesn't latch false manual
+        override.
+        """
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq.stamp_position_command("cover.x")
+        # Backdate the stamp past the existing cap-grace so only the new
+        # publish-lag window can save us.
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        # The sequencer just observed moving→settled.
+        seq._settled_at["cover.x"] = dt.datetime.now(dt.UTC)
+        assert seq.is_in_suppression_with_cap("cover.x", delta=95.0) is True
+
+    def test_large_delta_past_publish_lag_after_settled_returns_false(self) -> None:
+        """Once the publish-lag window elapses, the cap reasserts.
+
+        Counterpart to ``test_large_delta_inside_publish_lag_after_settled_returns_true``:
+        backdating ``_settled_at`` past the publish-lag window puts a large
+        delta firmly in user-touch territory. A sub-cap delta still passes
+        the legacy cap path.
+        """
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq.stamp_position_command("cover.x")
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        seq._settled_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 1.0
+        )
+        assert seq.is_in_suppression_with_cap("cover.x", delta=95.0) is False
+        # Sub-cap delta still suppressed via the cap path.
+        assert seq.is_in_suppression_with_cap("cover.x", delta=10.0) is True
+
+    def test_publish_lag_clears_on_next_position_command(self) -> None:
+        """``stamp_position_command`` clears ``_settled_at`` for a fresh cycle.
+
+        Without the clear, an old settle stamp from a previous cycle would
+        leak its publish-lag window into a new command — letting a true
+        user touch on the next cycle get swallowed as motor drift.
+        """
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq.stamp_position_command("cover.x")
+        seq._suppression_at["cover.x"] = dt.datetime.now(dt.UTC) - dt.timedelta(
+            seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+        )
+        # Lazy-write path: the cap query stamps _settled_at opportunistically.
+        seq.is_in_suppression_with_cap("cover.x", delta=10.0)
+        assert "cover.x" in seq._settled_at
+        # A new position command starts a fresh cycle; the prior settle
+        # stamp must be forgotten.
+        seq.stamp_position_command("cover.x")
+        assert "cover.x" not in seq._settled_at
 
 
 @pytest.mark.asyncio
@@ -249,6 +331,137 @@ class TestSettleAndTilt:
             "cover.x", position_target=60, tilt_target=80, reason="solar"
         )
         assert hass.services.async_call.call_count == 0
+
+    async def test_run_sequence_stamps_settled_at_after_wait_returns(self):
+        """``run_sequence`` deterministically stamps the moving→settled anchor.
+
+        After ``_wait_for_position_settle`` returns, the sequencer must
+        stamp ``_settled_at`` to anchor the publish-lag window (issue #33
+        Track A). Without this deterministic stamp the window would rely
+        solely on the lazy-write in ``is_in_suppression_with_cap``, which
+        only fires if/when a manual-override query happens to land at the
+        right moment.
+        """
+        _, seq = _build_sequencer()
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 60))
+        assert "cover.x" not in seq._settled_at
+        before = dt.datetime.now(dt.UTC)
+        await seq.run_sequence(
+            "cover.x", position_target=60, tilt_target=80, reason="solar"
+        )
+        after = dt.datetime.now(dt.UTC)
+        assert "cover.x" in seq._settled_at
+        assert before <= seq._settled_at["cover.x"] <= after
+
+    async def test_settle_does_not_stall_during_startup_grace_when_state_never_moves(
+        self, monkeypatch
+    ):
+        """Startup grace must block stall declaration before motor begins to travel.
+
+        Somfy IO motors take 3-5 s to begin physical travel after the service
+        call. During that window cover.state still reads "open" and
+        current_position is unchanged. Without the startup grace, the
+        no-progress counter trips after 3 samples and the loop declares stall
+        20-30 s before the cover actually stops moving — starting the
+        publish-lag clock far too early (issue #33 Track B).
+        """
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
+            0,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS",
+            0.05,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS",
+            0.2,
+        )
+        _, seq = _build_sequencer(get_state=lambda _eid: "open")
+        seq._get_current_position = MagicMock(return_value=100)
+
+        reached, last = await seq._wait_for_position_settle("cover.x", target=9)
+
+        assert reached is False
+        # Pre-fix returns after 4 samples (poll 1 sets last=100, polls 2-4
+        # each tick unchanged_samples up to 3 → stall). With the startup
+        # grace the loop must keep polling past the unchanged-sample
+        # threshold until the wall-clock grace elapses (0.05 s) or the
+        # timeout fires (0.2 s). Either way that's strictly more than 4
+        # samples.
+        assert seq._get_current_position.call_count > 4
+
+    async def test_settle_does_not_stall_after_motion_observed(self, monkeypatch):
+        """Once motion is observed, the unchanged-sample stall counter is active again.
+
+        State cycles ``open → closing → closing → open → open → open``; the
+        gate must let the post-motion 3-unchanged-sample stall fire. Without
+        a motion-observed flag, the same gate that protects pre-motion startup
+        would suppress all post-motion stalls and the loop would only ever
+        bail on the 60 s timeout.
+        """
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
+            0,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS",
+            0,
+        )
+        state_seq = iter(["open", "closing", "closing", "open", "open", "open"])
+        _, seq = _build_sequencer(
+            get_state=lambda _eid: next(state_seq, "open"),
+        )
+        seq._get_current_position = MagicMock(side_effect=[100, 100, 95, 95, 95, 95])
+
+        reached, last = await seq._wait_for_position_settle("cover.x", target=9)
+
+        assert reached is False
+        assert last == 95
+        # poll 1 (open, 100, last=None reset), poll 2 (closing, 100, moving
+        # reset), poll 3 (closing, 95, moving reset), poll 4 (open, 95,
+        # unchanged=1), poll 5 (open, 95, unchanged=2), poll 6 (open, 95,
+        # unchanged=3 → stall).
+        assert seq._get_current_position.call_count >= 6
+
+    async def test_settle_does_not_stall_during_startup_grace_no_state_callback(
+        self, monkeypatch
+    ):
+        """No ``get_state`` callback: startup grace still gates on wall-clock elapsed.
+
+        Backwards-compat path used by tests and non-venetian callers that
+        construct DualAxisSequencer without a state callback. The startup
+        grace must still apply, anchored purely on wall-clock time since the
+        loop began — otherwise a slow-starting motor's pre-motion samples
+        would prematurely declare stall.
+        """
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
+            0,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS",
+            0.05,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS",
+            0.2,
+        )
+        _, seq = _build_sequencer()  # no get_state
+        seq._get_current_position = MagicMock(return_value=60)
+
+        reached, last = await seq._wait_for_position_settle("cover.x", target=9)
+
+        assert reached is False
+        assert seq._get_current_position.call_count > 4
 
 
 @pytest.mark.asyncio
@@ -702,10 +915,22 @@ class TestSettleStateAware:
     async def test_settle_unchanged_samples_only_count_when_stationary(
         self, monkeypatch
     ):
-        """When state is always open, the existing 3-sample stall still fires."""
+        """When state is always open AND startup grace has elapsed, the 3-sample stall fires.
+
+        The startup grace (Track B fix in issue #33) is intentionally
+        bypassed here so we exercise the post-grace stall path. The
+        production grace prevents a slow-starting motor's pre-motion samples
+        from being misclassified as stall; once grace expires, the legacy
+        3-unchanged-sample counter still terminates the wait.
+        """
         monkeypatch.setattr(
             "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
+            0,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS",
             0,
         )
         state_seq = iter(["open", "open", "open", "open", "open"])
@@ -815,10 +1040,21 @@ class TestSettleStateAware:
         assert pos_calls[0] == 2
 
     async def test_settle_falls_back_when_no_get_state(self, monkeypatch):
-        """No get_state injected → behaves identically to pre-fix code (stall at 3)."""
+        """No get_state injected + startup grace bypassed → stalls at 4 polls.
+
+        Equivalent of the pre-Track-B fall-back path: with no state callback
+        and the startup grace patched to zero, the legacy 3-unchanged-sample
+        counter terminates the loop at poll 4 (poll 1 sets last_position,
+        polls 2-4 each increment unchanged_samples to 3).
+        """
         monkeypatch.setattr(
             "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
             ".VENETIAN_POSITION_SETTLE_POLL_SECONDS",
+            0,
+        )
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer"
+            ".VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS",
             0,
         )
         calls = [0]

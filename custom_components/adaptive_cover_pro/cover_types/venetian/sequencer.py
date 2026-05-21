@@ -37,8 +37,10 @@ from ...const import (
     ATTR_TILT_POSITION,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
+    VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES,
     VENETIAN_POSITION_SETTLE_POLL_SECONDS,
+    VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS,
     VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
     VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_POST_TILT_REBASE_DELAY_SECONDS,
@@ -113,6 +115,13 @@ class DualAxisSequencer:
         # CoverCommandService.PerEntityState) so non-venetian covers carry no
         # dual-axis state at all.
         self._suppression_at: dict[str, dt.datetime] = {}
+        # Per-entity ``moving → settled`` transition timestamp. Anchors the
+        # publish-lag window (issue #33 Track A) to the actual settle event
+        # observed by the sequencer, not to ``stamp_position_command``.
+        # Written by ``run_sequence`` after ``_wait_for_position_settle``
+        # returns, and lazy-written from ``is_in_suppression_with_cap`` when
+        # the cap query observes a settled state with no stamp yet.
+        self._settled_at: dict[str, dt.datetime] = {}
         self._tilt_targets: dict[str, int] = {}
         # Entities whose last stored target has been verified against the
         # actuator. Dedup at _send_tilt_command only fires when the target
@@ -162,37 +171,62 @@ class DualAxisSequencer:
     # -- suppression window ------------------------------------------------ #
 
     def stamp_position_command(self, entity_id: str) -> None:
-        """Record that a ``set_cover_position`` was just emitted."""
+        """Record that a ``set_cover_position`` was just emitted.
+
+        Also clears any prior ``moving → settled`` stamp for this entity so
+        the publish-lag window starts fresh for the new cycle. Without this
+        reset an old settle stamp from the previous cycle would leak its
+        publish-lag tail into a new command, letting a user touch on the
+        next cycle get swallowed as motor drift.
+        """
         self._suppression_at[entity_id] = dt.datetime.now(dt.UTC)
+        self._settled_at.pop(entity_id, None)
+
+    def _stamp_settled(self, entity_id: str) -> None:
+        """Record that the sequencer observed ``moving → settled`` for this entity.
+
+        Single dict-access site shared by the deterministic write in
+        ``run_sequence`` (after ``_wait_for_position_settle`` returns) and
+        the opportunistic lazy-write in ``is_in_suppression_with_cap``. Keep
+        callers from poking ``_settled_at`` directly so the publish-lag
+        anchor stays a single source of truth.
+        """
+        self._settled_at[entity_id] = dt.datetime.now(dt.UTC)
 
     def is_in_suppression(self, entity_id: str) -> bool:
         """Return whether the back-rotate window is still open for this cover."""
         ts = self._suppression_at.get(entity_id)
         if ts is None:
             return False
-        elapsed = (dt.datetime.now(dt.UTC) - ts).total_seconds()
-        return elapsed < VENETIAN_TILT_SUPPRESSION_SECONDS
+        return self._seconds_since(ts) < VENETIAN_TILT_SUPPRESSION_SECONDS
 
     def is_in_suppression_with_cap(self, entity_id: str, delta: float) -> bool:
         """Suppress back-rotate drift only when the delta is plausibly motor drift.
 
-        Slat geometry bounds back-rotation magnitude post-settle; a large delta
-        once the carriage has stopped is a user move, not motor drift, so the
-        manual-override path runs and the user's command is recorded (issue #33
-        follow-on).
+        Three-tier suppression on the tilt axis after a position command:
 
-        While the carriage is still mid-travel (HA cover state ``opening`` or
-        ``closing``) the cap is bypassed: real-world venetian actuators (KNX,
-        Shelly 2PM, FGR223) back-retract the slats by well over the cap during
-        carriage motion, so an arbitrarily large delta is still motor drift
-        until ``cover.state`` settles. The cap reasserts once state leaves the
-        moving set.
+        (a) **Carriage still mid-travel** (``cover.state`` in
+            ``opening``/``closing``): any delta is motor drift while the
+            motor runs. The cap is fully bypassed.
 
-        A post-settle grace tail (``VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS``)
-        also bypasses the cap: KNX/Shelly actuators publish their tilt-walk
-        burst after ``cover.state`` already reads ``open``/``closed``, so the
-        cap would reject legitimate motor drift as a user move without this
-        window (issue #33).
+        (b) **Post-stamp command-grace tail**
+            (``VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS``, 5 s): for a brief
+            tail after ``stamp_position_command``, even a large delta
+            (>cap) is still motor drift. Catches fast actuators (KNX,
+            Shelly 2PM) whose back-rotate burst lands microseconds after
+            ``cover.state`` reports settled.
+
+        (c) **Post-settle publish-lag window**
+            (``VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS``, 45 s): anchored
+            to the ``moving → settled`` transition the sequencer observed
+            in ``_wait_for_position_settle`` (or lazy-stamped here on the
+            first non-moving query). Catches slow-bus republish on Somfy
+            IO via Tahoma and KNX/Z2M where the back-rotate tilt value
+            lands tens of seconds after the cover physically stops.
+
+        Outside all three tiers the legacy slat-geometry cap applies: a
+        delta above ``VENETIAN_BACKROTATE_MAX_DELTA_PERCENT`` is a user
+        move and the manual-override path runs.
         """
         if not self.is_in_suppression(entity_id):
             return False
@@ -200,11 +234,23 @@ class DualAxisSequencer:
             state = self._get_state(entity_id)
             if state in _COVER_MOVING_STATES:
                 return True
+        # (b) Command-grace tail anchored to stamp_position_command.
         stamp = self._suppression_at.get(entity_id)
-        if stamp is not None:
-            elapsed = (dt.datetime.now(dt.UTC) - stamp).total_seconds()
-            if elapsed < VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS:
-                return True
+        if stamp is not None and (
+            self._seconds_since(stamp) < VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS
+        ):
+            return True
+        # (c) Publish-lag window anchored to moving → settled.
+        # Lazy-write: if the cap query observes a non-moving state and a
+        # live suppression stamp but no settle stamp yet, treat this query
+        # itself as the first non-moving observation and stamp now.
+        if entity_id not in self._settled_at and stamp is not None:
+            self._stamp_settled(entity_id)
+        settled_at = self._settled_at.get(entity_id)
+        if settled_at is not None and (
+            self._seconds_since(settled_at) < VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+        ):
+            return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
 
     # -- tilt sequence ----------------------------------------------------- #
@@ -219,10 +265,14 @@ class DualAxisSequencer:
         Defense-in-depth hook for Auto Control off→on transitions (issue #33).
         Suppression timestamps are intentionally untouched — the back-rotate
         window is a time-based safeguard, independent of the stored-target
-        cache.
+        cache. The ``moving → settled`` stamps used by the publish-lag
+        window are also cleared so a stale prior-cycle settle can't leak its
+        suppression tail into the next command after Auto Control is
+        re-enabled.
         """
         self._tilt_targets.clear()
         self._tilt_targets_verified.clear()
+        self._settled_at.clear()
 
     async def run_sequence(
         self,
@@ -241,6 +291,13 @@ class DualAxisSequencer:
         # Only the position-sequence path owns this stamp; tilt-only sends from
         # update_tilt_only must not extend it (issue #33 follow-on).
         self.stamp_position_command(entity_id)
+        # Anchor the publish-lag window to the moving → settled transition
+        # we just observed (issue #33 Track A). Must come AFTER
+        # stamp_position_command because that call clears ``_settled_at`` for
+        # a fresh cycle — we want the publish-lag clock to start now, not
+        # leak from a prior cycle. ``stamp_position_command`` pops; this
+        # write puts the fresh settle stamp back.
+        self._stamp_settled(entity_id)
         await self._send_tilt_command(
             entity_id,
             tilt_target=tilt_target,
@@ -510,12 +567,24 @@ class DualAxisSequencer:
         prevents a Shelly 2PM (or similar hardware) that publishes position at
         ~1 s intervals from triggering a false stall while the motor is still
         mid-travel.
+
+        Startup grace (``VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS``):
+        some actuators (Somfy IO via Tahoma in issue #33) take 3-5 s to begin
+        physical travel after the service call. During that pre-motion window
+        ``cover.state`` still reads ``open``/``closed`` and ``current_position``
+        is unchanged, which would otherwise trip the 3-sample stall counter
+        and declare settle 20-30 s before the cover actually stops moving.
+        The startup grace blocks stall declaration until either the cover has
+        been observed in a moving state at least once, or the wall-clock
+        grace window has elapsed since the loop began.
         """
-        deadline = dt.datetime.now(dt.UTC) + dt.timedelta(
+        loop_started = dt.datetime.now(dt.UTC)
+        deadline = loop_started + dt.timedelta(
             seconds=VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS
         )
         last_position: int | None = None
         unchanged_samples = 0
+        motion_observed = False
 
         while dt.datetime.now(dt.UTC) < deadline:
             current = self._get_current_position(entity_id)
@@ -526,6 +595,8 @@ class DualAxisSequencer:
             # the no-progress stall counter use the same snapshot.
             state = self._get_state(entity_id) if self._get_state else None
             is_moving = state in _COVER_MOVING_STATES
+            if is_moving:
+                motion_observed = True
 
             if abs(current - target) <= self._position_tolerance:
                 # When a get_state callback is provided, also require that
@@ -541,7 +612,14 @@ class DualAxisSequencer:
                     unchanged_samples = 0
                 else:
                     unchanged_samples += 1
-                    if unchanged_samples >= VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES:
+                    startup_grace_elapsed = (
+                        self._seconds_since(loop_started)
+                        >= VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS
+                    )
+                    if (
+                        unchanged_samples >= VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES
+                        and (motion_observed or startup_grace_elapsed)
+                    ):
                         self._logger.debug(
                             "Venetian settle: %s stalled at %s%% (target %s%%) "
                             "after %d unchanged samples",
@@ -565,6 +643,17 @@ class DualAxisSequencer:
             VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS,
         )
         return False, last_position
+
+    @staticmethod
+    def _seconds_since(stamp: dt.datetime) -> float:
+        """Return wall-clock seconds since ``stamp`` (UTC).
+
+        Single source of truth for elapsed-since-timestamp arithmetic.
+        Used by both the settle-loop startup grace and the suppression
+        cap-grace / publish-lag checks so the formula isn't duplicated
+        across the file.
+        """
+        return (dt.datetime.now(dt.UTC) - stamp).total_seconds()
 
     # -- diagnostics helpers ----------------------------------------------- #
 

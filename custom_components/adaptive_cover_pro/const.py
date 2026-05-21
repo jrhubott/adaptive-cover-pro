@@ -521,6 +521,36 @@ VENETIAN_BACKROTATE_MAX_DELTA_PERCENT = 30
 # so the cap must stay suspended until the HA state machine has fully drained.
 VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS = 5.0
 
+# Bypass the back-rotate cap for this many seconds after the sequencer observes
+# the cover transition out of the moving state (i.e. anchored to the actual
+# moving→settled boundary inside ``_wait_for_position_settle``, NOT to
+# ``stamp_position_command``). Somfy IO actuators in issue #33 publish their
+# back-rotate tilt burst ~27 s after settle; 45 s leaves ~18 s headroom for
+# slower bus republish on KNX/Z2M while staying well under
+# VENETIAN_TILT_SUPPRESSION_SECONDS=90.0. Anchored to the real settle
+# transition (not stamp_position_command), so a premature-stall on a slow-start
+# actuator cannot start this clock early.
+#
+# Behavioural-impact note: fast actuators (KNX sub-second publish, Shelly 2PM)
+# settle and publish back-rotate inside VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS=5.0
+# today, so extending publish-lag to 45 s does change behaviour: a user
+# twisting slats by hand at +10 s post-settle would, under the new code, be
+# classed as motor back-drive and not trip override — if their delta exceeds
+# 30 (the cap). Risk bounded by physics: real motor back-drive is
+# single-digit-percent (VENETIAN_REBASE_MAX_DRIFT_PERCENT=15), so a delta of
+# 30-95% during the 5-45 s window is implausible on any actuator. A user
+# twisting slats during the window almost always lands within the existing cap
+# (delta ≤ 30) which has always suppressed regardless of actuator speed.
+VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = 45.0
+
+# Refuse to count unchanged-position samples as a "stall" during the first N
+# seconds of _wait_for_position_settle UNLESS the cover has been observed in
+# opening/closing at least once. Justification: Somfy IO motors take 3-5 s to
+# begin physical travel after the service call; 6 s covers observed delay with
+# 1 s headroom. VENETIAN_POSITION_SETTLE_TIMEOUT_SECONDS=60.0 still hard-caps
+# so a dead motor doesn't block the rest of the update cycle.
+VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS = 6.0
+
 # After set_cover_tilt_position returns, real motors keep back-driving the
 # vertical axis briefly. Wait this many seconds before reading current_position
 # for the post-tilt rebase so the rebase captures the actual settled position

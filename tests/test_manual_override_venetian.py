@@ -70,7 +70,12 @@ def _tilt_check(*, expected: int = 70, suppressed: bool) -> SecondaryAxisCheck:
 
 
 def _make_sequencer_suppression(
-    *, entity_id: str, state: str, stamp_age_seconds: float = 0.0
+    *,
+    entity_id: str,
+    state: str,
+    stamp_age_seconds: float = 0.0,
+    settled_now: bool = False,
+    settled_age_seconds: float = 0.0,
 ) -> Callable[[str, float], bool]:
     """Build a real ``DualAxisSequencer`` and return its bound delta-cap gate.
 
@@ -83,6 +88,13 @@ def _make_sequencer_suppression(
     ``stamp_age_seconds`` backdates the suppression stamp so callers can land
     outside the post-settle cap-grace tail while still inside the overall
     suppression window.
+
+    ``settled_now`` calls the sequencer's ``_stamp_settled`` writer to
+    deterministically anchor the publish-lag window to "now" — modelling the
+    state immediately after ``run_sequence`` observes the carriage transition
+    to settled (issue #33 Track A). ``settled_age_seconds`` then backdates
+    that anchor so a test can land outside the publish-lag window while
+    keeping the legacy cap path intact.
     """
     hass = MagicMock()
     seq = DualAxisSequencer(
@@ -98,6 +110,10 @@ def _make_sequencer_suppression(
     seq.stamp_position_command(entity_id)
     if stamp_age_seconds > 0:
         seq._suppression_at[entity_id] -= dt.timedelta(seconds=stamp_age_seconds)
+    if settled_now:
+        seq._stamp_settled(entity_id)
+        if settled_age_seconds > 0:
+            seq._settled_at[entity_id] -= dt.timedelta(seconds=settled_age_seconds)
     return seq.is_in_suppression_with_cap
 
 
@@ -350,17 +366,31 @@ def test_tilt_drift_inside_post_settle_grace_is_ignored() -> None:
 
 
 def test_tilt_drift_after_settle_grace_with_large_delta_trips_override() -> None:
-    """Once the 5s grace tail elapses, the geometry-bounded cap reasserts.
+    """Once both the 5s cap-grace AND 45s publish-lag windows elapse, the cap reasserts.
 
-    A delta > 30% with state=``stopped`` and stamp older than the grace tail
-    is a user grabbing the slats, not motor drift, and must still trip
-    manual override even inside the 90s suppression window.
+    A delta > 30% with state=``stopped`` and both ``_suppression_at`` and
+    ``_settled_at`` aged past their respective windows is a user grabbing
+    the slats, not motor drift, and must still trip manual override even
+    inside the 90s overall suppression window.
+
+    The publish-lag window (issue #33 Track A) extends the original
+    cap-grace behaviour: pre-Track-A this test backdated only the
+    suppression stamp by 10 s; post-Track-A the settled anchor must also
+    be backdated past 45 s.
     """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+    )
+
     entity_id = "cover.venetian_post_settle_user_move"
     mgr = _make_manager(entity_id)
     mgr.hass.states.get = MagicMock(return_value=None)
     suppression = _make_sequencer_suppression(
-        entity_id=entity_id, state="stopped", stamp_age_seconds=10.0
+        entity_id=entity_id,
+        state="stopped",
+        stamp_age_seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 5.0,
+        settled_now=True,
+        settled_age_seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 1.0,
     )
 
     mgr.handle_state_change(
@@ -398,6 +428,167 @@ def test_non_venetian_cover_with_no_check_runs_position_axis_only() -> None:
     )
 
     assert not mgr.is_cover_manual(entity_id)
+
+
+# ---------------------------------------------------------------------------
+# Issue #33 Track A: publish-lag window anchored to moving → settled
+# ---------------------------------------------------------------------------
+
+
+def test_late_publish_burst_after_real_settle_does_not_trip_override() -> None:
+    """Somfy IO publish-lag scenario end-to-end (issue #33 Track A).
+
+    Reproduces the user's diagnostic: position command stamped, motor
+    physically settles, sequencer observes moving→settled (``_stamp_settled``
+    fires), 20-40 s later the actuator republishes the back-rotate tilt
+    burst with a delta > 30%. The new publish-lag window must suppress the
+    burst even though the legacy cap-grace (5 s) has long expired.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
+    )
+
+    entity_id = "cover.venetian_publish_lag"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    suppression = _make_sequencer_suppression(
+        entity_id=entity_id,
+        state="stopped",
+        stamp_age_seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0,
+        settled_now=True,
+    )
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=100, tilt=5),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        secondary_axis_check=SecondaryAxisCheck(
+            expected=100,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=suppression,
+        ),
+    )
+
+    assert not mgr.is_cover_manual(entity_id)
+    events = mgr.get_event_buffer()
+    assert any(
+        evt.get("event") == "manual_override_rejected_tilt_suppression"
+        for evt in events
+    ), f"expected rejected_tilt_suppression event, got {events}"
+
+
+def test_real_user_twist_after_publish_lag_still_trips_override() -> None:
+    """After the publish-lag window expires, a large tilt delta is a user touch.
+
+    Counterpart to ``test_late_publish_burst_after_real_settle_does_not_trip_override``:
+    same setup, but ``_settled_at`` is backdated past the publish-lag window
+    so the cap reasserts. A delta=95 is a real wand-twist and must trip
+    manual override.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+        VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
+    )
+
+    entity_id = "cover.venetian_real_user_twist"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    suppression = _make_sequencer_suppression(
+        entity_id=entity_id,
+        state="stopped",
+        stamp_age_seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0,
+        settled_now=True,
+        settled_age_seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 1.0,
+    )
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=100, tilt=5),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        secondary_axis_check=SecondaryAxisCheck(
+            expected=100,
+            attribute="current_tilt_position",
+            label="tilt",
+            suppression=suppression,
+        ),
+    )
+
+    assert mgr.is_cover_manual(entity_id)
+    events = mgr.get_event_buffer()
+    assert any(
+        evt.get("event") == "manual_override_set" for evt in events
+    ), f"expected manual_override_set event, got {events}"
+
+
+async def test_premature_stall_does_not_start_publish_lag_clock_early() -> None:
+    """End-to-end Track B + Track A: stall declaration is anchored to real settle.
+
+    A slow-starting actuator publishes the same position for the first few
+    samples (motor hasn't begun travel), then ramps down. Without the
+    Track B startup-grace fix the settle loop would declare stall on the
+    third pre-motion sample and ``run_sequence`` would stamp
+    ``_settled_at`` 20-30 s before the cover actually stops — starting
+    the publish-lag clock at the wrong moment.
+
+    This integration test drives ``run_sequence`` against that hardware
+    profile and asserts the stamp lands AFTER the startup-grace window
+    has elapsed.
+    """
+    import datetime as _dt
+
+    from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import (
+        DualAxisSequencer,
+    )
+
+    # Slow-start profile: 100 % for 5 samples (pre-motion), then ramps to 9.
+    pos_seq = iter([100, 100, 100, 100, 100, 80, 60, 9, 9, 9])
+    state_seq = iter(["open"] * 5 + ["closing"] * 3 + ["open"] * 2)
+
+    from unittest.mock import AsyncMock
+
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    seq = DualAxisSequencer(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: next(pos_seq, 9),
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        get_state=lambda _eid: next(state_seq, "open"),
+        post_settle_hold_seconds=0,
+    )
+
+    # Drive the settle loop fast and force a short startup grace so the test
+    # completes quickly, while still proving the grace gates the stall.
+    import custom_components.adaptive_cover_pro.cover_types.venetian.sequencer as seq_mod
+
+    orig_poll = seq_mod.VENETIAN_POSITION_SETTLE_POLL_SECONDS
+    orig_grace = seq_mod.VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS
+    seq_mod.VENETIAN_POSITION_SETTLE_POLL_SECONDS = 0.01
+    seq_mod.VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS = 0.05
+    try:
+        t0 = _dt.datetime.now(_dt.UTC)
+        await seq.run_sequence(
+            "cover.x", position_target=9, tilt_target=60, reason="solar"
+        )
+    finally:
+        seq_mod.VENETIAN_POSITION_SETTLE_POLL_SECONDS = orig_poll
+        seq_mod.VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS = orig_grace
+
+    assert "cover.x" in seq._settled_at
+    elapsed = (seq._settled_at["cover.x"] - t0).total_seconds()
+    # Must land at or after the startup-grace boundary (0.05 s here). The
+    # pre-fix code would stamp within microseconds of t0.
+    assert elapsed >= 0.05, f"settled_at stamped too early: {elapsed:.4f} s"
 
 
 # ---------------------------------------------------------------------------
