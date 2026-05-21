@@ -20,10 +20,18 @@ from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.cover_types.venetian import (
     DualAxisSequencer,
 )
+from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
+    VenetianPolicy,
+)
+from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.managers.grace_period import (
+    GracePeriodManager,
+)
 from custom_components.adaptive_cover_pro.managers.manual_override import (
     AdaptiveCoverManager,
     SecondaryAxisCheck,
 )
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
 def _make_event(entity_id: str, *, position: int | None, tilt: int | None):
@@ -390,3 +398,116 @@ def test_non_venetian_cover_with_no_check_runs_position_axis_only() -> None:
     )
 
     assert not mgr.is_cover_manual(entity_id)
+
+
+# ---------------------------------------------------------------------------
+# Issue #33 follow-on: command-grace guard for tilt-axis manual-override
+# ---------------------------------------------------------------------------
+
+
+def _make_policy_with_grace(
+    entity_id: str, *, venetian_mode: str = "tilt_only"
+) -> tuple[VenetianPolicy, GracePeriodManager]:
+    """Build a VenetianPolicy attached with a real GracePeriodManager in active grace.
+
+    Stamps ``entity_id`` in the grace manager so
+    ``grace_mgr.is_in_command_grace_period(entity_id)`` returns True.
+    The sequencer is wired for real via attach() so the suppression path
+    runs exactly as it does in production.
+    """
+    import datetime as _dt
+
+    grace_mgr = GracePeriodManager(logger=MagicMock())
+    # Stamp the entity directly — avoids asyncio.create_task() in unit-test context.
+    grace_mgr._command_timestamps[entity_id] = _dt.datetime.now().timestamp()
+
+    policy = VenetianPolicy()
+    policy.attach(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        grace_mgr=grace_mgr,
+        get_current_position=lambda _: None,
+        set_commanded_position=lambda *_: None,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        venetian_mode=venetian_mode,
+    )
+    return policy, grace_mgr
+
+
+def _make_pipeline_result(*, tilt: int = 60) -> PipelineResult:
+    """Build a minimal PipelineResult with a resolved tilt."""
+    return PipelineResult(
+        position=50,
+        control_method=ControlMethod.SOLAR,
+        reason="solar",
+        tilt=tilt,
+    )
+
+
+def test_tilt_axis_change_inside_command_grace_is_not_override() -> None:
+    """Tilt state change inside the command-grace window must NOT trip manual override.
+
+    User1's diagnostic: ``tilt_command_sent`` → 4.5 s → ``tilt_command_drift``
+    → ``manual_override_set``, all inside the 5 s command-grace tail.
+
+    In tilt_only mode ``update_tilt_only`` never stamps ``_suppression_at``, so
+    ``is_in_tilt_suppression`` returns False. Without the new grace gate the
+    delta=17 tilt change trips a false override.
+    """
+    entity_id = "cover.venetian_grace_tilt_only"
+    mgr = _make_manager(entity_id)
+    policy, grace_mgr = _make_policy_with_grace(entity_id, venetian_mode="tilt_only")
+
+    result = _make_pipeline_result(tilt=60)
+    check = policy.secondary_axis_check(result, MagicMock())
+    # delta = |60 - 43| = 17, threshold = 3 → would normally trip override
+    assert check is not None
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=None, tilt=43),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=3,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "Tilt change inside command grace should NOT trigger manual override"
+
+
+def test_tilt_only_update_inside_grace_position_and_tilt_mode_not_override() -> None:
+    """Same grace guard applies in position_and_tilt mode.
+
+    User2's path: update_tilt_only fires in position_and_tilt mode, similarly
+    never stamps _suppression_at. A tilt state-change inside grace must be
+    suppressed regardless of mode.
+    """
+    entity_id = "cover.venetian_grace_pos_and_tilt"
+    mgr = _make_manager(entity_id)
+    policy, grace_mgr = _make_policy_with_grace(
+        entity_id, venetian_mode="position_and_tilt"
+    )
+
+    result = _make_pipeline_result(tilt=60)
+    check = policy.secondary_axis_check(result, MagicMock())
+    # delta = |60 - 43| = 17, threshold = 3 → would normally trip override
+    assert check is not None
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=None, tilt=43),
+        our_state=50,
+        policy=get_policy("cover_venetian"),
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=3,
+        secondary_axis_check=check,
+    )
+
+    assert not mgr.is_cover_manual(entity_id), (
+        "Tilt change inside command grace (position_and_tilt mode) "
+        "should NOT trigger manual override"
+    )

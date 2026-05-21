@@ -635,7 +635,13 @@ def test_attach_invert_tilt_defaults_to_none() -> None:
 
 
 def test_secondary_axis_check_carries_expected_tilt() -> None:
-    """With a resolved tilt, the check exposes the expected slat angle and label."""
+    """With a resolved tilt, the check exposes the expected slat angle and label.
+
+    The suppression callback is an OR-composition of the tilt-suppression
+    window and the command-grace period. When neither is active (unattached
+    policy, no grace manager) it returns False.
+    """
+    entity_id = "cover.venetian_test"
     policy = VenetianPolicy()
     result = MagicMock()
     result.tilt = 75
@@ -644,8 +650,10 @@ def test_secondary_axis_check_carries_expected_tilt() -> None:
     assert check.expected == 75
     assert check.attribute == "current_tilt_position"
     assert check.label == "tilt"
-    assert check.suppression.__func__ is VenetianPolicy.is_in_tilt_suppression
-    assert check.suppression.__self__ is policy
+    # Suppression must be callable with the standard (entity_id, delta) signature.
+    assert callable(check.suppression)
+    # With no sequencer and no grace manager, suppression must return False.
+    assert check.suppression(entity_id, 0.0) is False
 
 
 @pytest.mark.asyncio

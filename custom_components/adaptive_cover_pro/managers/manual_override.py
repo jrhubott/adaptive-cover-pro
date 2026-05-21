@@ -215,6 +215,7 @@ class AdaptiveCoverManager:
         manual_threshold,
         *,
         secondary_axis_check: SecondaryAxisCheck | None = None,
+        is_in_command_grace: Callable[[str], bool] | None = None,
     ):
         """Process state change for manual override.
 
@@ -237,6 +238,12 @@ class AdaptiveCoverManager:
                 the cover-type policy (see ``CoverTypePolicy.secondary_axis_check``).
                 When provided, the secondary axis is evaluated up front and a
                 manual-override match short-circuits the position-axis check.
+            is_in_command_grace: Optional callable ``(entity_id) -> bool`` that
+                returns True while the integration's command-grace window is
+                active for this entity.  When True, all override detection is
+                suppressed — the position change is the cover responding to
+                the ACP command, not a user touch.  Supplied by the coordinator
+                via ``GracePeriodManager.is_in_command_grace_period``.
 
         """
         event = states_data
@@ -252,6 +259,15 @@ class AdaptiveCoverManager:
                 our_state=our_state,
                 new_position=None,
                 reason="wait_for_target active",
+            )
+            return
+        if is_in_command_grace is not None and is_in_command_grace(entity_id):
+            self._record_event(
+                entity_id,
+                "manual_override_rejected_command_grace",
+                our_state=our_state,
+                new_position=None,
+                reason="command grace period active",
             )
             return
 

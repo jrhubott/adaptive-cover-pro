@@ -441,6 +441,79 @@ def test_wait_for_target_prevents_override_regardless_of_tolerance():
     ), "wait_for_target=True must block all override detection"
 
 
+def test_position_change_inside_command_grace_is_not_override():
+    """Position change inside the command-grace window must NOT trip manual override.
+
+    Grace is active for the entity (timestamp just stamped). Even though the
+    position delta exceeds the threshold, the grace gate must suppress it.
+    """
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
+    import datetime as _dt
+
+    entity_id = "cover.test"
+    grace_mgr = GracePeriodManager(logger=MagicMock())
+    # Stamp grace directly to avoid asyncio.create_task in unit-test context.
+    grace_mgr._command_timestamps[entity_id] = _dt.datetime.now().timestamp()
+
+    manager = _make_manager()
+    state_data = _make_state_change_data(
+        entity_id, position=52
+    )  # delta=20 > threshold=5
+
+    manager.handle_state_change(
+        state_data,
+        our_state=72,
+        policy=get_policy("cover_blind"),
+        allow_reset=False,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        is_in_command_grace=grace_mgr.is_in_command_grace_period,
+    )
+
+    assert not manager.is_cover_manual(
+        entity_id
+    ), "Position change inside command grace should NOT trigger manual override"
+
+
+def test_position_change_after_grace_expired_trips_override():
+    """Position change after command-grace has expired must still trip override.
+
+    Grace window is 5 s. Stamping a timestamp 10 s in the past means the
+    grace period has already elapsed, so the position-delta check must run
+    and detect the manual override normally.
+    """
+    from custom_components.adaptive_cover_pro.managers.grace_period import (
+        GracePeriodManager,
+    )
+    import datetime as _dt
+
+    entity_id = "cover.test"
+    grace_mgr = GracePeriodManager(logger=MagicMock())
+    # Backdate the timestamp so grace has already expired (10 s > 5 s window).
+    grace_mgr._command_timestamps[entity_id] = _dt.datetime.now().timestamp() - 10
+
+    manager = _make_manager()
+    state_data = _make_state_change_data(
+        entity_id, position=52
+    )  # delta=20 > threshold=5
+
+    manager.handle_state_change(
+        state_data,
+        our_state=72,
+        policy=get_policy("cover_blind"),
+        allow_reset=False,
+        is_waiting=lambda _eid: False,
+        manual_threshold=5,
+        is_in_command_grace=grace_mgr.is_in_command_grace_period,
+    )
+
+    assert (
+        manager.is_cover_manual(entity_id) is True
+    ), "Position change after grace expired should trigger manual override"
+
+
 def test_tolerance_floor_applies_to_tilt_cover():
     """The tolerance floor applies equally to tilt covers (cover_tilt type)."""
     from custom_components.adaptive_cover_pro.managers.manual_override import (

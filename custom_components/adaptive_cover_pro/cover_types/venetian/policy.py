@@ -117,6 +117,7 @@ class VenetianPolicy(CoverTypePolicy):
     def __init__(self) -> None:
         """Initialise without a sequencer; ``attach()`` wires one up later."""
         self._sequencer: DualAxisSequencer | None = None
+        self._grace_mgr = None
         self._tilt_skip_above: int = DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         self._venetian_mode: str = DEFAULT_VENETIAN_MODE
         self._last_tilt: int | None = None
@@ -364,6 +365,7 @@ class VenetianPolicy(CoverTypePolicy):
 
     def attach(self, **kwargs: Any) -> None:  # noqa: D401
         """Construct the dual-axis sequencer once cmd_svc is available."""
+        self._grace_mgr = kwargs.get("grace_mgr")
         self._sequencer = DualAxisSequencer(
             hass=kwargs["hass"],
             logger=kwargs["logger"],
@@ -454,6 +456,22 @@ class VenetianPolicy(CoverTypePolicy):
             reason=reason,
         )
 
+    def _is_in_tilt_command_grace(self, entity_id: str, delta: float = 0.0) -> bool:
+        """Return True when the entity is inside the command-grace window.
+
+        Delegates to the coordinator-supplied ``GracePeriodManager``; returns
+        False when no manager is available (non-attached policy, tests that
+        construct the policy without attach()).
+
+        The ``delta`` parameter is accepted to match the
+        ``Callable[[str, float], bool]`` signature expected by
+        ``SecondaryAxisCheck.suppression`` — it is not used here because the
+        grace period is time-based, not delta-based.
+        """
+        if self._grace_mgr is None:
+            return False
+        return self._grace_mgr.is_in_command_grace_period(entity_id)
+
     def secondary_axis_check(
         self, result: PipelineResult, cmd_svc
     ) -> SecondaryAxisCheck | None:
@@ -462,14 +480,25 @@ class VenetianPolicy(CoverTypePolicy):
         Returns ``None`` when no tilt has been resolved (e.g. on a refresh
         where the engine couldn't compute one); otherwise carries the
         expected tilt and the suppression callback into manual_override.
+
+        The suppression callback is an OR-composition of the motor back-rotate
+        suppression window (``is_in_tilt_suppression``) and the command-grace
+        period (``_is_in_tilt_command_grace``).  Either condition is sufficient
+        to suppress the tilt-axis check and prevent a false override.
         """
         if result is None or result.tilt is None:
             return None
+
+        def _suppression(entity_id: str, delta: float = 0.0) -> bool:
+            return self.is_in_tilt_suppression(
+                entity_id, delta
+            ) or self._is_in_tilt_command_grace(entity_id, delta)
+
         return SecondaryAxisCheck(
             expected=result.tilt,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=self.is_in_tilt_suppression,
+            suppression=_suppression,
         )
 
     async def before_position_command(
