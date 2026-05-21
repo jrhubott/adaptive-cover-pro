@@ -45,6 +45,7 @@ PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.COVER,
+    Platform.NUMBER,
 ]
 CONF_SUN = ["sun.sun"]
 

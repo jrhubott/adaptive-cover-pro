@@ -7,7 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER, CONF_ENTITIES, DOMAIN
+from .const import _LOGGER, CONF_ENTITIES, CONF_MY_POSITION_VALUE, DOMAIN
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
@@ -25,12 +25,15 @@ async def async_setup_entry(
     reset_manual = AdaptiveCoverButton(
         config_entry.entry_id, hass, config_entry, coordinator
     )
+    my_position = AdaptiveCoverMyPositionButton(
+        config_entry.entry_id, hass, config_entry, coordinator
+    )
 
     buttons = []
 
     entities = config_entry.options.get(CONF_ENTITIES, [])
     if len(entities) >= 1:
-        buttons = [reset_manual]
+        buttons = [reset_manual, my_position]
 
     async_add_entities(buttons)
 
@@ -107,3 +110,37 @@ class AdaptiveCoverButton(AdaptiveCoverBaseEntity, ButtonEntity):
                     entity,
                 )
                 self.coordinator._cmd_svc.set_waiting(entity, False)  # noqa: SLF001
+
+
+class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
+    """Button that recalls the user's saved My Position preset."""
+
+    _attr_translation_key = "my_position"
+
+    def __init__(
+        self,
+        entry_id: str,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        coordinator: AdaptiveDataUpdateCoordinator,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(entry_id, hass, config_entry, coordinator)
+        self._attr_unique_id = f"{entry_id}_my_position"
+        self._entities = config_entry.options.get(CONF_ENTITIES, [])
+
+    async def async_press(self) -> None:
+        """Send the My Position command to all configured covers."""
+        my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
+        if my_position_value is None:
+            _LOGGER.warning(
+                "My Position button pressed but my_position_value is not configured"
+            )
+            return
+        for entity_id in self._entities:
+            await self.coordinator.async_apply_user_position(
+                entity_id,
+                int(my_position_value),
+                trigger="my_position_recall",
+                force=False,
+            )

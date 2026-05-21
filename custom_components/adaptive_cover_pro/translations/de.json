@@ -1020,6 +1020,16 @@
           "off": "Aus"
         }
       }
+    },
+    "button": {
+      "my_position": {
+        "name": "Meine Position"
+      }
+    },
+    "number": {
+      "my_position_value": {
+        "name": "Mein Positionswert"
+      }
     }
   },
   "selector": {

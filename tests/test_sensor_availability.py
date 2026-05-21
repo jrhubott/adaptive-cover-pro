@@ -68,8 +68,12 @@ from custom_components.adaptive_cover_pro.binary_sensor import (
     AdaptiveCoverPositionMismatchSensor,
 )
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
-from custom_components.adaptive_cover_pro.button import AdaptiveCoverButton
+from custom_components.adaptive_cover_pro.button import (
+    AdaptiveCoverButton,
+    AdaptiveCoverMyPositionButton,
+)
 from custom_components.adaptive_cover_pro.cover import AdaptiveProxyCover
+from custom_components.adaptive_cover_pro.number import AdaptiveCoverMyPositionNumber
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -217,6 +221,19 @@ ENTITY_FACTORIES: dict[type, object] = {
     ),
     # --- button.py ---
     AdaptiveCoverButton: lambda: AdaptiveCoverButton(
+        entry_id="test_avail_entry",
+        hass=_make_hass(),
+        config_entry=_make_config_entry(),
+        coordinator=_make_coordinator(),
+    ),
+    AdaptiveCoverMyPositionButton: lambda: AdaptiveCoverMyPositionButton(
+        entry_id="test_avail_entry",
+        hass=_make_hass(),
+        config_entry=_make_config_entry(),
+        coordinator=_make_coordinator(),
+    ),
+    # --- number.py ---
+    AdaptiveCoverMyPositionNumber: lambda: AdaptiveCoverMyPositionNumber(
         entry_id="test_avail_entry",
         hass=_make_hass(),
         config_entry=_make_config_entry(),

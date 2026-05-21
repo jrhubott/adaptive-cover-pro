@@ -1020,6 +1020,16 @@
           "off": "Désactivé"
         }
       }
+    },
+    "button": {
+      "my_position": {
+        "name": "Ma Position"
+      }
+    },
+    "number": {
+      "my_position_value": {
+        "name": "Valeur de Ma Position"
+      }
     }
   },
   "selector": {
