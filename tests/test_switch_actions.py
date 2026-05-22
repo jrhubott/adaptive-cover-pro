@@ -65,49 +65,69 @@ def _make_switch(key: str = "automatic_control", coordinator=None, config_entry=
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_turn_on_automatic_control_sends_position_to_non_manual_covers():
-    """Turn on automatic_control sends position to non-manual covers in window."""
+async def test_turn_on_automatic_control_signals_state_change_and_refreshes():
+    """Turn on automatic_control signals state_change; coordinator owns dispatch.
+
+    Issue #352: the switch must NOT dispatch positions itself — that would
+    send the stale pre-refresh ``coordinator.state``. Instead it sets
+    ``state_change=True`` and lets ``async_refresh`` route through
+    ``async_handle_state_change``, which dispatches the post-pipeline value.
+    """
     coord = _make_coordinator()
     coord.entities = ["cover.test_1", "cover.test_2"]
     coord.manager.is_cover_manual.side_effect = lambda e: e == "cover.test_2"
-
-    switch = _make_switch(key="automatic_control", coordinator=coord)
-    await switch.async_turn_on()
-
-    # apply_position called once — for cover.test_1 (cover.test_2 is manual)
-    assert coord._cmd_svc.apply_position.call_count == 1
-    call_args = coord._cmd_svc.apply_position.call_args
-    assert call_args[0][0] == "cover.test_1"
-    coord.async_refresh.assert_called_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_turn_on_automatic_control_skips_outside_time_window():
-    """Turn on automatic_control skips apply when not in time window."""
-    coord = _make_coordinator()
-    coord.entities = ["cover.test_1"]
-    coord.manager.is_cover_manual.return_value = False
-    coord.check_adaptive_time = False  # outside window
+    coord.state_change = False
 
     switch = _make_switch(key="automatic_control", coordinator=coord)
     await switch.async_turn_on()
 
     coord._cmd_svc.apply_position.assert_not_called()
+    assert coord.state_change is True
+    coord.async_refresh.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_turn_on_automatic_control_outside_time_window_still_signals():
+    """Outside the time window the switch still signals; the gate lives downstream.
+
+    Issue #352: the time-window skip now lives in ``async_handle_state_change``
+    (coordinator.py:1329-1337), not in the switch. The switch unconditionally
+    sets ``state_change=True`` so the coordinator gets a chance to evaluate
+    and decide whether to dispatch.
+    """
+    coord = _make_coordinator()
+    coord.entities = ["cover.test_1"]
+    coord.manager.is_cover_manual.return_value = False
+    coord.check_adaptive_time = False  # gate enforced inside the refresh
+    coord.state_change = False
+
+    switch = _make_switch(key="automatic_control", coordinator=coord)
+    await switch.async_turn_on()
+
+    coord._cmd_svc.apply_position.assert_not_called()
+    assert coord.state_change is True
     coord.async_refresh.assert_called_once()
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_turn_on_with_added_kwarg_skips_position_send():
-    """Turn on with added=True does not send positions (startup init path)."""
+    """Restore-from-state (added=True) must NOT signal state_change.
+
+    Startup-restore reconstructs auto_control's last state and must not
+    perturb the coordinator's dispatch flag — the first refresh has its own
+    path (``async_handle_first_refresh``).
+    """
     coord = _make_coordinator()
     coord.entities = ["cover.test_1"]
+    coord.state_change = False
 
     switch = _make_switch(key="automatic_control", coordinator=coord)
     await switch.async_turn_on(added=True)
 
     coord._cmd_svc.apply_position.assert_not_called()
+    assert coord.state_change is False
     coord.async_refresh.assert_called_once()
 
 

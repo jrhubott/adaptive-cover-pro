@@ -263,18 +263,16 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
             sequencer = getattr(self.coordinator._policy, "sequencer", None)
             if sequencer is not None:
                 sequencer.clear_tilt_targets()
-            options = self.coordinator.config_entry.options
-            for entity in self.coordinator.entities:
-                if (
-                    not self.coordinator.manager.is_cover_manual(entity)
-                    and self.coordinator.check_adaptive_time
-                ):
-                    ctx = self.coordinator._build_position_context(
-                        entity, options, force=True
-                    )
-                    await self.coordinator._cmd_svc.apply_position(
-                        entity, self.coordinator.state, "auto_control_on", context=ctx
-                    )
+            # Issue #352: signal state_change so the upcoming refresh routes
+            # through async_handle_state_change with the post-pipeline result.
+            # The previous design dispatched coordinator.state BEFORE refresh,
+            # sending the stale prior-cycle DefaultHandler value (e.g. 100 from
+            # an out-of-window cycle) and then waiting up to a minute for the
+            # periodic window-open transition to dispatch the correct solar
+            # value. Routing through state_change keeps dispatch in one place
+            # (the coordinator), aligned with weather/motion/window-open
+            # callers that already use this idiom.
+            self.coordinator.state_change = True
         await self.coordinator.async_refresh()
         self.schedule_update_ha_state()
 
