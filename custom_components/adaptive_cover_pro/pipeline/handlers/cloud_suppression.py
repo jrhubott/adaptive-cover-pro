@@ -36,6 +36,8 @@ class CloudSuppressionHandler(OverrideHandler):
             return None
         if not snapshot.climate_options.cloud_suppression_enabled:
             return None
+        if not snapshot.cover.direct_sun_valid:
+            return None
 
         r = snapshot.climate_readings
         triggers = []
@@ -74,4 +76,6 @@ class CloudSuppressionHandler(OverrideHandler):
         """Reason when cloud suppression is not active."""
         if not snapshot.in_time_window:
             return "outside time window"
+        if not snapshot.cover.direct_sun_valid:
+            return "cloud suppression skipped (sun outside window FOV)"
         return "cloud suppression inactive (direct sun present or feature disabled)"

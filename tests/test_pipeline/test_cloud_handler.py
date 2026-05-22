@@ -81,8 +81,9 @@ class TestCloudSuppressionHandler:
         assert self.handler.evaluate(snap) is None
 
     def test_activates_when_not_sunny(self) -> None:
-        """Activate when weather state is not sunny."""
+        """Activate when weather state is not sunny and sun is within FOV."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=False),
             climate_options=_make_options(enabled=True),
             default_position=30,
@@ -93,8 +94,9 @@ class TestCloudSuppressionHandler:
         assert result.position == 30
 
     def test_activates_when_lux_below_threshold(self) -> None:
-        """Activate when lux is below the configured threshold."""
+        """Activate when lux is below the configured threshold and sun is within FOV."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=True, lux_below_threshold=True),
             climate_options=_make_options(enabled=True),
         )
@@ -103,8 +105,9 @@ class TestCloudSuppressionHandler:
         assert result.control_method == ControlMethod.CLOUD
 
     def test_activates_when_irradiance_below_threshold(self) -> None:
-        """Activate when solar irradiance is below threshold."""
+        """Activate when solar irradiance is below threshold and sun is within FOV."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(
                 is_sunny=True, irradiance_below_threshold=True
             ),
@@ -115,8 +118,9 @@ class TestCloudSuppressionHandler:
         assert result.control_method == ControlMethod.CLOUD
 
     def test_activates_when_cloud_coverage_above_threshold(self) -> None:
-        """Activate when cloud coverage sensor exceeds threshold."""
+        """Activate when cloud coverage sensor exceeds threshold and sun is within FOV."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(cloud_coverage_above_threshold=True),
             climate_options=_make_options(enabled=True),
         )
@@ -125,8 +129,9 @@ class TestCloudSuppressionHandler:
         assert result.control_method == ControlMethod.CLOUD
 
     def test_returns_default_position(self) -> None:
-        """Return snapshot.default_position when suppressing."""
+        """Return snapshot.default_position when suppressing (sun within FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=False),
             climate_options=_make_options(enabled=True),
             default_position=55,
@@ -204,8 +209,9 @@ class TestCloudHandlerTimeWindow:
         )
 
     def test_returns_result_inside_time_window(self) -> None:
-        """Cloud suppression should activate when inside the time window."""
+        """Cloud suppression should activate when inside the time window and sun in FOV."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=False),
             climate_options=_make_options(enabled=True),
             default_position=30,
@@ -248,8 +254,9 @@ class TestCloudHandlerReasonString:
     handler = CloudSuppressionHandler()
 
     def test_reason_includes_weather_not_sunny(self) -> None:
-        """Reason must mention 'weather not sunny' when is_sunny is False."""
+        """Reason must mention 'weather not sunny' when is_sunny is False (sun in FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=False),
             climate_options=_make_options(enabled=True),
         )
@@ -258,8 +265,9 @@ class TestCloudHandlerReasonString:
         assert "weather not sunny" in result.reason
 
     def test_reason_includes_lux_below_threshold(self) -> None:
-        """Reason must mention 'lux below threshold' when lux fires."""
+        """Reason must mention 'lux below threshold' when lux fires (sun in FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=True, lux_below_threshold=True),
             climate_options=_make_options(enabled=True),
         )
@@ -268,8 +276,9 @@ class TestCloudHandlerReasonString:
         assert "lux below threshold" in result.reason
 
     def test_reason_includes_irradiance_below_threshold(self) -> None:
-        """Reason must mention 'irradiance below threshold' when irradiance fires."""
+        """Reason must mention 'irradiance below threshold' when irradiance fires (sun in FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(
                 is_sunny=True, irradiance_below_threshold=True
             ),
@@ -280,8 +289,9 @@ class TestCloudHandlerReasonString:
         assert "irradiance below threshold" in result.reason
 
     def test_reason_includes_cloud_coverage_above_threshold(self) -> None:
-        """Reason must mention 'cloud coverage above threshold' when cloud fires."""
+        """Reason must mention 'cloud coverage above threshold' when cloud fires (sun in FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(
                 is_sunny=True, cloud_coverage_above_threshold=True
             ),
@@ -292,8 +302,9 @@ class TestCloudHandlerReasonString:
         assert "cloud coverage above threshold" in result.reason
 
     def test_reason_lists_multiple_triggers(self) -> None:
-        """When multiple conditions fire, all should appear in the reason string."""
+        """When multiple conditions fire, all should appear in the reason string (sun in FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(
                 is_sunny=False,
                 lux_below_threshold=True,
@@ -308,11 +319,82 @@ class TestCloudHandlerReasonString:
         assert "cloud coverage above threshold" in result.reason
 
     def test_reason_does_not_say_no_direct_sun_detected(self) -> None:
-        """Old generic phrase 'no direct sun detected' must not appear (Issue #222)."""
+        """Old generic phrase 'no direct sun detected' must not appear (Issue #222, sun in FOV)."""
         snap = make_snapshot(
+            direct_sun_valid=True,
             climate_readings=_make_readings(is_sunny=False),
             climate_options=_make_options(enabled=True),
         )
         result = self.handler.evaluate(snap)
         assert result is not None
         assert "no direct sun detected" not in result.reason
+
+
+# ---------------------------------------------------------------------------
+# Issue #417 — CloudSuppressionHandler must respect direct_sun_valid (FOV gate)
+# ---------------------------------------------------------------------------
+
+
+class TestCloudHandlerFOVGate:
+    """CloudSuppressionHandler must return None when sun is outside the window FOV.
+
+    Before the fix, CloudSuppressionHandler ignored ``snapshot.cover.direct_sun_valid``
+    and would override normal pipeline behaviour (sending the cover to default/cloudy
+    position) even when the sun was geometrically outside the window's field of view.
+    In that scenario, the cloud trigger is irrelevant — the solar handler would already
+    have passed, so cloud suppression firing causes incorrect behaviour.
+    """
+
+    handler = CloudSuppressionHandler()
+
+    def test_returns_none_when_cloud_trigger_active_but_sun_outside_fov(self) -> None:
+        """Cloud-based trigger must not fire when sun is outside the window FOV.
+
+        Regression for issue #417: weather 'not sunny' triggered cloud suppression
+        even when direct_sun_valid=False (sun geometrically outside the FOV).
+        """
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            default_position=80,
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_returns_none_when_lux_trigger_active_but_sun_outside_fov(self) -> None:
+        """Lux-based trigger must not fire when sun is outside the window FOV.
+
+        Regression for issue #417: lux below threshold triggered cloud suppression
+        even when direct_sun_valid=False (sun geometrically outside the FOV).
+        """
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_readings=_make_readings(is_sunny=True, lux_below_threshold=True),
+            climate_options=_make_options(enabled=True),
+        )
+        assert self.handler.evaluate(snap) is None
+
+    def test_still_activates_when_cloud_trigger_active_and_sun_in_fov(self) -> None:
+        """Cloud suppression fires normally when sun IS within the window FOV."""
+        snap = make_snapshot(
+            direct_sun_valid=True,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            default_position=80,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.control_method == ControlMethod.CLOUD
+
+    def test_describe_skip_mentions_fov_when_sun_outside_fov(self) -> None:
+        """describe_skip() must mention FOV when sun is outside the window FOV."""
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            climate_readings=_make_readings(is_sunny=False),
+            climate_options=_make_options(enabled=True),
+            in_time_window=True,
+        )
+        reason = self.handler.describe_skip(snap)
+        assert (
+            "fov" in reason.lower()
+        ), f"Expected 'fov' in describe_skip reason but got: {reason!r}"

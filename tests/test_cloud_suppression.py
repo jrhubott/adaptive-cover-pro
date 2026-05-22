@@ -55,7 +55,7 @@ def _is_cloud_suppression_active(
     cloud_suppression_enabled: bool,
     weather_readings: ClimateReadings | None,
 ) -> bool:
-    """Replicate coordinator._is_cloud_suppression_active() logic for unit testing."""
+    """Check if cloud suppression is active based on conditions."""
     if not cloud_suppression_enabled:
         return False
     if weather_readings is None:
@@ -361,10 +361,37 @@ class TestCloudSuppressionPipelineIntegration:
         result = registry.evaluate(snapshot)
         assert result.control_method == ControlMethod.MANUAL
 
+    def test_default_wins_when_cloud_trigger_active_but_sun_outside_fov(self) -> None:
+        """DefaultHandler wins when cloud trigger fires but sun is outside the FOV.
+
+        Regression for issue #417: CloudSuppressionHandler used to ignore
+        direct_sun_valid and send the cover to cloudy_position / default_position
+        even when the sun was geometrically outside the window's field of view.
+        """
+        registry = self._make_registry()
+        snapshot = make_snapshot(
+            direct_sun_valid=False,
+            default_position=60,
+            climate_readings=make_weather_readings(is_sunny=False),
+            climate_options=ClimateOptions(
+                temp_low=None,
+                temp_high=None,
+                temp_switch=True,
+                transparent_blind=False,
+                temp_summer_outside=None,
+                cloud_suppression_enabled=True,
+                winter_close_insulation=False,
+            ),
+        )
+        result = registry.evaluate(snapshot)
+        assert result.control_method == ControlMethod.DEFAULT
+        assert result.position == 60
+
     def test_cloud_suppression_overrides_climate(self) -> None:
         """Cloud suppression (priority 60) fires before climate handler (priority 50)."""
         registry = self._make_registry()
         snapshot = make_snapshot(
+            direct_sun_valid=True,
             climate_mode_enabled=True,
             default_position=70,
             climate_readings=make_weather_readings(is_sunny=False),
@@ -408,8 +435,9 @@ class TestCloudyPosition:
         return CloudSuppressionHandler()
 
     def test_returns_cloudy_position_when_configured(self) -> None:
-        """Handler returns cloudy_position when set and cloud triggers fire."""
+        """Handler returns cloudy_position when set and cloud triggers fire (sun in FOV)."""
         snapshot = make_snapshot(
+            direct_sun_valid=True,
             default_position=60,
             is_sunset_active=False,
             climate_readings=make_weather_readings(is_sunny=False),
@@ -423,8 +451,9 @@ class TestCloudyPosition:
         assert "85%" in result.reason
 
     def test_falls_back_to_default_when_cloudy_position_none(self) -> None:
-        """Handler falls back to default_position when cloudy_position is None."""
+        """Handler falls back to default_position when cloudy_position is None (sun in FOV)."""
         snapshot = make_snapshot(
+            direct_sun_valid=True,
             default_position=60,
             is_sunset_active=False,
             climate_readings=make_weather_readings(is_sunny=False),
@@ -446,8 +475,9 @@ class TestCloudyPosition:
         assert self._handler().evaluate(snapshot) is None
 
     def test_sunset_active_overrides_cloudy_position(self) -> None:
-        """Sunset position wins over cloudy_position when sunset window is active."""
+        """Sunset position wins over cloudy_position when sunset window is active (sun in FOV)."""
         snapshot = make_snapshot(
+            direct_sun_valid=True,
             default_position=10,
             is_sunset_active=True,
             climate_readings=make_weather_readings(is_sunny=False),
@@ -460,7 +490,7 @@ class TestCloudyPosition:
         assert "cloudy position" not in result.reason
 
     def test_cloudy_position_respects_max_position_limit(self) -> None:
-        """Max position limit clamps cloudy_position."""
+        """Max position limit clamps cloudy_position (sun in FOV)."""
         from unittest.mock import MagicMock
 
         cfg = MagicMock()
@@ -468,7 +498,7 @@ class TestCloudyPosition:
         cfg.max_pos = 70
         cfg.min_pos_sun_only = False
         cfg.max_pos_sun_only = False
-        cover = _make_mock_cover(config=cfg)
+        cover = _make_mock_cover(direct_sun_valid=True, config=cfg)
         snapshot = make_snapshot(
             cover=cover,
             default_position=60,
@@ -481,7 +511,7 @@ class TestCloudyPosition:
         assert result.position == 70
 
     def test_cloudy_position_respects_min_position_limit(self) -> None:
-        """Min position limit clamps cloudy_position."""
+        """Min position limit clamps cloudy_position (sun in FOV)."""
         from unittest.mock import MagicMock
 
         cfg = MagicMock()
@@ -489,7 +519,7 @@ class TestCloudyPosition:
         cfg.max_pos = None
         cfg.min_pos_sun_only = False
         cfg.max_pos_sun_only = False
-        cover = _make_mock_cover(config=cfg)
+        cover = _make_mock_cover(direct_sun_valid=True, config=cfg)
         snapshot = make_snapshot(
             cover=cover,
             default_position=60,
