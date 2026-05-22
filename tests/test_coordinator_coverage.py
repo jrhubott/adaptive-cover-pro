@@ -502,6 +502,9 @@ async def test_window_close_sends_reposition_when_auto_control_on():
     coord._track_end_time = True
     coord._inverse_state = False
     coord.entities = [MagicMock()]
+    coord.hass = (
+        MagicMock()
+    )  # required by _read_time_entity in _compute_current_effective_default
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))
@@ -699,3 +702,152 @@ def test_read_custom_position_sensor_states_tilt_none_when_absent():
 
     assert len(result) == 1
     assert result[0].tilt is None
+
+
+# ---------------------------------------------------------------------------
+# _read_time_entity helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_read_time_entity_returns_none_for_none_entity_id():
+    """_read_time_entity returns None immediately when entity_id is None."""
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    mock_hass = MagicMock()
+    result = _read_time_entity(mock_hass, None)
+    assert result is None
+    mock_hass.states.get.assert_not_called()
+
+
+@pytest.mark.unit
+def test_read_time_entity_returns_none_for_unavailable():
+    """_read_time_entity returns None when entity state is unavailable."""
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    mock_state = MagicMock()
+    mock_state.state = "unavailable"
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+    result = _read_time_entity(mock_hass, "sensor.sunset_entity")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_read_time_entity_parses_iso_datetime():
+    """_read_time_entity returns a naive-local datetime for a valid ISO-8601 string."""
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    # Use a tz-naive ISO string so get_datetime_from_str returns it unchanged
+    mock_state = MagicMock()
+    mock_state.state = "2026-05-22T21:00:00"
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+    result = _read_time_entity(mock_hass, "sensor.sunset_entity")
+    assert result is not None
+    assert isinstance(result, dt.datetime)
+    assert result.year == 2026
+    assert result.month == 5
+    assert result.day == 22
+    assert result.hour == 21
+
+
+# ---------------------------------------------------------------------------
+# Coordinator passthrough: sunset/sunrise entity options → compute_effective_default
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_compute_current_effective_default_passes_sunset_entity_time():
+    """When CONF_SUNSET_TIME_ENTITY is set, sunset_time is read and forwarded."""
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_SUNRISE_OFFSET,
+        CONF_SUNSET_OFFSET,
+        CONF_SUNSET_POS,
+        CONF_SUNSET_TIME_ENTITY,
+    )
+
+    coord = _make_coordinator()
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord.hass = MagicMock()
+
+    fake_sunset_dt = dt.datetime(2026, 5, 22, 22, 0, 0)
+    options = {
+        CONF_DEFAULT_HEIGHT: 0,
+        CONF_SUNSET_POS: 80,
+        CONF_SUNSET_OFFSET: 0,
+        CONF_SUNRISE_OFFSET: 0,
+        CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk",
+    }
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator._read_time_entity",
+            return_value=fake_sunset_dt,
+        ) as mock_read,
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+            return_value=(80, True),
+        ) as mock_ced,
+    ):
+        coord._compute_current_effective_default(options)
+
+    # _read_time_entity called with the entity_id from options
+    mock_read.assert_any_call(coord.hass, "sensor.sun2_dusk")
+    # compute_effective_default received the override datetime
+    call_kwargs = mock_ced.call_args.kwargs
+    assert call_kwargs["sunset_time"] == fake_sunset_dt
+
+
+@pytest.mark.unit
+def test_compute_current_effective_default_passes_sunrise_entity_time():
+    """When CONF_SUNRISE_TIME_ENTITY is set, sunrise_time is read and forwarded."""
+    import datetime as dt
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_SUNRISE_OFFSET,
+        CONF_SUNRISE_TIME_ENTITY,
+        CONF_SUNSET_OFFSET,
+        CONF_SUNSET_POS,
+    )
+
+    coord = _make_coordinator()
+    cover_data = MagicMock()
+    cover_data.sun_data = MagicMock()
+    coord.get_blind_data = MagicMock(return_value=cover_data)
+    coord.hass = MagicMock()
+
+    fake_sunrise_dt = dt.datetime(2026, 5, 22, 8, 0, 0)
+    options = {
+        CONF_DEFAULT_HEIGHT: 0,
+        CONF_SUNSET_POS: 80,
+        CONF_SUNSET_OFFSET: 0,
+        CONF_SUNRISE_OFFSET: 0,
+        CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn",
+    }
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator._read_time_entity",
+            return_value=fake_sunrise_dt,
+        ) as mock_read,
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.compute_effective_default",
+            return_value=(0, False),
+        ) as mock_ced,
+    ):
+        coord._compute_current_effective_default(options)
+
+    # _read_time_entity called with the sunrise entity_id
+    mock_read.assert_any_call(coord.hass, "sensor.sun2_dawn")
+    # compute_effective_default received the override datetime
+    call_kwargs = mock_ced.call_args.kwargs
+    assert call_kwargs["sunrise_time"] == fake_sunrise_dt

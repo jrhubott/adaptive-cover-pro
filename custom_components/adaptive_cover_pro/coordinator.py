@@ -27,7 +27,12 @@ except ImportError:
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .config_types import RuntimeConfig
-from .helpers import compute_effective_default, state_attr
+from .helpers import (
+    compute_effective_default,
+    get_datetime_from_str,
+    get_safe_state,
+    state_attr,
+)
 from .config_context_adapter import ConfigContextAdapter
 from .cover_types import CoverTypePolicy, get_policy
 from .services.configuration_service import ConfigurationService
@@ -60,8 +65,10 @@ from .const import (
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_RETURN_SUNSET,
     CONF_SUNRISE_OFFSET,
+    CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_TRANSIT_TIMEOUT,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -110,6 +117,28 @@ from .state.window_transition_tracker import WindowTransitionTracker
 _MANIFEST_VERSION: str = json.loads(
     (pathlib.Path(__file__).parent / "manifest.json").read_text()
 )["version"]
+
+
+def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime | None:
+    """Read an entity whose state is an ISO-8601 datetime.
+
+    Returns naive-local datetime on success; None if entity_id is None,
+    the entity is unavailable, or the state cannot be parsed.
+    """
+    if entity_id is None:
+        return None
+    raw = get_safe_state(hass, entity_id)
+    if raw is None:
+        return None
+    try:
+        return get_datetime_from_str(raw)
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug(
+            "Could not parse time entity %s state %r as datetime",
+            entity_id,
+            raw,
+        )
+        return None
 
 
 @dataclass
@@ -812,12 +841,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sunrise_off = int(
             options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
         )
+        sunset_time = _read_time_entity(self.hass, options.get(CONF_SUNSET_TIME_ENTITY))
+        sunrise_time = _read_time_entity(
+            self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
+        )
         effective_default, is_sunset_active = compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
             sun_data=cover_data.sun_data,
             sunset_off=sunset_off,
             sunrise_off=sunrise_off,
+            sunset_time=sunset_time,
+            sunrise_time=sunrise_time,
         )
         self.logger.debug(
             "Effective default: %s (sunset_active=%s, h_def=%s, sunset_pos=%s)",
@@ -2206,6 +2241,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sunrise_off = int(
             options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
         )
+        sunset_time = _read_time_entity(self.hass, options.get(CONF_SUNSET_TIME_ENTITY))
+        sunrise_time = _read_time_entity(
+            self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
+        )
         cover_data = self.get_blind_data(options=options)
         return compute_effective_default(
             h_def=h_def,
@@ -2213,6 +2252,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sun_data=cover_data.sun_data,
             sunset_off=sunset_off,
             sunrise_off=sunrise_off,
+            sunset_time=sunset_time,
+            sunrise_time=sunrise_time,
         )
 
     async def _check_sunset_window_transition(self) -> None:

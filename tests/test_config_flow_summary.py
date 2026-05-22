@@ -62,8 +62,10 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_START_ENTITY,
     CONF_END_ENTITY,
     CONF_SUNRISE_OFFSET,
+    CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
@@ -2172,3 +2174,61 @@ def test_summary_shows_custom_slot_tilt_when_set():
     assert any(
         "tilt" in line.lower() and "35" in line for line in summary.splitlines()
     ), "Expected a tilt line with value 35 in summary"
+
+
+# ---------------------------------------------------------------------------
+# POSITION_SCHEMA accepts new entity fields (Step 7)
+# ---------------------------------------------------------------------------
+
+
+def test_position_schema_accepts_sunset_time_entity():
+    """POSITION_SCHEMA accepts sunset_time_entity key."""
+    from custom_components.adaptive_cover_pro.config_flow import POSITION_SCHEMA
+
+    result = POSITION_SCHEMA({CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk"})
+    assert result[CONF_SUNSET_TIME_ENTITY] == "sensor.sun2_dusk"
+
+
+def test_position_schema_accepts_sunrise_time_entity():
+    """POSITION_SCHEMA accepts sunrise_time_entity key."""
+    from custom_components.adaptive_cover_pro.config_flow import POSITION_SCHEMA
+
+    result = POSITION_SCHEMA({CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn"})
+    assert result[CONF_SUNRISE_TIME_ENTITY] == "sensor.sun2_dawn"
+
+
+# ---------------------------------------------------------------------------
+# _build_config_summary: entity ID shown when configured (Step 8)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_shows_sunset_entity_when_configured():
+    """Summary includes the sunset entity ID when CONF_SUNSET_TIME_ENTITY is set."""
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_POS] = 0
+    cfg[CONF_SUNSET_OFFSET] = 30
+    cfg[CONF_SUNSET_TIME_ENTITY] = "sensor.sun2_dusk"
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "sensor.sun2_dusk" in summary
+
+
+def test_summary_shows_sunrise_entity_when_configured():
+    """Summary includes the sunrise entity ID when CONF_SUNRISE_TIME_ENTITY is set."""
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_POS] = 0
+    cfg[CONF_SUNRISE_OFFSET] = 30
+    cfg[CONF_SUNRISE_TIME_ENTITY] = "sensor.sun2_dawn"
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "sensor.sun2_dawn" in summary
+
+
+def test_summary_without_entities_uses_offset_annotation():
+    """When no entity override is set, the existing offset annotation still appears."""
+    cfg = _minimal_vertical()
+    cfg[CONF_SUNSET_POS] = 0
+    cfg[CONF_SUNSET_OFFSET] = 30
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    # Offset annotation should still appear in some form
+    assert "+30" in summary or "30 min" in summary
+    # The entity IDs should NOT appear
+    assert "sun2" not in summary

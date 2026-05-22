@@ -186,6 +186,9 @@ CONF_SUNRISE_OFFSET = "sunrise_offset"  # minutes ±120 from sunrise to resume
 CONF_RETURN_SUNSET = "return_sunset"  # True: force-send default at end_time
 # If True, sunset position uses CONF_MY_POSITION_VALUE instead of CONF_SUNSET_POS.
 CONF_SUNSET_USE_MY = "sunset_use_my"
+# Optional entity whose state is a datetime; replaces astral-computed sunset/sunrise.
+CONF_SUNSET_TIME_ENTITY = "sunset_time_entity"
+CONF_SUNRISE_TIME_ENTITY = "sunrise_time_entity"
 # Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
 CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
 CONF_SUNSET_TILT = (

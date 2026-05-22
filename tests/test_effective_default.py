@@ -373,3 +373,137 @@ class TestZeroOffset:
             )
         assert active is False
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Entity override kwargs (sunset_time / sunrise_time)
+# ---------------------------------------------------------------------------
+
+
+class TestEntityOverride:
+    """Tests for sunset_time and sunrise_time override kwargs."""
+
+    def test_signature_accepts_new_kwargs(self):
+        """Passing sunset_time=None, sunrise_time=None must not raise TypeError."""
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=6)
+        today = dt.date.today()
+        midday = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        with _freeze_now(midday):
+            result, active = compute_effective_default(
+                h_def=0,
+                sunset_pos=80,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=None,
+                sunrise_time=None,
+            )
+        assert result == 0
+        assert active is False
+
+    def test_sunset_time_override_used_instead_of_astral(self):
+        """When sunset_time is set, it replaces astral sunset as boundary.
+
+        Astral sunset = 20:00; override = 22:00; now = 21:30 → daytime with astral,
+        but still before override boundary → not active.
+        """
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=6)
+        today = dt.date.today()
+        now_dt = dt.datetime(today.year, today.month, today.day, 21, 30, 0)
+        override_sunset = dt.datetime(today.year, today.month, today.day, 22, 0, 0)
+        with _freeze_now(now_dt):
+            result, active = compute_effective_default(
+                h_def=0,
+                sunset_pos=80,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=override_sunset,
+                sunrise_time=None,
+            )
+        # 21:30 is after astral 20:00 but before override 22:00 → not active
+        assert active is False
+        assert result == 0
+
+    def test_sunset_time_override_activates_window(self):
+        """When now > override sunset boundary the window is active."""
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=6)
+        today = dt.date.today()
+        now_dt = dt.datetime(today.year, today.month, today.day, 22, 30, 0)
+        override_sunset = dt.datetime(today.year, today.month, today.day, 22, 0, 0)
+        with _freeze_now(now_dt):
+            result, active = compute_effective_default(
+                h_def=0,
+                sunset_pos=80,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=override_sunset,
+                sunrise_time=None,
+            )
+        # 22:30 is after override 22:00 → active
+        assert active is True
+        assert result == 80
+
+    def test_sunrise_time_override_extends_window(self):
+        """sunrise_time override replaces astral sunrise as the window-close boundary.
+
+        Astral sunrise = 06:00; override = 08:00; now = 07:00 → active per override.
+        """
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=6)
+        today = dt.date.today()
+        now_dt = dt.datetime(today.year, today.month, today.day, 7, 0, 0)
+        override_sunrise = dt.datetime(today.year, today.month, today.day, 8, 0, 0)
+        with _freeze_now(now_dt):
+            result, active = compute_effective_default(
+                h_def=0,
+                sunset_pos=80,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=None,
+                sunrise_time=override_sunrise,
+            )
+        # 07:00 < override sunrise 08:00 → before_sunrise → active
+        assert active is True
+        assert result == 80
+
+    def test_offset_still_additive_with_entity_override(self):
+        """Offset is applied on top of the entity override value.
+
+        Override sunset = 20:00; offset = +30; boundary = 20:30.
+        Now = 20:15 → still before boundary → not active.
+        Now = 20:35 → after boundary → active.
+        """
+        sun = _make_sun_data(sunset_hour=18, sunrise_hour=6)  # astral far away
+        today = dt.date.today()
+        override_sunset = dt.datetime(today.year, today.month, today.day, 20, 0, 0)
+
+        # Before override+offset boundary
+        now_before = dt.datetime(today.year, today.month, today.day, 20, 15, 0)
+        with _freeze_now(now_before):
+            result, active = compute_effective_default(
+                h_def=0,
+                sunset_pos=80,
+                sun_data=sun,
+                sunset_off=30,
+                sunrise_off=0,
+                sunset_time=override_sunset,
+                sunrise_time=None,
+            )
+        assert active is False
+
+        # After override+offset boundary
+        now_after = dt.datetime(today.year, today.month, today.day, 20, 35, 0)
+        with _freeze_now(now_after):
+            result, active = compute_effective_default(
+                h_def=0,
+                sunset_pos=80,
+                sun_data=sun,
+                sunset_off=30,
+                sunrise_off=0,
+                sunset_time=override_sunset,
+                sunrise_time=None,
+            )
+        assert active is True
+        assert result == 80

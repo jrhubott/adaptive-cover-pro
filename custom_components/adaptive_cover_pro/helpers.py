@@ -199,6 +199,9 @@ def compute_effective_default(
     sun_data: "SunData",
     sunset_off: int,
     sunrise_off: int,
+    *,
+    sunset_time: dt.datetime | None = None,
+    sunrise_time: dt.datetime | None = None,
 ) -> tuple[int, bool]:
     """Return the effective default cover position based on astronomical sunset/sunrise.
 
@@ -218,6 +221,12 @@ def compute_effective_default(
         sun_data:   ``SunData`` instance providing today's sunset/sunrise times.
         sunset_off: Minutes *added* to astronomical sunset before the window opens.
         sunrise_off: Minutes *added* to astronomical sunrise before the window closes.
+        sunset_time: Optional override for the sunset boundary (naive-local datetime).
+            When provided, replaces the astral-computed sunset. ``sunset_off`` still
+            applies on top. Falls back to astral when ``None``.
+        sunrise_time: Optional override for the sunrise boundary (naive-local datetime).
+            When provided, replaces the astral-computed sunrise. ``sunrise_off`` still
+            applies on top. Falls back to astral when ``None``.
 
     Returns:
         A ``(effective_default, is_sunset_active)`` tuple where
@@ -227,8 +236,16 @@ def compute_effective_default(
     if sunset_pos is None:
         return h_def, False
 
-    sunset = sun_data.sunset().replace(tzinfo=None)
-    sunrise = sun_data.sunrise().replace(tzinfo=None)
+    sunset = (
+        sunset_time
+        if sunset_time is not None
+        else sun_data.sunset().replace(tzinfo=None)
+    )
+    sunrise = (
+        sunrise_time
+        if sunrise_time is not None
+        else sun_data.sunrise().replace(tzinfo=None)
+    )
     now_naive = dt.datetime.now(UTC).replace(tzinfo=None)
 
     after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))

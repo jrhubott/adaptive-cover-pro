@@ -91,8 +91,10 @@ from .const import (
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUNRISE_OFFSET,
+    CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_SUNSET_TILT,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -331,6 +333,12 @@ POSITION_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="minutes",
             )
+        ),
+        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
         vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -1533,6 +1541,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     sunset_pos = config.get(CONF_SUNSET_POS)
     sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
     sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
+    sunset_time_entity = config.get(CONF_SUNSET_TIME_ENTITY)
+    sunrise_time_entity = config.get(CONF_SUNRISE_TIME_ENTITY)
     timing_parts = []
     if start_entity:
         timing_parts.append(f"from {start_entity}")
@@ -1549,18 +1559,24 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         indent = "\u00a0" * 4
         lines.append(f"{indent}🕒 {timing_str}.")
         if sunset_pos is not None:
-            # Merge today's effective time and the offset into one parenthetical
-            def _sun_annotation(today_dt, offset_min: int) -> str:
+            # Merge today's effective time (or entity ID) and offset into one parenthetical
+            def _sun_annotation(
+                today_dt, offset_min: int, entity_id: str | None = None
+            ) -> str:
                 parts = []
-                if today_dt is not None:
+                if entity_id is not None:
+                    parts.append(f"via {entity_id}")
+                elif today_dt is not None:
                     parts.append(f"today ~{_fmt_sun_dt(today_dt)}")
                 off = _offset_str(int(offset_min))
                 if off:
                     parts.append(off)
                 return f" ({', '.join(parts)})" if parts else ""
 
-            sunset_ann = _sun_annotation(_sunset_eff, sunset_off)
-            sunrise_ann = _sun_annotation(_sunrise_eff, sunrise_off)
+            sunset_ann = _sun_annotation(_sunset_eff, sunset_off, sunset_time_entity)
+            sunrise_ann = _sun_annotation(
+                _sunrise_eff, sunrise_off, sunrise_time_entity
+            )
             has_end_time = bool(end_time or end_entity)
             _sunset_use_my = bool(config.get(CONF_SUNSET_USE_MY))
             _sunset_target = _pos_label(int(sunset_pos), _sunset_use_my)
@@ -1801,6 +1817,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNSET_USE_MY,
             CONF_SUNSET_OFFSET,
             CONF_SUNRISE_OFFSET,
+            CONF_SUNSET_TIME_ENTITY,
+            CONF_SUNRISE_TIME_ENTITY,
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_INVERSE_STATE,
             CONF_INTERP,
@@ -2694,6 +2712,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_SUNSET_POS: self.config.get(CONF_SUNSET_POS),
                 CONF_SUNSET_OFFSET: self.config.get(CONF_SUNSET_OFFSET),
                 CONF_SUNRISE_OFFSET: self.config.get(CONF_SUNRISE_OFFSET),
+                CONF_SUNSET_TIME_ENTITY: self.config.get(CONF_SUNSET_TIME_ENTITY),
+                CONF_SUNRISE_TIME_ENTITY: self.config.get(CONF_SUNRISE_TIME_ENTITY),
                 CONF_LENGTH_AWNING: self.config.get(CONF_LENGTH_AWNING),
                 CONF_AWNING_ANGLE: self.config.get(CONF_AWNING_ANGLE),
                 CONF_TILT_DISTANCE: self.config.get(CONF_TILT_DISTANCE),
