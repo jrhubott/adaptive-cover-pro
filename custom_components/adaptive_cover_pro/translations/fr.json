@@ -1023,12 +1023,12 @@
     },
     "button": {
       "my_position": {
-        "name": "Ma Position"
+        "name": "Position My gérée"
       }
     },
     "number": {
       "my_position_value": {
-        "name": "Valeur de Ma Position"
+        "name": "Valeur de position My gérée"
       }
     }
   },

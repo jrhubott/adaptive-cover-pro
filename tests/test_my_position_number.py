@@ -200,3 +200,34 @@ def test_set_native_value_cross_field_rule_fires():
             {CONF_SUNSET_USE_MY: True},
             "cover_blind",
         )
+
+
+# ---------------------------------------------------------------------------
+# Step 8 — native_value reads CONF_MY_POSITION_VALUE from options (issue #409)
+# ---------------------------------------------------------------------------
+
+
+def test_native_value_returns_option_value():
+    """native_value must return float(CONF_MY_POSITION_VALUE) from config_entry.options."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENTITIES,
+        CONF_MY_POSITION_VALUE,
+    )
+
+    entity = _make_number_entity()
+    entity.config_entry.options = {
+        CONF_ENTITIES: ["cover.test1"],
+        CONF_MY_POSITION_VALUE: 35,
+    }
+
+    assert entity.native_value == 35.0
+
+
+def test_native_value_returns_none_when_not_set():
+    """native_value must be None when CONF_MY_POSITION_VALUE is absent from options."""
+    from custom_components.adaptive_cover_pro.const import CONF_ENTITIES
+
+    entity = _make_number_entity()
+    entity.config_entry.options = {CONF_ENTITIES: ["cover.test1"]}
+
+    assert entity.native_value is None

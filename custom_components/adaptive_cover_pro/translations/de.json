@@ -1023,12 +1023,12 @@
     },
     "button": {
       "my_position": {
-        "name": "Meine Position"
+        "name": "Verwaltete My-Position"
       }
     },
     "number": {
       "my_position_value": {
-        "name": "Mein Positionswert"
+        "name": "Verwalteter My-Positionswert"
       }
     }
   },

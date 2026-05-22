@@ -66,6 +66,12 @@ class AdaptiveCoverMyPositionNumber(AdaptiveCoverBaseEntity, NumberEntity):
         self._attr_unique_id = f"{entry_id}_my_position_value"
         self._entities = config_entry.options.get(CONF_ENTITIES, [])
 
+    @property
+    def native_value(self) -> float | None:
+        """Return the current My Position value from config entry options."""
+        value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
+        return float(value) if value is not None else None
+
     async def async_set_native_value(self, value: float) -> None:
         """Persist a new My Position value to config_entry.options."""
         patch = {CONF_MY_POSITION_VALUE: int(value)}
