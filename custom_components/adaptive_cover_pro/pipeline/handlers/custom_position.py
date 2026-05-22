@@ -83,6 +83,8 @@ class CustomPositionHandler(OverrideHandler):
                                 " [bypasses automatic control]"
                             ),
                             raw_calculated_position=raw,
+                            active_slot=self._slot,
+                            floor_binding=None,
                         )
                     pos, mode_note = apply_minimum_mode(
                         self._position, raw, enabled=state.min_mode
@@ -98,6 +100,10 @@ class CustomPositionHandler(OverrideHandler):
                             " [bypasses automatic control]"
                         ),
                         raw_calculated_position=raw,
+                        active_slot=self._slot,
+                        floor_binding=(
+                            (raw < self._position) if state.min_mode else None
+                        ),
                     )
                 # Sensor found but not active — pass through
                 return None

@@ -252,3 +252,12 @@ class PipelineResult:
     # all other handlers.  Consumers must use explicit `is not None` checks
     # because 0% (fully closed) is a valid held position.
     held_position: int | None = None
+
+    # Custom position slot diagnostics — populated only when CustomPositionHandler wins.
+    # active_slot: 1-based slot number of the winning custom position handler; None otherwise.
+    # floor_binding: True when min_mode=True and the floor raises position above raw (floor is
+    #   actively constraining); False when min_mode=True and raw >= configured floor (floor is a
+    #   no-op); None when min_mode=False (exact mode) or on the use_my path, or when any
+    #   non-custom handler wins.
+    active_slot: int | None = None
+    floor_binding: bool | None = None
