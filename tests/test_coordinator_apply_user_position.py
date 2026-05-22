@@ -14,6 +14,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
+from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+    CustomPositionHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
     ManualOverrideHandler,
 )
@@ -59,6 +62,7 @@ def _make_coord(
     default_options=None,
     winner_name: str = "solar",
     winner_priority: int = 40,
+    winner_handler_instance=None,
 ):
     """Build a coordinator-shaped mock that exposes async_apply_user_position.
 
@@ -103,9 +107,12 @@ def _make_coord(
     )
 
     # Handler lookup so the helper can resolve priority from the winner step.
-    handler = MagicMock()
-    handler.priority = winner_priority
-    coord._handler_by_name = {winner_name: handler}
+    if winner_handler_instance is not None:
+        coord._handler_by_name = {winner_name: winner_handler_instance}
+    else:
+        handler = MagicMock()
+        handler.priority = winner_priority
+        coord._handler_by_name = {winner_name: handler}
 
     # Manager for manual-override engagement.
     coord.manager = MagicMock()
@@ -348,3 +355,158 @@ async def test_preempted_skip_recorded_in_last_skipped_action() -> None:
 def test_manual_override_priority_constant_unchanged() -> None:
     """Locks in ManualOverrideHandler.priority=80 so the preemption cutoff stays correct."""
     assert ManualOverrideHandler.priority == 80
+
+
+# ---------------------------------------------------------------------------
+# Custom-position min-mode floor interaction with async_apply_user_position
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_custom_position_min_mode_does_not_preempt_request_above_floor() -> None:
+    """When the winning custom-position handler is a min-mode floor and the user
+    requests a position at or above that floor, the command must NOT be preempted.
+    """
+    handler = CustomPositionHandler(
+        slot=1, entity_id="binary_sensor.cp1", position=60, priority=95
+    )
+    state = CustomPositionSensorState(
+        entity_id="binary_sensor.cp1",
+        is_on=True,
+        position=60,
+        priority=95,
+        min_mode=True,
+        use_my=False,
+    )
+    coord, ctx = _make_coord(
+        [state],
+        winner_name="custom_position_1",
+        winner_priority=95,
+        winner_handler_instance=handler,
+    )
+    coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
+        "custom_position_1", 95, position=60
+    )
+
+    outcome = await coord.async_apply_user_position(
+        "cover.test", 90, trigger="set_position"
+    )
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 90, "set_position", ctx
+    )
+    coord._cmd_svc.record_preempted_skip.assert_not_called()
+    assert outcome == ("sent", "set_cover_position")
+
+
+@pytest.mark.asyncio
+async def test_custom_position_min_mode_clamps_and_dispatches_request_below_floor() -> (
+    None
+):
+    """When the winning custom-position handler is a min-mode floor and the user
+    requests below that floor, the command is clamped to the floor and dispatched
+    (NOT preempted).
+    """
+    handler = CustomPositionHandler(
+        slot=1, entity_id="binary_sensor.cp1", position=60, priority=95
+    )
+    state = CustomPositionSensorState(
+        entity_id="binary_sensor.cp1",
+        is_on=True,
+        position=60,
+        priority=95,
+        min_mode=True,
+        use_my=False,
+    )
+    coord, ctx = _make_coord(
+        [state],
+        winner_name="custom_position_1",
+        winner_priority=95,
+        winner_handler_instance=handler,
+    )
+    coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
+        "custom_position_1", 95, position=60
+    )
+
+    outcome = await coord.async_apply_user_position(
+        "cover.test", 40, trigger="set_position"
+    )
+
+    coord._cmd_svc.apply_position.assert_awaited_once_with(
+        "cover.test", 60, "set_position", ctx
+    )
+    coord._cmd_svc.record_preempted_skip.assert_not_called()
+    assert outcome == ("sent", "set_cover_position")
+
+
+@pytest.mark.asyncio
+async def test_custom_position_exact_mode_still_preempts() -> None:
+    """When the winning custom-position handler is NOT in min-mode, it preempts
+    as before — the new exception must not fire.
+    """
+    handler = CustomPositionHandler(
+        slot=1, entity_id="binary_sensor.cp1", position=60, priority=95
+    )
+    state = CustomPositionSensorState(
+        entity_id="binary_sensor.cp1",
+        is_on=True,
+        position=60,
+        priority=95,
+        min_mode=False,
+        use_my=False,
+    )
+    coord, _ctx = _make_coord(
+        [state],
+        winner_name="custom_position_1",
+        winner_priority=95,
+        winner_handler_instance=handler,
+    )
+    coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
+        "custom_position_1", 95, position=60
+    )
+
+    outcome = await coord.async_apply_user_position(
+        "cover.test", 70, trigger="set_position"
+    )
+
+    assert outcome == ("skipped", "preempted_by_custom_position_1")
+    coord._cmd_svc.record_preempted_skip.assert_called_once()
+    coord._cmd_svc.apply_position.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_custom_position_min_mode_preempts_when_request_below_floor_and_handler_is_different_slot() -> (
+    None
+):
+    """When the winning handler is a different slot than the active min-mode
+    sensor state, the handler is not satisfied — preemption applies as normal.
+    """
+    handler = CustomPositionHandler(
+        slot=2, entity_id="binary_sensor.cp2", position=60, priority=95
+    )
+    # Only slot 1 is in the state list — slot 2's entity_id is absent
+    state = CustomPositionSensorState(
+        entity_id="binary_sensor.cp1",
+        is_on=True,
+        position=60,
+        priority=95,
+        min_mode=True,
+        use_my=False,
+    )
+    coord, _ctx = _make_coord(
+        [state],
+        winner_name="custom_position_2",
+        winner_priority=95,
+        winner_handler_instance=handler,
+    )
+    coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
+        "custom_position_2", 95, position=60
+    )
+
+    outcome = await coord.async_apply_user_position(
+        "cover.test", 90, trigger="set_position"
+    )
+
+    assert outcome == ("skipped", "preempted_by_custom_position_2")
+    coord._cmd_svc.record_preempted_skip.assert_called_once()
+    coord._cmd_svc.apply_position.assert_not_awaited()

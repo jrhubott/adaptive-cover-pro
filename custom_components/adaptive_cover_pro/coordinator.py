@@ -107,6 +107,7 @@ from .pipeline.handlers import (
 )
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
+from .pipeline.types import CustomPositionSensorState
 from .enums import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -158,6 +159,26 @@ class AdaptiveCoverData:
     states: dict
     attributes: dict
     diagnostics: dict | None = None
+
+
+def _winner_is_satisfied_custom_floor(
+    winner_handler: object,
+    states: list[CustomPositionSensorState],
+    clamped: int,
+) -> bool:
+    """Return True when the winning handler is a min-mode custom-position floor that the user's clamped request already satisfies."""
+    if not isinstance(winner_handler, CustomPositionHandler):
+        return False
+    matching = next(
+        (s for s in states if s.entity_id == winner_handler._entity_id),
+        None,
+    )
+    return (
+        matching is not None
+        and matching.is_on
+        and matching.min_mode
+        and clamped >= matching.position
+    )
 
 
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
@@ -1827,7 +1848,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 winner_priority = (
                     winner_handler.priority if winner_handler is not None else 0
                 )
-                if winner_priority > ManualOverrideHandler.priority:
+                if _winner_is_satisfied_custom_floor(winner_handler, states, clamped):
+                    pass  # fall through to mark_user_command + dispatch
+                elif winner_priority > ManualOverrideHandler.priority:
                     _LOGGER.info(
                         "user move on %s preempted by %s (priority %d > %d)",
                         entity_id,
