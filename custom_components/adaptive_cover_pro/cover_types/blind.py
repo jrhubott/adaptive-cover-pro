@@ -107,6 +107,14 @@ class BlindPolicy(CoverTypePolicy):
         """Return the glare-zones config for this cover (vertical-only feature)."""
         return config_service.get_glare_zones_config(options)
 
+    def lift_travel_metres(
+        self,
+        config_service: ConfigurationService,
+        options: dict,
+    ) -> float | None:
+        """Vertical blinds travel the configured window height."""
+        return config_service.get_vertical_data(options).h_win
+
     def geometry_schema(
         self,
         hass: HomeAssistant | None = None,

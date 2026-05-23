@@ -263,6 +263,14 @@ class VenetianPolicy(CoverTypePolicy):
             )
         return warnings
 
+    def lift_travel_metres(
+        self,
+        config_service: ConfigurationService,
+        options: dict,
+    ) -> float | None:
+        """Venetian lift axis travels the configured window height."""
+        return config_service.get_vertical_data(options).h_win
+
     def build_calc_engine(
         self,
         *,

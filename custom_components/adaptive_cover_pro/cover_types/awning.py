@@ -142,6 +142,14 @@ class AwningPolicy(CoverTypePolicy):
             ]
         return []
 
+    def lift_travel_metres(
+        self,
+        config_service: ConfigurationService,
+        options: dict,
+    ) -> float | None:
+        """Awnings travel the configured extension length."""
+        return config_service.get_horizontal_data(options).awn_length
+
     def build_calc_engine(
         self,
         *,

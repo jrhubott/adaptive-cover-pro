@@ -597,6 +597,42 @@ def test_wiki_anchor(cover_type: str, anchor: str) -> None:
     assert get_policy(cover_type).wiki_anchor() == anchor
 
 
+class TestLiftTravelMetres:
+    """Policy hook returning the configured travel range for the lift axis.
+
+    Pins the per-policy contract the Target Position sensor uses to compute
+    its physical-distance attributes. Tilt-only inherits the ``None`` default;
+    blind / venetian read ``h_win``; awning reads ``awn_length``.
+    """
+
+    @staticmethod
+    def _fake_config_service(h_win: float = 2.0, awn_length: float = 1.6) -> MagicMock:
+        svc = MagicMock()
+        svc.get_vertical_data.return_value = MagicMock(h_win=h_win)
+        svc.get_horizontal_data.return_value = MagicMock(awn_length=awn_length)
+        return svc
+
+    @pytest.mark.unit
+    def test_blind_returns_window_height(self) -> None:
+        svc = self._fake_config_service(h_win=2.4)
+        assert get_policy("cover_blind").lift_travel_metres(svc, {}) == 2.4
+
+    @pytest.mark.unit
+    def test_awning_returns_awn_length(self) -> None:
+        svc = self._fake_config_service(awn_length=1.8)
+        assert get_policy("cover_awning").lift_travel_metres(svc, {}) == 1.8
+
+    @pytest.mark.unit
+    def test_venetian_returns_window_height(self) -> None:
+        svc = self._fake_config_service(h_win=1.5)
+        assert get_policy("cover_venetian").lift_travel_metres(svc, {}) == 1.5
+
+    @pytest.mark.unit
+    def test_tilt_returns_none(self) -> None:
+        svc = self._fake_config_service()
+        assert get_policy("cover_tilt").lift_travel_metres(svc, {}) is None
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("cover_type", "label"),

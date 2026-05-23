@@ -362,6 +362,20 @@ class CoverTypePolicy(ABC):
         """
         return None
 
+    def lift_travel_metres(
+        self,
+        config_service: ConfigurationService,  # noqa: ARG002
+        options: dict,  # noqa: ARG002
+    ) -> float | None:
+        """Travel range of the position axis in canonical metres, or ``None``.
+
+        Returns ``None`` for cover types whose primary axis is not linear
+        (tilt-only). The Target Position sensor multiplies this by the
+        published position percentage to expose a physical-distance attribute
+        alongside the existing percentage value.
+        """
+        return None
+
     def disallowed_geometry_fields(
         self,
         *,
