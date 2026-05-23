@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 
 from ..diagnostics.event_buffer import EventBuffer
@@ -114,25 +115,18 @@ class PipelineRegistry:
                             merged[field_name] = val
                             break
 
-        result = PipelineResult(
-            position=winner.position,
-            control_method=winner.control_method,
-            reason=winner.reason,
+        # Propagate sunset-window flags from the snapshot.
+        # NOTE: configured_default and configured_sunset_pos are
+        # intentionally left at their defaults (0 / None) here.
+        # The coordinator annotates them via dataclasses.replace()
+        # after evaluation so they never appear in the snapshot
+        # that handlers can read.
+        result = dataclasses.replace(
+            winner,
             decision_trace=trace,
-            tilt=merged.get("tilt", winner.tilt),  # type: ignore[arg-type]
-            raw_calculated_position=winner.raw_calculated_position,
-            climate_state=merged.get("climate_state", winner.climate_state),  # type: ignore[arg-type]
-            climate_strategy=merged.get("climate_strategy", winner.climate_strategy),  # type: ignore[arg-type]
-            climate_data=merged.get("climate_data", winner.climate_data),
-            bypass_auto_control=winner.bypass_auto_control,
-            # Propagate sunset-window flags from the snapshot.
-            # NOTE: configured_default and configured_sunset_pos are
-            # intentionally left at their defaults (0 / None) here.
-            # The coordinator annotates them via dataclasses.replace()
-            # after evaluation so they never appear in the snapshot
-            # that handlers can read.
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,
+            **merged,
         )
         if self._event_buffer is not None:
             self._event_buffer.record(

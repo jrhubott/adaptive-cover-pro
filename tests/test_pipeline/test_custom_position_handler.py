@@ -558,16 +558,16 @@ class TestHandlerTilt:
 
 
 # ---------------------------------------------------------------------------
-# active_slot
+# custom_position_active_slot
 # ---------------------------------------------------------------------------
 
 
-class TestActiveSlot:
-    """active_slot is populated with the slot number when the handler fires."""
+class TestCustomPositionActiveSlot:
+    """custom_position_active_slot is populated with the slot number when the handler fires."""
 
     @pytest.mark.parametrize("slot", [1, 2, 3, 4])
-    def test_active_slot_matches_handler_slot(self, slot: int) -> None:
-        """active_slot == slot for each of the 4 possible slot numbers."""
+    def test_custom_position_active_slot_matches_handler_slot(self, slot: int) -> None:
+        """custom_position_active_slot == slot for each of the 4 possible slot numbers."""
         snapshot = make_snapshot(
             custom_position_sensors=[
                 _make_state(_ENTITY, True, 50, _DEFAULT_PRIORITY, False, False)
@@ -575,26 +575,26 @@ class TestActiveSlot:
         )
         result = _handler(slot=slot, entity_id=_ENTITY, position=50).evaluate(snapshot)
         assert result is not None
-        assert result.active_slot == slot
+        assert result.custom_position_active_slot == slot
 
-    def test_active_slot_none_on_default_pipeline_result(self) -> None:
-        """A non-custom PipelineResult has active_slot defaulting to None."""
+    def test_custom_position_active_slot_none_on_default_pipeline_result(self) -> None:
+        """A non-custom PipelineResult has custom_position_active_slot defaulting to None."""
         from custom_components.adaptive_cover_pro.enums import ControlMethod
         from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
         result = PipelineResult(
             position=50, control_method=ControlMethod.SOLAR, reason="solar"
         )
-        assert result.active_slot is None
+        assert result.custom_position_active_slot is None
 
 
 # ---------------------------------------------------------------------------
-# floor_binding
+# custom_position_minimum_mode
 # ---------------------------------------------------------------------------
 
 
-class TestFloorBinding:
-    """floor_binding reflects whether the floor constraint is actively raising position."""
+class TestCustomPositionMinimumMode:
+    """custom_position_minimum_mode reflects whether the floor constraint is actively raising position."""
 
     def _snap(
         self,
@@ -616,31 +616,31 @@ class TestFloorBinding:
             my_position_value=my_position_value,
         )
 
-    def test_floor_binding_true_when_floor_constrains(self) -> None:
-        """min_mode=True and raw < floor → floor_binding is True."""
+    def test_custom_position_minimum_mode_true_when_floor_constrains(self) -> None:
+        """min_mode=True and raw < floor → custom_position_minimum_mode is True."""
         snap = self._snap(position=50, min_mode=True, calculate_percentage_return=20.0)
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snap)
         assert result is not None
         assert result.position == 50
-        assert result.floor_binding is True
+        assert result.custom_position_minimum_mode is True
 
-    def test_floor_binding_false_when_floor_is_noop(self) -> None:
-        """min_mode=True and raw >= floor → floor_binding is False (motivating case)."""
+    def test_custom_position_minimum_mode_false_when_floor_is_noop(self) -> None:
+        """min_mode=True and raw >= floor → custom_position_minimum_mode is False (motivating case)."""
         snap = self._snap(position=50, min_mode=True, calculate_percentage_return=70.0)
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snap)
         assert result is not None
         assert result.position == 70
-        assert result.floor_binding is False
+        assert result.custom_position_minimum_mode is False
 
-    def test_floor_binding_none_when_exact_mode(self) -> None:
-        """min_mode=False → floor_binding is None."""
+    def test_custom_position_minimum_mode_none_when_exact_mode(self) -> None:
+        """min_mode=False → custom_position_minimum_mode is None."""
         snap = self._snap(position=50, min_mode=False, calculate_percentage_return=70.0)
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snap)
         assert result is not None
-        assert result.floor_binding is None
+        assert result.custom_position_minimum_mode is None
 
-    def test_floor_binding_none_on_use_my_path(self) -> None:
-        """use_my=True bypasses min_mode → floor_binding is None."""
+    def test_custom_position_minimum_mode_none_on_use_my_path(self) -> None:
+        """use_my=True bypasses min_mode → custom_position_minimum_mode is None."""
         snap = self._snap(
             position=50,
             min_mode=True,
@@ -650,15 +650,15 @@ class TestFloorBinding:
         )
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snap)
         assert result is not None
-        assert result.floor_binding is None
+        assert result.custom_position_minimum_mode is None
 
     def test_both_fields_none_on_non_custom_result(self) -> None:
-        """A plain PipelineResult has both active_slot and floor_binding as None."""
+        """A plain PipelineResult has both custom_position_active_slot and custom_position_minimum_mode as None."""
         from custom_components.adaptive_cover_pro.enums import ControlMethod
         from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
         result = PipelineResult(
             position=50, control_method=ControlMethod.SOLAR, reason="solar"
         )
-        assert result.active_slot is None
-        assert result.floor_binding is None
+        assert result.custom_position_active_slot is None
+        assert result.custom_position_minimum_mode is None

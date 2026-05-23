@@ -83,8 +83,8 @@ class CustomPositionHandler(OverrideHandler):
                                 " [bypasses automatic control]"
                             ),
                             raw_calculated_position=raw,
-                            active_slot=self._slot,
-                            floor_binding=None,
+                            custom_position_active_slot=self._slot,
+                            custom_position_minimum_mode=None,
                         )
                     pos, mode_note = apply_minimum_mode(
                         self._position, raw, enabled=state.min_mode
@@ -100,8 +100,8 @@ class CustomPositionHandler(OverrideHandler):
                             " [bypasses automatic control]"
                         ),
                         raw_calculated_position=raw,
-                        active_slot=self._slot,
-                        floor_binding=(
+                        custom_position_active_slot=self._slot,
+                        custom_position_minimum_mode=(
                             (raw < self._position) if state.min_mode else None
                         ),
                     )

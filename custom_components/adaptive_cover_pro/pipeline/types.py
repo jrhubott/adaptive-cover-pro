@@ -254,10 +254,10 @@ class PipelineResult:
     held_position: int | None = None
 
     # Custom position slot diagnostics — populated only when CustomPositionHandler wins.
-    # active_slot: 1-based slot number of the winning custom position handler; None otherwise.
-    # floor_binding: True when min_mode=True and the floor raises position above raw (floor is
+    # custom_position_active_slot: 1-based slot number of the winning custom position handler; None otherwise.
+    # custom_position_minimum_mode: True when min_mode=True and the floor raises position above raw (floor is
     #   actively constraining); False when min_mode=True and raw >= configured floor (floor is a
     #   no-op); None when min_mode=False (exact mode) or on the use_my path, or when any
     #   non-custom handler wins.
-    active_slot: int | None = None
-    floor_binding: bool | None = None
+    custom_position_active_slot: int | None = None
+    custom_position_minimum_mode: bool | None = None
