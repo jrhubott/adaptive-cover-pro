@@ -110,6 +110,7 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
         is_safety=False,
         bypass_auto_control=False,
         sun_just_appeared=False,
+        use_my_position=False,
     ):
         return PositionContext(
             auto_control=False,  # reflects automatic_control=False
@@ -121,6 +122,7 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
             force=force,
             is_safety=is_safety,
             bypass_auto_control=bypass_auto_control,
+            use_my_position=use_my_position,
         )
 
     coord._build_position_context = _fake_build_ctx

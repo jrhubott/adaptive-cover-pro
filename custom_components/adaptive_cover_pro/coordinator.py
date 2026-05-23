@@ -1168,6 +1168,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         is_safety: bool = False,
         bypass_auto_control: bool = False,
         sun_just_appeared: bool = False,
+        use_my_position: bool = False,
     ) -> PositionContext:
         """Build a PositionContext for the given cover entity.
 
@@ -1197,6 +1198,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 ``_check_sun_validity_transition()`` once before a multi-entity
                 loop and pass the result here so the stateful transition check
                 fires exactly once per update cycle.
+            use_my_position: If True, ORed into the context flag that routes
+                non-position-capable covers through ``stop_cover`` instead of
+                open/close.  Caller-supplied value is ORed with the pipeline
+                result's ``use_my_position`` so either source can enable it.
 
         """
         return PositionContext(
@@ -1211,9 +1216,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             is_safety=is_safety,
             bypass_auto_control=bypass_auto_control,
             use_my_position=(
-                self._pipeline_result.use_my_position
-                if self._pipeline_result
-                else False
+                use_my_position
+                or (
+                    self._pipeline_result.use_my_position
+                    if self._pipeline_result
+                    else False
+                )
             ),
             policy=self._policy,
             **self._policy.position_context_overrides(self._pipeline_result),
@@ -1788,6 +1796,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         trigger: str,
         options: dict | None = None,
         force: bool = False,
+        bypass_auto_control: bool = False,
+        use_my_position: bool = False,
     ) -> tuple[str, str]:
         """Apply a user-initiated position to a single cover.
 
@@ -1868,7 +1878,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     return "skipped", f"preempted_by_{winner_name}"
             self.manager.mark_user_command(entity_id, reason=trigger)
 
-        ctx = self._build_position_context(entity_id, opts, force=True)
+        ctx = self._build_position_context(
+            entity_id,
+            opts,
+            force=True,
+            bypass_auto_control=bypass_auto_control,
+            use_my_position=use_my_position,
+        )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
 
     def build_diagnostic_data(self) -> dict:

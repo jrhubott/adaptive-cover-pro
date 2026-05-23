@@ -5,6 +5,13 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from custom_components.adaptive_cover_pro.coordinator import (
+    AdaptiveDataUpdateCoordinator,
+)
+from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
+from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from custom_components.adaptive_cover_pro.enums import ControlMethod
+
 
 # ---------------------------------------------------------------------------
 # Step 8 — My Position button created when entities configured
@@ -126,3 +133,161 @@ async def test_press_records_preempted_skip_when_force_override_active():
 
     # Must not raise
     await button.async_press()
+
+
+# ---------------------------------------------------------------------------
+# Issue #430 regression tests — My Position button must bypass auto_control gate
+# ---------------------------------------------------------------------------
+
+
+def _make_my_position_coord():
+    """Return a coordinator-shaped object with a real _build_position_context.
+
+    Uses the same _make_coord pattern as test_coordinator_apply_user_position.py
+    but spies on _build_position_context to inspect which kwargs land there.
+    """
+    from custom_components.adaptive_cover_pro.pipeline.types import DecisionStep
+
+    coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+    coord.config_entry = MagicMock()
+    coord.config_entry.options = {}
+    coord._snapshot_builder = MagicMock()
+    coord._snapshot_builder.read_custom_position_sensors.return_value = []
+    coord._snapshot_builder.build = MagicMock(return_value=MagicMock())
+    coord._cover_data = MagicMock()
+    coord._cover_type = "cover_blind"
+    coord._weather_readings = None
+
+    pipeline_result = PipelineResult(
+        position=50,
+        control_method=ControlMethod.SOLAR,
+        reason="solar",
+        decision_trace=[
+            DecisionStep(handler="solar", matched=True, reason="solar", position=50)
+        ],
+    )
+    coord._pipeline = MagicMock()
+    coord._pipeline.evaluate.return_value = pipeline_result
+
+    solar_handler = MagicMock()
+    solar_handler.priority = 40
+    coord._handler_by_name = {"solar": solar_handler}
+
+    # _cmd_svc: apply_position returns "skipped"/"auto_control_off" unless
+    # bypass_auto_control is True on the context.  We use a real PositionContext
+    # to drive the gate, inspecting the context the coordinator passes.
+    captured_contexts: list[PositionContext] = []
+
+    async def _fake_apply(entity_id, position, trigger, ctx):
+        captured_contexts.append(ctx)
+        if not ctx.is_safety and not ctx.bypass_auto_control and not ctx.auto_control:
+            return ("skipped", "auto_control_off")
+        return ("sent", "set_cover_position")
+
+    cmd_svc = MagicMock()
+    cmd_svc.apply_position = _fake_apply
+    cmd_svc.record_preempted_skip = MagicMock()
+    coord._cmd_svc = cmd_svc
+    coord._captured_contexts = captured_contexts
+
+    # Real _build_position_context that passes bypass_auto_control into PositionContext.
+    coord.automatic_control = False
+    coord._pipeline_bypasses_auto_control = False
+    coord._pipeline_result = PipelineResult(
+        position=50, control_method=ControlMethod.SOLAR, reason="solar"
+    )
+    coord._inverse_state = False
+    coord.min_change = 2
+    coord.time_threshold = 0
+    coord._policy = MagicMock()
+    coord._policy.position_context_overrides.return_value = {}
+
+    manager = MagicMock()
+    manager.is_cover_manual.return_value = False
+    coord.manager = manager
+
+    coord._build_position_context = (
+        AdaptiveDataUpdateCoordinator._build_position_context.__get__(coord)
+    )
+    coord.async_apply_user_position = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_position.__get__(coord)
+    )
+
+    return coord
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_bypasses_auto_control():
+    """My Position button must send the command even when auto_control is off.
+
+    Regression test for issue #430: async_apply_user_position called without
+    bypass_auto_control=True fires the auto_control_off gate and silently
+    drops the command. The button must pass bypass_auto_control=True so the
+    gate is skipped.
+    """
+    coord = _make_my_position_coord()
+
+    # Confirm gate fires (produces "skipped", "auto_control_off") without bypass.
+    outcome_without_bypass = await coord.async_apply_user_position(
+        "cover.test", 50, trigger="my_position_recall", force=False
+    )
+    assert outcome_without_bypass == (
+        "skipped",
+        "auto_control_off",
+    ), f"Pre-fix baseline broken — expected gate to fire but got: {outcome_without_bypass}"
+
+    # After the fix the button calls with bypass_auto_control=True + use_my_position=True.
+    outcome = await coord.async_apply_user_position(
+        "cover.test",
+        50,
+        trigger="my_position_recall",
+        force=False,
+        bypass_auto_control=True,
+        use_my_position=True,
+    )
+
+    assert (
+        outcome[0] == "sent"
+    ), f"Expected command to be sent with bypass_auto_control=True, but got: {outcome}"
+
+
+@pytest.mark.asyncio
+async def test_my_position_button_passes_bypass_kwargs():
+    """async_press must forward bypass_auto_control=True and use_my_position=True.
+
+    Drives the button's real async_press with the real coordinator method bound
+    so we can assert the kwargs land on _build_position_context.
+    """
+    from custom_components.adaptive_cover_pro.button import (
+        AdaptiveCoverMyPositionButton,
+    )
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENTITIES,
+        CONF_MY_POSITION_VALUE,
+    )
+
+    config_entry = MagicMock()
+    config_entry.entry_id = "test_entry"
+    config_entry.options = {CONF_MY_POSITION_VALUE: 50, CONF_ENTITIES: ["cover.test"]}
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
+
+    coordinator = MagicMock()
+    coordinator.async_apply_user_position = AsyncMock(
+        return_value=("sent", "set_cover_position")
+    )
+
+    button = AdaptiveCoverMyPositionButton.__new__(AdaptiveCoverMyPositionButton)
+    button.coordinator = coordinator
+    button.config_entry = config_entry
+    button._entities = ["cover.test"]
+
+    await button.async_press()
+
+    coordinator.async_apply_user_position.assert_awaited_once()
+    _, kwargs = coordinator.async_apply_user_position.call_args
+    assert (
+        kwargs.get("bypass_auto_control") is True
+    ), "async_press must pass bypass_auto_control=True to async_apply_user_position"
+    assert (
+        kwargs.get("use_my_position") is True
+    ), "async_press must pass use_my_position=True to async_apply_user_position"
