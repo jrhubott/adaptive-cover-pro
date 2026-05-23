@@ -37,6 +37,7 @@ class StopTracker:
         logger,
         *,
         dry_run_fn: Callable[[], bool],
+        is_in_transit_fn: Callable[[str], bool] | None = None,
     ) -> None:
         """Initialize the StopTracker.
 
@@ -46,12 +47,27 @@ class StopTracker:
             dry_run_fn: Zero-arg callable returning the current dry-run flag.
                 Captured as a callable rather than a snapshot so the
                 tracker always reflects the orchestrator's live setting.
+            is_in_transit_fn: Optional callable ``(entity_id) -> bool`` that
+                returns True when HA reports the cover as opening or closing.
+                Defaults to an inline check when omitted (standalone use).
+                ``CoverCommandService`` supplies ``self._is_cover_in_transit``
+                so the transit predicate lives in exactly one place.
 
         """
         self._hass = hass
         self._logger = logger
         self._dry_run_fn = dry_run_fn
+        self._is_in_transit_fn: Callable[[str], bool] = (
+            is_in_transit_fn
+            if is_in_transit_fn is not None
+            else self._default_in_transit
+        )
         self._acp_stop_contexts: deque[str] = deque(maxlen=self._CONTEXT_HISTORY_SIZE)
+
+    def _default_in_transit(self, entity_id: str) -> bool:
+        """Inline fallback when no external predicate is injected."""
+        state_obj = self._hass.states.get(entity_id)
+        return state_obj is not None and state_obj.state in ("opening", "closing")
 
     # ------------------------------------------------------------------ #
     # Context tracking
@@ -85,11 +101,12 @@ class StopTracker:
         Note: ``send_my_position`` intentionally does NOT call this method —
         it deliberately sends stop_cover to a stationary cover (that is what
         triggers the My preset). This gate applies to shutdown paths only.
+
+        Delegates to the injected ``is_in_transit_fn`` (supplied by
+        ``CoverCommandService`` as ``self._is_cover_in_transit``) so the
+        transit predicate lives in one place.
         """
-        state_obj = self._hass.states.get(entity_id)
-        if state_obj is None:
-            return False
-        return state_obj.state in ("opening", "closing")
+        return self._is_in_transit_fn(entity_id)
 
     async def call_stop_cover(self, entity_id: str) -> None:
         """Issue cover.stop_cover and record the call context as ACP-originated.

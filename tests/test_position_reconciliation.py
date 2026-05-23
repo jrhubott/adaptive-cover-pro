@@ -928,6 +928,92 @@ def test_clear_non_safety_targets(svc):
     assert svc.is_safety_target("cover.safety")
 
 
+# ------------------------------------------------------------------ #
+# _reconcile — in-transit guard (issue #418)
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_while_cover_opening(svc, mock_hass):
+    """Reconciliation must not resend a target while the cover reports state=opening.
+
+    Regression for issue #418: the reconcile pass did not honour the
+    in-transit guard that apply_position and manual_override already
+    respected. A cover that just received a command and is actively
+    opening would be incorrectly retried before it reached its target.
+    """
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    buf = EventBuffer(maxlen=20)
+    svc._event_buffer = buf
+
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 30)  # Off target — would normally trigger retry
+
+    # Cover is actively moving toward the target
+    state_obj = MagicMock()
+    state_obj.state = "opening"
+    mock_hass.states.get.return_value = state_obj
+
+    await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    event_names = [e["event"] for e in buf.snapshot()]
+    assert "reconcile_skipped_in_transit" in event_names
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_while_cover_closing(svc, mock_hass):
+    """Reconciliation must not resend a target while the cover reports state=closing."""
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    buf = EventBuffer(maxlen=20)
+    svc._event_buffer = buf
+
+    svc.set_target("cover.test", 10)
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 70)  # Off target — would normally trigger retry
+
+    # Cover is actively closing toward the target
+    state_obj = MagicMock()
+    state_obj.state = "closing"
+    mock_hass.states.get.return_value = state_obj
+
+    await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    event_names = [e["event"] for e in buf.snapshot()]
+    assert "reconcile_skipped_in_transit" in event_names
+
+
+@pytest.mark.asyncio
+async def test_reconcile_retries_stationary_off_target(svc, mock_hass):
+    """Reconciliation does retry a stationary cover that is off target.
+
+    Regression guard: the in-transit guard must not block retries for covers
+    that have stopped but not reached their target (state=stopped or similar).
+    """
+    svc.set_target("cover.test", 50)
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 30)  # Off target
+
+    # Cover is stationary — not in transit
+    state_obj = MagicMock()
+    state_obj.state = "stopped"
+    mock_hass.states.get.return_value = state_obj
+
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_called_once()
+    assert svc.state("cover.test").retry_count == 1
+
+
 @pytest.mark.asyncio
 async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
     """force=True must bypass time_delta_too_small so safety commands always get sent.

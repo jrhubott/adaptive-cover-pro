@@ -1535,6 +1535,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.manual_threshold,
                 secondary_axis_check=secondary_axis_check,
                 is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
+                is_in_transit=self._cmd_svc._is_cover_in_transit,
             )
             # When a cover transitions into manual override, discard any
             # pre-existing integration target (including safety-tagged

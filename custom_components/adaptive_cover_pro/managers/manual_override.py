@@ -216,6 +216,7 @@ class AdaptiveCoverManager:
         *,
         secondary_axis_check: SecondaryAxisCheck | None = None,
         is_in_command_grace: Callable[[str], bool] | None = None,
+        is_in_transit: Callable[[str], bool] | None = None,
     ):
         """Process state change for manual override.
 
@@ -244,6 +245,13 @@ class AdaptiveCoverManager:
                 suppressed — the position change is the cover responding to
                 the ACP command, not a user touch.  Supplied by the coordinator
                 via ``GracePeriodManager.is_in_command_grace_period``.
+            is_in_transit: Optional callable ``(entity_id) -> bool`` returning
+                True when HA reports the cover state as ``opening`` or
+                ``closing``.  When True, the position-axis check is skipped
+                because ``current_position`` lags the physical position during
+                travel (issue #271).  Supplied by the coordinator via
+                ``CoverCommandService._is_cover_in_transit`` so the predicate
+                lives in one place.
 
         """
         event = states_data
@@ -323,8 +331,8 @@ class AdaptiveCoverManager:
         # look like a stale-position event with state=closing/opening.
         # Wait for the next event when the cover stops; that event runs
         # the full position-math path.
-        new_state_str = getattr(new_state, "state", None)
-        if new_state_str in ("opening", "closing"):
+        if is_in_transit is not None and is_in_transit(entity_id):
+            new_state_str = getattr(new_state, "state", "unknown")
             self._record_event(
                 entity_id,
                 "manual_override_rejected_in_transit",

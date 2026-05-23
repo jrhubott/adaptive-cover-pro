@@ -538,15 +538,29 @@ class TestInTransitGuard:
         event.new_state.last_updated = dt.datetime.now(dt.UTC)
         return event
 
-    def _make_manager(self, entity_id: str):
+    def _make_manager(self, entity_id: str, initial_state_str: str = "open"):
         from custom_components.adaptive_cover_pro.managers.manual_override import (
             AdaptiveCoverManager,
         )
 
+        # Provide a mutable state holder so tests can configure what
+        # hass.states.get(entity_id) returns. The transit predicate the
+        # coordinator passes to handle_state_change reads from hass.states;
+        # tests build the same predicate and pass it as a per-call kwarg.
+        hass = MagicMock()
+        state_holder = MagicMock()
+        state_holder.state = initial_state_str
+        hass.states.get.return_value = state_holder
+
         manager = AdaptiveCoverManager(
-            hass=MagicMock(),
+            hass=hass,
             reset_duration={"hours": 1},
             logger=MagicMock(),
+        )
+        manager._hass_state_holder = state_holder  # expose for per-test updates
+        manager._test_is_in_transit = lambda eid: (
+            hass.states.get(eid) is not None
+            and hass.states.get(eid).state in ("opening", "closing")
         )
         manager.add_covers([entity_id])
         return manager
@@ -562,7 +576,7 @@ class TestInTransitGuard:
         from custom_components.adaptive_cover_pro.cover_types import get_policy
 
         entity_id = "cover.patio_right_tv_shade"
-        manager = self._make_manager(entity_id)
+        manager = self._make_manager(entity_id, initial_state_str="closing")
         event = self._make_event(entity_id, current_position=100, state_str="closing")
 
         manager.handle_state_change(
@@ -572,6 +586,7 @@ class TestInTransitGuard:
             allow_reset=True,
             is_waiting=lambda _eid: False,
             manual_threshold=0,
+            is_in_transit=manager._test_is_in_transit,
         )
 
         assert not manager.is_cover_manual(entity_id), (
@@ -592,7 +607,7 @@ class TestInTransitGuard:
         from custom_components.adaptive_cover_pro.cover_types import get_policy
 
         entity_id = "cover.slow_open"
-        manager = self._make_manager(entity_id)
+        manager = self._make_manager(entity_id, initial_state_str="opening")
         event = self._make_event(entity_id, current_position=0, state_str="opening")
 
         manager.handle_state_change(
@@ -602,6 +617,7 @@ class TestInTransitGuard:
             allow_reset=True,
             is_waiting=lambda _eid: False,
             manual_threshold=0,
+            is_in_transit=manager._test_is_in_transit,
         )
 
         assert not manager.is_cover_manual(entity_id)
@@ -616,7 +632,7 @@ class TestInTransitGuard:
         from custom_components.adaptive_cover_pro.cover_types import get_policy
 
         entity_id = "cover.bedroom"
-        manager = self._make_manager(entity_id)
+        manager = self._make_manager(entity_id, initial_state_str="closing")
         policy = get_policy("cover_blind")
 
         in_transit = self._make_event(
@@ -629,11 +645,14 @@ class TestInTransitGuard:
             allow_reset=True,
             is_waiting=lambda _eid: False,
             manual_threshold=5,
+            is_in_transit=manager._test_is_in_transit,
         )
         assert not manager.is_cover_manual(
             entity_id
         ), "In-transit event must not have marked manual override"
 
+        # Advance the mocked HA state to reflect the cover settling
+        manager._hass_state_holder.state = "open"
         settled = self._make_event(entity_id, current_position=95, state_str="open")
         manager.handle_state_change(
             states_data=settled,
@@ -642,6 +661,7 @@ class TestInTransitGuard:
             allow_reset=True,
             is_waiting=lambda _eid: False,
             manual_threshold=5,
+            is_in_transit=manager._test_is_in_transit,
         )
         assert manager.is_cover_manual(entity_id), (
             "Settled event with current_position far from target must still "
@@ -665,6 +685,7 @@ class TestInTransitGuard:
             allow_reset=True,
             is_waiting=lambda _eid: False,
             manual_threshold=0,
+            is_in_transit=manager._test_is_in_transit,
         )
 
         assert not manager.is_cover_manual(entity_id)
