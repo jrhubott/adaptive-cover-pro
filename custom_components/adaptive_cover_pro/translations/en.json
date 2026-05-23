@@ -90,7 +90,7 @@
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
           "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room. Shown in the unit Home Assistant is configured for. This defines your acceptable 'glare zone' — the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3–0.5 m / 12–20 in) keeps sunlight very close to the window; Medium glare zone (0.5–1.0 m / 20–40 in) allows sun to reach desk or seating area; Large glare zone (2.0–3.0 m / 79–118 in) allows sunlight deep into the room. KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
         }
       },
       "position": {
@@ -589,7 +589,7 @@
           "max_elevation": "Track sun only when elevation is BELOW this angle (degrees above horizon). Sun elevation: 0°=horizon, 45°=halfway to zenith, 90°=directly overhead. Use this to ignore sun at certain times. Example: Set to 60° to ignore high midday sun. Leave empty to track sun at all elevations.",
           "blind_spot": "Enable if you have obstacles blocking sun in part of the tracking area (trees, nearby buildings, roof overhang, balcony). When enabled, you define an azimuth + elevation range where sun is blocked. Cover ignores sun position when it's in this 'blind spot'. Leave disabled if you have clear view to sun all day.",
           "enable_glare_zones": "Protect specific floor areas from direct sun glare (vertical covers only)",
-          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room (in meters). This defines your acceptable 'glare zone' - the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3-0.5m) keeps sunlight very close to the window (use when you want maximum shade); Medium glare zone (0.5-1.0m) allows sun to reach desk or seating area (balanced, most common for living spaces); Large glare zone (2.0-3.0m) allows sunlight deep into the room (good for dark rooms or passive solar heating). KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
+          "distance_shaded_area": "How far you want to ALLOW direct sunlight to reach into the room. Shown in the unit Home Assistant is configured for. This defines your acceptable 'glare zone' — the area where sunlight can reach the floor. The cover position adjusts to maintain this boundary as the sun moves across the sky. Common configurations: Small glare zone (0.3–0.5 m / 12–20 in) keeps sunlight very close to the window; Medium glare zone (0.5–1.0 m / 20–40 in) allows sun to reach desk or seating area; Large glare zone (2.0–3.0 m / 79–118 in) allows sunlight deep into the room. KEY CONCEPT: LARGER value = MORE sunlight allowed farther into room = cover stays HIGHER/MORE OPEN; SMALLER value = LESS sunlight into room = cover drops LOWER/MORE CLOSED. Measure from the inside of your window to where you want the sun boundary to be."
         }
       },
       "position": {
@@ -1489,7 +1489,7 @@
         },
         "distance_shaded_area": {
           "name": "Distance to shaded area",
-          "description": "Distance (m) from window to edge of shaded area (0.1–50 m)."
+          "description": "Distance from window to edge of shaded area in metres (0.1–50 m, canonical metric regardless of HA locale)."
         }
       }
     },
@@ -1547,23 +1547,23 @@
       "fields": {
         "window_height": {
           "name": "Window height",
-          "description": "Window height in metres (0.1–50 m). Vertical blind and awning only."
+          "description": "Window height in metres (0.1–50 m, canonical metric regardless of HA locale). Vertical blind and awning only."
         },
         "window_width": {
           "name": "Window width",
-          "description": "Window width in metres (0.1–50 m). Vertical blind only."
+          "description": "Window width in metres (0.1–50 m, canonical metric regardless of HA locale). Vertical blind only."
         },
         "window_depth": {
           "name": "Window depth",
-          "description": "Window reveal depth in metres (0–5 m). Vertical blind only."
+          "description": "Window reveal depth in metres (0–5 m, canonical metric regardless of HA locale). Vertical blind only."
         },
         "sill_height": {
           "name": "Sill height",
-          "description": "Window sill height from floor in metres (0–50 m). Vertical blind only."
+          "description": "Window sill height from floor in metres (0–50 m, canonical metric regardless of HA locale). Vertical blind only."
         },
         "length_awning": {
           "name": "Awning length",
-          "description": "Awning projection length in metres (0.3–6 m). Awning only."
+          "description": "Awning projection length in metres (0.3–6 m, canonical metric regardless of HA locale). Awning only."
         },
         "angle": {
           "name": "Awning angle",
@@ -1571,11 +1571,11 @@
         },
         "slat_depth": {
           "name": "Slat depth",
-          "description": "Venetian slat depth in centimetres (0.1–15 cm). Tilt only."
+          "description": "Venetian slat depth in centimetres (0.1–15 cm, canonical metric regardless of HA locale). Tilt only."
         },
         "slat_distance": {
           "name": "Slat distance",
-          "description": "Distance between slats in centimetres (0.1–15 cm). Tilt only."
+          "description": "Distance between slats in centimetres (0.1–15 cm, canonical metric regardless of HA locale). Tilt only."
         },
         "tilt_mode": {
           "name": "Tilt mode",

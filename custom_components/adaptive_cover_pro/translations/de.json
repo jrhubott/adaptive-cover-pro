@@ -90,7 +90,7 @@
           "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über Horizont). Sonnenhöhe: 0°=Horizont, 45°=halber Weg zum Zenit, 90°=direkt oben. Verwenden Sie dies, um Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° setzen, um hohe Mittag-Sonne zu ignorieren. Leer lassen, um Sonne auf allen Höhen zu verfolgen.",
           "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die Sonne in Teil des Verfolgungsbereichs blockieren (Bäume, nahe Gebäude, Dachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem die Sonne blockiert ist. Beschattung ignoriert die Sonnenposition, wenn sie in diesem ‚blinden Fleck' ist. Deaktiviert lassen, wenn Sie den ganzen Tag über freie Sicht zur Sonne haben.",
           "enable_glare_zones": "Schützen Sie bestimmte Bodenbereiche vor direkter Sonnenblendung (nur vertikale Beschattungen)",
-          "distance_shaded_area": "Wie weit Sie ZULASSEN, dass direktes Sonnenlicht in den Raum gelangt (in Metern). Dies definiert Ihre akzeptable ‚Blendungszone' – den Bereich, in dem Sonnenlicht den Boden erreichen kann. Die Beschattungsposition passt sich an, um diese Grenze zu erhalten, während sich die Sonne über den Himmel bewegt. Häufige Konfigurationen: Kleine Blendungszone (0,3-0,5 m) hält Sonnenlicht sehr nah am Fenster (verwenden, wenn Sie maximale Beschattung mögen); Mittlere Blendungszone (0,5-1,0 m) ermöglicht Sonne auf Schreibtisch oder Sitzbereich (ausgewogen, am häufigsten für Wohnräume); Große Blendungszone (2,0-3,0 m) ermöglicht Sonnenlicht tief in den Raum (gut für dunkle Räume oder passive Solarheizung). SCHLÜSSELKONZEPT: GRÖSSER Wert = MEHR Sonnenlicht tief in Raum = Beschattung bleibt HÖHER/OFFENER; KLEINER Wert = WENIGER Sonnenlicht in Raum = Beschattung sinkt TIEFER/GESCHLOSSENER. Messen Sie vom Innenrand Ihres Fensters bis zu der Stelle, wo Sie die Sonnengrenze haben möchten."
+          "distance_shaded_area": "Wie weit Sie möchten, dass direkte Sonneneinstrahlung in den Raum eindringt. Wird in der Einheit angezeigt, die in Home Assistant konfiguriert ist. Dies definiert Ihre akzeptable 'Blendungszone' — der Bereich, in dem Sonnenlicht auf den Boden fällt. Die Beschattungsposition wird angepasst, um diese Grenze zu wahren, während die Sonne über den Himmel wandert. Häufige Konfigurationen: Kleine Blendungszone (0,3–0,5 m / 12–20 Zoll) hält Sonnenlicht sehr nah am Fenster; Mittlere Blendungszone (0,5–1,0 m / 20–40 Zoll) ermöglicht Sonne auf Schreibtisch oder Sitzbereich; Große Blendungszone (2,0–3,0 m / 79–118 Zoll) ermöglicht tiefe Sonnenlichteinstrahlung in den Raum. SCHLÜSSELKONZEPT: GRÖSSERER Wert = MEHR Sonnenlicht tief in den Raum = Beschattung bleibt HÖHER/MEHR GEÖFFNET; KLEINERER Wert = WENIGER Sonnenlicht in den Raum = Beschattung sinkt TIEFER/MEHR GESCHLOSSEN. Messen Sie von der Innenseite Ihres Fensters zu dem Punkt, wo Sie die Sonnengrenze haben möchten."
         }
       },
       "position": {
@@ -589,7 +589,7 @@
           "max_elevation": "Verfolgen Sie die Sonne nur, wenn die Höhe UNTER diesem Winkel liegt (Grad über dem Horizont). Sonnenhöhe: 0°=Horizont, 45°=halb zum Zenit, 90°=direkt oben. Verwenden Sie dies, um die Sonne zu bestimmten Zeiten zu ignorieren. Beispiel: Auf 60° setzen, um hohe Mittagssonne zu ignorieren. Leer lassen, um Sonne bei allen Höhen zu verfolgen.",
           "blind_spot": "Aktivieren Sie, wenn Sie Hindernisse haben, die die Sonne in einem Teil des Verfolgungsbereichs blockieren (Bäume, Nachbargebäude, Dachdachüberstand, Balkon). Wenn aktiviert, definieren Sie einen Azimut- + Höhenbereich, in dem die Sonne blockiert ist. Der Behang ignoriert die Sonnenposition, wenn sie in dieser 'Totwinkelsone' ist. Deaktiviert lassen, wenn Sie klare Sicht zur Sonne den ganzen Tag haben.",
           "enable_glare_zones": "Schützen Sie bestimmte Bodenbereiche vor direkter Sonnenblendung (nur vertikale Behänge)",
-          "distance_shaded_area": "Wie weit Sie ZULASSEN möchten, dass direkte Sonnenstrahlung in den Raum eindringt (in Metern). Dies definiert Ihre akzeptable 'Blendungszone' – der Bereich, in dem Sonnenlicht den Boden erreichen kann. Die Behangposition passt sich an, um diese Grenze zu halten, während die Sonne über den Himmel wandert. Häufige Konfigurationen: Kleine Blendungszone (0,3–0,5 m) hält Sonnenlicht sehr nahe am Fenster (verwenden, wenn Sie maximalen Schatten wollen); mittlere Blendungszone (0,5–1,0 m) ermöglicht Sonne, Schreibtisch oder Sitzbereich zu erreichen (ausgewogen, am häufigsten für Wohnräume); große Blendungszone (2,0–3,0 m) ermöglicht Sonnenlicht tief in den Raum (gut für dunkle Räume oder passive Solarheizung). SCHLÜSSELKONZEPT: HÖHERER Wert = MEHR Sonnenlicht tief in Raum erlaubt = Behang bleibt HÖHER/MEHR OFFEN; NIEDRIGERER Wert = WENIGER Sonnenlicht in Raum = Behang senkt sich TIEFER/MEHR GESCHLOSSEN. Messen Sie von der Innenseite Ihres Fensters bis zu dem Punkt, wo Sie die Sonnengrenze haben möchten."
+          "distance_shaded_area": "Wie weit Sie möchten, dass direkte Sonneneinstrahlung in den Raum eindringt. Wird in der Einheit angezeigt, die in Home Assistant konfiguriert ist. Dies definiert Ihre akzeptable 'Blendungszone' — der Bereich, in dem Sonnenlicht auf den Boden fällt. Die Beschattungsposition wird angepasst, um diese Grenze zu wahren, während die Sonne über den Himmel wandert. Häufige Konfigurationen: Kleine Blendungszone (0,3–0,5 m / 12–20 Zoll) hält Sonnenlicht sehr nah am Fenster; Mittlere Blendungszone (0,5–1,0 m / 20–40 Zoll) ermöglicht Sonne auf Schreibtisch oder Sitzbereich; Große Blendungszone (2,0–3,0 m / 79–118 Zoll) ermöglicht tiefe Sonnenlichteinstrahlung in den Raum. SCHLÜSSELKONZEPT: GRÖSSERER Wert = MEHR Sonnenlicht tief in den Raum = Beschattung bleibt HÖHER/MEHR GEÖFFNET; KLEINERER Wert = WENIGER Sonnenlicht in den Raum = Beschattung sinkt TIEFER/MEHR GESCHLOSSEN. Messen Sie von der Innenseite Ihres Fensters zu dem Punkt, wo Sie die Sonnengrenze haben möchten."
         }
       },
       "position": {
@@ -1279,19 +1279,19 @@
           "name": "Markisen-Winkel"
         },
         "length_awning": {
-          "description": "Markisen-Ausfahrlänge in Metern (0,3–6 m). Nur Markise.",
+          "description": "Markisen-Ausfahrtslänge in Metern (0,3–6 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Markise.",
           "name": "Markisenlänge"
         },
         "sill_height": {
-          "description": "Fensterbrett-Höhe vom Boden in Metern (0–50 m). Nur Vertikaljalousie.",
+          "description": "Fensterbrett-Höhe vom Boden in Metern (0–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie.",
           "name": "Fensterbrett-Höhe"
         },
         "slat_depth": {
-          "description": "Tiefe der Venezianischer-Lamellen in Zentimetern (0,1–15 cm). Nur Neigung.",
+          "description": "Lamellentiefe in Zentimetern (0,1–15 cm, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Neigung.",
           "name": "Lamellen-Tiefe"
         },
         "slat_distance": {
-          "description": "Abstand zwischen Lamellen in Zentimetern (0,1–15 cm). Nur Neigung.",
+          "description": "Abstand zwischen Lamellen in Zentimetern (0,1–15 cm, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Neigung.",
           "name": "Lamellen-Abstand"
         },
         "tilt_mode": {
@@ -1299,15 +1299,15 @@
           "name": "Neigungs-Modus"
         },
         "window_depth": {
-          "description": "Fensterrahmen-Tiefe in Metern (0–5 m). Nur Vertikaljalousie.",
+          "description": "Fensterrahmen-Tiefe in Metern (0–5 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie.",
           "name": "Fenstertiefe"
         },
         "window_height": {
-          "description": "Fensterhöhe in Metern (0,1–50 m). Nur Vertikaljalousie und Markise.",
+          "description": "Fensterhöhe in Metern (0,1–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie und Markise.",
           "name": "Fensterhöhe"
         },
         "window_width": {
-          "description": "Fensterbreite in Metern (0,1–50 m). Nur Vertikaljalousie.",
+          "description": "Fensterbreite in Metern (0,1–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema). Nur Vertikaljalousie.",
           "name": "Fensterbreite"
         },
         "venetian_tilt_skip_above": {
@@ -1477,7 +1477,7 @@
       "description": "Aktualisiert Azimut, Sichtfeld, Höhenlimits und Sonnenverfolgungsschalter.",
       "fields": {
         "distance_shaded_area": {
-          "description": "Entfernung (m) von Fenster zu Schattenbereichskante (0,1–50 m).",
+          "description": "Entfernung vom Fenster zur Kante des Schattenbereichs in Metern (0,1–50 m, kanonisch metrisch, unabhängig vom HA-Gebietsschema).",
           "name": "Entfernung zum Schattenbereich"
         },
         "enable_sun_tracking": {

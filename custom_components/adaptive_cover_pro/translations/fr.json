@@ -90,7 +90,7 @@
           "max_elevation": "Suivez le soleil uniquement quand l'élévation est AU-DESSOUS de cet angle (degrés au-dessus de l'horizon). Élévation du soleil : 0°=horizon, 45°=mi-chemin vers le zénith, 90°=directement au-dessus. Utilisez ceci pour ignorer le soleil à certains moments. Exemple : réglez sur 60° pour ignorer le soleil haut de midi. Laissez vide pour suivre le soleil à toutes les élévations.",
           "blind_spot": "Activez si vous avez des obstacles bloquant le soleil dans une partie de la zone de suivi (arbres, bâtiments à proximité, surplomb de toit, balcon). Lorsqu'il est activé, vous définissez une plage azimut + élévation où le soleil est bloqué. Le store ignore la position du soleil quand elle se trouve dans cette « zone cachée ». Laissez désactivé si vous avez une vue dégagée du soleil toute la journée.",
           "enable_glare_zones": "Protégez les zones de sol spécifiques de l'éblouissement direct du soleil (stores verticaux uniquement)",
-          "distance_shaded_area": "Jusqu'à quelle distance vous souhaitez AUTORISER la lumière directe du soleil à pénétrer dans la pièce (en mètres). Cela définit votre « zone d'éblouissement » acceptable - la zone où la lumière du soleil peut atteindre le sol. La position du store s'ajuste pour maintenir cette limite au fur et à mesure que le soleil se déplace dans le ciel. Configurations courantes : zone d'éblouissement petite (0,3-0,5 m) maintient la lumière du soleil très près de la fenêtre (utilisé quand vous voulez une ombre maximale) ; zone d'éblouissement moyenne (0,5-1,0 m) permet au soleil d'atteindre un bureau ou une zone de séjour (équilibré, le plus courant pour les espaces de vie) ; zone d'éblouissement grande (2,0-3,0 m) permet à la lumière du soleil de pénétrer profondément dans la pièce (bon pour les pièces sombres ou le chauffage solaire passif). CONCEPT CLÉ : valeur PLUS GRANDE = PLUS de lumière du soleil autorisée plus loin dans la pièce = store reste PLUS HAUT/PLUS OUVERT ; valeur PLUS PETITE = MOINS de lumière du soleil dans la pièce = store descend PLUS BAS/PLUS FERMÉ. Mesurez de l'intérieur de votre fenêtre à l'endroit où vous voulez que la limite du soleil soit."
+          "distance_shaded_area": "Jusqu'où vous souhaitez PERMETTRE à la lumière directe du soleil de pénétrer dans la pièce. Affiché dans l'unité configurée dans Home Assistant. Cela définit votre « zone d'éblouissement » acceptable — la zone où la lumière solaire peut atteindre le sol. La position du store s'ajuste pour maintenir cette limite au fur et à mesure que le soleil traverse le ciel. Configurations courantes : Zone d'éblouissement petite (0.3–0.5 m / 12–20 in) maintient la lumière très près de la fenêtre ; Zone d'éblouissement moyenne (0.5–1.0 m / 20–40 in) permet au soleil d'atteindre le bureau ou la zone de repos ; Zone d'éblouissement grande (2.0–3.0 m / 79–118 in) permet à la lumière de pénétrer profondément dans la pièce. CONCEPT CLÉ : Valeur PLUS GRANDE = PLUS de lumière autorisée plus loin dans la pièce = le store reste PLUS HAUT/PLUS OUVERT ; Valeur PLUS PETITE = MOINS de lumière dans la pièce = le store descend PLUS BAS/PLUS FERMÉ. Mesurez depuis l'intérieur de votre fenêtre jusqu'au point où vous souhaitez que la limite de lumière solaire se termine."
         }
       },
       "position": {
@@ -589,7 +589,7 @@
           "max_elevation": "Suivez le soleil uniquement quand l'élévation est AU-DESSOUS de cet angle (degrés au-dessus de l'horizon). Élévation du soleil : 0°=horizon, 45°=mi-chemin vers le zénith, 90°=directement au-dessus. Utilisez ceci pour ignorer le soleil à certains moments. Exemple : réglez sur 60° pour ignorer le soleil haut de midi. Laissez vide pour suivre le soleil à toutes les élévations.",
           "blind_spot": "Activez si vous avez des obstacles bloquant le soleil dans une partie de la zone de suivi (arbres, bâtiments à proximité, surplomb de toit, balcon). Lorsqu'il est activé, vous définissez une plage azimut + élévation où le soleil est bloqué. Le store ignore la position du soleil quand elle se trouve dans cette « zone cachée ». Laissez désactivé si vous avez une vue dégagée du soleil toute la journée.",
           "enable_glare_zones": "Protégez les zones de sol spécifiques de l'éblouissement direct du soleil (stores verticaux uniquement)",
-          "distance_shaded_area": "Jusqu'à quelle distance vous souhaitez AUTORISER la lumière directe du soleil à pénétrer dans la pièce (en mètres). Cela définit votre « zone d'éblouissement » acceptable - la zone où la lumière du soleil peut atteindre le sol. La position du store s'ajuste pour maintenir cette limite au fur et à mesure que le soleil se déplace dans le ciel. Configurations courantes : zone d'éblouissement petite (0,3-0,5 m) maintient la lumière du soleil très près de la fenêtre (utilisé quand vous voulez une ombre maximale) ; zone d'éblouissement moyenne (0,5-1,0 m) permet au soleil d'atteindre un bureau ou une zone de séjour (équilibré, le plus courant pour les espaces de vie) ; zone d'éblouissement grande (2,0-3,0 m) permet à la lumière du soleil de pénétrer profondément dans la pièce (bon pour les pièces sombres ou le chauffage solaire passif). CONCEPT CLÉ : valeur PLUS GRANDE = PLUS de lumière du soleil autorisée plus loin dans la pièce = store reste PLUS HAUT/PLUS OUVERT ; valeur PLUS PETITE = MOINS de lumière du soleil dans la pièce = store descend PLUS BAS/PLUS FERMÉ. Mesurez de l'intérieur de votre fenêtre à l'endroit où vous voulez que la limite du soleil soit."
+          "distance_shaded_area": "Jusqu'où vous souhaitez PERMETTRE à la lumière directe du soleil de pénétrer dans la pièce. Affiché dans l'unité configurée dans Home Assistant. Cela définit votre « zone d'éblouissement » acceptable — la zone où la lumière solaire peut atteindre le sol. La position du store s'ajuste pour maintenir cette limite au fur et à mesure que le soleil traverse le ciel. Configurations courantes : Zone d'éblouissement petite (0.3–0.5 m / 12–20 in) maintient la lumière très près de la fenêtre ; Zone d'éblouissement moyenne (0.5–1.0 m / 20–40 in) permet au soleil d'atteindre le bureau ou la zone de repos ; Zone d'éblouissement grande (2.0–3.0 m / 79–118 in) permet à la lumière de pénétrer profondément dans la pièce. CONCEPT CLÉ : Valeur PLUS GRANDE = PLUS de lumière autorisée plus loin dans la pièce = le store reste PLUS HAUT/PLUS OUVERT ; Valeur PLUS PETITE = MOINS de lumière dans la pièce = le store descend PLUS BAS/PLUS FERMÉ. Mesurez depuis l'intérieur de votre fenêtre jusqu'au point où vous souhaitez que la limite de lumière solaire se termine."
         }
       },
       "position": {
@@ -1279,19 +1279,19 @@
           "name": "Angle du store banne"
         },
         "length_awning": {
-          "description": "Longueur de projection du store banne en mètres (0,3–6 m). Stores bannes uniquement.",
+          "description": "Longueur de projection du store banne en mètres (0,3–6 m, métrique canonique, indépendamment de la locale HA). Store banne uniquement.",
           "name": "Longueur du store banne"
         },
         "sill_height": {
-          "description": "Hauteur de l'appui de fenêtre depuis le sol en mètres (0–50 m). Stores verticaux uniquement.",
+          "description": "Hauteur de l'appui de fenêtre depuis le sol en mètres (0–50 m, métrique canonique, indépendamment de la locale HA). Store vertical uniquement.",
           "name": "Hauteur de l'appui"
         },
         "slat_depth": {
-          "description": "Profondeur de la lamelle vénitienne en centimètres (0,1–15 cm). Inclinaison uniquement.",
+          "description": "Profondeur de lamelle de vénitienne en centimètres (0,1–15 cm, métrique canonique, indépendamment de la locale HA). Inclinaison uniquement.",
           "name": "Profondeur de la lamelle"
         },
         "slat_distance": {
-          "description": "Distance entre les lamelles en centimètres (0,1–15 cm). Inclinaison uniquement.",
+          "description": "Distance entre les lamelles en centimètres (0,1–15 cm, métrique canonique, indépendamment de la locale HA). Inclinaison uniquement.",
           "name": "Distance entre les lamelles"
         },
         "tilt_mode": {
@@ -1299,15 +1299,15 @@
           "name": "Mode d'inclinaison"
         },
         "window_depth": {
-          "description": "Profondeur du rejingot de la fenêtre en mètres (0–5 m). Stores verticaux uniquement.",
+          "description": "Profondeur du rejingot de fenêtre en mètres (0–5 m, métrique canonique, indépendamment de la locale HA). Store vertical uniquement.",
           "name": "Profondeur de la fenêtre"
         },
         "window_height": {
-          "description": "Hauteur de la fenêtre en mètres (0,1–50 m). Stores verticaux et stores bannes uniquement.",
+          "description": "Hauteur de la fenêtre en mètres (0,1–50 m, métrique canonique, indépendamment de la locale HA). Store vertical et store banne uniquement.",
           "name": "Hauteur de la fenêtre"
         },
         "window_width": {
-          "description": "Largeur de la fenêtre en mètres (0,1–50 m). Stores verticaux uniquement.",
+          "description": "Largeur de la fenêtre en mètres (0,1–50 m, métrique canonique, indépendamment de la locale HA). Store vertical uniquement.",
           "name": "Largeur de la fenêtre"
         },
         "venetian_tilt_skip_above": {
@@ -1477,7 +1477,7 @@
       "description": "Mettre à jour l'azimut, le champ de vision, les limites d'élévation, et l'interrupteur de suivi solaire.",
       "fields": {
         "distance_shaded_area": {
-          "description": "Distance (m) de la fenêtre au bord de la zone ombragée (0,1–50 m).",
+          "description": "Distance de la fenêtre au bord de la zone ombragée en mètres (0,1–50 m, métrique canonique, indépendamment de la locale HA).",
           "name": "Distance vers la zone ombragée"
         },
         "enable_sun_tracking": {
