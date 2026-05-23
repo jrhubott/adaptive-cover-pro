@@ -10,18 +10,21 @@ from .enums import TiltMode
 
 @dataclass
 class GlareZone:
-    """A single glare protection zone on the floor.
+    """A single glare protection zone.
 
     Coordinates are relative to the window centre projected onto the floor:
       x = along the wall (positive = right when facing window from inside), metres
       y = into the room (perpendicular to window), metres — must be positive
       radius = zone radius, metres
+      z = height of the protected target above the floor, metres — 0 (default) protects
+          a floor disk; >0 protects a point at that height (e.g. eye level, tabletop).
     """
 
     name: str
     x: float
     y: float
     radius: float
+    z: float = 0.0
 
 
 @dataclass

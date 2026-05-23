@@ -704,6 +704,14 @@ _RANGE_WINDOW_WIDTH = (0.1, 50.0)  # CONF_WINDOW_WIDTH, metres
 _RANGE_WINDOW_DEPTH = (0.0, 5.0)  # CONF_WINDOW_DEPTH, metres
 _RANGE_SILL_HEIGHT = (0.0, 50.0)  # CONF_SILL_HEIGHT, metres
 
+# Glare zones — per-zone X/Y/Radius/Z bounds. Mirror the selector ranges in
+# config_flow._build_glare_zones_schema so changes stay in sync.
+_RANGE_GLARE_ZONE_X = (-5.0, 5.0)  # along the wall, metres
+_RANGE_GLARE_ZONE_Y = (0.0, 10.0)  # into the room, metres
+_RANGE_GLARE_ZONE_RADIUS = (0.1, 2.0)  # zone radius, metres
+_RANGE_GLARE_ZONE_Z = (0.0, 3.0)  # target height above floor, metres
+DEFAULT_GLARE_ZONE_Z = 0.0  # default — protects a floor disk (current behaviour)
+
 # Geometry — awning.
 _RANGE_LENGTH_AWNING = (0.3, 6.0)  # CONF_LENGTH_AWNING, metres
 _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
@@ -833,6 +841,13 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         ranges[slot_keys["position"]] = _RANGE_CUSTOM_POSITION
         ranges[slot_keys["priority"]] = _RANGE_CUSTOM_PRIORITY
         ranges[slot_keys["tilt"]] = _RANGE_TILT
+    # Glare-zone slots (4): per-zone x/y/radius/z. Selector bounds in
+    # config_flow._build_glare_zones_schema must mirror these.
+    for i in range(1, 5):
+        ranges[f"glare_zone_{i}_x"] = _RANGE_GLARE_ZONE_X
+        ranges[f"glare_zone_{i}_y"] = _RANGE_GLARE_ZONE_Y
+        ranges[f"glare_zone_{i}_radius"] = _RANGE_GLARE_ZONE_RADIUS
+        ranges[f"glare_zone_{i}_z"] = _RANGE_GLARE_ZONE_Z
     # Global default and sunset tilt (venetian only).
     ranges[CONF_DEFAULT_TILT] = _RANGE_TILT
     ranges[CONF_SUNSET_TILT] = _RANGE_TILT

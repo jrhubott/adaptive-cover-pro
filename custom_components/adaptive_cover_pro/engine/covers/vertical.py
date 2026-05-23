@@ -25,9 +25,24 @@ MIN_TAN_ELEVATION_CLAMP = 0.05
 MIN_COS_GAMMA_CLAMP = 0.01
 
 
+def _elevation_offset(height_m: float, sol_elev: float) -> float:
+    """Horizontal distance a sun ray covers while descending `height_m` metres.
+
+    For a sun ray at elevation `sol_elev` (degrees), descending a vertical
+    distance `height_m` corresponds to a horizontal distance of
+    `height_m / tan(sol_elev)`. The denominator is clamped at
+    MIN_TAN_ELEVATION_CLAMP so the offset stays finite at low sun.
+
+    Shared by sill_height geometry in calculate_position and the optional
+    glare-zone Z (height above floor) offset.
+    """
+    return height_m / max(float(tan(rad(sol_elev))), MIN_TAN_ELEVATION_CLAMP)
+
+
 def glare_zone_effective_distance(
     zone: GlareZone,
     gamma: float,
+    sol_elev: float,
     window_half_width: float,
 ) -> float | None:
     """Convert a glare zone to an effective distance (metres) for this sun angle.
@@ -40,9 +55,15 @@ def glare_zone_effective_distance(
     MORE blind coverage (lower position%) to protect. The GlareZoneHandler
     uses min() across zones to select the most restrictive (closest) zone.
 
+    When `zone.z > 0` the target sits above the floor (eye level, tabletop, TV).
+    The effective distance is then `nearest_y + z / tan(sol_elev)` — the same
+    trigonometric construction as sill_offset in calculate_position, signed in
+    the opposite direction.
+
     Args:
-        zone: The glare zone definition (x, y, radius — all in metres).
+        zone: The glare zone definition (x, y, radius, z — all in metres).
         gamma: Surface solar azimuth in degrees (positive = sun to the right).
+        sol_elev: Sun elevation in degrees (used only when zone.z > 0).
         window_half_width: Half the window width in metres.
 
     """
@@ -63,6 +84,9 @@ def glare_zone_effective_distance(
     x_at_window = nearest_x + nearest_y * float(tan(gamma_rad))
     if abs(x_at_window) > window_half_width:
         return None  # Ray enters outside the window opening — zone is naturally blocked
+
+    if zone.z > 0:
+        nearest_y += _elevation_offset(zone.z, sol_elev)
 
     return nearest_y
 
@@ -189,9 +213,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         # Account for window sill height (window not starting at floor)
         sill_offset = 0.0
         if self.sill_height > 0:
-            sill_offset = self.sill_height / max(
-                float(tan(rad(self.sol_elev))), MIN_TAN_ELEVATION_CLAMP
-            )
+            sill_offset = _elevation_offset(self.sill_height, self.sol_elev)
             effective_distance -= sill_offset
 
         # ── Sill geometry — why negative effective_distance means FULLY CLOSED ────────

@@ -82,7 +82,7 @@ class GlareZoneHandler(OverrideHandler):
             if zone is None:
                 continue
             zone_dist = glare_zone_effective_distance(
-                zone, cover.gamma, window_half_width
+                zone, cover.gamma, cover.sol_elev, window_half_width
             )
             if zone_dist is not None:
                 zone_results.append((zone_name, zone_dist))
@@ -109,12 +109,14 @@ class GlareZoneHandler(OverrideHandler):
         position = apply_snapshot_limits(snapshot, state, sun_valid=True)
 
         zone_names = ", ".join(contributing_zones)
+        z_adjusted = any(zones_by_name[name].z > 0 for name in contributing_zones)
+        z_suffix = " (Z-adjusted)" if z_adjusted else ""
         return PipelineResult(
             position=position,
             control_method=ControlMethod.GLARE_ZONE,
             reason=(
                 f"glare zone protection ({zone_names}) — "
-                f"effective distance {min_distance:.2f}m → position {position}%"
+                f"effective distance {min_distance:.2f}m{z_suffix} → position {position}%"
             ),
             raw_calculated_position=compute_raw_calculated_position(snapshot),
         )

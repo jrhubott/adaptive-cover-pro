@@ -150,9 +150,11 @@ class TestGlareZoneSchema:
 
     def test_length_keys_exhaustive(self):
         keys = _glare_zone_length_keys()
-        assert len(keys) == 12  # 4 slots × 3 axes
+        assert len(keys) == 16  # 4 slots × 4 axes (x, y, radius, z)
         assert "glare_zone_1_x" in keys
         assert "glare_zone_4_radius" in keys
+        assert "glare_zone_1_z" in keys
+        assert "glare_zone_4_z" in keys
 
 
 # --- Sensor-driven thresholds: SENSOR's unit wins ------------------------- #

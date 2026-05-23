@@ -31,6 +31,7 @@ def test_glare_zone_control_method_exists() -> None:
 def _make_vertical_cover(
     distance: float = 3.0,
     gamma: float = 0.0,
+    sol_elev: float = 45.0,
     direct_sun_valid: bool = True,
     calculate_percentage_return: float = 60.0,
 ):
@@ -43,6 +44,7 @@ def _make_vertical_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.distance = distance
     cover.gamma = gamma
+    cover.sol_elev = sol_elev
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
     cover.config = MagicMock()
     cover.config.min_pos = None
@@ -713,6 +715,54 @@ class TestGlareZoneReasonString:
         assert result is not None
         assert "position" in result.reason
         assert "%" in result.reason
+
+    def test_reason_includes_z_adjusted_suffix_when_contributing_zone_has_z(
+        self,
+    ) -> None:
+        """Reason gains '(Z-adjusted)' when the contributing zone has Z > 0."""
+        cover = _make_vertical_cover(
+            distance=5.0,
+            gamma=0.0,
+            sol_elev=45.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=30.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="eye", x=0.0, y=1.0, radius=0.0, z=1.1)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"eye"},
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "(Z-adjusted)" in result.reason
+
+    def test_reason_omits_z_adjusted_suffix_when_z_is_zero(self) -> None:
+        """No '(Z-adjusted)' suffix when no contributing zone has Z > 0."""
+        cover = _make_vertical_cover(
+            distance=5.0,
+            gamma=0.0,
+            sol_elev=45.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=30.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0, z=0.0)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"desk"},
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert "(Z-adjusted)" not in result.reason
 
 
 class TestGlareZoneLargeRadius:

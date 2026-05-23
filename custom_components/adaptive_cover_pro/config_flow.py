@@ -46,6 +46,7 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_ENABLE_PROXY_COVER,
+    DEFAULT_GLARE_ZONE_Z,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
@@ -1592,6 +1593,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             gz_parts.append(f"zones: {', '.join(zone_names)}")
         if width:
             gz_parts.append(f"{float(width):.2f}m window")
+        z_values = [
+            float(config.get(f"glare_zone_{i}_z") or 0.0)
+            for i in range(1, 5)
+            if config.get(f"glare_zone_{i}_name")
+        ]
+        if any(z > 0 for z in z_values):
+            gz_parts.append("Z height: " + ", ".join(f"{z:.2f}m" for z in z_values))
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
         lines.append(
             f"🔆 Glare zones: lowers blind further to protect floor areas from glare"
@@ -2156,24 +2164,11 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         }
     ),
     "glare_zones": frozenset(
-        {
-            CONF_ENABLE_GLARE_ZONES,
-            "glare_zone_1_name",
-            "glare_zone_1_x",
-            "glare_zone_1_y",
-            "glare_zone_1_radius",
-            "glare_zone_2_name",
-            "glare_zone_2_x",
-            "glare_zone_2_y",
-            "glare_zone_2_radius",
-            "glare_zone_3_name",
-            "glare_zone_3_x",
-            "glare_zone_3_y",
-            "glare_zone_3_radius",
-            "glare_zone_4_name",
-            "glare_zone_4_x",
-            "glare_zone_4_y",
-            "glare_zone_4_radius",
+        {CONF_ENABLE_GLARE_ZONES}
+        | {
+            f"glare_zone_{i}_{axis}"
+            for i in range(1, 5)
+            for axis in ("name", "x", "y", "radius", "z")
         }
     ),
     "weather": frozenset(
@@ -2324,9 +2319,11 @@ def _get_sun_tracking_schema(
 
 
 def _glare_zone_length_keys() -> tuple[str, ...]:
-    """Return the 12 metres-stored option keys for the 4 glare zone slots."""
+    """Return the 16 metres-stored option keys for the 4 glare zone slots."""
     return tuple(
-        f"glare_zone_{i}_{axis}" for i in range(1, 5) for axis in ("x", "y", "radius")
+        f"glare_zone_{i}_{axis}"
+        for i in range(1, 5)
+        for axis in ("x", "y", "radius", "z")
     )
 
 
@@ -2381,6 +2378,20 @@ def _build_glare_zones_schema(
             hass,
             min_m=0.1,
             max_m=2.0,
+            metric_step=0.05,
+            mode=selector.NumberSelectorMode.SLIDER,
+        )
+        # Optional Z = target height above floor (0 = floor disk, current behaviour).
+        # Selector bounds mirror _RANGE_GLARE_ZONE_Z in const.py.
+        schema_dict[
+            vol.Optional(
+                f"{prefix}_z",
+                default=_default(f"{prefix}_z", DEFAULT_GLARE_ZONE_Z),
+            )
+        ] = length_selector(
+            hass,
+            min_m=0.0,
+            max_m=3.0,
             metric_step=0.05,
             mode=selector.NumberSelectorMode.SLIDER,
         )

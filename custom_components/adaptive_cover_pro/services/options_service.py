@@ -277,6 +277,13 @@ FIELD_VALIDATORS: dict[str, Any] = {
         slot_keys["tilt"]: _range(slot_keys["tilt"])
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },
+    # Glare zones 1–4 — name is free-form text; x/y/radius/z pull ranges from
+    # OPTION_RANGES (bounds mirror config_flow._build_glare_zones_schema).
+    **{
+        f"glare_zone_{i}_{axis}": _range(f"glare_zone_{i}_{axis}")
+        for i in range(1, 5)
+        for axis in ("x", "y", "radius", "z")
+    },
     # Motion
     CONF_MOTION_SENSORS: _entities_v(),
     CONF_MOTION_TIMEOUT: _range(CONF_MOTION_TIMEOUT),

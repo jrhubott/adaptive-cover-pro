@@ -118,6 +118,37 @@ class TestGetGlareZonesConfig:
         assert result is not None
         assert result.window_width == 1.0
 
+    def test_zone_z_defaults_to_zero_when_absent(self):
+        """Existing configs without glare_zone_N_z load as Z=0 (back-compat)."""
+        svc = _make_service()
+        options = {
+            CONF_ENABLE_GLARE_ZONES: True,
+            CONF_WINDOW_WIDTH: 1.5,
+            "glare_zone_1_name": "Desk",
+            "glare_zone_1_x": 0.0,
+            "glare_zone_1_y": 2.0,
+            "glare_zone_1_radius": 0.3,
+        }
+        result = svc.get_glare_zones_config(options)
+        assert result is not None
+        assert result.zones[0].z == 0.0
+
+    def test_zone_z_is_read_when_present(self):
+        """Z>0 from options round-trips into the GlareZone dataclass."""
+        svc = _make_service()
+        options = {
+            CONF_ENABLE_GLARE_ZONES: True,
+            CONF_WINDOW_WIDTH: 1.5,
+            "glare_zone_1_name": "Eye",
+            "glare_zone_1_x": 0.0,
+            "glare_zone_1_y": 2.0,
+            "glare_zone_1_radius": 0.3,
+            "glare_zone_1_z": 1.1,
+        }
+        result = svc.get_glare_zones_config(options)
+        assert result is not None
+        assert result.zones[0].z == 1.1
+
 
 class TestGetVerticalData:
     """Test ConfigurationService.get_vertical_data — issue #174 regression."""

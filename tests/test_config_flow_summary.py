@@ -605,6 +605,31 @@ def test_glare_zones_not_shown_for_awning():
     assert "Glare zones" not in summary
 
 
+def test_glare_zones_summary_omits_z_when_all_zones_floor_level():
+    """No 'Z height' tag when every named zone has Z=0."""
+    cfg = {
+        CONF_ENABLE_GLARE_ZONES: True,
+        CONF_WINDOW_WIDTH: 1.5,
+        "glare_zone_1_name": "Desk",
+        "glare_zone_1_z": 0.0,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Z height" not in summary
+
+
+def test_glare_zones_summary_shows_z_when_any_zone_above_floor():
+    """'Z height' tag surfaces when at least one named zone has Z > 0."""
+    cfg = {
+        CONF_ENABLE_GLARE_ZONES: True,
+        CONF_WINDOW_WIDTH: 1.5,
+        "glare_zone_1_name": "Eye",
+        "glare_zone_1_z": 1.1,
+    }
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "Z height" in summary
+    assert "1.10m" in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 2: Climate
 # ---------------------------------------------------------------------------

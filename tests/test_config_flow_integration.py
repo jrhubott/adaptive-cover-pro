@@ -581,8 +581,8 @@ def test_build_glare_zones_schema_with_no_options():
 
     schema = _build_glare_zones_schema(options=None)
     assert isinstance(schema, vol.Schema)
-    # Should have 4 zones * 4 fields = 16 keys
-    assert len(schema.schema) == 16
+    # Should have 4 zones * 5 fields (name, x, y, radius, z) = 20 keys
+    assert len(schema.schema) == 20
 
 
 @pytest.mark.unit
@@ -596,7 +596,7 @@ def test_build_glare_zones_schema_with_existing_options():
     options = {"glare_zone_1_name": "My Zone", "glare_zone_1_x": 1.0}
     schema = _build_glare_zones_schema(options=options)
     assert isinstance(schema, vol.Schema)
-    assert len(schema.schema) == 16
+    assert len(schema.schema) == 20
 
 
 @pytest.mark.unit

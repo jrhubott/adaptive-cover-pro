@@ -32,6 +32,7 @@ from ..const import (
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    DEFAULT_GLARE_ZONE_Z,
     DEFAULT_MAX_TILT,
     DEFAULT_MIN_TILT,
 )
@@ -160,6 +161,7 @@ class ConfigurationService:
                     x=float(options.get(f"glare_zone_{i}_x", 0.0)),
                     y=float(options.get(f"glare_zone_{i}_y", 1.0)),
                     radius=float(options.get(f"glare_zone_{i}_radius", 0.3)),
+                    z=float(options.get(f"glare_zone_{i}_z", DEFAULT_GLARE_ZONE_Z)),
                 )
             )
 

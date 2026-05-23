@@ -337,7 +337,11 @@
           "glare_zone_4_name": "Nom zone 4",
           "glare_zone_4_x": "Position X zone 4",
           "glare_zone_4_y": "Position Y zone 4",
-          "glare_zone_4_radius": "Rayon zone 4"
+          "glare_zone_4_radius": "Rayon zone 4",
+          "glare_zone_1_z": "Zone 1 hauteur Z",
+          "glare_zone_2_z": "Zone 2 hauteur Z",
+          "glare_zone_3_z": "Zone 3 hauteur Z",
+          "glare_zone_4_z": "Zone 4 hauteur Z"
         },
         "data_description": {
           "enable_glare_zones": "Quand activé, le store s'abaisse pour ombrager toutes les zones actives du sol.",
@@ -356,7 +360,11 @@
           "glare_zone_4_name": "Nom de cette zone (par ex. 'Lit'). Laissez vide pour sauter.",
           "glare_zone_4_x": "Décalage gauche/droite par rapport au centre de la fenêtre. Affiché dans l'unité configurée dans Home Assistant. Positif = droite.",
           "glare_zone_4_y": "Distance dans la pièce (perpendiculaire à la fenêtre). Affiché dans l'unité configurée dans Home Assistant.",
-          "glare_zone_4_radius": "Rayon de protection autour du centre de la zone. Affiché dans l'unité configurée dans Home Assistant."
+          "glare_zone_4_radius": "Rayon de protection autour du centre de la zone. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_1_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_2_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_3_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_4_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant."
         }
       },
       "interp": {
@@ -830,7 +838,11 @@
           "glare_zone_4_name": "Nom zone 4",
           "glare_zone_4_x": "Position X zone 4",
           "glare_zone_4_y": "Position Y zone 4",
-          "glare_zone_4_radius": "Rayon zone 4"
+          "glare_zone_4_radius": "Rayon zone 4",
+          "glare_zone_1_z": "Zone 1 hauteur Z",
+          "glare_zone_2_z": "Zone 2 hauteur Z",
+          "glare_zone_3_z": "Zone 3 hauteur Z",
+          "glare_zone_4_z": "Zone 4 hauteur Z"
         },
         "data_description": {
           "enable_glare_zones": "Quand activé, le store s'abaisse pour ombrager toutes les zones actives du sol.",
@@ -849,7 +861,11 @@
           "glare_zone_4_name": "Nom de cette zone (par ex. 'Lit'). Laissez vide pour sauter.",
           "glare_zone_4_x": "Décalage gauche/droite par rapport au centre de la fenêtre. Affiché dans l'unité configurée dans Home Assistant. Positif = droite.",
           "glare_zone_4_y": "Distance dans la pièce (perpendiculaire à la fenêtre). Affiché dans l'unité configurée dans Home Assistant.",
-          "glare_zone_4_radius": "Rayon de protection autour du centre de la zone. Affiché dans l'unité configurée dans Home Assistant."
+          "glare_zone_4_radius": "Rayon de protection autour du centre de la zone. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_1_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_2_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_3_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant.",
+          "glare_zone_4_z": "Hauteur cible au-dessus du sol (par exemple surface du bureau ≈ 0,75 m, yeux assis ≈ 1,1 m, TV murale ≈ 1,5 m). La valeur par défaut 0 protège le sol. Affiché dans l'unité configurée dans Home Assistant."
         }
       },
       "sync": {

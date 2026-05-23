@@ -38,6 +38,7 @@ from tests.test_pipeline.conftest import make_snapshot
 def _make_vertical_cover(
     distance: float = 3.0,
     gamma: float = 0.0,
+    sol_elev: float = 45.0,
     direct_sun_valid: bool = True,
     calculate_percentage_return: float = 60.0,
 ):
@@ -46,6 +47,7 @@ def _make_vertical_cover(
     cover.direct_sun_valid = direct_sun_valid
     cover.distance = distance
     cover.gamma = gamma
+    cover.sol_elev = sol_elev
     cover.calculate_percentage = MagicMock(return_value=calculate_percentage_return)
     cover.config = MagicMock()
     cover.config.min_pos = None

@@ -337,7 +337,11 @@
           "glare_zone_4_name": "Name Zone 4",
           "glare_zone_4_x": "Zone 4 X-Position",
           "glare_zone_4_y": "Zone 4 Y-Position",
-          "glare_zone_4_radius": "Radius Zone 4"
+          "glare_zone_4_radius": "Radius Zone 4",
+          "glare_zone_1_z": "Zone 1 Z-Höhe",
+          "glare_zone_2_z": "Zone 2 Z-Höhe",
+          "glare_zone_3_z": "Zone 3 Z-Höhe",
+          "glare_zone_4_z": "Zone 4 Z-Höhe"
         },
         "data_description": {
           "enable_glare_zones": "Wenn aktiviert, senkt sich die Jalousie, um alle aktiven Bodenzonen zu beschatten.",
@@ -356,7 +360,11 @@
           "glare_zone_4_name": "Name für diese Zone (z. B. „Bett“). Lassen Sie leer zum Überspringen.",
           "glare_zone_4_x": "Links/Rechts-Versatz von der Fenstermitte. In der von Home Assistant konfigurierten Einheit angezeigt. Positiv = rechts.",
           "glare_zone_4_y": "Entfernung in den Raum hinein (senkrecht zum Fenster). In der von Home Assistant konfigurierten Einheit angezeigt.",
-          "glare_zone_4_radius": "Schutzradius um die Zonenmitte. In der von Home Assistant konfigurierten Einheit angezeigt."
+          "glare_zone_4_radius": "Schutzradius um die Zonenmitte. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_1_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_2_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_3_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_4_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt."
         }
       },
       "interp": {
@@ -830,7 +838,11 @@
           "glare_zone_4_name": "Zone-4-Name",
           "glare_zone_4_x": "Zone-4-X-Position",
           "glare_zone_4_y": "Zone-4-Y-Position",
-          "glare_zone_4_radius": "Zone-4-Radius"
+          "glare_zone_4_radius": "Zone-4-Radius",
+          "glare_zone_1_z": "Zone 1 Z-Höhe",
+          "glare_zone_2_z": "Zone 2 Z-Höhe",
+          "glare_zone_3_z": "Zone 3 Z-Höhe",
+          "glare_zone_4_z": "Zone 4 Z-Höhe"
         },
         "data_description": {
           "enable_glare_zones": "Bei Aktivierung senkt sich die Jalousie, um alle aktiven Bodenzonen zu beschatten.",
@@ -849,7 +861,11 @@
           "glare_zone_4_name": "Name für diese Zone (z.B. „Bett“). Lassen Sie leer, um zu überspringen.",
           "glare_zone_4_x": "Links/Rechts-Versatz von der Fenstermitte. In der von Home Assistant konfigurierten Einheit angezeigt. Positiv = rechts.",
           "glare_zone_4_y": "Entfernung in den Raum hinein (senkrecht zum Fenster). In der von Home Assistant konfigurierten Einheit angezeigt.",
-          "glare_zone_4_radius": "Schutzradius um die Zonenmitte. In der von Home Assistant konfigurierten Einheit angezeigt."
+          "glare_zone_4_radius": "Schutzradius um die Zonenmitte. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_1_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_2_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_3_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt.",
+          "glare_zone_4_z": "Zielhöhe über dem Boden (z. B. Schreibtischfläche ≈ 0,75 m, Augenhöhe im Sitzen ≈ 1,1 m, Wandfernseher ≈ 1,5 m). Standard 0 schützt den Boden. In der von Home Assistant konfigurierten Einheit angezeigt."
         }
       },
       "sync": {
