@@ -17,6 +17,7 @@ from ..const import (
     MAX_WINDOW_DEPTH,
 )
 from ..engine.covers import AdaptiveVerticalCover
+from ..unit_system import length_default, length_selector
 from ._helpers import window_dimensions_lines
 from .base import (
     CAP_HAS_SET_POSITION,
@@ -27,52 +28,53 @@ from .base import (
 )
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from ..engine.covers import AdaptiveGeneralCover
     from ..services.configuration_service import ConfigurationService
 
 
-GEOMETRY_VERTICAL_SCHEMA = vol.Schema(
-    {
-        vol.Required(
-            CONF_HEIGHT_WIN, default=DEFAULT_WINDOW_HEIGHT
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=50,
-                step=0.01,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="m",
-            )
-        ),
-        vol.Optional(CONF_WINDOW_WIDTH, default=1.0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=50,
-                step=0.01,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="m",
-            )
-        ),
-        vol.Optional(CONF_WINDOW_DEPTH, default=0.0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.0,
-                max=MAX_WINDOW_DEPTH,
-                step=0.01,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="m",
-            )
-        ),
-        vol.Optional(CONF_SILL_HEIGHT, default=0.0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.0,
-                max=50,
-                step=0.01,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="m",
-            )
-        ),
-    }
+# Keys whose stored value is canonical metres — used by config-flow steps to
+# convert between stored canonical and display-unit on form load/submit.
+VERTICAL_LENGTH_KEYS: tuple[str, ...] = (
+    CONF_HEIGHT_WIN,
+    CONF_WINDOW_WIDTH,
+    CONF_WINDOW_DEPTH,
+    CONF_SILL_HEIGHT,
 )
+
+
+def geometry_vertical_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+    """Vertical-blind geometry schema. ``hass=None`` → metric labels."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_HEIGHT_WIN,
+                default=length_default(DEFAULT_WINDOW_HEIGHT, hass),
+            ): length_selector(hass, min_m=0.1, max_m=50, metric_step=0.01),
+            vol.Optional(
+                CONF_WINDOW_WIDTH, default=length_default(1.0, hass)
+            ): length_selector(hass, min_m=0.1, max_m=50, metric_step=0.01),
+            vol.Optional(
+                CONF_WINDOW_DEPTH, default=length_default(0.0, hass)
+            ): length_selector(
+                hass,
+                min_m=0.0,
+                max_m=MAX_WINDOW_DEPTH,
+                metric_step=0.01,
+                mode=selector.NumberSelectorMode.SLIDER,
+            ),
+            vol.Optional(
+                CONF_SILL_HEIGHT, default=length_default(0.0, hass)
+            ): length_selector(hass, min_m=0.0, max_m=50, metric_step=0.01),
+        }
+    )
+
+
+# Module-level constant for backward compatibility with test imports that
+# inspect schema keys / call the schema as a validator. Built without hass
+# (== metric labels), identical to the historical schema.
+GEOMETRY_VERTICAL_SCHEMA = geometry_vertical_schema()
 
 
 class BlindPolicy(CoverTypePolicy):
@@ -105,9 +107,23 @@ class BlindPolicy(CoverTypePolicy):
         """Return the glare-zones config for this cover (vertical-only feature)."""
         return config_service.get_glare_zones_config(options)
 
-    def geometry_schema(self) -> vol.Schema:
-        """Return the vertical-blind geometry schema."""
-        return GEOMETRY_VERTICAL_SCHEMA
+    def geometry_schema(
+        self,
+        hass: HomeAssistant | None = None,
+        options: dict | None = None,  # noqa: ARG002
+    ) -> vol.Schema:
+        """Return the vertical-blind geometry schema for the given locale.
+
+        Returns the cached module-level constant when no locale is supplied so
+        identity-checking tests keep passing; builds a fresh schema otherwise.
+        """
+        if hass is None:
+            return GEOMETRY_VERTICAL_SCHEMA
+        return geometry_vertical_schema(hass)
+
+    def geometry_length_keys(self) -> tuple[str, ...]:
+        """Vertical blinds store four window dimensions in canonical metres."""
+        return VERTICAL_LENGTH_KEYS
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
         """Plain ``cover`` domain — no extra capability requirement."""

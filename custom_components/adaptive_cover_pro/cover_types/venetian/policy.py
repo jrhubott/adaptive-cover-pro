@@ -54,19 +54,32 @@ from ..base import (
     CoverTypePolicy,
     caps_get,
 )
-from ..blind import GEOMETRY_VERTICAL_SCHEMA
-from ..tilt import GEOMETRY_TILT_SCHEMA, TILT_CAPABLE_ENTITY_FILTER
+from ..blind import geometry_vertical_schema
+from ..tilt import TILT_CAPABLE_ENTITY_FILTER, geometry_tilt_schema
 from .sequencer import DualAxisSequencer
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from ...engine.covers import AdaptiveGeneralCover
     from ...pipeline.types import PipelineResult
     from ...services.configuration_service import ConfigurationService
 
 
-GEOMETRY_VENETIAN_SCHEMA = GEOMETRY_VERTICAL_SCHEMA.extend(
-    {
-        **GEOMETRY_TILT_SCHEMA.schema,
+# Re-exported for callers that want the unit-independent venetian-only keys.
+_VENETIAN_EXTRA_KEYS = (
+    CONF_VENETIAN_TILT_SKIP_ABOVE,
+    CONF_VENETIAN_MODE,
+    CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_INVERSE_TILT,
+    CONF_MAX_TILT,
+    CONF_MIN_TILT,
+)
+
+
+def _venetian_extras_schema() -> dict:
+    """Return the venetian-only schema dict (unit-independent fields)."""
+    return {
         vol.Optional(
             CONF_VENETIAN_TILT_SKIP_ABOVE, default=DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         ): vol.All(
@@ -90,7 +103,20 @@ GEOMETRY_VENETIAN_SCHEMA = GEOMETRY_VERTICAL_SCHEMA.extend(
             vol.Coerce(int), vol.Range(min=0, max=100)
         ),
     }
-)
+
+
+def geometry_venetian_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+    """Dual-axis venetian geometry schema. ``hass=None`` → metric labels."""
+    return geometry_vertical_schema(hass).extend(
+        {
+            **geometry_tilt_schema(hass).schema,
+            **_venetian_extras_schema(),
+        }
+    )
+
+
+# Module-level constant for backward compatibility with tests / re-exports.
+GEOMETRY_VENETIAN_SCHEMA = geometry_venetian_schema()
 
 
 class VenetianPolicy(CoverTypePolicy):
@@ -132,9 +158,31 @@ class VenetianPolicy(CoverTypePolicy):
         """Accept both vertical and tilt geometry; reject awning-only fields."""
         return [(awning_only, "awning")]
 
-    def geometry_schema(self) -> vol.Schema:
-        """Return the dual-axis geometry schema (vertical + tilt fields)."""
-        return GEOMETRY_VENETIAN_SCHEMA
+    def geometry_schema(
+        self,
+        hass: HomeAssistant | None = None,
+        options: dict | None = None,  # noqa: ARG002
+    ) -> vol.Schema:
+        """Return the dual-axis geometry schema for the given locale.
+
+        Returns the cached module-level constant when no locale is supplied so
+        identity-checking tests keep passing; builds a fresh schema otherwise.
+        """
+        if hass is None:
+            return GEOMETRY_VENETIAN_SCHEMA
+        return geometry_venetian_schema(hass)
+
+    def geometry_length_keys(self) -> tuple[str, ...]:
+        """Venetians carry the vertical-blind window dimensions in metres."""
+        from ..blind import VERTICAL_LENGTH_KEYS
+
+        return VERTICAL_LENGTH_KEYS
+
+    def geometry_slat_keys(self) -> tuple[str, ...]:
+        """Venetians also carry slat depth and spacing in centimetres."""
+        from ..tilt import TILT_SLAT_KEYS
+
+        return TILT_SLAT_KEYS
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
         """Require entities that advertise ``set_tilt_position``.

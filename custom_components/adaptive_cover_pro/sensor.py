@@ -644,7 +644,19 @@ def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     active_temp = diagnostics.get("active_temperature")
     if active_temp is not None:
         attrs["active_temperature"] = active_temp
-        attrs["temperature_unit"] = s.hass.config.units.temperature_unit
+        # ``active_temperature`` is reported in the configured sensor's unit,
+        # not HA's locale unit (the integration never converts sensor reads).
+        # Surface the SENSOR's unit so the value's meaning is unambiguous;
+        # fall back to HA's locale only when no sensor is configured.
+        from .const import CONF_TEMP_ENTITY
+        from .unit_system import sensor_unit_label
+
+        ha_unit = str(s.hass.config.units.temperature_unit)
+        sensor_uom = sensor_unit_label(
+            s.hass, s.config_entry.options.get(CONF_TEMP_ENTITY), ha_unit
+        )
+        attrs["temperature_unit"] = sensor_uom
+        attrs["ha_temperature_unit"] = ha_unit
 
     temp_details = diagnostics.get("temperature_details", {})
     if temp_details:

@@ -15,6 +15,7 @@ from ..const import (
 )
 from ..engine.covers import AdaptiveTiltCover
 from ..enums import TiltMode
+from ..unit_system import slat_default, slat_selector
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
     TILT_AXIS,
@@ -24,37 +25,45 @@ from .base import (
 )
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from ..engine.covers import AdaptiveGeneralCover
     from ..services.configuration_service import ConfigurationService
 
 
-GEOMETRY_TILT_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_TILT_DEPTH, default=3): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=15,
-                step=0.1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
-            )
-        ),
-        vol.Required(CONF_TILT_DISTANCE, default=2): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=15,
-                step=0.1,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="cm",
-            )
-        ),
-        vol.Required(CONF_TILT_MODE, default="mode2"): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=["mode1", "mode2"], translation_key="tilt_mode"
-            )
-        ),
-    }
-)
+# Keys whose stored value is canonical centimetres — used by config-flow steps
+# to convert between stored canonical and display-unit on form load/submit.
+TILT_SLAT_KEYS: tuple[str, ...] = (CONF_TILT_DEPTH, CONF_TILT_DISTANCE)
+
+
+# Default slat dimensions (canonical centimetres).
+_DEFAULT_TILT_DEPTH_CM = 3.0
+_DEFAULT_TILT_DISTANCE_CM = 2.0
+
+
+def geometry_tilt_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+    """Tilt-only geometry schema. ``hass=None`` → metric labels."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_TILT_DEPTH, default=slat_default(_DEFAULT_TILT_DEPTH_CM, hass)
+            ): slat_selector(hass, min_cm=0.1, max_cm=15),
+            vol.Required(
+                CONF_TILT_DISTANCE,
+                default=slat_default(_DEFAULT_TILT_DISTANCE_CM, hass),
+            ): slat_selector(hass, min_cm=0.1, max_cm=15),
+            vol.Required(CONF_TILT_MODE, default="mode2"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["mode1", "mode2"], translation_key="tilt_mode"
+                )
+            ),
+        }
+    )
+
+
+# Module-level constant for backward compatibility with tests / re-exports.
+# Built without hass (== metric labels), identical to the historical schema.
+GEOMETRY_TILT_SCHEMA = geometry_tilt_schema()
 
 
 # Filter shared by tilt and venetian: cover entities that expose
@@ -91,9 +100,23 @@ class TiltPolicy(CoverTypePolicy):
         """Reject vertical-blind and awning geometry fields on a tilt-only cover."""
         return [(vertical_only, "vertical blind"), (awning_only, "awning")]
 
-    def geometry_schema(self) -> vol.Schema:
-        """Return the slat-only geometry schema."""
-        return GEOMETRY_TILT_SCHEMA
+    def geometry_schema(
+        self,
+        hass: HomeAssistant | None = None,
+        options: dict | None = None,  # noqa: ARG002
+    ) -> vol.Schema:
+        """Return the slat-only geometry schema for the given locale.
+
+        Returns the cached module-level constant when no locale is supplied so
+        identity-checking tests keep passing; builds a fresh schema otherwise.
+        """
+        if hass is None:
+            return GEOMETRY_TILT_SCHEMA
+        return geometry_tilt_schema(hass)
+
+    def geometry_slat_keys(self) -> tuple[str, ...]:
+        """Tilt covers store slat depth and spacing in canonical centimetres."""
+        return TILT_SLAT_KEYS
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
         """Require entities that advertise ``set_tilt_position``."""

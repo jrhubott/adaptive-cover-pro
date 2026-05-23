@@ -388,13 +388,40 @@ class CoverTypePolicy(ABC):
         """
         return selector.EntityFilterSelectorConfig(domain="cover")
 
-    def geometry_schema(self) -> vol.Schema:
+    def geometry_schema(
+        self,
+        hass: HomeAssistant | None = None,  # noqa: ARG002
+        options: dict | None = None,  # noqa: ARG002
+    ) -> vol.Schema:
         """Return the config-flow geometry sub-schema for this cover type.
 
         Default: empty schema. Override to surface cover-type-specific
         geometry inputs (window dimensions, awning angle, slat depth, etc.).
+
+        *hass* and *options* let subclasses adapt the schema to the user's
+        configured unit system or to currently-stored values. The default
+        ignores both — passing them is backward-compatible.
         """
         return vol.Schema({})
+
+    def geometry_length_keys(self) -> tuple[str, ...]:
+        """Return option keys stored as canonical metres.
+
+        Used by the config-flow step handlers to convert these keys between
+        canonical (metres) and the user's display unit (m or in) on form
+        load / submit. Default empty so cover types without length fields
+        are no-ops.
+        """
+        return ()
+
+    def geometry_slat_keys(self) -> tuple[str, ...]:
+        """Return option keys stored as canonical centimetres.
+
+        Used by the config-flow step handlers to convert these keys between
+        canonical (centimetres) and the user's display unit (cm or in) on
+        form load / submit. Default empty.
+        """
+        return ()
 
     def summary_geometry_lines(
         self, config: dict[str, Any]

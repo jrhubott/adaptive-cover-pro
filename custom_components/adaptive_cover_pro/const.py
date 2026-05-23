@@ -754,9 +754,11 @@ _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 # Motion.
 _RANGE_MOTION_TIMEOUT = (30, 3600)  # CONF_MOTION_TIMEOUT, seconds
 
-# Climate.
-_RANGE_TEMPERATURE = (0, 90)  # temp_low / temp_high (sensor unit)
-_RANGE_OUTSIDE_THRESHOLD = (0, 100)  # CONF_OUTSIDE_THRESHOLD (sensor unit)
+# Climate. Range is interpreted in the **sensor's** unit, not HA's locale —
+# wide enough to span Celsius and Fahrenheit comfort thresholds (e.g.
+# 78°F warm threshold sits in this range).
+_RANGE_TEMPERATURE = (0, 150)  # temp_low / temp_high (sensor unit)
+_RANGE_OUTSIDE_THRESHOLD = (0, 150)  # CONF_OUTSIDE_THRESHOLD (sensor unit)
 
 # Weather safety.
 _RANGE_WEATHER_WIND_SPEED = (0, 200)  # wind-speed threshold (sensor unit)

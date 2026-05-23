@@ -17,6 +17,7 @@ from ..const import (
     MAX_AWNING_ANGLE,
 )
 from ..engine.covers import AdaptiveHorizontalCover
+from ..unit_system import length_default, length_selector
 from .base import (
     CAP_HAS_SET_POSITION,
     POSITION_AXIS_OPEN_BLOCKS_SUN,
@@ -26,44 +27,47 @@ from .base import (
 )
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from ..engine.covers import AdaptiveGeneralCover
     from ..services.configuration_service import ConfigurationService
 
 
-GEOMETRY_HORIZONTAL_SCHEMA = vol.Schema(
-    {
-        vol.Required(
-            CONF_LENGTH_AWNING, default=DEFAULT_AWNING_LENGTH
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.3,
-                max=6,
-                step=0.01,
+# Keys whose stored value is canonical metres — used by config-flow steps to
+# convert between stored canonical and display-unit on form load/submit.
+HORIZONTAL_LENGTH_KEYS: tuple[str, ...] = (CONF_LENGTH_AWNING, CONF_HEIGHT_WIN)
+
+
+def geometry_horizontal_schema(hass: HomeAssistant | None = None) -> vol.Schema:
+    """Horizontal-awning geometry schema. ``hass=None`` → metric labels."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_LENGTH_AWNING, default=length_default(DEFAULT_AWNING_LENGTH, hass)
+            ): length_selector(
+                hass,
+                min_m=0.3,
+                max_m=6,
+                metric_step=0.01,
                 mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="m",
-            )
-        ),
-        vol.Required(CONF_AWNING_ANGLE, default=0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=MAX_AWNING_ANGLE,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="°",
-            )
-        ),
-        vol.Required(
-            CONF_HEIGHT_WIN, default=DEFAULT_WINDOW_HEIGHT
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=50,
-                step=0.01,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="m",
-            )
-        ),
-    }
-)
+            ),
+            vol.Required(CONF_AWNING_ANGLE, default=0): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=MAX_AWNING_ANGLE,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="°",
+                )
+            ),
+            vol.Required(
+                CONF_HEIGHT_WIN, default=length_default(DEFAULT_WINDOW_HEIGHT, hass)
+            ): length_selector(hass, min_m=0.1, max_m=50, metric_step=0.01),
+        }
+    )
+
+
+# Module-level constant for backward compatibility with tests / re-exports.
+GEOMETRY_HORIZONTAL_SCHEMA = geometry_horizontal_schema()
 
 
 class AwningPolicy(CoverTypePolicy):
@@ -94,9 +98,23 @@ class AwningPolicy(CoverTypePolicy):
         """Reject vertical-blind and tilt geometry fields on an awning cover."""
         return [(vertical_only, "vertical blind"), (tilt_only, "tilt")]
 
-    def geometry_schema(self) -> vol.Schema:
-        """Return the horizontal-awning geometry schema."""
-        return GEOMETRY_HORIZONTAL_SCHEMA
+    def geometry_schema(
+        self,
+        hass: HomeAssistant | None = None,
+        options: dict | None = None,  # noqa: ARG002
+    ) -> vol.Schema:
+        """Return the horizontal-awning geometry schema for the given locale.
+
+        Returns the cached module-level constant when no locale is supplied so
+        identity-checking tests keep passing; builds a fresh schema otherwise.
+        """
+        if hass is None:
+            return GEOMETRY_HORIZONTAL_SCHEMA
+        return geometry_horizontal_schema(hass)
+
+    def geometry_length_keys(self) -> tuple[str, ...]:
+        """Awnings store awning length and window height in canonical metres."""
+        return HORIZONTAL_LENGTH_KEYS
 
     def entity_selector_filter(self) -> selector.EntityFilterSelectorConfig:
         """Plain ``cover`` domain — no extra capability requirement."""
