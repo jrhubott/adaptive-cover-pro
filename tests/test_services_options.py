@@ -287,12 +287,17 @@ class TestFieldValidators:
             FIELD_VALIDATORS[CONF_SILL_HEIGHT](50.01)
 
     def test_distance_bounds_50m(self):
+        FIELD_VALIDATORS[CONF_DISTANCE](0.0)
         FIELD_VALIDATORS[CONF_DISTANCE](0.1)
         FIELD_VALIDATORS[CONF_DISTANCE](50.0)
 
     def test_distance_above_50_rejected(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS[CONF_DISTANCE](50.01)
+
+    def test_distance_below_zero_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_DISTANCE](-0.01)
 
     def test_field_validators_post_settle_hold_range(self):
         """venetian_post_settle_hold accepts 0.0/2.0/10.0/None; rejects out-of-range."""

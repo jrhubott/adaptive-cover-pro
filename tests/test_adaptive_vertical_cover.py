@@ -46,6 +46,22 @@ class TestAdaptiveVerticalCover:
         assert height == vertical_cover_instance.h_win
 
     @pytest.mark.unit
+    def test_calculate_position_distance_zero_typical_sun(
+        self, vertical_cover_instance
+    ):
+        """distance=0 at 45° elev/gamma=0 → fully closed at the glass plane."""
+        vertical_cover_instance.distance = 0.0
+        assert vertical_cover_instance.calculate_position() == pytest.approx(0.0)
+        assert vertical_cover_instance.calculate_percentage() == 0
+
+    @pytest.mark.unit
+    def test_calculate_position_distance_zero_high_sun(self, vertical_cover_instance):
+        """distance=0 stays at 0 even when sun is steep — no NaN/inf."""
+        vertical_cover_instance.distance = 0.0
+        vertical_cover_instance.sol_elev = 89.0
+        assert vertical_cover_instance.calculate_position() == pytest.approx(0.0)
+
+    @pytest.mark.unit
     def test_calculate_percentage_standard(self, vertical_cover_instance):
         """Test percentage conversion."""
         percentage = vertical_cover_instance.calculate_percentage()

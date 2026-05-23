@@ -102,7 +102,7 @@ CONF_HEIGHT_WIN = "window_height"  # window height, metres (0.1-50.0)
 CONF_WINDOW_WIDTH = "window_width"  # window width, metres (0.1-50.0)
 CONF_WINDOW_DEPTH = "window_depth"  # window recess depth, metres (0.0-5.0)
 CONF_SILL_HEIGHT = "sill_height"  # sill height above floor, metres (0.0-50.0)
-CONF_DISTANCE = "distance_shaded_area"  # blind→shaded distance, m (0.1-50.0)
+CONF_DISTANCE = "distance_shaded_area"  # blind→shaded distance, m (0.0-50.0)
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 CONF_ENTITIES = "group"  # list of HA cover entity_ids controlled
@@ -718,7 +718,7 @@ _RANGE_MIN_TILT = (0, 100)  # CONF_MIN_TILT, percent
 _RANGE_AZIMUTH = (0, 359)  # CONF_AZIMUTH, degrees
 _RANGE_FOV = (0, 180)  # CONF_FOV_LEFT / CONF_FOV_RIGHT, degrees
 _RANGE_ELEVATION = (0, 90)  # min/max elevation, degrees
-_RANGE_DISTANCE = (0.1, 50.0)  # CONF_DISTANCE, metres
+_RANGE_DISTANCE = (0.0, 50.0)  # CONF_DISTANCE, metres
 
 # Blind spot.
 # Asymmetric LEFT vs RIGHT bounds are a historical quirk; preserved for compat.

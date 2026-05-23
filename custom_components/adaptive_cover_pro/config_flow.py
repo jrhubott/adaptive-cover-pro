@@ -270,7 +270,13 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             ),
             vol.Required(
                 CONF_DISTANCE, default=length_default(0.5, hass)
-            ): length_selector(hass, min_m=0.1, max_m=50, metric_step=0.1),
+            ): length_selector(
+                # min_m must match _RANGE_DISTANCE[0] in const.py
+                hass,
+                min_m=0.0,
+                max_m=50,
+                metric_step=0.1,
+            ),
             vol.Optional(
                 CONF_ENABLE_BLIND_SPOT, default=False
             ): selector.BooleanSelector(),
