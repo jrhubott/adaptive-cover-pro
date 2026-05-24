@@ -11,9 +11,16 @@
       "create_new": {
         "title": "Créer un nouveau store",
         "data": {
-          "name": "Nom",
-          "mode": "Type de store"
-        }
+          "name": "Nom (optionnel)",
+          "attach_to_device": "Attacher les entités d'aide à l'appareil du store",
+          "cover_entity": "Entité de protection"
+        },
+        "data_description": {
+          "attach_to_device": "Lorsqu'activé, les capteurs et interrupteurs de l'intégration apparaissent sous l'appareil du store dans HA. Lorsque désactivé, ils se trouvent sur un appareil virtuel autonome.",
+          "cover_entity": "L'entité de protection HA que cette instance contrôlera. Choisissez le store qui sert une fenêtre ; créez une instance distincte pour chaque orientation différente.",
+          "name": "Laissez vide pour dériver automatiquement du nom d'appareil du store, ou du nom convivial de l'entité avec un préfixe « Adaptive »."
+        },
+        "description": "Choisissez l'entité de protection que vous voulez qu'Adaptive Cover Pro gère. Le type de store est détecté à partir de la classe d'appareil de l'entité ; pour les classes ambiguës (ex. `blind`), nous vous le demanderons à l'écran suivant. Les entités d'aide de l'intégration (capteurs, interrupteurs, boutons) se rattachent à l'appareil du store par défaut — décochez la case pour les garder sur un appareil Adaptive Cover Pro autonome à la place.\n\n[En savoir plus]({learn_more})"
       },
       "cover_entities": {
         "title": "Stores et appareil",
@@ -468,11 +475,35 @@
           "transparent_blind": "Activez quand le matériau du store est transparent ou translucide. En été avec des occupants présents, un store transparent se fermera quand même complètement pour réduire les apports de chaleur, alors qu'un store opaque suivrait le suivi anti-éblouissement.",
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire)."
         }
+      },
+      "disambiguate_cover_type": {
+        "data": {
+          "cover_type": "Type de store"
+        },
+        "description": "La classe d'appareil du store (`blind`) pourrait être soit un store enroulable soit un store vénitien. Choisissez celui qui correspond à votre matériel afin que le bon moteur de calcul soit utilisé.",
+        "title": "Quel type de store est-ce ?"
+      },
+      "window_basics": {
+        "data": {
+          "azimuth": "Azimut de la fenêtre",
+          "distance_shaded_area": "Portée maximale de la lumière solaire dans la pièce",
+          "length_awning": "Longueur d'extension de la store banne",
+          "window_height": "Hauteur de la fenêtre"
+        },
+        "data_description": {
+          "azimuth": "Orientation de la fenêtre (0=N, 90=E, 180=S, 270=O). Utilisez une application de boussole ou vérifiez où le soleil se trouve à midi.",
+          "distance_shaded_area": "À quelle distance dans la pièce vous voulez empêcher la lumière solaire directe de pénétrer.",
+          "length_awning": "À quelle distance la store banne s'étend lorsqu'elle est complètement ouverte.",
+          "window_height": "Hauteur du haut en bas du verre."
+        },
+        "description": "Trois mesures rapides pour qu'Adaptive Cover Pro puisse faire la géométrie. Le reste peut être affiné plus tard à partir des options de l'intégration.",
+        "title": "Paramètres de base de la fenêtre"
       }
     },
     "abort": {
       "user_cancelled": "Action annulée par l'utilisateur",
-      "source_not_found": "Le store source n'existe plus."
+      "source_not_found": "Le store source n'existe plus.",
+      "unsupported_cover_device_class": "La classe de ce store n'est pas supportée par Adaptive Cover Pro (les portes de garage, portails, amortisseurs et stores similaires ne sont pas pris en charge). Choisissez un store de type fenêtre à la place."
     }
   },
   "options": {
@@ -1122,6 +1153,14 @@
       "options": {
         "return_to_default": "Retourner à la position par défaut",
         "hold_position": "Maintenir la position actuelle"
+      }
+    },
+    "cover_type": {
+      "options": {
+        "cover_awning": "Store banne",
+        "cover_blind": "Store enroulable / store",
+        "cover_tilt": "Inclinaison uniquement",
+        "cover_venetian": "Store vénitien (à lamelles)"
       }
     }
   },

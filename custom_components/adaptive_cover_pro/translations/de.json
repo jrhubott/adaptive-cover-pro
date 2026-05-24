@@ -11,9 +11,16 @@
       "create_new": {
         "title": "Neue Beschattung erstellen",
         "data": {
-          "name": "Name",
-          "mode": "Art der Jalousie"
-        }
+          "name": "Name (optional)",
+          "attach_to_device": "Helper-Entities an das Gerät der Beschattung anhängen",
+          "cover_entity": "Beschattungs-Entity"
+        },
+        "data_description": {
+          "attach_to_device": "Wenn aktiviert, erscheinen die Sensoren und Schalter der Integration unter dem Gerät der Beschattung in HA. Wenn deaktiviert, befinden sie sich auf einem eigenständigen virtuellen Gerät.",
+          "cover_entity": "Die HA-Beschattungs-Entity, die diese Instanz steuert. Wählen Sie die Beschattung, die ein Fenster bedient; erstellen Sie eine separate Instanz für jede unterschiedliche Ausrichtung.",
+          "name": "Lassen Sie das Feld leer, um den Namen automatisch vom Gerät der Beschattung oder vom benutzerdefinierten Namen der Entity mit dem Präfix 'Adaptive' abzuleiten."
+        },
+        "description": "Wählen Sie die Beschattungs-Entity, die Adaptive Cover Pro verwalten soll. Der Beschattungstyp wird anhand der Geräteclass der Entity erkannt; bei mehrdeutigen Classes (z. B. `blind`) werden Sie im nächsten Bildschirm aufgefordert. Die Helper-Entities der Integration (Sensoren, Schalter, Tasten) werden standardmäßig an das Gerät der Beschattung angehängt — deaktivieren Sie das Kontrollkästchen, um sie stattdessen auf einem eigenständigen Adaptive Cover Pro-Gerät zu halten.\n\n[Weitere Informationen]({learn_more})"
       },
       "cover_entities": {
         "title": "Beschattungen & Gerät",
@@ -468,11 +475,35 @@
           "transparent_blind": "Aktivieren Sie, wenn das Blindmaterial sheer oder durchsichtig ist. Im Sommer mit Anwesenden wird sich eine transparente Jalousie immer noch vollständig schließen, um die Wärmezunahme zu reduzieren, während eine undurchsichtige Jalousie stattdessen der Blendungskontrolle-Verfolgung folgen würde.",
           "winter_close_insulation": "Wenn aktiviert, schließt sich die Beschattung vollständig (0 %), während der Winter, wenn die Sonne nicht direkt auf das Fenster trifft, um Wärmeverluste nach innen zu verringern. Hat keine Auswirkung, wenn die Sonne auf dem Fenster ist (die Beschattung öffnet sich, um Solarwärme zu erfassen)."
         }
+      },
+      "disambiguate_cover_type": {
+        "data": {
+          "cover_type": "Beschattungstyp"
+        },
+        "description": "Die Geräteclass der Beschattung (`blind`) könnte entweder ein Rollladen oder eine Lamellenjalousie sein. Wählen Sie denjenigen aus, der zu Ihrer Hardware passt, damit die richtige Berechnungs-Engine verwendet wird.",
+        "title": "Welche Art von Beschattung ist dies?"
+      },
+      "window_basics": {
+        "data": {
+          "azimuth": "Fenster-Azimut",
+          "distance_shaded_area": "Maximale Eindringtiefe des Sonnenlichts in den Raum",
+          "length_awning": "Ausfahrlänge der Markise",
+          "window_height": "Fensterhöhe"
+        },
+        "data_description": {
+          "azimuth": "Kompassrichtung des Fensters (0=N, 90=O, 180=S, 270=W). Nutzen Sie eine Kompass-App oder überprüfen Sie, wo die Sonne mittags steht.",
+          "distance_shaded_area": "Wie weit in den Raum Sie verhindern möchten, dass direktes Sonnenlicht eindringt.",
+          "length_awning": "Wie weit sich die Markise bei vollständiger Öffnung erstreckt.",
+          "window_height": "Höhe des Fensters von oben nach unten."
+        },
+        "description": "Drei schnelle Messungen, damit Adaptive Cover Pro die Geometrie berechnen kann. Der Rest kann später über die Optionen der Integration angepasst werden.",
+        "title": "Fenster-Grundlagen"
       }
     },
     "abort": {
       "user_cancelled": "Aktion vom Benutzer abgebrochen",
-      "source_not_found": "Die Quellbeschattung existiert nicht mehr."
+      "source_not_found": "Die Quellbeschattung existiert nicht mehr.",
+      "unsupported_cover_device_class": "Die Geräteclass dieser Beschattung wird von Adaptive Cover Pro nicht unterstützt (Garagentore, Tore, Dämpfer und ähnliche Beschattungen sind außerhalb des Geltungsbereichs). Wählen Sie stattdessen eine fensterähnliche Beschattung."
     }
   },
   "options": {
@@ -1122,6 +1153,14 @@
       "options": {
         "return_to_default": "Standardposition zurückkehren",
         "hold_position": "Aktuelle Position halten"
+      }
+    },
+    "cover_type": {
+      "options": {
+        "cover_awning": "Markise",
+        "cover_blind": "Rollladen / Rollo",
+        "cover_tilt": "Nur Neigung",
+        "cover_venetian": "Lamellenjalousie"
       }
     }
   },

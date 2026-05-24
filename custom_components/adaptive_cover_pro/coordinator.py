@@ -201,7 +201,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         self.logger = ConfigContextAdapter(_LOGGER)
         self.logger.set_config_name(self.config_entry.data.get("name"))
-        self._cover_type = self.config_entry.data.get("sensor_type")
+        self._cover_type = self.config_entry.data.get("cover_type")
         self._policy: CoverTypePolicy = get_policy(self._cover_type)
         self._climate_mode = self.config_entry.options.get(CONF_CLIMATE_MODE, False)
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)

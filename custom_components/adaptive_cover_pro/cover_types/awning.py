@@ -79,6 +79,11 @@ class AwningPolicy(CoverTypePolicy):
     # subclass override.
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS_OPEN_BLOCKS_SUN,)
     supports_return_to_default_switch = True
+    # Awnings ask for extension length on the creation Screen 2 instead of
+    # window height.
+    creation_primary_length_key: ClassVar[str] = "length_awning"
+    creation_primary_length_bounds: ClassVar[tuple[float, float]] = (0.3, 6.0)
+    creation_primary_length_default: ClassVar[float] = 2.1
 
     def wiki_anchor(self) -> str:
         """Horizontal-awning geometry page."""

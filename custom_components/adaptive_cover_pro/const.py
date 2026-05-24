@@ -73,12 +73,13 @@ CONF_BLUEPRINT = "blueprint"
 # Identifies which cover type a config entry models and which HA device, if
 # any, the entities should be linked to.
 
-CONF_SENSOR_TYPE = "sensor_type"  # one of SensorType.* below
+CONF_COVER_TYPE = "cover_type"  # one of SensorType.* below
+CONF_SENSOR_TYPE = CONF_COVER_TYPE  # deprecated alias, removed next minor release
 CONF_DEVICE_ID = "linked_device_id"  # HA device_id to link this instance to
 
 
 class SensorType:
-    """Cover-type identifiers stored in ``config_entry.data[CONF_SENSOR_TYPE]``.
+    """Cover-type identifiers stored in ``config_entry.data[CONF_COVER_TYPE]``.
 
     These values drive which ``CoverTypePolicy`` (under ``cover_types/``) is
     instantiated, which config-flow geometry step is shown, and which calc-engine
@@ -97,7 +98,7 @@ class SensorType:
 # Window-frame dimensions and sun-tracking field-of-view. Consumed by
 # `engine/sun_geometry.py` and the vertical-blind calc path.
 
-CONF_AZIMUTH = "set_azimuth"  # window azimuth, degrees 0-359 (south=180)
+CONF_AZIMUTH = "azimuth"  # window azimuth, degrees 0-359 (south=180)
 CONF_HEIGHT_WIN = "window_height"  # window height, metres (0.1-50.0)
 CONF_WINDOW_WIDTH = "window_width"  # window width, metres (0.1-50.0)
 CONF_WINDOW_DEPTH = "window_depth"  # window recess depth, metres (0.0-5.0)
@@ -105,7 +106,8 @@ CONF_SILL_HEIGHT = "sill_height"  # sill height above floor, metres (0.0-50.0)
 CONF_DISTANCE = "distance_shaded_area"  # blind→shaded distance, m (0.0-50.0)
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
-CONF_ENTITIES = "group"  # list of HA cover entity_ids controlled
+CONF_COVERS = "covers"  # list of HA cover entity_ids controlled
+CONF_ENTITIES = CONF_COVERS  # deprecated alias, removed next minor release
 CONF_ENABLE_PROXY_COVER = "enable_proxy_cover"  # opt-in proxy cover platform
 DEFAULT_ENABLE_PROXY_COVER = False
 TRIGGER_PROXY_POSITION = "proxy_managed"
@@ -147,10 +149,12 @@ DEFAULT_MIN_TILT = 0  # default: no lower floor
 
 CONF_MAX_POSITION = "max_position"  # upper clamp on commanded position (1-100)
 CONF_MIN_POSITION = "min_position"  # lower clamp on commanded position (0-99)
-# If True, max_position is only enforced during active sun tracking.
-CONF_ENABLE_MAX_POSITION = "enable_max_position"
-# If True, min_position is only enforced during active sun tracking.
-CONF_ENABLE_MIN_POSITION = "enable_min_position"
+# If True, min_position / max_position are only enforced during active sun tracking.
+# Replaces the v3 pair (CONF_ENABLE_MIN_POSITION + CONF_ENABLE_MAX_POSITION).
+CONF_APPLY_LIMITS_TRACKING_ONLY = "apply_limits_during_tracking_only"
+# Deprecated aliases — kept for one minor release; both point at the merged key.
+CONF_ENABLE_MAX_POSITION = CONF_APPLY_LIMITS_TRACKING_ONLY
+CONF_ENABLE_MIN_POSITION = CONF_APPLY_LIMITS_TRACKING_ONLY
 # Fallback position when no override applies, % (range 0-100).
 CONF_DEFAULT_HEIGHT = "default_percentage"
 # Effective default position when no `default_percentage` is configured.

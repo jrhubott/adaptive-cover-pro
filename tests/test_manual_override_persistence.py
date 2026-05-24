@@ -49,7 +49,7 @@ def _make_sensor(manager):
     coordinator.manager = manager
 
     config_entry = MagicMock()
-    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
     config_entry.options = {}
 
     hass = MagicMock()

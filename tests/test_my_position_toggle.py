@@ -28,7 +28,7 @@ async def test_my_position_button_not_created_when_toggle_default_false():
     config_entry.entry_id = "test_entry"
     # No CONF_ENABLE_MY_POSITION_ENTITIES key — gate must default to False
     config_entry.options = {CONF_ENTITIES: ["cover.foo"]}
-    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
 
     coordinator = MagicMock()
     hass.data = {DOMAIN: {"test_entry": coordinator}}
@@ -62,7 +62,7 @@ async def test_my_position_number_not_created_when_toggle_default_false():
     config_entry.entry_id = "test_entry"
     # No CONF_ENABLE_MY_POSITION_ENTITIES key — gate must default to False
     config_entry.options = {CONF_ENTITIES: ["cover.foo"]}
-    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
 
     coordinator = MagicMock()
     hass.data = {DOMAIN: {"test_entry": coordinator}}
@@ -104,7 +104,7 @@ async def test_both_entities_created_when_toggle_true():
         CONF_ENTITIES: ["cover.foo"],
         CONF_ENABLE_MY_POSITION_ENTITIES: True,
     }
-    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
 
     coordinator = MagicMock()
     hass.data = {DOMAIN: {"test_entry": coordinator}}

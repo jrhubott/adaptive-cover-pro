@@ -9,10 +9,40 @@
         }
       },
       "create_new": {
-        "title": "Create New Cover",
+        "title": "Add a Cover",
+        "description": "Pick the cover entity you want Adaptive Cover Pro to manage. The cover type is detected from the entity's device class; for ambiguous classes (e.g. `blind`) we'll ask on the next screen. The integration's helper entities (sensors, switches, buttons) attach to the cover's device by default — uncheck the box to keep them on a standalone Adaptive Cover Pro device instead.\n\n[Learn more]({learn_more})",
         "data": {
-          "name": "Name",
-          "mode": "Type of blind"
+          "cover_entity": "Cover entity",
+          "name": "Name (optional)",
+          "attach_to_device": "Attach helper entities to the cover's device"
+        },
+        "data_description": {
+          "cover_entity": "The HA cover entity this instance will control. Pick the cover that serves one window; create a separate instance for each different orientation.",
+          "name": "Leave blank to auto-derive from the cover's device name, or the entity's friendly name with an 'Adaptive' prefix.",
+          "attach_to_device": "When on, the integration's sensors and switches appear under the cover's device in HA. When off, they live on a standalone virtual device."
+        }
+      },
+      "disambiguate_cover_type": {
+        "title": "What kind of cover is this?",
+        "description": "The cover's device class (`blind`) could be either a roller blind or a venetian blind. Pick the one that matches your hardware so the right calculation engine is used.",
+        "data": {
+          "cover_type": "Cover type"
+        }
+      },
+      "window_basics": {
+        "title": "Window Basics",
+        "description": "Three quick measurements so Adaptive Cover Pro can do the geometry. The rest can be tuned later from the integration's options.",
+        "data": {
+          "azimuth": "Window azimuth",
+          "window_height": "Window height",
+          "length_awning": "Awning extension length",
+          "distance_shaded_area": "Maximum sunlight reach into the room"
+        },
+        "data_description": {
+          "azimuth": "Compass bearing of the window (0=N, 90=E, 180=S, 270=W). Use a compass app or check where the sun is at noon.",
+          "window_height": "Top-to-bottom height of the glass.",
+          "length_awning": "How far the awning extends when fully open.",
+          "distance_shaded_area": "How far into the room you want direct sunlight prevented from reaching."
         }
       },
       "cover_entities": {
@@ -472,7 +502,8 @@
     },
     "abort": {
       "user_cancelled": "Action cancelled by user",
-      "source_not_found": "The source cover no longer exists."
+      "source_not_found": "The source cover no longer exists.",
+      "unsupported_cover_device_class": "This cover's device class isn't supported by Adaptive Cover Pro (garage doors, gates, dampers, and similar covers are out of scope). Pick a window-style cover instead."
     }
   },
   "options": {
@@ -1070,6 +1101,14 @@
         "cover_awning": "Horizontal blind",
         "cover_tilt": "Tilted blind",
         "cover_venetian": "Venetian blind (dual-axis)"
+      }
+    },
+    "cover_type": {
+      "options": {
+        "cover_blind": "Roller blind / shade",
+        "cover_venetian": "Venetian (slatted) blind",
+        "cover_awning": "Awning",
+        "cover_tilt": "Tilt-only"
       }
     },
     "tilt_mode": {

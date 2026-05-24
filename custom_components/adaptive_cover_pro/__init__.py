@@ -260,6 +260,7 @@ def _migrate_cm_to_m(value: float | int | None) -> float | None:
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
+    new_data = dict(entry.data)
     new_version = entry.version
 
     # v1 → v2: convert window/glare-zone dimensions from cm to metres.
@@ -289,8 +290,33 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_options.setdefault(CONF_ENABLE_MY_POSITION_ENTITIES, True)
         new_version = 3
 
+    # v3 → v4: rename a set of option keys to clearer wire-format names and
+    # collapse the two enable_{min,max}_position booleans into a single key.
+    # Also moves the cover-type identifier in entry.data from "sensor_type"
+    # to "cover_type" and drops the redundant "mode" mirror in options.
+    if new_version < 4:
+        _OPTION_RENAMES = {"group": "covers", "set_azimuth": "azimuth"}
+        for old, new in _OPTION_RENAMES.items():
+            if old in new_options:
+                new_options.setdefault(new, new_options[old])
+                del new_options[old]
+
+        if "enable_min_position" in new_options or "enable_max_position" in new_options:
+            min_val = new_options.pop("enable_min_position", False)
+            max_val = new_options.pop("enable_max_position", False)
+            new_options.setdefault(
+                "apply_limits_during_tracking_only", bool(min_val or max_val)
+            )
+
+        new_options.pop("mode", None)
+
+        if "sensor_type" in new_data and "cover_type" not in new_data:
+            new_data["cover_type"] = new_data.pop("sensor_type")
+
+        new_version = 4
+
     hass.config_entries.async_update_entry(
-        entry, options=new_options, version=new_version
+        entry, data=new_data, options=new_options, version=new_version
     )
     return True
 
