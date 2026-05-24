@@ -21,6 +21,7 @@ import voluptuous as vol
 from custom_components.adaptive_cover_pro.config_flow import (
     ConfigFlowHandler,
     LIGHT_CLOUD_SCHEMA,
+    POSITION_SCHEMA,
     SYNC_CATEGORIES,
     TEMPERATURE_CLIMATE_SCHEMA,
     WEATHER_OVERRIDE_SCHEMA,
@@ -29,6 +30,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     _CUSTOM_POSITION_OPTIONAL_KEYS,
     _extract_shared_options,
     _LIGHT_CLOUD_OPTIONAL_KEYS,
+    _POSITION_OPTIONAL_KEYS,
     _SYNC_UI_CATEGORIES,
     _TEMPERATURE_CLIMATE_OPTIONAL_KEYS,
     _WEATHER_OVERRIDE_OPTIONAL_KEYS,
@@ -583,6 +585,7 @@ class TestSelectorDomains:
 
 
 _SCHEMA_OPTIONAL_KEY_PAIRS = [
+    ("POSITION", POSITION_SCHEMA, _POSITION_OPTIONAL_KEYS),
     ("WEATHER_OVERRIDE", WEATHER_OVERRIDE_SCHEMA, _WEATHER_OVERRIDE_OPTIONAL_KEYS),
     ("LIGHT_CLOUD", LIGHT_CLOUD_SCHEMA, _LIGHT_CLOUD_OPTIONAL_KEYS),
     (
