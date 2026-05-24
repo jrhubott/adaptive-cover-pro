@@ -202,6 +202,7 @@ def compute_effective_default(
     *,
     sunset_time: dt.datetime | None = None,
     sunrise_time: dt.datetime | None = None,
+    after_start_time: bool = False,
 ) -> tuple[int, bool]:
     """Return the effective default cover position based on astronomical sunset/sunrise.
 
@@ -227,6 +228,12 @@ def compute_effective_default(
         sunrise_time: Optional override for the sunrise boundary (naive-local datetime).
             When provided, replaces the astral-computed sunrise. ``sunrise_off`` still
             applies on top. Falls back to astral when ``None``.
+        after_start_time: When ``True``, the user's operational window has already
+            started. In that case the ``before_sunrise`` branch is suppressed so that
+            a start_time earlier than astronomical sunrise (a valid config on short
+            winter days) does not incorrectly apply the sunset/night position.
+            Defaults to ``False`` for backward-compatibility with call sites that do
+            not have start_time context.
 
     Returns:
         A ``(effective_default, is_sunset_active)`` tuple where
@@ -250,7 +257,10 @@ def compute_effective_default(
 
     after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))
     before_sunrise = now_naive < (sunrise + timedelta(minutes=sunrise_off))
-    is_sunset_active = after_sunset or before_sunrise
+    # Suppress before_sunrise when the operational window has already started:
+    # start_time < astronomical_sunrise is a valid user config (e.g. start at 08:00,
+    # sunrise at 08:15 in winter). Once the user's window opens, nighttime rules end.
+    is_sunset_active = after_sunset or (before_sunrise and not after_start_time)
 
     effective = int(sunset_pos) if is_sunset_active else int(h_def)
     return effective, is_sunset_active
