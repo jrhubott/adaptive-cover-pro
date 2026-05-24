@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta, UTC
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+import custom_components.adaptive_cover_pro.sun as _sun_mod
 
 from custom_components.adaptive_cover_pro.forecast import (
     EVENT_FOV_ENTER,
@@ -571,3 +574,155 @@ async def test_async_recompute_forecast_handles_missing_data(monkeypatch):
 
     await coord_mod.AdaptiveDataUpdateCoordinator.async_recompute_forecast(coord)
     assert coord._position_forecast is sentinel
+
+
+# ---------------------------------------------------------------------------
+# Module-level SunData cache (issue #441 — Part 1)
+#
+# These tests pin the cross-entry shared-cache contract introduced in #441.
+# Two SunData instances at the same (timezone, lat, lon, elevation) must
+# share a single pd.date_range+astral walk per day; instances at different
+# keys must remain independent; the cache self-invalidates at midnight via
+# date.today() in the key; and concurrent fills are guarded by a lock.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_sun_day_cache():
+    """Wipe module-level SunData cache before/after each test."""
+    _sun_mod._DAY_CACHE.clear()
+    yield
+    _sun_mod._DAY_CACHE.clear()
+
+
+def _make_real_sun_data(
+    *, latitude: float = 37.0, longitude: float = -122.0, elevation: float = 0.0
+):
+    """Build a real SunData instance backed by a mock astral Location."""
+    from custom_components.adaptive_cover_pro.sun import SunData
+
+    location = MagicMock()
+    location.latitude = latitude
+    location.longitude = longitude
+    location.solar_azimuth = MagicMock(return_value=180.0)
+    location.solar_elevation = MagicMock(return_value=45.0)
+    return SunData(timezone="UTC", location=location, elevation=elevation)
+
+
+class TestSunDataModuleCache:
+    """Module-level day-keyed cache shares astral computation across SunData instances."""
+
+    def test_two_instances_same_location_share_one_fill(self):
+        """Two SunData at the same key trigger pd.date_range at most once."""
+        import pandas as pd
+
+        sd1 = _make_real_sun_data()
+        sd2 = _make_real_sun_data()
+
+        with patch(
+            "custom_components.adaptive_cover_pro.sun.pd.date_range",
+            wraps=pd.date_range,
+        ) as spy:
+            _ = sd1.times
+            _ = sd2.times
+
+        assert spy.call_count <= 1, (
+            f"pd.date_range called {spy.call_count}× for two instances at the same "
+            "location — expected ≤ 1 (module cache should prevent the second fill)"
+        )
+
+    def test_instances_different_elevation_get_independent_fills(self):
+        """Two SunData at different elevations each trigger their own fill."""
+        import pandas as pd
+
+        sd1 = _make_real_sun_data(elevation=0.0)
+        sd2 = _make_real_sun_data(elevation=500.0)
+
+        with patch(
+            "custom_components.adaptive_cover_pro.sun.pd.date_range",
+            wraps=pd.date_range,
+        ) as spy:
+            _ = sd1.times
+            _ = sd2.times
+
+        assert spy.call_count == 2, (
+            f"pd.date_range called {spy.call_count}× — expected exactly 2 for "
+            "instances at different elevations (independent cache entries)"
+        )
+
+    def test_cache_invalidates_at_midnight(self):
+        """After a simulated day-rollover the cache fills again on the new date."""
+        import pandas as pd
+
+        sd = _make_real_sun_data()
+
+        with patch(
+            "custom_components.adaptive_cover_pro.sun.pd.date_range",
+            wraps=pd.date_range,
+        ) as spy:
+            _ = sd.times  # fills the cache for today
+
+            # Simulate midnight: clear the module cache as a new day would.
+            _sun_mod._DAY_CACHE.clear()
+            # Reset instance fields so _ensure_today doesn't short-circuit.
+            sd._cache_day = None
+            sd._cache_times = None
+            sd._cache_azi = None
+            sd._cache_ele = None
+
+            _ = sd.times  # must fill again
+
+        assert (
+            spy.call_count == 2
+        ), f"pd.date_range called {spy.call_count}× — expected 2 (one per day)"
+
+    def test_cache_key_helper_exists_and_is_deterministic(self):
+        """_cache_key is importable and returns the same tuple on repeated calls."""
+        from custom_components.adaptive_cover_pro.sun import _cache_key
+
+        location = MagicMock()
+        location.latitude = 37.0
+        location.longitude = -122.0
+
+        key1 = _cache_key("UTC", location, 0.0)
+        key2 = _cache_key("UTC", location, 0.0)
+
+        assert key1 == key2
+        # Key is a tuple with at least 5 elements: tz, lat, lon, elevation, date.
+        assert isinstance(key1, tuple)
+        assert len(key1) >= 5
+
+    def test_concurrent_fills_produce_single_result(self):
+        """Two threads racing on the same key trigger pd.date_range at most once."""
+        import pandas as pd
+
+        # We need two SunData with the same key but separate instances so
+        # neither has a warm instance cache.
+        sd1 = _make_real_sun_data()
+        sd2 = _make_real_sun_data()
+
+        results: list[int] = []
+        barrier = threading.Barrier(2)
+
+        with patch(
+            "custom_components.adaptive_cover_pro.sun.pd.date_range",
+            wraps=pd.date_range,
+        ) as spy:
+
+            def _fill(sd):
+                barrier.wait()  # both threads start at the same moment
+                _ = sd.times
+                results.append(1)
+
+            t1 = threading.Thread(target=_fill, args=(sd1,))
+            t2 = threading.Thread(target=_fill, args=(sd2,))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        assert len(results) == 2  # both threads completed
+        assert spy.call_count <= 1, (
+            f"pd.date_range called {spy.call_count}× under concurrent access — "
+            "expected ≤ 1 (lock should prevent duplicate fills)"
+        )
