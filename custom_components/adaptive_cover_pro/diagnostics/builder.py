@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..const import ControlStatus
-from ..enums import ClimateStrategy, ControlMethod
+from ..const import ClimateStrategy, ControlMethod
 
 # ---------------------------------------------------------------------------
 # Context dataclass – the coordinator populates this before calling build()

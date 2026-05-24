@@ -15,7 +15,7 @@ from ...engine.covers.vertical import (
     AdaptiveVerticalCover,
     glare_zone_effective_distance,
 )
-from ...enums import ControlMethod
+from ...const import ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import apply_snapshot_limits, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot

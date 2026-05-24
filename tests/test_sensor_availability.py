@@ -38,7 +38,7 @@ from unittest.mock import MagicMock
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, SensorType
+from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
 from custom_components.adaptive_cover_pro.entity_base import AdaptiveCoverBaseEntity
 
 # Force all entity modules to import so Python registers their classes as
@@ -96,7 +96,7 @@ def _make_hass_no_states():
 def _make_config_entry():
     entry = MagicMock()
     entry.entry_id = "test_avail_entry"
-    entry.data = {"name": "Test", CONF_SENSOR_TYPE: SensorType.BLIND}
+    entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
     entry.options = {}
     return entry
 

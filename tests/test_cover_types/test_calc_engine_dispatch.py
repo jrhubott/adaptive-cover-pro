@@ -30,7 +30,7 @@ from custom_components.adaptive_cover_pro.engine.covers import (
     AdaptiveTiltCover,
     AdaptiveVerticalCover,
 )
-from custom_components.adaptive_cover_pro.enums import TiltMode
+from custom_components.adaptive_cover_pro.const import TiltMode
 
 
 def _common_cover_config() -> CoverConfig:

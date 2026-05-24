@@ -48,7 +48,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SUNSET_POS,
     CONF_WINDOW_DEPTH,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ TILT_OPTIONS: dict[str, Any] = {
 
 def make_config_entry(
     name: str = "Test Cover",
-    cover_type: str = SensorType.BLIND,
+    cover_type: str = CoverType.BLIND,
     options: dict[str, Any] | None = None,
     entry_id: str = "test_entry_01",
 ) -> MagicMock:
@@ -120,9 +120,9 @@ def make_config_entry(
     entry.domain = DOMAIN
     entry.data = {"name": name, CONF_SENSOR_TYPE: cover_type}
     entry.options = options if options is not None else dict(VERTICAL_OPTIONS)
-    if cover_type == SensorType.AWNING:
+    if cover_type == CoverType.AWNING:
         entry.options = options if options is not None else dict(HORIZONTAL_OPTIONS)
-    elif cover_type == SensorType.TILT:
+    elif cover_type == CoverType.TILT:
         entry.options = options if options is not None else dict(TILT_OPTIONS)
     entry.title = name
     return entry
@@ -131,7 +131,7 @@ def make_config_entry(
 async def setup_integration(
     hass: HomeAssistant,
     name: str = "Test Cover",
-    cover_type: str = SensorType.BLIND,
+    cover_type: str = CoverType.BLIND,
     options: dict[str, Any] | None = None,
     entry_id: str = "test_entry_01",
 ) -> ConfigEntry:
@@ -141,9 +141,9 @@ async def setup_integration(
     Returns the ConfigEntry.
     """
     opts = options if options is not None else dict(VERTICAL_OPTIONS)
-    if cover_type == SensorType.AWNING and options is None:
+    if cover_type == CoverType.AWNING and options is None:
         opts = dict(HORIZONTAL_OPTIONS)
-    elif cover_type == SensorType.TILT and options is None:
+    elif cover_type == CoverType.TILT and options is None:
         opts = dict(TILT_OPTIONS)
 
     hass.states.async_set(

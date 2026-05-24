@@ -11,7 +11,7 @@ from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_ID, CONF_SENSOR_TYPE, DOMAIN
-from .enums import CoverType
+from .const import CoverType
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry

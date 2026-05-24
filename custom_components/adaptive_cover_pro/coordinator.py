@@ -7,7 +7,12 @@ import datetime as dt
 import dataclasses
 import json
 import pathlib
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .forecast import Forecast
 
 import pytz
 from homeassistant.config_entries import ConfigEntry
@@ -15,6 +20,7 @@ from homeassistant.core import (
     Event,
     HomeAssistant,
     State,
+    callback,
 )
 
 # EventStateChangedData was added in Home Assistant 2024.4+
@@ -109,7 +115,7 @@ from .pipeline.handlers import (
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
 from .pipeline.types import CustomPositionSensorState
-from .enums import ControlMethod
+from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
 from .state.snapshot import CoverStateSnapshot, SunSnapshot
@@ -154,12 +160,19 @@ class StateChangedData:
 
 @dataclass
 class AdaptiveCoverData:
-    """AdaptiveCoverData class."""
+    """AdaptiveCoverData class.
+
+    Mutates each coordinator update cycle. ``position_forecast`` is the
+    one field that is NOT computed inside ``_async_update_data`` — it's
+    refreshed on a slow background cadence by ``async_recompute_forecast``
+    via the executor (see issue #437), and rolls forward between cycles.
+    """
 
     climate_mode_toggle: bool
     states: dict
     attributes: dict
     diagnostics: dict | None = None
+    position_forecast: Forecast | None = None
 
 
 def _winner_is_satisfied_custom_floor(
@@ -411,6 +424,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # we track the timestamp ourselves so diagnostics can report it.
         self._last_update_success_time: dt.datetime | None = None
 
+        # Issue #437: forecast cache + scheduling.  The forecast is heavy
+        # (~289-call astral walk × 49-sample window) and must NOT run inline
+        # on the event loop every state-write.  ``_position_forecast`` is
+        # the live cache that ``_async_update_data`` promotes into
+        # ``AdaptiveCoverData.position_forecast`` each cycle; the sensor
+        # reads exclusively from there.  ``_forecast_unsub`` holds the
+        # ``async_track_time_interval`` cancel handle.
+        self._position_forecast: Forecast | None = None
+        self._forecast_unsub: Callable[[], None] | None = None
+
     # --- Property delegates for CoverCommandService state ---
 
     @property
@@ -496,6 +519,93 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._start_startup_grace_period()
         # Start cover command service reconciliation timer
         self._cmd_svc.start()
+        # Schedule the position-forecast background recompute.  We do this
+        # AFTER super().async_config_entry_first_refresh() so the initial
+        # forecast lands on a populated AdaptiveCoverData.  The compute itself
+        # runs as a background task so setup never waits for it (issue #437).
+        self._start_forecast_scheduler()
+
+    def _start_forecast_scheduler(self) -> None:
+        """Kick off the initial forecast compute + periodic recompute timer.
+
+        Idempotent: calling this twice (e.g. on reload) reuses the existing
+        unsubscribe handle if already set.  Imported lazily so the import
+        graph at coordinator init time stays minimal.
+        """
+        from homeassistant.helpers.event import async_track_time_change
+
+        from .const import FORECAST_RECOMPUTE_INTERVAL_MIN
+
+        if self._forecast_unsub is not None:
+            return  # already scheduled
+
+        # Fire the initial compute as a background task so the rest of
+        # entry setup doesn't wait on the executor.  Use the config-entry
+        # task helper (not hass.async_create_background_task): it ties the
+        # task to the entry, which keeps a hard reference until the
+        # coroutine completes.  hass.async_create_background_task can race
+        # with the GC when called from a sync timer callback — tasks were
+        # being destroyed before reaching their first await, surfacing as
+        # "Task was destroyed but it is pending!" in the HA log.
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self.async_recompute_forecast(),
+            name="acp_initial_forecast",
+        )
+
+        # Periodic recompute aligned to wall-clock 5-minute boundaries
+        # (:00, :05, :10, …) so every entry's forecast attribute updates
+        # in lockstep — the dashboard sees one synchronised refresh
+        # instead of staggered per-entry ticks.  The forecast is a
+        # 12-hour outlook, so refreshing more often than every few
+        # minutes adds no information.  The timer fires a background
+        # task each tick to keep the event loop free.
+        #
+        # ``@callback`` is required: without it HA classifies the plain
+        # ``def`` as ``HassJobType.Executor`` and dispatches the tick to
+        # a worker thread, where ``loop.create_task(..., eager_start=True)``
+        # raises ``RuntimeError: loop is not the running loop`` and the
+        # recompute silently never happens.
+        @callback
+        def _tick(_now: dt.datetime) -> None:
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self.async_recompute_forecast(),
+                name="acp_periodic_forecast",
+            )
+
+        self._forecast_unsub = async_track_time_change(
+            self.hass,
+            _tick,
+            minute=range(0, 60, FORECAST_RECOMPUTE_INTERVAL_MIN),
+            second=0,
+        )
+
+    async def async_recompute_forecast(self) -> None:
+        """Refresh ``coordinator.data.position_forecast`` via an executor job.
+
+        Issue #437: the underlying :func:`build_forecast_for_coord` walks
+        289 solar samples and constructs a fresh ``AdaptiveGeneralCover``
+        per tick — running this on the event loop blocks for hundreds of
+        milliseconds on ARM hosts and trips HA's bootstrap-stage-2
+        timeout. Offloading to the executor keeps the loop responsive.
+
+        Failures are swallowed: the sensor degrades gracefully to ``None``
+        when the forecast cannot be computed (same contract the pre-fix
+        ``_safe_forecast`` wrapper offered).
+        """
+        from .forecast import build_forecast_for_coord
+
+        try:
+            forecast = await self.hass.async_add_executor_job(
+                build_forecast_for_coord, self
+            )
+        except Exception:  # noqa: BLE001 — defensive degradation
+            forecast = None
+        self._position_forecast = forecast
+        if self.data is not None:
+            self.data = replace(self.data, position_forecast=forecast)
+            self.async_update_listeners()
 
     async def async_check_entity_state_change(
         self, event: Event[EventStateChangedData]
@@ -875,6 +985,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_off=sunrise_off,
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
+            after_start_time=self.after_start_time,
         )
         self.logger.debug(
             "Effective default: %s (sunset_active=%s, h_def=%s, sunset_pos=%s)",
@@ -1140,6 +1251,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "blind_spot": options.get(CONF_BLIND_SPOT_ELEVATION),
             },
             diagnostics=diagnostics,
+            # Carry the last computed forecast forward across cycles; the
+            # forecast recompute timer is the only writer (issue #437).
+            position_forecast=self._position_forecast,
         )
 
     def _compute_mean_cover_position(self) -> int | None:
@@ -2298,6 +2412,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_off=sunrise_off,
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
+            after_start_time=self.after_start_time,
         )
 
     async def _check_sunset_window_transition(self) -> None:
@@ -2345,6 +2460,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Stop cover command service reconciliation timer
         self._cmd_svc.stop()
+
+        # Cancel the periodic forecast-recompute timer (issue #437).
+        if self._forecast_unsub is not None:
+            self._forecast_unsub()
+            self._forecast_unsub = None
 
         self.logger.debug("Coordinator shutdown complete")
 

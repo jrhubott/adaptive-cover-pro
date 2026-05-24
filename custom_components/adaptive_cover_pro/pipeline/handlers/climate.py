@@ -20,7 +20,7 @@ from ...const import (
 from ...cover_types import TiltPolicy, get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
 from ...engine.covers import AdaptiveTiltCover
-from ...enums import ClimateStrategy, ControlMethod
+from ...const import ClimateStrategy, ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,

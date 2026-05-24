@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime
 
 from custom_components.adaptive_cover_pro.cover_types import get_policy
-from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+from custom_components.adaptive_cover_pro.const import ClimateStrategy
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateCoverState,

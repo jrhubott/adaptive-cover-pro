@@ -305,7 +305,7 @@ class VenetianPolicy(CoverTypePolicy):
         branch even when the sun is below the horizon (issue #33), so
         direct_sun_valid is the authoritative signal.
         """
-        from ...enums import ControlMethod
+        from ...const import ControlMethod
 
         if result.control_method != ControlMethod.SOLAR:
             return True

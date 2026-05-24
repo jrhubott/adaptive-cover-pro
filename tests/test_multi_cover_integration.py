@@ -29,7 +29,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry as _Moc
 from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE as _CST,
     DOMAIN as _DOM,
-    SensorType as _ST,
+    CoverType as _ST,
 )
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator as _Coord,

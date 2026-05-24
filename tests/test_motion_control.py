@@ -508,7 +508,7 @@ async def test_async_check_motion_state_change_off_other_sensors_active():
 def test_determine_control_status_motion_timeout():
     """Test control status returns MOTION_TIMEOUT when active."""
     from custom_components.adaptive_cover_pro.const import ControlStatus
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from custom_components.adaptive_cover_pro.diagnostics.builder import (
         DiagnosticContext,
         DiagnosticsBuilder,
@@ -541,7 +541,7 @@ def test_determine_control_status_motion_timeout():
 def test_determine_control_status_force_override_precedence():
     """Test force override takes precedence over motion timeout."""
     from custom_components.adaptive_cover_pro.const import ControlStatus
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from custom_components.adaptive_cover_pro.diagnostics.builder import (
         DiagnosticContext,
         DiagnosticsBuilder,
@@ -577,7 +577,7 @@ def test_state_property_motion_timeout_uses_pipeline_result():
     The pipeline MotionTimeoutHandler computes position with min/max limits applied.
     The state property must not bypass the pipeline result with raw default_state.
     """
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
@@ -611,7 +611,7 @@ def test_state_property_force_override_precedence():
     from custom_components.adaptive_cover_pro.const import (
         CONF_FORCE_OVERRIDE_POSITION,
     )
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )

@@ -23,7 +23,7 @@ from custom_components.adaptive_cover_pro.cover_types.venetian import (
 from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
     VenetianPolicy,
 )
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.managers.grace_period import (
     GracePeriodManager,
 )

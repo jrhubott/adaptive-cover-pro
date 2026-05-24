@@ -21,25 +21,22 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
-from .const import CONF_DEFAULT_HEIGHT, DEFAULT_DEFAULT_HEIGHT
+from .const import (
+    CONF_DEFAULT_HEIGHT,
+    DEFAULT_DEFAULT_HEIGHT,
+    EVENT_FOV_ENTER,
+    EVENT_FOV_EXIT,
+    EVENT_SUNRISE,
+    EVENT_SUNSET,
+    FORECAST_STEP_MINUTES,
+    FORECAST_WINDOW_HOURS,
+    SUN_DATA_STEP_SECONDS,
+)
 
 if TYPE_CHECKING:
     from .coordinator import AdaptiveDataUpdateCoordinator
     from .engine.covers.base import AdaptiveGeneralCover
     from .sun import SunData
-
-
-# Forecast sampling cadence. 15-minute steps over a 12-hour window is dense
-# enough for the dashboard strip to read smoothly and cheap enough that the
-# computation finishes in well under a second on a Pi 4.
-FORECAST_STEP_MINUTES = 15
-FORECAST_WINDOW_HOURS = 12
-
-# Event kinds emitted on the forecast.
-EVENT_SUNRISE = "sunrise"
-EVENT_SUNSET = "sunset"
-EVENT_FOV_ENTER = "fov_enter"
-EVENT_FOV_EXIT = "fov_exit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +107,9 @@ def build_forecast(
         step_minutes=step_minutes,
         window_hours=window_hours,
     )
-    events = _build_events(sun_data=sun_data, samples=samples)
+    events = _build_events(
+        sun_data=sun_data, cover_factory=cover_factory, samples=samples
+    )
     return Forecast(samples=tuple(samples), events=tuple(events))
 
 
@@ -157,9 +156,19 @@ def _build_samples(
 
 
 def _build_events(
-    *, sun_data: SunData, samples: list[ForecastSample]
+    *,
+    sun_data: SunData,
+    cover_factory: Callable[[float, float], AdaptiveGeneralCover],
+    samples: list[ForecastSample],
 ) -> list[ForecastEvent]:
-    """Sunrise/sunset come from SunData; FOV transitions come from the samples."""
+    """Sunrise/sunset come from SunData; FOV transitions come from the samples.
+
+    FOV-enter/exit timestamps are refined from the coarse forecast cadence
+    (default 15 min) down to SunData's native 5-min grid by scanning the
+    grid points between the two samples that bracket the handler change —
+    otherwise the marker can lag the visible cover-position drop by up to
+    one full sample step.
+    """
     events: list[ForecastEvent] = []
     sunrise = sun_data.sunrise()
     sunset = sun_data.sunset()
@@ -168,47 +177,81 @@ def _build_events(
     if sunset is not None:
         events.append(ForecastEvent(t=sunset, kind=EVENT_SUNSET, label="Sunset"))
 
-    # FOV transitions: walk samples, emit an event when handler switches.
-    prev_handler: str | None = None
+    prev_sample: ForecastSample | None = None
     for sample in samples:
-        if prev_handler is None:
-            prev_handler = sample.handler
+        if prev_sample is None:
+            prev_sample = sample
             continue
-        if sample.handler == prev_handler:
+        if sample.handler == prev_sample.handler:
+            prev_sample = sample
             continue
-        if sample.handler == "solar":
+        target_valid = sample.handler == "solar"
+        crossing = _refine_fov_crossing(
+            sun_data=sun_data,
+            cover_factory=cover_factory,
+            t_before=prev_sample.t,
+            t_after=sample.t,
+            target_valid=target_valid,
+        )
+        t_event = crossing if crossing is not None else sample.t
+        if target_valid:
             events.append(
-                ForecastEvent(t=sample.t, kind=EVENT_FOV_ENTER, label="Sun enters FOV")
+                ForecastEvent(t=t_event, kind=EVENT_FOV_ENTER, label="Sun enters FOV")
             )
         else:
             events.append(
-                ForecastEvent(t=sample.t, kind=EVENT_FOV_EXIT, label="Sun exits FOV")
+                ForecastEvent(t=t_event, kind=EVENT_FOV_EXIT, label="Sun exits FOV")
             )
-        prev_handler = sample.handler
+        prev_sample = sample
 
     return sorted(events, key=lambda e: e.t)
 
 
-def _nearest_index(times: list[datetime], target: datetime) -> int | None:
-    """Index of the time in *times* closest to *target* (linear scan, ~250 items).
+def _refine_fov_crossing(
+    *,
+    sun_data: SunData,
+    cover_factory: Callable[[float, float], AdaptiveGeneralCover],
+    t_before: datetime,
+    t_after: datetime,
+    target_valid: bool,
+) -> datetime | None:
+    """First grid time in [t_before, t_after] where direct_sun_valid matches target_valid.
 
-    Returns None when *times* is empty. The caller has already short-circuited
-    in that case, but the guard keeps this helper safe in isolation.
+    Used to refine FOV-enter/exit event timestamps from the 15-min sample
+    cadence down to SunData's native 5-min grid; returns None when no
+    match is found.
+    """
+    times = list(sun_data.times)
+    if not times:
+        return None
+    azis = sun_data.solar_azimuth
+    eles = sun_data.solar_elevation
+    start_idx = _nearest_index(times, t_before)
+    end_idx = _nearest_index(times, t_after)
+    if start_idx is None or end_idx is None:
+        return None
+    for i in range(start_idx, min(end_idx, len(times) - 1) + 1):
+        cover = cover_factory(float(azis[i]), float(eles[i]))
+        if bool(cover.direct_sun_valid) == target_valid:
+            return times[i]
+    return None
+
+
+def _nearest_index(
+    times: list[datetime], target: datetime, step_seconds: int = SUN_DATA_STEP_SECONDS
+) -> int | None:
+    """Index of the time in *times* closest to *target* (O(1) arithmetic lookup).
+
+    ``times`` is expected to be the fixed 5-minute grid from ``SunData.times``.
+    ``step_seconds`` is parameterised so this stays correct if the cadence changes.
+    Returns None when *times* is empty.
     """
     if not times:
         return None
-    # Pandas DatetimeIndex entries are timezone-aware; convert target to match.
-    target_tz = target.tzinfo
-    if target_tz is None and times[0].tzinfo is not None:
+    if target.tzinfo is None and times[0].tzinfo is not None:
         target = target.replace(tzinfo=times[0].tzinfo)
-    best_idx = 0
-    best_delta = abs((times[0] - target).total_seconds())
-    for i, ts in enumerate(times):
-        delta = abs((ts - target).total_seconds())
-        if delta < best_delta:
-            best_idx = i
-            best_delta = delta
-    return best_idx
+    delta = (target - times[0]).total_seconds()
+    return max(0, min(len(times) - 1, round(delta / step_seconds)))
 
 
 def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
@@ -217,6 +260,11 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
     Reads the coordinator's policy, sun provider, config service, and options
     to drive the pure helper. Kept thin so unit tests can exercise the pure
     function directly with stubs.
+
+    Executor-safe: always invoked from
+    :meth:`AdaptiveDataUpdateCoordinator.async_recompute_forecast` via
+    :func:`hass.async_add_executor_job` so the ~289-call astral walk × 49-step
+    sampling loop never blocks the event loop (issue #437).
     """
     from homeassistant.util import dt as dt_util
 

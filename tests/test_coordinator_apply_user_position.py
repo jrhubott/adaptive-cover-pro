@@ -42,7 +42,7 @@ def _pipeline_result_with_winner(
     handler_name: str, priority: int, position: int = 50
 ) -> PipelineResult:
     """Build a synthetic ``PipelineResult`` whose decision_trace flags ``handler_name`` as the matched winner."""
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
 
     return PipelineResult(
         position=position,

@@ -46,15 +46,15 @@ async def test_unique_ids_do_not_change_across_cover_types(
     Registers one entry per cover type and asserts no intra-entry collisions.
     Cross-entry collisions are intentional (same suffix, different entry_id prefix).
     """
-    from custom_components.adaptive_cover_pro.const import SensorType
+    from custom_components.adaptive_cover_pro.const import CoverType
     from tests.ha_helpers import HORIZONTAL_OPTIONS, TILT_OPTIONS
 
     registry = er.async_get(hass)
 
     for cover_type, opts in [
-        (SensorType.BLIND, dict(VERTICAL_OPTIONS)),
-        (SensorType.AWNING, dict(HORIZONTAL_OPTIONS)),
-        (SensorType.TILT, dict(TILT_OPTIONS)),
+        (CoverType.BLIND, dict(VERTICAL_OPTIONS)),
+        (CoverType.AWNING, dict(HORIZONTAL_OPTIONS)),
+        (CoverType.TILT, dict(TILT_OPTIONS)),
     ]:
         entry = await setup_integration(
             hass,

@@ -12,14 +12,12 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 
 
-def _make_config_entry(
-    options: dict | None = None, sensor_type: str = SensorType.BLIND
-):
+def _make_config_entry(options: dict | None = None, sensor_type: str = CoverType.BLIND):
     entry = MagicMock()
     entry.entry_id = "test_entry"
     entry.data = {"name": "Test", CONF_SENSOR_TYPE: sensor_type}
@@ -325,7 +323,7 @@ async def test_glare_zone_switches_created_when_configured(hass) -> None:
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Glare Switch Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Glare Switch Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=options,
         entry_id="glare_sw_01",
         title="Glare Switch Test",
@@ -360,7 +358,7 @@ async def test_climate_switches_created_when_climate_mode_with_entities(hass) ->
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Climate Switch Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Climate Switch Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=options,
         entry_id="climate_sw_01",
         title="Climate Switch Test",

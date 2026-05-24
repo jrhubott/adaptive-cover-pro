@@ -11,7 +11,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
     DEFAULT_ENABLE_PROXY_COVER,
-    SensorType,
+    CoverType,
 )
 
 
@@ -28,14 +28,14 @@ def _schema_defaults(schema: vol.Schema) -> dict[str, Any]:
 
 def test_cover_entity_schema_contains_enable_proxy_cover_field() -> None:
     """``_build_cover_entity_schema`` exposes the new toggle."""
-    schema = _build_cover_entity_schema(SensorType.BLIND)
+    schema = _build_cover_entity_schema(CoverType.BLIND)
     names = [str(k) for k in schema.schema]
     assert CONF_ENABLE_PROXY_COVER in names
 
 
 def test_proxy_cover_defaults_to_false() -> None:
     """The toggle defaults to the DEFAULT_ENABLE_PROXY_COVER value (False)."""
-    schema = _build_cover_entity_schema(SensorType.BLIND)
+    schema = _build_cover_entity_schema(CoverType.BLIND)
     defaults = _schema_defaults(schema)
     assert (
         defaults.get(CONF_ENABLE_PROXY_COVER) is DEFAULT_ENABLE_PROXY_COVER
@@ -44,6 +44,6 @@ def test_proxy_cover_defaults_to_false() -> None:
 
 def test_proxy_cover_schema_validates_boolean_round_trip() -> None:
     """User input of ``True`` round-trips through the schema."""
-    schema = _build_cover_entity_schema(SensorType.BLIND)
+    schema = _build_cover_entity_schema(CoverType.BLIND)
     out = schema({CONF_ENTITIES: [], CONF_ENABLE_PROXY_COVER: True})
     assert out[CONF_ENABLE_PROXY_COVER] is True

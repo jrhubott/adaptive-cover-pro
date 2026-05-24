@@ -25,7 +25,7 @@ import pytest
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult

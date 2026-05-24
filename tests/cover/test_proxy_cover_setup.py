@@ -11,7 +11,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
@@ -43,7 +43,7 @@ async def _setup_with_proxy(
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": name, CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id=entry_id,
         title=name,

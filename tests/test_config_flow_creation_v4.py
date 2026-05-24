@@ -23,7 +23,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_HEIGHT_WIN,
     CONF_LENGTH_AWNING,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 
 pytestmark = pytest.mark.integration
@@ -117,7 +117,7 @@ async def test_creation_shade_device_class_creates_blind_entry(
     assert result["type"] == "create_entry"
 
     entry = result["result"]
-    assert entry.data[CONF_COVER_TYPE] == SensorType.BLIND
+    assert entry.data[CONF_COVER_TYPE] == CoverType.BLIND
     assert entry.options[CONF_COVERS] == [entity_id]
     assert entry.options[CONF_AZIMUTH] == 180
     assert entry.options[CONF_HEIGHT_WIN] == 2.1
@@ -172,7 +172,7 @@ async def test_creation_blind_device_class_prompts_disambiguation(
     assert result["step_id"] == "disambiguate_cover_type"
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_COVER_TYPE: SensorType.VENETIAN}
+        result["flow_id"], {CONF_COVER_TYPE: CoverType.VENETIAN}
     )
     assert result["step_id"] == "window_basics"
 
@@ -401,10 +401,10 @@ def test_infer_cover_type_unambiguous_classes() -> None:
         infer_cover_type_from_device_class,
     )
 
-    assert infer_cover_type_from_device_class("awning") == SensorType.AWNING
-    assert infer_cover_type_from_device_class("shutter") == SensorType.BLIND
-    assert infer_cover_type_from_device_class("curtain") == SensorType.BLIND
-    assert infer_cover_type_from_device_class("shade") == SensorType.BLIND
+    assert infer_cover_type_from_device_class("awning") == CoverType.AWNING
+    assert infer_cover_type_from_device_class("shutter") == CoverType.BLIND
+    assert infer_cover_type_from_device_class("curtain") == CoverType.BLIND
+    assert infer_cover_type_from_device_class("shade") == CoverType.BLIND
 
 
 def test_infer_cover_type_ambiguous_blind_returns_none() -> None:

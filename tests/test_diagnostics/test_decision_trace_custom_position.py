@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, SensorType
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverDecisionTraceSensor
 
@@ -29,7 +29,7 @@ def _make_hass():
 def _make_config_entry():
     entry = MagicMock()
     entry.entry_id = "test_custom_pos_trace_entry"
-    entry.data = {"name": "Test", CONF_SENSOR_TYPE: SensorType.BLIND}
+    entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
     entry.options = {}
     return entry
 
@@ -175,7 +175,7 @@ def _make_sensor_with_options(options: dict, states: dict | None = None):
 
     entry = MagicMock()
     entry.entry_id = "snapshot_entry"
-    entry.data = {"name": "Test", CONF_SENSOR_TYPE: SensorType.BLIND}
+    entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
     entry.options = options
 
     from custom_components.adaptive_cover_pro.sensor import (

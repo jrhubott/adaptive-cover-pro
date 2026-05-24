@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import (
     HORIZONTAL_OPTIONS,
@@ -34,14 +34,14 @@ pytestmark = pytest.mark.integration
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "svc_01",
-    cover_type: str = SensorType.BLIND,
+    cover_type: str = CoverType.BLIND,
     options: dict | None = None,
     name: str = "SVC Cover",
 ) -> MockConfigEntry:
     opts = dict(VERTICAL_OPTIONS) if options is None else options
-    if cover_type == SensorType.AWNING and options is None:
+    if cover_type == CoverType.AWNING and options is None:
         opts = dict(HORIZONTAL_OPTIONS)
-    elif cover_type == SensorType.TILT and options is None:
+    elif cover_type == CoverType.TILT and options is None:
         opts = dict(TILT_OPTIONS)
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -176,7 +176,7 @@ async def test_export_config_horizontal_contains_awning_fields(
     entry = await _setup(
         hass,
         entry_id="svc_horiz_01",
-        cover_type=SensorType.AWNING,
+        cover_type=CoverType.AWNING,
         name="Awning Cover",
     )
 
@@ -196,7 +196,7 @@ async def test_export_config_tilt_contains_slat_fields(hass: HomeAssistant) -> N
     entry = await _setup(
         hass,
         entry_id="svc_tilt_01",
-        cover_type=SensorType.TILT,
+        cover_type=CoverType.TILT,
         name="Tilt Cover",
     )
 

@@ -12,7 +12,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
@@ -29,7 +29,7 @@ async def _setup_no_sources(hass) -> None:
     opts[CONF_ENABLE_PROXY_COVER] = True
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Empty Sources", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Empty Sources", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id="proxy_cov_empty",
         title="Empty Sources",
@@ -75,7 +75,7 @@ async def _setup_unavail_proxy(hass):
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Dead", CONF_SENSOR_TYPE: SensorType.TILT},
+        data={"name": "Dead", CONF_SENSOR_TYPE: CoverType.TILT},
         options=opts,
         entry_id="proxy_cov_unavail",
         title="Dead",
@@ -151,7 +151,7 @@ async def test_tilt_command_dropped_when_source_lacks_tilt_capability(hass) -> N
     )
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "No Tilt", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "No Tilt", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id="proxy_cov_no_tilt",
         title="No Tilt",
@@ -203,7 +203,7 @@ async def test_properties_when_source_state_object_missing(hass) -> None:
     )
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Transient", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Transient", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id="proxy_cov_missing",
         title="Transient",

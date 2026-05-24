@@ -20,7 +20,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     CONF_START_ENTITY,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
@@ -37,7 +37,7 @@ async def _setup_entry_capture_tracked(
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Track Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Track Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id=entry_id,
         title="Track Test",

@@ -19,7 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import (
     VERTICAL_OPTIONS,
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.integration
 
 async def _setup_entry(
     hass: HomeAssistant,
-    cover_type: str = SensorType.BLIND,
+    cover_type: str = CoverType.BLIND,
     options: dict | None = None,
     entry_id: str = "reg_test_01",
     name: str = "Test Cover",
@@ -66,7 +66,7 @@ async def _setup_entry(
 @pytest.mark.integration
 async def test_vertical_cover_creates_sensors(hass: HomeAssistant) -> None:
     """Vertical blind creates the expected standard + diagnostic sensors."""
-    entry = await _setup_entry(hass, SensorType.BLIND, entry_id="vert_sensors_01")
+    entry = await _setup_entry(hass, CoverType.BLIND, entry_id="vert_sensors_01")
     sensor_ids = get_entity_ids_for_entry(hass, entry, "sensor")
     # Minimum: Target Position, Start Sun, End Sun, Sun Position, Control Status,
     # Decision Trace, Last Skipped Action, Last Cover Action,
@@ -77,7 +77,7 @@ async def test_vertical_cover_creates_sensors(hass: HomeAssistant) -> None:
 @pytest.mark.integration
 async def test_vertical_cover_creates_switches(hass: HomeAssistant) -> None:
     """Vertical blind creates at least Manual Override and Automatic Control switches."""
-    entry = await _setup_entry(hass, SensorType.BLIND, entry_id="vert_switches_01")
+    entry = await _setup_entry(hass, CoverType.BLIND, entry_id="vert_switches_01")
     switch_ids = get_entity_ids_for_entry(hass, entry, "switch")
     assert len(switch_ids) >= 2, f"Expected >= 2 switches, got: {switch_ids}"
 
@@ -85,7 +85,7 @@ async def test_vertical_cover_creates_switches(hass: HomeAssistant) -> None:
 @pytest.mark.integration
 async def test_vertical_cover_creates_binary_sensors(hass: HomeAssistant) -> None:
     """Vertical blind creates Sun Infront, Manual Override, Position Mismatch binary sensors."""
-    entry = await _setup_entry(hass, SensorType.BLIND, entry_id="vert_bs_01")
+    entry = await _setup_entry(hass, CoverType.BLIND, entry_id="vert_bs_01")
     bs_ids = get_entity_ids_for_entry(hass, entry, "binary_sensor")
     assert len(bs_ids) >= 3, f"Expected >= 3 binary sensors, got: {bs_ids}"
 
@@ -96,7 +96,7 @@ async def test_horizontal_cover_creates_entities(hass: HomeAssistant) -> None:
     from tests.ha_helpers import HORIZONTAL_OPTIONS
 
     entry = await _setup_entry(
-        hass, SensorType.AWNING, options=dict(HORIZONTAL_OPTIONS), entry_id="horiz_01"
+        hass, CoverType.AWNING, options=dict(HORIZONTAL_OPTIONS), entry_id="horiz_01"
     )
     sensor_ids = get_entity_ids_for_entry(hass, entry, "sensor")
     assert len(sensor_ids) >= 11
@@ -108,7 +108,7 @@ async def test_tilt_cover_creates_entities(hass: HomeAssistant) -> None:
     from tests.ha_helpers import TILT_OPTIONS
 
     entry = await _setup_entry(
-        hass, SensorType.TILT, options=dict(TILT_OPTIONS), entry_id="tilt_01"
+        hass, CoverType.TILT, options=dict(TILT_OPTIONS), entry_id="tilt_01"
     )
     sensor_ids = get_entity_ids_for_entry(hass, entry, "sensor")
     assert len(sensor_ids) >= 11

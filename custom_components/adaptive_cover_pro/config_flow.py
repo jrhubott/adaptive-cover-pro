@@ -146,16 +146,16 @@ from .const import (
     MODE2_OPEN_HORIZONTAL_PERCENT,
     OPTION_RANGES,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 SENSOR_TYPE_MENU = [
-    SensorType.BLIND,
-    SensorType.AWNING,
-    SensorType.TILT,
-    SensorType.VENETIAN,
+    CoverType.BLIND,
+    CoverType.AWNING,
+    CoverType.TILT,
+    CoverType.VENETIAN,
 ]
 
 _STANDALONE_SENTINEL = "__standalone__"
@@ -392,6 +392,17 @@ POSITION_SCHEMA = vol.Schema(
         vol.Optional(CONF_INTERP, default=False): selector.BooleanSelector(),
     }
 )
+
+# Keys in POSITION_SCHEMA with default=vol.UNDEFINED that voluptuous omits when
+# cleared by the user. Both flow handlers must call optional_entities() with this
+# list before dict.update() — otherwise the prior value survives a clear
+# (issue #439; same class as #323).
+_POSITION_OPTIONAL_KEYS: list[str] = [
+    CONF_SUNSET_POS,
+    CONF_MY_POSITION_VALUE,
+    CONF_SUNSET_TIME_ENTITY,
+    CONF_SUNRISE_TIME_ENTITY,
+]
 
 AUTOMATION_SCHEMA = vol.Schema(
     {
@@ -1790,7 +1801,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # the cover stops blocking heat or glare. Surface this as a ⚠️ line so
     # users see it before saving the config.
     if (
-        sensor_type in (SensorType.TILT, SensorType.VENETIAN)
+        sensor_type in (CoverType.TILT, CoverType.VENETIAN)
         and TiltPolicy.is_mode2(config.get(CONF_TILT_MODE))
         and min_pos is not None
         and min_pos >= MODE2_OPEN_HORIZONTAL_PERCENT
@@ -1974,7 +1985,7 @@ def _build_window_basics_schema(
     """
     from .unit_system import length_default
 
-    policy = get_policy(cover_type) if cover_type else get_policy(SensorType.BLIND)
+    policy = get_policy(cover_type) if cover_type else get_policy(CoverType.BLIND)
     lo, hi = policy.creation_primary_length_bounds
     return vol.Schema(
         {
@@ -2567,7 +2578,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 # Type known or not, derive a sensible name now and refine the
                 # title prefix at create-entry time once self.type_blind is set.
                 derived, title_is_device = await _derive_name_for_new_entry(
-                    self.hass, cover_entity, inferred or SensorType.BLIND
+                    self.hass, cover_entity, inferred or CoverType.BLIND
                 )
                 self.config["name"] = derived
                 if title_is_device:
@@ -2611,20 +2622,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_SENSOR_TYPE, default=SensorType.BLIND
+                    CONF_SENSOR_TYPE, default=CoverType.BLIND
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
                             {
-                                "value": SensorType.BLIND,
+                                "value": CoverType.BLIND,
                                 "label": "Roller blind / shade",
                             },
                             {
-                                "value": SensorType.VENETIAN,
+                                "value": CoverType.VENETIAN,
                                 "label": "Venetian (slatted) blind",
                             },
-                            {"value": SensorType.AWNING, "label": "Awning"},
-                            {"value": SensorType.TILT, "label": "Tilt-only"},
+                            {"value": CoverType.AWNING, "label": "Awning"},
+                            {"value": CoverType.TILT, "label": "Tilt-only"},
                         ],
                         mode=selector.SelectSelectorMode.LIST,
                         translation_key="cover_type",
@@ -2794,6 +2805,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
         """Configure position settings."""
         if user_input is not None:
+            self.optional_entities(_POSITION_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             # Quick setup: skip optional screens, go straight to summary
             if self.setup_mode == "quick":
@@ -3312,8 +3324,8 @@ class OptionsFlowHandler(OptionsFlow):
         self._config_entry = config_entry
         self.current_config: dict = dict(config_entry.data)
         self.options = dict(config_entry.options)
-        self.sensor_type: SensorType = (  # type: ignore[misc]
-            self.current_config.get(CONF_SENSOR_TYPE) or SensorType.BLIND
+        self.sensor_type: CoverType = (  # type: ignore[misc]
+            self.current_config.get(CONF_SENSOR_TYPE) or CoverType.BLIND
         )
         self.selected_sync_targets: list[str] = []
         self.selected_sync_categories: list[str] = []
@@ -3492,6 +3504,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
         """Adjust position settings."""
         if user_input is not None:
+            self.optional_entities(_POSITION_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(

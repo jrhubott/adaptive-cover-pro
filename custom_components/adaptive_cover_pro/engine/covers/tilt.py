@@ -9,7 +9,7 @@ from numpy import cos, tan
 from numpy import radians as rad
 
 from ...config_types import TiltConfig
-from ...enums import TiltMode
+from ...const import TiltMode
 from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
 

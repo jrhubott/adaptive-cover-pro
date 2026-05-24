@@ -11,7 +11,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, TILT_OPTIONS, _patch_coordinator_refresh
 
@@ -23,7 +23,7 @@ async def _setup_proxy(
     hass,
     *,
     source: str = "cover.living_room",
-    cover_type: str = SensorType.BLIND,
+    cover_type: str = CoverType.BLIND,
     entry_id: str = "proxy_cmd",
     options: dict | None = None,
     state: str = "open",
@@ -37,7 +37,7 @@ async def _setup_proxy(
         if options is not None
         else (
             dict(TILT_OPTIONS)
-            if cover_type == SensorType.TILT
+            if cover_type == CoverType.TILT
             else dict(VERTICAL_OPTIONS)
         )
     )
@@ -138,7 +138,7 @@ async def test_set_cover_tilt_position_routes_through_apply_user_position(hass) 
     """Tilt-capable cover: ``cover.set_cover_tilt_position`` routes through the helper."""
     entry, coord, proxy_eid = await _setup_proxy(
         hass,
-        cover_type=SensorType.TILT,
+        cover_type=CoverType.TILT,
         source="cover.venetian",
         entry_id="proxy_cmd_tilt",
         attrs={

@@ -18,7 +18,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.migrations import (
     _LEGACY_BINARY_SENSOR_SUFFIXES,
@@ -36,7 +36,7 @@ def _make_entry(hass: HomeAssistant, options: dict | None = None) -> MockConfigE
     """Create and add a config entry to hass without running async_setup."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Migration Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Migration Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=dict(VERTICAL_OPTIONS) if options is None else options,
         entry_id=ENTRY_ID,
         title="Migration Test",

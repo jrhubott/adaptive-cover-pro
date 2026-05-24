@@ -9,17 +9,17 @@ from ..const import (
     CONF_HEIGHT_WIN,
     CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
-    SensorType,
+    CoverType,
 )
 
 INFERENCE_UNSUPPORTED = "_unsupported"
 
 
 def infer_cover_type_from_device_class(device_class: str | None) -> str | None:
-    """Map an HA cover device_class to one of the integration's SensorType values.
+    """Map an HA cover device_class to one of the integration's CoverType values.
 
     Returns:
-        - A SensorType value when the mapping is unambiguous.
+        - A CoverType value when the mapping is unambiguous.
         - ``INFERENCE_UNSUPPORTED`` for cover-domain classes the integration cannot drive
           (garage/gate/door/damper).
         - ``None`` when the class is missing or could reasonably map to multiple types
@@ -31,9 +31,9 @@ def infer_cover_type_from_device_class(device_class: str | None) -> str | None:
         return None
     match device_class:
         case "awning":
-            return SensorType.AWNING
+            return CoverType.AWNING
         case "shutter" | "curtain" | "shade":
-            return SensorType.BLIND
+            return CoverType.BLIND
         case "blind":
             return None
         case "garage" | "gate" | "door" | "damper":

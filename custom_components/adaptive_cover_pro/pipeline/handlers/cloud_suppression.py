@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...enums import ControlMethod
+from ...const import ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,

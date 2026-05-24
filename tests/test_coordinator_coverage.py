@@ -777,6 +777,8 @@ def test_compute_current_effective_default_passes_sunset_entity_time():
     cover_data.sun_data = MagicMock()
     coord.get_blind_data = MagicMock(return_value=cover_data)
     coord.hass = MagicMock()
+    coord._time_mgr = MagicMock()
+    coord._time_mgr.after_start_time = False
 
     fake_sunset_dt = dt.datetime(2026, 5, 22, 22, 0, 0)
     options = {
@@ -824,6 +826,8 @@ def test_compute_current_effective_default_passes_sunrise_entity_time():
     cover_data.sun_data = MagicMock()
     coord.get_blind_data = MagicMock(return_value=cover_data)
     coord.hass = MagicMock()
+    coord._time_mgr = MagicMock()
+    coord._time_mgr.after_start_time = False
 
     fake_sunrise_dt = dt.datetime(2026, 5, 22, 8, 0, 0)
     options = {

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .enums import TiltMode
+from .const import TiltMode
 
 
 @dataclass

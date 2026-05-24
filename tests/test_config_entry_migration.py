@@ -18,7 +18,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     CONF_WINDOW_WIDTH,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 
 pytestmark = pytest.mark.integration
@@ -29,7 +29,7 @@ def _make_entry(
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Migration Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Migration Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=options,
         version=version,
         title="Migration Test",
@@ -279,14 +279,14 @@ async def test_migrate_v3_to_v4_moves_sensor_type_to_cover_type(
     """The cover-type key moves from sensor_type → cover_type in entry.data."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Migration Test", "sensor_type": SensorType.AWNING},
+        data={"name": "Migration Test", "sensor_type": CoverType.AWNING},
         options={},
         version=3,
         title="Migration Test",
     )
     entry.add_to_hass(hass)
     await async_migrate_entry(hass, entry)
-    assert entry.data["cover_type"] == SensorType.AWNING
+    assert entry.data["cover_type"] == CoverType.AWNING
     assert "sensor_type" not in entry.data
     assert entry.version == 4
 

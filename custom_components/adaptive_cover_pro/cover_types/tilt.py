@@ -14,7 +14,7 @@ from ..const import (
     CONF_TILT_MODE,
 )
 from ..engine.covers import AdaptiveTiltCover
-from ..enums import TiltMode
+from ..const import TiltMode
 from ..unit_system import slat_default, slat_selector
 from .base import (
     CAP_HAS_SET_TILT_POSITION,

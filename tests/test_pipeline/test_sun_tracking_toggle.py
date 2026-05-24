@@ -110,7 +110,7 @@ def test_glare_zone_handler_present_regardless_of_sun_tracking():
 @pytest.mark.unit
 def test_sun_tracking_disabled_pipeline_falls_through_to_default():
     """With sun tracking off and sun in FOV, pipeline result comes from DefaultHandler."""
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from tests.test_pipeline.conftest import make_snapshot
 
     coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
@@ -134,7 +134,7 @@ def test_force_override_min_mode_with_sun_tracking_off_uses_default():
     a geometrically valid sun (solar=29), the min-mode floor of 80 must resolve
     to max(80, 100)=100, not max(80, 29)=80.
     """
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from tests.test_pipeline.conftest import make_snapshot
 
     coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})

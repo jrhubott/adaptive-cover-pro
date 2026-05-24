@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
@@ -579,7 +579,7 @@ class TestCustomPositionActiveSlot:
 
     def test_custom_position_active_slot_none_on_default_pipeline_result(self) -> None:
         """A non-custom PipelineResult has custom_position_active_slot defaulting to None."""
-        from custom_components.adaptive_cover_pro.enums import ControlMethod
+        from custom_components.adaptive_cover_pro.const import ControlMethod
         from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
         result = PipelineResult(
@@ -654,7 +654,7 @@ class TestCustomPositionMinimumMode:
 
     def test_both_fields_none_on_non_custom_result(self) -> None:
         """A plain PipelineResult has both custom_position_active_slot and custom_position_minimum_mode as None."""
-        from custom_components.adaptive_cover_pro.enums import ControlMethod
+        from custom_components.adaptive_cover_pro.const import ControlMethod
         from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
         result = PipelineResult(
@@ -723,7 +723,7 @@ class TestCustomPositionActiveSlotName:
 
     def test_field_defaults_to_none_on_plain_result(self) -> None:
         """A non-custom PipelineResult has custom_position_active_slot_name=None."""
-        from custom_components.adaptive_cover_pro.enums import ControlMethod
+        from custom_components.adaptive_cover_pro.const import ControlMethod
         from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
         result = PipelineResult(

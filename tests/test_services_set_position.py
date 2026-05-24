@@ -15,7 +15,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.pipeline.types import (
     CustomPositionSensorState,
@@ -43,7 +43,7 @@ async def _setup(
     opts = dict(VERTICAL_OPTIONS) if options is None else options
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": name, CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id=entry_id,
         title=name,
@@ -763,7 +763,7 @@ async def test_service_force_default_preempted_by_force_override() -> None:
         DecisionStep,
         PipelineResult,
     )
-    from custom_components.adaptive_cover_pro.enums import ControlMethod
+    from custom_components.adaptive_cover_pro.const import ControlMethod
     from custom_components.adaptive_cover_pro.services.set_position_service import (
         async_handle_set_position,
     )

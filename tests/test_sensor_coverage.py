@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, SensorType
+from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
 from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
     AdaptiveCoverControlStatusSensor,
@@ -15,7 +15,7 @@ from custom_components.adaptive_cover_pro.sensor import (
 )
 
 
-def _make_config_entry(sensor_type=SensorType.BLIND):
+def _make_config_entry(sensor_type=CoverType.BLIND):
     entry = MagicMock()
     entry.entry_id = "test_entry"
     entry.data = {"name": "Test", CONF_SENSOR_TYPE: sensor_type}
@@ -354,7 +354,7 @@ def test_last_action_sensor_extra_state_attributes_no_action():
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "sensor_type",
-    [SensorType.BLIND, SensorType.AWNING, SensorType.TILT, SensorType.VENETIAN],
+    [CoverType.BLIND, CoverType.AWNING, CoverType.TILT, CoverType.VENETIAN],
 )
 def test_control_status_attrs_expose_cover_type(sensor_type):
     """cover_type is exposed so the Lovelace card can branch on it."""

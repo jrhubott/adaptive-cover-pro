@@ -31,7 +31,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
@@ -139,7 +139,7 @@ async def test_unique_id_snapshot_max_config(hass: HomeAssistant) -> None:
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Snap", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Snap", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=MAX_OPTIONS,
         entry_id=ENTRY_ID,
         title="Snap",

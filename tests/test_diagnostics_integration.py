@@ -17,7 +17,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.diagnostics import (
     async_get_config_entry_diagnostics,
@@ -39,7 +39,7 @@ async def _setup(
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": name, CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},
         options=dict(VERTICAL_OPTIONS),
         entry_id=entry_id,
         title=name,
@@ -71,7 +71,7 @@ async def test_diagnostics_contains_config_data(hass: HomeAssistant) -> None:
     result = await async_get_config_entry_diagnostics(hass, entry)
     assert "config_data" in result
     assert result["config_data"].get("name") == "Diag Cover"
-    assert result["config_data"].get(CONF_SENSOR_TYPE) == SensorType.BLIND
+    assert result["config_data"].get(CONF_SENSOR_TYPE) == CoverType.BLIND
 
 
 @pytest.mark.integration
@@ -130,7 +130,7 @@ async def test_diagnostics_result_is_json_serializable(hass: HomeAssistant) -> N
         """Handle types HA's JSON encoder supports."""
         if hasattr(o, "items"):  # mappingproxy, etc.
             return dict(o)
-        if isinstance(o, (set, frozenset)):
+        if isinstance(o, set | frozenset):
             return list(o)
         raise TypeError(f"Not serializable: {type(o)}")
 
@@ -166,9 +166,9 @@ async def test_diagnostics_json_serializable_with_numpy_floats(
     def _ha_default(o):
         if hasattr(o, "items"):
             return dict(o)
-        if isinstance(o, (np.floating,)):
+        if isinstance(o, np.floating):
             return float(o)
-        if isinstance(o, (np.integer,)):
+        if isinstance(o, np.integer):
             return int(o)
         raise TypeError(f"Not serializable: {type(o)}")
 

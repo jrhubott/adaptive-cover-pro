@@ -21,6 +21,7 @@ import voluptuous as vol
 from custom_components.adaptive_cover_pro.config_flow import (
     ConfigFlowHandler,
     LIGHT_CLOUD_SCHEMA,
+    POSITION_SCHEMA,
     SYNC_CATEGORIES,
     TEMPERATURE_CLIMATE_SCHEMA,
     WEATHER_OVERRIDE_SCHEMA,
@@ -29,6 +30,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     _CUSTOM_POSITION_OPTIONAL_KEYS,
     _extract_shared_options,
     _LIGHT_CLOUD_OPTIONAL_KEYS,
+    _POSITION_OPTIONAL_KEYS,
     _SYNC_UI_CATEGORIES,
     _TEMPERATURE_CLIMATE_OPTIONAL_KEYS,
     _WEATHER_OVERRIDE_OPTIONAL_KEYS,
@@ -55,7 +57,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_STATE,
     CONF_WEATHER_WIND_SPEED_SENSOR,
-    SensorType,
+    CoverType,
 )
 
 # ---------------------------------------------------------------------------
@@ -322,21 +324,21 @@ class TestPositionMapInSummary:
     def test_position_map_section_present(self):
         """Position Map section removed; How It Decides now carries per-rule targets."""
         config = self._base_config()
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "**Position Map**" not in result
         assert "**How It Decides**" in result
 
     def test_position_map_shows_default(self):
         """Default-fallback line renders under How It Decides."""
         config = self._base_config(**{CONF_DEFAULT_HEIGHT: 60})
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "60%" in result
         assert "🌙 Default" in result
 
     def test_position_map_shows_sunset(self):
         """Sunset row renders under How It Decides when configured."""
         config = self._base_config(**{CONF_SUNSET_POS: 0})
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "After sunset" in result
 
     def test_position_map_shows_force_override(self):
@@ -347,7 +349,7 @@ class TestPositionMapInSummary:
                 CONF_FORCE_OVERRIDE_POSITION: 100,
             }
         )
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "Force override" in result
         assert "100%" in result
 
@@ -359,26 +361,26 @@ class TestPositionMapInSummary:
                 CONF_WEATHER_OVERRIDE_POSITION: 0,
             }
         )
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "Weather safety" in result
 
     def test_position_map_shows_sun_tracking(self):
         """Sun tracking row renders under How It Decides."""
         config = self._base_config()
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "Tracks the sun" in result
 
     def test_position_map_shows_clamp_range(self):
         """Position Limits section shows the clamp range when min/max differ from defaults."""
         config = self._base_config(**{CONF_MIN_POSITION: 10, CONF_MAX_POSITION: 90})
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "10%" in result
         assert "90%" in result
 
     def test_position_map_no_clamp_at_defaults(self):
         """Position Limits omits clamp qualifier when min=0 and max=100."""
         config = self._base_config(**{CONF_MIN_POSITION: 0, CONF_MAX_POSITION: 100})
-        result = _build_config_summary(config, SensorType.BLIND)
+        result = _build_config_summary(config, CoverType.BLIND)
         assert "clamped" not in result
 
 
@@ -583,6 +585,7 @@ class TestSelectorDomains:
 
 
 _SCHEMA_OPTIONAL_KEY_PAIRS = [
+    ("POSITION", POSITION_SCHEMA, _POSITION_OPTIONAL_KEYS),
     ("WEATHER_OVERRIDE", WEATHER_OVERRIDE_SCHEMA, _WEATHER_OVERRIDE_OPTIONAL_KEYS),
     ("LIGHT_CLOUD", LIGHT_CLOUD_SCHEMA, _LIGHT_CLOUD_OPTIONAL_KEYS),
     (

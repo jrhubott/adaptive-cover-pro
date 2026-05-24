@@ -289,11 +289,11 @@ def test_config_summary_under_50ms() -> None:
         CONF_MAX_POSITION,
         CONF_MIN_POSITION,
         CONF_SENSOR_TYPE,
-        SensorType,
+        CoverType,
     )
 
     config = {
-        CONF_SENSOR_TYPE: SensorType.BLIND,
+        CONF_SENSOR_TYPE: CoverType.BLIND,
         CONF_AZIMUTH: 180,
         CONF_FOV_LEFT: 45,
         CONF_FOV_RIGHT: 45,
@@ -315,7 +315,7 @@ def test_config_summary_under_50ms() -> None:
     N = 100
     start = time.perf_counter()
     for _ in range(N):
-        _build_config_summary(config, SensorType.BLIND)
+        _build_config_summary(config, CoverType.BLIND)
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     assert elapsed_ms < 50 * (

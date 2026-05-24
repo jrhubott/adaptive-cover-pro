@@ -17,7 +17,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     CONF_VENETIAN_MODE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
@@ -41,7 +41,7 @@ async def _setup(
     opts = dict(VERTICAL_OPTIONS) if options is None else options
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": name, CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id=entry_id,
         title=name,
@@ -254,7 +254,7 @@ async def test_coordinator_wires_venetian_mode_into_policy(hass: HomeAssistant) 
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Venetian Test", CONF_SENSOR_TYPE: SensorType.VENETIAN},
+        data={"name": "Venetian Test", CONF_SENSOR_TYPE: CoverType.VENETIAN},
         options=opts,
         entry_id="venetian_mode_01",
         title="Venetian Test",
@@ -297,7 +297,7 @@ async def test_coordinator_wires_post_settle_hold_into_sequencer(
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Venetian Hold Test", CONF_SENSOR_TYPE: SensorType.VENETIAN},
+        data={"name": "Venetian Hold Test", CONF_SENSOR_TYPE: CoverType.VENETIAN},
         options=opts,
         entry_id="venetian_hold_01",
         title="Venetian Hold Test",

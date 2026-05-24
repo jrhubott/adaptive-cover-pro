@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...enums import ControlMethod
+from ...const import ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import apply_minimum_mode, compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot

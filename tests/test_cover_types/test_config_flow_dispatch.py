@@ -196,7 +196,7 @@ class TestGetPolicyAcceptsBothForms:
         assert isinstance(get_policy("cover_blind"), BlindPolicy)
 
     def test_strenum_input(self):
-        from custom_components.adaptive_cover_pro.enums import CoverType
+        from custom_components.adaptive_cover_pro.const import CoverType
 
         assert isinstance(get_policy(CoverType.VENETIAN), VenetianPolicy)
 

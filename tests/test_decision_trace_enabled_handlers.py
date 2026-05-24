@@ -23,9 +23,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
-    SensorType,
+    CoverType,
 )
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverDecisionTraceSensor
 
 
@@ -38,7 +38,7 @@ def _make_hass():
 def _make_config_entry(options: dict | None = None):
     entry = MagicMock()
     entry.entry_id = "test_enabled_handlers_entry"
-    entry.data = {"name": "Test", CONF_SENSOR_TYPE: SensorType.BLIND}
+    entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
     entry.options = options or {}
     return entry
 

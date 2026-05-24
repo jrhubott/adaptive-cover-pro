@@ -20,9 +20,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
@@ -48,7 +48,7 @@ async def _setup_proxy(hass, *, source: str = "cover.living_room"):
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Proxy Pre", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Proxy Pre", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=base,
         entry_id="proxy_pre",
         title="Proxy Pre",

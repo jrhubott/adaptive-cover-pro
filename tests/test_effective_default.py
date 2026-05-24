@@ -507,3 +507,88 @@ class TestEntityOverride:
             )
         assert active is True
         assert result == 80
+
+
+# ---------------------------------------------------------------------------
+# Start-time suppression of before-sunrise branch (issue #438)
+# ---------------------------------------------------------------------------
+
+
+class TestStartTimeSuppressesBeforeSunrise:
+    """When after_start_time=True the before-sunrise branch must not activate sunset_pos.
+
+    Regression for issue #438: start_time < astronomical_sunrise caused
+    sunset_pos (0%) to be used instead of default_pos (100%) in the morning.
+    """
+
+    def test_before_sunrise_but_after_start_time_returns_h_def(self):
+        """Regression: at 08:05 UTC, before sunrise at 08:10, but after start_time=08:00."""
+        sun = _make_sun_data(sunrise_hour=8, sunrise_minute=10, sunset_hour=18)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 8, 5, 0)
+        with _freeze_now(now):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                after_start_time=True,
+            )
+        # Operational window is open → sunset_pos must NOT apply
+        assert result == 100
+        assert active is False
+
+    def test_before_sunrise_without_start_time_still_returns_sunset_pos(self):
+        """Existing behaviour preserved when after_start_time=False (default)."""
+        sun = _make_sun_data(sunrise_hour=8, sunrise_minute=10, sunset_hour=18)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 8, 5, 0)
+        with _freeze_now(now):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                after_start_time=False,
+            )
+        # No start_time context → classic before-sunrise behaviour
+        assert result == 0
+        assert active is True
+
+    def test_before_sunrise_after_start_time_with_positive_sunrise_offset(self):
+        """after_start_time=True also suppresses when sunrise_off extends the window."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=18)
+        today = dt.date.today()
+        # sunrise=06:00, offset=120 → window would close at 08:00 without start_time fix
+        now = dt.datetime(today.year, today.month, today.day, 7, 30, 0)
+        with _freeze_now(now):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=120,
+                after_start_time=True,
+            )
+        assert result == 100
+        assert active is False
+
+    def test_after_sunset_not_affected_by_after_start_time(self):
+        """after_start_time=True must NOT suppress the after-sunset branch."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=18)
+        today = dt.date.today()
+        now = dt.datetime(today.year, today.month, today.day, 19, 0, 0)  # after sunset
+        with _freeze_now(now):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                after_start_time=True,
+            )
+        # after sunset → sunset_pos still applies regardless of start_time
+        assert result == 0
+        assert active is True

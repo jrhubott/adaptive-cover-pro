@@ -69,7 +69,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WEATHER_TIMEOUT,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     DOMAIN,
-    SensorType,
+    CoverType,
     VENETIAN_MODE_POSITION_AND_TILT,
 )
 from custom_components.adaptive_cover_pro.services.options_service import (
@@ -96,7 +96,7 @@ pytestmark = pytest.mark.integration
 async def _setup(
     hass: HomeAssistant,
     entry_id: str = "opts_01",
-    cover_type: str = SensorType.BLIND,
+    cover_type: str = CoverType.BLIND,
     options: dict | None = None,
     name: str = "Options Cover",
 ) -> MockConfigEntry:
@@ -167,14 +167,14 @@ class TestValidateOptionsPatch:
             validate_options_patch(
                 {"window_width": 1.0},
                 {},
-                sensor_type=SensorType.AWNING,
+                sensor_type=CoverType.AWNING,
             )
 
     def test_geometry_correct_cover_type_accepted(self):
         result = validate_options_patch(
             {"window_height": 2.5},
             {},
-            sensor_type=SensorType.BLIND,
+            sensor_type=CoverType.BLIND,
         )
         assert result["window_height"] == 2.5
 
@@ -182,7 +182,7 @@ class TestValidateOptionsPatch:
         result = validate_options_patch(
             {"length_awning": 3.0},
             {},
-            sensor_type=SensorType.AWNING,
+            sensor_type=CoverType.AWNING,
         )
         assert result["length_awning"] == 3.0
 
@@ -190,7 +190,7 @@ class TestValidateOptionsPatch:
         result = validate_options_patch(
             {"slat_depth": 3.0},
             {},
-            sensor_type=SensorType.TILT,
+            sensor_type=CoverType.TILT,
         )
         assert result["slat_depth"] == 3.0
 
@@ -1162,7 +1162,7 @@ class TestSetGeometry:
     """Integration tests for set_geometry service."""
 
     async def test_updates_window_height_for_blind(self, hass: HomeAssistant):
-        await _setup(hass, entry_id="geo_01", cover_type=SensorType.BLIND)
+        await _setup(hass, entry_id="geo_01", cover_type=CoverType.BLIND)
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
             patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
@@ -1173,7 +1173,7 @@ class TestSetGeometry:
         assert new_opts["window_height"] == 3.0
 
     async def test_awning_field_rejected_for_blind_cover(self, hass: HomeAssistant):
-        await _setup(hass, entry_id="geo_err_01", cover_type=SensorType.BLIND)
+        await _setup(hass, entry_id="geo_err_01", cover_type=CoverType.BLIND)
         with pytest.raises((ServiceValidationError, Exception)):
             await _call(hass, "set_geometry", {"length_awning": 2.5})
 
@@ -1183,7 +1183,7 @@ class TestSetGeometry:
         await _setup(
             hass,
             entry_id="geo_awn_01",
-            cover_type=SensorType.AWNING,
+            cover_type=CoverType.AWNING,
             options=dict(HORIZONTAL_OPTIONS),
         )
         with (

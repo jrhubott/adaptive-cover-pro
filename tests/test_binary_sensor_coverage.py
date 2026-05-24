@@ -14,13 +14,11 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 
 
-def _make_config_entry(
-    options: dict | None = None, sensor_type: str = SensorType.BLIND
-):
+def _make_config_entry(options: dict | None = None, sensor_type: str = CoverType.BLIND):
     entry = MagicMock()
     entry.entry_id = "test_entry"
     entry.data = {"name": "Test", CONF_SENSOR_TYPE: sensor_type}
@@ -54,7 +52,7 @@ async def test_glare_active_binary_sensor_created_when_enabled(hass) -> None:
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Glare Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Glare Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=options,
         entry_id="glare_bs_01",
         title="Glare Test",
@@ -91,7 +89,7 @@ async def test_glare_active_binary_sensor_not_created_when_awning(hass) -> None:
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Awning Test", CONF_SENSOR_TYPE: SensorType.AWNING},
+        data={"name": "Awning Test", CONF_SENSOR_TYPE: CoverType.AWNING},
         options=options,
         entry_id="glare_bs_awning_01",
         title="Awning Test",

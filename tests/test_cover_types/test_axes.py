@@ -423,15 +423,15 @@ def test_no_hardcoded_caps_get_strings_in_production() -> None:
 # ---------------------------------------------------------------------------
 # Production code outside ``cover_types/`` must dispatch through
 # ``get_policy(sensor_type).<flag>`` rather than comparing the sensor type to
-# a ``SensorType.<NAME>`` enum or hardcoded ``"cover_<name>"`` string. Adding
+# a ``CoverType.<NAME>`` enum or hardcoded ``"cover_<name>"`` string. Adding
 # a fifth cover type must not require parallel edits at every call site that
 # branched on the previous four — the policy ClassVars exist for exactly that.
 
-# Compares ``something == SensorType.X`` or ``SensorType.X == something``
+# Compares ``something == CoverType.X`` or ``CoverType.X == something``
 # (and ``!=``). Variable-to-variable compares (``== current_type``) don't
-# match because the right-hand side must be a literal ``SensorType.<NAME>``.
+# match because the right-hand side must be a literal ``CoverType.<NAME>``.
 _BANNED_SENSORTYPE_COMPARE_RE = re.compile(
-    r"SensorType\.[A-Z_]+\s*(==|!=)|(==|!=)\s*SensorType\.[A-Z_]+"
+    r"CoverType\.[A-Z_]+\s*(==|!=)|(==|!=)\s*CoverType\.[A-Z_]+"
 )
 # Compares ``cover_type == "cover_blind"`` and friends — the pre-policy
 # string-comparison form that ``caps_get`` and ``get_policy`` replaced.
@@ -445,10 +445,10 @@ _TYPE_BOUNDARY = _PRODUCTION_ROOT / "cover_types"
 
 @pytest.mark.unit
 def test_no_cover_type_literals_outside_cover_types() -> None:
-    """Fail if any production module outside cover_types/ compares to a SensorType literal.
+    """Fail if any production module outside cover_types/ compares to a CoverType literal.
 
     The "fifth cover type" punch list grows every time code branches on
-    ``SensorType.X`` directly. Add a ClassVar on ``CoverTypePolicy`` (see
+    ``CoverType.X`` directly. Add a ClassVar on ``CoverTypePolicy`` (see
     ``exposes_dual_axis_sensor`` and ``custom_position_includes_tilt`` for
     worked examples) and call it through ``get_policy(sensor_type)``
     instead — see CODING_GUIDELINES.md "Cover Type Abstraction".
@@ -551,7 +551,7 @@ def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
 def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
     """The dual-axis Target Tilt sensor is enabled only for venetian today.
 
-    Pins the ClassVar that replaced the literal ``SensorType.VENETIAN ==``
+    Pins the ClassVar that replaced the literal ``CoverType.VENETIAN ==``
     lambda gate on ``sensor.py``. Adding a fifth cover type must add a row
     here, not edit sensor.py.
     """

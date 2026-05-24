@@ -173,6 +173,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
 
+    # Register cleanup for the periodic position-forecast recompute timer
+    # (scheduled in async_config_entry_first_refresh — see issue #437). Wrap
+    # in a closure because the unsub handle isn't created until after this
+    # registration runs.
+    def _cancel_forecast_timer() -> None:
+        if coordinator._forecast_unsub is not None:
+            coordinator._forecast_unsub()
+            coordinator._forecast_unsub = None
+
+    entry.async_on_unload(_cancel_forecast_timer)
+
     # Store coordinator before platform setup so sensor async_added_to_hass can
     # access it during RestoreEntity rehydration (must run before first_refresh).
     hass.data[DOMAIN][entry.entry_id] = coordinator

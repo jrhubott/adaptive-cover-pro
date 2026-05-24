@@ -16,7 +16,7 @@ from custom_components.adaptive_cover_pro.config_types import (
 from custom_components.adaptive_cover_pro.engine.covers.vertical import (
     AdaptiveVerticalCover,
 )
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.glare_zone import (
     GlareZoneHandler,
 )

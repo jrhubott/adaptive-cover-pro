@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 
 from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     DefaultHandler,
     ForceOverrideHandler,
@@ -208,7 +208,7 @@ class TestWeatherOverrideBypassDisabled:
         )
         result = self.handler.evaluate(snapshot)
         assert result is not None
-        from custom_components.adaptive_cover_pro.enums import ControlMethod
+        from custom_components.adaptive_cover_pro.const import ControlMethod
 
         assert result.control_method == ControlMethod.WEATHER
 

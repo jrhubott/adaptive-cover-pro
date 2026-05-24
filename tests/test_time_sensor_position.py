@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, SensorType
+from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
 from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverTimeSensorEntity
 
 
@@ -25,7 +25,7 @@ def _make_hass():
 def _make_config_entry():
     entry = MagicMock()
     entry.entry_id = "test_position_entry"
-    entry.data = {"name": "Test", CONF_SENSOR_TYPE: SensorType.BLIND}
+    entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
     entry.options = {}
     return entry
 

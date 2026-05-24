@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
     DefaultHandler,
@@ -36,7 +36,7 @@ class TestPipelineResultSkipCommand:
 
     def test_skip_command_defaults_false(self) -> None:
         """skip_command is False by default — no behavior change for existing results."""
-        from custom_components.adaptive_cover_pro.enums import ControlMethod
+        from custom_components.adaptive_cover_pro.const import ControlMethod
 
         r = PipelineResult(
             position=42, control_method=ControlMethod.DEFAULT, reason="x"
@@ -45,7 +45,7 @@ class TestPipelineResultSkipCommand:
 
     def test_skip_command_can_be_set_true(self) -> None:
         """skip_command=True can be constructed for hold-mode results."""
-        from custom_components.adaptive_cover_pro.enums import ControlMethod
+        from custom_components.adaptive_cover_pro.const import ControlMethod
 
         r = PipelineResult(
             position=42,

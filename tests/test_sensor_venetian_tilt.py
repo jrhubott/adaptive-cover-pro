@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, SensorType
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.sensor import _STANDARD_SPECS
 
@@ -52,22 +52,22 @@ class TestCoverTiltSpec:
     def test_enabled_for_venetian(self):
         """enabled_when must return True for cover_venetian config entries."""
         spec = _cover_tilt_spec()
-        assert spec.enabled_when(_make_entry(SensorType.VENETIAN)) is True
+        assert spec.enabled_when(_make_entry(CoverType.VENETIAN)) is True
 
     def test_not_enabled_for_blind(self):
         """enabled_when must return False for cover_blind."""
         spec = _cover_tilt_spec()
-        assert spec.enabled_when(_make_entry(SensorType.BLIND)) is False
+        assert spec.enabled_when(_make_entry(CoverType.BLIND)) is False
 
     def test_not_enabled_for_awning(self):
         """enabled_when must return False for cover_awning."""
         spec = _cover_tilt_spec()
-        assert spec.enabled_when(_make_entry(SensorType.AWNING)) is False
+        assert spec.enabled_when(_make_entry(CoverType.AWNING)) is False
 
     def test_not_enabled_for_tilt(self):
         """enabled_when must return False for cover_tilt."""
         spec = _cover_tilt_spec()
-        assert spec.enabled_when(_make_entry(SensorType.TILT)) is False
+        assert spec.enabled_when(_make_entry(CoverType.TILT)) is False
 
     def test_value_fn_returns_tilt_from_pipeline_result(self):
         """value_fn must return the tilt integer from the active pipeline result."""

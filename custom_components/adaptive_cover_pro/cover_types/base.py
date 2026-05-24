@@ -157,14 +157,14 @@ class CoverTypePolicy(ABC):
     # Whether the diagnostic surface exposes a dual-axis target sensor (the
     # "Target Tilt" sensor in ``sensor.py``). Only meaningful for cover types
     # that drive both position and tilt on a single HA entity — venetian today.
-    # Replaces the literal ``SensorType.VENETIAN ==`` lambda gate that used to
+    # Replaces the literal ``CoverType.VENETIAN ==`` lambda gate that used to
     # live on ``sensor.py:807``.
     exposes_dual_axis_sensor: ClassVar[bool] = False
 
     # Whether the custom-position config-flow UI surfaces per-slot tilt sliders
     # and the global default/sunset tilt sliders. Only meaningful for cover
     # types whose policy can act on tilt independently — venetian today.
-    # Replaces the ``is_venetian = sensor_type == SensorType.VENETIAN`` branch
+    # Replaces the ``is_venetian = sensor_type == CoverType.VENETIAN`` branch
     # in ``config_flow._build_custom_position_schema_dict``.
     custom_position_includes_tilt: ClassVar[bool] = False
 
@@ -466,7 +466,7 @@ class CoverTypePolicy(ABC):
         appending this fragment to the wiki base. Default is the generic
         cover-types overview — every concrete policy overrides to its own
         page. Replaces the legacy ``_GEOMETRY_WIKI_URL`` dict in
-        ``config_flow.py`` that mapped ``SensorType`` literals to URLs.
+        ``config_flow.py`` that mapped ``CoverType`` literals to URLs.
         """
         return "Cover-Types"
 

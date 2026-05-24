@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.cover_types.venetian import VenetianPolicy
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 

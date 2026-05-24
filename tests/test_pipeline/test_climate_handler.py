@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
     ClimateHandler,
@@ -393,7 +393,7 @@ class TestWinterInsulation:
         result = self.handler.evaluate(snap)
         assert result is not None
         # Insulation is off → strategy is LOW_LIGHT (not WINTER_INSULATION)
-        from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+        from custom_components.adaptive_cover_pro.const import ClimateStrategy
 
         assert result.climate_strategy != ClimateStrategy.WINTER_INSULATION
 
@@ -915,7 +915,7 @@ class TestIssue373PipelineGlareControl:
         invariant at the ``ClimateHandler.evaluate()`` boundary so a future
         snapshot/handler refactor can't silently regress it.
         """
-        from custom_components.adaptive_cover_pro.enums import ClimateStrategy
+        from custom_components.adaptive_cover_pro.const import ClimateStrategy
 
         cover = _make_tilt_mode2_cover(gamma_deg=90.0, valid=False, min_pos=50)
         snap = make_snapshot(

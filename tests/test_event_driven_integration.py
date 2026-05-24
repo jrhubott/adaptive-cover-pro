@@ -19,7 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
@@ -43,7 +43,7 @@ async def _setup(
     opts = dict(VERTICAL_OPTIONS) if options is None else options
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": name, CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id=entry_id,
         title=name,

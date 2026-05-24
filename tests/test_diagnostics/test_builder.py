@@ -23,7 +23,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUDY_POSITION,
     ControlStatus,
 )
-from custom_components.adaptive_cover_pro.enums import ClimateStrategy, ControlMethod
+from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlMethod
 
 # ---------------------------------------------------------------------------
 # Helpers

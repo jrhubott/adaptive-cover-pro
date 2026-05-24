@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ..enums import ClimateStrategy, ControlMethod
+from ..const import ClimateStrategy, ControlMethod
 
 if TYPE_CHECKING:
     from ..config_types import CoverConfig, GlareZonesConfig

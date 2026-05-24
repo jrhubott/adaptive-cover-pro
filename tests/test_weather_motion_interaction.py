@@ -15,7 +15,7 @@ Covers:
 from __future__ import annotations
 
 from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression import (
     CloudSuppressionHandler,
 )

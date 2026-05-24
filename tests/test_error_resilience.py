@@ -19,7 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_SENSOR_TYPE,
     DOMAIN,
-    SensorType,
+    CoverType,
 )
 from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
@@ -43,7 +43,7 @@ async def _setup(
     opts = dict(VERTICAL_OPTIONS) if options is None else options
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": name, CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": name, CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id=entry_id,
         title=name,
@@ -146,7 +146,7 @@ async def test_none_values_in_options_do_not_crash_setup(hass: HomeAssistant) ->
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "None Opts", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "None Opts", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id="er_none_opts_01",
         title="None Opts",
@@ -167,7 +167,7 @@ async def test_empty_entities_list_does_not_crash(hass: HomeAssistant) -> None:
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Empty Covers", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Empty Covers", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id="er_empty_covers_01",
         title="Empty Covers",
@@ -188,7 +188,7 @@ async def test_climate_mode_enabled_without_temp_entity(hass: HomeAssistant) -> 
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Climate No Temp", CONF_SENSOR_TYPE: SensorType.BLIND},
+        data={"name": "Climate No Temp", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=opts,
         entry_id="er_climate_no_temp_01",
         title="Climate No Temp",

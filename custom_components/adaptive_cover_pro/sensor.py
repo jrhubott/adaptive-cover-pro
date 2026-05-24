@@ -42,8 +42,7 @@ from .const import (
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
-from .enums import ControlMethod
-from .forecast import build_forecast_for_coord
+from .const import ControlMethod
 from .unit_system import length_display_unit, to_display_length
 
 
@@ -80,6 +79,7 @@ class _SensorSpec:
     diagnostic: bool = (
         True  # False → uses AdaptiveCoverSensorBase (Cover_Position et al.)
     )
+    unrecorded_attributes: frozenset[str] = frozenset()
 
 
 def _exposes_dual_axis_sensor(entry: ConfigEntry) -> bool:
@@ -770,27 +770,15 @@ def _configured_handlers(opts: Mapping[str, Any]) -> list[str]:
     return enabled
 
 
-def _safe_forecast(coord: AdaptiveDataUpdateCoordinator):
-    """Compute the forecast or return None on any setup-time failure.
-
-    The coordinator may not yet have a sun provider / config service hooked up
-    during the brief first-refresh window; falling through gracefully here
-    keeps the sensor available rather than throwing.
-    """
-    try:
-        return build_forecast_for_coord(coord)
-    except Exception:  # noqa: BLE001 — defensive degradation, not silencing a bug
-        return None
-
-
 def _position_forecast_value(s: _ACPDiagnosticSensor) -> dt.datetime | None:
     """Return the timestamp of the next forecast event (sunrise, FOV enter, ...).
 
-    None when no events are scheduled or the forecast cannot be computed.
-    Used by the timestamp-typed Position Forecast sensor; the full series
-    lives in extra_state_attributes.
+    Reads from ``coordinator.data.position_forecast``, which the coordinator
+    refreshes on a slow background cadence via the executor (issue #437).
+    None when the forecast has not been computed yet or no upcoming events
+    are scheduled.
     """
-    forecast = _safe_forecast(s.coordinator)
+    forecast = getattr(s.coordinator.data, "position_forecast", None)
     if forecast is None:
         return None
     now = dt_util.now()
@@ -801,7 +789,12 @@ def _position_forecast_value(s: _ACPDiagnosticSensor) -> dt.datetime | None:
 def _position_forecast_attrs(
     s: _ACPDiagnosticSensor,
 ) -> Mapping[str, Any] | None:
-    forecast = _safe_forecast(s.coordinator)
+    """Return the serialised forecast samples + events for the companion card.
+
+    Reads from ``coordinator.data.position_forecast`` — never recomputes.
+    The coordinator owns the refresh cadence (issue #437).
+    """
+    forecast = getattr(s.coordinator.data, "position_forecast", None)
     if forecast is None:
         return None
     return forecast.to_attrs()
@@ -974,6 +967,9 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         value_fn=_cover_position_value,
         attrs_fn=_cover_position_attrs,
         diagnostic=False,
+        unrecorded_attributes=frozenset(
+            {"actual_positions", "actual_distances", "position_explanation"}
+        ),
     ),
     _SensorSpec(
         suffix="Cover_Tilt",
@@ -1025,6 +1021,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         translation_key="control_status",
         value_fn=_control_status_value,
         attrs_fn=_control_status_attrs,
+        unrecorded_attributes=frozenset({"manual_covers"}),
     ),
     _SensorSpec(
         suffix="decision_trace",
@@ -1035,6 +1032,9 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         options=tuple(m.value for m in ControlMethod) + ("unknown",),
         value_fn=_decision_trace_value,
         attrs_fn=_decision_trace_attrs,
+        unrecorded_attributes=frozenset(
+            {"trace", "custom_position_slots", "enabled_handlers"}
+        ),
     ),
     _SensorSpec(
         suffix="position_forecast",
@@ -1044,6 +1044,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_position_forecast_value,
         attrs_fn=_position_forecast_attrs,
+        unrecorded_attributes=frozenset({"forecast", "events"}),
     ),
     _SensorSpec(
         suffix="last_skipped_action",
@@ -1077,6 +1078,7 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         should_poll=False,
         value_fn=_position_verification_value,
         attrs_fn=_position_verification_attrs,
+        unrecorded_attributes=frozenset({"per_entity"}),
     ),
     _SensorSpec(
         suffix="motion_status",
@@ -1122,6 +1124,31 @@ _SPEC_OVERRIDES: dict[str, type[_ACPDiagnosticSensor]] = {
 }
 
 
+def _resolve_cls(default_base: type, spec: _SensorSpec) -> type:
+    """Pick the concrete class for ``spec``.
+
+    _SPEC_OVERRIDES wins for the base (RestoreEntity etc.); _unrecorded_attributes,
+    when set, is layered on via a one-shot subclass — HA reads that attribute at
+    class init, so it must live on a class, not an instance.
+    """
+    base = _SPEC_OVERRIDES.get(spec.suffix, default_base)
+    if not spec.unrecorded_attributes:
+        return base
+    return type(
+        f"_ACPSensor_{spec.suffix}",
+        (base,),
+        {"_unrecorded_attributes": spec.unrecorded_attributes},
+    )
+
+
+_STANDARD_CLASSES: dict[str, type] = {
+    s.suffix: _resolve_cls(_ACPSensor, s) for s in _STANDARD_SPECS
+}
+_DIAGNOSTIC_CLASSES: dict[str, type] = {
+    s.suffix: _resolve_cls(_ACPDiagnosticSensor, s) for s in _DIAGNOSTIC_SPECS
+}
+
+
 # ---------------------------------------------------------------------------
 # Platform setup
 # ---------------------------------------------------------------------------
@@ -1142,14 +1169,15 @@ async def async_setup_entry(
     for spec in _STANDARD_SPECS:
         if not spec.enabled_when(config_entry):
             continue
+        cls = _STANDARD_CLASSES[spec.suffix]
         entities.append(
-            _ACPSensor(config_entry.entry_id, hass, config_entry, coordinator, spec)
+            cls(config_entry.entry_id, hass, config_entry, coordinator, spec)
         )
 
     for spec in _DIAGNOSTIC_SPECS:
         if not spec.enabled_when(config_entry):
             continue
-        cls = _SPEC_OVERRIDES.get(spec.suffix, _ACPDiagnosticSensor)
+        cls = _DIAGNOSTIC_CLASSES[spec.suffix]
         entities.append(
             cls(config_entry.entry_id, hass, config_entry, coordinator, spec)
         )

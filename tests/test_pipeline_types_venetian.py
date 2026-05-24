@@ -7,7 +7,7 @@ diagnostics builder can surface ``tilt_target`` alongside position.
 
 from __future__ import annotations
 
-from custom_components.adaptive_cover_pro.enums import ControlMethod
+from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import (
     DecisionStep,
     PipelineResult,
