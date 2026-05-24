@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from collections.abc import Callable
 
-from .const import CONF_DEFAULT_HEIGHT, DEFAULT_DEFAULT_HEIGHT
+from .const import CONF_DEFAULT_HEIGHT, DEFAULT_DEFAULT_HEIGHT, SUN_DATA_STEP_SECONDS
 
 if TYPE_CHECKING:
     from .coordinator import AdaptiveDataUpdateCoordinator
@@ -189,26 +189,21 @@ def _build_events(
     return sorted(events, key=lambda e: e.t)
 
 
-def _nearest_index(times: list[datetime], target: datetime) -> int | None:
-    """Index of the time in *times* closest to *target* (linear scan, ~250 items).
+def _nearest_index(
+    times: list[datetime], target: datetime, step_seconds: int = SUN_DATA_STEP_SECONDS
+) -> int | None:
+    """Index of the time in *times* closest to *target* (O(1) arithmetic lookup).
 
-    Returns None when *times* is empty. The caller has already short-circuited
-    in that case, but the guard keeps this helper safe in isolation.
+    ``times`` is expected to be the fixed 5-minute grid from ``SunData.times``.
+    ``step_seconds`` is parameterised so this stays correct if the cadence changes.
+    Returns None when *times* is empty.
     """
     if not times:
         return None
-    # Pandas DatetimeIndex entries are timezone-aware; convert target to match.
-    target_tz = target.tzinfo
-    if target_tz is None and times[0].tzinfo is not None:
+    if target.tzinfo is None and times[0].tzinfo is not None:
         target = target.replace(tzinfo=times[0].tzinfo)
-    best_idx = 0
-    best_delta = abs((times[0] - target).total_seconds())
-    for i, ts in enumerate(times):
-        delta = abs((ts - target).total_seconds())
-        if delta < best_delta:
-            best_idx = i
-            best_delta = delta
-    return best_idx
+    delta = (target - times[0]).total_seconds()
+    return max(0, min(len(times) - 1, round(delta / step_seconds)))
 
 
 def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:

@@ -587,6 +587,66 @@ async def test_async_recompute_forecast_handles_missing_data(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+class TestNearestIndex:
+    """_nearest_index returns correct O(1) arithmetic result for all real SunData grid points."""
+
+    def test_exact_grid_points_match_linear_scan(self):
+        """Every 5-min mark in the sun_data timeline gives the same index as the linear scan."""
+        from custom_components.adaptive_cover_pro.forecast import _nearest_index
+        from datetime import UTC, datetime, timedelta
+
+        origin = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
+        times = [origin + timedelta(minutes=5 * i) for i in range(289)]
+
+        for expected_idx, t in enumerate(times):
+            result = _nearest_index(times, t)
+            assert result == expected_idx, f"idx {expected_idx}: got {result}"
+
+    def test_target_before_start_clamps_to_zero(self):
+        from custom_components.adaptive_cover_pro.forecast import _nearest_index
+        from datetime import UTC, datetime, timedelta
+
+        origin = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
+        times = [origin + timedelta(minutes=5 * i) for i in range(10)]
+        assert _nearest_index(times, origin - timedelta(hours=2)) == 0
+
+    def test_target_after_end_clamps_to_last(self):
+        from custom_components.adaptive_cover_pro.forecast import _nearest_index
+        from datetime import UTC, datetime, timedelta
+
+        origin = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
+        times = [origin + timedelta(minutes=5 * i) for i in range(10)]
+        assert _nearest_index(times, origin + timedelta(days=1)) == 9
+
+    def test_tz_naive_target_coerces_to_match_tz_aware_list(self):
+        from custom_components.adaptive_cover_pro.forecast import _nearest_index
+        from datetime import UTC, datetime, timedelta
+
+        origin = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
+        times = [origin + timedelta(minutes=5 * i) for i in range(10)]
+        naive = datetime(2026, 6, 1, 0, 0)
+        result = _nearest_index(times, naive)
+        assert result is not None
+
+    def test_empty_times_returns_none(self):
+        from custom_components.adaptive_cover_pro.forecast import _nearest_index
+        from datetime import UTC, datetime
+
+        assert _nearest_index([], datetime(2026, 6, 1, tzinfo=UTC)) is None
+
+    @pytest.mark.parametrize("offset_minutes", [0, 1, 2, 4, 5, 10, 600, 1440])
+    def test_midpoint_rounds_to_nearest(self, offset_minutes):
+        from custom_components.adaptive_cover_pro.forecast import _nearest_index
+        from datetime import UTC, datetime, timedelta
+
+        origin = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
+        times = [origin + timedelta(minutes=5 * i) for i in range(289)]
+        target = origin + timedelta(minutes=offset_minutes)
+        result = _nearest_index(times, target)
+        expected = max(0, min(288, round(offset_minutes / 5)))
+        assert result == expected
+
+
 @pytest.fixture(autouse=True)
 def _clear_sun_day_cache():
     """Wipe module-level SunData cache before/after each test."""

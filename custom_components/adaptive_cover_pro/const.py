@@ -462,6 +462,9 @@ STARTUP_GRACE_PERIOD_SECONDS = 30.0  # disable manual-override after HA startup
 # transitions promptly, cheap enough that even on a Pi 4 the executor job
 # completes in well under a second.
 FORECAST_RECOMPUTE_INTERVAL_MIN = 5
+# Physical step between consecutive SunData timeline entries (seconds).
+# Matches the "5min" freq passed to pd.date_range in sun.py.
+SUN_DATA_STEP_SECONDS: int = 300
 
 # Maximum time (seconds) to suppress manual override detection after sending a
 # position command.  Once this threshold is crossed, wait_for_target is cleared
