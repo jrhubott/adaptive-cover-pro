@@ -1400,3 +1400,72 @@ async def test_options_flow_venetian_geometry_saves_mode(hass: HomeAssistant) ->
 
     if result["type"] == "create_entry":
         assert result["data"].get(CONF_VENETIAN_MODE) == VENETIAN_MODE_TILT_ONLY
+
+
+@pytest.mark.integration
+async def test_options_flow_position_step_clears_sunset_pos_when_omitted(
+    hass: HomeAssistant,
+) -> None:
+    """Clearing sunset_position in options flow must write None, not keep old 0.
+
+    Regression for issue #439: submitting the position form without
+    CONF_SUNSET_POS while a prior value of 0 is stored must overwrite it
+    with None, not leave 0 in place.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUNSET_POS,
+        CONF_SUNSET_USE_MY,
+    )
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)
+    pre_options[CONF_SUNSET_POS] = 0  # seed the bug scenario
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Sunset Clear Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=pre_options,
+        entry_id="sunset_clear_01",
+        title="Sunset Clear Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "position"}
+    )
+    assert result["step_id"] == "position"
+
+    # Submit position form WITHOUT CONF_SUNSET_POS (user cleared the field)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_DEFAULT_HEIGHT: 60,
+            CONF_MIN_POSITION: 0,
+            CONF_ENABLE_MIN_POSITION: False,
+            CONF_MAX_POSITION: 100,
+            CONF_ENABLE_MAX_POSITION: False,
+            CONF_SUNSET_OFFSET: 0,
+            CONF_SUNRISE_OFFSET: 0,
+            CONF_INVERSE_STATE: False,
+            "interp": False,
+            "open_close_threshold": 50,
+            CONF_SUNSET_USE_MY: False,
+            # CONF_SUNSET_POS deliberately omitted — simulates user clearing the field
+        },
+    )
+    # Navigate to done
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    saved = result["data"]
+    assert (
+        saved.get(CONF_SUNSET_POS) is None
+    ), "sunset_position must be None after clearing, not retain previous value 0"

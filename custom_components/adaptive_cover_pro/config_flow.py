@@ -354,6 +354,17 @@ POSITION_SCHEMA = vol.Schema(
     }
 )
 
+# Keys in POSITION_SCHEMA with default=vol.UNDEFINED that voluptuous omits when
+# cleared by the user. Both flow handlers must call optional_entities() with this
+# list before dict.update() — otherwise the prior value survives a clear
+# (issue #439; same class as #323).
+_POSITION_OPTIONAL_KEYS: list[str] = [
+    CONF_SUNSET_POS,
+    CONF_MY_POSITION_VALUE,
+    CONF_SUNSET_TIME_ENTITY,
+    CONF_SUNRISE_TIME_ENTITY,
+]
+
 AUTOMATION_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DELTA_POSITION, default=2): selector.NumberSelector(
@@ -2406,6 +2417,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
         """Configure position settings."""
         if user_input is not None:
+            self.optional_entities(_POSITION_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             # Quick setup: skip optional screens, go straight to summary
             if self.setup_mode == "quick":
@@ -3078,6 +3090,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_position(self, user_input: dict[str, Any] | None = None):
         """Adjust position settings."""
         if user_input is not None:
+            self.optional_entities(_POSITION_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(
