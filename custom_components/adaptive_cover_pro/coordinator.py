@@ -985,6 +985,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_off=sunrise_off,
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
+            after_start_time=self.after_start_time,
         )
         self.logger.debug(
             "Effective default: %s (sunset_active=%s, h_def=%s, sunset_pos=%s)",
@@ -2411,6 +2412,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_off=sunrise_off,
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
+            after_start_time=self.after_start_time,
         )
 
     async def _check_sunset_window_transition(self) -> None:

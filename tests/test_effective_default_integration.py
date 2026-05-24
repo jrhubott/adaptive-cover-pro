@@ -398,3 +398,50 @@ class TestPipelineDefaultPropagationContract:
 
         assert day_result.position == 60
         assert sunset_result.position == 10
+
+
+# ---------------------------------------------------------------------------
+# Issue #438 regression: start_time < astronomical_sunrise (integration)
+# ---------------------------------------------------------------------------
+
+
+class TestStartTimeSuppressesSunsetDuringOperationalWindow:
+    """When operational window is open, before-sunrise branch must not apply sunset_pos.
+
+    Integration test: exercises compute_effective_default + DefaultHandler pipeline
+    together to confirm the fix flows end-to-end from the helper into the pipeline
+    result (regression for issue #438).
+    """
+
+    def test_pipeline_uses_h_def_when_before_sunrise_but_after_start_time(self):
+        """Regression #438: DefaultHandler must return h_def, not sunset_pos, when
+        the operational window is open even if before astronomical sunrise.
+
+        Scenario: sunrise=08:00, sunrise_off=10 → window closes at 08:10.
+        now=08:05 → before_sunrise normally True, but after_start_time suppresses it.
+        """
+        sun_data = _make_sun_data(sunset_hour=18, sunrise_hour=8)
+        # sunrise=08:00, offset=10 → boundary at 08:10; now=08:05 → before_sunrise
+        # without fix; suppressed with after_start_time=True.
+        with _freeze_now(_today(8, 5)):
+            effective, is_sunset_active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun_data,
+                sunset_off=0,
+                sunrise_off=10,
+                after_start_time=True,
+            )
+
+        assert is_sunset_active is False
+        assert effective == 100
+
+        registry = _registry(DefaultHandler())
+        snap = make_snapshot(
+            direct_sun_valid=False,
+            default_position=effective,
+            is_sunset_active=is_sunset_active,
+        )
+        result = registry.evaluate(snap)
+        assert result.control_method == ControlMethod.DEFAULT
+        assert result.position == 100  # h_def, NOT sunset_pos=0
