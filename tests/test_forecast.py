@@ -420,16 +420,17 @@ async def test_start_forecast_scheduler_kicks_off_initial_background_task(monkey
 
     coord = MagicMock(spec=coord_mod.AdaptiveDataUpdateCoordinator)
     coord.hass = MagicMock()
+    coord.config_entry = MagicMock()
     coord._forecast_unsub = None
 
     # Capture background tasks instead of running them.  Close the coroutine
     # passed in to avoid "coroutine was never awaited" warnings — we're
     # asserting on call_count, not on coroutine completion.
-    def _capture_bg(coro, name=None):  # noqa: ARG001
+    def _capture_bg(_hass, coro, name=None):  # noqa: ARG001
         coro.close()
         return MagicMock(name="task")
 
-    coord.hass.async_create_background_task = MagicMock(side_effect=_capture_bg)
+    coord.config_entry.async_create_background_task = MagicMock(side_effect=_capture_bg)
 
     # Capture the time-interval registration.
     track_calls: list = []
@@ -445,8 +446,9 @@ async def test_start_forecast_scheduler_kicks_off_initial_background_task(monkey
 
     coord_mod.AdaptiveDataUpdateCoordinator._start_forecast_scheduler(coord)
 
-    # One initial background task fired.
-    assert coord.hass.async_create_background_task.call_count == 1
+    # One initial background task fired via the config-entry helper (NOT
+    # hass.async_create_background_task — see coordinator.py for why).
+    assert coord.config_entry.async_create_background_task.call_count == 1
     # One time-interval timer registered.
     assert len(track_calls) == 1
     # Interval matches the constant (5 minutes).
@@ -472,13 +474,14 @@ async def test_start_forecast_scheduler_is_idempotent(monkeypatch):
 
     coord = MagicMock(spec=coord_mod.AdaptiveDataUpdateCoordinator)
     coord.hass = MagicMock()
+    coord.config_entry = MagicMock()
     coord._forecast_unsub = MagicMock(name="existing_unsub")
 
-    def _capture_bg(coro, name=None):  # noqa: ARG001
+    def _capture_bg(_hass, coro, name=None):  # noqa: ARG001
         coro.close()
         return MagicMock(name="task")
 
-    coord.hass.async_create_background_task = MagicMock(side_effect=_capture_bg)
+    coord.config_entry.async_create_background_task = MagicMock(side_effect=_capture_bg)
 
     track_mock = MagicMock(return_value=MagicMock(name="new_unsub"))
     monkeypatch.setattr(
@@ -488,7 +491,7 @@ async def test_start_forecast_scheduler_is_idempotent(monkeypatch):
     coord_mod.AdaptiveDataUpdateCoordinator._start_forecast_scheduler(coord)
 
     # Nothing scheduled — early return on existing handle.
-    assert coord.hass.async_create_background_task.call_count == 0
+    assert coord.config_entry.async_create_background_task.call_count == 0
     assert track_mock.call_count == 0
 
 
@@ -500,13 +503,14 @@ async def test_forecast_scheduler_tick_fires_background_task(monkeypatch):
 
     coord = MagicMock(spec=coord_mod.AdaptiveDataUpdateCoordinator)
     coord.hass = MagicMock()
+    coord.config_entry = MagicMock()
     coord._forecast_unsub = None
 
-    def _capture_bg(coro, name=None):  # noqa: ARG001
+    def _capture_bg(_hass, coro, name=None):  # noqa: ARG001
         coro.close()
         return MagicMock(name="task")
 
-    coord.hass.async_create_background_task = MagicMock(side_effect=_capture_bg)
+    coord.config_entry.async_create_background_task = MagicMock(side_effect=_capture_bg)
 
     captured_cb: list = []
 
@@ -523,11 +527,64 @@ async def test_forecast_scheduler_tick_fires_background_task(monkeypatch):
     assert len(captured_cb) == 1
 
     # Initial schedule already created one background task.
-    initial_count = coord.hass.async_create_background_task.call_count
+    initial_count = coord.config_entry.async_create_background_task.call_count
     # Fire two ticks.
     captured_cb[0](datetime.now(UTC))
     captured_cb[0](datetime.now(UTC))
-    assert coord.hass.async_create_background_task.call_count == initial_count + 2
+    assert (
+        coord.config_entry.async_create_background_task.call_count == initial_count + 2
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_forecast_scheduler_uses_entry_task_helper_not_hass(monkeypatch):
+    """Regression: must use `config_entry.async_create_background_task`.
+
+    The hass-level helper let tasks be destroyed before reaching their
+    first await when scheduled from a sync timer callback, producing
+    "Task was destroyed but it is pending!" in the log and silently
+    skipping the 5-min forecast refresh.  The entry-level helper holds
+    a hard reference for the lifetime of the entry, which fixes it.
+    """
+    from custom_components.adaptive_cover_pro import coordinator as coord_mod
+
+    coord = MagicMock(spec=coord_mod.AdaptiveDataUpdateCoordinator)
+    coord.hass = MagicMock()
+    coord.config_entry = MagicMock()
+    coord._forecast_unsub = None
+
+    def _capture_bg(_hass, coro, name=None):  # noqa: ARG001
+        coro.close()
+        return MagicMock(name="task")
+
+    coord.config_entry.async_create_background_task = MagicMock(side_effect=_capture_bg)
+    # Mark the hass helper so we can assert it is NOT used.
+    coord.hass.async_create_background_task = MagicMock(name="hass_helper")
+
+    captured_cb: list = []
+
+    def _fake_track_time_interval(_hass, cb, _interval):
+        captured_cb.append(cb)
+        return MagicMock(name="unsub")
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        _fake_track_time_interval,
+    )
+
+    coord_mod.AdaptiveDataUpdateCoordinator._start_forecast_scheduler(coord)
+    captured_cb[0](datetime.now(UTC))
+
+    # Initial + one tick = 2 calls, all on the entry helper.
+    assert coord.config_entry.async_create_background_task.call_count == 2
+    coord.hass.async_create_background_task.assert_not_called()
+
+    # First positional arg passed to the entry helper is hass, per the HA
+    # `ConfigEntry.async_create_background_task(hass, target, name=...)` signature.
+    for call in coord.config_entry.async_create_background_task.call_args_list:
+        args, _kwargs = call
+        assert args[0] is coord.hass
 
 
 # ---------------------------------------------------------------------------

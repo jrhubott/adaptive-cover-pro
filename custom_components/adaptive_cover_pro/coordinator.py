@@ -540,9 +540,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return  # already scheduled
 
         # Fire the initial compute as a background task so the rest of
-        # entry setup doesn't wait on the executor.
-        self.hass.async_create_background_task(
-            self.async_recompute_forecast(), name="acp_initial_forecast"
+        # entry setup doesn't wait on the executor.  Use the config-entry
+        # task helper (not hass.async_create_background_task): it ties the
+        # task to the entry, which keeps a hard reference until the
+        # coroutine completes.  hass.async_create_background_task can race
+        # with the GC when called from a sync timer callback — tasks were
+        # being destroyed before reaching their first await, surfacing as
+        # "Task was destroyed but it is pending!" in the HA log.
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self.async_recompute_forecast(),
+            name="acp_initial_forecast",
         )
 
         # Periodic recompute on a slow cadence — the forecast is a 12-hour
@@ -550,8 +558,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # information.  The timer fires a background task each tick to keep
         # the event loop free.
         def _tick(_now: dt.datetime) -> None:
-            self.hass.async_create_background_task(
-                self.async_recompute_forecast(), name="acp_periodic_forecast"
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self.async_recompute_forecast(),
+                name="acp_periodic_forecast",
             )
 
         self._forecast_unsub = async_track_time_interval(
