@@ -10,9 +10,11 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENTITIES,
     CONF_MY_POSITION_VALUE,
     CONF_SENSOR_TYPE,
+    DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DOMAIN,
     _RANGE_MY_POSITION,
 )
@@ -34,7 +36,9 @@ async def async_setup_entry(
     numbers = []
 
     entities = config_entry.options.get(CONF_ENTITIES, [])
-    if len(entities) >= 1:
+    if len(entities) >= 1 and config_entry.options.get(
+        CONF_ENABLE_MY_POSITION_ENTITIES, DEFAULT_ENABLE_MY_POSITION_ENTITIES
+    ):
         numbers = [
             AdaptiveCoverMyPositionNumber(
                 config_entry.entry_id, hass, config_entry, coordinator

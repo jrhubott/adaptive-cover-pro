@@ -362,6 +362,12 @@ CONF_CUSTOM_POSITION_MIN_MODE_4 = CUSTOM_POSITION_SLOTS[4]["min_mode"]
 CONF_CUSTOM_POSITION_USE_MY_4 = CUSTOM_POSITION_SLOTS[4]["use_my"]
 
 CONF_MY_POSITION_VALUE = "my_position_value"  # user's "my" position, 1-99
+# Opt-in toggle: when False, the "Managed My Position" button and
+# "Managed My Position Value" number entity are NOT created. Off by default
+# for new installs; the v2 → v3 migration sets it to True for every
+# pre-existing entry to preserve current behavior.
+CONF_ENABLE_MY_POSITION_ENTITIES = "enable_my_position_entities"
+DEFAULT_ENABLE_MY_POSITION_ENTITIES = False
 DEFAULT_CUSTOM_POSITION_PRIORITY = 77  # default priority for a new slot
 
 

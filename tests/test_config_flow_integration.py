@@ -1612,3 +1612,80 @@ async def test_create_flow_user_typed_name_overrides_device_name(
     # User name wins — device name is ignored
     assert entry.title == "Vertical My Cover"
     assert entry.data["name"] == "My Cover"
+
+
+# ---------------------------------------------------------------------------
+# OptionsFlow: position step exposes the My-preset entities toggle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_options_flow_position_step_exposes_my_position_toggle(
+    hass: HomeAssistant,
+) -> None:
+    """Position step must expose CONF_ENABLE_MY_POSITION_ENTITIES with default False."""
+    import voluptuous as vol
+
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My-toggle Test", CONF_SENSOR_TYPE: SensorType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="my_pos_toggle_01",
+        title="My-toggle Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Navigate into the position step.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "position"}
+        )
+    assert result["step_id"] == "position"
+
+    # Schema must contain the new toggle key with default False.
+    schema_keys = result["data_schema"].schema
+    matching = [
+        k
+        for k in schema_keys
+        if isinstance(k, vol.Marker) and k.schema == CONF_ENABLE_MY_POSITION_ENTITIES
+    ]
+    assert (
+        len(matching) == 1
+    ), f"Expected exactly one schema entry for {CONF_ENABLE_MY_POSITION_ENTITIES}"
+    assert matching[0].default() is False
+
+    # Submitting the form with the toggle on must land True in the entry options.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_DEFAULT_HEIGHT: 60,
+            CONF_MIN_POSITION: 0,
+            CONF_ENABLE_MIN_POSITION: False,
+            CONF_MAX_POSITION: 100,
+            CONF_ENABLE_MAX_POSITION: False,
+            CONF_SUNSET_OFFSET: 0,
+            CONF_SUNRISE_OFFSET: 0,
+            CONF_INVERSE_STATE: False,
+            "interp": False,
+            "open_close_threshold": 50,
+            CONF_ENABLE_MY_POSITION_ENTITIES: True,
+        },
+    )
+    assert result["type"] in ("form", "menu", "create_entry")
+
+    # Close the options flow to persist the changes via the done step.
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "done"}
+        )
+    assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True

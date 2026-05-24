@@ -49,12 +49,19 @@ async def test_number_entity_created_when_entities_configured():
         async_setup_entry,
     )
 
-    from custom_components.adaptive_cover_pro.const import CONF_ENTITIES, DOMAIN
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+        CONF_ENTITIES,
+        DOMAIN,
+    )
 
     hass = MagicMock()
     config_entry = MagicMock()
     config_entry.entry_id = "test_entry"
-    config_entry.options = {CONF_ENTITIES: ["cover.test1"]}
+    config_entry.options = {
+        CONF_ENTITIES: ["cover.test1"],
+        CONF_ENABLE_MY_POSITION_ENTITIES: True,
+    }
     config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
 
     coordinator = MagicMock()

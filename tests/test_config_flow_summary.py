@@ -1277,6 +1277,41 @@ def test_summary_shows_my_info_line_when_value_set_globally():
     assert "🎛️ Somfy My preset: 50%" in summary
 
 
+def test_summary_shows_my_position_entities_enabled():
+    """Summary must show enabled/disabled status for the My-preset entities toggle."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_MY_POSITION_VALUE] = 50
+    cfg[CONF_ENABLE_MY_POSITION_ENTITIES] = True
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "My-preset entities: enabled" in summary
+
+
+def test_summary_shows_my_position_entities_disabled_by_default():
+    """When the toggle is off (default), summary should show disabled."""
+    cfg = _minimal_vertical()
+    # No CONF_ENABLE_MY_POSITION_ENTITIES key — default False
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "My-preset entities: disabled" in summary
+
+
+def test_summary_warns_when_toggle_on_with_blank_value():
+    """Toggle on but my_position_value unset must emit a ⚠️ warning."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    cfg = _minimal_vertical()
+    cfg[CONF_ENABLE_MY_POSITION_ENTITIES] = True
+    # CONF_MY_POSITION_VALUE intentionally absent
+    summary = _build_config_summary(cfg, SensorType.BLIND)
+    assert "⚠️" in summary
+    assert "My Preset Value is not set" in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 1b: Cover Capabilities (now shown on Debug & Diagnostics screen)
 # ---------------------------------------------------------------------------

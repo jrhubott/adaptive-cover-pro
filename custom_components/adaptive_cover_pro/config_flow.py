@@ -36,6 +36,7 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
+    CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENABLE_PROXY_COVER,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
@@ -45,6 +46,7 @@ from .const import (
     CONF_SUNSET_USE_MY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_ENABLE_PROXY_COVER,
     DEFAULT_GLARE_ZONE_Z,
     CONF_FORCE_OVERRIDE_MIN_MODE,
@@ -337,6 +339,10 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(
+            CONF_ENABLE_MY_POSITION_ENTITIES,
+            default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_MY_POSITION_VALUE): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
@@ -1804,9 +1810,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     _any_use_my = bool(config.get(CONF_SUNSET_USE_MY)) or any(
         bool(config.get(f"custom_position_use_my_{_i}")) for _i in range(1, 5)
     )
+    _my_entities_enabled = bool(
+        config.get(
+            CONF_ENABLE_MY_POSITION_ENTITIES, DEFAULT_ENABLE_MY_POSITION_ENTITIES
+        )
+    )
+    lines.append(
+        f"🎛️ My-preset entities: {'enabled' if _my_entities_enabled else 'disabled'}"
+    )
     if my_pos is not None:
         lines.append(f"🎛️ Somfy My preset: {my_pos}% (used where enabled above)")
-    elif _any_use_my:
+    elif _any_use_my or _my_entities_enabled:
         lines.append(
             "⚠️ Somfy My preset is enabled for one or more targets but "
             "My Preset Value is not set — falls back to configured %."
@@ -1945,6 +1959,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MIN_POSITION,
             CONF_ENABLE_MIN_POSITION,
             CONF_SUNSET_POS,
+            CONF_ENABLE_MY_POSITION_ENTITIES,
             CONF_MY_POSITION_VALUE,
             CONF_SUNSET_USE_MY,
             CONF_SUNSET_OFFSET,
@@ -2401,7 +2416,7 @@ def _build_glare_zones_schema(
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()

@@ -39,11 +39,11 @@ def _make_entry(
 
 
 async def test_v1_window_width_converted_to_metres(hass: HomeAssistant) -> None:
-    """CONF_WINDOW_WIDTH of 100 cm becomes 1.0 m."""
+    """CONF_WINDOW_WIDTH of 100 cm becomes 1.0 m (and migration cascades to v3)."""
     entry = _make_entry(hass, {CONF_WINDOW_WIDTH: 100})
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_WINDOW_WIDTH] == 1.0
-    assert entry.version == 2
+    assert entry.version == 3
 
 
 async def test_v1_glare_zone_coordinates_converted_to_metres(
@@ -87,32 +87,40 @@ async def test_values_at_or_below_sentinel_left_alone(hass: HomeAssistant) -> No
     assert entry.options["glare_zone_1_x"] == 0.5
     assert entry.options["glare_zone_1_y"] == 2.0
     assert entry.options["glare_zone_1_radius"] == 0.3
-    assert entry.version == 2
+    assert entry.version == 3
 
 
 async def test_migration_is_idempotent(hass: HomeAssistant) -> None:
-    """Running the migration twice (second time on a v2 entry) is a no-op."""
+    """Running the migration twice (second time on a v3 entry) is a no-op."""
     entry = _make_entry(
         hass,
         {CONF_WINDOW_WIDTH: 200, "glare_zone_1_y": 150},
     )
     await async_migrate_entry(hass, entry)
     snapshot = dict(entry.options)
-    # Second run — entry is already v2 so migration short-circuits
+    # Second run — entry is already at head so migration short-circuits
     await async_migrate_entry(hass, entry)
     assert entry.options == snapshot
-    assert entry.version == 2
+    assert entry.version == 3
 
 
 async def test_migration_with_no_affected_fields_only_bumps_version(
     hass: HomeAssistant,
 ) -> None:
-    """An entry with no window_width or glare zones just gets its version bumped."""
+    """An entry with no window_width or glare zones gets its version bumped and toggle set."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
     options = {"azimuth": 180, "fov_left": 90, "fov_right": 90}
     entry = _make_entry(hass, options)
     await async_migrate_entry(hass, entry)
-    assert entry.options == options
-    assert entry.version == 2
+    # Original fields untouched, plus toggle defaulted to True for the upgrade.
+    assert entry.options["azimuth"] == 180
+    assert entry.options["fov_left"] == 90
+    assert entry.options["fov_right"] == 90
+    assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True
+    assert entry.version == 3
 
 
 async def test_negative_x_coordinate_migrated(hass: HomeAssistant) -> None:
@@ -132,3 +140,71 @@ async def test_zero_values_preserved(hass: HomeAssistant) -> None:
     assert entry.options["glare_zone_1_x"] == 0
     assert entry.options["glare_zone_1_y"] == 0
     assert entry.options[CONF_WINDOW_WIDTH] == 1.2
+
+
+# ---------------------------------------------------------------------------
+# Migration: v2 → v3 — enable My-preset entities by default for existing entries
+# ---------------------------------------------------------------------------
+
+
+async def test_migrate_v2_to_v3_sets_my_position_entities_true_for_existing_entry(
+    hass: HomeAssistant,
+) -> None:
+    """Existing v2 entries get enable_my_position_entities=True so behaviour is preserved."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    entry = _make_entry(hass, {"my_position_value": 50}, version=2)
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True
+    assert entry.version == 3
+
+
+async def test_migrate_v3_no_op_when_key_already_set_true(
+    hass: HomeAssistant,
+) -> None:
+    """If the key is already True on a v2 entry, the migration leaves it untouched."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    entry = _make_entry(
+        hass,
+        {CONF_ENABLE_MY_POSITION_ENTITIES: True, "my_position_value": 60},
+        version=2,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True
+    assert entry.version == 3
+
+
+async def test_migrate_v3_no_op_when_key_already_set_false(
+    hass: HomeAssistant,
+) -> None:
+    """If the key is already False on a v2 entry, the migration leaves it untouched."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    entry = _make_entry(
+        hass,
+        {CONF_ENABLE_MY_POSITION_ENTITIES: False},
+        version=2,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is False
+    assert entry.version == 3
+
+
+async def test_migrate_v1_cascades_through_v3(hass: HomeAssistant) -> None:
+    """A genuine v1 entry runs through cm→m migration AND v2→v3 toggle setdefault."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_MY_POSITION_ENTITIES,
+    )
+
+    entry = _make_entry(hass, {CONF_WINDOW_WIDTH: 200}, version=1)
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.options[CONF_WINDOW_WIDTH] == 2.0  # cm → m applied
+    assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True  # toggle preserved
+    assert entry.version == 3

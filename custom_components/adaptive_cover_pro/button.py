@@ -7,7 +7,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER, CONF_ENTITIES, CONF_MY_POSITION_VALUE, DOMAIN
+from .const import (
+    _LOGGER,
+    CONF_ENABLE_MY_POSITION_ENTITIES,
+    CONF_ENTITIES,
+    CONF_MY_POSITION_VALUE,
+    DEFAULT_ENABLE_MY_POSITION_ENTITIES,
+    DOMAIN,
+)
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
@@ -22,18 +29,21 @@ async def async_setup_entry(
         config_entry.entry_id
     ]
 
-    reset_manual = AdaptiveCoverButton(
-        config_entry.entry_id, hass, config_entry, coordinator
-    )
-    my_position = AdaptiveCoverMyPositionButton(
-        config_entry.entry_id, hass, config_entry, coordinator
-    )
-
-    buttons = []
+    buttons: list[ButtonEntity] = []
 
     entities = config_entry.options.get(CONF_ENTITIES, [])
     if len(entities) >= 1:
-        buttons = [reset_manual, my_position]
+        buttons.append(
+            AdaptiveCoverButton(config_entry.entry_id, hass, config_entry, coordinator)
+        )
+        if config_entry.options.get(
+            CONF_ENABLE_MY_POSITION_ENTITIES, DEFAULT_ENABLE_MY_POSITION_ENTITIES
+        ):
+            buttons.append(
+                AdaptiveCoverMyPositionButton(
+                    config_entry.entry_id, hass, config_entry, coordinator
+                )
+            )
 
     async_add_entities(buttons)
 

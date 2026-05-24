@@ -13,6 +13,7 @@ from homeassistant.helpers.event import (
 from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DEVICE_ID,
+    CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_START_ENTITY,
@@ -258,29 +259,39 @@ def _migrate_cm_to_m(value: float | int | None) -> float | None:
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
-    if entry.version >= 2:
-        return True
-
     new_options = dict(entry.options)
-    changed: list[str] = []
+    new_version = entry.version
 
-    for key in (CONF_WINDOW_WIDTH, *_GLARE_ZONE_DIMENSION_KEYS):
-        if key not in new_options:
-            continue
-        original = new_options[key]
-        migrated = _migrate_cm_to_m(original)
-        if migrated != original:
-            new_options[key] = migrated
-            changed.append(key)
+    # v1 → v2: convert window/glare-zone dimensions from cm to metres.
+    if new_version < 2:
+        changed: list[str] = []
+        for key in (CONF_WINDOW_WIDTH, *_GLARE_ZONE_DIMENSION_KEYS):
+            if key not in new_options:
+                continue
+            original = new_options[key]
+            migrated = _migrate_cm_to_m(original)
+            if migrated != original:
+                new_options[key] = migrated
+                changed.append(key)
+        if changed:
+            _LOGGER.info(
+                "Migrated %s from cm to metres (%s)",
+                entry.data.get("name", entry.entry_id),
+                ", ".join(changed),
+            )
+        new_version = 2
 
-    if changed:
-        _LOGGER.info(
-            "Migrated %s from cm to metres (%s)",
-            entry.data.get("name", entry.entry_id),
-            ", ".join(changed),
-        )
+    # v2 → v3: enable the My-preset entities by default for every pre-existing
+    # entry so the upgrade is invisible to users who already rely on the
+    # "Managed My Position" button and value entity. New installs created on
+    # v3 onwards default to False via the config-flow schema.
+    if new_version < 3:
+        new_options.setdefault(CONF_ENABLE_MY_POSITION_ENTITIES, True)
+        new_version = 3
 
-    hass.config_entries.async_update_entry(entry, options=new_options, version=2)
+    hass.config_entries.async_update_entry(
+        entry, options=new_options, version=new_version
+    )
     return True
 
 
