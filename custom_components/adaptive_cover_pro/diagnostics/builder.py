@@ -537,6 +537,7 @@ class DiagnosticsBuilder:
             CONF_IS_SUNNY_SENSOR,
             CONF_MAX_ELEVATION,
             CONF_MAX_POSITION,
+            CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MIN_ELEVATION,
             CONF_MIN_POSITION,
             CONF_MOTION_SENSORS,
@@ -576,6 +577,9 @@ class DiagnosticsBuilder:
                 "motion_timeout_active": ctx.motion_timeout_active,
                 "motion_hold_active": ctx.motion_hold_active,
                 "manual_toggle": ctx.manual_toggle,
+                "manual_ignore_external": options.get(
+                    CONF_MANUAL_IGNORE_EXTERNAL, False
+                ),
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),

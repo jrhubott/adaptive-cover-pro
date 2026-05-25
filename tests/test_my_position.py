@@ -688,6 +688,7 @@ class TestCoverServiceCallHandler:
         coord = MagicMock()
         coord.manual_toggle = True
         coord.automatic_control = True
+        coord.manual_ignore_external = False
         coord.entities = ["cover.somfy"]
         coord.manager = mgr
         coord.config_entry.options = {"my_position_value": 50}
@@ -723,6 +724,7 @@ class TestCoverServiceCallHandler:
         coord = MagicMock()
         coord.manual_toggle = True
         coord.automatic_control = True
+        coord.manual_ignore_external = False
         coord.entities = ["cover.somfy"]
         coord.manager = mgr
         coord.config_entry.options = {"my_position_value": 50}
@@ -758,6 +760,7 @@ class TestCoverServiceCallHandler:
         coord = MagicMock()
         coord.manual_toggle = True
         coord.automatic_control = True
+        coord.manual_ignore_external = False
         coord.entities = ["cover.somfy"]
         coord.manager = mgr
         coord.config_entry.options = {}  # no my_position_value
@@ -787,6 +790,7 @@ class TestCoverServiceCallHandler:
         coord = MagicMock()
         coord.manual_toggle = True
         coord.automatic_control = True
+        coord.manual_ignore_external = False
         coord.entities = ["cover.somfy"]
         coord.manager = mgr
         coord.config_entry.options = {"my_position_value": 50}
@@ -823,6 +827,7 @@ class TestCoverServiceCallHandler:
         coord = MagicMock()
         coord.manual_toggle = True
         coord.automatic_control = True
+        coord.manual_ignore_external = False
         coord.entities = ["cover.somfy", "cover.other"]
         coord.manager = mgr
         coord.config_entry.options = {"my_position_value": 60}

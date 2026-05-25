@@ -68,6 +68,7 @@ def test_from_options_uses_const_defaults_for_empty_input() -> None:
 
     assert rc.manual_override.reset is False
     assert rc.manual_override.duration == {"hours": 2}
+    assert rc.manual_override.ignore_external is False
 
     assert rc.time_window.start_time is None
     assert rc.time_window.start_time_entity is None
@@ -107,6 +108,7 @@ def test_from_options_reads_every_field_from_provided_dict() -> None:
         CONF_INTERP_LIST_NEW: [4, 5, 6],
         CONF_MANUAL_OVERRIDE_RESET: True,
         CONF_MANUAL_OVERRIDE_DURATION: {"hours": 4},
+        "manual_ignore_external": True,
         CONF_START_TIME: "08:00",
         CONF_START_ENTITY: "input_datetime.s",
         CONF_END_TIME: "20:00",
@@ -137,6 +139,7 @@ def test_from_options_reads_every_field_from_provided_dict() -> None:
     assert rc.tracking.interp_list_new == [4, 5, 6]
     assert rc.manual_override.reset is True
     assert rc.manual_override.duration == {"hours": 4}
+    assert rc.manual_override.ignore_external is True
     assert rc.time_window.start_time == "08:00"
     assert rc.time_window.end_time_entity == "input_datetime.e"
     assert rc.motion.sensors == ["binary_sensor.m"]

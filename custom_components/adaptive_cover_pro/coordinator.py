@@ -63,6 +63,7 @@ from .const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
@@ -234,6 +235,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_duration = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_DURATION
         ) or {"hours": 2}
+        self.manual_ignore_external = self.config_entry.options.get(
+            CONF_MANUAL_IGNORE_EXTERNAL, False
+        )
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
@@ -703,6 +707,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         if not self.manual_toggle or not self.automatic_control:
             self._manual_gate_closed_log("service_call", list(tracked))
+            return
+
+        # When manual_ignore_external is on, treat external stop_cover calls
+        # the same as external set_cover_position — only ACP-routed commands
+        # engage manual override.
+        if self.manual_ignore_external:
+            self.logger.debug(
+                "async_check_cover_service_call: ignoring external stop_cover on %s "
+                "(manual_ignore_external on)",
+                tracked,
+            )
             return
 
         my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
@@ -1588,6 +1603,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.cover_state_change = False
             return
 
+        # When manual_ignore_external is on, only ACP-routed commands (proxy
+        # entity, set_position service) engage manual override — those use the
+        # pre-emptive mark_user_command path inside async_apply_user_position
+        # and never reach the detection paths below. Skip the whole loop, but
+        # still drain _target_just_reached housekeeping so a later legitimate
+        # move isn't misclassified.
+        if self.manual_ignore_external:
+            for event_data in events:
+                self._target_just_reached.discard(event_data.entity_id)
+            self.logger.debug(
+                "Position changes for %s ignored (manual_ignore_external on; "
+                "only ACP proxy/service commands engage manual override)",
+                [e.entity_id for e in events],
+            )
+            self.cover_state_change = False
+            return
+
         for event_data in events:
             entity_id = event_data.entity_id
 
@@ -1795,6 +1827,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.time_threshold = rc.tracking.time_threshold
         self.manual_reset = rc.manual_override.reset
         self.manual_duration = rc.manual_override.duration
+        self.manual_ignore_external = rc.manual_override.ignore_external
         self.manual_threshold = rc.tracking.manual_threshold
         self.start_value = rc.tracking.interp_start
         self.end_value = rc.tracking.interp_end

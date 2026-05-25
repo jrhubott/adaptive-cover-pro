@@ -454,6 +454,9 @@ CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"  # % delta = manual touch, 0-99
 # If True, intermediate positions don't count as manual touches.
 CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
+# If True, only commands routed through ACP (proxy entity or set_position
+# service) engage manual override; all other position changes are ignored.
+CONF_MANUAL_IGNORE_EXTERNAL = "manual_ignore_external"
 # Position threshold separating "open" vs "closed" classification, % (1-99).
 CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
 

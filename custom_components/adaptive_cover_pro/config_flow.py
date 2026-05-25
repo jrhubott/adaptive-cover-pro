@@ -69,6 +69,7 @@ from .const import (
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
@@ -449,6 +450,9 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_MANUAL_IGNORE_INTERMEDIATE, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_MANUAL_IGNORE_EXTERNAL, default=False
         ): selector.BooleanSelector(),
         vol.Optional(
             CONF_TRANSIT_TIMEOUT,
@@ -1457,6 +1461,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mo_parts.append("resets on next move")
     if config.get(CONF_MANUAL_IGNORE_INTERMEDIATE):
         mo_parts.append("ignores intermediate positions")
+    if config.get(CONF_MANUAL_IGNORE_EXTERNAL):
+        mo_parts.append("ACP-only (ignores external moves)")
     transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
     if (
         transit_timeout is not None
@@ -2007,6 +2013,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MANUAL_IGNORE_INTERMEDIATE,
+            CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_TRANSIT_TIMEOUT,
         }
     ),
@@ -2982,6 +2989,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_MANUAL_THRESHOLD: self.config.get(CONF_MANUAL_THRESHOLD),
                 CONF_MANUAL_IGNORE_INTERMEDIATE: self.config.get(
                     CONF_MANUAL_IGNORE_INTERMEDIATE
+                ),
+                CONF_MANUAL_IGNORE_EXTERNAL: self.config.get(
+                    CONF_MANUAL_IGNORE_EXTERNAL
                 ),
                 CONF_OPEN_CLOSE_THRESHOLD: self.config.get(
                     CONF_OPEN_CLOSE_THRESHOLD, 50

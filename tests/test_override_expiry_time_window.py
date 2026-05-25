@@ -833,6 +833,7 @@ class TestIssue215StaleSafetyTarget:
         coordinator = MagicMock()
         coordinator.manual_toggle = True
         coordinator.automatic_control = True
+        coordinator.manual_ignore_external = False
         coordinator._is_in_startup_grace_period = MagicMock(return_value=False)
         coordinator._target_just_reached = set()
         coordinator._cmd_svc = cmd_svc

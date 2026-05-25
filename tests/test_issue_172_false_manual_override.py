@@ -80,6 +80,7 @@ def _make_coordinator(
         entity_id, current_position, old_position, new_state_str
     )
     coordinator.ignore_intermediate_states = ignore_intermediate
+    coordinator.manual_ignore_external = False
     coordinator._target_just_reached = set()
 
     grace_mgr = GracePeriodManager(logger=MagicMock(), command_grace_seconds=5.0)
@@ -658,6 +659,7 @@ async def test_multiple_covers_both_processed() -> None:
     coordinator = MagicMock()
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
+    coordinator.manual_ignore_external = False
     coordinator.target_call = {"cover.a": 72, "cover.b": 50}
     coordinator.wait_for_target = {"cover.a": False, "cover.b": False}
     coordinator._cover_type = "cover_blind"

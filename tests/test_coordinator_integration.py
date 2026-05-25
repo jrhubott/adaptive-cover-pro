@@ -54,6 +54,7 @@ def _make_coordinator(
     coordinator.entities = entities if entities is not None else ["cover.test"]
     coordinator.automatic_control = automatic_control
     coordinator.manual_toggle = manual_toggle
+    coordinator.manual_ignore_external = False
     coordinator.logger = MagicMock()
     coordinator.state_change = True
     coordinator.cover_state_change = True

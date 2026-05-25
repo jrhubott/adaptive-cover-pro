@@ -163,14 +163,16 @@
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
           "manual_threshold": "Seuil de dérogation manuelle",
           "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
-          "transit_timeout": "Délai de transit (secondes)"
+          "transit_timeout": "Délai de transit (secondes)",
+          "manual_ignore_external": "Engager uniquement la dérogation manuelle via les commandes Adaptive Cover Pro"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
           "manual_override_reset": "Réinitialisez le minuteur de dérogation manuelle après chaque ajustement manuel. S'il est activé, chaque changement manuel redémarre la durée de dérogation. S'il est désactivé, la durée s'applique uniquement au premier ajustement manuel (les changements ultérieurs ne prolongent pas la pause). Activez ceci si vous voulez que la période de dérogation se « renouvelle » à chaque toucher manuel.",
           "manual_threshold": "Différence de position (%) qui compte comme « dérogation manuelle » (par défaut : 1%). Si vous déplacez manuellement le store de ce montant, la détection de dérogation se déclenche. Valeurs typiques : 1-2% (sensible, détecte les petits ajustements), 5% (moins sensible, recommandé), 10% (seuls les grands changements manuels comptent). Empêche la détection accidentelle de dérogation due à de petites dérives de moteur ou aux variations de rapports de position.",
           "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
-          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes."
+          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes.",
+          "manual_ignore_external": "Lorsque activé, seuls les changements de position envoyés via l'entité proxy Adaptive Cover Pro ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle. Les changements de position d'autres sources (autres automatisations, la carte de protection Home Assistant par défaut, les télécommandes physiques ou RF) sont ignorés et le contrôle automatique continue sans interruption. Utile lorsque vous conduisez la protection uniquement via ACP lui-même et souhaitez que les changements d'état externes bruyants ne mettent pas l'automatisation en pause. Par défaut : désactivé."
         }
       },
       "force_override": {
@@ -650,14 +652,16 @@
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
           "manual_threshold": "Seuil de dérogation manuelle",
           "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
-          "transit_timeout": "Délai de transit (secondes)"
+          "transit_timeout": "Délai de transit (secondes)",
+          "manual_ignore_external": "Engager uniquement la dérogation manuelle via les commandes Adaptive Cover Pro"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
           "manual_override_reset": "Réinitialisez le minuteur de dérogation manuelle après chaque ajustement manuel. S'il est activé, chaque changement manuel redémarre la durée de dérogation. S'il est désactivé, la durée s'applique uniquement au premier ajustement manuel (les changements ultérieurs ne prolongent pas la pause). Activez ceci si vous voulez que la période de dérogation se « renouvelle » à chaque toucher manuel.",
           "manual_threshold": "Différence de position (%) qui compte comme « dérogation manuelle » (par défaut : 1%). Si vous déplacez manuellement le store de ce montant, la détection de dérogation se déclenche. Valeurs typiques : 1-2% (sensible, détecte les petits ajustements), 5% (moins sensible, recommandé), 10% (seuls les grands changements manuels comptent). Empêche la détection accidentelle de dérogation due à de petites dérives de moteur ou aux variations de rapports de position.",
           "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
-          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes."
+          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes.",
+          "manual_ignore_external": "Lorsque activé, seuls les changements de position envoyés via l'entité proxy Adaptive Cover Pro ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle. Les changements de position d'autres sources (autres automatisations, la carte de protection Home Assistant par défaut, les télécommandes physiques ou RF) sont ignorés et le contrôle automatique continue sans interruption. Utile lorsque vous conduisez la protection uniquement via ACP lui-même et souhaitez que les changements d'état externes bruyants ne mettent pas l'automatisation en pause. Par défaut : désactivé."
         }
       },
       "force_override": {
@@ -1437,6 +1441,10 @@
         "manual_threshold": {
           "description": "Changement de position (%) qui déclenche la détection de la dérogation manuelle (0–99).",
           "name": "Seuil de détection"
+        },
+        "manual_ignore_external": {
+          "name": "Engager uniquement via les commandes ACP",
+          "description": "Si vrai, seules les commandes routées via l'entité proxy ACP ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle ; tous les autres changements de position sont ignorés."
         }
       },
       "name": "Définir les paramètres de la dérogation manuelle"

@@ -163,6 +163,7 @@
           "manual_override_reset": "Reset Manual override duration",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
+          "manual_ignore_external": "Only engage manual override from Adaptive Cover Pro commands",
           "transit_timeout": "Transit timeout (seconds)"
         },
         "data_description": {
@@ -170,6 +171,7 @@
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
+          "manual_ignore_external": "When enabled, only position changes sent through the Adaptive Cover Pro proxy entity or the adaptive_cover_pro.set_position service engage manual override. Position changes from other sources (other automations, the default Home Assistant cover card, physical or RF remotes) are ignored and automatic control continues uninterrupted. Useful when you only ever drive the cover via ACP itself and want noisy external state changes to not pause automation. Default: off.",
           "transit_timeout": "How long ACP waits after a cover stops reporting forward progress before treating the next position report as a user-initiated manual override. The timer resets each time the cover moves closer to its commanded target, so slow-but-moving covers are protected for the full transit. Increase this value for covers that take longer than 45 seconds to complete a full traverse. Default: 45 seconds."
         }
       },
@@ -650,6 +652,7 @@
           "manual_override_reset": "Reset Manual override duration",
           "manual_threshold": "Manual override threshold",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual override (opening and closing)",
+          "manual_ignore_external": "Only engage manual override from Adaptive Cover Pro commands",
           "transit_timeout": "Transit timeout (seconds)"
         },
         "data_description": {
@@ -657,6 +660,7 @@
           "manual_override_reset": "Reset the manual override timer after each manual adjustment. If enabled, each manual change restarts the override duration. If disabled, the duration only applies to the first manual adjustment (subsequent changes don't extend the pause). Enable this if you want the override period to 'renew' with each manual touch.",
           "manual_threshold": "Position difference (%) that counts as 'manual override' (default: 1%). If you manually move cover by this amount, override detection triggers. Typical values: 1-2% (sensitive, detects small adjustments), 5% (less sensitive, recommended), 10% (only large manual changes count). Prevents accidental override detection from small motor drifts or position reporting variations.",
           "manual_ignore_intermediate": "Ignore intermediate positions during manual opening and closing operations. Enable this to prevent override detection from transitional positions while the cover is moving to your target position. Useful if your cover reports many intermediate values during movement.",
+          "manual_ignore_external": "When enabled, only position changes sent through the Adaptive Cover Pro proxy entity or the adaptive_cover_pro.set_position service engage manual override. Position changes from other sources (other automations, the default Home Assistant cover card, physical or RF remotes) are ignored and automatic control continues uninterrupted. Useful when you only ever drive the cover via ACP itself and want noisy external state changes to not pause automation. Default: off.",
           "transit_timeout": "How long ACP waits after a cover stops reporting forward progress before treating the next position report as a user-initiated manual override. The timer resets each time the cover moves closer to its commanded target, so slow-but-moving covers are protected for the full transit. Increase this value for covers that take longer than 45 seconds to complete a full traverse. Default: 45 seconds."
         }
       },
@@ -1278,6 +1282,10 @@
         "manual_ignore_intermediate": {
           "name": "Ignore intermediate states",
           "description": "If true, ignore opening/closing states for manual override detection."
+        },
+        "manual_ignore_external": {
+          "name": "Only engage from ACP commands",
+          "description": "If true, only commands routed through the ACP proxy entity or the adaptive_cover_pro.set_position service engage manual override; all other position changes are ignored."
         }
       }
     },

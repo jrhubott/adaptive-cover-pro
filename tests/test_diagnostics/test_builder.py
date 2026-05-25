@@ -722,6 +722,7 @@ class TestConfigurationDiagnostics:
             "motion_timeout_active",
             "motion_hold_active",
             "manual_toggle",
+            "manual_ignore_external",
             "enabled_toggle",
             "cloud_suppression_enabled",
             "cloudy_position",

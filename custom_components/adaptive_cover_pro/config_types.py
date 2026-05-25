@@ -208,6 +208,7 @@ class ManualOverrideSlice:
 
     reset: bool
     duration: dict
+    ignore_external: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,6 +251,7 @@ class RuntimeConfig:
             CONF_INTERP_LIST,
             CONF_INTERP_LIST_NEW,
             CONF_INTERP_START,
+            CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MANUAL_OVERRIDE_DURATION,
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
@@ -300,6 +302,7 @@ class RuntimeConfig:
             manual_override=ManualOverrideSlice(
                 reset=options.get(CONF_MANUAL_OVERRIDE_RESET, False),
                 duration=options.get(CONF_MANUAL_OVERRIDE_DURATION) or {"hours": 2},
+                ignore_external=options.get(CONF_MANUAL_IGNORE_EXTERNAL, False),
             ),
             time_window=TimeWindowSlice(
                 start_time=options.get(CONF_START_TIME),

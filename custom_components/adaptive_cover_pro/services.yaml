@@ -287,6 +287,11 @@ set_manual_override:
       description: "If true, ignore opening/closing transitional states for manual override detection."
       selector:
         boolean:
+    manual_ignore_external:
+      name: Only engage from ACP commands
+      description: "If true, only commands routed through the ACP proxy entity or the adaptive_cover_pro.set_position service engage manual override; all other position changes are ignored."
+      selector:
+        boolean:
 
 set_force_override:
   name: Set force override

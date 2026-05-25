@@ -72,6 +72,7 @@ def _make_coordinator(
     coordinator = MagicMock()
     coordinator.manual_toggle = manual_toggle
     coordinator.automatic_control = automatic_control
+    coordinator.manual_ignore_external = False
     cmd_svc = MagicMock()
     cmd_svc.get_target = MagicMock(return_value=target)
     cmd_svc.is_waiting_for_target = MagicMock(return_value=False)
