@@ -1008,6 +1008,13 @@
       },
       "position_forecast": {
         "name": "Positionsvorhersage"
+      },
+      "climate_status": {
+        "state": {
+          "summer_mode": "Sommermodus",
+          "winter_mode": "Wintermodus",
+          "intermediate": "Übergang"
+        }
       }
     },
     "switch": {

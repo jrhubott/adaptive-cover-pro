@@ -681,10 +681,10 @@ def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
     if data is None:
         return None
     if data.get("is_summer"):
-        return "Summer Mode"
+        return "summer_mode"
     if data.get("is_winter"):
-        return "Winter Mode"
-    return "Intermediate"
+        return "winter_mode"
+    return "intermediate"
 
 
 def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
@@ -1111,6 +1111,9 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="climate_status",
         display_name="Climate Status",
         icon="mdi:weather-partly-cloudy",
+        translation_key="climate_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=("summer_mode", "winter_mode", "intermediate"),
         value_fn=_climate_status_value,
         attrs_fn=_climate_status_attrs,
         enabled_when=lambda e: bool(e.options.get(CONF_CLIMATE_MODE, False)),

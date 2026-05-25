@@ -990,6 +990,13 @@
           "waiting_for_data": "Waiting for Data"
         }
       },
+      "climate_status": {
+        "state": {
+          "summer_mode": "Summer Mode",
+          "winter_mode": "Winter Mode",
+          "intermediate": "Intermediate"
+        }
+      },
       "decision_trace": {
         "name": "Decision Trace",
         "state": {

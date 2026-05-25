@@ -1008,6 +1008,13 @@
       },
       "position_forecast": {
         "name": "Prévision de position"
+      },
+      "climate_status": {
+        "state": {
+          "summer_mode": "Mode été",
+          "winter_mode": "Mode hiver",
+          "intermediate": "Intermédiaire"
+        }
       }
     },
     "switch": {
