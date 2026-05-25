@@ -1670,6 +1670,10 @@
       },
       "name": "Définir la position (avec plancher appliqué)",
       "description": "Déplace la protection vers la position demandée, en la limitant au plancher minimum le plus élevé de la position personnalisée active en mode minimum. Utilisez ceci au lieu de cover.set_cover_position quand vous avez besoin que les planchers de mode minimum d'ACP soient respectés à partir des automatisations. L'inclinaison n'est pas affectée."
+    },
+    "stop": {
+      "name": "Arrêter la protection",
+      "description": "Envoie stop_cover aux protections ciblées via le proxy ACP. Active la dérogation manuelle afin que le prochain cycle automatique ne contre-commande pas la protection. Utilisez ce service à la place de cover.stop_cover quand manual_ignore_external est activé."
     }
   }
 }

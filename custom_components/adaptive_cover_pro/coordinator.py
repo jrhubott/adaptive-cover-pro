@@ -2038,6 +2038,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
 
+    async def async_apply_user_stop(
+        self,
+        entity_id: str,
+        *,
+        trigger: str,
+    ) -> tuple[str, str]:
+        """Apply a user-initiated stop to a single cover.
+
+        Engages manual override (so the next cycle does not immediately
+        counter-command the cover) then dispatches an ACP-context-stamped
+        ``cover.stop_cover`` via :meth:`CoverCommandService.apply_user_stop`.
+        Stop is unconditional — no pipeline preemption check.
+        """
+        self.manager.mark_user_command(entity_id, reason=trigger)
+        return await self._cmd_svc.apply_user_stop(entity_id)
+
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
         result = self._pipeline_result

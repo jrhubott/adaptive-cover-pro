@@ -1670,6 +1670,10 @@
       },
       "name": "Position setzen (mit Mindestwert-Erzwingung)",
       "description": "Bewegt die Beschattung zur angeforderten Position und begrenzt sie auf den höchsten aktiven Mindestwert der benutzerdefinierten Position. Verwenden Sie dies statt cover.set_cover_position, wenn Sie ACP's Mindestwerte aus Automationen berücksichtigen möchten. Die Neigung wird nicht beeinflusst."
+    },
+    "stop": {
+      "name": "Beschattung stoppen",
+      "description": "Sendet stop_cover an die gewählten Beschattungen über den ACP-Proxy. Aktiviert Manuelle Übersteuerung, sodass der nächste automatische Zyklus die Beschattung nicht gegen die Bedienung aussteuert. Verwenden Sie dies statt cover.stop_cover, wenn manual_ignore_external aktiviert ist."
     }
   }
 }

@@ -1137,6 +1137,10 @@
     }
   },
   "services": {
+    "stop": {
+      "name": "Stop cover",
+      "description": "Sends stop_cover to the targeted covers via the ACP proxy. Engages manual override so the next automatic cycle does not counter-command the cover. Use this instead of cover.stop_cover when manual_ignore_external is enabled."
+    },
     "integration_enable": {
       "name": "Enable integration",
       "description": "Re-enables Adaptive Cover Pro on the targeted instances. Covers stay where they are; positioning resumes on the next natural update cycle."

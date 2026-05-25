@@ -552,6 +552,16 @@ class CoverCommandService:
         """
         return self._transit_elapsed_without_progress(entity_id, now)
 
+    async def apply_user_stop(self, entity_id: str) -> tuple[str, str]:
+        """Send an ACP-context-stamped ``cover.stop_cover`` for a user-initiated stop.
+
+        Routes through ``_stop_tracker.call_stop_cover`` so the resulting
+        EVENT_CALL_SERVICE is recognised as ACP-originated and ignored by
+        the coordinator's service-call listener.
+        """
+        await self._stop_tracker.call_stop_cover(entity_id)
+        return "sent", "stop_cover"
+
     def was_acp_stop_context(self, context_id: str) -> bool:
         """Whether ``context_id`` belongs to an ACP-originated cover.stop_cover call.
 

@@ -1,3 +1,15 @@
+stop:
+  name: Stop cover
+  description: >-
+    Sends stop_cover to the targeted covers via the ACP proxy so the command
+    is recognised as ACP-originated. Engages manual override so the next
+    automatic cycle does not immediately counter-command the cover. Compatible
+    with manual_ignore_external mode — the Lovelace card stop button should
+    call this service instead of cover.stop_cover directly.
+  target:
+    entity:
+      integration: adaptive_cover_pro
+
 integration_enable:
   name: Enable integration
   description: >-
