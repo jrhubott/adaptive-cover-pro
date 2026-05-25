@@ -290,3 +290,21 @@ def test_venetian_mode_in_en_geometry_translations() -> None:
     assert "venetian_mode" in opt_geom.get(
         "data_description", {}
     ), "venetian_mode description missing from options.step.geometry.data_description"
+
+
+# ---------------------------------------------------------------------------
+# Issue #457 — FR cloud_suppression decision trace label must use action-oriented phrasing
+# ---------------------------------------------------------------------------
+
+
+def test_fr_cloud_suppression_decision_trace_state() -> None:
+    """FR decision_trace.state.cloud_suppression must use action-oriented phrasing, not 'Suppression de nuages'."""
+    fr = _load(TRANSLATIONS_DIR / "fr.json")
+    value = fr["entity"]["sensor"]["decision_trace"]["state"]["cloud_suppression"]
+    assert value != "Suppression de nuages", (
+        "Reverted to misleading phrasing — must say 'Désactivation par temps nuageux' "
+        "(reads as 'removing the clouds' to a French native speaker; see issue #457)"
+    )
+    assert (
+        "nuageux" in value.lower()
+    ), f"FR cloud_suppression state label should reference cloudy weather; got: {value!r}"

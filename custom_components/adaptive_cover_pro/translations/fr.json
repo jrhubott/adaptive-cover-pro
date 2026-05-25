@@ -1007,7 +1007,7 @@
           "force_override": "Dérogation forcée",
           "custom_position": "Position personnalisée",
           "weather_override": "Dérogation météo",
-          "cloud_suppression": "Suppression de nuages"
+          "cloud_suppression": "Désactivation par temps nuageux"
         }
       },
       "position_forecast": {
