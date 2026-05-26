@@ -10,6 +10,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
 from voluptuous.validators import Coerce, Range
 
 if TYPE_CHECKING:
@@ -17,12 +18,11 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-SET_POSITION_SCHEMA = vol.Schema(
+SET_POSITION_SCHEMA = cv.make_entity_service_schema(
     {
         vol.Required("position"): vol.All(Coerce(int), Range(min=0, max=100)),
         vol.Optional("force", default=False): bool,
-    },
-    extra=vol.PREVENT_EXTRA,
+    }
 )
 
 

@@ -194,12 +194,18 @@ def test_schema_accepts_boundary_values() -> None:
         SET_POSITION_SCHEMA,
     )
 
-    assert SET_POSITION_SCHEMA({"position": 0})["position"] == 0
-    assert SET_POSITION_SCHEMA({"position": 100})["position"] == 100
+    assert (
+        SET_POSITION_SCHEMA({"position": 0, "entity_id": ["cover.test"]})["position"]
+        == 0
+    )
+    assert (
+        SET_POSITION_SCHEMA({"position": 100, "entity_id": ["cover.test"]})["position"]
+        == 100
+    )
 
 
 def test_schema_rejects_extra_key_tilt() -> None:
-    """Schema rejects extra key 'tilt' (PREVENT_EXTRA)."""
+    """Schema rejects genuinely-unknown keys (e.g. 'tilt' is not a valid field)."""
     from custom_components.adaptive_cover_pro.services.set_position_service import (
         SET_POSITION_SCHEMA,
     )
@@ -214,7 +220,7 @@ def test_schema_coerces_string_to_int() -> None:
         SET_POSITION_SCHEMA,
     )
 
-    result = SET_POSITION_SCHEMA({"position": "40"})
+    result = SET_POSITION_SCHEMA({"position": "40", "entity_id": ["cover.test"]})
     assert result["position"] == 40
     assert isinstance(result["position"], int)
 
@@ -806,12 +812,14 @@ async def test_service_force_default_preempted_by_force_override() -> None:
 
 
 def test_schema_accepts_force_parameter() -> None:
-    """SET_POSITION_SCHEMA accepts the new optional ``force`` field."""
+    """SET_POSITION_SCHEMA accepts the optional ``force`` field."""
     from custom_components.adaptive_cover_pro.services.set_position_service import (
         SET_POSITION_SCHEMA,
     )
 
-    result = SET_POSITION_SCHEMA({"position": 50, "force": True})
+    result = SET_POSITION_SCHEMA(
+        {"position": 50, "force": True, "entity_id": ["cover.test"]}
+    )
     assert result["position"] == 50
     assert result["force"] is True
 
@@ -822,5 +830,40 @@ def test_schema_defaults_force_to_false() -> None:
         SET_POSITION_SCHEMA,
     )
 
-    result = SET_POSITION_SCHEMA({"position": 50})
+    result = SET_POSITION_SCHEMA({"position": 50, "entity_id": ["cover.test"]})
     assert result.get("force") is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #460: Schema must accept HA-injected target keys
+# ---------------------------------------------------------------------------
+
+
+def test_schema_accepts_ha_injected_entity_id() -> None:
+    """Schema accepts entity_id injected by HA target resolution."""
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        SET_POSITION_SCHEMA,
+    )
+
+    result = SET_POSITION_SCHEMA({"position": 50, "entity_id": ["cover.patio"]})
+    assert result["position"] == 50
+
+
+def test_schema_accepts_ha_injected_device_id() -> None:
+    """Schema accepts device_id injected by HA target resolution."""
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        SET_POSITION_SCHEMA,
+    )
+
+    result = SET_POSITION_SCHEMA({"position": 30, "device_id": ["abc123"]})
+    assert result["position"] == 30
+
+
+def test_schema_accepts_ha_injected_area_id() -> None:
+    """Schema accepts area_id injected by HA target resolution."""
+    from custom_components.adaptive_cover_pro.services.set_position_service import (
+        SET_POSITION_SCHEMA,
+    )
+
+    result = SET_POSITION_SCHEMA({"position": 75, "area_id": ["living_room"]})
+    assert result["position"] == 75
