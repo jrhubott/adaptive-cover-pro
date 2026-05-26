@@ -56,6 +56,7 @@ class CoverConfig:
     blind_spot_on: bool
     min_elevation: int | None
     max_elevation: int | None
+    min_pos_sun_tracking: int | None = None  # separate floor for sun-tracking only; None = use min_pos
 
     @classmethod
     def from_options(cls, options: dict) -> CoverConfig:
@@ -75,6 +76,7 @@ class CoverConfig:
             CONF_MAX_POSITION,
             CONF_MIN_ELEVATION,
             CONF_MIN_POSITION,
+            CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNRISE_OFFSET,
             CONF_SUNSET_OFFSET,
             CONF_SUNSET_POS,
@@ -95,6 +97,7 @@ class CoverConfig:
             min_pos=options.get(CONF_MIN_POSITION) or 0,
             max_pos_sun_only=options.get(CONF_ENABLE_MAX_POSITION, False),
             min_pos_sun_only=options.get(CONF_ENABLE_MIN_POSITION, False),
+            min_pos_sun_tracking=options.get(CONF_MIN_POSITION_SUN_TRACKING),  # no `or` — preserves None vs 0
             blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
             blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
             blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),

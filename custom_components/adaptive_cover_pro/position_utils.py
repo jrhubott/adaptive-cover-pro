@@ -67,6 +67,7 @@ class PositionConverter:
         apply_min: bool,
         apply_max: bool,
         sun_valid: bool,
+        sun_tracking_min_pos: int | None = None,
     ) -> int:
         """Apply min/max position limits.
 
@@ -77,6 +78,9 @@ class PositionConverter:
             apply_min: Whether min limit applies (when False, always apply)
             apply_max: Whether max limit applies (when False, always apply)
             sun_valid: Whether sun is in valid position (direct sunlight)
+            sun_tracking_min_pos: Optional separate minimum floor that applies
+                only during sun tracking (sun_valid=True). When set, overrides
+                min_pos for sun-tracking paths. None means fall back to min_pos.
 
         Returns:
             Constrained position value (0-100)
@@ -95,10 +99,19 @@ class PositionConverter:
             if not apply_max or sun_valid:
                 result = min(result, max_pos)
 
+        # Sun-tracking floor: when sun_tracking_min_pos is set and sun is valid,
+        # use it as the effective min floor instead of min_pos.
+        # None means "fall back to min_pos" — preserves existing behavior exactly.
+        # Guard: only use if it's an int (not None or any non-numeric sentinel).
+        _use_sun_tracking = (
+            isinstance(sun_tracking_min_pos, int) and sun_valid
+        )
+        effective_min = sun_tracking_min_pos if _use_sun_tracking else min_pos
+
         # Apply min position limit
-        if min_pos is not None and min_pos != 0:
+        if effective_min is not None and effective_min != 0:
             # Always apply if enable flag is False, or if sun is valid
             if not apply_min or sun_valid:
-                result = max(result, min_pos)
+                result = max(result, effective_min)
 
         return int(result)

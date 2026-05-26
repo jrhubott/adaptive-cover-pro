@@ -136,6 +136,10 @@ DEFAULT_MIN_TILT = 0  # default: no lower floor
 
 CONF_MAX_POSITION = "max_position"  # upper clamp on commanded position (1-100)
 CONF_MIN_POSITION = "min_position"  # lower clamp on commanded position (0-99)
+# Optional separate floor that applies only during sun tracking (0-99, optional).
+# When set, overrides CONF_MIN_POSITION for sun-tracking paths only.
+# None (unset) means fall back to CONF_MIN_POSITION.
+CONF_MIN_POSITION_SUN_TRACKING = "min_position_sun_tracking"
 # If True, max_position is only enforced during active sun tracking.
 CONF_ENABLE_MAX_POSITION = "enable_max_position"
 # If True, min_position is only enforced during active sun tracking.
@@ -850,6 +854,7 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_DEFAULT_HEIGHT: _RANGE_DEFAULT_HEIGHT,
         CONF_MAX_POSITION: _RANGE_MAX_POSITION,
         CONF_MIN_POSITION: _RANGE_MIN_POSITION,
+        CONF_MIN_POSITION_SUN_TRACKING: _RANGE_MIN_POSITION,
         CONF_SUNSET_POS: _RANGE_SUNSET_POS,
         CONF_MY_POSITION_VALUE: _RANGE_MY_POSITION,
         CONF_SUNSET_OFFSET: _RANGE_OFFSET_MINUTES,

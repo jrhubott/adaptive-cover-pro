@@ -708,6 +708,7 @@ class TestConfigurationDiagnostics:
             "blind_spot_left",
             "blind_spot_right",
             "min_position",
+            "min_position_sun_tracking",
             "max_position",
             "enable_min_position",
             "enable_max_position",

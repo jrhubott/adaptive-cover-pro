@@ -52,6 +52,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MAX_POSITION,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
+    CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_OUTSIDETEMP_ENTITY,
@@ -987,6 +988,47 @@ def test_delta_position_and_time_shown():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "3%" in summary
     assert "5 min" in summary
+
+
+def test_summary_shows_sun_tracking_min_when_set():
+    """Sun-tracking min line appears in Position Limits when min_position_sun_tracking is set."""
+    cfg = {
+        CONF_MIN_POSITION: 0,
+        CONF_MIN_POSITION_SUN_TRACKING: 15,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Sun-tracking min: 15%" in summary
+
+
+def test_summary_sun_tracking_min_absent_when_not_set():
+    """Sun-tracking min line does not appear when min_position_sun_tracking is not set."""
+    cfg = {CONF_MIN_POSITION: 0}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Sun-tracking min" not in summary
+
+
+def test_summary_warns_when_sun_tracking_min_below_min_position():
+    """Footgun warning appears when sun_tracking_min < min_position (always-on floor dominates)."""
+    cfg = {
+        CONF_MIN_POSITION: 20,
+        CONF_MIN_POSITION_SUN_TRACKING: 10,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️" in summary
+    assert "10%" in summary
+    assert "20%" in summary
+
+
+def test_summary_no_warning_when_sun_tracking_min_above_min_position():
+    """No footgun warning when sun_tracking_min >= min_position (no conflict)."""
+    cfg = {
+        CONF_MIN_POSITION: 10,
+        CONF_MIN_POSITION_SUN_TRACKING: 15,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    # No footgun warning (sun_tracking_min is above min_pos, so it's effective)
+    # There may be other ⚠️ in summary, but not for this specific scenario
+    assert "sun-tracking floor will be raised" not in summary
 
 
 # ---------------------------------------------------------------------------

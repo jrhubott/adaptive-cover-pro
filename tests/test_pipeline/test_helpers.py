@@ -22,13 +22,19 @@ from custom_components.adaptive_cover_pro.pipeline.helpers import (
 
 
 def _make_config(
-    *, min_pos=None, max_pos=None, min_pos_sun_only=False, max_pos_sun_only=False
+    *,
+    min_pos=None,
+    max_pos=None,
+    min_pos_sun_only=False,
+    max_pos_sun_only=False,
+    min_pos_sun_tracking=None,
 ):
     return SimpleNamespace(
         min_pos=min_pos,
         max_pos=max_pos,
         min_pos_sun_only=min_pos_sun_only,
         max_pos_sun_only=max_pos_sun_only,
+        min_pos_sun_tracking=min_pos_sun_tracking,
     )
 
 
@@ -49,6 +55,7 @@ def _make_snapshot(
     max_pos=None,
     min_pos_sun_only=False,
     max_pos_sun_only=False,
+    min_pos_sun_tracking=None,
     is_sunset_active=False,
     enable_sun_tracking=True,
 ):
@@ -59,6 +66,7 @@ def _make_snapshot(
             max_pos=max_pos,
             min_pos_sun_only=min_pos_sun_only,
             max_pos_sun_only=max_pos_sun_only,
+            min_pos_sun_tracking=min_pos_sun_tracking,
         ),
         default_position=default_position,
         is_sunset_active=is_sunset_active,
@@ -73,6 +81,12 @@ def _make_snapshot(
 
 class TestApplySnapshotLimits:
     """Tests for apply_snapshot_limits."""
+
+    def test_uses_sun_tracking_min_when_set_and_sun_valid(self):
+        """When CoverConfig.min_pos_sun_tracking is set, sun_valid=True paths use it."""
+        snap = _make_snapshot(min_pos=0, min_pos_sun_tracking=15)
+        assert apply_snapshot_limits(snap, value=5, sun_valid=True) == 15
+        assert apply_snapshot_limits(snap, value=5, sun_valid=False) == 5
 
     def test_no_limits_returns_value(self):
         """Value passes through unchanged when no limits configured."""

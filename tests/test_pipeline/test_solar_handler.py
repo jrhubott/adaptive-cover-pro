@@ -50,6 +50,7 @@ class TestSolarHandler:
         config.max_pos = 80
         config.min_pos_sun_only = False
         config.max_pos_sun_only = False
+        config.min_pos_sun_tracking = None
         cover = _make_mock_cover(
             direct_sun_valid=True,
             calculate_percentage_return=95.0,

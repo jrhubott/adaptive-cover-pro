@@ -78,6 +78,7 @@ from .const import (
     CONF_MAX_POSITION,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
+    CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MODE,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
@@ -331,6 +332,15 @@ POSITION_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_ENABLE_MIN_POSITION, default=False
         ): selector.BooleanSelector(),
+        vol.Optional(CONF_MIN_POSITION_SUN_TRACKING): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=99,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
         vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -396,6 +406,7 @@ POSITION_SCHEMA = vol.Schema(
 _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_POS,
     CONF_MY_POSITION_VALUE,
+    CONF_MIN_POSITION_SUN_TRACKING,
     CONF_SUNSET_TIME_ENTITY,
     CONF_SUNRISE_TIME_ENTITY,
 ]
@@ -1800,10 +1811,27 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             limit_parts.append(f"Calibration {interp_lo}→{interp_hi}")
         else:
             limit_parts.append("Position calibration on")
+    min_pos_sun_track = config.get(CONF_MIN_POSITION_SUN_TRACKING)
+    if min_pos_sun_track is not None:
+        limit_parts.append(f"Sun-tracking min: {min_pos_sun_track}%")
     if limit_parts:
         lines.append("")
         lines.append("**Position Limits**")
         lines.append(" · ".join(limit_parts))
+
+    # Footgun: sun-tracking floor below always-on floor is a no-op (issue #467).
+    # The always-on min_pos dominates, so min_pos_sun_tracking < min_pos is a
+    # configuration mistake. Surface it so the user can correct it.
+    if (
+        min_pos_sun_track is not None
+        and min_pos is not None
+        and min_pos > min_pos_sun_track
+    ):
+        lines.append(
+            f"⚠️ Sun-tracking min {min_pos_sun_track}% < min position {min_pos}% — "
+            "always-on floor dominates; sun-tracking floor will be raised to "
+            f"{min_pos}%."
+        )
 
     # MODE2 + min_position footgun warning (issue #373).
     # In MODE2 the OPEN (horizontal) slat angle IS 50%, so any min_position
@@ -1975,6 +2003,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_ENABLE_MAX_POSITION,
             CONF_MIN_POSITION,
             CONF_ENABLE_MIN_POSITION,
+            CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNSET_POS,
             CONF_ENABLE_MY_POSITION_ENTITIES,
             CONF_MY_POSITION_VALUE,

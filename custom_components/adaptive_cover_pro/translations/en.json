@@ -102,6 +102,7 @@
           "enable_max_position": "Apply max only during sun tracking",
           "min_position": "Minimum Position",
           "enable_min_position": "Apply min only during sun tracking",
+          "min_position_sun_tracking": "Min Position During Sun Tracking",
           "sunset_position": "Sunset Position",
           "enable_my_position_entities": "Enable My-preset entities",
           "my_position_value": "My position value",
@@ -120,6 +121,7 @@
           "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
           "min_position": "Minimum cover position limit (0-99%). 0% = closed (blinds lowered / awning retracted). Cover will never go below this value. Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
           "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position_sun_tracking": "Optional separate minimum position floor that only applies while the sun is in the field of view. When set, replaces 'Minimum Position' during sun-tracking calculations. Leave blank to use 'Minimum Position' for both sun-tracking and other modes. Use this when your cover has a mechanical dead zone at the bottom of travel (e.g. roller shutters whose slats gap before the bottom lifts) and you want sun-tracking to skip that dead zone while still allowing the cover to fully close at sunset. 0% = closed (blinds lowered), 100% = open (blinds raised).",
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Common uses: Privacy (0%), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "enable_my_position_entities": "Create the Managed My Position button and the Managed My Position Value number entity. Off by default — turn on if you use the Somfy-style 'My' preset and want to recall or edit the value from a dashboard.",
           "my_position_value": "The position (1–99%) you programmed on the motor remote (My/favorite preset). Leave blank to disable My-position triggering for this cover.",
@@ -613,6 +615,7 @@
           "enable_max_position": "Apply max only during sun tracking",
           "min_position": "Minimum Position",
           "enable_min_position": "Apply min only during sun tracking",
+          "min_position_sun_tracking": "Min Position During Sun Tracking",
           "sunset_position": "Sunset Position",
           "enable_my_position_entities": "Enable My-preset entities",
           "my_position_value": "My position value",
@@ -631,6 +634,7 @@
           "enable_max_position": "Controls WHEN maximum position limit applies. UNCHECKED (default, recommended): Maximum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes above max value. CHECKED (advanced): Maximum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go above max value. Most users should leave this UNCHECKED for consistent protection.",
           "min_position": "Minimum cover position limit (0-99%). 0% = closed (blinds lowered / awning retracted). Cover will never go below this value. Use this to: prevent cover from fully closing (set to 20%), maintain some light (set to 30-40%), protect from jamming at bottom (set to 5%). This creates a lower boundary for all automatic positions. Works with 'Apply min only during sun tracking' toggle below.",
           "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
+          "min_position_sun_tracking": "Optional separate minimum position floor that only applies while the sun is in the field of view. When set, replaces 'Minimum Position' during sun-tracking calculations. Leave blank to use 'Minimum Position' for both sun-tracking and other modes. Use this when your cover has a mechanical dead zone at the bottom of travel (e.g. roller shutters whose slats gap before the bottom lifts) and you want sun-tracking to skip that dead zone while still allowing the cover to fully close at sunset. 0% = closed (blinds lowered), 100% = open (blinds raised).",
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Common uses: Privacy (0%), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
           "enable_my_position_entities": "Create the Managed My Position button and the Managed My Position Value number entity. Off by default — turn on if you use the Somfy-style 'My' preset and want to recall or edit the value from a dashboard.",
           "my_position_value": "The position (1–99%) you programmed on the motor remote (My/favorite preset). Leave blank to disable My-position triggering for this cover.",
@@ -1188,6 +1192,10 @@
         "enable_min_position": {
           "name": "Enable min position only during tracking",
           "description": "If true, min_position applies only while sun is tracked."
+        },
+        "min_position_sun_tracking": {
+          "name": "Min position during sun tracking",
+          "description": "Optional separate minimum floor that applies only during sun tracking (0–99%). When set, overrides min_position for sun-tracking paths only. Leave unset to use min_position for all paths."
         },
         "max_position": {
           "name": "Maximum position",

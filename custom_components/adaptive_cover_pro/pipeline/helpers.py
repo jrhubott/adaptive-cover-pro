@@ -45,6 +45,7 @@ def apply_snapshot_limits(
         snapshot.config.min_pos_sun_only,
         snapshot.config.max_pos_sun_only,
         sun_valid,
+        sun_tracking_min_pos=snapshot.config.min_pos_sun_tracking,
     )
 
 
