@@ -128,11 +128,9 @@ def test_sun_tracking_disabled_pipeline_falls_through_to_default():
 
 @pytest.mark.unit
 def test_force_override_min_mode_with_sun_tracking_off_uses_default():
-    """Force override min-mode floors against default position when sun tracking is off.
-
-    End-to-end regression test for #264: with tracking off (default=100) and
-    a geometrically valid sun (solar=29), the min-mode floor of 80 must resolve
-    to max(80, 100)=100, not max(80, 29)=80.
+    """Force override defers in min_mode; with sun tracking off, the winner
+    is DefaultHandler (position=100). The floor of 80 is below the default,
+    so no clamp is applied. End-to-end regression test for #264 + #463.
     """
     from custom_components.adaptive_cover_pro.const import ControlMethod
     from tests.test_pipeline.conftest import make_snapshot
@@ -152,5 +150,9 @@ def test_force_override_min_mode_with_sun_tracking_off_uses_default():
     result = registry.evaluate(snap)
 
     assert result is not None
-    assert result.control_method == ControlMethod.FORCE
-    assert result.position == 100  # max(80, default=100) = 100
+    assert result.control_method == ControlMethod.DEFAULT
+    assert result.position == 100  # default beats the floor 80
+    # No clamp step because the floor is below the winner.
+    assert not any(
+        s.handler == "floor_clamp" and s.matched for s in result.decision_trace
+    )

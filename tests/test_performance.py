@@ -224,8 +224,13 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
     snapshot.motion_control_enabled = True
     snapshot.force_override_active = False
     snapshot.force_override_position = 0
+    snapshot.force_override_sensors = {}
+    snapshot.force_override_min_mode = False
     snapshot.is_weather_active = False
     snapshot.weather_position = 0
+    snapshot.weather_override_active = False
+    snapshot.weather_override_position = 0
+    snapshot.weather_override_min_mode = False
     snapshot.weather_bypass_auto_control = False
     snapshot.manual_override_active = False
     snapshot.custom_position_sensors = [

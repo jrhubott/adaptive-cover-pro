@@ -485,7 +485,12 @@ class DiagnosticsBuilder:
 
     @staticmethod
     def _build_decision_trace(ctx: DiagnosticContext) -> dict:
-        """Build per-handler decision trace from pipeline result."""
+        """Build per-handler decision trace from pipeline result.
+
+        Note: the trace may include a synthetic ``floor_clamp`` step that is
+        not backed by a registered handler — it represents the post-decision
+        floor-composition pass in :class:`PipelineRegistry` (issue #463).
+        """
         result = ctx.pipeline_result
         if result is None or not result.decision_trace:
             return {"decision_trace": []}

@@ -113,9 +113,9 @@ from .pipeline.handlers import (
     SolarHandler,
     WeatherOverrideHandler,
 )
+from .pipeline.floors import effective_floor, gather_active_floors
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
-from .pipeline.types import CustomPositionSensorState
 from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -174,26 +174,6 @@ class AdaptiveCoverData:
     attributes: dict
     diagnostics: dict | None = None
     position_forecast: Forecast | None = None
-
-
-def _winner_is_satisfied_custom_floor(
-    winner_handler: object,
-    states: list[CustomPositionSensorState],
-    clamped: int,
-) -> bool:
-    """Return True when the winning handler is a min-mode custom-position floor that the user's clamped request already satisfies."""
-    if not isinstance(winner_handler, CustomPositionHandler):
-        return False
-    matching = next(
-        (s for s in states if s.entity_id == winner_handler._entity_id),
-        None,
-    )
-    return (
-        matching is not None
-        and matching.is_on
-        and matching.min_mode
-        and clamped >= matching.position
-    )
 
 
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
@@ -1970,10 +1950,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         opt in.
         """
         opts = options if options is not None else self.config_entry.options
-        states = self._snapshot_builder.read_custom_position_sensors(opts)
-        floors = [s.position for s in states if s.is_on and s.min_mode]
-        effective_floor = max(floors) if floors else 0
-        clamped = max(int(requested), effective_floor)
+        snapshot = self._snapshot_builder.build(
+            opts,
+            cover_data=self._cover_data,
+            cover_type=self._cover_type,
+            climate_readings=self._weather_readings,
+            manual_override_active=False,
+            motion_timeout_active=self.is_motion_timeout_active,
+            weather_override_active=self.is_weather_override_active,
+            in_time_window=self.check_adaptive_time,
+            current_cover_position=self._compute_mean_cover_position(),
+            is_glare_zone_enabled=self._is_glare_zone_enabled,
+        )
+        floors = gather_active_floors(snapshot)
+        effective_floor_pos, _ = effective_floor(floors)
+        clamped = max(int(requested), effective_floor_pos)
         if clamped != requested:
             _LOGGER.info(
                 "%s: requested %d clamped to %d (active min-mode floor)",
@@ -1986,33 +1977,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "%s: requested %d, floor %d — no clamping needed",
                 trigger,
                 requested,
-                effective_floor,
+                effective_floor_pos,
             )
 
         if not force:
-            snapshot = self._snapshot_builder.build(
-                opts,
-                cover_data=self._cover_data,
-                cover_type=self._cover_type,
-                climate_readings=self._weather_readings,
-                manual_override_active=False,
-                motion_timeout_active=self.is_motion_timeout_active,
-                weather_override_active=self.is_weather_override_active,
-                in_time_window=self.check_adaptive_time,
-                current_cover_position=self._compute_mean_cover_position(),
-                is_glare_zone_enabled=self._is_glare_zone_enabled,
-            )
             result = self._pipeline.evaluate(snapshot)
-            winner_step = next((s for s in result.decision_trace if s.matched), None)
+            winner_step = next(
+                (
+                    s
+                    for s in result.decision_trace
+                    if s.matched and s.handler != "floor_clamp"
+                ),
+                None,
+            )
             if winner_step is not None:
                 winner_name = winner_step.handler
                 winner_handler = self._handler_by_name.get(winner_name)
                 winner_priority = (
                     winner_handler.priority if winner_handler is not None else 0
                 )
-                if _winner_is_satisfied_custom_floor(winner_handler, states, clamped):
-                    pass  # fall through to mark_user_command + dispatch
-                elif winner_priority > ManualOverrideHandler.priority:
+                if winner_priority > ManualOverrideHandler.priority:
                     _LOGGER.info(
                         "user move on %s preempted by %s (priority %d > %d)",
                         entity_id,

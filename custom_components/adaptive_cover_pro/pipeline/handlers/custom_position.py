@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...const import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import apply_minimum_mode, compute_raw_calculated_position
+from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -60,11 +60,21 @@ class CustomPositionHandler(OverrideHandler):
         return f"custom_position_{self._slot}"
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
-        """Return the configured position when this slot's sensor is active."""
+        """Return the configured position when this slot's sensor is active.
+
+        In ``min_mode`` (and not on the ``use_my`` path), the handler defers
+        by returning ``None``. The registry then composes the configured
+        position as a post-decision floor clamp on whichever lower-priority
+        handler wins (issue #463).
+        """
         # Find our sensor in the snapshot's sensor list by entity_id.
         for state in snapshot.custom_position_sensors:
             if state.entity_id == self._entity_id:
                 if state.is_on:
+                    # Floor mode (without use_my) defers to the floor-clamp
+                    # composition pass — see pipeline/floors.py.
+                    if state.min_mode and not state.use_my:
+                        return None
                     raw = compute_raw_calculated_position(snapshot)
                     # "Use My" path: route through the cover's hardware-stored My preset.
                     # my_position_value acts as both the target and the reason annotation.
@@ -87,9 +97,9 @@ class CustomPositionHandler(OverrideHandler):
                             custom_position_minimum_mode=None,
                             custom_position_active_slot_name=state.sensor_name,
                         )
-                    pos, mode_note = apply_minimum_mode(
-                        self._position, raw, enabled=state.min_mode
-                    )
+                    # Exact-position branch (state.min_mode is False here —
+                    # floor mode defers above).
+                    pos = self._position
                     return PipelineResult(
                         position=pos,
                         tilt=self._tilt,
@@ -97,14 +107,12 @@ class CustomPositionHandler(OverrideHandler):
                         control_method=ControlMethod.CUSTOM_POSITION,
                         reason=(
                             f"custom position #{self._slot} active ({self._entity_id})"
-                            f" — position {pos}%{mode_note}"
+                            f" — position {pos}%"
                             " [bypasses automatic control]"
                         ),
                         raw_calculated_position=raw,
                         custom_position_active_slot=self._slot,
-                        custom_position_minimum_mode=(
-                            (raw < self._position) if state.min_mode else None
-                        ),
+                        custom_position_minimum_mode=None,
                         custom_position_active_slot_name=state.sensor_name,
                     )
                 # Sensor found but not active — pass through

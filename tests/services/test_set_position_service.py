@@ -40,6 +40,12 @@ def _make_coord(custom_states):
     coord.config_entry.options = {}
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = custom_states
+    # Floor composition reads custom_position_sensors from a real PipelineSnapshot
+    # (issue #463) — return a populated snapshot from build().
+    from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+
+    snapshot = make_snapshot(custom_position_sensors=custom_states or [])
+    coord._snapshot_builder.build = MagicMock(return_value=snapshot)
     ctx = MagicMock(name="position_context")
     coord._build_position_context.return_value = ctx
     coord._cmd_svc = MagicMock()

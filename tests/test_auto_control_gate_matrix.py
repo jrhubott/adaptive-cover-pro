@@ -371,9 +371,46 @@ async def _trigger_async_apply_user_position(coord):
     coord.config_entry.options = {}
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors = MagicMock(return_value=[])
-    await coord.async_apply_user_position(
-        "cover.test", 42, trigger="set_position", force=True
-    )
+    # Floor composition reads from a real PipelineSnapshot (#463).
+    from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+    from unittest.mock import patch as _patch  # noqa: PLC0415
+
+    snapshot = make_snapshot()
+    coord._snapshot_builder.build = MagicMock(return_value=snapshot)
+    # Snapshot builder consumes these coordinator attrs via kwargs — present
+    # them as plain mocks so the call signature resolves.  The mock returns
+    # the pre-built snapshot regardless of inputs.
+    coord._cover_data = MagicMock()
+    coord._cover_type = "cover_blind"
+    coord._weather_readings = None
+    coord._compute_mean_cover_position = MagicMock(return_value=None)
+    # is_motion_timeout_active / is_weather_override_active / check_adaptive_time
+    # are properties — patch them at the class level for this call.
+    with (
+        _patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "is_motion_timeout_active",
+            new_callable=lambda: False,
+        ),
+        _patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "is_weather_override_active",
+            new_callable=lambda: False,
+        ),
+        _patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "check_adaptive_time",
+            new_callable=lambda: True,
+        ),
+        _patch.object(
+            AdaptiveDataUpdateCoordinator,
+            "_is_glare_zone_enabled",
+            new=MagicMock(return_value=False),
+        ),
+    ):
+        await coord.async_apply_user_position(
+            "cover.test", 42, trigger="set_position", force=True
+        )
 
 
 CONTROL_GATE_MATRIX: list[MatrixCase] = [

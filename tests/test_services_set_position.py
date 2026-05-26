@@ -70,11 +70,17 @@ def _make_coord(
     coord.config_entry.options = options or {}
 
     # Snapshot builder — async_apply_user_position routes its custom-position
-    # read through this collaborator after Phase D.
+    # read through this collaborator after Phase D.  Floor composition now
+    # consumes the full PipelineSnapshot (issue #463), so we hand back a real
+    # snapshot pre-populated with the requested custom-position states.
+    from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = (
         custom_states or []
     )
+    snapshot = make_snapshot(custom_position_sensors=custom_states or [])
+    coord._snapshot_builder.build = MagicMock(return_value=snapshot)
 
     # _build_position_context
     ctx = MagicMock()

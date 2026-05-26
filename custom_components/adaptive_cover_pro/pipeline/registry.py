@@ -6,6 +6,7 @@ import dataclasses
 import datetime as dt
 
 from ..diagnostics.event_buffer import EventBuffer
+from .floors import effective_floor, gather_active_floors
 from .handler import OverrideHandler
 from .types import DecisionStep, PipelineResult, PipelineSnapshot
 
@@ -115,12 +116,61 @@ class PipelineRegistry:
                             merged[field_name] = val
                             break
 
+        # Floor-mode composition (issue #463).  Custom-position slots,
+        # weather override, and force override in min_mode each contribute
+        # a "floor" — a minimum position that must clamp the winner regardless
+        # of priority.  The handlers themselves defer (return None) in floor
+        # mode; the registry composes the effective floor here so the
+        # arithmetic lives in exactly one place (pipeline/floors.py).
+        active_floors = gather_active_floors(snapshot)
+        floor_pos, floor_info = effective_floor(active_floors)
+        clamped_position = winner.position
+        if floor_info is not None and floor_pos > winner.position:
+            clamped_position = floor_pos
+            trace.append(
+                DecisionStep(
+                    handler="floor_clamp",
+                    matched=True,
+                    reason=(
+                        f"floor raised winner from {winner.position}% to "
+                        f"{floor_pos}% by {floor_info.label}"
+                    ),
+                    position=floor_pos,
+                )
+            )
+        # Replace any existing trace step whose handler matches an active
+        # floor's source — those steps came from the deferral path and
+        # carry an unhelpful describe_skip reason.  We give them a fresh
+        # entry that explains the floor was active but did not win.
+        floor_sources = {info.source for info in active_floors}
+        trace = [step for step in trace if step.handler not in floor_sources]
+        for info in active_floors:
+            if (
+                floor_info is not None
+                and info is floor_info
+                and floor_pos > winner.position
+            ):
+                continue  # this floor *did* win — already emitted as floor_clamp
+            trace.append(
+                DecisionStep(
+                    handler=info.source,
+                    matched=False,
+                    reason=(
+                        f"floor {info.position}% inactive "
+                        f"(winner {winner.position}% above floor)"
+                    ),
+                    position=info.position,
+                )
+            )
+
         # Propagate sunset-window flags from the snapshot.
         # NOTE: configured_default and configured_sunset_pos are
         # intentionally left at their defaults (0 / None) here.
         # The coordinator annotates them via dataclasses.replace()
         # after evaluation so they never appear in the snapshot
         # that handlers can read.
+        if clamped_position != winner.position:
+            winner = dataclasses.replace(winner, position=clamped_position)
         result = dataclasses.replace(
             winner,
             decision_trace=trace,

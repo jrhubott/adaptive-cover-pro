@@ -592,43 +592,12 @@ class TestFieldPropagationThroughRegistry:
         assert result.control_method == ControlMethod.CUSTOM_POSITION
         assert result.custom_position_active_slot == 2
 
-    def test_custom_position_minimum_mode_false_when_raw_above_floor(self) -> None:
-        """Regression guard for issue #421: registry must not strip PipelineResult fields
-        added after the original whitelist.
-
-        custom_position_minimum_mode=False (floor is a no-op) must survive registry.
-        This is the motivating case: floor=50, raw=80 → floor does not constrain.
-        """
-        registry = PipelineRegistry(
-            [
-                CustomPositionHandler(
-                    slot=1,
-                    entity_id="binary_sensor.slot1",
-                    position=50,
-                    priority=77,
-                ),
-                SolarHandler(),
-                DefaultHandler(),
-            ]
-        )
-        snap = make_snapshot(
-            custom_position_sensors=[
-                _cps("binary_sensor.slot1", True, 50, 77, min_mode=True)
-            ],
-            direct_sun_valid=True,
-            calculate_percentage_return=80.0,
-        )
-        result = registry.evaluate(snap)
-        assert result.control_method == ControlMethod.CUSTOM_POSITION
-        # raw=80 > floor=50 → floor is a no-op → custom_position_minimum_mode is False
-        assert result.custom_position_minimum_mode is False
-
-    def test_custom_position_minimum_mode_true_when_floor_constrains(self) -> None:
-        """Regression guard for issue #421: registry must not strip PipelineResult fields
-        added after the original whitelist.
-
-        custom_position_minimum_mode=True (floor raises position) must survive registry.
-        floor=50, raw=10 → floor actively constrains.
+    def test_custom_position_min_mode_floor_above_solar_clamps_via_registry(
+        self,
+    ) -> None:
+        """floor=50, solar=10 → registry composes a floor_clamp step and clamps
+        the SolarHandler winner to 50%. CustomPositionHandler itself defers in
+        min_mode (issue #463).
         """
         registry = PipelineRegistry(
             [
@@ -650,9 +619,40 @@ class TestFieldPropagationThroughRegistry:
             calculate_percentage_return=10.0,
         )
         result = registry.evaluate(snap)
-        assert result.control_method == ControlMethod.CUSTOM_POSITION
-        # raw=10 < floor=50 → floor actively constrains → custom_position_minimum_mode is True
-        assert result.custom_position_minimum_mode is True
+        assert result.position == 50
+        assert result.control_method == ControlMethod.SOLAR
+        # The floor-clamp synthetic step is in the trace.
+        assert any(
+            s.handler == "floor_clamp" and s.matched for s in result.decision_trace
+        )
+
+    def test_custom_position_min_mode_no_clamp_when_solar_above_floor(self) -> None:
+        """floor=50, solar=80 → floor is inert, no clamp, no floor_clamp step."""
+        registry = PipelineRegistry(
+            [
+                CustomPositionHandler(
+                    slot=1,
+                    entity_id="binary_sensor.slot1",
+                    position=50,
+                    priority=77,
+                ),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
+        )
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cps("binary_sensor.slot1", True, 50, 77, min_mode=True)
+            ],
+            direct_sun_valid=True,
+            calculate_percentage_return=80.0,
+        )
+        result = registry.evaluate(snap)
+        assert result.position == 80
+        assert result.control_method == ControlMethod.SOLAR
+        assert not any(
+            s.handler == "floor_clamp" and s.matched for s in result.decision_trace
+        )
 
     def test_use_my_position_survives_registry(self) -> None:
         """Regression guard for issue #421: registry must not strip PipelineResult fields

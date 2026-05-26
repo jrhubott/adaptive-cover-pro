@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...const import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import apply_minimum_mode, compute_raw_calculated_position
+from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -28,16 +28,21 @@ class WeatherOverrideHandler(OverrideHandler):
     priority = 90
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
-        """Return override position when weather conditions are active."""
+        """Return override position when weather conditions are active.
+
+        When ``weather_override_min_mode`` is True, the handler defers
+        (returns ``None``) so the registry can compose the configured
+        position as a post-decision floor clamp on whichever lower-priority
+        handler wins (issue #463).
+        """
         if not snapshot.weather_override_active:
             return None
-        configured = snapshot.weather_override_position
+        if snapshot.weather_override_min_mode:
+            return None
+        pos = snapshot.weather_override_position
         bypass = snapshot.weather_bypass_auto_control
         raw = compute_raw_calculated_position(snapshot)
-        pos, mode_note = apply_minimum_mode(
-            configured, raw, enabled=snapshot.weather_override_min_mode
-        )
-        reason = f"weather override active — position {pos}%{mode_note}"
+        reason = f"weather override active — position {pos}%"
         if bypass:
             reason += " [bypasses automatic control]"
         return PipelineResult(
