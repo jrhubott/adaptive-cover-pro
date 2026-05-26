@@ -170,7 +170,11 @@ class PipelineRegistry:
         # after evaluation so they never appear in the snapshot
         # that handlers can read.
         if clamped_position != winner.position:
-            winner = dataclasses.replace(winner, position=clamped_position)
+            winner = dataclasses.replace(
+                winner,
+                position=clamped_position,
+                floor_clamp_applied=True,
+            )
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
@@ -194,6 +198,7 @@ class PipelineRegistry:
                     "position": result.position,
                     "reason": result.reason,
                     "bypass_auto_control": result.bypass_auto_control,
+                    "floor_clamp_applied": result.floor_clamp_applied,
                     "is_sunset_active": result.is_sunset_active,
                 }
             )

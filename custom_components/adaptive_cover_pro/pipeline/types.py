@@ -237,6 +237,12 @@ class PipelineResult:
     # normal sun-tracking automation.
     bypass_auto_control: bool = False
 
+    # When True, the registry's floor-clamp composition pass raised this
+    # winner's position to a user-configured floor. The coordinator's `state`
+    # property treats the position as already in cover-position space and
+    # skips interpolation / inverse-state remapping (issue #469).
+    floor_clamp_applied: bool = False
+
     # When True, the coordinator should route this command through
     # CoverCommandService.send_my_position() on non-position-capable covers
     # (cover.stop_cover while stationary → triggers the Somfy "My" hardware preset).

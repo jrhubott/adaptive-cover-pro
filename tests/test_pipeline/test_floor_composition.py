@@ -423,6 +423,81 @@ def test_floor_inactive_when_sensor_off() -> None:
     assert not any(s.handler == "floor_clamp" for s in result.decision_trace)
 
 
+def test_floor_clamp_sets_floor_clamp_applied_flag() -> None:
+    """Active floor that raises the winner sets ``floor_clamp_applied=True`` (issue #469)."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_summer_options(),
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    assert result.floor_clamp_applied is True
+
+
+def test_no_clamp_keeps_floor_clamp_applied_false() -> None:
+    """With no active floors, ``floor_clamp_applied`` stays False (issue #469)."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_summer_options(),
+        direct_sun_valid=False,
+    )
+    registry = _registry_with_custom([])
+    result = registry.evaluate(snap)
+    assert result.floor_clamp_applied is False
+
+
+def test_inactive_floor_below_winner_keeps_flag_false() -> None:
+    """Floor present but below winner — clamp not applied, flag stays False (issue #469)."""
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=ClimateReadings(
+            outside_temperature=None,
+            inside_temperature=22.0,  # not summer/winter → LOW_LIGHT → default_position
+            is_presence=False,
+            is_sunny=False,
+            lux_below_threshold=False,
+            irradiance_below_threshold=False,
+            cloud_coverage_above_threshold=False,
+        ),
+        climate_options=_summer_options(),
+        default_position=80,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    assert result.position == 80
+    assert result.floor_clamp_applied is False
+
+
 def test_decision_trace_does_not_mislabel_winner() -> None:
     """Only the underlying handler is marked as the non-clamp winner (no double-winner)."""
     cover = _climate_cover(direct_sun_valid=False)

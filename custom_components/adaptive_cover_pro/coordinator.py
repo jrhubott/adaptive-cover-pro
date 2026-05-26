@@ -2169,9 +2169,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         bypass_auto_control=True on their result, which causes their position
         to be returned directly — bypassing interpolation and inverse_state —
         even when automatic_control is OFF or outside the time window.
+
+        Floor-clamped winners (issue #469): when the registry raises a
+        non-bypass winner's position to a user-configured floor, the
+        resulting value is already in cover-position space.  Interpolation
+        and inverse_state would re-map a user-typed floor through the
+        calibration curve and silently dispatch a different position, so
+        the same short-circuit applies.
         """
-        # Safety overrides take full precedence — skip post-processing transforms.
-        if self._pipeline_bypasses_auto_control:
+        # Safety overrides and floor-clamped winners both produce positions
+        # already in cover-position space — skip post-processing transforms.
+        if (
+            self._pipeline_bypasses_auto_control
+            or self._pipeline_result.floor_clamp_applied
+        ):
             return self._pipeline_result.position
 
         state = self._pipeline_result.position
