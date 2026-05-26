@@ -721,6 +721,7 @@ WINDOW_DEPTH_GAMMA_THRESHOLD = 10  # deg — min gamma for depth contribution
 # OPTION_RANGES (used for legacy schema validation).
 
 DEFAULT_WINDOW_HEIGHT = 2.1  # metres — config-flow default
+DEFAULT_DISTANCE = 1.0  # metres — shaded distance default for vertical blinds
 DEFAULT_AWNING_LENGTH = 2.1  # metres — config-flow default
 DEFAULT_WINDOW_AZIMUTH = 180  # degrees — config-flow default (south-facing)
 MAX_WINDOW_DEPTH = 5.0  # metres — UI cap for window depth

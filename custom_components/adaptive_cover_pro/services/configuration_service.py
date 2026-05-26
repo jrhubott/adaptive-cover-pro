@@ -32,9 +32,11 @@ from ..const import (
     CONF_TILT_MODE,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    DEFAULT_DISTANCE,
     DEFAULT_GLARE_ZONE_Z,
     DEFAULT_MAX_TILT,
     DEFAULT_MIN_TILT,
+    DEFAULT_WINDOW_HEIGHT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,9 +80,11 @@ class ConfigurationService:
             VerticalConfig with distance, window_height, window_depth, sill_height
 
         """
+        _raw_distance = options.get(CONF_DISTANCE)
+        _raw_h_win = options.get(CONF_HEIGHT_WIN)
         return VerticalConfig(
-            distance=options.get(CONF_DISTANCE) or 1.0,
-            h_win=options.get(CONF_HEIGHT_WIN) or 2.1,
+            distance=_raw_distance if _raw_distance is not None else DEFAULT_DISTANCE,
+            h_win=_raw_h_win if _raw_h_win is not None else DEFAULT_WINDOW_HEIGHT,
             window_depth=options.get(CONF_WINDOW_DEPTH)
             or 0.0,  # Default 0.0; handle None for non-vertical covers
             sill_height=options.get(CONF_SILL_HEIGHT)
