@@ -97,7 +97,11 @@ class CoverConfig:
             min_pos=options.get(CONF_MIN_POSITION) or 0,
             max_pos_sun_only=options.get(CONF_ENABLE_MAX_POSITION, False),
             min_pos_sun_only=options.get(CONF_ENABLE_MIN_POSITION, False),
-            min_pos_sun_tracking=options.get(CONF_MIN_POSITION_SUN_TRACKING),  # no `or` — preserves None vs 0
+            min_pos_sun_tracking=(  # no `or` — preserves None vs 0; int() coerces HA float from NumberSelector
+                int(options[CONF_MIN_POSITION_SUN_TRACKING])
+                if options.get(CONF_MIN_POSITION_SUN_TRACKING) is not None
+                else None
+            ),
             blind_spot_left=options.get(CONF_BLIND_SPOT_LEFT),
             blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
             blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),

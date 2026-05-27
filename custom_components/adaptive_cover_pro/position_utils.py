@@ -102,11 +102,12 @@ class PositionConverter:
         # Sun-tracking floor: when sun_tracking_min_pos is set and sun is valid,
         # use it as the effective min floor instead of min_pos.
         # None means "fall back to min_pos" — preserves existing behavior exactly.
-        # Guard: only use if it's an int (not None or any non-numeric sentinel).
-        _use_sun_tracking = (
-            isinstance(sun_tracking_min_pos, int) and sun_valid
-        )
-        effective_min = sun_tracking_min_pos if _use_sun_tracking else min_pos
+        # Guard: isinstance(x, (int, float)) accepts both int and float so the floor
+        # fires when HA's NumberSelector stores a float (e.g. 25.0) — issue #475.
+        # Using (int, float) rather than is-not-None avoids false-positives from
+        # unspecified MagicMock attributes in tests.
+        _use_sun_tracking = isinstance(sun_tracking_min_pos, (int, float)) and sun_valid
+        effective_min = int(sun_tracking_min_pos) if _use_sun_tracking else min_pos
 
         # Apply min position limit
         if effective_min is not None and effective_min != 0:

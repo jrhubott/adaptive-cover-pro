@@ -15,7 +15,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.config_types import CoverConfig
+from custom_components.adaptive_cover_pro.const import (
+    CONF_MIN_POSITION_SUN_TRACKING,
+    ControlMethod,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateHandler,
 )
@@ -467,3 +471,37 @@ class TestSunTrackingMinPosition:
 
         assert result.control_method == ControlMethod.SOLAR
         assert result.position == 20  # falls back to regular min_pos
+
+    def test_config_from_options_float_coerced_to_int(self):
+        """CoverConfig.from_options coerces a float min_pos_sun_tracking to int.
+
+        HA's NumberSelector always stores float (e.g. 25.0); the dataclass field
+        is typed int | None.  The boundary read in from_options must coerce.
+        Regression test for issue #475.
+        """
+        config = CoverConfig.from_options(
+            {
+                CONF_MIN_POSITION_SUN_TRACKING: 25.0,  # float — as HA stores it
+            }
+        )
+        assert isinstance(config.min_pos_sun_tracking, int)
+        assert config.min_pos_sun_tracking == 25
+
+    def test_solar_handler_uses_sun_tracking_min_floor_float_value(self):
+        """SolarHandler floors at sun_tracking_min_pos even when stored as float.
+
+        HA stores NumberSelector values as float (e.g. 25.0); the isinstance(x, int)
+        guard in apply_limits silently skips the floor for floats.
+        Regression test for issue #475.
+        """
+        snap = _snap_with_solar(
+            calculate_return=0.0,
+            min_pos=0,
+            min_pos_sun_tracking=25.0,  # float — as HA stores it; bug: floor not applied
+            direct_sun_valid=True,
+        )
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        result = registry.evaluate(snap)
+
+        assert result.control_method == ControlMethod.SOLAR
+        assert result.position == 25  # must be floored at 25, not 1
