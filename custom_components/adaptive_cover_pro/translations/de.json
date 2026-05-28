@@ -47,7 +47,8 @@
           "inverse_tilt": "Neigung invertieren",
           "max_tilt": "Maximale Lamellennneigung (%)",
           "min_tilt": "Minimale Lamellenneigung (%)",
-          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)"
+          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)",
+          "venetian_backrotate_publish_lag": "Verzögerungsfenster für Statusmeldung (s)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -64,7 +65,8 @@
           "inverse_tilt": "Invertiert nur die Neigungsachse. Aktivieren Sie diese Option, wenn Ihre Hardware den Wert 0 für \"Lamellen offen\" und 100 für \"Lamellen geschlossen\" sendet, was dem Erwartungswert der Integration entspricht. Dies gilt nur für die Neigungsachse (Lamellen) — die Positionsachse wird separat durch \"Zustand invertieren\" gesteuert. Die meisten Beschattungen benötigen dies nicht. Nützlich für KNX- oder Somfy-Hardware, bei der die Neigungsrichtung der HA-Konvention entgegengesetzt verdrahtet ist.",
           "max_tilt": "Obergrenze für den maximalen Neigungswinkel der Lamellen (0–100). Niedrigere Werte verhindern, dass Lamellen Winkelpositionen erreichen, die direktes Sonnenlicht ins Zimmer reflektieren. Standard: 100 (keine Obergrenze). Beispiel: Stellen Sie 70 ein, wenn vollständig geöffnete Lamellen zu Spitzensonnenzeiten Blendungen verursachen.",
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
-          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s."
+          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s."
         }
       },
       "sun_tracking": {
@@ -558,7 +560,8 @@
           "inverse_tilt": "Neigung invertieren",
           "max_tilt": "Maximale Lamellennneigung (%)",
           "min_tilt": "Minimale Lamellenneigung (%)",
-          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)"
+          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)",
+          "venetian_backrotate_publish_lag": "Verzögerungsfenster für Statusmeldung (s)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -575,7 +578,8 @@
           "inverse_tilt": "Invertiert nur die Neigungsachse. Aktivieren Sie diese Option, wenn Ihre Hardware den Wert 0 für \"Lamellen offen\" und 100 für \"Lamellen geschlossen\" sendet, was dem Erwartungswert der Integration entspricht. Dies gilt nur für die Neigungsachse (Lamellen) — die Positionsachse wird separat durch \"Zustand invertieren\" gesteuert. Die meisten Beschattungen benötigen dies nicht. Nützlich für KNX- oder Somfy-Hardware, bei der die Neigungsrichtung der HA-Konvention entgegengesetzt verdrahtet ist.",
           "max_tilt": "Obergrenze für den maximalen Neigungswinkel der Lamellen (0–100). Niedrigere Werte verhindern, dass Lamellen Winkelpositionen erreichen, die direktes Sonnenlicht ins Zimmer reflektieren. Standard: 100 (keine Obergrenze). Beispiel: Stellen Sie 70 ein, wenn vollständig geöffnete Lamellen zu Spitzensonnenzeiten Blendungen verursachen.",
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
-          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s."
+          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s."
         }
       },
       "sun_tracking": {
@@ -1662,6 +1666,10 @@
         "venetian_post_settle_hold": {
           "name": "Wartezeit nach Fahrt (s)",
           "description": "Wartezeit in Sekunden nach dem Anhalten des Antriebs, bevor der Neigungsbefehl gesendet wird (0,0–10,0 s). Auf 4–6 s erhöhen für KNX FGR223-Firmware."
+        },
+        "venetian_backrotate_publish_lag": {
+          "description": "Sekunden, die die Integration eine verspätete Status-/Neigungsmeldung des Aktors toleriert, bevor sie als Benutzerberührung behandelt wird (15–180 s). Standard 45 s. Erhöhen Sie auf 60–120 s für langsame KNX-Busse oder Fibaro/Shelly-Neuveröffentlichung; straffen Sie nur für ungewöhnlich schnelle Aktoren.",
+          "name": "Verzögerungsfenster für Statusmeldung (s)"
         }
       }
     },

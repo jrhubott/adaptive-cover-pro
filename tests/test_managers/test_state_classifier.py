@@ -232,3 +232,56 @@ def test_classify_clears_wait_when_cover_moves_away_from_target(classifier_setup
     types = [e["event"] for e in buf.snapshot()]
     assert "transit_cleared" in types
     svc.set_waiting.assert_called_once_with("cover.x", False)
+
+
+# ---------------------------------------------------------------------------
+# Issue #33 Phase 5: the classifier's inline ``state in ("opening", "closing")``
+# checks have been replaced by the shared
+# ``managers.cover_command.transit.is_state_in_transit`` helper so the
+# in-transit predicate lives in exactly one place across the cover-command
+# service, the dual-axis sequencer, and the classifier. The behavioural
+# fix for the user's reported false-override lives on the policy
+# (``VenetianPolicy.primary_axis_suppression``), not here — the classifier
+# behaviour is byte-equivalent to pre-Phase-5 for every existing
+# transit / startup-delay / step-motor-pause invariant.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_state_classifier_consults_shared_is_state_in_transit(
+    classifier_setup, monkeypatch
+):
+    """Monkeypatching the helper must flip the classifier's transit decision.
+
+    Proves the classifier actually delegates to
+    ``managers.cover_command.transit.is_state_in_transit`` rather than
+    carrying an inlined ``state in ("opening", "closing")`` copy. We patch
+    the helper to flip its decision and confirm the classifier's behaviour
+    changes — without touching any other input. The classifier reaches the
+    helper via the module attribute (so callers can monkeypatch a single
+    location), not via direct ``from ... import`` at call site.
+    """
+    import custom_components.adaptive_cover_pro.managers.cover_command.state_classifier as classifier_mod
+
+    # Patch the helper to claim "opening" is NOT in transit. The step-motor
+    # pause block's ``was_transitioning`` check (old_state=opening,
+    # new_state=open) is the easiest observable: pre-patch a state change
+    # opening→open with pos unchanged would NOT be classified as step-motor
+    # pause; post-patch ``was_transitioning`` becomes False so the path
+    # falls through to ``transit_cleared``.
+    monkeypatch.setattr(classifier_mod, "is_state_in_transit", lambda _state: False)
+
+    svc = _make_service(target=10, new_pos=50, old_pos=60)
+    classifier, _buf, grace, _debug_log = classifier_setup(svc)
+    grace.start_command_grace_period = MagicMock()
+    classifier.classify(
+        _make_event(
+            "cover.x", new_pos=50, old_pos=60, new_state="open", old_state="opening"
+        ),
+        ignore_intermediate_states=False,
+        target_just_reached=set(),
+        grace_mgr=grace,
+    )
+    # Step-motor pause needs ``was_transitioning`` True; the patched helper
+    # forces it to False, so the pause path no longer fires.
+    grace.start_command_grace_period.assert_not_called()

@@ -385,6 +385,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             tilt_skip_above=_rc_attach.venetian.tilt_skip_above,
             venetian_mode=_rc_attach.venetian.venetian_mode,
             post_settle_hold_seconds=_rc_attach.venetian.post_settle_hold_seconds,
+            backrotate_publish_lag_seconds=(
+                _rc_attach.venetian.backrotate_publish_lag_seconds
+            ),
             invert_tilt=lambda: self._inverse_tilt,
             get_min_change=lambda: self.min_change,
         )
@@ -2149,6 +2152,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             manual_toggle=self.manual_toggle,
             enabled_toggle=(
                 self.enabled_toggle if self.enabled_toggle is not None else True
+            ),
+            primary_axis_suppression_counts=(
+                self.manager.primary_axis_suppression_counts()
             ),
         )
 

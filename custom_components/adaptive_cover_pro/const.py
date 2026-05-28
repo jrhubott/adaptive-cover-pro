@@ -586,7 +586,28 @@ VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS = 5.0
 # 30-95% during the 5-45 s window is implausible on any actuator. A user
 # twisting slats during the window almost always lands within the existing cap
 # (delta ≤ 30) which has always suppressed regardless of actuator speed.
-VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = 45.0
+#
+# Configurable per-instance (issue #33 Phase 5 cross-axis). The module-level
+# default below is consumed when no instance config is available (unit tests,
+# legacy callers); production reads ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG``
+# from options and threads it through ``RuntimeConfig.venetian`` →
+# ``VenetianPolicy.attach()`` → ``DualAxisSequencer.__init__``. The legacy
+# name ``VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS`` is retained as an alias of
+# the default so older tests / re-exports keep working without churn.
+CONF_VENETIAN_BACKROTATE_PUBLISH_LAG = (
+    "venetian_backrotate_publish_lag"  # s, 15.0-180.0
+)
+DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = 45.0  # default publish-lag
+MIN_VENETIAN_BACKROTATE_PUBLISH_LAG = 15.0  # UI lower bound, seconds
+MAX_VENETIAN_BACKROTATE_PUBLISH_LAG = 180.0  # UI upper bound, seconds
+# Backward-compat alias — the old module-level constant the sequencer used to
+# read directly. Tests and any other downstream caller that imports the legacy
+# name continue to see the same float value; new code should pull the value
+# from ``DualAxisSequencer._backrotate_publish_lag_seconds`` so a per-instance
+# override actually flows through.
+VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = (
+    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+)
 
 # Refuse to count unchanged-position samples as a "stall" during the first N
 # seconds of _wait_for_position_settle UNLESS the cover has been observed in
@@ -824,6 +845,10 @@ _RANGE_VENETIAN_TILT_SKIP_ABOVE = (
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
 )  # CONF_VENETIAN_TILT_SKIP_ABOVE, percent
+_RANGE_VENETIAN_BACKROTATE_PUBLISH_LAG = (
+    MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
+)  # CONF_VENETIAN_BACKROTATE_PUBLISH_LAG, seconds
 
 
 def _build_option_ranges() -> dict[str, tuple[float, float]]:
@@ -879,6 +904,7 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_MIN_TILT: _RANGE_MIN_TILT,
         CONF_VENETIAN_POST_SETTLE_HOLD: _RANGE_VENETIAN_POST_SETTLE_HOLD,
         CONF_VENETIAN_TILT_SKIP_ABOVE: _RANGE_VENETIAN_TILT_SKIP_ABOVE,
+        CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: _RANGE_VENETIAN_BACKROTATE_PUBLISH_LAG,
     }
     # Custom-position slots: per-slot position (0–100), priority (1–99), tilt (0–100).
     for slot_keys in CUSTOM_POSITION_SLOTS.values():

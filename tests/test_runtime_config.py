@@ -213,3 +213,28 @@ def test_runtime_config_venetian_slice_reads_options() -> None:
     assert rc.venetian.post_settle_hold_seconds == 5.5
     assert rc.venetian.tilt_skip_above == 80
     assert rc.venetian.venetian_mode == VENETIAN_MODE_TILT_ONLY
+
+
+@pytest.mark.unit
+def test_runtime_config_threads_publish_lag_into_sequencer() -> None:
+    """Issue #33: ``backrotate_publish_lag_seconds`` plumbs through ``VenetianSlice``.
+
+    A user setting ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG`` in options must
+    surface on ``rc.venetian.backrotate_publish_lag_seconds`` so the
+    coordinator can pass it into ``DualAxisSequencer.__init__``. Empty
+    options must fall back to ``DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS``.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+        DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+    )
+
+    rc_default = RuntimeConfig.from_options({})
+    assert (
+        rc_default.venetian.backrotate_publish_lag_seconds
+        == DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+    )
+    assert rc_default.venetian.backrotate_publish_lag_seconds == 45.0
+
+    rc_custom = RuntimeConfig.from_options({CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: 75.0})
+    assert rc_custom.venetian.backrotate_publish_lag_seconds == 75.0

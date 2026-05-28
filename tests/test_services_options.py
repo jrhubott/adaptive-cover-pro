@@ -1393,13 +1393,24 @@ class TestSetVenetian:
         # Key removed (None = clear); coordinator will use DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
         assert CONF_VENETIAN_POST_SETTLE_HOLD not in new_opts
 
-    def test_section_venetian_has_three_keys(self):
-        """_SECTION_VENETIAN must contain all three venetian option keys."""
+    def test_section_venetian_has_four_keys(self):
+        """_SECTION_VENETIAN must contain all four venetian option keys.
+
+        Grew to four with issue #33 Phase 5: ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG``
+        joined the existing three (post-settle hold, tilt-skip-above, venetian
+        mode). The section is the allow-list for ``set_venetian`` so the new
+        publish-lag option becomes settable via that service automatically
+        once it lives here.
+        """
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+        )
         from custom_components.adaptive_cover_pro.services.options_service import (
             _SECTION_VENETIAN,
         )
 
         assert CONF_VENETIAN_POST_SETTLE_HOLD in _SECTION_VENETIAN
         assert CONF_VENETIAN_MODE in _SECTION_VENETIAN
+        assert CONF_VENETIAN_BACKROTATE_PUBLISH_LAG in _SECTION_VENETIAN
         # Skip CONF_VENETIAN_TILT_SKIP_ABOVE import — use length check
-        assert len(_SECTION_VENETIAN) == 3
+        assert len(_SECTION_VENETIAN) == 4

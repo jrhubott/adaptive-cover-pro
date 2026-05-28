@@ -47,7 +47,8 @@
           "inverse_tilt": "Inverser l'inclinaison",
           "max_tilt": "Inclinaison Maximale des Lamelles (%)",
           "min_tilt": "Inclinaison Minimale des Lamelles (%)",
-          "venetian_post_settle_hold": "Délai post-arrêt (s)"
+          "venetian_post_settle_hold": "Délai post-arrêt (s)",
+          "venetian_backrotate_publish_lag": "Fenêtre de latence de publication (s)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -64,7 +65,8 @@
           "inverse_tilt": "Inverse l'axe d'inclinaison uniquement. Activez si votre matériel envoie une inclinaison 0 pour lamelles ouvertes et 100 pour lamelles fermées, ce qui est l'opposé de ce que l'intégration attend. Cela s'applique uniquement à l'axe d'inclinaison (lamelles) — l'axe de position est contrôlé séparément par « Inverser l'état ». La plupart des protections n'ont pas besoin de ceci. Utile pour le matériel KNX ou Somfy où la direction d'inclinaison est câblée à l'opposé de la convention HA.",
           "max_tilt": "Limite de l'angle d'inclinaison maximal des lamelles (0–100 %). Les valeurs plus basses empêchent les lamelles d'atteindre des angles qui réfléchissent la lumière directe du soleil dans la pièce. Défaut : 100 (pas de limite). Exemple : réglez à 70 si les lamelles complètement ouvertes causent des reflets à des angles de soleil maximum.",
           "min_tilt": "Limite inférieure de l'angle d'inclinaison des lamelles (0–100 %). Les valeurs plus élevées empêchent les lamelles de se fermer complètement — utile pour les stores qui bloquent toute la lumière à 0 %. Défaut : 0 (pas de limite). Exemple : réglez à 10 si vos stores deviennent complètement opaques à 0 % et vous voulez toujours un peu de lumière.",
-          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s."
+          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Durée (en secondes) pendant laquelle l'intégration tolère une publication tardive de l'état de position de votre actionneur avant de la traiter comme un geste utilisateur réel. 45 s par défaut convient à Somfy IO via Tahoma. Augmentez à 60–120 s si votre matériel (bus KNX lent, Fibaro/Shelly republish) publie la position actuelle après l'arrêt physique du store – le symptôme est des événements « manual_override_set » parasites déclenchés ~30–90 s après un mouvement commandé. Diminuez uniquement si vous avez un actionneur inhabituellement rapide et souhaitez une détection de faux contact plus stricte. Plage 15–180 s."
         }
       },
       "sun_tracking": {
@@ -558,7 +560,8 @@
           "inverse_tilt": "Inverser l'inclinaison",
           "max_tilt": "Inclinaison Maximale des Lamelles (%)",
           "min_tilt": "Inclinaison Minimale des Lamelles (%)",
-          "venetian_post_settle_hold": "Délai post-arrêt (s)"
+          "venetian_post_settle_hold": "Délai post-arrêt (s)",
+          "venetian_backrotate_publish_lag": "Fenêtre de latence de publication (s)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -575,7 +578,8 @@
           "inverse_tilt": "Inverse l'axe d'inclinaison uniquement. Activez si votre matériel envoie une inclinaison 0 pour lamelles ouvertes et 100 pour lamelles fermées, ce qui est l'opposé de ce que l'intégration attend. Cela s'applique uniquement à l'axe d'inclinaison (lamelles) — l'axe de position est contrôlé séparément par « Inverser l'état ». La plupart des protections n'ont pas besoin de ceci. Utile pour le matériel KNX ou Somfy où la direction d'inclinaison est câblée à l'opposé de la convention HA.",
           "max_tilt": "Limite de l'angle d'inclinaison maximal des lamelles (0–100 %). Les valeurs plus basses empêchent les lamelles d'atteindre des angles qui réfléchissent la lumière directe du soleil dans la pièce. Défaut : 100 (pas de limite). Exemple : réglez à 70 si les lamelles complètement ouvertes causent des reflets à des angles de soleil maximum.",
           "min_tilt": "Limite inférieure de l'angle d'inclinaison des lamelles (0–100 %). Les valeurs plus élevées empêchent les lamelles de se fermer complètement — utile pour les stores qui bloquent toute la lumière à 0 %. Défaut : 0 (pas de limite). Exemple : réglez à 10 si vos stores deviennent complètement opaques à 0 % et vous voulez toujours un peu de lumière.",
-          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s."
+          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Durée (en secondes) pendant laquelle l'intégration tolère une publication tardive de l'état de position de votre actionneur avant de la traiter comme un geste utilisateur réel. 45 s par défaut convient à Somfy IO via Tahoma. Augmentez à 60–120 s si votre matériel (bus KNX lent, Fibaro/Shelly republish) publie la position actuelle après l'arrêt physique du store – le symptôme est des événements « manual_override_set » parasites déclenchés ~30–90 s après un mouvement commandé. Diminuez uniquement si vous avez un actionneur inhabituellement rapide et souhaitez une détection de faux contact plus stricte. Plage 15–180 s."
         }
       },
       "sun_tracking": {
@@ -1662,6 +1666,10 @@
         "venetian_post_settle_hold": {
           "name": "Délai post-arrêt (s)",
           "description": "Secondes d'attente après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison (0,0–10,0 s). Augmenter à 4–6 s pour le firmware KNX FGR223."
+        },
+        "venetian_backrotate_publish_lag": {
+          "description": "Secondes pendant lesquelles l'intégration tolère une publication tardive de l'état de position/inclinaison de l'actionneur avant de la traiter comme un geste utilisateur (15–180 s). 45 s par défaut. Augmentez à 60–120 s pour un bus KNX lent ou Fibaro/Shelly republish ; resserrez uniquement pour les actionneurs inhabituellement rapides.",
+          "name": "Fenêtre de latence de publication (s)"
         }
       }
     },

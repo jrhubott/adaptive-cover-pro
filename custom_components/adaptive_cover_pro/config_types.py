@@ -155,6 +155,15 @@ class VenetianSlice:
     post_settle_hold_seconds: float
     tilt_skip_above: int
     venetian_mode: str
+    # Width (seconds) of the publish-lag suppression window anchored to the
+    # cover's ``moving → settled`` transition (issue #33 Phase 5). Used by
+    # ``DualAxisSequencer.is_in_suppression_with_cap`` for the tilt axis and
+    # by ``VenetianPolicy.primary_axis_suppression`` for the position axis,
+    # so slow-bus actuators (Somfy IO via Tahoma, KNX, Fibaro/Shelly republish)
+    # whose late ``current_position`` / ``current_tilt_position`` publishes
+    # land tens of seconds after physical settle no longer trip false
+    # manual-override events.
+    backrotate_publish_lag_seconds: float
 
 
 # Sub-dataclasses group fields by manager so each manager's ``update_config``
@@ -269,6 +278,7 @@ class RuntimeConfig:
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_START_ENTITY,
             CONF_START_TIME,
+            CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             CONF_VENETIAN_MODE,
             CONF_VENETIAN_POST_SETTLE_HOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
@@ -284,6 +294,7 @@ class RuntimeConfig:
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
             DEFAULT_MOTION_TIMEOUT,
+            DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
             DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
@@ -357,5 +368,9 @@ class RuntimeConfig:
                     CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
                 ),
                 venetian_mode=options.get(CONF_VENETIAN_MODE, DEFAULT_VENETIAN_MODE),
+                backrotate_publish_lag_seconds=options.get(
+                    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+                    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+                ),
             ),
         )

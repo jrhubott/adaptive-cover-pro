@@ -95,6 +95,14 @@ class DiagnosticContext:
     manual_toggle: bool = True
     enabled_toggle: bool = True
 
+    # Issue #33 Phase 5: per-entity counts of cross-axis publish-lag
+    # suppressions in the last 24 h. Threaded in from
+    # ``ManualOverrideManager.primary_axis_suppression_counts()`` so a
+    # user looking at a diagnostic file can immediately see whether the
+    # new guard is firing — and how often — for their actuator. Empty
+    # dict (default) → key omitted from diagnostics output.
+    primary_axis_suppression_counts: dict[str, int] = field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -464,6 +472,14 @@ class DiagnosticsBuilder:
 
         # Always emit cover_commands (empty dict when nothing active)
         diagnostics["cover_commands"] = ctx.cover_command_state or {}
+
+        # Issue #33 Phase 5 cross-axis publish-lag suppression counts.
+        # Surfaced only when non-empty so the field stays out of the way
+        # for users whose actuator publishes inside the default window.
+        if ctx.primary_axis_suppression_counts:
+            diagnostics["primary_axis_suppression_last_24h"] = dict(
+                ctx.primary_axis_suppression_counts
+            )
 
         return diagnostics
 

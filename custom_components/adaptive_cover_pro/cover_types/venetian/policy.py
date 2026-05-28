@@ -25,15 +25,19 @@ from ...const import (
     CONF_INVERSE_TILT,
     CONF_MAX_TILT,
     CONF_MIN_TILT,
+    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     DEFAULT_MAX_TILT,
     DEFAULT_MIN_TILT,
+    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
+    MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
+    MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -71,6 +75,7 @@ _VENETIAN_EXTRA_KEYS = (
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_INVERSE_TILT,
     CONF_MAX_TILT,
     CONF_MIN_TILT,
@@ -95,6 +100,16 @@ def _venetian_extras_schema() -> dict:
             CONF_VENETIAN_POST_SETTLE_HOLD,
             default=DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+        vol.Optional(
+            CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+            default=DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+        ): vol.All(
+            vol.Coerce(float),
+            vol.Range(
+                min=MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
+                max=MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
+            ),
+        ),
         vol.Optional(CONF_INVERSE_TILT, default=False): bool,
         vol.Optional(CONF_MAX_TILT, default=DEFAULT_MAX_TILT): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=100)
@@ -438,6 +453,10 @@ class VenetianPolicy(CoverTypePolicy):
             post_settle_hold_seconds=kwargs.get(
                 "post_settle_hold_seconds", DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
             ),
+            backrotate_publish_lag_seconds=kwargs.get(
+                "backrotate_publish_lag_seconds",
+                DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+            ),
         )
         if "tilt_skip_above" in kwargs:
             self._tilt_skip_above = int(kwargs["tilt_skip_above"])
@@ -462,6 +481,30 @@ class VenetianPolicy(CoverTypePolicy):
         if self._sequencer is None:
             return False
         return self._sequencer.is_in_suppression_with_cap(entity_id, delta)
+
+    def primary_axis_suppression(self, entity_id: str, delta: float = 0.0) -> bool:
+        """Apply the tilt-axis publish-lag window to the position axis too.
+
+        Issue #33 Phase 5 (cross-axis): the user's 2026-05-26 diagnostic on
+        ``cover.wohnzimmerjalousie_links`` shows the position axis hit the
+        same defect that PR #408 fixed on the tilt axis — a slow-bus
+        actuator publishes a stale ``current_position`` ~60 s after the
+        cover has physically stopped, and the position-axis branch of
+        ``handle_state_change`` reads it as a 100 % user-initiated touch.
+
+        Both axes share one predicate
+        (``DualAxisSequencer.is_in_suppression_with_cap``) plus the
+        command-grace tail, so the position-axis path consults exactly the
+        same window the tilt-axis ``SecondaryAxisCheck.suppression`` does.
+        Per CODING_GUIDELINES.md § "No Code Duplication" the shared
+        callback inside :meth:`secondary_axis_check` now delegates here
+        instead of inlining its own OR-composition.
+        """
+        if self._sequencer is None:
+            return False
+        return self._sequencer.is_in_suppression_with_cap(
+            entity_id, delta
+        ) or self._is_in_tilt_command_grace(entity_id, delta)
 
     def _clear_last_tilt(self) -> None:
         """Forget the last resolved tilt so tilt-only cycles don't replay it.
@@ -537,24 +580,21 @@ class VenetianPolicy(CoverTypePolicy):
         where the engine couldn't compute one); otherwise carries the
         expected tilt and the suppression callback into manual_override.
 
-        The suppression callback is an OR-composition of the motor back-rotate
-        suppression window (``is_in_tilt_suppression``) and the command-grace
-        period (``_is_in_tilt_command_grace``).  Either condition is sufficient
-        to suppress the tilt-axis check and prevent a false override.
+        The suppression callback is the same predicate
+        :meth:`primary_axis_suppression` exposes for the position axis
+        (issue #33 Phase 5 cross-axis): the motor back-rotate window
+        OR'd with the command-grace period. Sharing one callback across
+        both axes keeps the publish-lag and grace logic from drifting per
+        CODING_GUIDELINES.md § "No Code Duplication".
         """
         if result is None or result.tilt is None:
             return None
-
-        def _suppression(entity_id: str, delta: float = 0.0) -> bool:
-            return self.is_in_tilt_suppression(
-                entity_id, delta
-            ) or self._is_in_tilt_command_grace(entity_id, delta)
 
         return SecondaryAxisCheck(
             expected=result.tilt,
             attribute="current_tilt_position",
             label="tilt",
-            suppression=_suppression,
+            suppression=self.primary_axis_suppression,
         )
 
     async def before_position_command(

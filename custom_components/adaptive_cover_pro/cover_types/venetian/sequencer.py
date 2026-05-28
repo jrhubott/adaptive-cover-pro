@@ -35,9 +35,9 @@ from homeassistant.exceptions import HomeAssistantError
 
 from ...const import (
     ATTR_TILT_POSITION,
+    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
-    VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES,
     VENETIAN_POSITION_SETTLE_POLL_SECONDS,
     VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS,
@@ -51,15 +51,13 @@ from ...const import (
     VENETIAN_TILT_VERIFY_TOLERANCE,
 )
 from ...managers.cover_command.gates import check_position_delta
+from ...managers.cover_command.transit import is_state_in_transit
 from ...managers.manual_override import inverse_state
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from ...diagnostics.event_buffer import EventBuffer
-
-# HA cover states that indicate the motor is still mid-travel.
-_COVER_MOVING_STATES = frozenset({"opening", "closing"})
 
 # Reason codes for tilt_command_skipped events.
 _TILT_SKIP_DRY_RUN = "dry_run"
@@ -96,8 +94,19 @@ class DualAxisSequencer:
         invert_tilt: Callable[[], bool] | None = None,
         get_min_change: Callable[[], int] | None = None,
         post_settle_hold_seconds: float = DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+        backrotate_publish_lag_seconds: float = (
+            DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+        ),
     ) -> None:
-        """Bind HA + cmd_svc dependencies; per-entity timestamps start empty."""
+        """Bind HA + cmd_svc dependencies; per-entity timestamps start empty.
+
+        ``backrotate_publish_lag_seconds`` (issue #33 Phase 5) is user-
+        configurable via ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG`` and feeds
+        :meth:`is_in_suppression_with_cap`'s post-settle publish-lag tier.
+        Bigger values absorb longer republish lags (slow KNX bus, Somfy IO
+        via Tahoma); smaller values tighten false-touch detection on fast
+        actuators.
+        """
         self._hass = hass
         self._logger = logger
         self._grace_mgr = grace_mgr
@@ -111,6 +120,7 @@ class DualAxisSequencer:
         self._invert_tilt = invert_tilt
         self._get_min_change = get_min_change
         self._post_settle_hold_seconds = post_settle_hold_seconds
+        self._backrotate_publish_lag_seconds = backrotate_publish_lag_seconds
         # Per-entity timestamps. Keep these on the sequencer (rather than on
         # CoverCommandService.PerEntityState) so non-venetian covers carry no
         # dual-axis state at all.
@@ -232,7 +242,7 @@ class DualAxisSequencer:
             return False
         if self._get_state is not None:
             state = self._get_state(entity_id)
-            if state in _COVER_MOVING_STATES:
+            if is_state_in_transit(state):
                 return True
         # (b) Command-grace tail anchored to stamp_position_command.
         stamp = self._suppression_at.get(entity_id)
@@ -248,7 +258,7 @@ class DualAxisSequencer:
             self._stamp_settled(entity_id)
         settled_at = self._settled_at.get(entity_id)
         if settled_at is not None and (
-            self._seconds_since(settled_at) < VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+            self._seconds_since(settled_at) < self._backrotate_publish_lag_seconds
         ):
             return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
@@ -594,7 +604,7 @@ class DualAxisSequencer:
             # Read state once per iteration so both the in-tolerance gate and
             # the no-progress stall counter use the same snapshot.
             state = self._get_state(entity_id) if self._get_state else None
-            is_moving = state in _COVER_MOVING_STATES
+            is_moving = is_state_in_transit(state)
             if is_moving:
                 motion_observed = True
 

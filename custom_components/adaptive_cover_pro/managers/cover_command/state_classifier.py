@@ -42,6 +42,8 @@ import datetime as dt
 from typing import TYPE_CHECKING, Any
 from collections.abc import Callable
 
+from .transit import is_state_in_transit
+
 if TYPE_CHECKING:
     from homeassistant.core import Event
 
@@ -94,10 +96,7 @@ class StateClassifier:
         entity_id = event.entity_id
         if logger is not None:
             logger.debug("Processing state change event: %s", event)
-        if ignore_intermediate_states and event.new_state.state in [
-            "opening",
-            "closing",
-        ]:
+        if ignore_intermediate_states and is_state_in_transit(event.new_state.state):
             if logger is not None:
                 logger.debug("Ignoring intermediate state change for %s", entity_id)
             return
@@ -145,10 +144,7 @@ class StateClassifier:
                 # or "closed" throughout transit and simply update current_position.
                 # The direction/progress check therefore runs for ALL covers based
                 # on position delta, regardless of the HA state string (Issue #285).
-                cover_is_transitioning = event.new_state.state in (
-                    "opening",
-                    "closing",
-                )
+                cover_is_transitioning = is_state_in_transit(event.new_state.state)
 
                 old_position = cmd_svc.read_position_with_capabilities(  # noqa: SLF001
                     entity_id, caps, event.old_state
@@ -163,9 +159,8 @@ class StateClassifier:
                 # resume.  This must be checked before the direction/progress block
                 # so that forward-progress detection (Issue #285) does not short-
                 # circuit the grace-period restart.
-                was_transitioning = (
-                    event.old_state is not None
-                    and event.old_state.state in ("opening", "closing")
+                was_transitioning = event.old_state is not None and is_state_in_transit(
+                    event.old_state.state
                 )
                 if (
                     not cover_is_transitioning
@@ -292,10 +287,7 @@ class StateClassifier:
                         )
                         new_state_str = event.new_state.state
                         state_changed = old_state_str != new_state_str
-                        if (
-                            old_state_str not in ("opening", "closing")
-                            and state_changed
-                        ):
+                        if not is_state_in_transit(old_state_str) and state_changed:
                             self._debug_log(
                                 "manual_override",
                                 "Grace expired but %s position unchanged at %s "

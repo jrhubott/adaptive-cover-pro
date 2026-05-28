@@ -798,13 +798,17 @@ class CoverCommandService:
     def _is_cover_in_transit(self, entity_id: str) -> bool:
         """Return True when HA reports the cover as actively opening or closing.
 
-        Used as a shared predicate by the reconciliation pass and delegated to
-        by StopTracker.is_cover_in_motion, keeping the in-transit definition in
-        a single place. Callers that need to guard against stale position reads
-        during a transit move delegate here rather than inlining the state check.
+        Thin wrapper over :func:`managers.cover_command.transit.is_state_in_transit`
+        so the cover-command service, the dual-axis sequencer, and the
+        state classifier all consult the same string-membership rule (issue
+        #33 Phase 5). Callers that need to guard against stale position
+        reads during a transit move delegate here rather than inlining the
+        state check.
         """
+        from .transit import is_state_in_transit
+
         state_obj = self._hass.states.get(entity_id)
-        return state_obj is not None and state_obj.state in ("opening", "closing")
+        return is_state_in_transit(state_obj.state if state_obj is not None else None)
 
     # ------------------------------------------------------------------ #
     # Gate checks (used internally by apply_position)
