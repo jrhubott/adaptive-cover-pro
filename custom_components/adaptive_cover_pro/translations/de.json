@@ -113,7 +113,8 @@
           "inverse_state": "Zustand umkehren (erforderlich für Beschattungen, die nicht HA-Richtlinien folgen)",
           "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Öffnungs-/Schließungspositionszuordnung)",
           "sunrise_time_entity": "Sonnenaufgangs-Zeit-Entität",
-          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität"
+          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität",
+          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
         },
         "data_description": {
           "default_percentage": "Beschattungsposition, wenn die Sonne nicht vor dem Fenster steht (0-100 %). 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen), 50 % = halb offen (ausgewogenes Licht und Datenschutz), 100 % = offen (Jalousien angehoben / Markise ausgefahren). Dies ist die ‚Ruheposition', die verwendet wird, wenn die Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, blockiert durch Hindernisse oder außerhalb der Verfolgungszeiten).",
@@ -132,7 +133,8 @@
           "inverse_state": "Aktivieren Sie für Beschattungen, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen/gesenkt, 100 = offen/angehoben. Invertiert: 0 = offen/angehoben, 100 = geschlossen/gesenkt. Aktivieren Sie dies NUR, wenn Ihre Beschattung das entgegengesetzte Verhalten zeigt, 100 % schließt anstatt zu öffnen, oder die Dokumentation sagt ‚invertiert' oder ‚umgekehrt'. Testen Sie Ihre Beschattung zunächst manuell. Die meisten Beschattungen benötigen dies nicht.",
           "interp": "Aktivieren Sie die benutzerdefinierte Positionszuordnung zur Kalibrierung von Beschattungen, die nicht linear auf 0–100 %-Befehle reagieren. Wenn aktiviert, wird ein Abschnitt ‚Positionskalibrierung' im Optionsmenü angezeigt (unter Positionseinstellungen), in dem Sie die Zuordnungswerte konfigurieren können. Anwendungsfälle: Beschattung bewegt sich nicht linear, bevorzugte Bereiche (mehr geschlossen oder mehr offen), Kalibrierung für ungewöhnliches Beschattungsverhalten. Deaktiviert für Normalbetrieb lassen.",
           "sunrise_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenaufgang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenaufgangszeit als Grenze zum Schließen des Fensters morgens. Akzeptiert Sensor- oder input_datetime-Entitäten. Der Sonnenaufgang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
-          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist."
+          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
+          "return_sunset": "Wenn der Betriebsendzeitpunkt erreicht ist, verschieben Sie die Beschattung auf die aktuelle wirksame Standardposition (die bei bereits eingetretenem astronomischem Sonnenuntergang die Sonnenuntergangsposition ist, andernfalls die normale Standardposition). Nützlich, wenn Ihr Endzeitpunkt vor Sonnenuntergang liegt und Sie die Beschattung korrekt für den Abend positionieren möchten. Diese Bewegung erfolgt nur, wenn die automatische Steuerung AN ist – wenn die automatische Steuerung deaktiviert ist, bleibt die Beschattung dort, wo sie sich zum Endzeitpunkt befindet."
         }
       },
       "automation": {
@@ -144,8 +146,7 @@
           "start_time": "Startzeit",
           "start_entity": "Entität, die die Startzeit angibt",
           "end_time": "Endzeit",
-          "end_entity": "Entität, die die Endzeit angibt",
-          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
+          "end_entity": "Entität, die die Endzeit angibt"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert winzige Anpassungen bei langsamer Sonnenbewegung. Typische Werte: 1–2% (sehr responsiv, häufige Anpassungen), 5% (ausgewogen, für die meisten empfohlen), 10% (seltener, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30% ist und die Sonne sich leicht bewegt, nur anpassen, wenn die neue Position 35% oder mehr beträgt (mit 5%-Schwellwert). Reduziert Verschleiß und Geräusche durch ständige winzige Anpassungen.",
@@ -153,8 +154,7 @@
           "start_time": "Automatische Steuerung nicht vor dieser Uhrzeit starten (24-Stunden-Format). Nutzen Sie dies, um morgens länger zu schlafen ohne Jalousien (auf 08:00 oder später einstellen), Ihre Routine abzugleichen (auf Ihre Aufwachzeit einstellen) oder lassen Sie es leer, um bei Sonnenaufgang zu starten. Beispiel: „07:30“ bedeutet, dass die automatische Steuerung um 07:30 Uhr beginnt. Manuelle Steuerung funktioniert davor weiterhin.",
           "start_entity": "Entität, die den Startzeitpunkt darstellt und die oben eingestellte feste Startzeit außer Kraft setzt. Nützlich zur Automatisierung der Startzeit mit einer Entität (z. B. Sensor, der die Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
           "end_time": "Automatische Steuerung nach dieser Uhrzeit beenden (24-Stunden-Format). Nutzen Sie dies für Abendprivatsphäre (auf 18:00 oder 19:00 einstellen), Rückkehr zum Standard vor dem Schlafengehen oder lassen Sie es leer, um bis zum Sonnenuntergang weiterzumachen. Beispiel: „20:00“ bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
-          "end_entity": "Entität, die den Endzeitpunkt darstellt und die oben eingestellte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
-          "return_sunset": "Wenn der Betriebsendzeitpunkt erreicht ist, verschieben Sie die Beschattung auf die aktuelle wirksame Standardposition (die bei bereits eingetretenem astronomischem Sonnenuntergang die Sonnenuntergangsposition ist, andernfalls die normale Standardposition). Nützlich, wenn Ihr Endzeitpunkt vor Sonnenuntergang liegt und Sie die Beschattung korrekt für den Abend positionieren möchten. Diese Bewegung erfolgt nur, wenn die automatische Steuerung AN ist – wenn die automatische Steuerung deaktiviert ist, bleibt die Beschattung dort, wo sie sich zum Endzeitpunkt befindet."
+          "end_entity": "Entität, die den Endzeitpunkt darstellt und die oben eingestellte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt)."
         }
       },
       "manual_override": {
@@ -515,8 +515,7 @@
           "start_time": "Startzeit",
           "start_entity": "Entität, die die Startzeit angibt",
           "end_time": "Endzeit",
-          "end_entity": "Entität, die die Endzeit angibt",
-          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
+          "end_entity": "Entität, die die Endzeit angibt"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert kleine Anpassungen, während sich die Sonne langsam bewegt. Typische Werte: 1-2 % (sehr reaktiv, kann häufig anpassen), 5 % (ausgewogen, empfohlen für die meisten), 10 % (weniger häufig, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30 % ist und die Sonne sich leicht bewegt, passen Sie nur an, wenn die neue Position 35 % oder höher ist (mit 5 % Schwelle). Reduziert Motorverschleiß und Lärm von konstanten kleinen Anpassungen.",
@@ -524,8 +523,7 @@
           "start_time": "Starten Sie nicht die automatische Kontrolle vor dieser Zeit (24-Stunden-Format). Verwenden Sie dies, um länger zu schlafen ohne Morgenblindheit (auf 08:00 oder später setzen), Ihrer Routine zu entsprechen (auf Aufwachzeit setzen), oder leer lassen, um bei Sonnenaufgang zu starten. Beispiel: ‚07:30' bedeutet, dass die automatische Kontrolle um 07:30 Uhr beginnt. Manuelle Kontrolle funktioniert vor dieser Zeit immer noch.",
           "start_entity": "Entität, die den Startzeitstatus darstellt und die oben festgelegte feste Startzeit überschreibt. Nützlich zur Automatisierung der Startzeit mit einer Entität (z. B. Sensor, der Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
           "end_time": "Beenden Sie die automatische Kontrolle nach dieser Zeit (24-Stunden-Format). Verwenden Sie dies, um Abendprivatsphäre zu behalten (auf 18:00 oder 19:00 setzen), zur Standardposition vor dem Schlafengehen zurückzukehren, oder leer lassen, um bis zum Sonnenuntergang zu fahren. Beispiel: ‚20:00' bedeutet, dass die automatische Kontrolle um 20:00 Uhr endet. Manuelle Kontrolle funktioniert nach dieser Zeit immer noch.",
-          "end_entity": "Entität, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit überschreibt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
-          "return_sunset": "Wenn die betriebliche Endzeit erreicht ist, senden Sie Beschattungen in die aktuelle effektive Standardposition (die die Sonnenuntergangsposition ist, wenn der astronomische Sonnenuntergang bereits aufgetreten ist, ansonsten die normale Standardposition). Nützlich, wenn Ihre Endzeit vor Sonnenuntergang liegt und Sie die Beschattungen korrekt für den Abend positionieren möchten. Diese Bewegung tritt nur auf, wenn die Automatische Kontrolle AKTIVIERT ist – wenn die Automatische Kontrolle deaktiviert ist, bleibt die Beschattung dort, wo sie zur Endzeit ist."
+          "end_entity": "Entität, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit überschreibt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt)."
         }
       },
       "cover_entities": {
@@ -626,7 +624,8 @@
           "inverse_state": "Zustand umkehren (erforderlich für Beschattungen, die nicht HA-Richtlinien folgen)",
           "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Öffnungs-/Schließungspositionszuordnung)",
           "sunrise_time_entity": "Sonnenaufgangs-Zeit-Entität",
-          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität"
+          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität",
+          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
         },
         "data_description": {
           "default_percentage": "Behangposition, wenn die Sonne nicht vor dem Fenster steht (0–100%). 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen), 50% = halb offen (ausgewogenes Licht und Datenschutz), 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Dies ist die 'Ruheposition', die verwendet wird, wenn Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, wird durch Hindernisse blockiert oder liegt außerhalb der Verfolgungszeiten).",
@@ -645,7 +644,8 @@
           "inverse_state": "Aktivieren Sie dies für Behänge, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen/heruntergelassen, 100 = offen/hochgezogen. Invertiert: 0 = offen/hochgezogen, 100 = geschlossen/heruntergelassen. Markieren Sie dies NUR, wenn Ihr Behang entgegengesetztes Verhalten zeigt, 100% schließt statt öffnet, oder die Dokumentation sagt 'invertiert' oder 'umgekehrt'. Testen Sie Ihren Behang zunächst manuell, um sicherzustellen. Die meisten Behänge benötigen dies nicht.",
           "interp": "Aktivieren Sie benutzerdefinierte Positionszuordnung zur Kalibrierung von Behängen, die nicht linear auf 0–100 %-Befehle reagieren. Wenn aktiviert, wird ein Abschnitt 'Positionskalibrierung' im Optionsmenü angezeigt (unter Positionseinstellungen), wo Sie die Zuordnungswerte konfigurieren können. Anwendungsfälle: Behang bewegt sich nicht linear, bevorzugt bestimmte Bereiche (mehr geschlossen oder mehr offen), Kalibrierung für ungewöhnliches Behangverhalten. Deaktiviert lassen für normalen Betrieb.",
           "sunrise_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenaufgang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenaufgangszeit als Grenze zum Schließen des Fensters morgens. Akzeptiert Sensor- oder input_datetime-Entitäten. Der Sonnenaufgang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
-          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist."
+          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
+          "return_sunset": "Wenn die betriebliche Endzeit erreicht ist, senden Sie Beschattungen in die aktuelle effektive Standardposition (die die Sonnenuntergangsposition ist, wenn der astronomische Sonnenuntergang bereits aufgetreten ist, ansonsten die normale Standardposition). Nützlich, wenn Ihre Endzeit vor Sonnenuntergang liegt und Sie die Beschattungen korrekt für den Abend positionieren möchten. Diese Bewegung tritt nur auf, wenn die Automatische Kontrolle AKTIVIERT ist – wenn die Automatische Kontrolle deaktiviert ist, bleibt die Beschattung dort, wo sie zur Endzeit ist."
         }
       },
       "manual_override": {

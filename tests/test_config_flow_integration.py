@@ -95,6 +95,7 @@ _POSITION = {
     # CONF_SUNSET_POS is Optional — omit to use default
     CONF_SUNSET_OFFSET: 0,
     CONF_SUNRISE_OFFSET: 0,
+    CONF_RETURN_SUNSET: False,
     CONF_INVERSE_STATE: False,
     "interp": False,
     "open_close_threshold": 50,
@@ -105,7 +106,6 @@ _AUTOMATION = {
     CONF_DELTA_TIME: 2,  # plain integer (minutes) per AUTOMATION_SCHEMA
     CONF_START_TIME: "08:00:00",
     CONF_END_TIME: "20:00:00",
-    CONF_RETURN_SUNSET: False,
     # start_entity / end_entity are Optional — omit
 }
 
@@ -738,6 +738,7 @@ def test_config_flow_does_not_import_async_get_translations() -> None:
                 CONF_ENABLE_MAX_POSITION: False,
                 CONF_SUNSET_OFFSET: 0,
                 CONF_SUNRISE_OFFSET: 0,
+                CONF_RETURN_SUNSET: False,
                 CONF_INVERSE_STATE: False,
                 "interp": False,
                 "open_close_threshold": 50,
@@ -750,7 +751,6 @@ def test_config_flow_does_not_import_async_get_translations() -> None:
                 CONF_DELTA_TIME: 2,
                 CONF_START_TIME: "08:00:00",
                 CONF_END_TIME: "20:00:00",
-                CONF_RETURN_SUNSET: False,
             },
         ),
         (

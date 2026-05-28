@@ -565,7 +565,9 @@ class DiagnosticsBuilder:
                 "blind_spot_left": options.get(CONF_BLIND_SPOT_LEFT),
                 "blind_spot_right": options.get(CONF_BLIND_SPOT_RIGHT),
                 "min_position": options.get(CONF_MIN_POSITION),
-                "min_position_sun_tracking": options.get(CONF_MIN_POSITION_SUN_TRACKING),
+                "min_position_sun_tracking": options.get(
+                    CONF_MIN_POSITION_SUN_TRACKING
+                ),
                 "max_position": options.get(CONF_MAX_POSITION),
                 "enable_min_position": options.get(CONF_ENABLE_MIN_POSITION, False),
                 "enable_max_position": options.get(CONF_ENABLE_MAX_POSITION, False),

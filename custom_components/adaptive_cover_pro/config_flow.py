@@ -308,6 +308,9 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(
+            CONF_ENABLE_MAX_POSITION, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_MAX_POSITION, default=100): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
@@ -318,7 +321,7 @@ POSITION_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(
-            CONF_ENABLE_MAX_POSITION, default=False
+            CONF_ENABLE_MIN_POSITION, default=False
         ): selector.BooleanSelector(),
         vol.Optional(CONF_MIN_POSITION, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -329,9 +332,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(
-            CONF_ENABLE_MIN_POSITION, default=False
-        ): selector.BooleanSelector(),
         vol.Optional(CONF_MIN_POSITION_SUN_TRACKING): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -340,6 +340,12 @@ POSITION_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="%",
             )
+        ),
+        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
         vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -350,19 +356,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(
-            CONF_ENABLE_MY_POSITION_ENTITIES,
-            default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_MY_POSITION_VALUE): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=99,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="%",
-            )
-        ),
-        vol.Optional(CONF_SUNSET_USE_MY, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=-120,
@@ -379,12 +372,20 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="minutes",
             )
         ),
-        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_ENABLE_MY_POSITION_ENTITIES,
+            default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
+        ): selector.BooleanSelector(),
+        vol.Optional(CONF_MY_POSITION_VALUE): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=99,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
         ),
-        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
+        vol.Optional(CONF_SUNSET_USE_MY, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
@@ -430,15 +431,14 @@ AUTOMATION_SCHEMA = vol.Schema(
                 unit_of_measurement="minutes",
             )
         ),
-        vol.Optional(CONF_START_TIME, default="00:00:00"): selector.TimeSelector(),
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
-        vol.Optional(CONF_END_TIME, default="00:00:00"): selector.TimeSelector(),
+        vol.Optional(CONF_START_TIME, default="00:00:00"): selector.TimeSelector(),
         vol.Optional(CONF_END_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
-        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_END_TIME, default="00:00:00"): selector.TimeSelector(),
     }
 )
 
@@ -696,6 +696,18 @@ def weather_override_schema(
                 CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
             ): _numeric_selector(),
             vol.Optional(
+                CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
+            ): _numeric_selector(),
+            vol.Optional(
+                CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
+            ): _binary_on_selector(),
+            vol.Optional(
+                CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
+            ): _binary_on_selector(),
+            vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): _binary_on_selector(
+                multiple=True
+            ),
+            vol.Optional(
                 CONF_WEATHER_WIND_SPEED_THRESHOLD,
                 default=DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
             ): selector.NumberSelector(
@@ -720,9 +732,6 @@ def weather_override_schema(
                 )
             ),
             vol.Optional(
-                CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
-            ): _numeric_selector(),
-            vol.Optional(
                 CONF_WEATHER_RAIN_THRESHOLD, default=DEFAULT_WEATHER_RAIN_THRESHOLD
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -732,15 +741,6 @@ def weather_override_schema(
                     mode=selector.NumberSelectorMode.SLIDER,
                     unit_of_measurement=rain_unit,
                 )
-            ),
-            vol.Optional(
-                CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
-            ): _binary_on_selector(),
-            vol.Optional(
-                CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
-            ): _binary_on_selector(),
-            vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): _binary_on_selector(
-                multiple=True
             ),
             vol.Optional(
                 CONF_WEATHER_OVERRIDE_POSITION, default=0
@@ -820,6 +820,18 @@ def light_cloud_schema(
                 selector.EntityFilterSelectorConfig(domain="weather")
             ),
             vol.Optional(
+                CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
+            ): _binary_on_selector(),
+            vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): _numeric_selector(
+                device_class="illuminance"
+            ),
+            vol.Optional(
+                CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
+            ): _numeric_selector(device_class="irradiance"),
+            vol.Optional(
+                CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
+            ): _numeric_selector(),
+            vol.Optional(
                 CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -845,20 +857,11 @@ def light_cloud_schema(
                     ],
                 )
             ),
-            vol.Optional(
-                CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
-            ): _binary_on_selector(),
-            vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): _numeric_selector(
-                device_class="illuminance"
-            ),
             vol.Optional(CONF_LUX_THRESHOLD, default=1000): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     mode=selector.NumberSelectorMode.BOX, unit_of_measurement=lux_unit
                 )
             ),
-            vol.Optional(
-                CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
-            ): _numeric_selector(device_class="irradiance"),
             vol.Optional(
                 CONF_IRRADIANCE_THRESHOLD, default=300
             ): selector.NumberSelector(
@@ -866,9 +869,6 @@ def light_cloud_schema(
                     mode=selector.NumberSelectorMode.BOX, unit_of_measurement=irr_unit
                 )
             ),
-            vol.Optional(
-                CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
-            ): _numeric_selector(),
             vol.Optional(
                 CONF_CLOUD_COVERAGE_THRESHOLD, default=DEFAULT_CLOUD_COVERAGE_THRESHOLD
             ): selector.NumberSelector(
@@ -925,6 +925,12 @@ def temperature_climate_schema(
             vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
                 selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
             ),
+            vol.Optional(
+                CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
+            ): _numeric_selector(),
+            vol.Optional(
+                CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
+            ): _presence_like_selector(),
             vol.Optional(CONF_TEMP_LOW, default=21): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=_TEMP_RANGE_MIN,
@@ -943,9 +949,6 @@ def temperature_climate_schema(
                     unit_of_measurement=inside_unit,
                 )
             ),
-            vol.Optional(
-                CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
-            ): _numeric_selector(),
             vol.Optional(CONF_OUTSIDE_THRESHOLD, default=25): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=_TEMP_RANGE_MIN,
@@ -954,9 +957,6 @@ def temperature_climate_schema(
                     unit_of_measurement=outside_unit,
                 )
             ),
-            vol.Optional(
-                CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
-            ): _presence_like_selector(),
             vol.Optional(
                 CONF_TRANSPARENT_BLIND, default=False
             ): selector.BooleanSelector(),
@@ -2015,6 +2015,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_INVERSE_STATE,
             CONF_INTERP,
+            CONF_RETURN_SUNSET,
         }
     ),
     "interp": frozenset(
@@ -2033,7 +2034,6 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_START_ENTITY,
             CONF_END_TIME,
             CONF_END_ENTITY,
-            CONF_RETURN_SUNSET,
         }
     ),
     "manual_override": frozenset(

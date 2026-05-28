@@ -113,7 +113,8 @@
           "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
           "interp": "Activer l'étalonnage de position (mappage custom position ouverture/fermeture)",
           "sunrise_time_entity": "Entité Heure de Lever du Soleil",
-          "sunset_time_entity": "Entité Heure de Coucher du Soleil"
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
+          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
@@ -132,7 +133,8 @@
           "inverse_state": "Activez pour les stores où la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez ceci UNIQUEMENT si votre store montre un comportement opposé, 100% ferme au lieu d'ouvrir, ou la documentation dit « inversé » ou « inversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
           "interp": "Activez le mappage de position personnalisé pour étalonner les stores qui ne répondent pas linéairement aux commandes 0–100%. Quand activé, une section « Étalonnage de position » apparaîtra dans le menu des options (sous Paramètres de position) où vous pouvez configurer les valeurs de mappage. Cas d'utilisation : le store ne se déplace pas linéairement, préférez certaines plages (plus fermé ou plus ouvert), étalonner pour un comportement de store inhabituel. Laissez désactivé pour un fonctionnement normal.",
           "sunrise_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « lever du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de lever du soleil calculée par astral en tant que limite de fermeture de fenêtre le matin. Accepte les entités sensor ou input_datetime. Le Décalage Lever du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible."
+          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
+          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
         }
       },
       "automation": {
@@ -144,8 +146,7 @@
           "start_time": "Heure de début",
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
-          "end_entity": "Entité indiquant l'heure de fin",
-          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
+          "end_entity": "Entité indiquant l'heure de fin"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -153,8 +154,7 @@
           "start_time": "Ne commencez pas le contrôle automatique avant cette heure (format 24 heures). Utilisez ceci pour rester endormi sans stores du matin (réglez sur 08:00 ou plus tard), correspondez à votre routine (réglez sur l'heure du réveil), ou laissez vide pour commencer au lever du soleil. Exemple : '07:30' signifie que le contrôle automatique commence à 7:30 AM. Le contrôle manuel fonctionne toujours avant cette heure.",
           "start_entity": "Entité représentant l'état de l'heure de début, remplaçant l'heure de début fixe définie ci-dessus. Utile pour automatiser l'heure de début avec une entité (par ex., un capteur qui fournit l'heure du réveil en fonction du calendrier ou du suivi du sommeil).",
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
-          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
-          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
+          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne)."
         }
       },
       "manual_override": {
@@ -515,8 +515,7 @@
           "start_time": "Heure de début",
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
-          "end_entity": "Entité indiquant l'heure de fin",
-          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
+          "end_entity": "Entité indiquant l'heure de fin"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -524,8 +523,7 @@
           "start_time": "Ne commencez pas le contrôle automatique avant cette heure (format 24 heures). Utilisez ceci pour rester endormi sans stores du matin (réglez sur 08:00 ou plus tard), correspondez à votre routine (réglez sur l'heure du réveil), ou laissez vide pour commencer au lever du soleil. Exemple : '07:30' signifie que le contrôle automatique commence à 7:30 AM. Le contrôle manuel fonctionne toujours avant cette heure.",
           "start_entity": "Entité représentant l'état de l'heure de début, remplaçant l'heure de début fixe définie ci-dessus. Utile pour automatiser l'heure de début avec une entité (par ex., un capteur qui fournit l'heure du réveil en fonction du calendrier ou du suivi du sommeil).",
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
-          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
-          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
+          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne)."
         }
       },
       "cover_entities": {
@@ -626,7 +624,8 @@
           "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
           "interp": "Activer l'étalonnage de position (mappage custom position ouverture/fermeture)",
           "sunrise_time_entity": "Entité Heure de Lever du Soleil",
-          "sunset_time_entity": "Entité Heure de Coucher du Soleil"
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
+          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
@@ -645,7 +644,8 @@
           "inverse_state": "Activez pour les stores où la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez ceci UNIQUEMENT si votre store montre un comportement opposé, 100% ferme au lieu d'ouvrir, ou la documentation dit « inversé » ou « inversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
           "interp": "Activez le mappage de position personnalisé pour étalonner les stores qui ne répondent pas linéairement aux commandes 0–100%. Quand activé, une section « Étalonnage de position » apparaîtra dans le menu des options (sous Paramètres de position) où vous pouvez configurer les valeurs de mappage. Cas d'utilisation : le store ne se déplace pas linéairement, préférez certaines plages (plus fermé ou plus ouvert), étalonner pour un comportement de store inhabituel. Laissez désactivé pour un fonctionnement normal.",
           "sunrise_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « lever du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de lever du soleil calculée par astral en tant que limite de fermeture de fenêtre le matin. Accepte les entités sensor ou input_datetime. Le Décalage Lever du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible."
+          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
+          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
         }
       },
       "manual_override": {
