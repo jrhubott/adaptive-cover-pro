@@ -38,8 +38,8 @@ _elevation = st.floats(
 )
 # Window azimuth: 0–360
 _win_azi = st.integers(min_value=0, max_value=360)
-# FOV: 1–90 degrees per side
-_fov = st.integers(min_value=1, max_value=90)
+# FOV: 0–90 degrees per side (0 is valid: no FOV on that side)
+_fov = st.integers(min_value=0, max_value=90)
 # Distance from window: 0.1–10 metres
 _distance = st.floats(
     min_value=0.1, max_value=10.0, allow_nan=False, allow_infinity=False

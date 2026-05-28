@@ -82,12 +82,22 @@ class CoverConfig:
             CONF_SUNRISE_OFFSET,
             CONF_SUNSET_OFFSET,
             CONF_SUNSET_POS,
+            DEFAULT_FOV_LEFT,
+            DEFAULT_FOV_RIGHT,
         )
 
         return cls(
             win_azi=options.get(CONF_AZIMUTH) or 180,
-            fov_left=options.get(CONF_FOV_LEFT) or 90,
-            fov_right=options.get(CONF_FOV_RIGHT) or 90,
+            fov_left=(
+                options[CONF_FOV_LEFT]
+                if options.get(CONF_FOV_LEFT) is not None
+                else DEFAULT_FOV_LEFT
+            ),
+            fov_right=(
+                options[CONF_FOV_RIGHT]
+                if options.get(CONF_FOV_RIGHT) is not None
+                else DEFAULT_FOV_RIGHT
+            ),
             h_def=options.get(CONF_DEFAULT_HEIGHT) or 0,
             sunset_pos=options.get(CONF_SUNSET_POS),
             sunset_off=options.get(CONF_SUNSET_OFFSET) or 0,

@@ -252,6 +252,55 @@ class TestFOVBoundary:
 
 
 # ===========================================================================
+# 3b. FOV zero boundary — config loader must preserve fov=0
+# ===========================================================================
+
+
+class TestFOVZeroBoundary:
+    """fov=0 is a valid configuration meaning 'no field of view on that side'."""
+
+    @pytest.mark.unit
+    def test_fov_left_zero_loaded_as_zero_not_default(self):
+        """CoverConfig.from_options must preserve fov_left=0, not substitute 90."""
+        from custom_components.adaptive_cover_pro.config_types import CoverConfig
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_FOV_LEFT,
+            CONF_FOV_RIGHT,
+        )
+
+        cfg = CoverConfig.from_options({CONF_FOV_LEFT: 0, CONF_FOV_RIGHT: 90})
+        assert cfg.fov_left == 0
+
+    @pytest.mark.unit
+    def test_fov_right_zero_loaded_as_zero_not_default(self):
+        """CoverConfig.from_options must preserve fov_right=0, not substitute 90."""
+        from custom_components.adaptive_cover_pro.config_types import CoverConfig
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_FOV_LEFT,
+            CONF_FOV_RIGHT,
+        )
+
+        cfg = CoverConfig.from_options({CONF_FOV_LEFT: 90, CONF_FOV_RIGHT: 0})
+        assert cfg.fov_right == 0
+
+    @pytest.mark.unit
+    def test_sun_with_positive_gamma_outside_zero_left_fov_is_not_valid(self):
+        """When fov_left=0, any sun at gamma>0 is outside the left FOV."""
+        sg = _make_sun_geometry(sol_azi=170.0, win_azi=180, fov_left=0, fov_right=90)
+        # gamma = 180 - 170 = +10 (sun to the left of window normal)
+        assert sg.gamma == pytest.approx(10.0)
+        assert sg.valid is False
+
+    @pytest.mark.unit
+    def test_sun_with_negative_gamma_outside_zero_right_fov_is_not_valid(self):
+        """When fov_right=0, any sun at gamma<0 is outside the right FOV."""
+        sg = _make_sun_geometry(sol_azi=190.0, win_azi=180, fov_left=90, fov_right=0)
+        # gamma = 180 - 190 = -10 (sun to the right of window normal)
+        assert sg.gamma == pytest.approx(-10.0)
+        assert sg.valid is False
+
+
+# ===========================================================================
 # 4. control_state_reason missing branches
 # ===========================================================================
 
