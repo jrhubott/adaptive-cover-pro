@@ -418,11 +418,12 @@ class TestStartTimeSuppressesSunsetDuringOperationalWindow:
         the operational window is open even if before astronomical sunrise.
 
         Scenario: sunrise=08:00, sunrise_off=10 → window closes at 08:10.
-        now=08:05 → before_sunrise normally True, but after_start_time suppresses it.
+        now=08:05 → before_sunrise normally True, but window_explicitly_started
+        suppresses it.
         """
         sun_data = _make_sun_data(sunset_hour=18, sunrise_hour=8)
         # sunrise=08:00, offset=10 → boundary at 08:10; now=08:05 → before_sunrise
-        # without fix; suppressed with after_start_time=True.
+        # without fix; suppressed with window_explicitly_started=True.
         with _freeze_now(_today(8, 5)):
             effective, is_sunset_active = compute_effective_default(
                 h_def=100,
@@ -430,7 +431,7 @@ class TestStartTimeSuppressesSunsetDuringOperationalWindow:
                 sun_data=sun_data,
                 sunset_off=0,
                 sunrise_off=10,
-                after_start_time=True,
+                window_explicitly_started=True,
             )
 
         assert is_sunset_active is False

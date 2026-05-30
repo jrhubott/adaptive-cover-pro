@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     from ..config_context_adapter import ConfigContextAdapter
 
+from ..const import BLANK_TIME
 from ..helpers import get_datetime_from_str, get_safe_state
 
 
@@ -104,14 +105,16 @@ class TimeWindowManager:
             return time.replace(year=today.year, month=today.month, day=today.day)
         return time
 
-    @property
-    def after_start_time(self) -> bool:
-        """Check if current time is after start time.
+    def _start_has_passed(self) -> bool | None:
+        """Evaluate the configured start time against now.
 
         Returns:
-            True if current time is after configured start time (from entity
-            or static config), False otherwise. Returns True if no start time
-            configured.
+            ``True``/``False`` when a *real* start time (entity or non-blank
+            static config) is configured — whether ``now`` is at/after it.
+            ``None`` when there is no real start time: no entity and the static
+            value is either unset or the blank sentinel ``BLANK_TIME``, or the
+            entity/config value could not be parsed. ``None`` means "no explicit
+            operational-window start" — distinct from an explicit 00:00 start.
 
         """
         now = dt.datetime.now()
@@ -121,29 +124,57 @@ class TimeWindowManager:
             )
             if time is None:
                 self.logger.debug(
-                    "Start time entity %s returned None, treating as start passed",
+                    "Start time entity %s returned None, treating as no start set",
                     self._start_time_entity,
                 )
-                return True
+                return None
             time = self._normalize_to_today(time)
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s ", time, now, now >= time
             )
             self._cached_start_time = time
             return now >= time
-        if self._start_time is not None:
+        if self._start_time is not None and self._start_time != BLANK_TIME:
             time = get_datetime_from_str(self._start_time)
             if time is None:
                 self.logger.debug(
-                    "Start time config value could not be parsed, treating as start passed"
+                    "Start time config value could not be parsed, treating as no start set"
                 )
-                return True
+                return None
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s", time, now, now >= time
             )
             self._cached_start_time = time
             return now >= time
-        return True
+        return None
+
+    @property
+    def after_start_time(self) -> bool:
+        """Check if current time is after start time.
+
+        Returns:
+            True if current time is after configured start time (from entity
+            or static config), False otherwise. Returns True if no start time
+            configured (including the blank sentinel) — the active-window logic
+            keys on this meaning "no start restriction".
+
+        """
+        passed = self._start_has_passed()
+        return True if passed is None else passed
+
+    @property
+    def window_explicitly_started(self) -> bool:
+        """Whether a real (non-blank) start time is configured AND has passed.
+
+        Distinct from :pyattr:`after_start_time`, which returns True for the
+        no-start / blank-sentinel case. Used by ``compute_effective_default`` to
+        suppress the overnight position only when the user's operational window
+        has genuinely opened — not when the start time is merely blank
+        (issue #492). Returns False when no real start is configured.
+
+        """
+        passed = self._start_has_passed()
+        return False if passed is None else passed
 
     @property
     def end_time(self) -> dt.datetime | None:

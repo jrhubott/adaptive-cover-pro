@@ -401,6 +401,22 @@ def test_start_entity_preferred_over_default_start_time():
     assert "until 00:00:00" not in summary
 
 
+def test_blank_start_end_time_not_shown_as_literal():
+    """Blank-sentinel start/end times must not render as 'from 00:00:00'.
+
+    Regression for issue #492: a cleared TimeSelector coerces to the blank
+    sentinel '00:00:00'. The summary must treat it as unset (sunrise/sunset)
+    rather than printing a literal midnight window.
+    """
+    from custom_components.adaptive_cover_pro.const import BLANK_TIME
+
+    cfg = {CONF_START_TIME: BLANK_TIME, CONF_END_TIME: BLANK_TIME}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "from 00:00:00" not in summary
+    assert "until 00:00:00" not in summary
+    assert "Active during daylight" in summary
+
+
 def test_explicit_start_time_used_when_no_entity():
     """Static time is used when no entity is configured."""
     cfg = {CONF_START_TIME: "07:00", CONF_END_TIME: "21:00"}

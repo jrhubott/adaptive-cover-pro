@@ -1289,6 +1289,62 @@ async def test_options_flow_custom_position_clears_sensor_position_and_priority(
         ), f"{slot['priority']} should be None after clearing"
 
 
+@pytest.mark.integration
+async def test_cleared_start_time_persists_blank(hass: HomeAssistant) -> None:
+    """Clearing the start time in the automation step must not persist '00:00:00'.
+
+    Regression for issue #492: a previously-saved start_time of '08:00:00' that
+    the user clears (the form omits the key) must end up absent/None in stored
+    options, never the blank sentinel '00:00:00' — otherwise the night position
+    is suppressed every night after midnight.
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    pre_options = dict(VERTICAL_OPTIONS)  # start_time = "08:00:00"
+    pre_options[CONF_START_TIME] = "08:00:00"
+    pre_options[CONF_END_TIME] = "20:00:00"
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Clear Time", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=pre_options,
+        entry_id="clear_start_time_01",
+        title="Clear Time",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "automation"}
+    )
+    assert result["step_id"] == "automation"
+
+    # Submit the automation step omitting the time keys (cleared TimeSelectors).
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_DELTA_POSITION: 5, CONF_DELTA_TIME: 2},
+    )
+    assert result["type"] in ("form", "menu")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "done"}
+    )
+    assert result["type"] == "create_entry"
+
+    saved = result["data"]
+    assert (
+        saved.get(CONF_START_TIME) is None
+    ), f"start_time should be absent/None, got {saved.get(CONF_START_TIME)!r}"
+    assert (
+        saved.get(CONF_END_TIME) is None
+    ), f"end_time should be absent/None, got {saved.get(CONF_END_TIME)!r}"
+
+
 # ---------------------------------------------------------------------------
 # Regression: clearing Is Sunny sensor in light_cloud step (issue #377)
 # ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
+    BLANK_TIME,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -434,11 +435,14 @@ AUTOMATION_SCHEMA = vol.Schema(
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
-        vol.Optional(CONF_START_TIME, default="00:00:00"): selector.TimeSelector(),
+        # No default: a cleared TimeSelector must leave the key absent so it can
+        # be stripped (issue #492). Blank stripping is enforced in
+        # async_step_automation since the suggested-values path can re-add it.
+        vol.Optional(CONF_START_TIME): selector.TimeSelector(),
         vol.Optional(CONF_END_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
-        vol.Optional(CONF_END_TIME, default="00:00:00"): selector.TimeSelector(),
+        vol.Optional(CONF_END_TIME): selector.TimeSelector(),
     }
 )
 
@@ -1693,13 +1697,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     timing_parts = []
     if start_entity:
         timing_parts.append(f"from {start_entity}")
-    elif start_time:
+    elif start_time and start_time != BLANK_TIME:
         timing_parts.append(f"from {start_time}")
     if end_entity:
         timing_parts.append(f"until {end_entity}")
-    elif end_time:
+    elif end_time and end_time != BLANK_TIME:
         timing_parts.append(f"until {end_time}")
-    if timing_parts or sunset_pos is not None:
+    # A schedule key present but blank (cleared TimeSelector → "00:00:00") still
+    # means the user configured the automation window — show "Active during
+    # daylight" rather than nothing, so the summary reflects the real behavior
+    # (issue #492). CONF_*_TIME default to BLANK_TIME, so test membership too.
+    schedule_configured = any(
+        config.get(key) not in (None, BLANK_TIME)
+        for key in (CONF_START_ENTITY, CONF_END_ENTITY)
+    ) or any(key in config for key in (CONF_START_TIME, CONF_END_TIME))
+    if timing_parts or sunset_pos is not None or schedule_configured:
         timing_str = (
             " ".join(timing_parts) if timing_parts else "Active during daylight"
         )
@@ -3387,6 +3399,14 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage automation options."""
         if user_input is not None:
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
+            # A cleared TimeSelector either omits the key or coerces to the blank
+            # sentinel "00:00:00". Treat both as "unset": drop the key from the
+            # submission and from any previously-stored option so it never
+            # persists as a literal midnight window (issue #492).
+            for time_key in (CONF_START_TIME, CONF_END_TIME):
+                if user_input.get(time_key) in (None, BLANK_TIME):
+                    user_input.pop(time_key, None)
+                    self.options.pop(time_key, None)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(

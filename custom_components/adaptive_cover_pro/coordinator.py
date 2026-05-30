@@ -967,23 +967,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # (astronomical_sunrise + sunrise_offset).
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)  # None when not configured
-        sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-        sunrise_off = int(
-            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
-        )
-        sunset_time = _read_time_entity(self.hass, options.get(CONF_SUNSET_TIME_ENTITY))
-        sunrise_time = _read_time_entity(
-            self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
-        )
-        effective_default, is_sunset_active = compute_effective_default(
-            h_def=h_def,
-            sunset_pos=sunset_pos_cfg,
-            sun_data=cover_data.sun_data,
-            sunset_off=sunset_off,
-            sunrise_off=sunrise_off,
-            sunset_time=sunset_time,
-            sunrise_time=sunrise_time,
-            after_start_time=self.after_start_time,
+        effective_default, is_sunset_active = self._compute_current_effective_default(
+            options, cover_data=cover_data
         )
         self.logger.debug(
             "Effective default: %s (sunset_active=%s, h_def=%s, sunset_pos=%s)",
@@ -1887,6 +1872,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return self._time_mgr.after_start_time
 
     @property
+    def window_explicitly_started(self):
+        """Whether a real (non-blank) start time is configured and has passed.
+
+        Delegates to TimeWindowManager. Distinct from ``after_start_time``
+        (issue #492): feeds ``compute_effective_default`` so a blank start time
+        does not suppress the overnight position after midnight.
+        """
+        return self._time_mgr.window_explicitly_started
+
+    @property
     def _end_time(self) -> dt.datetime | None:
         """Get end time — delegates to TimeWindowManager."""
         return self._time_mgr.end_time
@@ -2437,11 +2432,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         await self._check_sunset_window_transition()
 
-    def _compute_current_effective_default(self, options: dict) -> tuple[int, bool]:
+    def _compute_current_effective_default(
+        self, options: dict, cover_data=None
+    ) -> tuple[int, bool]:
         """Return (effective_pos, is_sunset_active) for the current moment.
 
-        Shared by _on_window_closed and _check_sunset_window_transition so the
-        same options-reading and compute_effective_default call is not duplicated.
+        Single source of truth for reading the sunset/sunrise options and
+        calling ``compute_effective_default``. Shared by the main update cycle
+        (``_calculate_cover_state``), ``_on_window_closed`` and
+        ``_check_sunset_window_transition`` so the options-reading and the
+        ``window_explicitly_started`` signal are not duplicated.
+
+        Args:
+            options: The config-entry options dict.
+            cover_data: An already-computed cover-data object whose ``sun_data``
+                is reused. When ``None`` the cover data is computed fresh via
+                ``get_blind_data`` (the transition call sites have no cover_data
+                in hand).
+
         """
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)
@@ -2453,7 +2461,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sunrise_time = _read_time_entity(
             self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
         )
-        cover_data = self.get_blind_data(options=options)
+        if cover_data is None:
+            cover_data = self.get_blind_data(options=options)
         return compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -2462,7 +2471,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_off=sunrise_off,
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
-            after_start_time=self.after_start_time,
+            window_explicitly_started=self.window_explicitly_started,
         )
 
     async def _check_sunset_window_transition(self) -> None:

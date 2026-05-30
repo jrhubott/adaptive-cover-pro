@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from ..const import (
+    BLANK_TIME,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -599,7 +600,7 @@ def _cross_field_validate(patch: dict, current: dict) -> None:
     if CONF_START_TIME in patch or CONF_START_ENTITY in patch:
         st = merged_active.get(CONF_START_TIME)
         se = merged_active.get(CONF_START_ENTITY)
-        if st and st != "00:00:00" and se:
+        if st and st != BLANK_TIME and se:
             raise ServiceValidationError(
                 f"start_time ('{st}') and start_entity ('{se}') are mutually exclusive. "
                 "Set one or the other, not both."
@@ -608,7 +609,7 @@ def _cross_field_validate(patch: dict, current: dict) -> None:
     if CONF_END_TIME in patch or CONF_END_ENTITY in patch:
         et = merged_active.get(CONF_END_TIME)
         ee = merged_active.get(CONF_END_ENTITY)
-        if et and et != "00:00:00" and ee:
+        if et and et != BLANK_TIME and ee:
             raise ServiceValidationError(
                 f"end_time ('{et}') and end_entity ('{ee}') are mutually exclusive. "
                 "Set one or the other, not both."

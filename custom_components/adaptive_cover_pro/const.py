@@ -431,6 +431,10 @@ CONF_START_TIME = "start_time"  # active-window start "HH:MM:SS"
 CONF_START_ENTITY = "start_entity"  # input_datetime overriding start_time
 CONF_END_TIME = "end_time"  # active-window end "HH:MM:SS"
 CONF_END_ENTITY = "end_entity"  # input_datetime overriding end_time
+# Blank/unset sentinel for start/end times: HA's TimeSelector cannot emit a
+# true None, so a cleared field coerces to midnight. Treated as "no time set"
+# everywhere (see issue #492).
+BLANK_TIME = "00:00:00"
 
 
 # =============================================================================
