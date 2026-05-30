@@ -26,6 +26,9 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_SUN_TRACKING,
     CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_IS_SUNNY_SENSOR,
+    CONF_LUX_ENTITY,
     CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
@@ -759,7 +762,15 @@ def _configured_handlers(opts: Mapping[str, Any]) -> list[str]:
         enabled.append("custom_position")
     if opts.get(CONF_MOTION_SENSORS):
         enabled.append("motion")
-    if opts.get(CONF_CLOUD_SUPPRESSION) and opts.get(CONF_CLOUD_COVERAGE_ENTITY):
+    if opts.get(CONF_CLOUD_SUPPRESSION) and any(
+        opts.get(k)
+        for k in (
+            CONF_IS_SUNNY_SENSOR,
+            CONF_LUX_ENTITY,
+            CONF_IRRADIANCE_ENTITY,
+            CONF_CLOUD_COVERAGE_ENTITY,
+        )
+    ):
         enabled.append("cloud")
     if opts.get(CONF_CLIMATE_MODE):
         enabled.append("climate")

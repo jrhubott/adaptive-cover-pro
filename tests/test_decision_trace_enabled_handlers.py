@@ -20,6 +20,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_SUN_TRACKING,
     CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_IS_SUNNY_SENSOR,
+    CONF_LUX_ENTITY,
     CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
@@ -174,6 +177,25 @@ def test_cloud_disabled_when_only_entity_set():
 def test_cloud_enabled_when_both_set():
     enabled = _enabled(
         {CONF_CLOUD_SUPPRESSION: True, CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud"}
+    )
+    assert "cloud" in enabled
+
+
+def test_cloud_enabled_when_is_sunny_sensor_configured():
+    enabled = _enabled(
+        {CONF_CLOUD_SUPPRESSION: True, CONF_IS_SUNNY_SENSOR: "binary_sensor.ensoleille"}
+    )
+    assert "cloud" in enabled
+
+
+def test_cloud_enabled_when_lux_entity_configured():
+    enabled = _enabled({CONF_CLOUD_SUPPRESSION: True, CONF_LUX_ENTITY: "sensor.lux"})
+    assert "cloud" in enabled
+
+
+def test_cloud_enabled_when_irradiance_entity_configured():
+    enabled = _enabled(
+        {CONF_CLOUD_SUPPRESSION: True, CONF_IRRADIANCE_ENTITY: "sensor.irradiance"}
     )
     assert "cloud" in enabled
 
