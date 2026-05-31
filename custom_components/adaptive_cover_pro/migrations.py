@@ -3,6 +3,17 @@
 Each migration runs at most once per config entry, tracked by a flag stored in
 entry.options.  Migrations must be idempotent — safe to call again if the flag
 is somehow missing.
+
+Idempotency contract
+--------------------
+* The flag is written to ``entry.options`` **before** any registry mutations.
+* If a crash occurs between the flag write and the first ``async_remove`` call
+  the migration will never re-run (flag is already set) — entities in that
+  window would linger as unavailable ghosts.  This is the safer trade-off vs.
+  the alternative (writing after removal), which could cause a partial removal
+  loop on every restart until all targeted entities are gone.
+* Both migrations collect the list of entities to remove before mutating
+  anything, so the INFO log that follows reflects the actual work done.
 """
 
 from __future__ import annotations
@@ -68,20 +79,33 @@ async def async_prune_legacy_entities(hass: HomeAssistant, entry: ConfigEntry) -
         return
 
     registry = er.async_get(hass)
-    removed: list[str] = []
 
+    # --- Phase 1: collect candidates (read-only) ---
+    to_remove: list[tuple[str, str]] = []  # (entity_id, unique_id)
     for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if entity_entry.domain != "binary_sensor":
             continue
         uid: str = entity_entry.unique_id or ""
         if any(uid.endswith(suffix) for suffix in _LEGACY_BINARY_SENSOR_SUFFIXES):
-            _LOGGER.info(
-                "Removing legacy orphaned entity %s (unique_id=%s)",
-                entity_entry.entity_id,
-                uid,
-            )
-            registry.async_remove(entity_entry.entity_id)
-            removed.append(entity_entry.entity_id)
+            to_remove.append((entity_entry.entity_id, uid))
+
+    # --- Phase 2: write flag BEFORE mutations so a crash mid-removal cannot
+    #     create a partial-removal loop on subsequent restarts. ---
+    hass.config_entries.async_update_entry(
+        entry,
+        options={**entry.options, _PRUNE_V1_FLAG: True},
+    )
+
+    # --- Phase 3: perform removals ---
+    removed: list[str] = []
+    for entity_id, uid in to_remove:
+        _LOGGER.info(
+            "Removing legacy orphaned entity %s (unique_id=%s)",
+            entity_id,
+            uid,
+        )
+        registry.async_remove(entity_id)
+        removed.append(entity_id)
 
     if removed:
         _LOGGER.info(
@@ -90,12 +114,6 @@ async def async_prune_legacy_entities(hass: HomeAssistant, entry: ConfigEntry) -
             entry.entry_id,
             removed,
         )
-
-    # Mark as done whether or not anything was removed — prevents repeated scans.
-    hass.config_entries.async_update_entry(
-        entry,
-        options={**entry.options, _PRUNE_V1_FLAG: True},
-    )
 
 
 async def async_prune_legacy_sensor_entities(
@@ -113,22 +131,29 @@ async def async_prune_legacy_sensor_entities(
         return
 
     registry = er.async_get(hass)
-    removed: list[str] = []
+
+    # --- Phase 1: collect candidates (read-only) ---
+    to_remove: list[str] = []
     for suffix in _LEGACY_SENSOR_SUFFIXES:
         old_uid = f"{entry.entry_id}_{suffix}"
-        if entity_id := registry.async_get_entity_id("sensor", DOMAIN, old_uid):
-            registry.async_remove(entity_id)
-            removed.append(entity_id)
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, old_uid)
+        if entity_id is not None:
+            to_remove.append(entity_id)
 
-    if removed:
-        _LOGGER.info(
-            "Pruned %d legacy sensor entity/entities for config entry %s: %s",
-            len(removed),
-            entry.entry_id,
-            removed,
-        )
-
+    # --- Phase 2: write flag BEFORE mutations (same reasoning as above) ---
     hass.config_entries.async_update_entry(
         entry,
         options={**entry.options, _PRUNE_SENSORS_V1_FLAG: True},
     )
+
+    # --- Phase 3: perform removals ---
+    for entity_id in to_remove:
+        registry.async_remove(entity_id)
+
+    if to_remove:
+        _LOGGER.info(
+            "Pruned %d legacy sensor entity/entities for config entry %s: %s",
+            len(to_remove),
+            entry.entry_id,
+            to_remove,
+        )
