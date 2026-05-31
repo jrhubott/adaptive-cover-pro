@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from ..const import custom_position_handler_name
 from .types import PipelineSnapshot
 
 
@@ -55,12 +56,12 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
     path is hardware-pinned and never participates in floor semantics.
     """
     floors: list[FloorClampInfo] = []
-    for index, state in enumerate(snapshot.custom_position_sensors, start=1):
+    for state in snapshot.custom_position_sensors:
         if state.is_on and state.min_mode and not state.use_my:
             label = state.sensor_name or state.entity_id
             floors.append(
                 FloorClampInfo(
-                    source=f"custom_position_{index}",
+                    source=custom_position_handler_name(state.slot),
                     label=label,
                     position=state.position,
                 )

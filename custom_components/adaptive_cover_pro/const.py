@@ -345,6 +345,17 @@ CUSTOM_POSITION_SLOTS: dict[int, dict[str, str]] = {
     n: _custom_position_slot_keys(n) for n in CUSTOM_POSITION_SLOT_NUMBERS
 }
 
+
+def custom_position_handler_name(slot: int) -> str:
+    """Return the canonical decision-trace handler name for a custom slot.
+
+    Single source of truth for the ``custom_position_N`` name (issue #496).
+    Both ``CustomPositionHandler.name`` and the floor-composition trace source
+    delegate here so the two can never drift to different numbering schemes.
+    """
+    return f"custom_position_{slot}"
+
+
 # Slot 1 — named aliases for each of the five sub-keys.
 CONF_CUSTOM_POSITION_SENSOR_1 = CUSTOM_POSITION_SLOTS[1]["sensor"]  # trigger
 CONF_CUSTOM_POSITION_1 = CUSTOM_POSITION_SLOTS[1]["position"]  # 0-100

@@ -93,6 +93,7 @@ def _cp_state(
     sensor_name: str | None = None,
     use_my: bool = False,
     priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
+    slot: int = 0,
 ) -> CustomPositionSensorState:
     return CustomPositionSensorState(
         entity_id=entity_id,
@@ -102,6 +103,7 @@ def _cp_state(
         min_mode=min_mode,
         use_my=use_my,
         sensor_name=sensor_name,
+        slot=slot,
     )
 
 
@@ -250,6 +252,92 @@ def test_two_custom_floors_pick_highest() -> None:
     ]
     assert len(clamp_steps) == 1
     assert "Floor60" in clamp_steps[0].reason
+
+
+def test_gapped_custom_floor_slots_label_real_slot() -> None:
+    """Gapped slots (#3/#4 active, #1/#2 empty) label the real slot, not list index.
+
+    Mirrors the issue #496 reporter's config: only custom-position slots 3 and 4
+    are configured. The compacted ``custom_position_sensors`` list has two
+    entries, so an ``enumerate(start=1)`` index would mislabel them as
+    ``custom_position_1`` / ``custom_position_2``. The trace must instead carry
+    the real slot names and the registry dedup must remove the deferred handlers'
+    "sensor not active" skip steps for both active slots.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        climate_mode_enabled=True,
+        climate_readings=_summer_readings(),
+        climate_options=_summer_options(),
+        default_position=90,
+        direct_sun_valid=False,
+        # Compacted list in CUSTOM_POSITION_SLOTS order: slot 3 then slot 4.
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp3",
+                is_on=True,
+                position=100,
+                min_mode=True,
+                sensor_name="Mode aeration",
+                slot=3,
+            ),
+            _cp_state(
+                "binary_sensor.cp4",
+                is_on=True,
+                position=80,
+                min_mode=True,
+                sensor_name="Mode shade",
+                slot=4,
+            ),
+        ],
+    )
+    handlers = [
+        _cp_handler(4, "binary_sensor.cp4", 80),
+        _cp_handler(3, "binary_sensor.cp3", 100),
+    ]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+
+    # (a) winner clamped to the highest floor (max(80, 100) = 100).
+    assert result.position == 100
+
+    # (b) the inactive 80% floor step is labelled custom_position_4 (never 1/2),
+    #     and the matched floor_clamp references the slot-3 active source.
+    inactive_floor_steps = [
+        s
+        for s in result.decision_trace
+        if s.handler.startswith("custom_position_")
+        and not s.matched
+        and s.position == 80
+    ]
+    assert len(inactive_floor_steps) == 1
+    assert inactive_floor_steps[0].handler == "custom_position_4"
+    clamp_steps = [
+        s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
+    ]
+    assert len(clamp_steps) == 1
+    assert "Mode aeration" in clamp_steps[0].reason
+
+    # (c) no "sensor not active" reason survives for an active slot.
+    for s in result.decision_trace:
+        if s.handler in ("custom_position_3", "custom_position_4"):
+            assert "sensor not active" not in s.reason
+
+    # (d) each real slot is represented exactly once and there are zero phantom
+    #     slots 1/2. Slot 3 is the winning floor, so it surfaces only as the
+    #     floor_clamp step (no redundant custom_position_3 entry — the registry
+    #     dedup deliberately omits the winner's inactive step). Slot 4 is the
+    #     non-winning floor, surfacing as exactly one custom_position_4 step.
+    cp3_steps = [s for s in result.decision_trace if s.handler == "custom_position_3"]
+    cp4_steps = [s for s in result.decision_trace if s.handler == "custom_position_4"]
+    assert len(cp3_steps) == 0  # represented by floor_clamp instead
+    assert len(cp4_steps) == 1
+    assert "Mode aeration" in clamp_steps[0].reason  # slot 3 == the floor_clamp
+    assert not any(
+        s.handler in ("custom_position_1", "custom_position_2")
+        for s in result.decision_trace
+    )
 
 
 def test_real_position_custom_slot_clamped_by_floor_slot() -> None:

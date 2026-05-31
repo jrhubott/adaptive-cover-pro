@@ -174,7 +174,7 @@ class PipelineSnapshotBuilder:
         position).
         """
         result: list[CustomPositionSensorState] = []
-        for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
             sensor = options.get(slot_keys["sensor"])
             position = options.get(slot_keys["position"])
             enabled = bool(
@@ -204,6 +204,7 @@ class PipelineSnapshotBuilder:
                         use_my=use_my,
                         tilt=tilt,
                         sensor_name=sensor_name,
+                        slot=slot,
                     )
                 )
         return result
