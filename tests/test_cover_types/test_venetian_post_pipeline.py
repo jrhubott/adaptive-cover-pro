@@ -160,6 +160,26 @@ class TestPostPipelineResolveTiltOnlyMode:
         )
         assert out.position == 50
 
+    def test_tilt_only_honors_explicit_custom_position(self):
+        """tilt_only must not rewrite position when a custom-position handler supplied it.
+
+        Regression for issue #499: CUSTOM_POSITION + tilt_only silently dropped
+        the user-configured position by collapsing it to POSITION_CLOSED.
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=100,
+            control_method=ControlMethod.CUSTOM_POSITION,
+            tilt=100,
+            reason="test",
+        )
+        out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
+        assert out.position == 100
+        assert out.tilt == 100
+
 
 class TestPostPipelineResolveNoSunStrip:
     """Tilt must be stripped when SOLAR is emitted but direct sun is not hitting the window.
@@ -317,6 +337,7 @@ class TestPostPipelineResolveHandlerTilt:
             )
             out = policy.post_pipeline_resolve(result, **_non_solar_kwargs())
             assert out.tilt == handler_tilt
+            assert out.position == 50
 
     def test_handler_tilt_honored_for_default_path(self):
         """Handler-supplied tilt on DEFAULT (default_tilt / sunset_tilt) must survive."""

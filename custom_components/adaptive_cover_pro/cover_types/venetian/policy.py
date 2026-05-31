@@ -29,6 +29,7 @@ from ...const import (
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
+    ControlMethod,
     DEFAULT_MAX_TILT,
     DEFAULT_MIN_TILT,
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
@@ -79,6 +80,19 @@ _VENETIAN_EXTRA_KEYS = (
     CONF_INVERSE_TILT,
     CONF_MAX_TILT,
     CONF_MIN_TILT,
+)
+
+# Control methods that carry an explicit, user-specified position.
+# The tilt-only carriage-close rewrite does not apply to these — the
+# user's position wins over "close carriage, let tilt filter".
+_EXPLICIT_USER_POSITION_METHODS = frozenset(
+    {
+        ControlMethod.CUSTOM_POSITION,
+        ControlMethod.FORCE,
+        ControlMethod.WEATHER,
+        ControlMethod.MANUAL,
+        ControlMethod.MOTION,
+    }
 )
 
 
@@ -320,8 +334,6 @@ class VenetianPolicy(CoverTypePolicy):
         branch even when the sun is below the horizon (issue #33), so
         direct_sun_valid is the authoritative signal.
         """
-        from ...const import ControlMethod
-
         if result.control_method != ControlMethod.SOLAR:
             return True
         return cover is None or not cover.direct_sun_valid
@@ -355,7 +367,10 @@ class VenetianPolicy(CoverTypePolicy):
             handler_tilt = result.tilt
             position = result.position
             trace = list(result.decision_trace)
-            if self._venetian_mode == VENETIAN_MODE_TILT_ONLY:
+            if (
+                self._venetian_mode == VENETIAN_MODE_TILT_ONLY
+                and result.control_method not in _EXPLICIT_USER_POSITION_METHODS
+            ):
                 trace.append(
                     DecisionStep(
                         handler="venetian_mode",
