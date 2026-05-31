@@ -1837,8 +1837,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
         config = self._config_service.get_common_data(options)
         _raw_azi, _raw_elev = self.pos_sun
+        # When sun.sun is unavailable both attributes return None.  Using 0.0/0.0
+        # is dangerous: azimuth=0, elevation=0 is a valid-looking sun position
+        # that could place the sun inside a window's FOV and send spurious commands.
+        # Guard: when elevation is None (sun.sun truly unavailable) set sol_elev=-1.0
+        # so SunGeometry.valid_elevation returns False and no solar positioning
+        # commands are issued until the sun entity recovers.
+        _sun_unavailable = _raw_azi is None and _raw_elev is None
+        if _sun_unavailable:
+            self.logger.warning(
+                "sun.sun attributes unavailable -- solar tracking disabled until "
+                "sun entity reports valid azimuth/elevation"
+            )
         sol_azi = _raw_azi if _raw_azi is not None else 0.0
-        sol_elev = _raw_elev if _raw_elev is not None else 0.0
+        # -1.0 elevation is below the horizon; valid_elevation requires elev >= 0
+        sol_elev = _raw_elev if _raw_elev is not None else (-1.0 if _sun_unavailable else 0.0)
         return self._policy.build_calc_engine(
             logger=self.logger,
             sol_azi=sol_azi,
