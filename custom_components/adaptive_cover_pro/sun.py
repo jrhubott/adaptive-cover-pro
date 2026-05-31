@@ -133,21 +133,32 @@ class SunData:
     def times(self) -> pd.DatetimeIndex:
         """Today's 5-minute timeline (cached per day)."""
         self._ensure_today()
-        assert self._cache_times is not None  # for type narrowing
+        # Use explicit RuntimeError instead of assert: assert is stripped in
+        # optimized builds (-O), which would cause a silent None dereference.
+        if self._cache_times is None:
+            raise RuntimeError(  # pragma: no cover
+                "SunData cache fill failed: _cache_times is None after _ensure_today()"
+            )
         return self._cache_times
 
     @property
     def solar_azimuth(self) -> list[float]:
         """Solar azimuth at each entry in :attr:`times` (cached per day)."""
         self._ensure_today()
-        assert self._cache_azi is not None
+        if self._cache_azi is None:
+            raise RuntimeError(  # pragma: no cover
+                "SunData cache fill failed: _cache_azi is None after _ensure_today()"
+            )
         return self._cache_azi
 
     @property
     def solar_elevation(self) -> list[float]:
         """Solar elevation at each entry in :attr:`times` (cached per day)."""
         self._ensure_today()
-        assert self._cache_ele is not None
+        if self._cache_ele is None:
+            raise RuntimeError(  # pragma: no cover
+                "SunData cache fill failed: _cache_ele is None after _ensure_today()"
+            )
         return self._cache_ele
 
     def sunset(self) -> datetime:
