@@ -96,6 +96,23 @@ def _source_friendly_label(hass: HomeAssistant, entity_id: str) -> str:
     return entity_id.split(".", 1)[-1].replace("_", " ").title()
 
 
+def _state_key(state: Any) -> tuple:
+    """Return a compact tuple that summarises the observable proxy state.
+
+    Used by _handle_source_event to skip redundant async_write_ha_state()
+    calls when neither the cover state string nor the position/tilt attributes
+    have changed (e.g. repeated OPENING pulses with the same position value).
+    """
+    if state is None:
+        return (None,)
+    return (
+        state.state,
+        state.attributes.get(STATE_ATTR_POSITION),
+        state.attributes.get(STATE_ATTR_TILT_POSITION),
+        state.attributes.get("supported_features"),
+    )
+
+
 class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
     """Proxy cover that mirrors a source and routes commands through ACP."""
 
@@ -122,6 +139,8 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
             self._attr_name = f"{title} Managed ({label})"
         else:
             self._attr_name = f"{title} Managed"
+        # Change-gate: remember last-written state key so we skip no-op writes.
+        self._last_written_state_key: tuple | None = None
 
     # ---- availability + mirroring -------------------------------------- #
 
@@ -196,6 +215,18 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
 
     @callback
     def _handle_source_event(self, event: Event) -> None:
+        """Write HA state when the source cover changes — change-gated.
+
+        Skips the write when the observable state (cover state string,
+        position, tilt, supported_features) is identical to the last write,
+        avoiding spurious HA state writes during rapid OPENING/CLOSING
+        intermediate events that carry no new information.
+        """
+        new_state = event.data.get("new_state")
+        key = _state_key(new_state)
+        if key == self._last_written_state_key:
+            return
+        self._last_written_state_key = key
         self.async_write_ha_state()
 
     # ---- command routing ---------------------------------------------- #
