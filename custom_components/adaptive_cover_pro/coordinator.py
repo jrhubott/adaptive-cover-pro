@@ -343,6 +343,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
 
+        # Built once and reused for both the command-service construction
+        # (position_tolerance) and the late policy.attach below.
+        _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
+
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
         # on_tick keeps time window transition checks running on the same 1-min interval
@@ -355,6 +359,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
+            position_tolerance=_rc_attach.tracking.position_tolerance,
             transit_timeout_seconds=self.config_entry.options.get(CONF_TRANSIT_TIMEOUT)
             or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
@@ -368,7 +373,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Late-bind cover-type policy dependencies (e.g. VenetianPolicy
         # constructs its DualAxisSequencer here once cmd_svc + grace_mgr are
         # available).  Default policies have a no-op attach.
-        _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
         self._policy.attach(
             hass=self.hass,
             logger=self.logger,
@@ -1803,6 +1807,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.new_list = rc.tracking.interp_list_new
 
         self._cmd_svc.update_threshold(rc.open_close_threshold)
+        self._cmd_svc.update_position_tolerance(rc.tracking.position_tolerance)
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,

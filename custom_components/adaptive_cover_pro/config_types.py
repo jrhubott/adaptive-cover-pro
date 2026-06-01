@@ -223,6 +223,7 @@ class TrackingSlice:
 
     min_change: int
     time_threshold: int
+    position_tolerance: int
     manual_threshold: int | None
     interp_start: Any
     interp_end: Any
@@ -286,6 +287,7 @@ class RuntimeConfig:
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
             CONF_OPEN_CLOSE_THRESHOLD,
+            CONF_POSITION_TOLERANCE,
             CONF_START_ENTITY,
             CONF_START_TIME,
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
@@ -312,6 +314,7 @@ class RuntimeConfig:
             DEFAULT_WEATHER_TIMEOUT,
             DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
             DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+            POSITION_TOLERANCE_PERCENT,
         )
 
         return cls(
@@ -323,6 +326,8 @@ class RuntimeConfig:
             tracking=TrackingSlice(
                 min_change=options.get(CONF_DELTA_POSITION) or 1,
                 time_threshold=options.get(CONF_DELTA_TIME) or 2,
+                position_tolerance=options.get(CONF_POSITION_TOLERANCE)
+                or POSITION_TOLERANCE_PERCENT,
                 manual_threshold=options.get(CONF_MANUAL_THRESHOLD),
                 interp_start=options.get(CONF_INTERP_START),
                 interp_end=options.get(CONF_INTERP_END),

@@ -144,6 +144,7 @@
         "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
+          "position_tolerance": "Position match tolerance",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
@@ -152,6 +153,7 @@
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
+          "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta above: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
           "delta_time": "Minimum time (minutes) between cover adjustments. Prevents rapid position changes. Typical values: 2-3 min (very responsive, may be noisy), 5-10 min (balanced, recommended), 15-20 min (slow, gentle adjustments). If sun changes rapidly (clouds, shadows), integration waits this long before adjusting again. Reduces motor wear and provides smoother operation. Minimum is 2 minutes.",
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
@@ -513,6 +515,7 @@
         "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
+          "position_tolerance": "Position match tolerance",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
@@ -521,6 +524,7 @@
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
+          "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta above: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
           "delta_time": "Minimum time (minutes) between cover adjustments. Prevents rapid position changes. Typical values: 2-3 min (very responsive, may be noisy), 5-10 min (balanced, recommended), 15-20 min (slow, gentle adjustments). If sun changes rapidly (clouds, shadows), integration waits this long before adjusting again. Reduces motor wear and provides smoother operation. Minimum is 2 minutes.",
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",

@@ -437,6 +437,11 @@ DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
 
 CONF_DELTA_POSITION = "delta_position"  # min % change to emit, range 1-90
 CONF_DELTA_TIME = "delta_time"  # min seconds between commands, range 2-60
+# Allowed gap between commanded and reported position before the periodic
+# reconciliation pass treats the cover as "not arrived" and resends the
+# command. Distinct from CONF_DELTA_POSITION (movement hysteresis). Default
+# is POSITION_TOLERANCE_PERCENT (see section 20). Range 0-20. Issue #507.
+CONF_POSITION_TOLERANCE = "position_tolerance"
 CONF_START_TIME = "start_time"  # active-window start "HH:MM:SS"
 CONF_START_ENTITY = "start_entity"  # input_datetime overriding start_time
 CONF_END_TIME = "end_time"  # active-window end "HH:MM:SS"
@@ -540,7 +545,10 @@ DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN  # default mode
 # the cover actually reached the commanded position.
 
 POSITION_CHECK_INTERVAL_MINUTES = 1  # minutes — recheck cadence
-POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance
+# Default for the now-configurable CONF_POSITION_TOLERANCE (issue #507). Still
+# the fixed floor for the manual-override threshold (effective_manual_threshold
+# in managers/manual_override.py reads this constant directly, NOT the option).
+POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance (default)
 MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 
 
@@ -829,6 +837,7 @@ _RANGE_INTERP_VALUE = (0, 100)  # interp start/end, percent
 # Automation timing.
 _RANGE_DELTA_POSITION = (1, 90)  # CONF_DELTA_POSITION, percent
 _RANGE_DELTA_TIME = (2, 60)  # CONF_DELTA_TIME, seconds
+_RANGE_POSITION_TOLERANCE = (0, 20)  # CONF_POSITION_TOLERANCE, percent
 
 # Manual override.
 _RANGE_MANUAL_THRESHOLD = (0, 99)  # CONF_MANUAL_THRESHOLD, percent
@@ -905,6 +914,7 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_INTERP_END: _RANGE_INTERP_VALUE,
         CONF_DELTA_POSITION: _RANGE_DELTA_POSITION,
         CONF_DELTA_TIME: _RANGE_DELTA_TIME,
+        CONF_POSITION_TOLERANCE: _RANGE_POSITION_TOLERANCE,
         CONF_MANUAL_THRESHOLD: _RANGE_MANUAL_THRESHOLD,
         CONF_FORCE_OVERRIDE_POSITION: _RANGE_FORCE_POSITION,
         CONF_MOTION_TIMEOUT: _RANGE_MOTION_TIMEOUT,

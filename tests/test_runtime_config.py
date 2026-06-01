@@ -29,6 +29,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_OPEN_CLOSE_THRESHOLD,
+    CONF_POSITION_TOLERANCE,
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -94,6 +95,18 @@ def test_from_options_uses_const_defaults_for_empty_input() -> None:
 
 
 @pytest.mark.unit
+def test_position_tolerance_defaults_to_three() -> None:
+    """Empty options → tolerance falls back to POSITION_TOLERANCE_PERCENT (issue #507)."""
+    rc = RuntimeConfig.from_options({})
+    assert rc.tracking.position_tolerance == 3
+
+
+def test_position_tolerance_reads_provided_value() -> None:
+    """A configured tolerance flows through to the tracking slice (issue #507)."""
+    rc = RuntimeConfig.from_options({CONF_POSITION_TOLERANCE: 8})
+    assert rc.tracking.position_tolerance == 8
+
+
 def test_from_options_reads_every_field_from_provided_dict() -> None:
     options = {
         CONF_ENTITIES: ["cover.test"],

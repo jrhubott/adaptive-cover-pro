@@ -816,6 +816,54 @@ async def test_options_flow_form_step_saves_and_returns_to_init(
 
 
 @pytest.mark.integration
+async def test_options_flow_automation_saves_position_tolerance(
+    hass: HomeAssistant,
+) -> None:
+    """Submitting the automation step persists CONF_POSITION_TOLERANCE (issue #507)."""
+    from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Tol Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="tol_round_trip_01",
+        title="Tol Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        if result["type"] == "menu":
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"], {"next_step_id": "automation"}
+            )
+        assert result["step_id"] == "automation"
+
+        # Submit the automation step with the new tolerance; returns to the menu.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                CONF_DELTA_POSITION: 5,
+                CONF_POSITION_TOLERANCE: 8,
+                CONF_DELTA_TIME: 2,
+                CONF_START_TIME: "08:00:00",
+                CONF_END_TIME: "20:00:00",
+            },
+        )
+        # Finish the flow so the accumulated options are written to the entry.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "done"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_POSITION_TOLERANCE] == 8
+
+
+@pytest.mark.integration
 async def test_options_flow_sun_tracking_step(hass: HomeAssistant) -> None:
     """OptionsFlow sun_tracking step saves and returns to init."""
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh

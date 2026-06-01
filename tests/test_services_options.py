@@ -51,6 +51,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_WINDOW_WIDTH,
     CONF_MOTION_TIMEOUT,
     CONF_MY_POSITION_VALUE,
+    CONF_POSITION_TOLERANCE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
     CONF_START_ENTITY,
@@ -261,6 +262,17 @@ class TestFieldValidators:
     def test_window_depth_negative_rejected(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS[CONF_WINDOW_DEPTH](-0.01)
+
+    def test_position_tolerance_accepts_bounds(self):
+        # Issue #507: configurable reconciliation tolerance, range (0, 20).
+        FIELD_VALIDATORS[CONF_POSITION_TOLERANCE](0)
+        FIELD_VALIDATORS[CONF_POSITION_TOLERANCE](20)
+
+    def test_position_tolerance_out_of_range_rejected(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_POSITION_TOLERANCE](21)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_POSITION_TOLERANCE](-1)
 
     def test_height_win_bounds_50m(self):
         FIELD_VALIDATORS[CONF_HEIGHT_WIN](0.1)

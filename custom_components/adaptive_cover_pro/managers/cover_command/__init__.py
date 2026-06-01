@@ -722,6 +722,15 @@ class CoverCommandService:
         """
         self._open_close_threshold = threshold
 
+    def update_position_tolerance(self, value: int) -> None:
+        """Update the position-match (reconciliation) tolerance.
+
+        Args:
+            value: Allowed deviation between target and reported position (%).
+
+        """
+        self._position_tolerance = value
+
     # ------------------------------------------------------------------ #
     # State classification (manual-override detection)
     # ------------------------------------------------------------------ #
