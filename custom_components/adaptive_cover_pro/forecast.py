@@ -29,7 +29,6 @@ from .const import (
     EVENT_SUNRISE,
     EVENT_SUNSET,
     FORECAST_STEP_MINUTES,
-    FORECAST_WINDOW_HOURS,
     SUN_DATA_STEP_SECONDS,
 )
 
@@ -89,23 +88,28 @@ def build_forecast(
     default_position: int,
     now: datetime,
     step_minutes: int = FORECAST_STEP_MINUTES,
-    window_hours: int = FORECAST_WINDOW_HOURS,
 ) -> Forecast:
     """Compute the forecast for one cover.
+
+    Walks the full local calendar day (00:00 → 24:00) using the solar position
+    table already stored in *sun_data*, so the companion card's elevation chart
+    and sample strip share the same time axis.
 
     ``cover_factory`` is a closure that builds a cover engine for an
     arbitrary (sol_azi, sol_elev) pair; the caller is responsible for
     passing the same configuration / sun_data the live cover uses.
     Decoupling the factory from this helper keeps the function pure and
     trivially testable with a stub cover.
+
+    ``now`` is retained on the signature for caller context (e.g. tests
+    anchoring time, scripts passing wall-clock time) and for future
+    use — the samples deliberately cover the full day regardless of ``now``.
     """
     samples = _build_samples(
         sun_data=sun_data,
         cover_factory=cover_factory,
         default_position=default_position,
-        now=now,
         step_minutes=step_minutes,
-        window_hours=window_hours,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -118,21 +122,26 @@ def _build_samples(
     sun_data: SunData,
     cover_factory: Callable[[float, float], AdaptiveGeneralCover],
     default_position: int,
-    now: datetime,
     step_minutes: int,
-    window_hours: int,
 ) -> list[ForecastSample]:
-    """Walk the sun_data table at *step_minutes* cadence for *window_hours*."""
+    """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
+
+    Uses ``times[0]`` (local midnight 00:00) as the loop start and
+    ``times[-1]`` (next midnight 24:00) as the loop end, so the sample
+    strip always covers the same 24-hour window as the companion card's
+    elevation chart regardless of what time ``build_forecast`` is called.
+    """
     times = list(sun_data.times)
     azis = list(sun_data.solar_azimuth)
     eles = list(sun_data.solar_elevation)
     if not times:
         return []
-    horizon = now + timedelta(hours=window_hours)
+    day_start = times[0]
+    horizon = times[-1]
     step = timedelta(minutes=step_minutes)
 
     samples: list[ForecastSample] = []
-    t = now
+    t = day_start
     while t <= horizon:
         idx = _nearest_index(times, t)
         if idx is None:
