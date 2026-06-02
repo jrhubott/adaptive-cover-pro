@@ -224,7 +224,11 @@
           "custom_position_tilt_3": "Inclinaison pour le créneau 3",
           "custom_position_tilt_4": "Inclinaison pour le créneau 4",
           "default_tilt": "Inclinaison par défaut",
-          "sunset_tilt": "Inclinaison au coucher du soleil"
+          "sunset_tilt": "Inclinaison au coucher du soleil",
+          "custom_position_tilt_only_1": "Emplacement 1 : inclinaison uniquement",
+          "custom_position_tilt_only_2": "Emplacement 2 : inclinaison uniquement",
+          "custom_position_tilt_only_3": "Emplacement 3 : inclinaison uniquement",
+          "custom_position_tilt_only_4": "Emplacement 4 : inclinaison uniquement"
         },
         "data_description": {
           "custom_position_sensor_1": "Capteur binaire que, quand « activé », déplace le store à sa position configurée. Laissez vide pour sauter cet emplacement.",
@@ -252,7 +256,11 @@
           "custom_position_tilt_3": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 3 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
           "custom_position_tilt_4": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 4 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
           "default_tilt": "Angle d'inclinaison par défaut (0–100 %) pour les stores vénitiens lorsqu'aucun autre gestionnaire ne remplace l'inclinaison. Appliqué chaque fois que le gestionnaire de position par défaut est actif. Laisser vide pour laisser le moteur calculer l'inclinaison à partir de la géométrie solaire.",
-          "sunset_tilt": "Angle d'inclinaison (0–100 %) pour les stores vénitiens pendant la fenêtre du coucher du soleil. Remplace l'inclinaison par défaut lorsque la fenêtre horaire du coucher du soleil est active. Laisser vide pour revenir à l'inclinaison par défaut."
+          "sunset_tilt": "Angle d'inclinaison (0–100 %) pour les stores vénitiens pendant la fenêtre du coucher du soleil. Remplace l'inclinaison par défaut lorsque la fenêtre horaire du coucher du soleil est active. Laisser vide pour revenir à l'inclinaison par défaut.",
+          "custom_position_tilt_only_1": "Quand activé, l'emplacement 1 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement.",
+          "custom_position_tilt_only_2": "Quand activé, l'emplacement 2 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement.",
+          "custom_position_tilt_only_3": "Quand activé, l'emplacement 3 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement.",
+          "custom_position_tilt_only_4": "Quand activé, l'emplacement 4 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement."
         }
       },
       "motion_override": {
@@ -719,7 +727,11 @@
           "custom_position_tilt_3": "Inclinaison pour le créneau 3",
           "custom_position_tilt_4": "Inclinaison pour le créneau 4",
           "default_tilt": "Inclinaison par défaut",
-          "sunset_tilt": "Inclinaison au coucher du soleil"
+          "sunset_tilt": "Inclinaison au coucher du soleil",
+          "custom_position_tilt_only_1": "Emplacement 1 : inclinaison uniquement",
+          "custom_position_tilt_only_2": "Emplacement 2 : inclinaison uniquement",
+          "custom_position_tilt_only_3": "Emplacement 3 : inclinaison uniquement",
+          "custom_position_tilt_only_4": "Emplacement 4 : inclinaison uniquement"
         },
         "data_description": {
           "custom_position_sensor_1": "Capteur binaire que, quand « activé », déplace le store à sa position configurée. Laissez vide pour sauter cet emplacement.",
@@ -747,7 +759,11 @@
           "custom_position_tilt_3": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 3 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
           "custom_position_tilt_4": "Angle d'inclinaison (0–100 %) à appliquer lorsque le capteur du créneau 4 est actif. Stores vénitiens uniquement. Laisser vide pour laisser le moteur calculer l'inclinaison automatiquement.",
           "default_tilt": "Angle d'inclinaison par défaut (0–100 %) pour les stores vénitiens lorsqu'aucun autre gestionnaire ne remplace l'inclinaison. Appliqué chaque fois que le gestionnaire de position par défaut est actif. Laisser vide pour laisser le moteur calculer l'inclinaison à partir de la géométrie solaire.",
-          "sunset_tilt": "Angle d'inclinaison (0–100 %) pour les stores vénitiens pendant la fenêtre du coucher du soleil. Remplace l'inclinaison par défaut lorsque la fenêtre horaire du coucher du soleil est active. Laisser vide pour revenir à l'inclinaison par défaut."
+          "sunset_tilt": "Angle d'inclinaison (0–100 %) pour les stores vénitiens pendant la fenêtre du coucher du soleil. Remplace l'inclinaison par défaut lorsque la fenêtre horaire du coucher du soleil est active. Laisser vide pour revenir à l'inclinaison par défaut.",
+          "custom_position_tilt_only_1": "Quand activé, l'emplacement 1 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement.",
+          "custom_position_tilt_only_2": "Quand activé, l'emplacement 2 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement.",
+          "custom_position_tilt_only_3": "Quand activé, l'emplacement 3 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement.",
+          "custom_position_tilt_only_4": "Quand activé, l'emplacement 4 fixe uniquement l'angle de lamelle (sa valeur d'inclinaison) — le suivi solaire pilote toujours la position du store. Stores vénitiens uniquement. Remplace le Mode minimum et Utiliser Ma position pour cet emplacement."
         }
       },
       "motion_override": {

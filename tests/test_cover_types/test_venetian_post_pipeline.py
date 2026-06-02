@@ -181,6 +181,71 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.tilt == 100
 
 
+class TestPostPipelineResolveTiltOnlyContribution:
+    """Per-slot tilt-only overlay (issue #514) honored; position stays solar."""
+
+    def test_overlaid_tilt_honored_position_stays_solar(self):
+        """SOLAR winner + overlaid tilt → tilt honored, position unchanged.
+
+        Default venetian mode (position_and_tilt): the registry overlaid a
+        tilt-only slot's slat angle onto a SOLAR result. The position pipeline
+        drives the carriage; the overlaid tilt rides through unchanged.
+        """
+        policy = _make_policy()
+        result = PipelineResult(
+            position=60,
+            control_method=ControlMethod.SOLAR,
+            tilt=25,
+            tilt_only_contribution_active=True,
+            reason="test",
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        assert out.position == 60
+        assert out.tilt == 25
+
+    def test_global_tilt_only_suppressed_when_contribution_active(self):
+        """Per-slot tilt-only suppresses the global tilt-only carriage-close.
+
+        When the global venetian mode is tilt_only AND a per-slot tilt-only
+        contribution drives the slat angle, the carriage must stay at the
+        position the pipeline resolved (solar) instead of being forced closed
+        (decision Q2).
+        """
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=60,
+            control_method=ControlMethod.SOLAR,
+            tilt=25,
+            tilt_only_contribution_active=True,
+            reason="test",
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        assert out.position == 60
+        assert out.tilt == 25
+        # The global tilt-only carriage-close trace step must NOT appear.
+        assert "venetian_mode" not in [s.handler for s in out.decision_trace]
+
+    def test_global_tilt_only_still_closes_without_contribution(self):
+        """Without a per-slot contribution, global tilt-only still closes."""
+        from custom_components.adaptive_cover_pro.const import VENETIAN_MODE_TILT_ONLY
+
+        policy = _make_policy()
+        policy._venetian_mode = VENETIAN_MODE_TILT_ONLY
+        result = PipelineResult(
+            position=60,
+            control_method=ControlMethod.SOLAR,
+            tilt=25,
+            tilt_only_contribution_active=False,
+            reason="test",
+        )
+        out = policy.post_pipeline_resolve(result, **_solar_kwargs())
+        assert out.position == 0
+        assert "venetian_mode" in [s.handler for s in out.decision_trace]
+
+
 class TestPostPipelineResolveNoSunStrip:
     """Tilt must be stripped when SOLAR is emitted but direct sun is not hitting the window.
 

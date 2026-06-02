@@ -71,6 +71,11 @@ class CustomPositionHandler(OverrideHandler):
         for state in snapshot.custom_position_sensors:
             if state.entity_id == self._entity_id:
                 if state.is_on:
+                    # Tilt-only mode defers to the tilt-axis overlay pass — the
+                    # slot fixes the slat angle but never claims position
+                    # (issue #514). See pipeline/tilt_axis.py.
+                    if state.tilt_only:
+                        return None
                     # Floor mode (without use_my) defers to the floor-clamp
                     # composition pass — see pipeline/floors.py.
                     if state.min_mode and not state.use_my:

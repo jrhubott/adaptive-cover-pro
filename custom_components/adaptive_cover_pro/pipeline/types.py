@@ -49,6 +49,12 @@ class CustomPositionSensorState:
     min_mode: bool
     use_my: bool
     tilt: int | None = None
+    # When True, the slot fixes only the slat angle (tilt) and does NOT claim
+    # the position axis (issue #514). The handler defers (returns None) from
+    # evaluate(); the registry's tilt-axis pass overlays this slot's tilt onto
+    # whichever handler wins position. Mutually exclusive with min_mode / use_my
+    # (normalized in snapshot_builder — tilt_only wins).
+    tilt_only: bool = False
     # Human label of the bound sensor (its friendly_name attribute), surfaced so
     # downstream diagnostics can show e.g. "Custom · Table extension" instead of
     # just "Custom #1". None when the sensor isn't loaded or has no friendly_name.
@@ -247,6 +253,14 @@ class PipelineResult:
     # property treats the position as already in cover-position space and
     # skips interpolation / inverse-state remapping (issue #469).
     floor_clamp_applied: bool = False
+
+    # When True, the registry's tilt-axis pass overlaid a per-slot tilt-only
+    # contribution onto this winner (issue #514). VenetianPolicy reads this in
+    # post_pipeline_resolve to suppress the global VENETIAN_MODE_TILT_ONLY
+    # carriage-close for the cycle so the position pipeline genuinely drives
+    # the carriage. Cover-type-agnostic — set by the registry, acted on only
+    # inside cover_types/.
+    tilt_only_contribution_active: bool = False
 
     # When True, the coordinator should route this command through
     # CoverCommandService.send_my_position() on non-position-capable covers

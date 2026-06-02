@@ -111,6 +111,56 @@ def test_custom_position_schema_awning_excludes_tilt_slots() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Per-slot tilt-only boolean — venetian only (issue #514)
+# ---------------------------------------------------------------------------
+
+
+def test_custom_position_schema_venetian_includes_tilt_only_slots() -> None:
+    """Venetian schema includes the per-slot tilt_only boolean."""
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        CoverType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.VENETIAN)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert (
+            slot_keys["tilt_only"] in keys
+        ), f"{slot_keys['tilt_only']} missing for venetian"
+
+
+def test_custom_position_schema_blind_excludes_tilt_only_slots() -> None:
+    """Blind schema must not include the per-slot tilt_only boolean."""
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        CoverType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert (
+            slot_keys["tilt_only"] not in keys
+        ), f"{slot_keys['tilt_only']} should not be in blind"
+
+
+def test_custom_position_schema_awning_excludes_tilt_only_slots() -> None:
+    """Awning schema must not include the per-slot tilt_only boolean."""
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SLOTS,
+        CoverType,
+    )
+
+    schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.AWNING)
+    keys = {str(k) for k in schema}
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        assert (
+            slot_keys["tilt_only"] not in keys
+        ), f"{slot_keys['tilt_only']} should not be in awning"
+
+
+# ---------------------------------------------------------------------------
 # Default/sunset tilt sliders — venetian only (Step 13)
 # ---------------------------------------------------------------------------
 

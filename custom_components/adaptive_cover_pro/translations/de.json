@@ -224,7 +224,11 @@
           "custom_position_tilt_3": "Neigung für Slot 3",
           "custom_position_tilt_4": "Neigung für Slot 4",
           "default_tilt": "Standard-Neigung",
-          "sunset_tilt": "Sonnenuntergang-Neigung"
+          "sunset_tilt": "Sonnenuntergang-Neigung",
+          "custom_position_tilt_only_1": "Slot 1: nur Neigung",
+          "custom_position_tilt_only_2": "Slot 2: nur Neigung",
+          "custom_position_tilt_only_3": "Slot 3: nur Neigung",
+          "custom_position_tilt_only_4": "Slot 4: nur Neigung"
         },
         "data_description": {
           "custom_position_sensor_1": "Binärer Sensor, der bei „ein“ die Beschattung in ihre konfigurierte Position bewegt. Lassen Sie leer, um diesen Slot zu überspringen.",
@@ -252,7 +256,11 @@
           "custom_position_tilt_3": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 3 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
           "custom_position_tilt_4": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 4 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
           "default_tilt": "Standard-Neigungswinkel (0–100 %) für Jalousien, wenn kein anderer Handler die Neigung überschreibt. Wird immer dann angewendet, wenn der Standard-Positionshandler aktiv ist. Nicht setzen, damit die Engine die Neigung aus der Sonnengeometrie berechnet.",
-          "sunset_tilt": "Neigungswinkel (0–100 %) für Jalousien während des Sonnenuntergangsfensters. Überschreibt die Standard-Neigung, wenn das Sonnenuntergangs-Zeitfenster aktiv ist. Nicht setzen, um auf die Standard-Neigung zurückzufallen."
+          "sunset_tilt": "Neigungswinkel (0–100 %) für Jalousien während des Sonnenuntergangsfensters. Überschreibt die Standard-Neigung, wenn das Sonnenuntergangs-Zeitfenster aktiv ist. Nicht setzen, um auf die Standard-Neigung zurückzufallen.",
+          "custom_position_tilt_only_1": "Wenn aktiviert, wird bei Slot 1 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft.",
+          "custom_position_tilt_only_2": "Wenn aktiviert, wird bei Slot 2 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft.",
+          "custom_position_tilt_only_3": "Wenn aktiviert, wird bei Slot 3 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft.",
+          "custom_position_tilt_only_4": "Wenn aktiviert, wird bei Slot 4 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft."
         }
       },
       "motion_override": {
@@ -719,7 +727,11 @@
           "custom_position_tilt_3": "Neigung für Slot 3",
           "custom_position_tilt_4": "Neigung für Slot 4",
           "default_tilt": "Standard-Neigung",
-          "sunset_tilt": "Sonnenuntergang-Neigung"
+          "sunset_tilt": "Sonnenuntergang-Neigung",
+          "custom_position_tilt_only_1": "Slot 1: nur Neigung",
+          "custom_position_tilt_only_2": "Slot 2: nur Neigung",
+          "custom_position_tilt_only_3": "Slot 3: nur Neigung",
+          "custom_position_tilt_only_4": "Slot 4: nur Neigung"
         },
         "data_description": {
           "custom_position_sensor_1": "Binärsensor, der die Abdeckung bei Aktivierung (An) zu ihrer konfigurierten Position verschiebt. Lassen Sie leer, um diesen Slot zu überspringen.",
@@ -747,7 +759,11 @@
           "custom_position_tilt_3": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 3 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
           "custom_position_tilt_4": "Neigungswinkel (0–100 %), der gesetzt wird, wenn der Sensor von Slot 4 aktiv ist. Nur für Jalousien. Nicht setzen, damit die Engine die Neigung automatisch berechnet.",
           "default_tilt": "Standard-Neigungswinkel (0–100 %) für Jalousien, wenn kein anderer Handler die Neigung überschreibt. Wird immer dann angewendet, wenn der Standard-Positionshandler aktiv ist. Nicht setzen, damit die Engine die Neigung aus der Sonnengeometrie berechnet.",
-          "sunset_tilt": "Neigungswinkel (0–100 %) für Jalousien während des Sonnenuntergangsfensters. Überschreibt die Standard-Neigung, wenn das Sonnenuntergangs-Zeitfenster aktiv ist. Nicht setzen, um auf die Standard-Neigung zurückzufallen."
+          "sunset_tilt": "Neigungswinkel (0–100 %) für Jalousien während des Sonnenuntergangsfensters. Überschreibt die Standard-Neigung, wenn das Sonnenuntergangs-Zeitfenster aktiv ist. Nicht setzen, um auf die Standard-Neigung zurückzufallen.",
+          "custom_position_tilt_only_1": "Wenn aktiviert, wird bei Slot 1 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft.",
+          "custom_position_tilt_only_2": "Wenn aktiviert, wird bei Slot 2 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft.",
+          "custom_position_tilt_only_3": "Wenn aktiviert, wird bei Slot 3 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft.",
+          "custom_position_tilt_only_4": "Wenn aktiviert, wird bei Slot 4 nur der Lamellen-Winkel (Neigung) festgelegt — die Position der Jalousie wird weiterhin durch die Sonnenstand-Nachführung gesteuert. Nur für Jalousien. Setzt „Minimaler Modus\" und „Meine Position verwenden\" für diesen Slot außer Kraft."
         }
       },
       "motion_override": {

@@ -370,6 +370,7 @@ class VenetianPolicy(CoverTypePolicy):
             if (
                 self._venetian_mode == VENETIAN_MODE_TILT_ONLY
                 and result.control_method not in _EXPLICIT_USER_POSITION_METHODS
+                and not result.tilt_only_contribution_active
             ):
                 trace.append(
                     DecisionStep(
@@ -416,7 +417,10 @@ class VenetianPolicy(CoverTypePolicy):
         position = result.position
         trace = list(result.decision_trace)
 
-        if self._venetian_mode == VENETIAN_MODE_TILT_ONLY:
+        if (
+            self._venetian_mode == VENETIAN_MODE_TILT_ONLY
+            and not result.tilt_only_contribution_active
+        ):
             trace.append(
                 DecisionStep(
                     handler="venetian_mode",

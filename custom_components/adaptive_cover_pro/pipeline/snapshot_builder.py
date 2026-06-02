@@ -66,6 +66,7 @@ from ..const import (
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_CUSTOM_POSITION_TILT_ONLY,
     DEFAULT_MOTION_TIMEOUT_MODE,
 )
 from ..helpers import compute_effective_default
@@ -194,6 +195,20 @@ class PipelineSnapshotBuilder:
                 use_my = bool(options.get(slot_keys["use_my"], False))
                 raw_tilt = options.get(slot_keys["tilt"])
                 tilt = int(raw_tilt) if raw_tilt is not None else None
+                tilt_only = bool(
+                    options.get(
+                        slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY
+                    )
+                )
+                # Mutual exclusion: tilt_only wins over min_mode / use_my
+                # (decision Q3). A slot can fix only the slat angle OR claim
+                # position as a floor / via My — not both. Normalize here, the
+                # single read site, mirroring the existing use_my-over-min_mode
+                # precedent. The config-summary surfaces a warning when a user
+                # configured a conflicting combination.
+                if tilt_only:
+                    min_mode = False
+                    use_my = False
                 result.append(
                     CustomPositionSensorState(
                         entity_id=sensor,
@@ -203,6 +218,7 @@ class PipelineSnapshotBuilder:
                         min_mode=min_mode,
                         use_my=use_my,
                         tilt=tilt,
+                        tilt_only=tilt_only,
                         sensor_name=sensor_name,
                         slot=slot,
                     )

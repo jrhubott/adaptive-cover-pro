@@ -600,6 +600,9 @@ def _build_custom_position_schema_dict(sensor_type: str | None = None) -> dict:
         )
         if include_tilt:
             schema[vol.Optional(slot_keys["tilt"])] = _position_slider()
+            schema[vol.Optional(slot_keys["tilt_only"], default=False)] = (
+                selector.BooleanSelector()
+            )
     if include_tilt:
         schema[vol.Optional(CONF_DEFAULT_TILT)] = _position_slider()
         schema[vol.Optional(CONF_SUNSET_TILT)] = _position_slider()
@@ -1329,8 +1332,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         ]
     )
     has_motion = bool(config.get(CONF_MOTION_SENSORS))
-    # Build per-slot custom position data: list of (slot, entity_id, position, priority, use_my, tilt)
-    _custom_slots: list[tuple[int, str, int, int, bool, int | None]] = []
+    # Build per-slot custom position data:
+    # list of (slot, entity_id, position, priority, use_my, tilt, tilt_only)
+    _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool]] = []
     for _i in range(1, 5):
         _sensor = config.get(f"custom_position_sensor_{_i}")
         _pos = config.get(f"custom_position_{_i}")
@@ -1341,7 +1345,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
             _use_my = bool(config.get(f"custom_position_use_my_{_i}"))
             _slot_tilt = config.get(f"custom_position_tilt_{_i}")
-            _custom_slots.append((_i, _sensor, int(_pos), _pri, _use_my, _slot_tilt))
+            _tilt_only = bool(config.get(f"custom_position_tilt_only_{_i}"))
+            _custom_slots.append(
+                (_i, _sensor, int(_pos), _pri, _use_my, _slot_tilt, _tilt_only)
+            )
     has_custom_position = bool(_custom_slots)
     my_pos = config.get(CONF_MY_POSITION_VALUE)  # None = not configured
     has_cloud = bool(config.get(CONF_CLOUD_SUPPRESSION))
@@ -1502,19 +1509,40 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
 
     # Custom positions — each slot at its own configured priority
     if has_custom_position:
-        for _slot, _eid, _pos, _pri, _use_my, _slot_tilt in _custom_slots:
-            target = _pos_label(_pos, _use_my)
-            cp_min = (
-                " (as minimum)"
-                if config.get(f"custom_position_min_mode_{_slot}")
-                else ""
-            )
+        for _slot, _eid, _pos, _pri, _use_my, _slot_tilt, _tilt_only in _custom_slots:
             tilt_note = f", tilt {_slot_tilt}%" if _slot_tilt is not None else ""
-            lines.append(
-                f"🎯 Custom #{_slot}: if {_eid} is on → {target}{cp_min}{tilt_note}"
-                f" — bypasses delta gates and auto-control"
-                f"{_badge(_pri)}"
-            )
+            if _tilt_only:
+                # Tilt-only fixes the slat angle and lets the position pipeline
+                # (solar etc.) drive the carriage — min_mode/use_my are ignored.
+                slat = _slot_tilt if _slot_tilt is not None else 0
+                lines.append(
+                    f"🎯 Custom #{_slot}: if {_eid} is on → tilt only "
+                    f"(slat fixed at {slat}%; position driven by sun tracking)"
+                    f"{_badge(_pri)}"
+                )
+            else:
+                target = _pos_label(_pos, _use_my)
+                cp_min = (
+                    " (as minimum)"
+                    if config.get(f"custom_position_min_mode_{_slot}")
+                    else ""
+                )
+                lines.append(
+                    f"🎯 Custom #{_slot}: if {_eid} is on → {target}{cp_min}{tilt_note}"
+                    f" — bypasses delta gates and auto-control"
+                    f"{_badge(_pri)}"
+                )
+        # Mutual-exclusion warning: tilt_only wins over min_mode / use_my
+        # (issue #514). Surface the conflict so the user knows the latter two
+        # are ignored for that slot.
+        for _slot, _eid, _pos, _pri, _use_my, _slot_tilt, _tilt_only in _custom_slots:
+            if _tilt_only and (
+                config.get(f"custom_position_min_mode_{_slot}") or _use_my
+            ):
+                lines.append(
+                    f"⚠️ Custom #{_slot}: tilt only is on — "
+                    "Use as minimum / Use My position are ignored for this slot."
+                )
 
     # Motion timeout (75)
     timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
@@ -1929,7 +1957,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     if summary_policy.supports_glare_zones:
         _chain_entries.append((45, "Glare", has_glare))
     # Insert one entry per custom slot at its configured priority
-    for _slot, _eid, _pos, _pri, _use_my, _slot_tilt in _custom_slots:
+    for _slot, _eid, _pos, _pri, _use_my, _slot_tilt, _tilt_only in _custom_slots:
         _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
     # Sort highest priority first
     _chain_entries.sort(key=lambda e: e[0], reverse=True)

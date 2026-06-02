@@ -319,7 +319,7 @@ CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3, 4)  # supported indice
 
 
 def _custom_position_slot_keys(n: int) -> dict[str, str]:
-    """Return the seven wire-format option keys for slot *n*."""
+    """Return the eight wire-format option keys for slot *n*."""
     return {
         "sensor": f"custom_position_sensor_{n}",
         "position": f"custom_position_{n}",
@@ -327,6 +327,10 @@ def _custom_position_slot_keys(n: int) -> dict[str, str]:
         "min_mode": f"custom_position_min_mode_{n}",
         "use_my": f"custom_position_use_my_{n}",
         "tilt": f"custom_position_tilt_{n}",
+        # When True, the slot fixes only the slat angle (tilt) — solar drives
+        # position. Reuses the slot's existing `tilt` value as the slat angle
+        # (issue #514). Venetian-only; gated on custom_position_includes_tilt.
+        "tilt_only": f"custom_position_tilt_only_{n}",
         # `enabled` is opt-out: existing entries lack the key and behave as
         # enabled. Set to False to silence a slot without clearing its
         # configuration — used by the companion card's slot toggle UI.
@@ -391,6 +395,8 @@ CONF_MY_POSITION_VALUE = "my_position_value"  # user's "my" position, 1-99
 CONF_ENABLE_MY_POSITION_ENTITIES = "enable_my_position_entities"
 DEFAULT_ENABLE_MY_POSITION_ENTITIES = False
 DEFAULT_CUSTOM_POSITION_PRIORITY = 77  # default priority for a new slot
+# Default for an absent custom_position_tilt_only_<N> option (issue #514).
+DEFAULT_CUSTOM_POSITION_TILT_ONLY = False
 
 
 # =============================================================================

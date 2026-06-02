@@ -8,7 +8,21 @@ import datetime as dt
 from ..diagnostics.event_buffer import EventBuffer
 from .floors import effective_floor, gather_active_floors
 from .handler import OverrideHandler
+from .tilt_axis import resolve_tilt_axis
 from .types import DecisionStep, PipelineResult, PipelineSnapshot
+
+
+def _drop_trace_steps(
+    trace: list[DecisionStep], sources: set[str]
+) -> list[DecisionStep]:
+    """Remove trace steps whose handler is one of ``sources``.
+
+    Both the floor pass and the tilt-axis pass re-emit fresh trace steps for
+    handlers that *deferred* (returned None) so the registry can replace the
+    handler's unhelpful ``describe_skip`` entry. They share this removal step
+    so the dedup logic lives in one place (CODING_GUIDELINES § No Duplication).
+    """
+    return [step for step in trace if step.handler not in sources]
 
 
 class PipelineRegistry:
@@ -143,7 +157,7 @@ class PipelineRegistry:
         # carry an unhelpful describe_skip reason.  We give them a fresh
         # entry that explains the floor was active but did not win.
         floor_sources = {info.source for info in active_floors}
-        trace = [step for step in trace if step.handler not in floor_sources]
+        trace = _drop_trace_steps(trace, floor_sources)
         for info in active_floors:
             if (
                 floor_info is not None
@@ -163,6 +177,52 @@ class PipelineRegistry:
                 )
             )
 
+        # Tilt-axis overlay (issue #514).  A per-slot "tilt-only" custom
+        # position fixes the slat angle without claiming position — the slot's
+        # handler defers (returns None) and this pass overlays its tilt onto
+        # whichever handler won position.  Fill-when-unset: the overlay only
+        # applies when the winner's own tilt is None, so a position-winner that
+        # already set an explicit tilt keeps it (decision Q1b).  Resolution is
+        # cover-type-agnostic and lives in pipeline/tilt_axis.py.
+        tilt_contribution = resolve_tilt_axis(snapshot)
+        tilt_overlay: int | None = None
+        tilt_only_active = False
+        if tilt_contribution is not None:
+            tilt_only_active = True
+            # Replace any trace step for the contributing slot — it came from the
+            # handler's deferral path and carries an unhelpful describe_skip
+            # reason (mirrors the floor pass's step-replacement).
+            trace = _drop_trace_steps(trace, {tilt_contribution.source})
+            if winner.tilt is None:
+                tilt_overlay = tilt_contribution.tilt
+                trace.append(
+                    DecisionStep(
+                        handler=tilt_contribution.source,
+                        matched=True,
+                        reason=(
+                            f"tilt-only: slat angle fixed at "
+                            f"{tilt_contribution.tilt}% by {tilt_contribution.label}"
+                            f"; position driven by {winning_handler.name}"
+                        ),
+                        position=None,
+                        tilt=tilt_contribution.tilt,
+                    )
+                )
+            else:
+                trace.append(
+                    DecisionStep(
+                        handler=tilt_contribution.source,
+                        matched=False,
+                        reason=(
+                            f"tilt-only {tilt_contribution.tilt}% deferred — "
+                            f"{winning_handler.name} already set tilt "
+                            f"{winner.tilt}%"
+                        ),
+                        position=None,
+                        tilt=tilt_contribution.tilt,
+                    )
+                )
+
         # Propagate sunset-window flags from the snapshot.
         # NOTE: configured_default and configured_sunset_pos are
         # intentionally left at their defaults (0 / None) here.
@@ -175,11 +235,17 @@ class PipelineRegistry:
                 position=clamped_position,
                 floor_clamp_applied=True,
             )
+        # The dedicated tilt-axis overlay (issue #514) wins the tilt field over
+        # the generic _MERGEABLE tilt fill — both only fire when the winner's
+        # own tilt is None, but a tilt-only contribution is explicit user intent.
+        if tilt_overlay is not None:
+            merged["tilt"] = tilt_overlay
         result = dataclasses.replace(
             winner,
             decision_trace=trace,
             default_position=snapshot.default_position,
             is_sunset_active=snapshot.is_sunset_active,
+            tilt_only_contribution_active=tilt_only_active,
             **merged,
         )
         if self._event_buffer is not None:

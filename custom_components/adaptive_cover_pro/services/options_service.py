@@ -283,6 +283,10 @@ FIELD_VALIDATORS: dict[str, Any] = {
     },
     **{slot_keys["use_my"]: _bool_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()},
     **{
+        slot_keys["tilt_only"]: _bool_v()
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
+    **{
         slot_keys["tilt"]: _range(slot_keys["tilt"])
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },

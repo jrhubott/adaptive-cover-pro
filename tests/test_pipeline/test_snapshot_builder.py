@@ -191,6 +191,63 @@ def test_read_custom_position_sensors_emits_one_state_per_configured_slot():
 
 
 @pytest.mark.unit
+def test_read_custom_position_sensors_reads_tilt_only():
+    """tilt_only flag is read from options into the sensor state (issue #514)."""
+    on_state = MagicMock()
+    on_state.state = "on"
+    builder, _, _ = _make_builder(states={"binary_sensor.guest": on_state})
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["sensor"]: "binary_sensor.guest",
+        first_slot_keys["position"]: 42,
+        first_slot_keys["tilt"]: 30,
+        first_slot_keys["tilt_only"]: True,
+    }
+    out = builder.read_custom_position_sensors(opts)
+    assert out[0].tilt_only is True
+
+
+@pytest.mark.unit
+def test_read_custom_position_sensors_tilt_only_normalizes_min_mode_use_my():
+    """tilt_only wins: min_mode and use_my are forced False (decision Q3)."""
+    on_state = MagicMock()
+    on_state.state = "on"
+    builder, _, _ = _make_builder(states={"binary_sensor.guest": on_state})
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["sensor"]: "binary_sensor.guest",
+        first_slot_keys["position"]: 42,
+        first_slot_keys["tilt"]: 30,
+        first_slot_keys["tilt_only"]: True,
+        first_slot_keys["min_mode"]: True,
+        first_slot_keys["use_my"]: True,
+    }
+    out = builder.read_custom_position_sensors(opts)
+    state = out[0]
+    assert state.tilt_only is True
+    assert state.min_mode is False
+    assert state.use_my is False
+
+
+@pytest.mark.unit
+def test_read_custom_position_sensors_tilt_only_defaults_false():
+    """tilt_only defaults to False when the option is absent."""
+    on_state = MagicMock()
+    on_state.state = "on"
+    builder, _, _ = _make_builder(states={"binary_sensor.guest": on_state})
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["sensor"]: "binary_sensor.guest",
+        first_slot_keys["position"]: 42,
+    }
+    out = builder.read_custom_position_sensors(opts)
+    assert out[0].tilt_only is False
+
+
+@pytest.mark.unit
 def test_read_custom_position_sensors_unconfigured_returns_empty():
     builder, _, _ = _make_builder()
     assert builder.read_custom_position_sensors({}) == []
