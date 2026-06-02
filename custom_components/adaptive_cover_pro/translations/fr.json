@@ -54,7 +54,8 @@
           "inverse_tilt": "Inverser l'inclinaison",
           "max_tilt": "Inclinaison Maximale des Lamelles (%)",
           "min_tilt": "Inclinaison Minimale des Lamelles (%)",
-          "venetian_post_settle_hold": "Délai post-arrêt (s)"
+          "venetian_post_settle_hold": "Délai post-arrêt (s)",
+          "venetian_backrotate_publish_lag": "Fenêtre de latence de publication (s)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -71,7 +72,8 @@
           "inverse_tilt": "Inverse l'axe d'inclinaison uniquement. Activez si votre matériel envoie une inclinaison 0 pour lamelles ouvertes et 100 pour lamelles fermées, ce qui est l'opposé de ce que l'intégration attend. Cela s'applique uniquement à l'axe d'inclinaison (lamelles) — l'axe de position est contrôlé séparément par « Inverser l'état ». La plupart des protections n'ont pas besoin de ceci. Utile pour le matériel KNX ou Somfy où la direction d'inclinaison est câblée à l'opposé de la convention HA.",
           "max_tilt": "Limite de l'angle d'inclinaison maximal des lamelles (0–100 %). Les valeurs plus basses empêchent les lamelles d'atteindre des angles qui réfléchissent la lumière directe du soleil dans la pièce. Défaut : 100 (pas de limite). Exemple : réglez à 70 si les lamelles complètement ouvertes causent des reflets à des angles de soleil maximum.",
           "min_tilt": "Limite inférieure de l'angle d'inclinaison des lamelles (0–100 %). Les valeurs plus élevées empêchent les lamelles de se fermer complètement — utile pour les stores qui bloquent toute la lumière à 0 %. Défaut : 0 (pas de limite). Exemple : réglez à 10 si vos stores deviennent complètement opaques à 0 % et vous voulez toujours un peu de lumière.",
-          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s."
+          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Durée (en secondes) pendant laquelle l'intégration tolère une publication tardive de l'état de position de votre actionneur avant de la traiter comme un geste utilisateur réel. 45 s par défaut convient à Somfy IO via Tahoma. Augmentez à 60–120 s si votre matériel (bus KNX lent, Fibaro/Shelly republish) publie la position actuelle après l'arrêt physique du store – le symptôme est des événements « manual_override_set » parasites déclenchés ~30–90 s après un mouvement commandé. Diminuez uniquement si vous avez un actionneur inhabituellement rapide et souhaitez une détection de faux contact plus stricte. Plage 15–180 s."
         }
       },
       "sun_tracking": {
@@ -109,6 +111,7 @@
           "enable_max_position": "Appliquer le max uniquement lors du suivi du soleil",
           "min_position": "Position minimale",
           "enable_min_position": "Appliquer le min uniquement lors du suivi du soleil",
+          "min_position_sun_tracking": "Position minimale pendant le suivi solaire",
           "sunset_position": "Position au coucher du soleil",
           "enable_my_position_entities": "Activer les entités du préset Ma",
           "my_position_value": "Ma valeur de position",
@@ -119,7 +122,8 @@
           "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
           "interp": "Activer l'étalonnage de position (mappage custom position ouverture/fermeture)",
           "sunrise_time_entity": "Entité Heure de Lever du Soleil",
-          "sunset_time_entity": "Entité Heure de Coucher du Soleil"
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
+          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
@@ -127,6 +131,7 @@
           "enable_max_position": "Contrôle QUAND la limite de position maximale s'applique. NON COCHÉ (par défaut, recommandé) : Position maximale s'applique TOUT LE TEMPS - lors du suivi du soleil, position par défaut, modes climatiques, etc. Le store ne dépasse jamais la valeur max. COCHÉ (avancé) : Position maximale s'applique UNIQUEMENT quand le soleil est directement devant la fenêtre. Pendant les états par défaut/repli, le store peut dépasser la valeur max. La plupart des utilisateurs doivent laisser UNCHECKED pour une protection cohérente.",
           "min_position": "Limite de position minimale du store (0-99%). 0% = fermé (stores baissés / store banne rétracté). Le store ne descendra jamais en dessous de cette valeur. Utilisez ceci pour : empêcher le store de se fermer complètement (réglez sur 20%), maintenir de la lumière (réglez sur 30-40%), protéger du blocage au bas (réglez sur 5%). Ceci crée une limite inférieure pour toutes les positions automatiques. Fonctionne avec le bouton bascule « Appliquer min uniquement lors du suivi du soleil » ci-dessous.",
           "enable_min_position": "Contrôle QUAND la limite de position minimale s'applique. NON COCHÉ (par défaut, recommandé) : Position minimale s'applique TOUT LE TEMPS - lors du suivi du soleil, position par défaut, modes climatiques, etc. Le store ne descend jamais sous la valeur min. COCHÉ (avancé) : Position minimale s'applique UNIQUEMENT quand le soleil est directement devant la fenêtre. Pendant les états par défaut/repli, le store peut descendre sous la valeur min. La plupart des utilisateurs doivent laisser UNCHECKED pour une protection cohérente.",
+          "min_position_sun_tracking": "Limite de position minimale facultative qui s'applique uniquement pendant que le soleil est dans le champ de vision. Lorsqu'elle est définie, elle remplace « Position minimale » lors des calculs de suivi solaire. Laissez vide pour utiliser « Position minimale » pour le suivi solaire et les autres modes. Utilisez cette option si votre store a une zone morte mécanique en bas du parcours (par exemple, les volets roulants dont les lames s'écartent avant le bas se soulève) et que vous souhaitez que le suivi solaire ignore cette zone morte tout en permettant au store de se fermer complètement au coucher du soleil. 0% = fermé (stores baissés), 100% = ouvert (stores levés).",
           "sunset_position": "Position du store à définir après le coucher du soleil. Effacez le curseur (laissez vide) pour utiliser la position par défaut à la place — pas de comportement spécial au coucher du soleil. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Utilisations courantes : confidentialité (0%), ouvert pour la brise nocturne (100%), confidentialité partielle (30-50%). Si défini, cela remplace la position par défaut après le coucher du soleil.",
           "enable_my_position_entities": "Crée le bouton « Ma position gérée » et l'entité nombre « Valeur de Ma position gérée ». Désactivé par défaut — activez cette option si vous utilisez le préset « Ma » de type Somfy et souhaitez rappeler ou modifier la valeur depuis un tableau de bord.",
           "my_position_value": "La position (1–99%) que vous avez programmée sur la télécommande du moteur (My/préset favori). Laissez vide pour désactiver le déclenchement de Ma position pour ce store.",
@@ -137,7 +142,8 @@
           "inverse_state": "Activez pour les stores où la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez ceci UNIQUEMENT si votre store montre un comportement opposé, 100% ferme au lieu d'ouvrir, ou la documentation dit « inversé » ou « inversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
           "interp": "Activez le mappage de position personnalisé pour étalonner les stores qui ne répondent pas linéairement aux commandes 0–100%. Quand activé, une section « Étalonnage de position » apparaîtra dans le menu des options (sous Paramètres de position) où vous pouvez configurer les valeurs de mappage. Cas d'utilisation : le store ne se déplace pas linéairement, préférez certaines plages (plus fermé ou plus ouvert), étalonner pour un comportement de store inhabituel. Laissez désactivé pour un fonctionnement normal.",
           "sunrise_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « lever du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de lever du soleil calculée par astral en tant que limite de fermeture de fenêtre le matin. Accepte les entités sensor ou input_datetime. Le Décalage Lever du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible."
+          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
+          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
         }
       },
       "automation": {
@@ -150,7 +156,7 @@
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
           "end_entity": "Entité indiquant l'heure de fin",
-          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
+          "position_tolerance": "Tolérance de correspondance de position"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -159,7 +165,7 @@
           "start_entity": "Entité représentant l'état de l'heure de début, remplaçant l'heure de début fixe définie ci-dessus. Utile pour automatiser l'heure de début avec une entité (par ex., un capteur qui fournit l'heure du réveil en fonction du calendrier ou du suivi du sommeil).",
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
           "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
-          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
+          "position_tolerance": "Écart autorisé (%) entre la position commandée et la position signalée par le store avant que l'intégration la considère comme « non arrivée » et renvoyez la commande. Ceci est distinct de l'ajustement minimum ci-dessus : l'ajustement détermine si une nouvelle commande doit être envoyée, tandis que cette tolérance détermine si une commande déjà envoyée a été exécutée. La valeur par défaut de 3 % couvre l'arrondi normal du moteur (par ex. un store qui se stabilise à 98 % quand il est commandé à 100 %). Augmentez-la pour les actionneurs qui sous-dépassent ou surpassent systématiquement — par exemple, réglez 6 % si un store commandé à 100 % signale 95 % et serait autrement cliqué et réessayé chaque minute."
         }
       },
       "manual_override": {
@@ -170,14 +176,16 @@
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
           "manual_threshold": "Seuil de dérogation manuelle",
           "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
-          "transit_timeout": "Délai de transit (secondes)"
+          "transit_timeout": "Délai de transit (secondes)",
+          "manual_ignore_external": "Engager uniquement la dérogation manuelle via les commandes Adaptive Cover Pro"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
           "manual_override_reset": "Réinitialisez le minuteur de dérogation manuelle après chaque ajustement manuel. S'il est activé, chaque changement manuel redémarre la durée de dérogation. S'il est désactivé, la durée s'applique uniquement au premier ajustement manuel (les changements ultérieurs ne prolongent pas la pause). Activez ceci si vous voulez que la période de dérogation se « renouvelle » à chaque toucher manuel.",
           "manual_threshold": "Différence de position (%) qui compte comme « dérogation manuelle » (par défaut : 1%). Si vous déplacez manuellement le store de ce montant, la détection de dérogation se déclenche. Valeurs typiques : 1-2% (sensible, détecte les petits ajustements), 5% (moins sensible, recommandé), 10% (seuls les grands changements manuels comptent). Empêche la détection accidentelle de dérogation due à de petites dérives de moteur ou aux variations de rapports de position.",
           "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
-          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes."
+          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes.",
+          "manual_ignore_external": "Lorsque activé, seuls les changements de position envoyés via l'entité proxy Adaptive Cover Pro ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle. Les changements de position d'autres sources (autres automatisations, la carte de protection Home Assistant par défaut, les télécommandes physiques ou RF) sont ignorés et le contrôle automatique continue sans interruption. Utile lorsque vous conduisez la protection uniquement via ACP lui-même et souhaitez que les changements d'état externes bruyants ne mettent pas l'automatisation en pause. Par défaut : désactivé."
         }
       },
       "force_override": {
@@ -531,7 +539,7 @@
           "light_cloud": "☁️ Capteurs de lumière et nuages",
           "temperature_climate": "🌡️ Température et climat"
         },
-        "description": "Configuration : **{instance_name}**"
+        "description": "Configuration : **{instance_name}**\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
       "automation": {
         "title": "Horaires et synchronisation",
@@ -543,7 +551,7 @@
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
           "end_entity": "Entité indiquant l'heure de fin",
-          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
+          "position_tolerance": "Tolérance de correspondance de position"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -552,7 +560,7 @@
           "start_entity": "Entité représentant l'état de l'heure de début, remplaçant l'heure de début fixe définie ci-dessus. Utile pour automatiser l'heure de début avec une entité (par ex., un capteur qui fournit l'heure du réveil en fonction du calendrier ou du suivi du sommeil).",
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
           "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
-          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
+          "position_tolerance": "Écart autorisé (%) entre la position commandée et la position signalée par le store avant que l'intégration la considère comme « non arrivée » et renvoyez la commande. Ceci est distinct de l'ajustement minimum ci-dessus : l'ajustement détermine si une nouvelle commande doit être envoyée, tandis que cette tolérance détermine si une commande déjà envoyée a été exécutée. La valeur par défaut de 3 % couvre l'arrondi normal du moteur (par ex. un store qui se stabilise à 98 % quand il est commandé à 100 %). Augmentez-la pour les actionneurs qui sous-dépassent ou surpassent systématiquement — par exemple, réglez 6 % si un store commandé à 100 % signale 95 % et serait autrement cliqué et réessayé chaque minute."
         }
       },
       "cover_entities": {
@@ -587,7 +595,8 @@
           "inverse_tilt": "Inverser l'inclinaison",
           "max_tilt": "Inclinaison Maximale des Lamelles (%)",
           "min_tilt": "Inclinaison Minimale des Lamelles (%)",
-          "venetian_post_settle_hold": "Délai post-arrêt (s)"
+          "venetian_post_settle_hold": "Délai post-arrêt (s)",
+          "venetian_backrotate_publish_lag": "Fenêtre de latence de publication (s)"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -604,7 +613,8 @@
           "inverse_tilt": "Inverse l'axe d'inclinaison uniquement. Activez si votre matériel envoie une inclinaison 0 pour lamelles ouvertes et 100 pour lamelles fermées, ce qui est l'opposé de ce que l'intégration attend. Cela s'applique uniquement à l'axe d'inclinaison (lamelles) — l'axe de position est contrôlé séparément par « Inverser l'état ». La plupart des protections n'ont pas besoin de ceci. Utile pour le matériel KNX ou Somfy où la direction d'inclinaison est câblée à l'opposé de la convention HA.",
           "max_tilt": "Limite de l'angle d'inclinaison maximal des lamelles (0–100 %). Les valeurs plus basses empêchent les lamelles d'atteindre des angles qui réfléchissent la lumière directe du soleil dans la pièce. Défaut : 100 (pas de limite). Exemple : réglez à 70 si les lamelles complètement ouvertes causent des reflets à des angles de soleil maximum.",
           "min_tilt": "Limite inférieure de l'angle d'inclinaison des lamelles (0–100 %). Les valeurs plus élevées empêchent les lamelles de se fermer complètement — utile pour les stores qui bloquent toute la lumière à 0 %. Défaut : 0 (pas de limite). Exemple : réglez à 10 si vos stores deviennent complètement opaques à 0 % et vous voulez toujours un peu de lumière.",
-          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s."
+          "venetian_post_settle_hold": "Durée d'attente (en secondes) après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison. La valeur par défaut de 2,0 s convient à la plupart des actionneurs. Augmentez à 4–6 s pour le KNX FGR223 ou tout autre firmware qui réenclenche une inclinaison-vers-ouvert peu après l'arrêt du mécanisme — sans ce délai supplémentaire, la commande d'inclinaison entre en conflit avec ce réenclenchement et perd. Plage : 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Durée (en secondes) pendant laquelle l'intégration tolère une publication tardive de l'état de position de votre actionneur avant de la traiter comme un geste utilisateur réel. 45 s par défaut convient à Somfy IO via Tahoma. Augmentez à 60–120 s si votre matériel (bus KNX lent, Fibaro/Shelly republish) publie la position actuelle après l'arrêt physique du store – le symptôme est des événements « manual_override_set » parasites déclenchés ~30–90 s après un mouvement commandé. Diminuez uniquement si vous avez un actionneur inhabituellement rapide et souhaitez une détection de faux contact plus stricte. Plage 15–180 s."
         }
       },
       "sun_tracking": {
@@ -642,6 +652,7 @@
           "enable_max_position": "Appliquer le max uniquement lors du suivi du soleil",
           "min_position": "Position minimale",
           "enable_min_position": "Appliquer le min uniquement lors du suivi du soleil",
+          "min_position_sun_tracking": "Position minimale pendant le suivi solaire",
           "sunset_position": "Position au coucher du soleil",
           "enable_my_position_entities": "Activer les entités du préset Ma",
           "my_position_value": "Ma valeur de position",
@@ -652,7 +663,8 @@
           "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
           "interp": "Activer l'étalonnage de position (mappage custom position ouverture/fermeture)",
           "sunrise_time_entity": "Entité Heure de Lever du Soleil",
-          "sunset_time_entity": "Entité Heure de Coucher du Soleil"
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
+          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte"
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
@@ -660,6 +672,7 @@
           "enable_max_position": "Contrôle QUAND la limite de position maximale s'applique. NON COCHÉ (par défaut, recommandé) : Position maximale s'applique TOUT LE TEMPS - lors du suivi du soleil, position par défaut, modes climatiques, etc. Le store ne dépasse jamais la valeur max. COCHÉ (avancé) : Position maximale s'applique UNIQUEMENT quand le soleil est directement devant la fenêtre. Pendant les états par défaut/repli, le store peut dépasser la valeur max. La plupart des utilisateurs doivent laisser UNCHECKED pour une protection cohérente.",
           "min_position": "Limite de position minimale du store (0-99%). 0% = fermé (stores baissés / store banne rétracté). Le store ne descendra jamais en dessous de cette valeur. Utilisez ceci pour : empêcher le store de se fermer complètement (réglez sur 20%), maintenir de la lumière (réglez sur 30-40%), protéger du blocage au bas (réglez sur 5%). Ceci crée une limite inférieure pour toutes les positions automatiques. Fonctionne avec le bouton bascule « Appliquer min uniquement lors du suivi du soleil » ci-dessous.",
           "enable_min_position": "Contrôle QUAND la limite de position minimale s'applique. NON COCHÉ (par défaut, recommandé) : Position minimale s'applique TOUT LE TEMPS - lors du suivi du soleil, position par défaut, modes climatiques, etc. Le store ne descend jamais sous la valeur min. COCHÉ (avancé) : Position minimale s'applique UNIQUEMENT quand le soleil est directement devant la fenêtre. Pendant les états par défaut/repli, le store peut descendre sous la valeur min. La plupart des utilisateurs doivent laisser UNCHECKED pour une protection cohérente.",
+          "min_position_sun_tracking": "Limite de position minimale facultative qui s'applique uniquement pendant que le soleil est dans le champ de vision. Lorsqu'elle est définie, elle remplace « Position minimale » lors des calculs de suivi solaire. Laissez vide pour utiliser « Position minimale » pour le suivi solaire et les autres modes. Utilisez cette option si votre store a une zone morte mécanique en bas du parcours (par exemple, les volets roulants dont les lames s'écartent avant le bas se soulève) et que vous souhaitez que le suivi solaire ignore cette zone morte tout en permettant au store de se fermer complètement au coucher du soleil. 0% = fermé (stores baissés), 100% = ouvert (stores levés).",
           "sunset_position": "Position du store à définir après le coucher du soleil. Effacez le curseur (laissez vide) pour utiliser la position par défaut à la place — pas de comportement spécial au coucher du soleil. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Utilisations courantes : confidentialité (0%), ouvert pour la brise nocturne (100%), confidentialité partielle (30-50%). Si défini, cela remplace la position par défaut après le coucher du soleil.",
           "enable_my_position_entities": "Crée le bouton « Ma position gérée » et l'entité nombre « Valeur de Ma position gérée ». Désactivé par défaut — activez cette option si vous utilisez le préset « Ma » de type Somfy et souhaitez rappeler ou modifier la valeur depuis un tableau de bord.",
           "my_position_value": "La position (1–99%) que vous avez programmée sur la télécommande du moteur (My/préset favori). Laissez vide pour désactiver le déclenchement de Ma position pour ce store.",
@@ -670,7 +683,8 @@
           "inverse_state": "Activez pour les stores où la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez ceci UNIQUEMENT si votre store montre un comportement opposé, 100% ferme au lieu d'ouvrir, ou la documentation dit « inversé » ou « inversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
           "interp": "Activez le mappage de position personnalisé pour étalonner les stores qui ne répondent pas linéairement aux commandes 0–100%. Quand activé, une section « Étalonnage de position » apparaîtra dans le menu des options (sous Paramètres de position) où vous pouvez configurer les valeurs de mappage. Cas d'utilisation : le store ne se déplace pas linéairement, préférez certaines plages (plus fermé ou plus ouvert), étalonner pour un comportement de store inhabituel. Laissez désactivé pour un fonctionnement normal.",
           "sunrise_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « lever du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de lever du soleil calculée par astral en tant que limite de fermeture de fenêtre le matin. Accepte les entités sensor ou input_datetime. Le Décalage Lever du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible."
+          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
+          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin."
         }
       },
       "manual_override": {
@@ -681,14 +695,16 @@
           "manual_override_reset": "Réinitialiser la durée de la dérogation manuelle",
           "manual_threshold": "Seuil de dérogation manuelle",
           "manual_ignore_intermediate": "Ignorer les positions intermédiaires lors de la dérogation manuelle (ouverture et fermeture)",
-          "transit_timeout": "Délai de transit (secondes)"
+          "transit_timeout": "Délai de transit (secondes)",
+          "manual_ignore_external": "Engager uniquement la dérogation manuelle via les commandes Adaptive Cover Pro"
         },
         "data_description": {
           "manual_override_duration": "Combien de temps (minutes) pour mettre en pause le contrôle automatique après ajustement manuel. Quand vous déplacez manuellement le store, le contrôle automatique met en pause. Valeurs typiques : 10-15 min (pause courte, reprendre le suivi bientôt), 30 min (pause moyenne, équilibrée), 60-120 min (pause longue, garder la position manuelle plus longtemps), 0 (désactivé, reprendre immédiatement le contrôle automatique - non recommandé). Vous donne le contrôle quand vous le voulez, reprend l'automatisation plus tard.",
           "manual_override_reset": "Réinitialisez le minuteur de dérogation manuelle après chaque ajustement manuel. S'il est activé, chaque changement manuel redémarre la durée de dérogation. S'il est désactivé, la durée s'applique uniquement au premier ajustement manuel (les changements ultérieurs ne prolongent pas la pause). Activez ceci si vous voulez que la période de dérogation se « renouvelle » à chaque toucher manuel.",
           "manual_threshold": "Différence de position (%) qui compte comme « dérogation manuelle » (par défaut : 1%). Si vous déplacez manuellement le store de ce montant, la détection de dérogation se déclenche. Valeurs typiques : 1-2% (sensible, détecte les petits ajustements), 5% (moins sensible, recommandé), 10% (seuls les grands changements manuels comptent). Empêche la détection accidentelle de dérogation due à de petites dérives de moteur ou aux variations de rapports de position.",
           "manual_ignore_intermediate": "Ignorez les positions intermédiaires lors des opérations d'ouverture et de fermeture manuelles. Activez ceci pour empêcher la détection de dérogation des positions transitoires tandis que le store se déplace vers votre position cible. Utile si votre store signale de nombreuses valeurs intermédiaires pendant le mouvement.",
-          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes."
+          "transit_timeout": "Durée pendant laquelle ACP attend après l'arrêt du signalement de progression d'une protection avant de traiter le prochain rapport de position comme une dérogation manuelle initiée par l'utilisateur. Le minuteur se réinitialise chaque fois que la protection se rapproche de sa cible commandée, de sorte que les protections se déplaçant lentement mais continuellement sont protégées pendant l'intégralité du transit. Augmentez cette valeur pour les protections qui prennent plus de 45 secondes pour un parcours complet. Par défaut : 45 secondes.",
+          "manual_ignore_external": "Lorsque activé, seuls les changements de position envoyés via l'entité proxy Adaptive Cover Pro ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle. Les changements de position d'autres sources (autres automatisations, la carte de protection Home Assistant par défaut, les télécommandes physiques ou RF) sont ignorés et le contrôle automatique continue sans interruption. Utile lorsque vous conduisez la protection uniquement via ACP lui-même et souhaitez que les changements d'état externes bruyants ne mettent pas l'automatisation en pause. Par défaut : désactivé."
         }
       },
       "force_override": {
@@ -1034,11 +1050,18 @@
           "force_override": "Dérogation forcée",
           "custom_position": "Position personnalisée",
           "weather_override": "Dérogation météo",
-          "cloud_suppression": "Suppression de nuages"
+          "cloud_suppression": "Désactivation par temps nuageux"
         }
       },
       "position_forecast": {
         "name": "Prévision de position"
+      },
+      "climate_status": {
+        "state": {
+          "summer_mode": "Mode été",
+          "winter_mode": "Mode hiver",
+          "intermediate": "Intermédiaire"
+        }
       }
     },
     "switch": {
@@ -1469,6 +1492,10 @@
         "manual_threshold": {
           "description": "Changement de position (%) qui déclenche la détection de la dérogation manuelle (0–99).",
           "name": "Seuil de détection"
+        },
+        "manual_ignore_external": {
+          "name": "Engager uniquement via les commandes ACP",
+          "description": "Si vrai, seules les commandes routées via l'entité proxy ACP ou le service adaptive_cover_pro.set_position engagent la dérogation manuelle ; tous les autres changements de position sont ignorés."
         }
       },
       "name": "Définir les paramètres de la dérogation manuelle"
@@ -1515,6 +1542,10 @@
         "enable_min_position": {
           "description": "Si vrai, min_position s'applique uniquement lors du suivi du soleil.",
           "name": "Activer la position min uniquement pendant le suivi"
+        },
+        "min_position_sun_tracking": {
+          "name": "Position minimale pendant le suivi solaire",
+          "description": "Limite minimale facultative qui s'applique uniquement pendant le suivi solaire (0–99%). Lorsqu'elle est définie, elle remplace min_position pour les chemins de suivi solaire uniquement. Laissez vide pour utiliser min_position pour tous les chemins."
         },
         "inverse_state": {
           "description": "Inverser la position pour les protections qui signalent l'état de manière inverse.",
@@ -1678,6 +1709,10 @@
         "venetian_post_settle_hold": {
           "name": "Délai post-arrêt (s)",
           "description": "Secondes d'attente après l'arrêt du mécanisme avant l'envoi de la commande d'inclinaison (0,0–10,0 s). Augmenter à 4–6 s pour le firmware KNX FGR223."
+        },
+        "venetian_backrotate_publish_lag": {
+          "description": "Secondes pendant lesquelles l'intégration tolère une publication tardive de l'état de position/inclinaison de l'actionneur avant de la traiter comme un geste utilisateur (15–180 s). 45 s par défaut. Augmentez à 60–120 s pour un bus KNX lent ou Fibaro/Shelly republish ; resserrez uniquement pour les actionneurs inhabituellement rapides.",
+          "name": "Fenêtre de latence de publication (s)"
         }
       }
     },
@@ -1694,6 +1729,10 @@
       },
       "name": "Définir la position (avec plancher appliqué)",
       "description": "Déplace la protection vers la position demandée, en la limitant au plancher minimum le plus élevé de la position personnalisée active en mode minimum. Utilisez ceci au lieu de cover.set_cover_position quand vous avez besoin que les planchers de mode minimum d'ACP soient respectés à partir des automatisations. L'inclinaison n'est pas affectée."
+    },
+    "stop": {
+      "name": "Arrêter la protection",
+      "description": "Envoie stop_cover aux protections ciblées via le proxy ACP. Active la dérogation manuelle afin que le prochain cycle automatique ne contre-commande pas la protection. Utilisez ce service à la place de cover.stop_cover quand manual_ignore_external est activé."
     }
   }
 }

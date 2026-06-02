@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
+    BLANK_TIME,
     CONF_APPLY_LIMITS_TRACKING_ONLY,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
@@ -70,6 +71,7 @@ from .const import (
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
@@ -78,6 +80,7 @@ from .const import (
     CONF_MAX_POSITION,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
+    CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MODE,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
@@ -88,6 +91,7 @@ from .const import (
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
+    CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
@@ -311,6 +315,9 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(
+            CONF_ENABLE_MAX_POSITION, default=False
+        ): selector.BooleanSelector(),
         vol.Optional(CONF_MAX_POSITION, default=100): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
@@ -321,7 +328,7 @@ POSITION_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(
-            CONF_ENABLE_MAX_POSITION, default=False
+            CONF_ENABLE_MIN_POSITION, default=False
         ): selector.BooleanSelector(),
         vol.Optional(CONF_MIN_POSITION, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -332,9 +339,21 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(
-            CONF_ENABLE_MIN_POSITION, default=False
-        ): selector.BooleanSelector(),
+        vol.Optional(CONF_MIN_POSITION_SUN_TRACKING): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=99,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
         vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -344,19 +363,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(
-            CONF_ENABLE_MY_POSITION_ENTITIES,
-            default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
-        ): selector.BooleanSelector(),
-        vol.Optional(CONF_MY_POSITION_VALUE): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=99,
-                mode=selector.NumberSelectorMode.SLIDER,
-                unit_of_measurement="%",
-            )
-        ),
-        vol.Optional(CONF_SUNSET_USE_MY, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=-120,
@@ -373,12 +379,20 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="minutes",
             )
         ),
-        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_ENABLE_MY_POSITION_ENTITIES,
+            default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
+        ): selector.BooleanSelector(),
+        vol.Optional(CONF_MY_POSITION_VALUE): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=99,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
         ),
-        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
+        vol.Optional(CONF_SUNSET_USE_MY, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_OPEN_CLOSE_THRESHOLD, default=50): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
@@ -400,6 +414,7 @@ POSITION_SCHEMA = vol.Schema(
 _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_POS,
     CONF_MY_POSITION_VALUE,
+    CONF_MIN_POSITION_SUN_TRACKING,
     CONF_SUNSET_TIME_ENTITY,
     CONF_SUNRISE_TIME_ENTITY,
 ]
@@ -415,6 +430,15 @@ AUTOMATION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_POSITION_TOLERANCE, default=3): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=20,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
         vol.Optional(CONF_DELTA_TIME, default=2): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=2,
@@ -423,15 +447,17 @@ AUTOMATION_SCHEMA = vol.Schema(
                 unit_of_measurement="minutes",
             )
         ),
-        vol.Optional(CONF_START_TIME, default="00:00:00"): selector.TimeSelector(),
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
-        vol.Optional(CONF_END_TIME, default="00:00:00"): selector.TimeSelector(),
+        # No default: a cleared TimeSelector must leave the key absent so it can
+        # be stripped (issue #492). Blank stripping is enforced in
+        # async_step_automation since the suggested-values path can re-add it.
+        vol.Optional(CONF_START_TIME): selector.TimeSelector(),
         vol.Optional(CONF_END_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
-        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_END_TIME): selector.TimeSelector(),
     }
 )
 
@@ -454,6 +480,9 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_MANUAL_IGNORE_INTERMEDIATE, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_MANUAL_IGNORE_EXTERNAL, default=False
         ): selector.BooleanSelector(),
         vol.Optional(
             CONF_TRANSIT_TIMEOUT,
@@ -686,6 +715,18 @@ def weather_override_schema(
                 CONF_WEATHER_WIND_DIRECTION_SENSOR, default=vol.UNDEFINED
             ): _numeric_selector(),
             vol.Optional(
+                CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
+            ): _numeric_selector(),
+            vol.Optional(
+                CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
+            ): _binary_on_selector(),
+            vol.Optional(
+                CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
+            ): _binary_on_selector(),
+            vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): _binary_on_selector(
+                multiple=True
+            ),
+            vol.Optional(
                 CONF_WEATHER_WIND_SPEED_THRESHOLD,
                 default=DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
             ): selector.NumberSelector(
@@ -710,9 +751,6 @@ def weather_override_schema(
                 )
             ),
             vol.Optional(
-                CONF_WEATHER_RAIN_SENSOR, default=vol.UNDEFINED
-            ): _numeric_selector(),
-            vol.Optional(
                 CONF_WEATHER_RAIN_THRESHOLD, default=DEFAULT_WEATHER_RAIN_THRESHOLD
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -722,15 +760,6 @@ def weather_override_schema(
                     mode=selector.NumberSelectorMode.SLIDER,
                     unit_of_measurement=rain_unit,
                 )
-            ),
-            vol.Optional(
-                CONF_WEATHER_IS_RAINING_SENSOR, default=vol.UNDEFINED
-            ): _binary_on_selector(),
-            vol.Optional(
-                CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
-            ): _binary_on_selector(),
-            vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): _binary_on_selector(
-                multiple=True
             ),
             vol.Optional(
                 CONF_WEATHER_OVERRIDE_POSITION, default=0
@@ -810,6 +839,18 @@ def light_cloud_schema(
                 selector.EntityFilterSelectorConfig(domain="weather")
             ),
             vol.Optional(
+                CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
+            ): _binary_on_selector(),
+            vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): _numeric_selector(
+                device_class="illuminance"
+            ),
+            vol.Optional(
+                CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
+            ): _numeric_selector(device_class="irradiance"),
+            vol.Optional(
+                CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
+            ): _numeric_selector(),
+            vol.Optional(
                 CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -835,20 +876,11 @@ def light_cloud_schema(
                     ],
                 )
             ),
-            vol.Optional(
-                CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
-            ): _binary_on_selector(),
-            vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): _numeric_selector(
-                device_class="illuminance"
-            ),
             vol.Optional(CONF_LUX_THRESHOLD, default=1000): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     mode=selector.NumberSelectorMode.BOX, unit_of_measurement=lux_unit
                 )
             ),
-            vol.Optional(
-                CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
-            ): _numeric_selector(device_class="irradiance"),
             vol.Optional(
                 CONF_IRRADIANCE_THRESHOLD, default=300
             ): selector.NumberSelector(
@@ -856,9 +888,6 @@ def light_cloud_schema(
                     mode=selector.NumberSelectorMode.BOX, unit_of_measurement=irr_unit
                 )
             ),
-            vol.Optional(
-                CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
-            ): _numeric_selector(),
             vol.Optional(
                 CONF_CLOUD_COVERAGE_THRESHOLD, default=DEFAULT_CLOUD_COVERAGE_THRESHOLD
             ): selector.NumberSelector(
@@ -915,6 +944,12 @@ def temperature_climate_schema(
             vol.Optional(CONF_TEMP_ENTITY): selector.EntitySelector(
                 selector.EntityFilterSelectorConfig(domain=["climate", "sensor"])
             ),
+            vol.Optional(
+                CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
+            ): _numeric_selector(),
+            vol.Optional(
+                CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
+            ): _presence_like_selector(),
             vol.Optional(CONF_TEMP_LOW, default=21): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=_TEMP_RANGE_MIN,
@@ -933,9 +968,6 @@ def temperature_climate_schema(
                     unit_of_measurement=inside_unit,
                 )
             ),
-            vol.Optional(
-                CONF_OUTSIDETEMP_ENTITY, default=vol.UNDEFINED
-            ): _numeric_selector(),
             vol.Optional(CONF_OUTSIDE_THRESHOLD, default=25): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=_TEMP_RANGE_MIN,
@@ -944,9 +976,6 @@ def temperature_climate_schema(
                     unit_of_measurement=outside_unit,
                 )
             ),
-            vol.Optional(
-                CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
-            ): _presence_like_selector(),
             vol.Optional(
                 CONF_TRANSPARENT_BLIND, default=False
             ): selector.BooleanSelector(),
@@ -1462,6 +1491,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mo_parts.append("resets on next move")
     if config.get(CONF_MANUAL_IGNORE_INTERMEDIATE):
         mo_parts.append("ignores intermediate positions")
+    if config.get(CONF_MANUAL_IGNORE_EXTERNAL):
+        mo_parts.append("ACP-only (ignores external moves)")
     transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
     if (
         transit_timeout is not None
@@ -1681,13 +1712,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     timing_parts = []
     if start_entity:
         timing_parts.append(f"from {start_entity}")
-    elif start_time:
+    elif start_time and start_time != BLANK_TIME:
         timing_parts.append(f"from {start_time}")
     if end_entity:
         timing_parts.append(f"until {end_entity}")
-    elif end_time:
+    elif end_time and end_time != BLANK_TIME:
         timing_parts.append(f"until {end_time}")
-    if timing_parts or sunset_pos is not None:
+    # A schedule key present but blank (cleared TimeSelector → "00:00:00") still
+    # means the user configured the automation window — show "Active during
+    # daylight" rather than nothing, so the summary reflects the real behavior
+    # (issue #492). CONF_*_TIME default to BLANK_TIME, so test membership too.
+    schedule_configured = any(
+        config.get(key) not in (None, BLANK_TIME)
+        for key in (CONF_START_ENTITY, CONF_END_ENTITY)
+    ) or any(key in config for key in (CONF_START_TIME, CONF_END_TIME))
+    if timing_parts or sunset_pos is not None or schedule_configured:
         timing_str = (
             " ".join(timing_parts) if timing_parts else "Active during daylight"
         )
@@ -1790,10 +1829,27 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             limit_parts.append(f"Calibration {interp_lo}→{interp_hi}")
         else:
             limit_parts.append("Position calibration on")
+    min_pos_sun_track = config.get(CONF_MIN_POSITION_SUN_TRACKING)
+    if min_pos_sun_track is not None:
+        limit_parts.append(f"Sun-tracking min: {min_pos_sun_track}%")
     if limit_parts:
         lines.append("")
         lines.append("**Position Limits**")
         lines.append(" · ".join(limit_parts))
+
+    # Footgun: sun-tracking floor below always-on floor is a no-op (issue #467).
+    # The always-on min_pos dominates, so min_pos_sun_tracking < min_pos is a
+    # configuration mistake. Surface it so the user can correct it.
+    if (
+        min_pos_sun_track is not None
+        and min_pos is not None
+        and min_pos > min_pos_sun_track
+    ):
+        lines.append(
+            f"⚠️ Sun-tracking min {min_pos_sun_track}% < min position {min_pos}% — "
+            "always-on floor dominates; sun-tracking floor will be raised to "
+            f"{min_pos}%."
+        )
 
     # MODE2 + min_position footgun warning (issue #373).
     # In MODE2 the OPEN (horizontal) slat angle IS 50%, so any min_position
@@ -2062,6 +2118,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_ENABLE_MAX_POSITION,
             CONF_MIN_POSITION,
             CONF_ENABLE_MIN_POSITION,
+            CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNSET_POS,
             CONF_ENABLE_MY_POSITION_ENTITIES,
             CONF_MY_POSITION_VALUE,
@@ -2073,6 +2130,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_INVERSE_STATE,
             CONF_INTERP,
+            CONF_RETURN_SUNSET,
         }
     ),
     "interp": frozenset(
@@ -2086,12 +2144,12 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "automation": frozenset(
         {
             CONF_DELTA_POSITION,
+            CONF_POSITION_TOLERANCE,
             CONF_DELTA_TIME,
             CONF_START_TIME,
             CONF_START_ENTITY,
             CONF_END_TIME,
             CONF_END_ENTITY,
-            CONF_RETURN_SUNSET,
         }
     ),
     "manual_override": frozenset(
@@ -2100,6 +2158,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
             CONF_MANUAL_IGNORE_INTERMEDIATE,
+            CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_TRANSIT_TIMEOUT,
         }
     ),
@@ -3156,6 +3215,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_MANUAL_IGNORE_INTERMEDIATE: self.config.get(
                     CONF_MANUAL_IGNORE_INTERMEDIATE
                 ),
+                CONF_MANUAL_IGNORE_EXTERNAL: self.config.get(
+                    CONF_MANUAL_IGNORE_EXTERNAL
+                ),
                 CONF_OPEN_CLOSE_THRESHOLD: self.config.get(
                     CONF_OPEN_CLOSE_THRESHOLD, 50
                 ),
@@ -3382,7 +3444,10 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_menu(  # type: ignore[return-value]
             step_id="init",
             menu_options=menu_options,
-            description_placeholders={"instance_name": self.config_entry.title},
+            description_placeholders={
+                "instance_name": self.config_entry.title,
+                "coffee_url": "https://www.buymeacoffee.com/jrhubott",
+            },
         )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
@@ -3521,6 +3586,14 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage automation options."""
         if user_input is not None:
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
+            # A cleared TimeSelector either omits the key or coerces to the blank
+            # sentinel "00:00:00". Treat both as "unset": drop the key from the
+            # submission and from any previously-stored option so it never
+            # persists as a literal midnight window (issue #492).
+            for time_key in (CONF_START_TIME, CONF_END_TIME):
+                if user_input.get(time_key) in (None, BLANK_TIME):
+                    user_input.pop(time_key, None)
+                    self.options.pop(time_key, None)
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(

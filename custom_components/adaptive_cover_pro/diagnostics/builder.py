@@ -95,6 +95,14 @@ class DiagnosticContext:
     manual_toggle: bool = True
     enabled_toggle: bool = True
 
+    # Issue #33 Phase 5: per-entity counts of cross-axis publish-lag
+    # suppressions in the last 24 h. Threaded in from
+    # ``ManualOverrideManager.primary_axis_suppression_counts()`` so a
+    # user looking at a diagnostic file can immediately see whether the
+    # new guard is firing — and how often — for their actuator. Empty
+    # dict (default) → key omitted from diagnostics output.
+    primary_axis_suppression_counts: dict[str, int] = field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -465,6 +473,14 @@ class DiagnosticsBuilder:
         # Always emit cover_commands (empty dict when nothing active)
         diagnostics["cover_commands"] = ctx.cover_command_state or {}
 
+        # Issue #33 Phase 5 cross-axis publish-lag suppression counts.
+        # Surfaced only when non-empty so the field stays out of the way
+        # for users whose actuator publishes inside the default window.
+        if ctx.primary_axis_suppression_counts:
+            diagnostics["primary_axis_suppression_last_24h"] = dict(
+                ctx.primary_axis_suppression_counts
+            )
+
         return diagnostics
 
     @staticmethod
@@ -485,7 +501,12 @@ class DiagnosticsBuilder:
 
     @staticmethod
     def _build_decision_trace(ctx: DiagnosticContext) -> dict:
-        """Build per-handler decision trace from pipeline result."""
+        """Build per-handler decision trace from pipeline result.
+
+        Note: the trace may include a synthetic ``floor_clamp`` step that is
+        not backed by a registered handler — it represents the post-decision
+        floor-composition pass in :class:`PipelineRegistry` (issue #463).
+        """
         result = ctx.pipeline_result
         if result is None or not result.decision_trace:
             return {"decision_trace": []}
@@ -537,8 +558,10 @@ class DiagnosticsBuilder:
             CONF_IS_SUNNY_SENSOR,
             CONF_MAX_ELEVATION,
             CONF_MAX_POSITION,
+            CONF_MANUAL_IGNORE_EXTERNAL,
             CONF_MIN_ELEVATION,
             CONF_MIN_POSITION,
+            CONF_MIN_POSITION_SUN_TRACKING,
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
             DEFAULT_MOTION_TIMEOUT,
@@ -558,6 +581,9 @@ class DiagnosticsBuilder:
                 "blind_spot_left": options.get(CONF_BLIND_SPOT_LEFT),
                 "blind_spot_right": options.get(CONF_BLIND_SPOT_RIGHT),
                 "min_position": options.get(CONF_MIN_POSITION),
+                "min_position_sun_tracking": options.get(
+                    CONF_MIN_POSITION_SUN_TRACKING
+                ),
                 "max_position": options.get(CONF_MAX_POSITION),
                 "enable_min_position": options.get(CONF_ENABLE_MIN_POSITION, False),
                 "enable_max_position": options.get(CONF_ENABLE_MAX_POSITION, False),
@@ -576,6 +602,9 @@ class DiagnosticsBuilder:
                 "motion_timeout_active": ctx.motion_timeout_active,
                 "motion_hold_active": ctx.motion_hold_active,
                 "manual_toggle": ctx.manual_toggle,
+                "manual_ignore_external": options.get(
+                    CONF_MANUAL_IGNORE_EXTERNAL, False
+                ),
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),

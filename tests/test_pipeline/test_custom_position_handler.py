@@ -279,7 +279,13 @@ class TestRawCalculatedPosition:
 
 
 class TestMinimumPositionMode:
-    """Tests for CustomPositionHandler minimum position mode."""
+    """Tests for CustomPositionHandler minimum position mode.
+
+    Floor-mode composition lives in the registry post-decision pass (see
+    ``tests/test_pipeline/test_floor_composition.py``). At the handler
+    level, all min_mode does is *defer* — evaluate() returns None so the
+    pipeline can pick a genuine lower-priority winner.
+    """
 
     def _snapshot_min_mode(
         self,
@@ -310,41 +316,15 @@ class TestMinimumPositionMode:
         assert result is not None
         assert result.position == 30
 
-    def test_min_mode_on_calculated_higher_uses_calculated(self) -> None:
-        """With min_mode on, if calculated position > floor, use calculated."""
+    def test_min_mode_on_defers(self) -> None:
+        """With min_mode on, the handler defers (returns None) — the floor is
+        composed by the registry, not produced by the handler.
+        """
         snap = self._snapshot_min_mode(
             position=30, min_mode=True, calculate_percentage_return=50.0
         )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
-        assert result is not None
-        assert result.position == 50
-
-    def test_min_mode_on_calculated_lower_uses_floor(self) -> None:
-        """With min_mode on, if calculated position < floor, use the floor."""
-        snap = self._snapshot_min_mode(
-            position=30, min_mode=True, calculate_percentage_return=10.0
-        )
-        result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
-        assert result is not None
-        assert result.position == 30
-
-    def test_min_mode_on_calculated_equal_uses_floor(self) -> None:
-        """With min_mode on, if calculated equals floor, position equals floor."""
-        snap = self._snapshot_min_mode(
-            position=30, min_mode=True, calculate_percentage_return=30.0
-        )
-        result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
-        assert result is not None
-        assert result.position == 30
-
-    def test_min_mode_on_reason_mentions_minimum_mode(self) -> None:
-        """With min_mode on, reason string mentions minimum mode."""
-        snap = self._snapshot_min_mode(
-            position=30, min_mode=True, calculate_percentage_return=50.0
-        )
-        result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
-        assert result is not None
-        assert "minimum mode" in result.reason
+        assert result is None
 
     def test_min_mode_off_reason_no_minimum_mode_mention(self) -> None:
         """With min_mode off, reason string does not mention minimum mode."""
@@ -354,15 +334,6 @@ class TestMinimumPositionMode:
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
         assert result is not None
         assert "minimum mode" not in result.reason
-
-    def test_min_mode_control_method_still_custom_position(self) -> None:
-        """ControlMethod remains CUSTOM_POSITION regardless of min_mode."""
-        snap = self._snapshot_min_mode(
-            position=30, min_mode=True, calculate_percentage_return=70.0
-        )
-        result = _handler(entity_id=_ENTITY, position=30).evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.CUSTOM_POSITION
 
 
 # ---------------------------------------------------------------------------
@@ -382,15 +353,17 @@ class TestBypassAutoControl:
         assert result is not None
         assert result.bypass_auto_control is True
 
-    def test_bypass_flag_set_min_mode_path(self) -> None:
-        """Min-mode path sets bypass_auto_control=True."""
+    def test_bypass_flag_min_mode_defers(self) -> None:
+        """Min-mode handler defers (returns None) — bypass is moot since no
+        result is produced. The floor-clamp composition pass in the registry
+        carries the bypass forward via the lower-priority winner.
+        """
         snapshot = make_snapshot(
             custom_position_sensors=[_make_state(_ENTITY, True, 30, 77, True, False)],
             calculate_percentage_return=50.0,
         )
         result = _handler(entity_id=_ENTITY, position=30).evaluate(snapshot)
-        assert result is not None
-        assert result.bypass_auto_control is True
+        assert result is None
 
     def test_bypass_flag_set_use_my_path(self) -> None:
         """Use-My path sets bypass_auto_control=True."""
@@ -546,15 +519,16 @@ class TestHandlerTilt:
         assert result is not None
         assert result.tilt is None
 
-    def test_tilt_stamped_on_min_mode_path(self) -> None:
-        """Handler with tilt=60 stamps result.tilt=60 on min-mode path."""
+    def test_min_mode_defers_so_no_tilt_emitted(self) -> None:
+        """Min-mode handler defers — tilt would be applied by the lower-priority
+        winner; this handler emits no result of its own.
+        """
         snapshot = make_snapshot(
             custom_position_sensors=[_make_state(_ENTITY, True, 30, 77, True, False)],
             calculate_percentage_return=50.0,
         )
         result = _handler(entity_id=_ENTITY, position=30, tilt=60).evaluate(snapshot)
-        assert result is not None
-        assert result.tilt == 60
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -594,7 +568,13 @@ class TestCustomPositionActiveSlot:
 
 
 class TestCustomPositionMinimumMode:
-    """custom_position_minimum_mode reflects whether the floor constraint is actively raising position."""
+    """custom_position_minimum_mode field on PipelineResult.
+
+    With floor-mode composition moved to the registry, the handler no longer
+    emits a PipelineResult when min_mode is active — it defers. The remaining
+    on-handler invariants: the field is None on exact-position results, on the
+    use-My path, and on non-custom results.
+    """
 
     def _snap(
         self,
@@ -616,21 +596,11 @@ class TestCustomPositionMinimumMode:
             my_position_value=my_position_value,
         )
 
-    def test_custom_position_minimum_mode_true_when_floor_constrains(self) -> None:
-        """min_mode=True and raw < floor → custom_position_minimum_mode is True."""
+    def test_min_mode_defers(self) -> None:
+        """min_mode=True (without use_my) → evaluate() returns None."""
         snap = self._snap(position=50, min_mode=True, calculate_percentage_return=20.0)
         result = _handler(entity_id=_ENTITY, position=50).evaluate(snap)
-        assert result is not None
-        assert result.position == 50
-        assert result.custom_position_minimum_mode is True
-
-    def test_custom_position_minimum_mode_false_when_floor_is_noop(self) -> None:
-        """min_mode=True and raw >= floor → custom_position_minimum_mode is False (motivating case)."""
-        snap = self._snap(position=50, min_mode=True, calculate_percentage_return=70.0)
-        result = _handler(entity_id=_ENTITY, position=50).evaluate(snap)
-        assert result is not None
-        assert result.position == 70
-        assert result.custom_position_minimum_mode is False
+        assert result is None
 
     def test_custom_position_minimum_mode_none_when_exact_mode(self) -> None:
         """min_mode=False → custom_position_minimum_mode is None."""

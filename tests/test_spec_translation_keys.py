@@ -40,7 +40,13 @@ _EN_JSON: dict = json.loads(
 # Canary: lock the expected set of sensor translation_keys. Update here when a
 # new sensor spec with translation_key is added.
 _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
-    {"control_status", "decision_trace", "motion_status", "position_forecast"}
+    {
+        "climate_status",
+        "control_status",
+        "decision_trace",
+        "motion_status",
+        "position_forecast",
+    }
 )
 
 # Switch keys that appear in en.json under entity.switch but are generated

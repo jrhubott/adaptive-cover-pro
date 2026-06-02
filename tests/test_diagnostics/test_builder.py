@@ -708,6 +708,7 @@ class TestConfigurationDiagnostics:
             "blind_spot_left",
             "blind_spot_right",
             "min_position",
+            "min_position_sun_tracking",
             "max_position",
             "enable_min_position",
             "enable_max_position",
@@ -722,6 +723,7 @@ class TestConfigurationDiagnostics:
             "motion_timeout_active",
             "motion_hold_active",
             "manual_toggle",
+            "manual_ignore_external",
             "enabled_toggle",
             "cloud_suppression_enabled",
             "cloudy_position",
@@ -1111,3 +1113,40 @@ class TestCloudyPositionDiagnostics:
         assert cloud_step is not None
         assert "cloudy position 25%" in cloud_step["reason"]
         assert "cloudy position 25%" in explanation
+
+
+# ---------------------------------------------------------------------------
+# Issue #33: primary-axis suppression counts in debug section
+# ---------------------------------------------------------------------------
+
+
+class TestPrimaryAxisSuppressionCounts:
+    """Verify the new per-entity suppression counter surfaces in diagnostics."""
+
+    def test_primary_axis_suppression_counts_surface_in_debug_info(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Non-empty counter dict surfaces under ``primary_axis_suppression_last_24h``.
+
+        The coordinator threads
+        ``ManualOverrideManager.primary_axis_suppression_counts()`` into
+        ``DiagnosticContext`` so a user looking at a diagnostic file can
+        immediately tell whether the new publish-lag guard is firing for
+        their actuator.
+        """
+        ctx = _base_ctx(primary_axis_suppression_counts={"cover.living_room": 7})
+        diag, _ = builder.build(ctx)
+        assert diag["primary_axis_suppression_last_24h"] == {"cover.living_room": 7}
+
+    def test_primary_axis_suppression_counts_omitted_when_empty(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Empty counter dict → key absent from diagnostics.
+
+        Keeps the noise level down: only surfaces when the new guard has
+        actually fired at least once. Mirrors the pattern used by
+        ``event_timeline``.
+        """
+        ctx = _base_ctx(primary_axis_suppression_counts={})
+        diag, _ = builder.build(ctx)
+        assert "primary_axis_suppression_last_24h" not in diag

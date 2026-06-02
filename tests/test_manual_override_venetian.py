@@ -702,3 +702,311 @@ def test_tilt_only_update_inside_grace_position_and_tilt_mode_not_override() -> 
         "Tilt change inside command grace (position_and_tilt mode) "
         "should NOT trigger manual override"
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #33 Phase 5: cross-axis publish-lag suppression for the primary
+# (position) axis. The tilt axis already has the three-tier suppression
+# (mid-travel / post-stamp cap-grace / post-settle publish-lag); the user's
+# 2026-05-26 diagnostic shows the same defect exists on the position axis
+# but has no equivalent guard. The tests below pin the new behaviour.
+# ---------------------------------------------------------------------------
+
+
+def _make_policy_with_publish_lag(
+    entity_id: str,
+    *,
+    settled_age_seconds: float = 0.0,
+    backrotate_publish_lag_seconds: float | None = None,
+) -> tuple[VenetianPolicy, object]:
+    """Build a VenetianPolicy whose sequencer is anchored just past settle.
+
+    The grace manager is constructed but NOT stamped — the suppression I
+    want to exercise is the publish-lag window (anchored to the
+    moving→settled transition), not the command-grace tail.
+
+    ``settled_age_seconds`` backdates the sequencer's ``_settled_at`` stamp so
+    a single test can land inside or outside the publish-lag window without
+    sleeping. The suppression stamp is similarly aged past the
+    ``VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS`` boundary so the 5 s cap-grace
+    tail is closed — only the publish-lag window itself protects the test.
+
+    ``backrotate_publish_lag_seconds`` overrides the default so the
+    configurable-option tests can prove the value actually drives the window.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
+    )
+
+    grace_mgr = GracePeriodManager(logger=MagicMock())
+    policy = VenetianPolicy()
+    attach_kwargs: dict = {
+        "hass": MagicMock(),
+        "logger": MagicMock(),
+        "grace_mgr": grace_mgr,
+        "get_current_position": lambda _: None,
+        "set_commanded_position": lambda *_: None,
+        "position_tolerance": 5,
+        "is_dry_run": lambda: False,
+        "get_state": lambda _eid: "stopped",
+    }
+    if backrotate_publish_lag_seconds is not None:
+        attach_kwargs["backrotate_publish_lag_seconds"] = backrotate_publish_lag_seconds
+    policy.attach(**attach_kwargs)
+
+    seq = policy.sequencer
+    assert seq is not None
+    seq.stamp_position_command(entity_id)
+    # Push the suppression stamp past the cap-grace tail so only publish-lag
+    # remains as the suppressing predicate.
+    seq._suppression_at[entity_id] -= dt.timedelta(
+        seconds=VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS + 1.0
+    )
+    seq._stamp_settled(entity_id)
+    if settled_age_seconds > 0:
+        seq._settled_at[entity_id] -= dt.timedelta(seconds=settled_age_seconds)
+    return policy, grace_mgr
+
+
+def test_position_drift_inside_publish_lag_after_settle_is_ignored() -> None:
+    """Issue #33: late position publish inside the publish-lag window must NOT trip override.
+
+    Reproduces the user's 2026-05-26 diagnostic on
+    ``cover.wohnzimmerjalousie_links``: ``set_cover_position(100)`` at T+0,
+    cover state transitions ``opening`` → settled by T+8 s, then at T+64 s a
+    stale ``current_position=0`` is published by the slow Somfy IO bus while
+    HA cover state has reverted to ``open``. Pre-fix the position-axis
+    branch had no equivalent guard to the tilt axis's
+    ``is_in_suppression_with_cap`` and fired ``manual_override_set`` with
+    delta=100 against effective_threshold=3.
+
+    Post-fix, the new ``CoverTypePolicy.primary_axis_suppression`` hook
+    delegates to the same publish-lag predicate the tilt axis already uses,
+    so this late publish is recorded as
+    ``manual_override_rejected_primary_axis_suppression`` and the cover
+    stays automatic.
+    """
+    entity_id = "cover.wohnzimmerjalousie_links"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    policy, _grace_mgr = _make_policy_with_publish_lag(
+        entity_id, settled_age_seconds=20.0
+    )
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=0, tilt=100),
+        our_state=100,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=None,
+        is_in_command_grace=lambda _eid: False,
+        is_in_transit=lambda _eid: False,
+    )
+
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "Late position publish inside the publish-lag window must NOT trip override"
+    events = mgr.get_event_buffer()
+    assert any(
+        evt.get("event") == "manual_override_rejected_primary_axis_suppression"
+        for evt in events
+    ), f"expected primary-axis suppression event, got {events}"
+    counts = mgr.primary_axis_suppression_counts()
+    assert (
+        counts.get(entity_id, 0) == 1
+    ), "expected counter to record one primary-axis suppression"
+
+
+def test_position_drift_after_publish_lag_still_trips_override() -> None:
+    """Once the publish-lag window has elapsed, a 100% position delta IS a user touch.
+
+    Same setup as
+    ``test_position_drift_inside_publish_lag_after_settle_is_ignored`` but
+    ``_settled_at`` is aged past
+    ``VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS`` so the new predicate
+    returns False and the legacy threshold path runs — exactly what should
+    happen when the user really did grab the cover an hour after a
+    commanded move.
+
+    NOTE: This test passes pre-fix for the WRONG reason — without the
+    publish-lag guard, the position-axis path always trips for delta=100%.
+    Post-fix it passes for the RIGHT reason: the guard correctly opts out
+    when settled_age > publish-lag window.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+    )
+
+    entity_id = "cover.wohnzimmerjalousie_links_real_user"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    policy, _grace_mgr = _make_policy_with_publish_lag(
+        entity_id,
+        settled_age_seconds=VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS + 1.0,
+    )
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=0, tilt=100),
+        our_state=100,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=None,
+        is_in_command_grace=lambda _eid: False,
+        is_in_transit=lambda _eid: False,
+    )
+
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "100% delta after publish-lag window must trip manual override"
+    events = mgr.get_event_buffer()
+    assert any(
+        evt.get("event") == "manual_override_set" for evt in events
+    ), f"expected manual_override_set, got {events}"
+    counts = mgr.primary_axis_suppression_counts()
+    assert (
+        counts.get(entity_id, 0) == 0
+    ), "counter must NOT increment when suppression is bypassed"
+
+
+def test_configurable_publish_lag_extends_suppression_window() -> None:
+    """A user-bumped publish-lag value must suppress drift inside the bigger window.
+
+    With ``backrotate_publish_lag_seconds=90.0`` and
+    ``settled_age_seconds=60.0`` we land inside the 90 s window but outside
+    the default 45 s window — proving the configurable option actually
+    changes the predicate's outcome. Targets the slow-KNX/Fibaro/Shelly
+    user the diagnostic surfaced.
+    """
+    entity_id = "cover.venetian_slow_actuator"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    policy, _grace_mgr = _make_policy_with_publish_lag(
+        entity_id,
+        settled_age_seconds=60.0,
+        backrotate_publish_lag_seconds=90.0,
+    )
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=0, tilt=100),
+        our_state=100,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=None,
+        is_in_command_grace=lambda _eid: False,
+        is_in_transit=lambda _eid: False,
+    )
+
+    assert not mgr.is_cover_manual(
+        entity_id
+    ), "60 s late publish must be suppressed when publish-lag is bumped to 90 s"
+
+
+def test_configurable_publish_lag_shrinks_suppression_window() -> None:
+    """A user-tightened publish-lag value must let drift through above the smaller window.
+
+    With ``backrotate_publish_lag_seconds=20.0`` and
+    ``settled_age_seconds=30.0`` we land outside the tighter window — even
+    though we'd be inside the 45 s default. Proves the option drives both
+    directions, not just the bump-up case.
+    """
+    entity_id = "cover.venetian_fast_actuator"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    policy, _grace_mgr = _make_policy_with_publish_lag(
+        entity_id,
+        settled_age_seconds=30.0,
+        backrotate_publish_lag_seconds=20.0,
+    )
+
+    mgr.handle_state_change(
+        states_data=_make_event(entity_id, position=0, tilt=100),
+        our_state=100,
+        policy=policy,
+        allow_reset=True,
+        is_waiting=lambda _eid: False,
+        manual_threshold=None,
+        is_in_command_grace=lambda _eid: False,
+        is_in_transit=lambda _eid: False,
+    )
+
+    assert mgr.is_cover_manual(
+        entity_id
+    ), "30 s late publish must trip override when publish-lag is dropped to 20 s"
+
+
+def test_warn_log_fires_on_first_suppression_per_entity(caplog) -> None:
+    """WARN log fires on the first suppression per entity per process, then ≤1 per hour.
+
+    The log message guides the user toward the new configurable option when
+    they see the suppression firing repeatedly on the same actuator. Two
+    suppressions within a minute → one WARN line. A third suppression more
+    than an hour later → a second WARN line.
+    """
+    import logging
+
+    entity_id = "cover.warn_test"
+    mgr = _make_manager(entity_id)
+    mgr.hass.states.get = MagicMock(return_value=None)
+    policy, _grace_mgr = _make_policy_with_publish_lag(
+        entity_id, settled_age_seconds=20.0
+    )
+
+    def _drive_one_suppression() -> None:
+        mgr.handle_state_change(
+            states_data=_make_event(entity_id, position=0, tilt=100),
+            our_state=100,
+            policy=policy,
+            allow_reset=True,
+            is_waiting=lambda _eid: False,
+            manual_threshold=None,
+            is_in_command_grace=lambda _eid: False,
+            is_in_transit=lambda _eid: False,
+        )
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="custom_components.adaptive_cover_pro.managers.manual_override",
+    ):
+        _drive_one_suppression()
+        # Re-stamp the sequencer's settle to drive a second suppression
+        # (running handle_state_change again with no fresh stamp would still
+        # land in the same window; that's fine — we want the throttle path).
+        policy.sequencer._stamp_settled(entity_id)
+        policy.sequencer._settled_at[entity_id] -= dt.timedelta(seconds=20.0)
+        _drive_one_suppression()
+
+    suppression_warns = [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING and "publish-lag" in rec.getMessage()
+    ]
+    assert len(suppression_warns) == 1, (
+        f"expected exactly 1 WARN inside throttle window, got {len(suppression_warns)}: "
+        f"{[r.getMessage() for r in suppression_warns]}"
+    )
+
+    # Advance the throttle clock past 1 h and drive a third suppression.
+    last_warn = mgr._last_suppression_warn_at[entity_id]
+    mgr._last_suppression_warn_at[entity_id] = last_warn - dt.timedelta(
+        hours=1, seconds=1
+    )
+    with caplog.at_level(
+        logging.WARNING,
+        logger="custom_components.adaptive_cover_pro.managers.manual_override",
+    ):
+        caplog.clear()
+        policy.sequencer._stamp_settled(entity_id)
+        policy.sequencer._settled_at[entity_id] -= dt.timedelta(seconds=20.0)
+        _drive_one_suppression()
+
+    suppression_warns_after_throttle = [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING and "publish-lag" in rec.getMessage()
+    ]
+    assert (
+        len(suppression_warns_after_throttle) == 1
+    ), "expected the per-hour throttle to release a second WARN line"

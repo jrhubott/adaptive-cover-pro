@@ -552,6 +552,16 @@ class CoverCommandService:
         """
         return self._transit_elapsed_without_progress(entity_id, now)
 
+    async def apply_user_stop(self, entity_id: str) -> tuple[str, str]:
+        """Send an ACP-context-stamped ``cover.stop_cover`` for a user-initiated stop.
+
+        Routes through ``_stop_tracker.call_stop_cover`` so the resulting
+        EVENT_CALL_SERVICE is recognised as ACP-originated and ignored by
+        the coordinator's service-call listener.
+        """
+        await self._stop_tracker.call_stop_cover(entity_id)
+        return "sent", "stop_cover"
+
     def was_acp_stop_context(self, context_id: str) -> bool:
         """Whether ``context_id`` belongs to an ACP-originated cover.stop_cover call.
 
@@ -712,6 +722,15 @@ class CoverCommandService:
         """
         self._open_close_threshold = threshold
 
+    def update_position_tolerance(self, value: int) -> None:
+        """Update the position-match (reconciliation) tolerance.
+
+        Args:
+            value: Allowed deviation between target and reported position (%).
+
+        """
+        self._position_tolerance = value
+
     # ------------------------------------------------------------------ #
     # State classification (manual-override detection)
     # ------------------------------------------------------------------ #
@@ -788,13 +807,17 @@ class CoverCommandService:
     def _is_cover_in_transit(self, entity_id: str) -> bool:
         """Return True when HA reports the cover as actively opening or closing.
 
-        Used as a shared predicate by the reconciliation pass and delegated to
-        by StopTracker.is_cover_in_motion, keeping the in-transit definition in
-        a single place. Callers that need to guard against stale position reads
-        during a transit move delegate here rather than inlining the state check.
+        Thin wrapper over :func:`managers.cover_command.transit.is_state_in_transit`
+        so the cover-command service, the dual-axis sequencer, and the
+        state classifier all consult the same string-membership rule (issue
+        #33 Phase 5). Callers that need to guard against stale position
+        reads during a transit move delegate here rather than inlining the
+        state check.
         """
+        from .transit import is_state_in_transit
+
         state_obj = self._hass.states.get(entity_id)
-        return state_obj is not None and state_obj.state in ("opening", "closing")
+        return is_state_in_transit(state_obj.state if state_obj is not None else None)
 
     # ------------------------------------------------------------------ #
     # Gate checks (used internally by apply_position)

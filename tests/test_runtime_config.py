@@ -29,6 +29,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_OPEN_CLOSE_THRESHOLD,
+    CONF_POSITION_TOLERANCE,
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -68,6 +69,7 @@ def test_from_options_uses_const_defaults_for_empty_input() -> None:
 
     assert rc.manual_override.reset is False
     assert rc.manual_override.duration == {"hours": 2}
+    assert rc.manual_override.ignore_external is False
 
     assert rc.time_window.start_time is None
     assert rc.time_window.start_time_entity is None
@@ -93,6 +95,18 @@ def test_from_options_uses_const_defaults_for_empty_input() -> None:
 
 
 @pytest.mark.unit
+def test_position_tolerance_defaults_to_three() -> None:
+    """Empty options → tolerance falls back to POSITION_TOLERANCE_PERCENT (issue #507)."""
+    rc = RuntimeConfig.from_options({})
+    assert rc.tracking.position_tolerance == 3
+
+
+def test_position_tolerance_reads_provided_value() -> None:
+    """A configured tolerance flows through to the tracking slice (issue #507)."""
+    rc = RuntimeConfig.from_options({CONF_POSITION_TOLERANCE: 8})
+    assert rc.tracking.position_tolerance == 8
+
+
 def test_from_options_reads_every_field_from_provided_dict() -> None:
     options = {
         CONF_ENTITIES: ["cover.test"],
@@ -107,6 +121,7 @@ def test_from_options_reads_every_field_from_provided_dict() -> None:
         CONF_INTERP_LIST_NEW: [4, 5, 6],
         CONF_MANUAL_OVERRIDE_RESET: True,
         CONF_MANUAL_OVERRIDE_DURATION: {"hours": 4},
+        "manual_ignore_external": True,
         CONF_START_TIME: "08:00",
         CONF_START_ENTITY: "input_datetime.s",
         CONF_END_TIME: "20:00",
@@ -137,6 +152,7 @@ def test_from_options_reads_every_field_from_provided_dict() -> None:
     assert rc.tracking.interp_list_new == [4, 5, 6]
     assert rc.manual_override.reset is True
     assert rc.manual_override.duration == {"hours": 4}
+    assert rc.manual_override.ignore_external is True
     assert rc.time_window.start_time == "08:00"
     assert rc.time_window.end_time_entity == "input_datetime.e"
     assert rc.motion.sensors == ["binary_sensor.m"]
@@ -210,3 +226,28 @@ def test_runtime_config_venetian_slice_reads_options() -> None:
     assert rc.venetian.post_settle_hold_seconds == 5.5
     assert rc.venetian.tilt_skip_above == 80
     assert rc.venetian.venetian_mode == VENETIAN_MODE_TILT_ONLY
+
+
+@pytest.mark.unit
+def test_runtime_config_threads_publish_lag_into_sequencer() -> None:
+    """Issue #33: ``backrotate_publish_lag_seconds`` plumbs through ``VenetianSlice``.
+
+    A user setting ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG`` in options must
+    surface on ``rc.venetian.backrotate_publish_lag_seconds`` so the
+    coordinator can pass it into ``DualAxisSequencer.__init__``. Empty
+    options must fall back to ``DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS``.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+        DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+    )
+
+    rc_default = RuntimeConfig.from_options({})
+    assert (
+        rc_default.venetian.backrotate_publish_lag_seconds
+        == DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+    )
+    assert rc_default.venetian.backrotate_publish_lag_seconds == 45.0
+
+    rc_custom = RuntimeConfig.from_options({CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: 75.0})
+    assert rc_custom.venetian.backrotate_publish_lag_seconds == 75.0

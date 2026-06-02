@@ -21,6 +21,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_FOV_LEFT,
     CONF_HEIGHT_WIN,
     CONF_MOTION_TIMEOUT,
+    CONF_POSITION_TOLERANCE,
     CONF_SUNSET_TILT,
     CUSTOM_POSITION_SLOTS,
     OPTION_RANGES,
@@ -51,6 +52,13 @@ def test_option_ranges_covers_every_numeric_validator() -> None:
     for key in expected_numeric:
         assert key in OPTION_RANGES, f"{key} should be in OPTION_RANGES"
         assert key in FIELD_VALIDATORS, f"{key} should be in FIELD_VALIDATORS"
+
+
+@pytest.mark.unit
+def test_position_tolerance_range_registered() -> None:
+    """``CONF_POSITION_TOLERANCE`` is registered with range (0, 20) (issue #507)."""
+    assert CONF_POSITION_TOLERANCE in OPTION_RANGES
+    assert OPTION_RANGES[CONF_POSITION_TOLERANCE] == (0, 20)
 
 
 @pytest.mark.unit

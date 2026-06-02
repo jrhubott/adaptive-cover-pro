@@ -27,9 +27,21 @@ More detail: **[How It Decides](https://github.com/jrhubott/adaptive-cover-pro/w
 
 ## Companion Lovelace card
 
-Pair with the **[Adaptive Cover Pro Card](https://github.com/jrhubott/adaptive-cover-pro-card)**, a custom Lovelace card that shows the full pipeline decision trace, a polar sun compass, live cover positions, and inline override controls — all in one card. HACS-installable. See the **[Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card)** wiki page for setup and configuration.
+The **[Adaptive Cover Pro Card](https://github.com/jrhubott/adaptive-cover-pro-card)** turns the integration's sensors into a dashboard you can read at a glance. It's HACS-installable and ships three cards in one bundle.
 
-<img src="https://raw.githubusercontent.com/jrhubott/adaptive-cover-pro-card/main/images/card-preview.png" alt="Adaptive Cover Pro Card preview" width="600">
+**Sky compass** — watch the sun cross each window in real time: its arc through the field of view, the shaded wedge of the cover closing to track it, sunrise and sunset, and the day's elevation curve underneath.
+
+<img src="https://raw.githubusercontent.com/jrhubott/adaptive-cover-pro-card/main/images/sky-compass-timelapse.gif" alt="Sky compass tracking the sun across a full day" width="540">
+
+**Tile card** — one compact row per shade: icon, live position, `↑ ■ ▼` controls, and a badge that tells you which automation is driving the cover right now (Auto, Solar tracking, a Manual override with its expiry and a resume button, Motion, and more). Tap any tile for the full pipeline trace, today's forecast, the compass, and override controls.
+
+<img src="https://raw.githubusercontent.com/jrhubott/adaptive-cover-pro-card/main/images/tile-gallery.png" alt="Tile card across four automation states" width="440">
+
+**Full card** — everything in one place: the compass, the elevation chart, the pipeline decision strip with the winning handler highlighted, per-cover position bars, and override controls.
+
+<img src="https://raw.githubusercontent.com/jrhubott/adaptive-cover-pro-card/main/images/card-preview.png" alt="Adaptive Cover Pro Card — all sections" width="340">
+
+Setup and options: **[Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card)** · **[Sky Compass Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Sky-Compass-Card)**.
 
 ---
 
@@ -50,7 +62,7 @@ Full steps: **[Installation](https://github.com/jrhubott/adaptive-cover-pro/wiki
 | 🎨 **Dashboard**           | [Lovelace Card](https://github.com/jrhubott/adaptive-cover-pro/wiki/Lovelace-Card) — install, configure, and use the companion card that visualizes the full pipeline                                                                                                                                                                                                                                                                                                                          |
 | ⚙️ **Configuration**       | [Sun Tracking](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Sun-Tracking) · [Glare Zones](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Glare-Zones) · [Weather Safety](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety) · [Climate](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Climate) · [Summary Screen](https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Summary-Screen) |
 | 🔌 **Entities & services** | [Entities](https://github.com/jrhubott/adaptive-cover-pro/wiki/Entities) · [Runtime Configuration Services](https://github.com/jrhubott/adaptive-cover-pro/wiki/Runtime-Configuration-Services) · [Position Verification](https://github.com/jrhubott/adaptive-cover-pro/wiki/Position-Verification) · [Somfy RTS (My Position)](https://github.com/jrhubott/adaptive-cover-pro/wiki/My-Position-Support-Somfy-RTS)                                                                            |
-| 🛠️ **Operations**          | [Troubleshooting](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) · [Known Limitations](https://github.com/jrhubott/adaptive-cover-pro/wiki/Known-Limitations)                                                                                                                                                                                                                                                                                                            |
+| 🛠️ **Operations**          | [Troubleshooting](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting) (incl. [stopping false manual overrides](https://github.com/jrhubott/adaptive-cover-pro/wiki/Troubleshooting#workaround--stop-unexpected-manual-overrides-entirely)) · [Known Limitations](https://github.com/jrhubott/adaptive-cover-pro/wiki/Known-Limitations)                                                                                                                                       |
 
 ## Support
 

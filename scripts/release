@@ -383,6 +383,11 @@ validate_branch() {
             if ! confirm "Continue with beta release from main?"; then
                 exit 1
             fi
+        elif [[ $current_branch != "develop" ]]; then
+            log_warning "Preferred beta source is develop. You're on $current_branch."
+            if ! confirm "Continue with beta release from $current_branch?"; then
+                exit 1
+            fi
         fi
     else
         # Production releases must be from main
@@ -839,8 +844,8 @@ verify_zip_asset() {
 
             if [[ $size_kb -lt 100 ]]; then
                 log_warning "Asset size seems small (${size_kb}KB < 100KB)"
-            elif [[ $size_kb -gt 500 ]]; then
-                log_warning "Asset size seems large (${size_kb}KB > 500KB)"
+            elif [[ $size_kb -gt 1000 ]]; then
+                log_warning "Asset size seems large (${size_kb}KB > 1000KB)"
             fi
         fi
 

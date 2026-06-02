@@ -200,6 +200,7 @@ async def test_startup_grace_period_prevents_manual_override_detection():
     coordinator._grace_mgr._startup_timestamp = dt.datetime.now().timestamp()  # Active
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
+    coordinator.manual_ignore_external = False
     coordinator.cover_state_change = True
     coordinator.state_change_data = MagicMock()
     coordinator.state_change_data.entity_id = "cover.test"
@@ -237,6 +238,7 @@ async def test_startup_grace_period_allows_manual_override_after_expiration():
     # Set timestamp to 60 seconds ago (expired) — mock _is_in_startup_grace_period
     coordinator.manual_toggle = True
     coordinator.automatic_control = True
+    coordinator.manual_ignore_external = False
     coordinator.cover_state_change = True
     state_data = MagicMock()
     state_data.entity_id = "cover.test"

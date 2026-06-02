@@ -52,6 +52,7 @@ def _make_mock_cover(
         config.max_pos = None
         config.min_pos_sun_only = False
         config.max_pos_sun_only = False
+        config.min_pos_sun_tracking = None
     cover.config = config
     return cover
 

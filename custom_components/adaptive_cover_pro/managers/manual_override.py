@@ -2,16 +2,32 @@
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import datetime as dt
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from ..const import DEFAULT_DEBUG_EVENT_BUFFER_SIZE, POSITION_TOLERANCE_PERCENT
+from ..const import (
+    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
+    POSITION_TOLERANCE_PERCENT,
+)
 from ..diagnostics.event_buffer import EventBuffer
 from ..helpers import check_cover_features
+
+_LOGGER = logging.getLogger(__name__)
+
+# Issue #33 Phase 5: per-entity counters of primary-axis publish-lag
+# suppressions are pruned to events newer than this. 24 h matches what the
+# diagnostic file surfaces under ``primary_axis_suppression_last_24h``.
+_PRIMARY_AXIS_SUPPRESSION_WINDOW = dt.timedelta(hours=24)
+# WARN throttle: per-entity, fire on the first suppression then at most once
+# per hour to keep the log readable for users with chronically slow actuators.
+_PRIMARY_AXIS_SUPPRESSION_WARN_THROTTLE = dt.timedelta(hours=1)
 
 
 def effective_manual_threshold(user_threshold: int | None) -> int:
@@ -161,6 +177,73 @@ class AdaptiveCoverManager:
             if event_buffer is not None
             else EventBuffer(maxlen=DEFAULT_DEBUG_EVENT_BUFFER_SIZE)
         )
+        # Issue #33 Phase 5: rolling per-entity log of primary-axis publish-lag
+        # suppressions and a per-entity WARN throttle. Both live on the
+        # manager (per-instance state, side-effect bookkeeping); the
+        # predicate that decides whether to fire lives on the cover-type
+        # policy (cover-type-specific behaviour). Per CODING_GUIDELINES.md §
+        # "Managers Hold State, Policies Hold Behavior".
+        self._primary_axis_suppression_counts: dict[
+            str, collections.deque[dt.datetime]
+        ] = {}
+        self._last_suppression_warn_at: dict[str, dt.datetime] = {}
+
+    def _record_primary_axis_suppression(self, entity_id: str, *, delta: float) -> None:
+        """Log a primary-axis publish-lag suppression and throttle the WARN.
+
+        Issue #33 Phase 5 (cross-axis): the position-axis equivalent of
+        ``manual_override_rejected_tilt_suppression``. Keeps a 24 h
+        rolling window of suppressions per entity (surfaced under
+        ``primary_axis_suppression_last_24h`` in diagnostics) and emits a
+        WARN line on the first hit per entity plus at most one per hour.
+
+        Why a counter at all: a user whose actuator publishes its
+        post-move state inside the default 45 s window is silent —
+        suppression does the right thing. A user whose actuator publishes
+        at 60+ s gets repeated rejections, and the counter is the only
+        signal in diagnostics that tells them to bump
+        ``venetian_backrotate_publish_lag``. The throttled WARN log makes
+        the same suggestion visible in the HA log.
+        """
+        now = dt.datetime.now(dt.UTC)
+        deque = self._primary_axis_suppression_counts.setdefault(
+            entity_id, collections.deque()
+        )
+        deque.append(now)
+        cutoff = now - _PRIMARY_AXIS_SUPPRESSION_WINDOW
+        while deque and deque[0] < cutoff:
+            deque.popleft()
+
+        last_warn = self._last_suppression_warn_at.get(entity_id)
+        if (
+            last_warn is None
+            or (now - last_warn) >= _PRIMARY_AXIS_SUPPRESSION_WARN_THROTTLE
+        ):
+            _LOGGER.warning(
+                "Primary-axis manual override suppressed for %s "
+                "(publish-lag, delta=%.1f%%, count_last_24h=%d). "
+                "If this fires repeatedly for the same actuator, "
+                "increase '%s' in options.",
+                entity_id,
+                delta,
+                len(deque),
+                CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+            )
+            self._last_suppression_warn_at[entity_id] = now
+
+    def primary_axis_suppression_counts(self) -> dict[str, int]:
+        """Return per-entity counts of primary-axis suppressions in the last 24 h.
+
+        Used by ``DiagnosticsBuilder._build_debug_info`` to surface the
+        cross-axis publish-lag guard's activity. Empty entries are pruned
+        so the returned dict only carries entities with at least one
+        suppression in the window.
+        """
+        return {
+            eid: len(deque)
+            for eid, deque in self._primary_axis_suppression_counts.items()
+            if deque
+        }
 
     def _record_event(
         self,
@@ -340,6 +423,30 @@ class AdaptiveCoverManager:
                 new_position=new_position,
                 reason=f"cover state '{new_state_str}' indicates in-transit",
             )
+            return
+
+        # Issue #33 Phase 5: cross-axis publish-lag guard. Slow-bus
+        # actuators (Somfy IO via Tahoma, slow KNX, Fibaro/Shelly republish)
+        # publish a late ``current_position`` tens of seconds after the
+        # cover has physically stopped. Without this guard the threshold
+        # check below would treat the stale publish as a 100 % user touch.
+        # ``CoverTypePolicy.primary_axis_suppression`` defaults to False on
+        # non-venetian cover types — they don't share the back-rotate
+        # signature and so opt out automatically.
+        delta = abs(our_state - new_position)
+        if policy.primary_axis_suppression(entity_id, float(delta)):
+            self._record_event(
+                entity_id,
+                "manual_override_rejected_primary_axis_suppression",
+                our_state=our_state,
+                new_position=new_position,
+                effective_threshold=None,
+                reason=(
+                    f"primary-axis publish-lag suppression for {entity_id} "
+                    f"(delta {delta:.1f}%)"
+                ),
+            )
+            self._record_primary_axis_suppression(entity_id, delta=delta)
             return
 
         if new_position != our_state:

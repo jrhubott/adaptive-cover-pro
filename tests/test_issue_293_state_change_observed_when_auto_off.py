@@ -37,6 +37,7 @@ def _make_coord_auto_off():
     coord = MagicMock()
     coord.manual_toggle = True
     coord.automatic_control = False  # ← key: auto control is OFF
+    coord.manual_ignore_external = False
     coord._cover_type = "cover_awning"
     coord.manual_reset = False
     coord.manual_threshold = 5

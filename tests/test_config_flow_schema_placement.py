@@ -8,7 +8,9 @@ from custom_components.adaptive_cover_pro import config_flow as cf
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
+    CONF_DELTA_POSITION,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_POSITION_TOLERANCE,
     CONF_TRANSIT_TIMEOUT,
     CONF_VENETIAN_MODE,
 )
@@ -16,6 +18,18 @@ from custom_components.adaptive_cover_pro.const import (
 
 def _schema_keys(schema) -> set[str]:
     return {str(k) for k in schema.schema}
+
+
+def test_position_tolerance_in_automation_schema_with_default_three() -> None:
+    """CONF_POSITION_TOLERANCE lives on the automation step, default 3 (issue #507)."""
+    keys = _schema_keys(cf.AUTOMATION_SCHEMA)
+    assert CONF_POSITION_TOLERANCE in keys
+    # Placed alongside the movement delta on the automation step.
+    assert CONF_DELTA_POSITION in keys
+    marker = next(
+        k for k in cf.AUTOMATION_SCHEMA.schema if str(k) == CONF_POSITION_TOLERANCE
+    )
+    assert marker.default() == 3
 
 
 @pytest.mark.parametrize(

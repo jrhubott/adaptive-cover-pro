@@ -37,7 +37,11 @@ class TestCoordinatorStateIntCoercion:
         )
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        pr = SimpleNamespace(position=pipeline_position, bypass_auto_control=False)
+        pr = SimpleNamespace(
+            position=pipeline_position,
+            bypass_auto_control=False,
+            floor_clamp_applied=False,
+        )
         coord._pipeline_result = pr
         coord._use_interpolation = True
         coord._inverse_state = False
@@ -76,7 +80,9 @@ class TestCoordinatorStateIntCoercion:
         )
 
         coord = object.__new__(AdaptiveDataUpdateCoordinator)
-        pr = SimpleNamespace(position=55, bypass_auto_control=False)
+        pr = SimpleNamespace(
+            position=55, bypass_auto_control=False, floor_clamp_applied=False
+        )
         coord._pipeline_result = pr
         coord._use_interpolation = False
         coord._inverse_state = False

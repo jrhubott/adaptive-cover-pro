@@ -1,0 +1,131 @@
+# Nightly pre-release built from the tip of `develop`.
+#
+# This workflow lives on `main` because `on: schedule` only fires from the
+# repository's default branch — but every job operates on `develop` (it checks
+# out `develop` to compute the version and to build the tagged commit).
+#
+# Flow: compute a `-nightly.<date>` version → (if develop changed) run the test
+# suite → make an ephemeral manifest-bump commit, tag it, and push ONLY the tag.
+# The existing `publish-release.yml` then builds + publishes the pre-release.
+#
+# The tag MUST be pushed with RELEASE_PAT: a tag pushed with the default
+# GITHUB_TOKEN does not trigger other workflows, so publish-release.yml would
+# never fire.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # ~07:00 UTC daily (overnight in the Americas)
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Compute version & detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Decide
+        id: decide
+        run: |
+          set -euo pipefail
+
+          # Next patch above the current manifest version, stripped of any
+          # pre-release suffix — guarantees the nightly sorts above the installed
+          # stable so HACS offers it as an update.
+          BASE=$(jq -r '.version' custom_components/adaptive_cover_pro/manifest.json)
+          CORE=${BASE%%-*}
+          IFS=. read -r MAJ MIN PAT <<< "$CORE"
+          VERSION="${MAJ}.${MIN}.$((PAT + 1))-nightly.$(date -u +%Y%m%d%H%M)"
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Computed nightly version: $VERSION"
+
+          # Skip when develop has no new commits since the last nightly tag.
+          LAST=$(git tag -l 'v*-nightly.*' --sort=-version:refname | head -n1 || true)
+          if [ -z "$LAST" ]; then
+            echo "No previous nightly tag — will build."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            COUNT=$(git rev-list --count "${LAST}..HEAD")
+            echo "Commits on develop since ${LAST}: ${COUNT}"
+            if [ "$COUNT" -gt 0 ]; then
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "develop unchanged since last nightly — skipping."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  test:
+    name: Test gate
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
+  release:
+    name: Tag & publish nightly
+    needs: [check, test]
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout develop (with release PAT)
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Build ephemeral bump commit & push tag
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Set the nightly version in manifest.json so the zipped build carries
+          # it. This commit is NEVER pushed to develop — only the tag is pushed,
+          # which keeps develop's history clean.
+          jq --arg v "$VERSION" '.version = $v' \
+            custom_components/adaptive_cover_pro/manifest.json > manifest.tmp
+          mv manifest.tmp custom_components/adaptive_cover_pro/manifest.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: nightly build ${TAG}"
+          git tag -a "${TAG}" -m "Nightly build ${TAG}"
+
+          # PAT push so publish-release.yml triggers (GITHUB_TOKEN would not).
+          git push origin "refs/tags/${TAG}"
+          echo "Pushed ${TAG}; publish-release.yml will build the pre-release."
+
+      - name: Prune old nightly releases (keep newest 3)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          mapfile -t TAGS < <(gh release list --limit 100 --json tagName \
+            --jq '.[].tagName | select(test("-nightly\\."))')
+          i=0
+          for t in "${TAGS[@]}"; do
+            i=$((i + 1))
+            [ "$i" -le 3 ] && continue
+            echo "Deleting old nightly release ${t}"
+            gh release delete "${t}" --cleanup-tag --yes
+          done

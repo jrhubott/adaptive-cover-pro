@@ -443,6 +443,39 @@ def test_record_skipped_action_overwrites_previous(cmd_svc):
 # --- update_threshold ---
 
 
+def test_position_tolerance_ctor_arg_honored(mock_hass, logger, grace_mgr):
+    """A configured position_tolerance widens the check_target_reached band (issue #507)."""
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=6,
+    )
+    assert svc._position_tolerance == 6
+    svc.set_target("cover.test", 100)
+    # 94 vs 100 → gap 6 ≤ 6 tolerance → reached.
+    assert svc.check_target_reached("cover.test", 94) is True
+    svc.set_target("cover.test", 100)
+    # 93 vs 100 → gap 7 > 6 tolerance → not reached.
+    assert svc.check_target_reached("cover.test", 93) is False
+
+
+def test_update_position_tolerance(mock_hass, logger, grace_mgr):
+    """update_position_tolerance mutates the backing field (issue #507)."""
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+    )
+    svc.update_position_tolerance(10)
+    assert svc._position_tolerance == 10
+    svc.set_target("cover.test", 100)
+    # 91 vs 100 → gap 9 ≤ 10 tolerance → reached.
+    assert svc.check_target_reached("cover.test", 91) is True
+
+
 def test_update_threshold(cmd_svc):
     """update_threshold changes the open/close threshold."""
     cmd_svc.update_threshold(75)

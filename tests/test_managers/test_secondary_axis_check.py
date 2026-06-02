@@ -51,6 +51,26 @@ class TestEffectiveManualThreshold:
             == POSITION_TOLERANCE_PERCENT + 7
         )
 
+    def test_floor_independent_of_configurable_position_tolerance(self):
+        """The manual-override floor stays keyed to the fixed constant (issue #507).
+
+        CONF_POSITION_TOLERANCE makes the *reconciliation* tolerance configurable,
+        but the manual-override false-positive floor must NOT follow it — a wide
+        arrival tolerance (e.g. 15) must not silently swallow a genuine 14% manual
+        nudge. effective_manual_threshold reads POSITION_TOLERANCE_PERCENT directly
+        and takes no position-tolerance input, so a RuntimeConfig with a widened
+        tolerance leaves the floor untouched.
+        """
+        from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
+        from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
+
+        rc = RuntimeConfig.from_options({CONF_POSITION_TOLERANCE: 15})
+        assert rc.tracking.position_tolerance == 15
+        # Floor is unchanged: still max(user, fixed constant), never 15.
+        assert effective_manual_threshold(None) == POSITION_TOLERANCE_PERCENT
+        assert effective_manual_threshold(0) == POSITION_TOLERANCE_PERCENT
+        assert POSITION_TOLERANCE_PERCENT == 3
+
 
 def _state(attrs: dict):
     s = MagicMock()

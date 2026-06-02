@@ -16,7 +16,6 @@ from custom_components.adaptive_cover_pro.forecast import (
     EVENT_SUNRISE,
     EVENT_SUNSET,
     FORECAST_STEP_MINUTES,
-    FORECAST_WINDOW_HOURS,
     Forecast,
     ForecastEvent,
     ForecastSample,
@@ -28,11 +27,13 @@ from custom_components.adaptive_cover_pro.forecast import (
 # ---------------------------------------------------------------------------
 
 _NOW = datetime(2026, 6, 1, 6, 0, tzinfo=UTC)
+# Midnight anchor: real SunData.times start at local 00:00 on the current day.
+_DAY_START = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
 
 
 def _make_sun_data(
     *,
-    n_samples: int = 96,
+    n_samples: int = 289,
     step_minutes: int = 5,
     azi_at: float = 180.0,
     ele_at: float = 30.0,
@@ -42,10 +43,11 @@ def _make_sun_data(
     """Build a minimal SunData stand-in for forecast tests.
 
     Produces a constant-sun timeline for *n_samples* steps of *step_minutes*
-    starting at _NOW.  Tests that need a varying sun pattern can patch the
-    azimuth/elevation lists after construction.
+    starting at _DAY_START (local midnight), matching real SunData semantics
+    (00:00 → 24:00 inclusive at 5-min cadence = 289 points).  Tests that need
+    a varying sun pattern can patch the azimuth/elevation lists after construction.
     """
-    times = [_NOW + timedelta(minutes=i * step_minutes) for i in range(n_samples)]
+    times = [_DAY_START + timedelta(minutes=i * step_minutes) for i in range(n_samples)]
     sd = MagicMock()
     sd.times = times
     sd.solar_azimuth = [azi_at] * n_samples
@@ -80,7 +82,7 @@ def _make_cover_factory(*, solar_valid: bool, percentage: int = 40):
 class TestBuildForecastSamples:
     """build_forecast emits one sample per tick over the configured window."""
 
-    def test_default_cadence_emits_step_per_15_minutes_for_12_hours(self):
+    def test_default_cadence_emits_samples_for_full_calendar_day(self):
         sd = _make_sun_data()
         f = build_forecast(
             sun_data=sd,
@@ -88,8 +90,8 @@ class TestBuildForecastSamples:
             default_position=10,
             now=_NOW,
         )
-        # 12 hours of 15-minute steps inclusive at both ends = 12 * 60 / 15 + 1.
-        expected = (FORECAST_WINDOW_HOURS * 60 // FORECAST_STEP_MINUTES) + 1
+        # Full calendar day (00:00 → 24:00) at 15-minute steps inclusive = 24 * 60 / 15 + 1 = 97.
+        expected = (24 * 60 // FORECAST_STEP_MINUTES) + 1
         assert len(f.samples) == expected
         # All samples carry the configured default since solar isn't valid.
         assert all(s.position == 10 and s.handler == "default" for s in f.samples)
@@ -104,17 +106,37 @@ class TestBuildForecastSamples:
         )
         assert all(s.position == 55 and s.handler == "solar" for s in f.samples)
 
-    def test_custom_step_and_window_produce_proportional_sample_count(self):
-        sd = _make_sun_data(n_samples=200, step_minutes=5)
+    def test_custom_step_covers_full_day_proportionally(self):
+        sd = _make_sun_data(n_samples=289, step_minutes=5)
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
             default_position=0,
             now=_NOW,
             step_minutes=30,
-            window_hours=4,
         )
-        assert len(f.samples) == (4 * 60 // 30) + 1
+        # Full calendar day (00:00 → 24:00) at 30-minute steps = 24 * 60 / 30 + 1 = 49.
+        assert len(f.samples) == (24 * 60 // 30) + 1
+
+    def test_full_day_forecast_starts_at_midnight_ends_at_midnight(self):
+        """First sample is at local midnight, last sample is at the next midnight."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            default_position=0,
+            now=_NOW,
+        )
+        assert len(f.samples) > 0, "forecast produced no samples"
+        # First sample matches the first time in sun_data (midnight).
+        assert (
+            f.samples[0].t == _DAY_START
+        ), f"first sample at {f.samples[0].t}, expected {_DAY_START}"
+        # Last sample is at next midnight: _DAY_START + 24 h.
+        expected_last = _DAY_START + timedelta(hours=24)
+        assert (
+            f.samples[-1].t == expected_last
+        ), f"last sample at {f.samples[-1].t}, expected {expected_last}"
 
     def test_empty_sun_data_returns_empty_samples_and_events(self):
         sd = _make_sun_data(n_samples=0)
@@ -215,17 +237,17 @@ class TestBuildForecastEvents:
         Post-fix the event time is the SunData grid point where
         ``direct_sun_valid`` actually flips True — accurate to the 5-min grid.
         """
-        # 12 hours at 5-min step covers the full forecast window exactly.
-        n_samples = 12 * 60 // 5 + 1
+        # Full calendar day at 5-min step = 289 samples (00:00 → 24:00).
+        n_samples = 24 * 60 // 5 + 1
         sd = _make_sun_data(n_samples=n_samples, step_minutes=5)
         # Encode "time" into azimuth so a factory ignoring ele can decide by azi.
         sd.solar_azimuth = [float(i) for i in range(n_samples)]
 
-        # Crossing index 20 = 100 min from _NOW; 15-min samples bracket it
-        # at 90 min (azi 18) and 105 min (azi 21) — so a naive enter event
+        # Crossing index 20 = 100 min from _DAY_START (00:00); 15-min samples bracket
+        # it at 90 min (azi 18) and 105 min (azi 21) — so a naive enter event
         # would land at 105 min, but the true crossing is at 100 min.
         crossing_idx = 20
-        crossing_time = _NOW + timedelta(minutes=crossing_idx * 5)
+        crossing_time = _DAY_START + timedelta(minutes=crossing_idx * 5)
 
         def factory(azi, _ele):
             cover = MagicMock()

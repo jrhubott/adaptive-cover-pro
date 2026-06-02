@@ -1103,19 +1103,167 @@ class TestTiltVerification:
         assert seq.last_tilt_target("cover.x") == 80
 
     async def test_update_tilt_only_retries_after_drift_clears_target(self):
-        """update_tilt_only must resend when the recorded target was cleared by drift."""
+        """update_tilt_only must resend when the recorded target was cleared by drift.
+
+        Issue #500: each send through ``_send_tilt_command`` with verify=True
+        produces two service calls when the actuator drifts on every read —
+        the initial send and one bounded drift retry. The retry's
+        ``_retry_depth=1`` blocks further recursion.
+        """
         hass, seq = _build_sequencer(get_current_tilt_position=lambda _eid: 0)
-        # First send: drift clears the target.
+        # First send: drift triggers a bounded retry (2 calls); both still
+        # drift, target stays cleared.
         await seq._send_tilt_command(
             "cover.x", tilt_target=80, position_target=60, reason="solar"
         )
         assert seq.last_tilt_target("cover.x") is None
-        assert hass.services.async_call.call_count == 1
-        # Same target via update_tilt_only: short-circuit compares against None → resends.
+        assert hass.services.async_call.call_count == 2
+        # Same target via update_tilt_only: short-circuit compares against None
+        # → resends; that resend also drifts and retries, +2 more calls.
         await seq.update_tilt_only(
             "cover.x", tilt_target=80, current_position=60, reason="solar"
         )
+        assert hass.services.async_call.call_count == 4
+
+
+@pytest.mark.asyncio
+class TestTiltDriftImmediateRetry:
+    """Issue #500: drift triggers a single bounded immediate re-send.
+
+    Previously the sequencer detected drift, popped the stored target, and
+    waited for the next coordinator cycle (potentially minutes away with
+    ``delta_position=5``) to retry. For this user's KNX/Shelly actuator the
+    back-rotate landed at 100% tilt during a carriage open, the integration
+    saw drift on the verify path, and the user stared at the wrong tilt
+    until the next cycle. The fix re-sends once through ``_send_tilt_command``
+    after a short delay so all gates (dedup, dry-run, grace) are reused per
+    the no-duplication rule, with a ``_retry_depth`` kwarg that blocks
+    recursion past one retry.
+    """
+
+    async def test_drift_triggers_immediate_resend_via_send_tilt_command(
+        self, monkeypatch
+    ):
+        """Initial send drifts; the bounded retry verifies in-tolerance."""
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
+            "VENETIAN_DRIFT_RETRY_DELAY_SECONDS",
+            0,
+        )
+        # Stateful actuator: drift on every verify sample of the first send
+        # (4 reads at 0%), then in-tolerance for the retry's verify samples.
+        readings = {"count": 0}
+
+        def stateful_tilt(_eid):
+            readings["count"] += 1
+            # First send's verify loop reads VENETIAN_TILT_VERIFY_MAX_SAMPLES
+            # (4) times at 0; retry verify loop returns 80.
+            return 0 if readings["count"] <= 4 else 80
+
+        buf = EventBuffer(maxlen=32)
+        hass, seq = _build_sequencer(
+            get_current_tilt_position=stateful_tilt,
+            event_buffer=buf,
+        )
+        await seq._send_tilt_command(
+            "cover.x", tilt_target=80, position_target=60, reason="solar"
+        )
+        # Two service calls: the initial send and the bounded drift retry.
         assert hass.services.async_call.call_count == 2
+        events = buf.snapshot()
+        drift = [e for e in events if e["event"] == "tilt_command_drift"]
+        retries = [e for e in events if e["event"] == "tilt_command_drift_retry"]
+        verified = [e for e in events if e["event"] == "tilt_command_verified"]
+        assert len(drift) == 1
+        assert len(retries) == 1
+        assert len(verified) == 1
+        # After the retry verifies, the stored target reflects the
+        # successfully landed tilt.
+        assert seq.last_tilt_target("cover.x") == 80
+
+    async def test_drift_retry_does_not_recurse_when_still_drifting(self, monkeypatch):
+        """A still-drifting retry must not trigger a third send (``_retry_depth`` guard)."""
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
+            "VENETIAN_DRIFT_RETRY_DELAY_SECONDS",
+            0,
+        )
+        buf = EventBuffer(maxlen=32)
+        hass, seq = _build_sequencer(
+            get_current_tilt_position=lambda _eid: 0,  # always drifts
+            event_buffer=buf,
+        )
+        await seq._send_tilt_command(
+            "cover.x", tilt_target=80, position_target=60, reason="solar"
+        )
+        # Exactly two: initial send + one bounded retry, no third.
+        assert hass.services.async_call.call_count == 2
+        events = buf.snapshot()
+        drift = [e for e in events if e["event"] == "tilt_command_drift"]
+        retries = [e for e in events if e["event"] == "tilt_command_drift_retry"]
+        # Both sends drift; only the first emits a drift_retry.
+        assert len(drift) == 2
+        assert len(retries) == 1
+        # Target was cleared by the second drift and not restored.
+        assert seq.last_tilt_target("cover.x") is None
+
+    async def test_drift_retry_completes_within_bounded_time(self, monkeypatch):
+        """The retry must complete in a bounded time (no unbounded sleep loop)."""
+        import asyncio as _asyncio
+
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
+            "VENETIAN_DRIFT_RETRY_DELAY_SECONDS",
+            0,
+        )
+        _, seq = _build_sequencer(
+            get_current_tilt_position=lambda _eid: 0,
+        )
+        await _asyncio.wait_for(
+            seq._send_tilt_command(
+                "cover.x", tilt_target=80, position_target=60, reason="solar"
+            ),
+            timeout=5.0,
+        )
+
+    async def test_no_retry_when_initial_send_verifies_in_tolerance(self):
+        """A healthy initial send must not trigger a retry."""
+        buf = EventBuffer(maxlen=32)
+        hass, seq = _build_sequencer(
+            get_current_tilt_position=lambda _eid: 78,  # within tolerance of 80
+            event_buffer=buf,
+        )
+        await seq._send_tilt_command(
+            "cover.x", tilt_target=80, position_target=60, reason="solar"
+        )
+        assert hass.services.async_call.call_count == 1
+        events = buf.snapshot()
+        retries = [e for e in events if e["event"] == "tilt_command_drift_retry"]
+        assert retries == []
+
+    async def test_retry_depth_blocks_recursion_at_send_level(self, monkeypatch):
+        """A caller-supplied ``_retry_depth=1`` must short-circuit the retry path."""
+        monkeypatch.setattr(
+            "custom_components.adaptive_cover_pro.cover_types.venetian.sequencer."
+            "VENETIAN_DRIFT_RETRY_DELAY_SECONDS",
+            0,
+        )
+        buf = EventBuffer(maxlen=32)
+        hass, seq = _build_sequencer(
+            get_current_tilt_position=lambda _eid: 0,  # always drifts
+            event_buffer=buf,
+        )
+        await seq._send_tilt_command(
+            "cover.x",
+            tilt_target=80,
+            position_target=60,
+            reason="solar",
+            _retry_depth=1,
+        )
+        assert hass.services.async_call.call_count == 1
+        events = buf.snapshot()
+        retries = [e for e in events if e["event"] == "tilt_command_drift_retry"]
+        assert retries == []
 
 
 @pytest.mark.asyncio
@@ -1276,11 +1424,14 @@ class TestSendTiltCommandDedup:
         await seq._send_tilt_command(
             "cover.x", tilt_target=60, position_target=17, reason="solar"
         )
-        # Second send dedups (preserves opening-cycle service-call count) but
-        # the verify path runs because the prior send was unverified.
-        assert hass.services.async_call.call_count == 1
+        # Second send dedups (preserves the tilt-first opening service-call
+        # count) but the verify path runs because the prior send was
+        # unverified. The verify sees drift, fires one bounded retry through
+        # _send_tilt_command — that retry adds one service call and emits a
+        # second drift event before _retry_depth=1 stops recursion (#500).
+        assert hass.services.async_call.call_count == 2
         drift = [e for e in buf.snapshot() if e["event"] == "tilt_command_drift"]
-        assert len(drift) == 1
+        assert len(drift) == 2
         # Drift clears the stored target so the next update_tilt_only retries.
         assert seq.last_tilt_target("cover.x") is None
 
@@ -1300,7 +1451,10 @@ class TestTiltFirstThenSequenceVerify:
     async def test_run_sequence_after_tilt_first_runs_verify_on_dedup(self):
         """End-to-end: tilt-first then run_sequence with divergent actuator.
 
-        Produces a single tilt service call AND a tilt_command_drift event.
+        Issue #500: the verify on the dedup branch sees the wrong landing
+        and triggers one bounded drift retry, which adds a second service
+        call and a second drift event before ``_retry_depth=1`` stops
+        recursion.
         """
         buf = EventBuffer(maxlen=32)
         # Actuator reports the wrong tilt (0) for every verify sample — the
@@ -1331,14 +1485,14 @@ class TestTiltFirstThenSequenceVerify:
             reason="solar",
         )
 
-        # Service-call dedup preserved: still just the pre-tilt call.
-        assert hass.services.async_call.call_count == 1
+        # Pre-tilt call (1) + drift-retry call from the dedup verify (1) = 2.
+        assert hass.services.async_call.call_count == 2
 
         events = buf.snapshot()
         # The dedup branch DID run verify, and verify saw the wrong landing.
-        # Pre-fix: no verify event at all (verify was wholly skipped).
+        # Both the verify and the still-drifting retry emit drift events.
         drift = [e for e in events if e["event"] == "tilt_command_drift"]
-        assert len(drift) == 1
+        assert len(drift) == 2
         # Dedup itself was recorded.
         skipped = [
             e
@@ -1386,7 +1540,13 @@ class TestTiltVerifyWithRetry:
         assert len(verified_events) == 1
 
     async def test_verify_clears_target_when_all_samples_drift(self):
-        """Constantly stale read → target cleared, drift event records final sample."""
+        """Constantly stale read → target cleared, drift event records final sample.
+
+        Issue #500: the verify path now schedules one bounded drift retry,
+        which itself drifts and emits a second drift event before
+        ``_retry_depth=1`` stops recursion. Both events record the same
+        post-drift sample.
+        """
         buf = EventBuffer(maxlen=16)
         _, seq = _build_sequencer(
             get_current_tilt_position=lambda _eid: 0,
@@ -1397,9 +1557,10 @@ class TestTiltVerifyWithRetry:
         )
         assert seq.last_tilt_target("cover.x") is None
         drift_events = [e for e in buf.snapshot() if e["event"] == "tilt_command_drift"]
-        assert len(drift_events) == 1
-        assert drift_events[0]["actual_tilt_position"] == 0
-        assert drift_events[0]["delta"] == 80
+        assert len(drift_events) == 2
+        for evt in drift_events:
+            assert evt["actual_tilt_position"] == 0
+            assert evt["delta"] == 80
 
     async def test_verify_stops_polling_after_first_in_tolerance_sample(self):
         """In-tolerance first read must short-circuit — no extra polls."""
@@ -1504,6 +1665,11 @@ class TestTiltDiagnosticEvents:
         assert "ts" in ev
 
     async def test_tilt_command_drift_event(self):
+        """Schedule a bounded drift retry on the verify path (issue #500).
+
+        The retry itself drifts on the all-drift actuator → two
+        ``tilt_command_drift`` events per send.
+        """
         buf = EventBuffer(maxlen=16)
         _, seq = _build_sequencer(
             get_current_tilt_position=lambda _eid: 0,
@@ -1513,13 +1679,13 @@ class TestTiltDiagnosticEvents:
             "cover.x", tilt_target=80, position_target=60, reason="solar"
         )
         drift = [e for e in buf.snapshot() if e["event"] == "tilt_command_drift"]
-        assert len(drift) == 1
-        ev = drift[0]
-        assert ev["entity_id"] == "cover.x"
-        assert ev["tilt_target"] == 80
-        assert ev["actual_tilt_position"] == 0
-        assert ev["delta"] == 80
-        assert "ts" in ev
+        assert len(drift) == 2
+        for ev in drift:
+            assert ev["entity_id"] == "cover.x"
+            assert ev["tilt_target"] == 80
+            assert ev["actual_tilt_position"] == 0
+            assert ev["delta"] == 80
+            assert "ts" in ev
 
     async def test_no_verify_event_when_tilt_position_unknown(self):
         buf = EventBuffer(maxlen=16)
@@ -1660,7 +1826,9 @@ class TestTiltDeltaGate:
         """When tilt delta meets min_change, the tilt service call fires.
 
         Stored target and actuator agree at 50 — gate fires because delta >= min_change
-        regardless of anchor source (issue #33).
+        regardless of anchor source (issue #33). Actuator continues to read
+        50 after the send so verify sees drift and triggers the issue #500
+        bounded retry, which adds one additional service call.
         """
         hass, seq = _build_sequencer(
             get_min_change=lambda: 8,
@@ -1672,7 +1840,8 @@ class TestTiltDeltaGate:
             "cover.x", tilt_target=58, position_target=60, reason="solar"
         )
 
-        assert hass.services.async_call.call_count == 1
+        # Initial send (delta gate passes) + one bounded drift retry (#500).
+        assert hass.services.async_call.call_count == 2
 
     async def test_first_cycle_bypasses_gate(self):
         """With no prior tilt target, the gate is bypassed (first-cycle send)."""
@@ -1781,7 +1950,8 @@ class TestTiltDeltaAnchorIsActualTilt:
         Reproduces issue #33 comment 81 failure mode 1: motor auto-tilted to 100
         on close, but our stored target is the pre-close 74. New target 72 has
         |72−74|=2 against stored (would skip), but |72−100|=28 against actual
-        (must fire).
+        (must fire). The actuator continues to read 100 after the send, so
+        verify sees drift and triggers the issue #500 bounded retry (+1 call).
         """
         hass, seq = _build_sequencer(
             get_min_change=lambda: 8,
@@ -1793,7 +1963,8 @@ class TestTiltDeltaAnchorIsActualTilt:
             "cover.x", tilt_target=72, position_target=60, reason="solar"
         )
 
-        assert hass.services.async_call.call_count == 1
+        # Initial send + one bounded drift retry (#500).
+        assert hass.services.async_call.call_count == 2
 
     async def test_slow_drift_past_stale_anchor_fires_each_cycle(self):
         """Stored=74, actual=100. Targets 70, 69, 68 each delta against stored
@@ -1801,7 +1972,9 @@ class TestTiltDeltaAnchorIsActualTilt:
 
         Reproduces issue #33 comment 81 failure mode 2: solar drift across
         multiple cycles below the legacy stored-target min_change but well
-        above the gate threshold relative to actual tilt.
+        above the gate threshold relative to actual tilt. Each of the three
+        sends drifts on verify and triggers the issue #500 bounded retry, so
+        the service-call count doubles: 3 sends × 2 calls each = 6.
         """
         hass, seq = _build_sequencer(
             get_min_change=lambda: 8,
@@ -1814,7 +1987,7 @@ class TestTiltDeltaAnchorIsActualTilt:
                 "cover.x", tilt_target=target, position_target=60, reason="solar"
             )
 
-        assert hass.services.async_call.call_count == 3
+        assert hass.services.async_call.call_count == 6
 
     async def test_anchor_falls_back_to_stored_target_when_actuator_returns_none(self):
         """When ``get_current_tilt_position`` returns None, anchor falls back

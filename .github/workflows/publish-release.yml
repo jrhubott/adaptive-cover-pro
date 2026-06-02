@@ -27,6 +27,21 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
 
+          # Pre-release tags carry a hyphenated identifier (e.g. -beta.N, -nightly.<date>).
+          EXTRA=""
+          NOTES="Release $TAG - See full changelog below"
+          case "$TAG" in
+            *-*) EXTRA="--prerelease --latest=false" ;;
+          esac
+          case "$TAG" in
+            *-nightly.*)
+              NOTES=$(printf '%s\n' \
+                '> 🌙 **Nightly build from `develop` — unstable, for testing.**' \
+                '> Auto-generated from the latest development code. Expect rough edges — not for production use.' \
+                '> Hit a problem? Open an issue and include this nightly version string.')
+              ;;
+          esac
+
           # Check if release already exists
           RELEASE_ID=$(gh release view "$TAG" --json id -q .id 2>/dev/null || echo "")
 
@@ -34,8 +49,8 @@ jobs:
             echo "Creating new published release for $TAG"
             gh release create "$TAG" \
               --title "Adaptive Cover Pro ⛅ $TAG" \
-              --notes "Release $TAG - See full changelog below" \
-              --generate-notes
+              --notes "$NOTES" \
+              --generate-notes $EXTRA
           else
             echo "Release already exists for $TAG"
           fi

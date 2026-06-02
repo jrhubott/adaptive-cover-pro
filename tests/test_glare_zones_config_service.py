@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.config_types import GlareZonesConfig
 from custom_components.adaptive_cover_pro.const import (
+    CONF_DISTANCE,
     CONF_ENABLE_GLARE_ZONES,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
@@ -182,3 +183,37 @@ class TestGetVerticalData:
         svc = _make_service()
         result = svc.get_vertical_data({CONF_WINDOW_DEPTH: 0.3})
         assert result.window_depth == 0.3
+
+    def test_distance_zero_is_preserved(self):
+        """CONF_DISTANCE=0.0 must not be treated as falsy and silently replaced with 1.0.
+
+        Regression for issue #464: distance=0 sets shaded area at the glass plane;
+        the cover must close fully (0%), not stay open because distance=1.0 was substituted.
+        """
+        svc = _make_service()
+        result = svc.get_vertical_data({CONF_DISTANCE: 0.0})
+        assert result.distance == 0.0
+
+    def test_distance_zero_int_is_preserved(self):
+        """CONF_DISTANCE=0 (integer) must also be preserved, not treated as falsy."""
+        svc = _make_service()
+        result = svc.get_vertical_data({CONF_DISTANCE: 0})
+        assert result.distance == 0
+
+    def test_distance_none_defaults_to_1m(self):
+        """CONF_DISTANCE=None (unset key or explicitly None) falls back to DEFAULT_DISTANCE (1.0m)."""
+        svc = _make_service()
+        result = svc.get_vertical_data({CONF_DISTANCE: None})
+        assert result.distance == 1.0
+
+    def test_distance_absent_defaults_to_1m(self):
+        """Missing CONF_DISTANCE key falls back to DEFAULT_DISTANCE (1.0m)."""
+        svc = _make_service()
+        result = svc.get_vertical_data({})
+        assert result.distance == 1.0
+
+    def test_distance_nonzero_preserved(self):
+        """Non-zero CONF_DISTANCE is passed through unchanged."""
+        svc = _make_service()
+        result = svc.get_vertical_data({CONF_DISTANCE: 2.5})
+        assert result.distance == 2.5

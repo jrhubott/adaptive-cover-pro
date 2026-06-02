@@ -94,6 +94,8 @@ CONF_SILL_HEIGHT = "sill_height"  # sill height above floor, metres (0.0-50.0)
 CONF_DISTANCE = "distance_shaded_area"  # blind→shaded distance, m (0.0-50.0)
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
+DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
+DEFAULT_FOV_RIGHT = 90  # degrees; matches config flow default
 CONF_COVERS = "covers"  # list of HA cover entity_ids controlled
 CONF_ENTITIES = CONF_COVERS  # deprecated alias, removed next minor release
 CONF_ENABLE_PROXY_COVER = "enable_proxy_cover"  # opt-in proxy cover platform
@@ -137,6 +139,10 @@ DEFAULT_MIN_TILT = 0  # default: no lower floor
 
 CONF_MAX_POSITION = "max_position"  # upper clamp on commanded position (1-100)
 CONF_MIN_POSITION = "min_position"  # lower clamp on commanded position (0-99)
+# Optional separate floor that applies only during sun tracking (0-99, optional).
+# When set, overrides CONF_MIN_POSITION for sun-tracking paths only.
+# None (unset) means fall back to CONF_MIN_POSITION.
+CONF_MIN_POSITION_SUN_TRACKING = "min_position_sun_tracking"
 # If True, min_position / max_position are only enforced during active sun tracking.
 # Replaces the v3 pair (CONF_ENABLE_MIN_POSITION + CONF_ENABLE_MAX_POSITION).
 CONF_APPLY_LIMITS_TRACKING_ONLY = "apply_limits_during_tracking_only"
@@ -195,12 +201,11 @@ CONF_SUNSET_TILT = (
 # 8a. Forecast Timeline
 # =============================================================================
 # Sampling cadence and boundary-event vocabulary for the dashboard forecast
-# strip built by ``forecast.build_forecast``. 15-minute steps over a 12-hour
-# window are dense enough to read smoothly and cheap enough to compute in well
-# under a second on a Pi 4.
+# strip built by ``forecast.build_forecast``. 15-minute steps over the full
+# local calendar day (00:00 → 24:00) are dense enough to read smoothly and
+# cheap enough to compute in well under a second on a Pi 4.
 
 FORECAST_STEP_MINUTES = 15  # cadence between forecast samples, minutes
-FORECAST_WINDOW_HOURS = 12  # forecast lookahead, hours
 
 EVENT_SUNRISE = "sunrise"  # boundary event: sun rises above horizon
 EVENT_SUNSET = "sunset"  # boundary event: sun sets below horizon
@@ -342,6 +347,17 @@ CUSTOM_POSITION_SLOTS: dict[int, dict[str, str]] = {
     n: _custom_position_slot_keys(n) for n in CUSTOM_POSITION_SLOT_NUMBERS
 }
 
+
+def custom_position_handler_name(slot: int) -> str:
+    """Return the canonical decision-trace handler name for a custom slot.
+
+    Single source of truth for the ``custom_position_N`` name (issue #496).
+    Both ``CustomPositionHandler.name`` and the floor-composition trace source
+    delegate here so the two can never drift to different numbering schemes.
+    """
+    return f"custom_position_{slot}"
+
+
 # Slot 1 — named aliases for each of the five sub-keys.
 CONF_CUSTOM_POSITION_SENSOR_1 = CUSTOM_POSITION_SLOTS[1]["sensor"]  # trigger
 CONF_CUSTOM_POSITION_1 = CUSTOM_POSITION_SLOTS[1]["position"]  # 0-100
@@ -424,10 +440,19 @@ DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
 
 CONF_DELTA_POSITION = "delta_position"  # min % change to emit, range 1-90
 CONF_DELTA_TIME = "delta_time"  # min seconds between commands, range 2-60
+# Allowed gap between commanded and reported position before the periodic
+# reconciliation pass treats the cover as "not arrived" and resends the
+# command. Distinct from CONF_DELTA_POSITION (movement hysteresis). Default
+# is POSITION_TOLERANCE_PERCENT (see section 20). Range 0-20. Issue #507.
+CONF_POSITION_TOLERANCE = "position_tolerance"
 CONF_START_TIME = "start_time"  # active-window start "HH:MM:SS"
 CONF_START_ENTITY = "start_entity"  # input_datetime overriding start_time
 CONF_END_TIME = "end_time"  # active-window end "HH:MM:SS"
 CONF_END_ENTITY = "end_entity"  # input_datetime overriding end_time
+# Blank/unset sentinel for start/end times: HA's TimeSelector cannot emit a
+# true None, so a cleared field coerces to midnight. Treated as "no time set"
+# everywhere (see issue #492).
+BLANK_TIME = "00:00:00"
 
 
 # =============================================================================
@@ -457,6 +482,9 @@ CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"  # % delta = manual touch, 0-99
 # If True, intermediate positions don't count as manual touches.
 CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
+# If True, only commands routed through ACP (proxy entity or set_position
+# service) engage manual override; all other position changes are ignored.
+CONF_MANUAL_IGNORE_EXTERNAL = "manual_ignore_external"
 # Position threshold separating "open" vs "closed" classification, % (1-99).
 CONF_OPEN_CLOSE_THRESHOLD = "open_close_threshold"
 
@@ -520,7 +548,10 @@ DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN  # default mode
 # the cover actually reached the commanded position.
 
 POSITION_CHECK_INTERVAL_MINUTES = 1  # minutes — recheck cadence
-POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance
+# Default for the now-configurable CONF_POSITION_TOLERANCE (issue #507). Still
+# the fixed floor for the manual-override threshold (effective_manual_threshold
+# in managers/manual_override.py reads this constant directly, NOT the option).
+POSITION_TOLERANCE_PERCENT = 3  # % — "position matches" tolerance (default)
 MAX_POSITION_RETRIES = 3  # maximum re-send attempts before giving up
 
 
@@ -582,7 +613,28 @@ VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS = 5.0
 # 30-95% during the 5-45 s window is implausible on any actuator. A user
 # twisting slats during the window almost always lands within the existing cap
 # (delta ≤ 30) which has always suppressed regardless of actuator speed.
-VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = 45.0
+#
+# Configurable per-instance (issue #33 Phase 5 cross-axis). The module-level
+# default below is consumed when no instance config is available (unit tests,
+# legacy callers); production reads ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG``
+# from options and threads it through ``RuntimeConfig.venetian`` →
+# ``VenetianPolicy.attach()`` → ``DualAxisSequencer.__init__``. The legacy
+# name ``VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS`` is retained as an alias of
+# the default so older tests / re-exports keep working without churn.
+CONF_VENETIAN_BACKROTATE_PUBLISH_LAG = (
+    "venetian_backrotate_publish_lag"  # s, 15.0-180.0
+)
+DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = 45.0  # default publish-lag
+MIN_VENETIAN_BACKROTATE_PUBLISH_LAG = 15.0  # UI lower bound, seconds
+MAX_VENETIAN_BACKROTATE_PUBLISH_LAG = 180.0  # UI upper bound, seconds
+# Backward-compat alias — the old module-level constant the sequencer used to
+# read directly. Tests and any other downstream caller that imports the legacy
+# name continue to see the same float value; new code should pull the value
+# from ``DualAxisSequencer._backrotate_publish_lag_seconds`` so a per-instance
+# override actually flows through.
+VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS = (
+    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+)
 
 # Refuse to count unchanged-position samples as a "stall" during the first N
 # seconds of _wait_for_position_settle UNLESS the cover has been observed in
@@ -611,6 +663,13 @@ VENETIAN_TILT_VERIFY_TOLERANCE = 5  # percent — tilt-verification tolerance
 # next cycle (issue #33).
 VENETIAN_TILT_VERIFY_MAX_SAMPLES = 4  # total reads (1 immediate + 3 retries)
 VENETIAN_TILT_VERIFY_POLL_SECONDS = 1.0  # sleep between retry reads
+
+# After _verify_and_record_tilt records a drift, sleep this many seconds before
+# the single bounded retry through _send_tilt_command. Short enough that the
+# user does not see the wrong tilt for long; long enough that the actuator's
+# carriage-move back-rotate has fully published before the retry reads back.
+# Issue #500.
+VENETIAN_DRIFT_RETRY_DELAY_SECONDS = 2.0
 
 # Hold delay between position settle and the tilt command. Some actuators
 # perform a firmware tilt-reassert after the carriage reports closed/open
@@ -721,6 +780,7 @@ WINDOW_DEPTH_GAMMA_THRESHOLD = 10  # deg — min gamma for depth contribution
 # OPTION_RANGES (used for legacy schema validation).
 
 DEFAULT_WINDOW_HEIGHT = 2.1  # metres — config-flow default
+DEFAULT_DISTANCE = 1.0  # metres — shaded distance default for vertical blinds
 DEFAULT_AWNING_LENGTH = 2.1  # metres — config-flow default
 DEFAULT_WINDOW_AZIMUTH = 180  # degrees — config-flow default (south-facing)
 MAX_WINDOW_DEPTH = 5.0  # metres — UI cap for window depth
@@ -787,6 +847,7 @@ _RANGE_INTERP_VALUE = (0, 100)  # interp start/end, percent
 # Automation timing.
 _RANGE_DELTA_POSITION = (1, 90)  # CONF_DELTA_POSITION, percent
 _RANGE_DELTA_TIME = (2, 60)  # CONF_DELTA_TIME, seconds
+_RANGE_POSITION_TOLERANCE = (0, 20)  # CONF_POSITION_TOLERANCE, percent
 
 # Manual override.
 _RANGE_MANUAL_THRESHOLD = (0, 99)  # CONF_MANUAL_THRESHOLD, percent
@@ -819,6 +880,10 @@ _RANGE_VENETIAN_TILT_SKIP_ABOVE = (
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
 )  # CONF_VENETIAN_TILT_SKIP_ABOVE, percent
+_RANGE_VENETIAN_BACKROTATE_PUBLISH_LAG = (
+    MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
+)  # CONF_VENETIAN_BACKROTATE_PUBLISH_LAG, seconds
 
 
 def _build_option_ranges() -> dict[str, tuple[float, float]]:
@@ -849,6 +914,7 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_DEFAULT_HEIGHT: _RANGE_DEFAULT_HEIGHT,
         CONF_MAX_POSITION: _RANGE_MAX_POSITION,
         CONF_MIN_POSITION: _RANGE_MIN_POSITION,
+        CONF_MIN_POSITION_SUN_TRACKING: _RANGE_MIN_POSITION,
         CONF_SUNSET_POS: _RANGE_SUNSET_POS,
         CONF_MY_POSITION_VALUE: _RANGE_MY_POSITION,
         CONF_SUNSET_OFFSET: _RANGE_OFFSET_MINUTES,
@@ -858,6 +924,7 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_INTERP_END: _RANGE_INTERP_VALUE,
         CONF_DELTA_POSITION: _RANGE_DELTA_POSITION,
         CONF_DELTA_TIME: _RANGE_DELTA_TIME,
+        CONF_POSITION_TOLERANCE: _RANGE_POSITION_TOLERANCE,
         CONF_MANUAL_THRESHOLD: _RANGE_MANUAL_THRESHOLD,
         CONF_FORCE_OVERRIDE_POSITION: _RANGE_FORCE_POSITION,
         CONF_MOTION_TIMEOUT: _RANGE_MOTION_TIMEOUT,
@@ -873,6 +940,7 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
         CONF_MIN_TILT: _RANGE_MIN_TILT,
         CONF_VENETIAN_POST_SETTLE_HOLD: _RANGE_VENETIAN_POST_SETTLE_HOLD,
         CONF_VENETIAN_TILT_SKIP_ABOVE: _RANGE_VENETIAN_TILT_SKIP_ABOVE,
+        CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: _RANGE_VENETIAN_BACKROTATE_PUBLISH_LAG,
     }
     # Custom-position slots: per-slot position (0–100), priority (1–99), tilt (0–100).
     for slot_keys in CUSTOM_POSITION_SLOTS.values():

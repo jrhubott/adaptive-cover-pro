@@ -160,7 +160,10 @@ def _make_my_position_coord():
     coord.config_entry.options = {}
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = []
-    coord._snapshot_builder.build = MagicMock(return_value=MagicMock())
+    # Floor composition reads from a real PipelineSnapshot (#463).
+    from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
+
+    coord._snapshot_builder.build = MagicMock(return_value=make_snapshot())
     coord._cover_data = MagicMock()
     coord._cover_type = "cover_blind"
     coord._weather_readings = None

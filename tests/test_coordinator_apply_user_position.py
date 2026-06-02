@@ -63,6 +63,12 @@ def _make_coord(
     winner_name: str = "solar",
     winner_priority: int = 40,
     winner_handler_instance=None,
+    weather_override_active: bool = False,
+    weather_override_position: int = 0,
+    weather_override_min_mode: bool = False,
+    force_override_sensors: dict[str, bool] | None = None,
+    force_override_position: int = 0,
+    force_override_min_mode: bool = False,
 ):
     """Build a coordinator-shaped mock that exposes async_apply_user_position.
 
@@ -75,6 +81,7 @@ def _make_coord(
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
+    from tests.test_pipeline.conftest import make_snapshot
 
     coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
     coord.config_entry = MagicMock()
@@ -84,8 +91,16 @@ def _make_coord(
     # async_apply_user_position route through it.
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = custom_states
-    snapshot_sentinel = MagicMock(name="pipeline_snapshot")
-    coord._snapshot_builder.build = MagicMock(return_value=snapshot_sentinel)
+    snapshot = make_snapshot(
+        custom_position_sensors=custom_states or [],
+        weather_override_active=weather_override_active,
+        weather_override_position=weather_override_position,
+        weather_override_min_mode=weather_override_min_mode,
+        force_override_sensors=force_override_sensors or {},
+        force_override_position=force_override_position,
+        force_override_min_mode=force_override_min_mode,
+    )
+    coord._snapshot_builder.build = MagicMock(return_value=snapshot)
     # Coordinator state that the builder call needs as keyword args.  These
     # are instance attributes (set in __init__) so they aren't on the spec'd
     # MagicMock by default — preset them explicitly.
@@ -197,9 +212,10 @@ async def test_async_apply_user_position_uses_passed_options_when_provided() -> 
         "cover.test", 10, trigger="set_position", options=custom_options
     )
 
-    coord._snapshot_builder.read_custom_position_sensors.assert_called_once_with(
-        custom_options
-    )
+    coord._snapshot_builder.build.assert_called_once()
+    args, kwargs = coord._snapshot_builder.build.call_args
+    # First positional arg of build() is the options dict.
+    assert args[0] is custom_options or kwargs.get("opts") is custom_options
     # And the override flowed into _build_position_context too
     args, kwargs = coord._build_position_context.call_args
     # signature: (entity, options, *, force=...)
@@ -364,12 +380,10 @@ def test_manual_override_priority_constant_unchanged() -> None:
 
 @pytest.mark.asyncio
 async def test_custom_position_min_mode_does_not_preempt_request_above_floor() -> None:
-    """When the winning custom-position handler is a min-mode floor and the user
-    requests a position at or above that floor, the command must NOT be preempted.
+    """When a min-mode floor is active and the user requests a position at or
+    above the floor, the command must NOT be preempted — floors defer to the
+    floor-clamp composition pass (#463), they no longer act as priority winners.
     """
-    handler = CustomPositionHandler(
-        slot=1, entity_id="binary_sensor.cp1", position=60, priority=95
-    )
     state = CustomPositionSensorState(
         entity_id="binary_sensor.cp1",
         is_on=True,
@@ -380,12 +394,8 @@ async def test_custom_position_min_mode_does_not_preempt_request_above_floor() -
     )
     coord, ctx = _make_coord(
         [state],
-        winner_name="custom_position_1",
-        winner_priority=95,
-        winner_handler_instance=handler,
-    )
-    coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
-        "custom_position_1", 95, position=60
+        winner_name="solar",
+        winner_priority=40,
     )
 
     outcome = await coord.async_apply_user_position(
@@ -403,13 +413,9 @@ async def test_custom_position_min_mode_does_not_preempt_request_above_floor() -
 async def test_custom_position_min_mode_clamps_and_dispatches_request_below_floor() -> (
     None
 ):
-    """When the winning custom-position handler is a min-mode floor and the user
-    requests below that floor, the command is clamped to the floor and dispatched
-    (NOT preempted).
+    """When a min-mode floor is active and the user requests below the floor,
+    the command is clamped to the floor and dispatched — NOT preempted.
     """
-    handler = CustomPositionHandler(
-        slot=1, entity_id="binary_sensor.cp1", position=60, priority=95
-    )
     state = CustomPositionSensorState(
         entity_id="binary_sensor.cp1",
         is_on=True,
@@ -420,12 +426,8 @@ async def test_custom_position_min_mode_clamps_and_dispatches_request_below_floo
     )
     coord, ctx = _make_coord(
         [state],
-        winner_name="custom_position_1",
-        winner_priority=95,
-        winner_handler_instance=handler,
-    )
-    coord._pipeline.evaluate.return_value = _pipeline_result_with_winner(
-        "custom_position_1", 95, position=60
+        winner_name="solar",
+        winner_priority=40,
     )
 
     outcome = await coord.async_apply_user_position(
@@ -478,13 +480,14 @@ async def test_custom_position_exact_mode_still_preempts() -> None:
 async def test_custom_position_min_mode_preempts_when_request_below_floor_and_handler_is_different_slot() -> (
     None
 ):
-    """When the winning handler is a different slot than the active min-mode
-    sensor state, the handler is not satisfied — preemption applies as normal.
+    """A real-position custom-position handler (different slot) wins with
+    priority 95 > 80 → preempts. The floor clamp on the requested value
+    is irrelevant once preemption fires.
     """
     handler = CustomPositionHandler(
         slot=2, entity_id="binary_sensor.cp2", position=60, priority=95
     )
-    # Only slot 1 is in the state list — slot 2's entity_id is absent
+    # Only slot 1 is the min-mode floor — slot 2 is the priority-95 winner.
     state = CustomPositionSensorState(
         entity_id="binary_sensor.cp1",
         is_on=True,

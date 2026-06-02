@@ -15,7 +15,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.config_types import CoverConfig
+from custom_components.adaptive_cover_pro.const import (
+    CONF_MIN_POSITION_SUN_TRACKING,
+    ControlMethod,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateHandler,
 )
@@ -43,6 +47,7 @@ def _config_with_limits(
     max_pos: int | None = None,
     min_pos_sun_only: bool = False,
     max_pos_sun_only: bool = False,
+    min_pos_sun_tracking: int | None = None,
 ):
     """Build a mock cover config with specific position limits."""
     config = MagicMock()
@@ -50,6 +55,7 @@ def _config_with_limits(
     config.max_pos = max_pos
     config.min_pos_sun_only = min_pos_sun_only
     config.max_pos_sun_only = max_pos_sun_only
+    config.min_pos_sun_tracking = min_pos_sun_tracking
     return config
 
 
@@ -60,6 +66,7 @@ def _snap_with_solar(
     max_pos: int | None = None,
     min_pos_sun_only: bool = False,
     max_pos_sun_only: bool = False,
+    min_pos_sun_tracking: int | None = None,
     direct_sun_valid: bool = True,
     default_position: int = 50,
 ) -> PipelineSnapshot:
@@ -69,6 +76,7 @@ def _snap_with_solar(
         max_pos=max_pos,
         min_pos_sun_only=min_pos_sun_only,
         max_pos_sun_only=max_pos_sun_only,
+        min_pos_sun_tracking=min_pos_sun_tracking,
     )
     cover = _make_mock_cover(
         direct_sun_valid=direct_sun_valid,
@@ -406,3 +414,94 @@ class TestClimateHandlerRespectsPositionLimits:
 
         assert result.control_method == ControlMethod.WINTER
         assert result.position == 100
+
+
+# ---------------------------------------------------------------------------
+# Issue #467: sun_tracking_min_pos — separate floor for sun tracking
+# ---------------------------------------------------------------------------
+
+
+class TestSunTrackingMinPosition:
+    """Sun-tracking floor applies to SolarHandler but not to DefaultHandler.
+
+    Reproduces issue #467: roller-shutter users want sun-tracking to floor at
+    a separate value (e.g. 15%) to skip the inter-slat dead zone, while still
+    allowing the cover to fully close (0%) at sunset / when sun is not valid.
+    """
+
+    def test_solar_handler_uses_sun_tracking_min_floor(self):
+        """SolarHandler floors at min_pos_sun_tracking, not min_pos, when set."""
+        snap = _snap_with_solar(
+            calculate_return=5.0,
+            min_pos=0,
+            min_pos_sun_tracking=15,
+            direct_sun_valid=True,
+        )
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        result = registry.evaluate(snap)
+
+        assert result.control_method == ControlMethod.SOLAR
+        assert result.position == 15  # floored at sun-tracking floor
+
+    def test_default_handler_not_floored_by_sun_tracking_min(self):
+        """DefaultHandler is NOT floored by min_pos_sun_tracking (sun not valid)."""
+        snap = _snap_with_solar(
+            calculate_return=5.0,
+            min_pos=0,
+            min_pos_sun_tracking=15,
+            direct_sun_valid=False,
+            default_position=0,
+        )
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        result = registry.evaluate(snap)
+
+        assert result.control_method == ControlMethod.DEFAULT
+        assert result.position == 0  # NOT floored — sun-tracking floor doesn't apply
+
+    def test_sun_tracking_min_unset_falls_back_to_min_pos(self):
+        """When min_pos_sun_tracking is None, min_pos applies as before."""
+        snap = _snap_with_solar(
+            calculate_return=5.0,
+            min_pos=20,
+            min_pos_sun_tracking=None,
+            direct_sun_valid=True,
+        )
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        result = registry.evaluate(snap)
+
+        assert result.control_method == ControlMethod.SOLAR
+        assert result.position == 20  # falls back to regular min_pos
+
+    def test_config_from_options_float_coerced_to_int(self):
+        """CoverConfig.from_options coerces a float min_pos_sun_tracking to int.
+
+        HA's NumberSelector always stores float (e.g. 25.0); the dataclass field
+        is typed int | None.  The boundary read in from_options must coerce.
+        Regression test for issue #475.
+        """
+        config = CoverConfig.from_options(
+            {
+                CONF_MIN_POSITION_SUN_TRACKING: 25.0,  # float — as HA stores it
+            }
+        )
+        assert isinstance(config.min_pos_sun_tracking, int)
+        assert config.min_pos_sun_tracking == 25
+
+    def test_solar_handler_uses_sun_tracking_min_floor_float_value(self):
+        """SolarHandler floors at sun_tracking_min_pos even when stored as float.
+
+        HA stores NumberSelector values as float (e.g. 25.0); the isinstance(x, int)
+        guard in apply_limits silently skips the floor for floats.
+        Regression test for issue #475.
+        """
+        snap = _snap_with_solar(
+            calculate_return=0.0,
+            min_pos=0,
+            min_pos_sun_tracking=25.0,  # float — as HA stores it; bug: floor not applied
+            direct_sun_valid=True,
+        )
+        registry = PipelineRegistry([SolarHandler(), DefaultHandler()])
+        result = registry.evaluate(snap)
+
+        assert result.control_method == ControlMethod.SOLAR
+        assert result.position == 25  # must be floored at 25, not 1

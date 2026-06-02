@@ -63,6 +63,7 @@ from .const import (
     CONF_INTERP,
     CONF_INVERSE_STATE,
     CONF_INVERSE_TILT,
+    CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
@@ -112,9 +113,9 @@ from .pipeline.handlers import (
     SolarHandler,
     WeatherOverrideHandler,
 )
+from .pipeline.floors import effective_floor, gather_active_floors
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
-from .pipeline.types import CustomPositionSensorState
 from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -175,26 +176,6 @@ class AdaptiveCoverData:
     position_forecast: Forecast | None = None
 
 
-def _winner_is_satisfied_custom_floor(
-    winner_handler: object,
-    states: list[CustomPositionSensorState],
-    clamped: int,
-) -> bool:
-    """Return True when the winning handler is a min-mode custom-position floor that the user's clamped request already satisfies."""
-    if not isinstance(winner_handler, CustomPositionHandler):
-        return False
-    matching = next(
-        (s for s in states if s.entity_id == winner_handler._entity_id),
-        None,
-    )
-    return (
-        matching is not None
-        and matching.is_on
-        and matching.min_mode
-        and clamped >= matching.position
-    )
-
-
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
 
@@ -234,6 +215,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_duration = self.config_entry.options.get(
             CONF_MANUAL_OVERRIDE_DURATION
         ) or {"hours": 2}
+        self.manual_ignore_external = self.config_entry.options.get(
+            CONF_MANUAL_IGNORE_EXTERNAL, False
+        )
         self.state_change = False
         self.cover_state_change = False
         self.first_refresh = False
@@ -359,6 +343,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Track position explanation for change detection logging
         self._last_position_explanation: str = ""
 
+        # Built once and reused for both the command-service construction
+        # (position_tolerance) and the late policy.attach below.
+        _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
+
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
         # on_tick keeps time window transition checks running on the same 1-min interval
@@ -371,6 +359,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
+            position_tolerance=_rc_attach.tracking.position_tolerance,
             transit_timeout_seconds=self.config_entry.options.get(CONF_TRANSIT_TIMEOUT)
             or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
             on_tick=self._check_time_window_transition,
@@ -384,7 +373,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Late-bind cover-type policy dependencies (e.g. VenetianPolicy
         # constructs its DualAxisSequencer here once cmd_svc + grace_mgr are
         # available).  Default policies have a no-op attach.
-        _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
         self._policy.attach(
             hass=self.hass,
             logger=self.logger,
@@ -401,6 +389,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             tilt_skip_above=_rc_attach.venetian.tilt_skip_above,
             venetian_mode=_rc_attach.venetian.venetian_mode,
             post_settle_hold_seconds=_rc_attach.venetian.post_settle_hold_seconds,
+            backrotate_publish_lag_seconds=(
+                _rc_attach.venetian.backrotate_publish_lag_seconds
+            ),
             invert_tilt=lambda: self._inverse_tilt,
             get_min_change=lambda: self.min_change,
         )
@@ -705,6 +696,17 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._manual_gate_closed_log("service_call", list(tracked))
             return
 
+        # When manual_ignore_external is on, treat external stop_cover calls
+        # the same as external set_cover_position — only ACP-routed commands
+        # engage manual override.
+        if self.manual_ignore_external:
+            self.logger.debug(
+                "async_check_cover_service_call: ignoring external stop_cover on %s "
+                "(manual_ignore_external on)",
+                tracked,
+            )
+            return
+
         my_position_value = self.config_entry.options.get(CONF_MY_POSITION_VALUE)
         if my_position_value is None:
             self.logger.debug(
@@ -969,23 +971,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # (astronomical_sunrise + sunrise_offset).
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)  # None when not configured
-        sunset_off = int(options.get(CONF_SUNSET_OFFSET) or 0)
-        sunrise_off = int(
-            options.get(CONF_SUNRISE_OFFSET, options.get(CONF_SUNSET_OFFSET) or 0)
-        )
-        sunset_time = _read_time_entity(self.hass, options.get(CONF_SUNSET_TIME_ENTITY))
-        sunrise_time = _read_time_entity(
-            self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
-        )
-        effective_default, is_sunset_active = compute_effective_default(
-            h_def=h_def,
-            sunset_pos=sunset_pos_cfg,
-            sun_data=cover_data.sun_data,
-            sunset_off=sunset_off,
-            sunrise_off=sunrise_off,
-            sunset_time=sunset_time,
-            sunrise_time=sunrise_time,
-            after_start_time=self.after_start_time,
+        effective_default, is_sunset_active = self._compute_current_effective_default(
+            options, cover_data=cover_data
         )
         self.logger.debug(
             "Effective default: %s (sunset_active=%s, h_def=%s, sunset_pos=%s)",
@@ -1588,6 +1575,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.cover_state_change = False
             return
 
+        # When manual_ignore_external is on, only ACP-routed commands (proxy
+        # entity, set_position service) engage manual override — those use the
+        # pre-emptive mark_user_command path inside async_apply_user_position
+        # and never reach the detection paths below. Skip the whole loop, but
+        # still drain _target_just_reached housekeeping so a later legitimate
+        # move isn't misclassified.
+        if self.manual_ignore_external:
+            for event_data in events:
+                self._target_just_reached.discard(event_data.entity_id)
+            self.logger.debug(
+                "Position changes for %s ignored (manual_ignore_external on; "
+                "only ACP proxy/service commands engage manual override)",
+                [e.entity_id for e in events],
+            )
+            self.cover_state_change = False
+            return
+
         for event_data in events:
             entity_id = event_data.entity_id
 
@@ -1795,6 +1799,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.time_threshold = rc.tracking.time_threshold
         self.manual_reset = rc.manual_override.reset
         self.manual_duration = rc.manual_override.duration
+        self.manual_ignore_external = rc.manual_override.ignore_external
         self.manual_threshold = rc.tracking.manual_threshold
         self.start_value = rc.tracking.interp_start
         self.end_value = rc.tracking.interp_end
@@ -1802,6 +1807,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.new_list = rc.tracking.interp_list_new
 
         self._cmd_svc.update_threshold(rc.open_close_threshold)
+        self._cmd_svc.update_position_tolerance(rc.tracking.position_tolerance)
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,
@@ -1871,6 +1877,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         return self._time_mgr.after_start_time
 
     @property
+    def window_explicitly_started(self):
+        """Whether a real (non-blank) start time is configured and has passed.
+
+        Delegates to TimeWindowManager. Distinct from ``after_start_time``
+        (issue #492): feeds ``compute_effective_default`` so a blank start time
+        does not suppress the overnight position after midnight.
+        """
+        return self._time_mgr.window_explicitly_started
+
+    @property
     def _end_time(self) -> dt.datetime | None:
         """Get end time — delegates to TimeWindowManager."""
         return self._time_mgr.end_time
@@ -1937,10 +1953,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         opt in.
         """
         opts = options if options is not None else self.config_entry.options
-        states = self._snapshot_builder.read_custom_position_sensors(opts)
-        floors = [s.position for s in states if s.is_on and s.min_mode]
-        effective_floor = max(floors) if floors else 0
-        clamped = max(int(requested), effective_floor)
+        snapshot = self._snapshot_builder.build(
+            opts,
+            cover_data=self._cover_data,
+            cover_type=self._cover_type,
+            climate_readings=self._weather_readings,
+            manual_override_active=False,
+            motion_timeout_active=self.is_motion_timeout_active,
+            weather_override_active=self.is_weather_override_active,
+            in_time_window=self.check_adaptive_time,
+            current_cover_position=self._compute_mean_cover_position(),
+            is_glare_zone_enabled=self._is_glare_zone_enabled,
+        )
+        floors = gather_active_floors(snapshot)
+        effective_floor_pos, _ = effective_floor(floors)
+        clamped = max(int(requested), effective_floor_pos)
         if clamped != requested:
             _LOGGER.info(
                 "%s: requested %d clamped to %d (active min-mode floor)",
@@ -1953,33 +1980,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "%s: requested %d, floor %d — no clamping needed",
                 trigger,
                 requested,
-                effective_floor,
+                effective_floor_pos,
             )
 
         if not force:
-            snapshot = self._snapshot_builder.build(
-                opts,
-                cover_data=self._cover_data,
-                cover_type=self._cover_type,
-                climate_readings=self._weather_readings,
-                manual_override_active=False,
-                motion_timeout_active=self.is_motion_timeout_active,
-                weather_override_active=self.is_weather_override_active,
-                in_time_window=self.check_adaptive_time,
-                current_cover_position=self._compute_mean_cover_position(),
-                is_glare_zone_enabled=self._is_glare_zone_enabled,
-            )
             result = self._pipeline.evaluate(snapshot)
-            winner_step = next((s for s in result.decision_trace if s.matched), None)
+            winner_step = next(
+                (
+                    s
+                    for s in result.decision_trace
+                    if s.matched and s.handler != "floor_clamp"
+                ),
+                None,
+            )
             if winner_step is not None:
                 winner_name = winner_step.handler
                 winner_handler = self._handler_by_name.get(winner_name)
                 winner_priority = (
                     winner_handler.priority if winner_handler is not None else 0
                 )
-                if _winner_is_satisfied_custom_floor(winner_handler, states, clamped):
-                    pass  # fall through to mark_user_command + dispatch
-                elif winner_priority > ManualOverrideHandler.priority:
+                if winner_priority > ManualOverrideHandler.priority:
                     _LOGGER.info(
                         "user move on %s preempted by %s (priority %d > %d)",
                         entity_id,
@@ -2004,6 +2024,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             use_my_position=use_my_position,
         )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
+
+    async def async_apply_user_stop(
+        self,
+        entity_id: str,
+        *,
+        trigger: str,
+    ) -> tuple[str, str]:
+        """Apply a user-initiated stop to a single cover.
+
+        Engages manual override (so the next cycle does not immediately
+        counter-command the cover) then dispatches an ACP-context-stamped
+        ``cover.stop_cover`` via :meth:`CoverCommandService.apply_user_stop`.
+        Stop is unconditional — no pipeline preemption check.
+        """
+        self.manager.mark_user_command(entity_id, reason=trigger)
+        return await self._cmd_svc.apply_user_stop(entity_id)
 
     def build_diagnostic_data(self) -> dict:
         """Build diagnostic data from current coordinator state."""
@@ -2117,6 +2153,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             enabled_toggle=(
                 self.enabled_toggle if self.enabled_toggle is not None else True
             ),
+            primary_axis_suppression_counts=(
+                self.manager.primary_axis_suppression_counts()
+            ),
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)
@@ -2136,9 +2175,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         bypass_auto_control=True on their result, which causes their position
         to be returned directly — bypassing interpolation and inverse_state —
         even when automatic_control is OFF or outside the time window.
+
+        Floor-clamped winners (issue #469): when the registry raises a
+        non-bypass winner's position to a user-configured floor, the
+        resulting value is already in cover-position space.  Interpolation
+        and inverse_state would re-map a user-typed floor through the
+        calibration curve and silently dispatch a different position, so
+        the same short-circuit applies.
         """
-        # Safety overrides take full precedence — skip post-processing transforms.
-        if self._pipeline_bypasses_auto_control:
+        # Safety overrides and floor-clamped winners both produce positions
+        # already in cover-position space — skip post-processing transforms.
+        if (
+            self._pipeline_bypasses_auto_control
+            or self._pipeline_result.floor_clamp_applied
+        ):
             return self._pipeline_result.position
 
         state = self._pipeline_result.position
@@ -2387,11 +2437,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         await self._check_sunset_window_transition()
 
-    def _compute_current_effective_default(self, options: dict) -> tuple[int, bool]:
+    def _compute_current_effective_default(
+        self, options: dict, cover_data=None
+    ) -> tuple[int, bool]:
         """Return (effective_pos, is_sunset_active) for the current moment.
 
-        Shared by _on_window_closed and _check_sunset_window_transition so the
-        same options-reading and compute_effective_default call is not duplicated.
+        Single source of truth for reading the sunset/sunrise options and
+        calling ``compute_effective_default``. Shared by the main update cycle
+        (``_calculate_cover_state``), ``_on_window_closed`` and
+        ``_check_sunset_window_transition`` so the options-reading and the
+        ``window_explicitly_started`` signal are not duplicated.
+
+        Args:
+            options: The config-entry options dict.
+            cover_data: An already-computed cover-data object whose ``sun_data``
+                is reused. When ``None`` the cover data is computed fresh via
+                ``get_blind_data`` (the transition call sites have no cover_data
+                in hand).
+
         """
         h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
         sunset_pos_cfg = options.get(CONF_SUNSET_POS)
@@ -2403,7 +2466,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sunrise_time = _read_time_entity(
             self.hass, options.get(CONF_SUNRISE_TIME_ENTITY)
         )
-        cover_data = self.get_blind_data(options=options)
+        if cover_data is None:
+            cover_data = self.get_blind_data(options=options)
         return compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -2412,7 +2476,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_off=sunrise_off,
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
-            after_start_time=self.after_start_time,
+            window_explicitly_started=self.window_explicitly_started,
         )
 
     async def _check_sunset_window_transition(self) -> None:

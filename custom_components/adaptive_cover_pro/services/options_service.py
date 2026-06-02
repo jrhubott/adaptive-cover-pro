@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 from ..const import (
+    BLANK_TIME,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -58,6 +59,7 @@ from ..const import (
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
@@ -66,6 +68,7 @@ from ..const import (
     CONF_MAX_POSITION,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
+    CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MODE,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
@@ -73,6 +76,7 @@ from ..const import (
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
+    CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
     CONF_RETURN_SUNSET,
     CONF_SILL_HEIGHT,
@@ -91,6 +95,7 @@ from ..const import (
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
     CONF_TILT_MODE,
+    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
@@ -203,6 +208,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Venetian-specific options
     CONF_VENETIAN_POST_SETTLE_HOLD: _range(CONF_VENETIAN_POST_SETTLE_HOLD),
     CONF_VENETIAN_TILT_SKIP_ABOVE: _range(CONF_VENETIAN_TILT_SKIP_ABOVE),
+    CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: _range(CONF_VENETIAN_BACKROTATE_PUBLISH_LAG),
     CONF_VENETIAN_MODE: _select_v(*VENETIAN_MODES),
     # Sun tracking
     CONF_ENABLE_SUN_TRACKING: _bool_v(),
@@ -223,6 +229,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_ENABLE_MAX_POSITION: _bool_v(),
     CONF_MIN_POSITION: _range(CONF_MIN_POSITION),
     CONF_ENABLE_MIN_POSITION: _bool_v(),
+    CONF_MIN_POSITION_SUN_TRACKING: _range(CONF_MIN_POSITION_SUN_TRACKING),
     CONF_SUNSET_POS: _range(CONF_SUNSET_POS),
     CONF_MY_POSITION_VALUE: _range(CONF_MY_POSITION_VALUE),
     CONF_SUNSET_USE_MY: _bool_v(),
@@ -242,6 +249,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Automation timing
     CONF_DELTA_POSITION: _range(CONF_DELTA_POSITION),
     CONF_DELTA_TIME: _range(CONF_DELTA_TIME),
+    CONF_POSITION_TOLERANCE: _range(CONF_POSITION_TOLERANCE),
     CONF_START_TIME: _time_v(),
     CONF_START_ENTITY: _entity_v(),
     CONF_END_TIME: _time_v(),
@@ -252,6 +260,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_MANUAL_OVERRIDE_RESET: _bool_v(),
     CONF_MANUAL_THRESHOLD: _range(CONF_MANUAL_THRESHOLD),
     CONF_MANUAL_IGNORE_INTERMEDIATE: _bool_v(),
+    CONF_MANUAL_IGNORE_EXTERNAL: _bool_v(),
     # Force override
     CONF_FORCE_OVERRIDE_SENSORS: _entities_v(),
     CONF_FORCE_OVERRIDE_POSITION: _range(CONF_FORCE_OVERRIDE_POSITION),
@@ -336,6 +345,7 @@ _SECTION_POSITION_LIMITS = frozenset(
         CONF_DEFAULT_HEIGHT,
         CONF_MIN_POSITION,
         CONF_ENABLE_MIN_POSITION,
+        CONF_MIN_POSITION_SUN_TRACKING,
         CONF_MAX_POSITION,
         CONF_ENABLE_MAX_POSITION,
         CONF_OPEN_CLOSE_THRESHOLD,
@@ -371,6 +381,7 @@ _SECTION_MANUAL_OVERRIDE = frozenset(
         CONF_MANUAL_OVERRIDE_RESET,
         CONF_MANUAL_THRESHOLD,
         CONF_MANUAL_IGNORE_INTERMEDIATE,
+        CONF_MANUAL_IGNORE_EXTERNAL,
     }
 )
 
@@ -479,6 +490,7 @@ _SECTION_VENETIAN = frozenset(
     {
         CONF_VENETIAN_POST_SETTLE_HOLD,
         CONF_VENETIAN_TILT_SKIP_ABOVE,
+        CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
         CONF_VENETIAN_MODE,
     }
 )
@@ -590,7 +602,7 @@ def _cross_field_validate(patch: dict, current: dict) -> None:
     if CONF_START_TIME in patch or CONF_START_ENTITY in patch:
         st = merged_active.get(CONF_START_TIME)
         se = merged_active.get(CONF_START_ENTITY)
-        if st and st != "00:00:00" and se:
+        if st and st != BLANK_TIME and se:
             raise ServiceValidationError(
                 f"start_time ('{st}') and start_entity ('{se}') are mutually exclusive. "
                 "Set one or the other, not both."
@@ -599,7 +611,7 @@ def _cross_field_validate(patch: dict, current: dict) -> None:
     if CONF_END_TIME in patch or CONF_END_ENTITY in patch:
         et = merged_active.get(CONF_END_TIME)
         ee = merged_active.get(CONF_END_ENTITY)
-        if et and et != "00:00:00" and ee:
+        if et and et != BLANK_TIME and ee:
             raise ServiceValidationError(
                 f"end_time ('{et}') and end_entity ('{ee}') are mutually exclusive. "
                 "Set one or the other, not both."

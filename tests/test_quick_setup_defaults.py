@@ -484,6 +484,43 @@ class TestCoordinatorInitWithNoneOptions:
         td = dt.timedelta(**coord.manual_duration)
         assert td.total_seconds() > 0
 
+    @pytest.mark.unit
+    def test_update_options_forwards_configured_position_tolerance(self):
+        """_update_options pushes the configured tolerance to the command service (issue #507)."""
+        from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord._cmd_svc = MagicMock()
+        coord._time_mgr = MagicMock()
+        coord._motion_mgr = MagicMock()
+        coord._weather_mgr = MagicMock()
+        coord.manager = MagicMock()
+
+        coord._update_options({**self._POISONED_OPTIONS, CONF_POSITION_TOLERANCE: 12})
+
+        coord._cmd_svc.update_position_tolerance.assert_called_once_with(12)
+
+    @pytest.mark.unit
+    def test_update_options_position_tolerance_defaults_to_three(self):
+        """Absent tolerance option resolves to the default (3) on options change (issue #507)."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = object.__new__(AdaptiveDataUpdateCoordinator)
+        coord._cmd_svc = MagicMock()
+        coord._time_mgr = MagicMock()
+        coord._motion_mgr = MagicMock()
+        coord._weather_mgr = MagicMock()
+        coord.manager = MagicMock()
+
+        coord._update_options(self._POISONED_OPTIONS)
+
+        coord._cmd_svc.update_position_tolerance.assert_called_once_with(3)
+
 
 # ---------------------------------------------------------------------------
 # Group 3 — Structural guard: timedelta(**None) regression

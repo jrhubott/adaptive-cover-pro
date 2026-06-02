@@ -53,6 +53,11 @@ class CustomPositionSensorState:
     # downstream diagnostics can show e.g. "Custom · Table extension" instead of
     # just "Custom #1". None when the sensor isn't loaded or has no friendly_name.
     sensor_name: str | None = None
+    # Real 1-4 slot number this state was built from. The snapshot's sensor list
+    # is compacted (gaps skipped), so the list index does NOT recover the slot;
+    # carry it explicitly so the floor trace can label the correct
+    # custom_position_N handler (issue #496). 0 = unset.
+    slot: int = 0
 
 
 @dataclass(frozen=True)
@@ -236,6 +241,12 @@ class PipelineResult:
     # that wind/rain/force protection still works when the user has paused
     # normal sun-tracking automation.
     bypass_auto_control: bool = False
+
+    # When True, the registry's floor-clamp composition pass raised this
+    # winner's position to a user-configured floor. The coordinator's `state`
+    # property treats the position as already in cover-position space and
+    # skips interpolation / inverse-state remapping (issue #469).
+    floor_clamp_applied: bool = False
 
     # When True, the coordinator should route this command through
     # CoverCommandService.send_my_position() on non-position-capable covers

@@ -121,6 +121,7 @@ async def test_full_repro_user_recovery_observed():
     coord = MagicMock()
     coord.manual_toggle = True
     coord.automatic_control = False
+    coord.manual_ignore_external = False
     coord._cover_type = "cover_awning"
     coord.manual_reset = False
     coord.manual_threshold = 5

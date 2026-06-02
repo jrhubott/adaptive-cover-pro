@@ -26,6 +26,9 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_SUN_TRACKING,
     CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_IS_SUNNY_SENSOR,
+    CONF_LUX_ENTITY,
     CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
@@ -681,10 +684,10 @@ def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
     if data is None:
         return None
     if data.get("is_summer"):
-        return "Summer Mode"
+        return "summer_mode"
     if data.get("is_winter"):
-        return "Winter Mode"
-    return "Intermediate"
+        return "winter_mode"
+    return "intermediate"
 
 
 def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
@@ -759,7 +762,15 @@ def _configured_handlers(opts: Mapping[str, Any]) -> list[str]:
         enabled.append("custom_position")
     if opts.get(CONF_MOTION_SENSORS):
         enabled.append("motion")
-    if opts.get(CONF_CLOUD_SUPPRESSION) and opts.get(CONF_CLOUD_COVERAGE_ENTITY):
+    if opts.get(CONF_CLOUD_SUPPRESSION) and any(
+        opts.get(k)
+        for k in (
+            CONF_IS_SUNNY_SENSOR,
+            CONF_LUX_ENTITY,
+            CONF_IRRADIANCE_ENTITY,
+            CONF_CLOUD_COVERAGE_ENTITY,
+        )
+    ):
         enabled.append("cloud")
     if opts.get(CONF_CLIMATE_MODE):
         enabled.append("climate")
@@ -1111,6 +1122,9 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suffix="climate_status",
         display_name="Climate Status",
         icon="mdi:weather-partly-cloudy",
+        translation_key="climate_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=("summer_mode", "winter_mode", "intermediate"),
         value_fn=_climate_status_value,
         attrs_fn=_climate_status_attrs,
         enabled_when=lambda e: bool(e.options.get(CONF_CLIMATE_MODE, False)),

@@ -327,6 +327,49 @@ async def test_reconcile_no_action_when_at_target(svc, mock_hass):
     assert svc.state("cover.test").retry_count == 0
 
 
+@pytest.fixture
+def svc_tol6(mock_hass, grace_mgr):
+    """CoverCommandService with a widened reconciliation tolerance (issue #507)."""
+    return CoverCommandService(
+        hass=mock_hass,
+        logger=MagicMock(),
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        open_close_threshold=50,
+        check_interval_minutes=1,
+        position_tolerance=6,
+        max_retries=3,
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_no_resend_within_configured_tolerance(svc_tol6, mock_hass):
+    """A configured tolerance of 6 treats 95-vs-100 as arrived → no resend (issue #507)."""
+    svc_tol6.set_target("cover.test", 100)
+    svc_tol6.set_waiting("cover.test", False)
+    _patch_position(svc_tol6, 95)  # delta=5 ≤ tolerance=6
+
+    with _patch_caps():
+        await svc_tol6.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    assert svc_tol6.state("cover.test").retry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_default_tolerance_still_resends_at_95(svc, mock_hass):
+    """Default tolerance (3) still resends 95-vs-100 — preserves today's behavior."""
+    svc.set_target("cover.test", 100)
+    svc.set_waiting("cover.test", False)
+    _patch_position(svc, 95)  # delta=5 > tolerance=3
+
+    with _patch_caps():
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_called_once()
+    assert svc.state("cover.test").retry_count == 1
+
+
 @pytest.mark.asyncio
 async def test_reconcile_retries_when_cover_missed_target(svc, mock_hass):
     """Reconciliation resends command when cover is outside tolerance."""

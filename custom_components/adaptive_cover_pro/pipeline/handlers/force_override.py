@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...const import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import apply_minimum_mode, compute_raw_calculated_position
+from ..helpers import compute_raw_calculated_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -20,21 +20,26 @@ class ForceOverrideHandler(OverrideHandler):
     priority = 100
 
     def evaluate(self, snapshot: PipelineSnapshot) -> PipelineResult | None:
-        """Return override position when any force override sensor is on."""
+        """Return override position when any force override sensor is on.
+
+        When ``force_override_min_mode`` is True, the handler defers
+        (returns ``None``) so the registry can compose the configured
+        position as a post-decision floor clamp on whichever lower-priority
+        handler wins (issue #463).
+        """
         if not snapshot.force_override_sensors:
             return None
         if not any(snapshot.force_override_sensors.values()):
             return None
+        if snapshot.force_override_min_mode:
+            return None
         active = [e for e, on in snapshot.force_override_sensors.items() if on]
-        configured = snapshot.force_override_position
+        pos = snapshot.force_override_position
         raw = compute_raw_calculated_position(snapshot)
-        pos, mode_note = apply_minimum_mode(
-            configured, raw, enabled=snapshot.force_override_min_mode
-        )
         return PipelineResult(
             position=pos,
             control_method=ControlMethod.FORCE,
-            reason=f"force override active ({', '.join(active)}) — position {pos}%{mode_note} [bypasses automatic control]",
+            reason=f"force override active ({', '.join(active)}) — position {pos}% [bypasses automatic control]",
             bypass_auto_control=True,
             raw_calculated_position=raw,
         )

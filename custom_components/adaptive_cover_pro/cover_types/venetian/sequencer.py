@@ -35,9 +35,10 @@ from homeassistant.exceptions import HomeAssistantError
 
 from ...const import (
     ATTR_TILT_POSITION,
+    DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
     VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
-    VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+    VENETIAN_DRIFT_RETRY_DELAY_SECONDS,
     VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES,
     VENETIAN_POSITION_SETTLE_POLL_SECONDS,
     VENETIAN_POSITION_SETTLE_STARTUP_GRACE_SECONDS,
@@ -51,15 +52,13 @@ from ...const import (
     VENETIAN_TILT_VERIFY_TOLERANCE,
 )
 from ...managers.cover_command.gates import check_position_delta
+from ...managers.cover_command.transit import is_state_in_transit
 from ...managers.manual_override import inverse_state
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from ...diagnostics.event_buffer import EventBuffer
-
-# HA cover states that indicate the motor is still mid-travel.
-_COVER_MOVING_STATES = frozenset({"opening", "closing"})
 
 # Reason codes for tilt_command_skipped events.
 _TILT_SKIP_DRY_RUN = "dry_run"
@@ -96,8 +95,19 @@ class DualAxisSequencer:
         invert_tilt: Callable[[], bool] | None = None,
         get_min_change: Callable[[], int] | None = None,
         post_settle_hold_seconds: float = DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+        backrotate_publish_lag_seconds: float = (
+            DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+        ),
     ) -> None:
-        """Bind HA + cmd_svc dependencies; per-entity timestamps start empty."""
+        """Bind HA + cmd_svc dependencies; per-entity timestamps start empty.
+
+        ``backrotate_publish_lag_seconds`` (issue #33 Phase 5) is user-
+        configurable via ``CONF_VENETIAN_BACKROTATE_PUBLISH_LAG`` and feeds
+        :meth:`is_in_suppression_with_cap`'s post-settle publish-lag tier.
+        Bigger values absorb longer republish lags (slow KNX bus, Somfy IO
+        via Tahoma); smaller values tighten false-touch detection on fast
+        actuators.
+        """
         self._hass = hass
         self._logger = logger
         self._grace_mgr = grace_mgr
@@ -111,6 +121,7 @@ class DualAxisSequencer:
         self._invert_tilt = invert_tilt
         self._get_min_change = get_min_change
         self._post_settle_hold_seconds = post_settle_hold_seconds
+        self._backrotate_publish_lag_seconds = backrotate_publish_lag_seconds
         # Per-entity timestamps. Keep these on the sequencer (rather than on
         # CoverCommandService.PerEntityState) so non-venetian covers carry no
         # dual-axis state at all.
@@ -232,7 +243,7 @@ class DualAxisSequencer:
             return False
         if self._get_state is not None:
             state = self._get_state(entity_id)
-            if state in _COVER_MOVING_STATES:
+            if is_state_in_transit(state):
                 return True
         # (b) Command-grace tail anchored to stamp_position_command.
         stamp = self._suppression_at.get(entity_id)
@@ -248,7 +259,7 @@ class DualAxisSequencer:
             self._stamp_settled(entity_id)
         settled_at = self._settled_at.get(entity_id)
         if settled_at is not None and (
-            self._seconds_since(settled_at) < VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
+            self._seconds_since(settled_at) < self._backrotate_publish_lag_seconds
         ):
             return True
         return delta <= VENETIAN_BACKROTATE_MAX_DELTA_PERCENT
@@ -316,6 +327,7 @@ class DualAxisSequencer:
         force: bool = False,
         position_settled: bool = True,
         verify: bool = True,
+        _retry_depth: int = 0,
     ) -> None:
         """Emit ``set_cover_tilt_position`` and rebase the commanded position.
 
@@ -348,6 +360,13 @@ class DualAxisSequencer:
         all skipped. Verifying the pre-position tilt is pointless because
         the actuator hasn't published yet AND the position command is about
         to move the carriage; verification would race both signals.
+
+        ``_retry_depth`` is an internal recursion guard for the issue #500
+        drift-retry path: ``_verify_and_record_tilt`` calls back into this
+        method with ``_retry_depth=1`` after a drift event so the gates
+        (dedup, dry-run, grace) are reused per the no-duplication rule. The
+        depth flag is threaded straight into the verify step so a still-
+        drifting retry does not spawn another retry.
         """
         if not force and tilt_target == self._tilt_targets.get(entity_id):
             self._record_event(
@@ -360,7 +379,9 @@ class DualAxisSequencer:
             )
             if verify and entity_id not in self._tilt_targets_verified:
                 await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
-                await self._verify_and_record_tilt(entity_id, tilt_target)
+                await self._verify_and_record_tilt(
+                    entity_id, tilt_target, _retry_depth=_retry_depth
+                )
             return
 
         if not force and self._get_min_change is not None:
@@ -469,7 +490,9 @@ class DualAxisSequencer:
         # may back-rotate the slats during position movement, leaving the cover
         # at tilt=0 even though we sent tilt=N. If we detect drift, clear the
         # recorded target so the next update_tilt_only cycle retries.
-        await self._verify_and_record_tilt(entity_id, tilt_target)
+        await self._verify_and_record_tilt(
+            entity_id, tilt_target, _retry_depth=_retry_depth
+        )
 
         if position_settled:
             self._rebase_commanded_position(entity_id, position_target)
@@ -594,7 +617,7 @@ class DualAxisSequencer:
             # Read state once per iteration so both the in-tolerance gate and
             # the no-progress stall counter use the same snapshot.
             state = self._get_state(entity_id) if self._get_state else None
-            is_moving = state in _COVER_MOVING_STATES
+            is_moving = is_state_in_transit(state)
             if is_moving:
                 motion_observed = True
 
@@ -665,7 +688,9 @@ class DualAxisSequencer:
             {"ts": dt.datetime.now(dt.UTC).isoformat(), "event": event_name, **fields}
         )
 
-    async def _verify_and_record_tilt(self, entity_id: str, tilt_target: int) -> None:
+    async def _verify_and_record_tilt(
+        self, entity_id: str, tilt_target: int, *, _retry_depth: int = 0
+    ) -> None:
         """Poll actual tilt up to N samples; accept on the first in-tolerance read.
 
         Attempt 0 reads immediately (the caller has already slept
@@ -676,6 +701,14 @@ class DualAxisSequencer:
         can land the slats correctly but report the pre-update value for
         1–3 s afterwards — a single-shot read misreads that lag as drift
         and triggers a phantom retry next cycle (issue #33).
+
+        On drift, when ``_retry_depth == 0``, schedules a single bounded
+        re-send through ``_send_tilt_command`` after
+        ``VENETIAN_DRIFT_RETRY_DELAY_SECONDS`` so all gates (dedup, dry-run,
+        grace) are reused per the no-duplication rule (issue #500). The
+        retry passes ``_retry_depth=1`` to block further recursion: a still-
+        drifting second attempt drops out and the next coordinator cycle
+        owns ultimate recovery.
         """
         if self._get_current_tilt_position is None:
             return
@@ -724,3 +757,28 @@ class DualAxisSequencer:
         )
         self._tilt_targets.pop(entity_id, None)
         self._tilt_targets_verified.discard(entity_id)
+
+        # Issue #500: don't wait for the next coordinator cycle (minutes away
+        # with delta_position=5). Re-send once through _send_tilt_command —
+        # reuses every gate (dedup, dry-run, grace) per the no-duplication
+        # rule. _retry_depth blocks recursion: the retry call passes
+        # _retry_depth=1, and this branch only fires when _retry_depth == 0.
+        if _retry_depth == 0:
+            self._record_event(
+                "tilt_command_drift_retry",
+                entity_id=entity_id,
+                tilt_target=tilt_target,
+                actual_tilt_position=actual,
+                delta=delta,
+                retry_delay_seconds=VENETIAN_DRIFT_RETRY_DELAY_SECONDS,
+            )
+            await asyncio.sleep(VENETIAN_DRIFT_RETRY_DELAY_SECONDS)
+            await self._send_tilt_command(
+                entity_id,
+                tilt_target=tilt_target,
+                position_target=self._get_current_position(entity_id) or 0,
+                reason="drift_retry",
+                force=True,
+                verify=True,
+                _retry_depth=1,
+            )

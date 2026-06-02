@@ -54,7 +54,8 @@
           "inverse_tilt": "Neigung invertieren",
           "max_tilt": "Maximale Lamellennneigung (%)",
           "min_tilt": "Minimale Lamellenneigung (%)",
-          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)"
+          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)",
+          "venetian_backrotate_publish_lag": "Verzögerungsfenster für Statusmeldung (s)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -71,7 +72,8 @@
           "inverse_tilt": "Invertiert nur die Neigungsachse. Aktivieren Sie diese Option, wenn Ihre Hardware den Wert 0 für \"Lamellen offen\" und 100 für \"Lamellen geschlossen\" sendet, was dem Erwartungswert der Integration entspricht. Dies gilt nur für die Neigungsachse (Lamellen) — die Positionsachse wird separat durch \"Zustand invertieren\" gesteuert. Die meisten Beschattungen benötigen dies nicht. Nützlich für KNX- oder Somfy-Hardware, bei der die Neigungsrichtung der HA-Konvention entgegengesetzt verdrahtet ist.",
           "max_tilt": "Obergrenze für den maximalen Neigungswinkel der Lamellen (0–100). Niedrigere Werte verhindern, dass Lamellen Winkelpositionen erreichen, die direktes Sonnenlicht ins Zimmer reflektieren. Standard: 100 (keine Obergrenze). Beispiel: Stellen Sie 70 ein, wenn vollständig geöffnete Lamellen zu Spitzensonnenzeiten Blendungen verursachen.",
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
-          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s."
+          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s."
         }
       },
       "sun_tracking": {
@@ -109,6 +111,7 @@
           "enable_max_position": "Max nur während Sonnenverfolgung anwenden",
           "min_position": "Minimale Position",
           "enable_min_position": "Min nur während Sonnenverfolgung anwenden",
+          "min_position_sun_tracking": "Min. Position während Sonnennachführung",
           "sunset_position": "Sonnenuntergangsposition",
           "enable_my_position_entities": "Mein-Voreinstellung-Entitäten aktivieren",
           "my_position_value": "Mein Positionswert",
@@ -119,7 +122,8 @@
           "inverse_state": "Zustand umkehren (erforderlich für Beschattungen, die nicht HA-Richtlinien folgen)",
           "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Öffnungs-/Schließungspositionszuordnung)",
           "sunrise_time_entity": "Sonnenaufgangs-Zeit-Entität",
-          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität"
+          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität",
+          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
         },
         "data_description": {
           "default_percentage": "Beschattungsposition, wenn die Sonne nicht vor dem Fenster steht (0-100 %). 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen), 50 % = halb offen (ausgewogenes Licht und Datenschutz), 100 % = offen (Jalousien angehoben / Markise ausgefahren). Dies ist die ‚Ruheposition', die verwendet wird, wenn die Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, blockiert durch Hindernisse oder außerhalb der Verfolgungszeiten).",
@@ -127,6 +131,7 @@
           "enable_max_position": "Kontrolliert, WANN die maximale Positionslimit gilt. NICHT AKTIVIERT (Standard, empfohlen): Maximale Position gilt JEDERZEIT – während Sonnenverfolgung, Standardposition, Klimamodi usw. Beschattung geht niemals über den Maximalwert hinaus. AKTIVIERT (erweitert): Maximale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann die Beschattung über den Maximalwert hinausgehen. Die meisten Benutzer sollten dies NICHT AKTIVIERT lassen für konsistenten Schutz.",
           "min_position": "Minimale Beschattungspositionslimit (0-99 %). 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen). Beschattung geht niemals unter diesen Wert hinaus. Verwenden Sie dies, um: Zu verhindern, dass sich die Beschattung vollständig schließt (auf 20 % setzen), Etwas Licht zu behalten (auf 30-40 % setzen), Blockieren an der Unterseite zu schützen (auf 5 % setzen). Dies schafft eine Untergrenze für alle automatischen Positionen. Funktioniert mit dem Schalter ‚Min nur während Sonnenverfolgung anwenden' unten.",
           "enable_min_position": "Kontrolliert, WANN die minimale Positionslimit gilt. NICHT AKTIVIERT (Standard, empfohlen): Minimale Position gilt JEDERZEIT – während Sonnenverfolgung, Standardposition, Klimamodi usw. Beschattung geht niemals unter den Mindestwert hinaus. AKTIVIERT (erweitert): Minimale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann die Beschattung unter den Mindestwert hinausgehen. Die meisten Benutzer sollten dies NICHT AKTIVIERT lassen für konsistenten Schutz.",
+          "min_position_sun_tracking": "Optionale separate Minimalposition-Grenze, die nur während der Sonnennachführung gilt. Wenn gesetzt, ersetzt sie die 'Minimale Position' bei Sonnennachführungs-Berechnungen. Leer lassen, um 'Minimale Position' für Sonnennachführung und andere Modi zu verwenden. Nutzen Sie dies, wenn Ihre Beschattung eine mechanische Totzone am unteren Ende des Fahrtwegs hat (z. B. Rollläden, deren Lamellen vor dem Hochfahren klaffen) und Sie möchten, dass die Sonnennachführung diese Totzone überspringt, während die Beschattung bei Sonnenuntergang noch vollständig geschlossen werden kann. 0% = geschlossen (Jalousie unten), 100% = geöffnet (Jalousie oben).",
           "sunset_position": "Beschattungsposition nach Sonnenuntergang. Löschen Sie den Schieberegler (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangsverhalten. 0 % = geschlossen (Jalousien gesenkt / Markise eingezogen), 100 % = offen (Jalousien angehoben / Markise ausgefahren). Häufige Verwendungen: Datenschutz (0 %), Für Nachtluft offen (100 %), Teilweise Datenschutz (30-50 %). Wenn gesetzt, überschreibt dies die Standardposition nach Sonnenuntergang.",
           "enable_my_position_entities": "Erstellt die Schaltfläche Verwaltete Meine Position und die Zahlen-Entität Verwalteter Mein-Positionswert. Standardmäßig deaktiviert – aktivieren Sie diese Option, wenn Sie die Somfy-typische Mein-Voreinstellung verwenden und den Wert über ein Dashboard abrufen oder bearbeiten möchten.",
           "my_position_value": "Die Position (1–99 %), die Sie auf der Fernbedienung des Motors programmiert haben (Mein/Favorit-Voreinstellung). Leer lassen, um die Auslösung von Mein-Position für diese Beschattung zu deaktivieren.",
@@ -137,7 +142,8 @@
           "inverse_state": "Aktivieren Sie für Beschattungen, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen/gesenkt, 100 = offen/angehoben. Invertiert: 0 = offen/angehoben, 100 = geschlossen/gesenkt. Aktivieren Sie dies NUR, wenn Ihre Beschattung das entgegengesetzte Verhalten zeigt, 100 % schließt anstatt zu öffnen, oder die Dokumentation sagt ‚invertiert' oder ‚umgekehrt'. Testen Sie Ihre Beschattung zunächst manuell. Die meisten Beschattungen benötigen dies nicht.",
           "interp": "Aktivieren Sie die benutzerdefinierte Positionszuordnung zur Kalibrierung von Beschattungen, die nicht linear auf 0–100 %-Befehle reagieren. Wenn aktiviert, wird ein Abschnitt ‚Positionskalibrierung' im Optionsmenü angezeigt (unter Positionseinstellungen), in dem Sie die Zuordnungswerte konfigurieren können. Anwendungsfälle: Beschattung bewegt sich nicht linear, bevorzugte Bereiche (mehr geschlossen oder mehr offen), Kalibrierung für ungewöhnliches Beschattungsverhalten. Deaktiviert für Normalbetrieb lassen.",
           "sunrise_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenaufgang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenaufgangszeit als Grenze zum Schließen des Fensters morgens. Akzeptiert Sensor- oder input_datetime-Entitäten. Der Sonnenaufgang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
-          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist."
+          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
+          "return_sunset": "Wenn der Betriebsendzeitpunkt erreicht ist, verschieben Sie die Beschattung auf die aktuelle wirksame Standardposition (die bei bereits eingetretenem astronomischem Sonnenuntergang die Sonnenuntergangsposition ist, andernfalls die normale Standardposition). Nützlich, wenn Ihr Endzeitpunkt vor Sonnenuntergang liegt und Sie die Beschattung korrekt für den Abend positionieren möchten. Diese Bewegung erfolgt nur, wenn die automatische Steuerung AN ist – wenn die automatische Steuerung deaktiviert ist, bleibt die Beschattung dort, wo sie sich zum Endzeitpunkt befindet."
         }
       },
       "automation": {
@@ -150,7 +156,7 @@
           "start_entity": "Entität, die die Startzeit angibt",
           "end_time": "Endzeit",
           "end_entity": "Entität, die die Endzeit angibt",
-          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
+          "position_tolerance": "Positionsabweichungs-Toleranz"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert winzige Anpassungen bei langsamer Sonnenbewegung. Typische Werte: 1–2% (sehr responsiv, häufige Anpassungen), 5% (ausgewogen, für die meisten empfohlen), 10% (seltener, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30% ist und die Sonne sich leicht bewegt, nur anpassen, wenn die neue Position 35% oder mehr beträgt (mit 5%-Schwellwert). Reduziert Verschleiß und Geräusche durch ständige winzige Anpassungen.",
@@ -159,7 +165,7 @@
           "start_entity": "Entität, die den Startzeitpunkt darstellt und die oben eingestellte feste Startzeit außer Kraft setzt. Nützlich zur Automatisierung der Startzeit mit einer Entität (z. B. Sensor, der die Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
           "end_time": "Automatische Steuerung nach dieser Uhrzeit beenden (24-Stunden-Format). Nutzen Sie dies für Abendprivatsphäre (auf 18:00 oder 19:00 einstellen), Rückkehr zum Standard vor dem Schlafengehen oder lassen Sie es leer, um bis zum Sonnenuntergang weiterzumachen. Beispiel: „20:00“ bedeutet, dass die automatische Steuerung um 20:00 Uhr endet. Manuelle Steuerung funktioniert nach dieser Zeit weiterhin.",
           "end_entity": "Entität, die den Endzeitpunkt darstellt und die oben eingestellte feste Endzeit außer Kraft setzt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der die Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
-          "return_sunset": "Wenn der Betriebsendzeitpunkt erreicht ist, verschieben Sie die Beschattung auf die aktuelle wirksame Standardposition (die bei bereits eingetretenem astronomischem Sonnenuntergang die Sonnenuntergangsposition ist, andernfalls die normale Standardposition). Nützlich, wenn Ihr Endzeitpunkt vor Sonnenuntergang liegt und Sie die Beschattung korrekt für den Abend positionieren möchten. Diese Bewegung erfolgt nur, wenn die automatische Steuerung AN ist – wenn die automatische Steuerung deaktiviert ist, bleibt die Beschattung dort, wo sie sich zum Endzeitpunkt befindet."
+          "position_tolerance": "Erlaubter Toleranzbereich (%) zwischen der angeforderten Position und der von der Beschattung gemeldeten Position, bevor die Integration sie als \"nicht angekommen\" behandelt und den Befehl erneut sendet. Dies unterscheidet sich von der Minimalen Positionsanpassung oben: Die Anpassung entscheidet, ob ein neuer Befehl gesendet wird, während diese Toleranz entscheidet, ob ein bereits gesendeter Befehl akzeptiert wurde. Der Standard von 3% deckt normale Motorreaktionen ab (z. B. eine Beschattung, die sich auf 98% einstellt, wenn sie auf 100% eingestellt wird). Erhöhen Sie ihn für Antriebe, die konsistent unter- oder überschießen — stellen Sie beispielsweise 6% ein, wenn eine Beschattung, die auf 100% angefordert wird, 95% meldet und sonst jede Minute klicken und erneut versuchen würde."
         }
       },
       "manual_override": {
@@ -170,14 +176,16 @@
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
           "manual_threshold": "Schwellwert der manuellen Übersteuerung",
           "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)",
-          "transit_timeout": "Transitzeit-Timeout (Sekunden)"
+          "transit_timeout": "Transitzeit-Timeout (Sekunden)",
+          "manual_ignore_external": "Manuelle Übersteuerung nur durch Adaptive Cover Pro-Befehle aktivieren"
         },
         "data_description": {
           "manual_override_duration": "Wie lange (in Minuten) die automatische Kontrolle nach manueller Anpassung pausiert. Wenn Sie die Beschattung manuell bewegen, pausiert die automatische Kontrolle. Typische Werte: 10-15 Min. (kurze Pause, Verfolgung wird bald fortgesetzt), 30 Min. (mittlere Pause, ausgewogen), 60-120 Min. (lange Pause, manuelle Position länger behalten), 0 (deaktiviert, Verfolgung wird sofort fortgesetzt – nicht empfohlen). Gibt Ihnen Kontrolle, wenn Sie sie möchten, setzt die Automatisierung später fort.",
           "manual_override_reset": "Setzen Sie den Timer für die manuelle Übersteuerung nach jeder manuellen Anpassung zurück. Wenn aktiviert, startet jede manuelle Änderung die Übersteuerungsdauer neu. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie dies, wenn Sie möchten, dass der Übersteuerungszeitraum bei jeder manuellen Anpassung ‚erneuert' wird.",
           "manual_threshold": "Positionsdifferenz (%), die als ‚manuelle Übersteuerung' zählt (Standardwert: 1 %). Wenn Sie die Beschattung manuell um diesen Betrag bewegen, wird die Erkennungsüberschreibung ausgelöst. Typische Werte: 1-2 % (empfindlich, erkennt kleine Anpassungen), 5 % (weniger empfindlich, empfohlen), 10 % (nur große manuelle Änderungen zählen). Verhindert versehentliche Erkennungsüberschreibung durch kleine Motorabweichungen oder Positionsabweichungen.",
           "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Erkennungsüberschreibung bei Übergangspositionen ausgelöst wird, während sich die Beschattung zu Ihrer Zielposition bewegt. Nützlich, wenn Ihre Beschattung viele Zwischenwerte während der Bewegung meldet.",
-          "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden."
+          "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden.",
+          "manual_ignore_external": "Wenn aktiviert, werden nur Positionsänderungen, die über die Adaptive Cover Pro Proxy-Entität oder den Dienst adaptive_cover_pro.set_position gesendet werden, die manuelle Übersteuerung aktivieren. Positionsänderungen aus anderen Quellen (andere Automationen, die Standard-Home Assistant-Beschattungskarte, physische oder RF-Fernbedienungen) werden ignoriert und die automatische Steuerung läuft ungestört weiter. Praktisch, wenn Sie die Beschattung nur über ACP selbst steuern und möchten, dass laute externe Statusänderungen die Automation nicht unterbrechen. Standard: aus."
         }
       },
       "force_override": {
@@ -531,7 +539,7 @@
           "light_cloud": "☁️ Lichtsensoren und Wolken",
           "temperature_climate": "🌡️ Temperatur und Klima"
         },
-        "description": "Konfiguration: **{instance_name}**"
+        "description": "Konfiguration: **{instance_name}**\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
       "automation": {
         "title": "Zeitplan und Timing",
@@ -543,7 +551,7 @@
           "start_entity": "Entität, die die Startzeit angibt",
           "end_time": "Endzeit",
           "end_entity": "Entität, die die Endzeit angibt",
-          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
+          "position_tolerance": "Positionsabweichungs-Toleranz"
         },
         "data_description": {
           "delta_position": "Minimale Positionsänderung (%) erforderlich, bevor die Beschattung angepasst wird. Verhindert kleine Anpassungen, während sich die Sonne langsam bewegt. Typische Werte: 1-2 % (sehr reaktiv, kann häufig anpassen), 5 % (ausgewogen, empfohlen für die meisten), 10 % (weniger häufig, größere Bewegungen). Beispiel: Wenn die Beschattung bei 30 % ist und die Sonne sich leicht bewegt, passen Sie nur an, wenn die neue Position 35 % oder höher ist (mit 5 % Schwelle). Reduziert Motorverschleiß und Lärm von konstanten kleinen Anpassungen.",
@@ -552,7 +560,7 @@
           "start_entity": "Entität, die den Startzeitstatus darstellt und die oben festgelegte feste Startzeit überschreibt. Nützlich zur Automatisierung der Startzeit mit einer Entität (z. B. Sensor, der Aufwachzeit basierend auf Kalender oder Schlafverfolgung bereitstellt).",
           "end_time": "Beenden Sie die automatische Kontrolle nach dieser Zeit (24-Stunden-Format). Verwenden Sie dies, um Abendprivatsphäre zu behalten (auf 18:00 oder 19:00 setzen), zur Standardposition vor dem Schlafengehen zurückzukehren, oder leer lassen, um bis zum Sonnenuntergang zu fahren. Beispiel: ‚20:00' bedeutet, dass die automatische Kontrolle um 20:00 Uhr endet. Manuelle Kontrolle funktioniert nach dieser Zeit immer noch.",
           "end_entity": "Entität, die den Endzeitstatus darstellt und die oben festgelegte feste Endzeit überschreibt. Nützlich zur Automatisierung der Endzeit mit einer Entität (z. B. Sensor, der Schlafenszeit basierend auf Kalender oder täglicher Routine bereitstellt).",
-          "return_sunset": "Wenn die betriebliche Endzeit erreicht ist, senden Sie Beschattungen in die aktuelle effektive Standardposition (die die Sonnenuntergangsposition ist, wenn der astronomische Sonnenuntergang bereits aufgetreten ist, ansonsten die normale Standardposition). Nützlich, wenn Ihre Endzeit vor Sonnenuntergang liegt und Sie die Beschattungen korrekt für den Abend positionieren möchten. Diese Bewegung tritt nur auf, wenn die Automatische Kontrolle AKTIVIERT ist – wenn die Automatische Kontrolle deaktiviert ist, bleibt die Beschattung dort, wo sie zur Endzeit ist."
+          "position_tolerance": "Erlaubter Toleranzbereich (%) zwischen der angeforderten Position und der von der Beschattung gemeldeten Position, bevor die Integration sie als \"nicht angekommen\" behandelt und den Befehl erneut sendet. Dies unterscheidet sich von der Minimalen Positionsanpassung oben: Die Anpassung entscheidet, ob ein neuer Befehl gesendet wird, während diese Toleranz entscheidet, ob ein bereits gesendeter Befehl akzeptiert wurde. Der Standard von 3% deckt normale Motorreaktionen ab (z. B. eine Beschattung, die sich auf 98% einstellt, wenn sie auf 100% eingestellt wird). Erhöhen Sie ihn für Antriebe, die konsistent unter- oder überschießen — stellen Sie beispielsweise 6% ein, wenn eine Beschattung, die auf 100% angefordert wird, 95% meldet und sonst jede Minute klicken und erneut versuchen würde."
         }
       },
       "cover_entities": {
@@ -587,7 +595,8 @@
           "inverse_tilt": "Neigung invertieren",
           "max_tilt": "Maximale Lamellennneigung (%)",
           "min_tilt": "Minimale Lamellenneigung (%)",
-          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)"
+          "venetian_post_settle_hold": "Wartezeit nach Fahrt (s)",
+          "venetian_backrotate_publish_lag": "Verzögerungsfenster für Statusmeldung (s)"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -604,7 +613,8 @@
           "inverse_tilt": "Invertiert nur die Neigungsachse. Aktivieren Sie diese Option, wenn Ihre Hardware den Wert 0 für \"Lamellen offen\" und 100 für \"Lamellen geschlossen\" sendet, was dem Erwartungswert der Integration entspricht. Dies gilt nur für die Neigungsachse (Lamellen) — die Positionsachse wird separat durch \"Zustand invertieren\" gesteuert. Die meisten Beschattungen benötigen dies nicht. Nützlich für KNX- oder Somfy-Hardware, bei der die Neigungsrichtung der HA-Konvention entgegengesetzt verdrahtet ist.",
           "max_tilt": "Obergrenze für den maximalen Neigungswinkel der Lamellen (0–100). Niedrigere Werte verhindern, dass Lamellen Winkelpositionen erreichen, die direktes Sonnenlicht ins Zimmer reflektieren. Standard: 100 (keine Obergrenze). Beispiel: Stellen Sie 70 ein, wenn vollständig geöffnete Lamellen zu Spitzensonnenzeiten Blendungen verursachen.",
           "min_tilt": "Untergrenze für die minimale Neigungswinkel der Lamellen (0–100). Höhere Werte verhindern, dass Lamellen vollständig schließen – nützlich für Jalousien, die bei 0% das gesamte Licht blockieren. Standard: 0 (keine Untergrenze). Beispiel: Stellen Sie 10 ein, wenn Ihre Jalousien bei 0% vollständig dunkel werden und Sie immer etwas Licht durchlassen möchten.",
-          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s."
+          "venetian_post_settle_hold": "Wie lange (in Sekunden) nach dem Anhalten des Antriebs gewartet wird, bevor der Neigungsbefehl gesendet wird. Standardmäßig 2,0 s, was für die meisten Aktoren geeignet ist. Erhöhen Sie den Wert auf 4–6 s für KNX FGR223 oder andere Firmware, die kurz nach dem Anhalten des Antriebs eine Neigung-zu-Offen-Bewegung erneut auslöst — ohne die zusätzliche Wartezeit konkurriert der Neigungsbefehl mit dieser Auslösung und verliert. Bereich 0,0–10,0 s.",
+          "venetian_backrotate_publish_lag": "Wie lange (in Sekunden) die Integration eine verspätete Statusmeldung der Position von Ihrem Aktor toleriert, bevor sie als echte Benutzerberührung behandelt wird. Standard 45 s eignet sich für Somfy IO über Tahoma. Erhöhen Sie auf 60–120 s, wenn Ihre Hardware (langsamer KNX-Bus, Fibaro/Shelly-Neuveröffentlichung) die aktuelle_Position lange nach dem physischen Stopp der Beschattung meldet – Symptom sind fehlerhafte 'manual_override_set'-Ereignisse, die etwa 30–90 s nach einem befohlenen Bewegungsbefehl ausgelöst werden. Verringern Sie nur, wenn Sie einen ungewöhnlich schnellen Aktor haben und eine straffere Erkennungsfehlertoleranz möchten. Bereich 15–180 s."
         }
       },
       "sun_tracking": {
@@ -642,6 +652,7 @@
           "enable_max_position": "Max nur während Sonnenverfolgung anwenden",
           "min_position": "Minimale Position",
           "enable_min_position": "Min nur während Sonnenverfolgung anwenden",
+          "min_position_sun_tracking": "Min. Position während Sonnennachführung",
           "sunset_position": "Sonnenuntergangsposition",
           "enable_my_position_entities": "Mein-Voreinstellung-Entitäten aktivieren",
           "my_position_value": "Mein Positionswert",
@@ -652,7 +663,8 @@
           "inverse_state": "Zustand umkehren (erforderlich für Beschattungen, die nicht HA-Richtlinien folgen)",
           "interp": "Positionskalibrierung aktivieren (benutzerdefinierte Öffnungs-/Schließungspositionszuordnung)",
           "sunrise_time_entity": "Sonnenaufgangs-Zeit-Entität",
-          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität"
+          "sunset_time_entity": "Sonnenuntergangs-Zeit-Entität",
+          "return_sunset": "Beschattungen zur aktuellen Standardposition verschieben, wenn die Endzeit erreicht wird"
         },
         "data_description": {
           "default_percentage": "Behangposition, wenn die Sonne nicht vor dem Fenster steht (0–100%). 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen), 50% = halb offen (ausgewogenes Licht und Datenschutz), 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Dies ist die 'Ruheposition', die verwendet wird, wenn Sonnenverfolgung nicht aktiv ist (Sonne ist hinter dem Fenster, wird durch Hindernisse blockiert oder liegt außerhalb der Verfolgungszeiten).",
@@ -660,6 +672,7 @@
           "enable_max_position": "Kontrolliert WANN die maximale Positionsbegrenzung gilt. UNCHECKED (Standard, empfohlen): Maximale Position gilt IMMER – während Sonnenverfolgung, Standardposition, Klimamodi usw. Behang geht nie über Maximalwert hinaus. CHECKED (fortgeschritten): Maximale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann der Behang über Maximalwert hinausgehen. Die meisten Benutzer sollten dies UNCHECKED lassen für konsistenten Schutz.",
           "min_position": "Minimale Behangpositionsbegrenzung (0–99%). 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen). Behang geht nie unter diesen Wert. Verwenden Sie dies, um: zu verhindern, dass sich der Behang vollständig schließt (auf 20% setzen), etwas Licht zu halten (auf 30–40% setzen), vor Klemmen an der Unterseite zu schützen (auf 5% setzen). Dies erzeugt eine Untergrenze für alle automatischen Positionen. Funktioniert mit dem Umschalter 'Minimum nur während Sonnenverfolgung anwenden' unten.",
           "enable_min_position": "Kontrolliert WANN die minimale Positionsbegrenzung gilt. UNCHECKED (Standard, empfohlen): Minimale Position gilt IMMER – während Sonnenverfolgung, Standardposition, Klimamodi usw. Behang geht nie unter Minimalwert. CHECKED (fortgeschritten): Minimale Position gilt NUR, wenn die Sonne direkt vor dem Fenster steht. Während Standard-/Rückfallzustände kann der Behang unter Minimalwert gehen. Die meisten Benutzer sollten dies UNCHECKED lassen für konsistenten Schutz.",
+          "min_position_sun_tracking": "Optionale separate Minimalposition-Grenze, die nur während der Sonnennachführung gilt. Wenn gesetzt, ersetzt sie die 'Minimale Position' bei Sonnennachführungs-Berechnungen. Leer lassen, um 'Minimale Position' für Sonnennachführung und andere Modi zu verwenden. Nutzen Sie dies, wenn Ihre Beschattung eine mechanische Totzone am unteren Ende des Fahrtwegs hat (z. B. Rollläden, deren Lamellen vor dem Hochfahren klaffen) und Sie möchten, dass die Sonnennachführung diese Totzone überspringt, während die Beschattung bei Sonnenuntergang noch vollständig geschlossen werden kann. 0% = geschlossen (Jalousie unten), 100% = geöffnet (Jalousie oben).",
           "sunset_position": "Behangposition nach Sonnenuntergang. Löschen Sie den Schieber (leer lassen), um stattdessen die Standardposition zu verwenden – kein spezielles Sonnenuntergangverhalten. 0% = geschlossen (Jalousie heruntergelassen / Markise eingezogen), 100% = offen (Jalousie hochgezogen / Markise ausgefahren). Häufige Verwendungen: Datenschutz (0%), Offen für Nachtluft (100%), Teilweiser Datenschutz (30–50%). Wenn gesetzt, überschreibt dies die Standardposition nach Sonnenuntergang.",
           "enable_my_position_entities": "Erstellt die Schaltfläche Verwaltete Meine Position und die Zahlen-Entität Verwalteter Mein-Positionswert. Standardmäßig deaktiviert – aktivieren Sie diese Option, wenn Sie die Somfy-typische Mein-Voreinstellung verwenden und den Wert über ein Dashboard abrufen oder bearbeiten möchten.",
           "my_position_value": "Die Position (1–99%), die Sie auf der Motorsteuerung programmiert haben (Favorit). Leer lassen, um die Auslösung der Lieblingsposition für diesen Behang zu deaktivieren.",
@@ -670,7 +683,8 @@
           "inverse_state": "Aktivieren Sie dies für Behänge, bei denen die Positionslogik umgekehrt ist. Standard: 0 = geschlossen/heruntergelassen, 100 = offen/hochgezogen. Invertiert: 0 = offen/hochgezogen, 100 = geschlossen/heruntergelassen. Markieren Sie dies NUR, wenn Ihr Behang entgegengesetztes Verhalten zeigt, 100% schließt statt öffnet, oder die Dokumentation sagt 'invertiert' oder 'umgekehrt'. Testen Sie Ihren Behang zunächst manuell, um sicherzustellen. Die meisten Behänge benötigen dies nicht.",
           "interp": "Aktivieren Sie benutzerdefinierte Positionszuordnung zur Kalibrierung von Behängen, die nicht linear auf 0–100 %-Befehle reagieren. Wenn aktiviert, wird ein Abschnitt 'Positionskalibrierung' im Optionsmenü angezeigt (unter Positionseinstellungen), wo Sie die Zuordnungswerte konfigurieren können. Anwendungsfälle: Behang bewegt sich nicht linear, bevorzugt bestimmte Bereiche (mehr geschlossen oder mehr offen), Kalibrierung für ungewöhnliches Behangverhalten. Deaktiviert lassen für normalen Betrieb.",
           "sunrise_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenaufgang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenaufgangszeit als Grenze zum Schließen des Fensters morgens. Akzeptiert Sensor- oder input_datetime-Entitäten. Der Sonnenaufgang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
-          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist."
+          "sunset_time_entity": "Optionale Entität, deren Zustand eine Datum/Uhrzeit ist (z. B. Sun2 'Sonnenuntergang bei -4° Elevation'). Bei Einstellung ersetzt sie die durch astral berechnete Sonnenuntergangszeit als Fenstergrenze. Akzeptiert Sensor- oder input_datetime-Entitäten, die eine ISO-8601-Datum/Uhrzeit melden. Der Sonnenuntergang-Offset wird zusätzlich angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
+          "return_sunset": "Wenn die betriebliche Endzeit erreicht ist, senden Sie Beschattungen in die aktuelle effektive Standardposition (die die Sonnenuntergangsposition ist, wenn der astronomische Sonnenuntergang bereits aufgetreten ist, ansonsten die normale Standardposition). Nützlich, wenn Ihre Endzeit vor Sonnenuntergang liegt und Sie die Beschattungen korrekt für den Abend positionieren möchten. Diese Bewegung tritt nur auf, wenn die Automatische Kontrolle AKTIVIERT ist – wenn die Automatische Kontrolle deaktiviert ist, bleibt die Beschattung dort, wo sie zur Endzeit ist."
         }
       },
       "manual_override": {
@@ -681,14 +695,16 @@
           "manual_override_reset": "Dauer der manuellen Übersteuerung zurücksetzen",
           "manual_threshold": "Schwellwert der manuellen Übersteuerung",
           "manual_ignore_intermediate": "Zwischenpositionen während manueller Übersteuerung ignorieren (Öffnen und Schließen)",
-          "transit_timeout": "Transitzeit-Timeout (Sekunden)"
+          "transit_timeout": "Transitzeit-Timeout (Sekunden)",
+          "manual_ignore_external": "Manuelle Übersteuerung nur durch Adaptive Cover Pro-Befehle aktivieren"
         },
         "data_description": {
           "manual_override_duration": "Wie lange (Minuten) die automatische Steuerung nach manueller Anpassung pausiert. Wenn Sie den Behang manuell bewegen, pausiert die automatische Steuerung. Typische Werte: 10–15 Min (kurze Pause, Verfolgung bald fortgesetzt), 30 Min (mittlere Pause, ausgewogen), 60–120 Min (lange Pause, manuelle Position länger beibehalten), 0 (deaktiviert, sofort automatische Steuerung fortsetzen – nicht empfohlen). Gibt Ihnen Kontrolle, wenn Sie sie wollen, setzt Automatisierung später fort.",
           "manual_override_reset": "Setzen Sie den Übersteuerungstimer nach jeder manuellen Anpassung zurück. Wenn aktiviert, startet jede manuelle Änderung die Übersteuerungsdauer neu. Wenn deaktiviert, gilt die Dauer nur für die erste manuelle Anpassung (nachfolgende Änderungen verlängern die Pause nicht). Aktivieren Sie dies, wenn Sie möchten, dass die Übersteuerungsperiode mit jedem manuellen Eingriff 'erneuert' wird.",
           "manual_threshold": "Positionsdifferenz (%), die als 'manuelle Übersteuerung' gilt (Standard: 1%). Wenn Sie den Behang manuell um diesen Betrag bewegen, wird die Übersteuerungserkennung ausgelöst. Typische Werte: 1–2% (empfindlich, erkennt kleine Anpassungen), 5% (weniger empfindlich, empfohlen), 10% (nur große manuelle Änderungen zählen). Verhindert versehentliche Übersteuerungserkennung durch kleine Motordriften oder Positionsmeldungsvariationen.",
           "manual_ignore_intermediate": "Ignorieren Sie Zwischenpositionen während manueller Öffnungs- und Schließvorgänge. Aktivieren Sie dies, um zu verhindern, dass die Übersteuerungserkennung von Übergangspositionen während der Bewegung des Behangs zu Ihrer Zielposition ausgelöst wird. Nützlich, wenn Ihr Behang viele Zwischenwerte während der Bewegung meldet.",
-          "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden."
+          "transit_timeout": "Zeitspanne, die ACP wartet, nachdem eine Beschattung aufgehört hat, Fortschritt zu melden, bevor die nächste Positionsmeldung als manuelle Übersteuerung durch den Benutzer behandelt wird. Der Timer wird zurückgesetzt, sobald sich die Beschattung dem angesteuerten Ziel nähert, sodass langsame, aber sich bewegende Beschattungen über die gesamte Fahrtdauer geschützt sind. Erhöhen Sie diesen Wert für Beschattungen, die länger als 45 Sekunden für einen vollständigen Durchgang benötigen. Standard: 45 Sekunden.",
+          "manual_ignore_external": "Wenn aktiviert, werden nur Positionsänderungen, die über die Adaptive Cover Pro Proxy-Entität oder den Dienst adaptive_cover_pro.set_position gesendet werden, die manuelle Übersteuerung aktivieren. Positionsänderungen aus anderen Quellen (andere Automationen, die Standard-Home Assistant-Beschattungskarte, physische oder RF-Fernbedienungen) werden ignoriert und die automatische Steuerung läuft ungestört weiter. Praktisch, wenn Sie die Beschattung nur über ACP selbst steuern und möchten, dass laute externe Statusänderungen die Automation nicht unterbrechen. Standard: aus."
         }
       },
       "force_override": {
@@ -1039,6 +1055,13 @@
       },
       "position_forecast": {
         "name": "Positionsvorhersage"
+      },
+      "climate_status": {
+        "state": {
+          "summer_mode": "Sommermodus",
+          "winter_mode": "Wintermodus",
+          "intermediate": "Übergang"
+        }
       }
     },
     "switch": {
@@ -1469,6 +1492,10 @@
         "manual_threshold": {
           "description": "Positionsänderung (%) die manuelle Übersteuerung auslöst (0–99).",
           "name": "Erkennungsschwelle"
+        },
+        "manual_ignore_external": {
+          "name": "Nur durch ACP-Befehle aktivieren",
+          "description": "Falls true, werden nur Befehle über die ACP Proxy-Entität oder den Dienst adaptive_cover_pro.set_position die manuelle Übersteuerung aktivieren; alle anderen Positionsänderungen werden ignoriert."
         }
       },
       "name": "Einstellungen für manuelle Übersteuerung festlegen"
@@ -1515,6 +1542,10 @@
         "enable_min_position": {
           "description": "Wenn wahr, wird min_position nur während Sonnenverfolgung angewendet.",
           "name": "Minimum-Position nur während Verfolgung aktivieren"
+        },
+        "min_position_sun_tracking": {
+          "name": "Min. Position während Sonnennachführung",
+          "description": "Optionale separate Minimalgrenze, die nur während der Sonnennachführung gilt (0–99%). Wenn gesetzt, überschreibt sie min_position nur für Sonnennachführungs-Pfade. Leer lassen, um min_position für alle Pfade zu verwenden."
         },
         "inverse_state": {
           "description": "Position für Beschattungen invertieren, die Status invers melden.",
@@ -1678,6 +1709,10 @@
         "venetian_post_settle_hold": {
           "name": "Wartezeit nach Fahrt (s)",
           "description": "Wartezeit in Sekunden nach dem Anhalten des Antriebs, bevor der Neigungsbefehl gesendet wird (0,0–10,0 s). Auf 4–6 s erhöhen für KNX FGR223-Firmware."
+        },
+        "venetian_backrotate_publish_lag": {
+          "description": "Sekunden, die die Integration eine verspätete Status-/Neigungsmeldung des Aktors toleriert, bevor sie als Benutzerberührung behandelt wird (15–180 s). Standard 45 s. Erhöhen Sie auf 60–120 s für langsame KNX-Busse oder Fibaro/Shelly-Neuveröffentlichung; straffen Sie nur für ungewöhnlich schnelle Aktoren.",
+          "name": "Verzögerungsfenster für Statusmeldung (s)"
         }
       }
     },
@@ -1694,6 +1729,10 @@
       },
       "name": "Position setzen (mit Mindestwert-Erzwingung)",
       "description": "Bewegt die Beschattung zur angeforderten Position und begrenzt sie auf den höchsten aktiven Mindestwert der benutzerdefinierten Position. Verwenden Sie dies statt cover.set_cover_position, wenn Sie ACP's Mindestwerte aus Automationen berücksichtigen möchten. Die Neigung wird nicht beeinflusst."
+    },
+    "stop": {
+      "name": "Beschattung stoppen",
+      "description": "Sendet stop_cover an die gewählten Beschattungen über den ACP-Proxy. Aktiviert Manuelle Übersteuerung, sodass der nächste automatische Zyklus die Beschattung nicht gegen die Bedienung aussteuert. Verwenden Sie dies statt cover.stop_cover, wenn manual_ignore_external aktiviert ist."
     }
   }
 }

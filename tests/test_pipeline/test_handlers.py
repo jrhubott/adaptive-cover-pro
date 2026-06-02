@@ -167,7 +167,11 @@ class TestForceOverrideHandler:
 
 
 class TestForceOverrideHandlerMinMode:
-    """Tests for ForceOverrideHandler minimum position mode."""
+    """ForceOverrideHandler defers in min_mode; the registry composes the floor.
+
+    See ``tests/test_pipeline/test_floor_composition.py`` for the end-to-end
+    floor-clamp composition tests.
+    """
 
     handler = ForceOverrideHandler()
 
@@ -184,8 +188,10 @@ class TestForceOverrideHandlerMinMode:
         assert result is not None
         assert result.position == 30
 
-    def test_min_mode_on_calculated_higher_uses_calculated(self) -> None:
-        """With min_mode on, if calculated position > floor, use calculated."""
+    def test_min_mode_on_defers(self) -> None:
+        """With min_mode on, evaluate() returns None — the registry composes
+        the floor as a post-decision clamp.
+        """
         snap = make_snapshot(
             force_override_sensors={"binary_sensor.s": True},
             force_override_position=30,
@@ -194,60 +200,7 @@ class TestForceOverrideHandlerMinMode:
             calculate_percentage_return=50.0,
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 50
-
-    def test_min_mode_on_calculated_lower_uses_floor(self) -> None:
-        """With min_mode on, if calculated position < floor, use the floor."""
-        snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=30,
-            force_override_min_mode=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=10.0,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 30
-
-    def test_min_mode_on_calculated_equal_uses_floor(self) -> None:
-        """With min_mode on, if calculated equals floor, position equals floor."""
-        snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=30,
-            force_override_min_mode=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=30.0,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 30
-
-    def test_min_mode_on_reason_mentions_minimum_mode(self) -> None:
-        """With min_mode on, reason string mentions minimum mode."""
-        snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=30,
-            force_override_min_mode=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=50.0,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert "minimum mode" in result.reason
-
-    def test_min_mode_control_method_still_force(self) -> None:
-        """ControlMethod remains FORCE regardless of min_mode."""
-        snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=30,
-            force_override_min_mode=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=70.0,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.control_method == ControlMethod.FORCE
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -256,16 +209,17 @@ class TestForceOverrideHandlerMinMode:
 
 
 class TestForceOverrideHandlerMinModeWithSunTrackingOff:
-    """Force override min-mode floors correctly when sun tracking is disabled.
+    """ForceOverrideHandler defers in min_mode regardless of sun-tracking toggle.
 
-    Regression tests for #264: with tracking off and default=100, a
-    configured floor of 80 must yield max(80, 100)=100, not max(80, 29)=80.
+    Issue #264 (floor measured against default rather than solar when tracking
+    off) is now handled by the registry's floor-composition pass, which clamps
+    whichever lower-priority handler actually wins — including the default
+    fallback when tracking is off.
     """
 
     handler = ForceOverrideHandler()
 
-    def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
-        """Min-mode floor measured against default position, not solar, when tracking off."""
+    def test_min_mode_defers_when_tracking_off(self) -> None:
         snap = make_snapshot(
             force_override_sensors={"binary_sensor.s": True},
             force_override_position=80,
@@ -276,26 +230,9 @@ class TestForceOverrideHandlerMinModeWithSunTrackingOff:
             enable_sun_tracking=False,
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 100
+        assert result is None
 
-    def test_min_mode_floor_still_enforced_when_default_below_floor(self) -> None:
-        """Floor is enforced when default position is below the configured floor."""
-        snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=80,
-            force_override_min_mode=True,
-            direct_sun_valid=True,
-            calculate_percentage_return=29.0,
-            default_position=50,
-            enable_sun_tracking=False,
-        )
-        result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 80
-
-    def test_min_mode_sun_tracking_enabled_unchanged_regression(self) -> None:
-        """Regression guard: solar floor semantics unchanged when tracking is on."""
+    def test_min_mode_defers_when_tracking_on(self) -> None:
         snap = make_snapshot(
             force_override_sensors={"binary_sensor.s": True},
             force_override_position=80,
@@ -306,17 +243,15 @@ class TestForceOverrideHandlerMinModeWithSunTrackingOff:
             enable_sun_tracking=True,
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 80  # max(80, 29) = 80 — solar floor applies
+        assert result is None
 
 
 class TestWeatherOverrideHandlerMinModeWithSunTrackingOff:
-    """Weather override min-mode floors correctly when sun tracking is disabled."""
+    """WeatherOverrideHandler defers in min_mode regardless of sun-tracking toggle."""
 
     handler = WeatherOverrideHandler()
 
-    def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
-        """Min-mode floor measured against default position, not solar, when tracking off."""
+    def test_min_mode_defers_when_tracking_off(self) -> None:
         snap = make_snapshot(
             weather_override_active=True,
             weather_override_position=80,
@@ -327,11 +262,9 @@ class TestWeatherOverrideHandlerMinModeWithSunTrackingOff:
             enable_sun_tracking=False,
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 100
+        assert result is None
 
-    def test_min_mode_sun_tracking_enabled_unchanged_regression(self) -> None:
-        """Regression guard: solar floor semantics unchanged when tracking is on."""
+    def test_min_mode_defers_when_tracking_on(self) -> None:
         snap = make_snapshot(
             weather_override_active=True,
             weather_override_position=80,
@@ -342,12 +275,11 @@ class TestWeatherOverrideHandlerMinModeWithSunTrackingOff:
             enable_sun_tracking=True,
         )
         result = self.handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 80  # max(80, 29) = 80 — solar floor applies
+        assert result is None
 
 
 class TestCustomPositionHandlerMinModeWithSunTrackingOff:
-    """Custom position min-mode floors correctly when sun tracking is disabled."""
+    """CustomPositionHandler defers in min_mode regardless of sun-tracking toggle."""
 
     def _make_handler(self) -> CustomPositionHandler:
         return CustomPositionHandler(
@@ -357,8 +289,7 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
         )
 
-    def test_min_mode_uses_default_not_solar_when_tracking_off(self) -> None:
-        """Min-mode floor measured against default position, not solar, when tracking off."""
+    def test_min_mode_defers_when_tracking_off(self) -> None:
         handler = self._make_handler()
         snap = make_snapshot(
             custom_position_sensors=[
@@ -377,11 +308,9 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
             enable_sun_tracking=False,
         )
         result = handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 100
+        assert result is None
 
-    def test_min_mode_sun_tracking_enabled_unchanged_regression(self) -> None:
-        """Regression guard: solar floor semantics unchanged when tracking is on."""
+    def test_min_mode_defers_when_tracking_on(self) -> None:
         handler = self._make_handler()
         snap = make_snapshot(
             custom_position_sensors=[
@@ -400,8 +329,7 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
             enable_sun_tracking=True,
         )
         result = handler.evaluate(snap)
-        assert result is not None
-        assert result.position == 80  # max(80, 29) = 80 — solar floor applies
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

@@ -233,6 +233,35 @@ class CoverTypePolicy(ABC):
         """
         return False
 
+    def primary_axis_suppression(
+        self,
+        entity_id: str,  # noqa: ARG002
+        delta: float = 0.0,  # noqa: ARG002
+    ) -> bool:
+        """Return True when a primary-axis state change should be ignored.
+
+        Issue #33 cross-axis fix: slow-bus actuators (Somfy IO via Tahoma,
+        KNX, Fibaro/Shelly republish) can publish a late
+        ``current_position`` tens of seconds after the cover has physically
+        stopped. Without a suppression window the position-axis branch of
+        ``AdaptiveCoverManager.handle_state_change`` reads the stale
+        publish as a 100 % delta versus the commanded target and trips a
+        false ``manual_override_set``.
+
+        Default: no suppression. Single-axis cover types (blind, awning,
+        tilt) have no back-rotating partner axis and no equivalent
+        publish-lag signature, so they opt out. ``VenetianPolicy``
+        overrides to consult the same three-tier window that already
+        protects the tilt axis — a single predicate shared across both
+        axes per CODING_GUIDELINES.md § "Code duplication is not okay".
+
+        Liskov: ``delta=0.0`` and ``entity_id`` are the same shape every
+        subclass accepts. Adding a new required parameter on a subclass
+        would crash callers holding a ``CoverTypePolicy`` reference; the
+        base default of ``False`` keeps non-venetian dispatch safe.
+        """
+        return False
+
     async def maybe_update_tilt_only(
         self,
         entity_id: str,  # noqa: ARG002

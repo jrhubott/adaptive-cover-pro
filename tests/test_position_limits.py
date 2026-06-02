@@ -275,6 +275,72 @@ def test_sunset_position_with_always_min_pos(mock_sun_data, mock_logger):
         ), f"Expected 0 (sunset position exempt from min_pos), got {result.position}"
 
 
+# ---------------------------------------------------------------------------
+# Issue #467: sun_tracking_min_pos tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_apply_limits_sun_tracking_min_overrides_when_sun_valid():
+    """When sun_tracking_min_pos is set AND sun_valid=True, it overrides min_pos."""
+    result = PositionConverter.apply_limits(
+        value=5,
+        min_pos=0,
+        max_pos=100,
+        apply_min=False,
+        apply_max=False,
+        sun_valid=True,
+        sun_tracking_min_pos=15,
+    )
+    assert result == 15  # sun-tracking floor wins
+
+
+@pytest.mark.unit
+def test_apply_limits_sun_tracking_min_ignored_when_sun_not_valid():
+    """When sun_valid=False, sun_tracking_min_pos is ignored and min_pos applies."""
+    result = PositionConverter.apply_limits(
+        value=5,
+        min_pos=0,
+        max_pos=100,
+        apply_min=False,
+        apply_max=False,
+        sun_valid=False,
+        sun_tracking_min_pos=15,
+    )
+    assert result == 5  # min_pos=0 doesn't clamp; sun-tracking floor doesn't apply
+
+
+@pytest.mark.unit
+def test_apply_limits_sun_tracking_min_none_falls_back_to_min_pos():
+    """When sun_tracking_min_pos=None (default), behavior matches today exactly."""
+    result = PositionConverter.apply_limits(
+        value=5,
+        min_pos=20,
+        max_pos=100,
+        apply_min=False,
+        apply_max=False,
+        sun_valid=True,
+        sun_tracking_min_pos=None,
+    )
+    assert result == 20  # falls through to min_pos
+
+
+@pytest.mark.unit
+def test_apply_limits_sun_tracking_min_zero_is_distinct_from_unset():
+    """sun_tracking_min_pos=0 means 'no sun-tracking floor' (not 'unset')."""
+    result = PositionConverter.apply_limits(
+        value=5,
+        min_pos=20,
+        max_pos=100,
+        apply_min=True,  # min_pos only during sun tracking → applies here
+        apply_max=False,
+        sun_valid=True,
+        sun_tracking_min_pos=0,
+    )
+    # When sun_tracking_min_pos=0 explicitly, it overrides min_pos=20 during sun-tracking
+    assert result == 5
+
+
 @pytest.mark.unit
 def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
     """Test that direct_sun_valid uses 'and' operator (not bitwise '&')."""
