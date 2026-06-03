@@ -75,7 +75,7 @@ class StateClassifier:
         self._debug_log = debug_log
         self._logger = getattr(service, "_logger", None)
 
-    def classify(
+    def classify(  # noqa: C901
         self,
         event: Event,
         *,
@@ -180,6 +180,14 @@ class StateClassifier:
                     )
                     if logger is not None:
                         logger.debug("Wait for target: %s", cmd_svc.waiting_entities())
+                    return
+
+                # Optimistic-target guard (Issue #518): see _check_optimistic_guard.
+                now = dt.datetime.now(dt.UTC)
+                if self._check_optimistic_guard(
+                    event, entity_id, old_position, position, target,
+                    cmd_svc=cmd_svc, grace_mgr=grace_mgr, now=now, logger=logger,
+                ):
                     return
 
                 # Direction/progress check: runs for all covers where positions and
@@ -343,3 +351,81 @@ class StateClassifier:
         else:
             if logger is not None:
                 logger.debug("No wait for target call for %s", entity_id)
+
+    def _check_optimistic_guard(
+        self,
+        event: Any,
+        entity_id: str,
+        old_position: int | None,
+        position: int | None,
+        target: int | None,
+        *,
+        cmd_svc: Any,
+        grace_mgr: Any,
+        now: dt.datetime,
+        logger: Any,
+    ) -> bool:
+        """Detect and handle the optimistic-target-replay signature (Issue #518).
+
+        Some cover firmware reports the commanded target position immediately
+        (before the motor moves), then updates to the real intermediate position
+        as the carriage travels.  When the grace period expires, the classifier
+        sees ``old_position == target`` (the optimistic report) and
+        ``position != target`` (the real intermediate), computing
+        ``old_distance = 0``, ``new_distance > 0`` — which the direction/progress
+        block misidentifies as drift-away and incorrectly clears ``wait_for_target``.
+
+        Detection signature: ``old_position == target AND position != target``
+        AND still within the 45-second transit-timeout backstop window.  The
+        backstop is the ultimate safety net: an optimistic cover that stalls
+        off-target is still cleared after 45 s.  True drift-away (Issue #285)
+        always starts from ``old_position != target``, so this guard leaves that
+        case untouched.
+
+        Returns:
+            ``True`` if the guard fired and ``classify`` should return immediately
+            (``wait_for_target`` is kept), ``False`` otherwise.
+
+        """
+        if not (
+            target is not None
+            and old_position is not None
+            and old_position == target
+            and position is not None
+            and position != target
+        ):
+            return False
+
+        elapsed = cmd_svc.transit_elapsed_without_progress(entity_id, now)
+        timeout = cmd_svc.transit_timeout_seconds
+        if elapsed is not None and elapsed >= timeout:
+            # Backstop exceeded — let the caller fall through to clear.
+            return False
+
+        grace_mgr.start_command_grace_period(entity_id)
+        cmd_svc.record_progress(entity_id, now)
+        self._debug_log(
+            "manual_override",
+            "Cover %s reported optimistic target %s before moving; "
+            "real position now %s — restarting grace period "
+            "(transit_elapsed=%.1fs)",
+            entity_id,
+            target,
+            position,
+            elapsed if elapsed is not None else 0.0,
+        )
+        if self._event_buffer is not None:
+            self._event_buffer.record(
+                {
+                    "ts": now.isoformat(),
+                    "event": "transit_optimistic_target_replay",
+                    "entity_id": entity_id,
+                    "old_position": old_position,
+                    "position": position,
+                    "target": target,
+                    "cover_state": event.new_state.state,
+                }
+            )
+        if logger is not None:
+            logger.debug("Wait for target: %s", cmd_svc.waiting_entities())
+        return True
