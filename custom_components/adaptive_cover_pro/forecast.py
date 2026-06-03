@@ -150,6 +150,11 @@ def _build_samples(
         azi = float(azis[idx])
         ele = float(eles[idx])
         cover = cover_factory(azi, ele)
+        # Evaluate the cover's time-dependent gates (sunset/sunrise offset) at
+        # *this sample's* time, not wall-clock now — otherwise a forecast
+        # recomputed after sunset marks the whole projected day as suppressed
+        # and every sample collapses to the default position (issue #516).
+        cover.eval_time = t
         if cover.direct_sun_valid:
             samples.append(
                 ForecastSample(
@@ -185,6 +190,14 @@ def _build_events(
         events.append(ForecastEvent(t=sunrise, kind=EVENT_SUNRISE, label="Sunrise"))
     if sunset is not None:
         events.append(ForecastEvent(t=sunset, kind=EVENT_SUNSET, label="Sunset"))
+    # Forward-looking event so the sensor's "next event" state stays a real
+    # timestamp late in the evening once today's events are all in the past,
+    # instead of resolving to None / Unknown (issue #516).
+    next_sunrise = sun_data.next_sunrise()
+    if next_sunrise is not None:
+        events.append(
+            ForecastEvent(t=next_sunrise, kind=EVENT_SUNRISE, label="Sunrise")
+        )
 
     prev_sample: ForecastSample | None = None
     for sample in samples:
@@ -241,6 +254,7 @@ def _refine_fov_crossing(
         return None
     for i in range(start_idx, min(end_idx, len(times) - 1) + 1):
         cover = cover_factory(float(azis[i]), float(eles[i]))
+        cover.eval_time = times[i]
         if bool(cover.direct_sun_valid) == target_valid:
             return times[i]
     return None

@@ -177,3 +177,23 @@ class SunData:
             # Polar night: sun never rises — treat as very early morning
             today = date.today()
             return datetime(today.year, today.month, today.day, 0, 1, 0)  # noqa: DTZ001
+
+    def next_sunrise(self) -> datetime:
+        """Fetch tomorrow's sunrise time.
+
+        Lets the forecast expose a still-upcoming event late in the evening,
+        after today's sunrise/sunset/FOV events have all passed, so the
+        ``position_forecast`` sensor keeps a real timestamp instead of going
+        ``Unknown`` (issue #516).
+
+        Returns an early-morning sentinel (00:01 tomorrow) at polar latitudes
+        during polar night when astral raises ValueError.
+        """
+        tomorrow = date.today() + timedelta(days=1)
+        try:
+            return self.location.sunrise(tomorrow, local=False)
+        except (ValueError, AttributeError):
+            # Polar night: sun never rises — treat as very early morning
+            return datetime(
+                tomorrow.year, tomorrow.month, tomorrow.day, 0, 1, 0
+            )  # noqa: DTZ001

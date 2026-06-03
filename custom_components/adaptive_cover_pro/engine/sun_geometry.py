@@ -26,13 +26,23 @@ class SunGeometry:
         sun_data: SunData,
         config: CoverConfig,
         logger: object,
+        eval_time: datetime | None = None,
     ) -> None:
-        """Initialise with sun position, solar data, cover config, and logger."""
+        """Initialise with sun position, solar data, cover config, and logger.
+
+        ``eval_time`` is the moment the time-dependent gates (sunset/sunrise
+        offset) should be evaluated against. The live pipeline leaves it
+        ``None`` so those gates use wall-clock now. The forecast passes the
+        timestamp of the sample it is projecting so each point on the
+        full-day strip is evaluated at *its own* time rather than the moment
+        the forecast happens to be recomputed (issue #516).
+        """
         self.sol_azi = sol_azi
         self.sol_elev = sol_elev
         self.sun_data = sun_data
         self.config = config
         self.logger = logger
+        self.eval_time = eval_time
 
     # ------------------------------------------------------------------
     # Azimuth helpers
@@ -141,7 +151,8 @@ class SunGeometry:
         """
         sunset = self.sun_data.sunset().replace(tzinfo=None)
         sunrise = self.sun_data.sunrise().replace(tzinfo=None)
-        now_naive = datetime.now(UTC).replace(tzinfo=None)
+        ref = self.eval_time.astimezone(UTC) if self.eval_time else datetime.now(UTC)
+        now_naive = ref.replace(tzinfo=None)
         after_sunset = now_naive > (sunset + timedelta(minutes=self.config.sunset_off))
         before_sunrise = now_naive < (
             sunrise + timedelta(minutes=self.config.sunrise_off)

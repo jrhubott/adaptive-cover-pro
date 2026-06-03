@@ -55,13 +55,22 @@ class AdaptiveGeneralCover(ABC):
 
     @property
     def solar(self) -> SunGeometry:
-        """Build a SunGeometry from current field values (always fresh)."""
+        """Build a SunGeometry from current field values (always fresh).
+
+        ``eval_time`` is read via ``getattr`` rather than being a dataclass
+        field: the base carries no default field of its own (subclasses add
+        non-default config fields after it, which would break dataclass field
+        ordering). The forecast sets ``cover.eval_time`` dynamically per sample
+        so its time-dependent gates are evaluated at the projected time; the
+        live path never sets it, so it stays ``None`` → wall-clock now.
+        """
         return SunGeometry(
             self.sol_azi,
             self.sol_elev,
             self.sun_data,
             self.config,
             self.logger,
+            eval_time=getattr(self, "eval_time", None),
         )
 
     def __getattr__(self, name: str) -> object:
@@ -152,7 +161,7 @@ class AdaptiveGeneralCover(ABC):
         return self.solar.is_sun_in_blind_spot
 
     def solar_times(self) -> tuple[datetime | None, datetime | None]:
-        """Delegate to SunGeometry.solar_times()."""
+        """Delegate to the SunGeometry solar_times helper."""
         return self.solar.solar_times()
 
     def solar_times_with_position(
@@ -161,7 +170,7 @@ class AdaptiveGeneralCover(ABC):
         tuple[datetime, float, float] | None,
         tuple[datetime, float, float] | None,
     ]:
-        """Delegate to SunGeometry.solar_times_with_position()."""
+        """Delegate to the SunGeometry solar_times_with_position helper."""
         return self.solar.solar_times_with_position()
 
     # ------------------------------------------------------------------

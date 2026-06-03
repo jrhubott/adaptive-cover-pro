@@ -182,6 +182,43 @@ class TestSunsetValid:
         sg = SunGeometry(180.0, 45.0, sun_data, _make_config(), _make_logger())
         assert sg.sunset_valid is True
 
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_eval_time_overrides_wall_clock(self, mock_dt):
+        """eval_time at noon → not sunset, even when the wall clock is evening.
+
+        Regression for issue #516: the forecast walks the day and must evaluate
+        each sample's sunset/sunrise gate at *its own* time, not at the moment
+        the forecast happens to be recomputed.
+        """
+        from datetime import UTC as _UTC
+
+        mock_dt.now.return_value = datetime(2024, 1, 1, 22, 0, 0)  # evening
+        mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+        sun_data = _make_sun_data()
+        sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
+        sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
+        noon = datetime(2024, 1, 1, 12, 0, 0, tzinfo=_UTC)
+        sg = SunGeometry(
+            180.0, 45.0, sun_data, _make_config(), _make_logger(), eval_time=noon
+        )
+        assert sg.sunset_valid is False
+
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_eval_time_evening_is_sunset(self, mock_dt):
+        """eval_time after sunset → sunset gate active, regardless of wall clock."""
+        from datetime import UTC as _UTC
+
+        mock_dt.now.return_value = datetime(2024, 1, 1, 12, 0, 0)  # midday clock
+        mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+        sun_data = _make_sun_data()
+        sun_data.sunset.return_value = datetime(2024, 1, 1, 18, 0, 0)
+        sun_data.sunrise.return_value = datetime(2024, 1, 1, 6, 0, 0)
+        evening = datetime(2024, 1, 1, 19, 0, 0, tzinfo=_UTC)
+        sg = SunGeometry(
+            180.0, 45.0, sun_data, _make_config(), _make_logger(), eval_time=evening
+        )
+        assert sg.sunset_valid is True
+
 
 # ------------------------------------------------------------------
 # direct_sun_valid

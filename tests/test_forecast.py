@@ -39,6 +39,7 @@ def _make_sun_data(
     ele_at: float = 30.0,
     sunrise: datetime | None = None,
     sunset: datetime | None = None,
+    next_sunrise: datetime | None = None,
 ):
     """Build a minimal SunData stand-in for forecast tests.
 
@@ -46,6 +47,10 @@ def _make_sun_data(
     starting at _DAY_START (local midnight), matching real SunData semantics
     (00:00 → 24:00 inclusive at 5-min cadence = 289 points).  Tests that need
     a varying sun pattern can patch the azimuth/elevation lists after construction.
+
+    ``next_sunrise`` defaults to None so the forward-looking forecast event
+    (issue #516) is omitted unless a test opts in — keeps event-count
+    assertions on the today-only events stable.
     """
     times = [_DAY_START + timedelta(minutes=i * step_minutes) for i in range(n_samples)]
     sd = MagicMock()
@@ -54,6 +59,7 @@ def _make_sun_data(
     sd.solar_elevation = [ele_at] * n_samples
     sd.sunrise = MagicMock(return_value=sunrise)
     sd.sunset = MagicMock(return_value=sunset)
+    sd.next_sunrise = MagicMock(return_value=next_sunrise)
     return sd
 
 
@@ -151,6 +157,67 @@ class TestBuildForecastSamples:
         )
         assert f.samples == ()
         assert f.events == ()
+
+
+class _EvalTimeCover:
+    """Fake cover whose direct_sun_valid depends on the per-sample eval_time.
+
+    Mirrors the real engine's time-dependent sunset gate (issue #516): solar
+    is only valid between 10:00 and 16:00 of the *sample's own* timestamp. If
+    the forecast failed to set ``eval_time`` per sample (the bug), reading
+    ``direct_sun_valid`` would raise on ``None.hour`` — so this also guards
+    against a regression to wall-clock evaluation.
+    """
+
+    def __init__(self) -> None:
+        self.eval_time = None
+
+    @property
+    def direct_sun_valid(self) -> bool:
+        return 10 <= self.eval_time.hour < 16
+
+    def calculate_percentage(self) -> int:
+        return 40
+
+
+class TestForecastEvaluatesPerSampleTime:
+    """Regression for #516: per-sample sunset gate, not wall-clock now."""
+
+    def test_midday_samples_track_even_when_built_in_the_evening(self):
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=lambda _azi, _ele: _EvalTimeCover(),
+            default_position=100,
+            now=datetime(2026, 6, 1, 23, 0, tzinfo=UTC),  # built late in the day
+        )
+        # The curve is NOT flat: midday samples track the sun...
+        solar = [s for s in f.samples if s.handler == "solar"]
+        assert (
+            solar
+        ), "no solar samples — forecast collapsed to all-default (the #516 bug)"
+        assert all(10 <= s.t.hour < 16 for s in solar)
+        assert all(s.position == 40 for s in solar)
+        # ...while off-hours sit at the default.
+        assert any(s.handler == "default" and s.position == 100 for s in f.samples)
+
+    def test_forward_sunrise_event_is_appended(self):
+        next_rise = _DAY_START + timedelta(days=1, hours=5, minutes=40)
+        sd = _make_sun_data(
+            sunrise=_DAY_START + timedelta(hours=5),
+            sunset=_DAY_START + timedelta(hours=20),
+            next_sunrise=next_rise,
+        )
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            default_position=0,
+            now=_NOW,
+        )
+        sunrise_events = [e for e in f.events if e.kind == EVENT_SUNRISE]
+        # Today's sunrise plus tomorrow's forward-looking one.
+        assert len(sunrise_events) == 2
+        assert sunrise_events[-1].t == next_rise
 
 
 # ---------------------------------------------------------------------------

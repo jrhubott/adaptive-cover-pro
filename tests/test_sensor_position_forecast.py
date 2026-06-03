@@ -127,6 +127,35 @@ def test_value_returns_none_when_no_upcoming_events(monkeypatch):
 
 
 @pytest.mark.unit
+def test_value_resolves_to_forward_sunrise_late_in_day(monkeypatch):
+    """Issue #516: with today's events past, the state points at tomorrow's sunrise.
+
+    `build_forecast` now appends a forward-looking next-sunrise event so the
+    sensor stays a real timestamp late in the evening instead of going Unknown.
+    """
+    from custom_components.adaptive_cover_pro.forecast import (
+        Forecast,
+        ForecastEvent,
+    )
+    from custom_components.adaptive_cover_pro import sensor as sensor_mod
+    from custom_components.adaptive_cover_pro.sensor import _position_forecast_value
+
+    past_sunset = _NOW - timedelta(hours=3)
+    next_sunrise = _NOW + timedelta(hours=8)
+    forecast = Forecast(
+        samples=(),
+        events=(
+            ForecastEvent(t=past_sunset, kind="sunset", label="Sunset"),
+            ForecastEvent(t=next_sunrise, kind="sunrise", label="Sunrise"),
+        ),
+    )
+    sensor = _make_sensor_with_coord(forecast)
+    monkeypatch.setattr(sensor_mod.dt_util, "now", lambda: _NOW)
+
+    assert _position_forecast_value(sensor) == next_sunrise
+
+
+@pytest.mark.unit
 def test_no_recompute_across_n_state_writes(monkeypatch):
     """Driving N back-to-back reads through both callables triggers zero recomputes.
 
