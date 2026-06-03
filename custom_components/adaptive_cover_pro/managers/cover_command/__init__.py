@@ -940,16 +940,23 @@ class CoverCommandService:
                 current_position=_current,
             )
 
-        # Same-position short-circuit — applies to ALL callers, including force=True.
-        # Issuing set_cover_position with the current position is always a no-op
-        # physically but causes audible relay clicks on many motors (issue #290).
+        # Same-position band — applies to ALL callers, including force=True and
+        # is_safety=True.  Issuing set_cover_position when the cover is already
+        # at (or within user-configured tolerance of) the target is a physical
+        # no-op that causes audible relay clicks on many motors (issue #290).
+        # The band is governed by _position_tolerance (CONF_POSITION_TOLERANCE,
+        # default POSITION_TOLERANCE_PERCENT = 3) so the user controls the
+        # dead-band width; raising it suppresses repeated commands when a motor
+        # physically cannot reach the commanded special-position target (issue
+        # #507).  At the default of 3 this also gives the main command gate the
+        # same tolerance the reconciliation path already used.
         # sun_just_appeared is the one exception: the sun transitioning in/out of
         # validity is a sentinel that we must re-confirm the cover position even
         # if it hasn't changed numerically.
         if (
             not context.sun_just_appeared
             and _current is not None
-            and _current == position
+            and abs(_current - position) <= self._position_tolerance
         ):
             if context.policy is not None and context.tilt is not None:
                 await context.policy.maybe_update_tilt_only(

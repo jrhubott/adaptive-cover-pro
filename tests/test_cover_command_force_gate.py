@@ -104,7 +104,10 @@ class TestSafetyBypassStillWorks:
 
     @pytest.mark.asyncio
     async def test_is_safety_proceeds_when_auto_control_off(self, svc, hass):
-        with _patch_caps():
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=50),
+        ):
             outcome, _detail = await svc.apply_position(
                 "cover.test",
                 0,
@@ -123,7 +126,10 @@ class TestSafetyBypassStillWorks:
         ["force_override", "weather", "synthetic_safety"],
     )
     async def test_safety_callers_bypass_gate(self, svc, hass, trigger):
-        with _patch_caps():
+        with (
+            _patch_caps(),
+            patch.object(svc, "_get_current_position", return_value=60),
+        ):
             outcome, _ = await svc.apply_position(
                 f"cover.{trigger}",
                 25,

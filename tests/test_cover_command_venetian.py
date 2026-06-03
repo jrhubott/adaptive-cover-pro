@@ -368,8 +368,10 @@ async def test_tilt_on_target_plus_position_back_drive_does_not_trip_manual_over
     )
 
     entity_id = "cover.venetian_morning"
-    # Motor back-drove to 37% after the tilt command.
-    hass.states.get.return_value = _state_with_position(37)
+    # Motor back-drove to 38% after the tilt command (drift=4 > default tolerance=3).
+    # Using 38 rather than 37 ensures the cover is outside the same-position band
+    # so apply_position fires the position command and stamps the suppression window.
+    hass.states.get.return_value = _state_with_position(38)
 
     with _patch_caps_dual_axis():
         await svc.apply_position(
@@ -390,7 +392,7 @@ async def test_tilt_on_target_plus_position_back_drive_does_not_trip_manual_over
     event.entity_id = entity_id
     event.new_state = MagicMock()
     event.new_state.state = "stopped"
-    event.new_state.attributes = {"current_position": 37, "current_tilt_position": 70}
+    event.new_state.attributes = {"current_position": 38, "current_tilt_position": 70}
     event.new_state.last_updated = dt.datetime.now(dt.UTC)
 
     mgr.handle_state_change(

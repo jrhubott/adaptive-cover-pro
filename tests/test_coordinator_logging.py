@@ -63,14 +63,18 @@ class TestApplyPositionGateLogging:
 
     @pytest.mark.asyncio
     async def test_skips_position_delta_too_small(self):
-        """Returns skip when position delta is below min_change."""
+        """Returns skip when position delta is below min_change.
+
+        Uses delta=4 (50→54) which is outside the default tolerance band
+        (POSITION_TOLERANCE_PERCENT=3, |50-54|=4 > 3) but below min_change=5.
+        """
         svc = _make_cmd_svc()
-        # Current position = 50, target = 51, min_change = 5 → delta too small
+        # Current position = 50, target = 54, min_change = 5 → delta too small
         svc._get_current_position = MagicMock(return_value=50)
         ctx = _make_context(min_change=5)
 
         outcome, reason = await svc.apply_position(
-            "cover.test", 51, "solar", context=ctx
+            "cover.test", 54, "solar", context=ctx
         )
 
         assert outcome == "skipped"
@@ -143,8 +147,13 @@ class TestApplyPositionGateLogging:
 
     @pytest.mark.asyncio
     async def test_force_bypasses_delta_and_manual_override_gates(self):
-        """force=True bypasses delta/time/manual_override but NOT auto_control (issue #293)."""
+        """force=True bypasses delta/time/manual_override but NOT auto_control (issue #293).
+
+        Uses current=50 so the cover is far from target=0 (|50-0|=50 > tolerance=3),
+        confirming that force bypasses delta/manual_override, not the same-position band.
+        """
         svc = _make_cmd_svc()
+        svc._get_current_position = MagicMock(return_value=50)
 
         with patch(
             "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",

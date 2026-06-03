@@ -102,9 +102,11 @@ async def test_apply_skips_auto_control_off(svc):
 
 @pytest.mark.asyncio
 async def test_apply_skips_delta_too_small(svc):
+    # delta=4 (50→54) is outside the tolerance band (svc has position_tolerance=3,
+    # so |50-54|=4 > 3) but still below min_change=5 → delta_too_small gate fires.
     _patch_position(svc, 50)
     outcome, reason = await svc.apply_position(
-        "cover.test", 51, "solar", context=_ctx(min_change=5)
+        "cover.test", 54, "solar", context=_ctx(min_change=5)
     )
     assert outcome == "skipped"
     assert reason == "delta_too_small"
@@ -199,6 +201,9 @@ async def test_apply_sends_when_all_gates_pass(svc, mock_hass):
 @pytest.mark.asyncio
 async def test_apply_force_bypasses_delta_and_manual_override_gates(svc, mock_hass):
     """force=True bypasses delta/time/manual_override but NOT auto_control (issue #293)."""
+    # Use current=50 so the cover is genuinely far from target=0 (|50-0|=50 > tolerance=3)
+    # confirming force bypasses delta/manual_override, not the same-position band.
+    _patch_position(svc, 50)
     with _patch_caps():
         outcome, _ = await svc.apply_position(
             "cover.test",
@@ -1066,6 +1071,9 @@ async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
     """
     import datetime as _dt
 
+    # Use current=50 so cover is far from target=0 (|50-0|=50 > tolerance=3)
+    # ensuring the same-position band doesn't interfere.
+    _patch_position(svc, 50)
     recent = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=30)  # 0.5 min ago
     with (
         _patch_caps(),
@@ -1087,8 +1095,12 @@ async def test_force_apply_bypasses_time_delta_gate(svc, mock_hass):
 
 @pytest.mark.asyncio
 async def test_force_apply_bypasses_position_delta_gate(svc, mock_hass):
-    """force=True must bypass delta_too_small so safety commands always get sent."""
-    _patch_position(svc, 61)  # Would be delta=1 which is < min_change=5
+    """force=True must bypass delta_too_small so safety commands always get sent.
+
+    Uses current=64, target=60 (delta=4): outside tolerance=3 but below
+    min_change=5, confirming force bypasses the delta gate (not the band).
+    """
+    _patch_position(svc, 64)  # delta=4 to target=60 → outside tolerance=3, below min_change=5
     with _patch_caps():
         outcome, detail = await svc.apply_position(
             "cover.test",
@@ -1166,12 +1178,11 @@ async def test_safety_target_set_on_open_close_force(svc, mock_hass):
 async def test_special_position_target_bypasses_delta(svc, mock_hass):
     """Moving TO a special position (0, 100, default, sunset) bypasses delta check.
 
-    Scenario: cover is at 55%, min_change=10, target is 0% (special).
-    Normally delta=55 >= 10 would pass, but even if delta were small,
-    special positions bypass it.  This test uses a scenario where delta
-    would be blocked if not for the special bypass: cover at 99%, target=100%.
+    Scenario: cover at 96%, target=100% (special).  delta=4 is outside the
+    tolerance band (svc has position_tolerance=3, |96-100|=4 > 3) but below
+    min_change=5; the special-position bypass lets the command through.
     """
-    _patch_position(svc, 99)  # delta=1, below min_change=5
+    _patch_position(svc, 96)  # delta=4 → outside tolerance=3, below min_change=5
     with (
         _patch_caps(),
         patch(
@@ -1193,8 +1204,9 @@ async def test_special_position_target_bypasses_delta(svc, mock_hass):
 async def test_special_position_current_bypasses_delta(svc, mock_hass):
     """Moving FROM a special position also bypasses the delta check.
 
-    Cover is at 0% (special), target is 2% — delta=2 < min_change=5.
-    Because current position (0%) is special, the check is bypassed.
+    Cover is at 0% (special), target is 4% — delta=4 is outside tolerance=3
+    (svc has position_tolerance=3) but below min_change=5.  Because current
+    position (0%) is special, the check is bypassed.
     """
     _patch_position(svc, 0)  # current is special
     with (
@@ -1206,7 +1218,7 @@ async def test_special_position_current_bypasses_delta(svc, mock_hass):
     ):
         outcome, _ = await svc.apply_position(
             "cover.test",
-            2,  # small delta=2, but moving FROM special position
+            4,  # delta=4 outside tolerance=3, below min_change=5, FROM special
             "solar",
             context=_ctx(min_change=5, special_positions=[0, 100, 50]),
         )
@@ -1218,11 +1230,13 @@ async def test_non_special_small_delta_is_blocked(svc, mock_hass):
     """Without a special position, a small delta IS blocked by min_change.
 
     Control: verify that without the special bypass, a small delta fails.
+    Uses delta=4 (55→59) which is outside tolerance=3 (svc has position_tolerance=3)
+    but below min_change=5, so the delta gate fires.
     """
-    _patch_position(svc, 55)  # delta=2 < min_change=5, no special positions
+    _patch_position(svc, 55)  # delta=4 to 59 → outside tolerance=3, below min_change=5
     outcome, reason = await svc.apply_position(
         "cover.test",
-        57,  # delta=2 < min_change=5
+        59,  # delta=4 < min_change=5, |55-59|=4 > tolerance=3
         "solar",
         context=_ctx(min_change=5, special_positions=[]),  # no specials
     )
@@ -1330,11 +1344,15 @@ async def test_sun_just_appeared_bypasses_delta(svc, mock_hass):
 
 @pytest.mark.asyncio
 async def test_sun_just_appeared_false_enforces_delta(svc, mock_hass):
-    """With sun_just_appeared=False, small delta is still blocked."""
-    _patch_position(svc, 50)  # delta=1 < min_change=5
+    """With sun_just_appeared=False, small delta is still blocked.
+
+    Uses delta=4 (50→54) which is outside tolerance=3 (svc has position_tolerance=3)
+    but below min_change=5, confirming the delta gate enforces the threshold.
+    """
+    _patch_position(svc, 50)  # delta=4 to 54 → outside tolerance=3, below min_change=5
     outcome, reason = await svc.apply_position(
         "cover.test",
-        51,
+        54,
         "solar",
         context=_ctx(
             min_change=5,
@@ -1434,8 +1452,12 @@ async def test_force_true_bypasses_time_delta_and_position_delta(svc, mock_hass)
     Verifies that no single gate can block a force=True command, which is
     required for force override release, manual override expiry, and safety
     handlers to work reliably.
+
+    Uses current=56, target=60 (delta=4): outside tolerance=3 (svc has
+    position_tolerance=3) but below min_change=5, so both time and position
+    delta gates would block without force=True.
     """
-    _patch_position(svc, 59)  # delta=1, below min_change=5
+    _patch_position(svc, 56)  # delta=4 to target=60 → outside tolerance=3, below min_change=5
     recent = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)
     with (
         _patch_caps(),
@@ -1514,11 +1536,16 @@ async def test_apply_dry_run_skips_service_call(svc, mock_hass):
 
 @pytest.mark.asyncio
 async def test_dry_run_still_honors_earlier_gates(svc, mock_hass):
-    """When delta is too small AND dry-run is on, delta gate fires before dry-run."""
+    """When delta is too small AND dry-run is on, delta gate fires before dry-run.
+
+    Uses delta=4 (50→54) which is outside tolerance=3 (svc has position_tolerance=3)
+    but below min_change=5, confirming the delta gate still fires before the dry-run
+    skip when the position change is genuinely below the threshold.
+    """
     svc.dry_run = True
     _patch_position(svc, 50)
     outcome, reason = await svc.apply_position(
-        "cover.test", 51, "solar", context=_ctx(min_change=5)
+        "cover.test", 54, "solar", context=_ctx(min_change=5)
     )
     assert outcome == "skipped"
     assert reason == "delta_too_small"

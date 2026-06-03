@@ -54,6 +54,9 @@ def _make_coord_with_real_cmd_svc(hass):
         open_close_threshold=50,
     )
     cmd_svc._enabled = True
+    # Stub current position so abs(current - 60) is computable and outside
+    # the tolerance band (cover is at 0, target will be 60 — far apart).
+    cmd_svc._get_current_position = MagicMock(return_value=0)
     coord._cmd_svc = cmd_svc
 
     def _build_ctx(

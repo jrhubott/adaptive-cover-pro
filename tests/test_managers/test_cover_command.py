@@ -669,3 +669,172 @@ async def test_apply_position_proceeds_when_state_loaded_with_unknown_position(
         outcome, reason = await cmd_svc.apply_position("cover.zw", 50, "solar", _ctx())
 
     assert reason != "cover_unavailable"
+
+
+# --- position_tolerance same-position band (issue #507) ---
+
+
+def _ctx_with_special() -> PositionContext:
+    """PositionContext that passes every gate except same-position."""
+    return PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=10,
+        time_threshold=0,
+        special_positions=[0, 100],
+    )
+
+
+def _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance: int):
+    """CoverCommandService with a specific position_tolerance."""
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        position_tolerance=tolerance,
+    )
+    return svc
+
+
+def _stub_state(mock_hass, current_position: int) -> None:
+    """Wire mock_hass so apply_position sees an available cover at *current_position*."""
+    state_obj = MagicMock()
+    state_obj.state = "open"
+    state_obj.attributes = {
+        "current_position": current_position,
+        "supported_features": 15,
+    }
+    mock_hass.states.get.return_value = state_obj
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+
+
+@pytest.mark.asyncio
+async def test_apply_position_within_tolerance_skips_normal_path(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #507 — cover at 98, target 100, tolerance=8: storm-repro, normal path.
+
+    With |98-100|=2 <= tolerance=8 the same-position band must suppress the
+    command.  No set_cover_position service call is made and last_skipped_action
+    records the skip.  This is the exact scenario from the diagnostics report.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
+    _stub_state(mock_hass, current_position=98)
+
+    with patch.object(svc, "_get_current_position", return_value=98):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "default", _ctx_with_special()
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.last_skipped_action["entity_id"] == "cover.test"
+    assert svc.last_skipped_action["reason"] == "same_position"
+
+
+@pytest.mark.asyncio
+async def test_apply_position_within_tolerance_skips_force_path(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #507 — force=True within tolerance is ALSO suppressed (user decision).
+
+    The user owns position_tolerance, so if the cover is already within tolerance
+    of the target no command should be sent regardless of force/safety.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
+    _stub_state(mock_hass, current_position=98)
+
+    ctx = _ctx_with_special()
+    ctx = PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=10,
+        time_threshold=0,
+        special_positions=[0, 100],
+        force=True,
+        is_safety=True,
+    )
+
+    with patch.object(svc, "_get_current_position", return_value=98):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "force_override", ctx
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_exact_equality_still_skips(mock_hass, logger, grace_mgr):
+    """Exact-equality case still skips with default tolerance=0."""
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=0)
+    _stub_state(mock_hass, current_position=100)
+
+    with patch.object(svc, "_get_current_position", return_value=100):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "default", _ctx_with_special()
+        )
+
+    assert outcome == "skipped"
+    assert reason == "same_position"
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_out_of_band_sends_command(mock_hass, logger, grace_mgr):
+    """Issue #507 — cover at 90, target 100, tolerance=8: |90-100|=10 > 8, genuine move.
+
+    A cover genuinely far from the target must still be commanded (#127 preserved).
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
+    _stub_state(mock_hass, current_position=90)
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=90),
+        patch.object(svc, "_check_position_delta", return_value=True),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "default", _ctx_with_special()
+        )
+
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_zero_tolerance_sends_command(mock_hass, logger, grace_mgr):
+    """Issue #507 — position_tolerance=0 (default): backward-compat, genuine moves proceed.
+
+    Covers at 98 targeting 100 with default tolerance=0 must still be commanded,
+    so that existing behaviour is unchanged when the option is not configured.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=0)
+    _stub_state(mock_hass, current_position=98)
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_position_delta", return_value=True),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "default", _ctx_with_special()
+        )
+
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
