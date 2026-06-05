@@ -18,6 +18,7 @@ from .blind import BlindPolicy
 from .awning import AwningPolicy
 from .dual_panel import DualPanelPolicy
 from .oscillating_awning import OscillatingAwningPolicy
+from .split_panel import SplitPanelPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
 
@@ -51,6 +52,7 @@ __all__ = [
     "CoverTypePolicy",
     "DualPanelPolicy",
     "OscillatingAwningPolicy",
+    "SplitPanelPolicy",
     "TiltPolicy",
     "VenetianPolicy",
     "get_policy",

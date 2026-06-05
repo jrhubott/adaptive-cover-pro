@@ -737,6 +737,15 @@ DUAL_PANEL_BLACKOUT_TRIGGERS = (
 DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS = list(DUAL_PANEL_BLACKOUT_TRIGGERS)
 
 
+# Split-panel covers drive two SEPARATE HA cover entities that are the two
+# sections of ONE fabric (coupled): a TOP section and a BOTTOM section. In the
+# "bottom blocks, top free" behaviour the bottom section tracks the sun like a
+# normal blind while the top section stays open for daylight/view; the
+# top-open design keeps the two sections from overlapping on the shared fabric.
+CONF_SPLIT_PANEL_TOP = "split_panel_top"  # entity_id of the upper section
+CONF_SPLIT_PANEL_BOTTOM = "split_panel_bottom"  # entity_id of the lower section
+
+
 # =============================================================================
 # 22. Debug & Diagnostics
 # =============================================================================
@@ -970,6 +979,7 @@ class CoverType(StrEnum):
     VENETIAN = "cover_venetian"
     OSCILLATING_AWNING = "cover_oscillating_awning"
     DUAL_PANEL = "cover_dual_panel"
+    SPLIT_PANEL = "cover_split_panel"
 
     @property
     def display_name(self) -> str:
@@ -986,6 +996,7 @@ class CoverType(StrEnum):
             self.VENETIAN: "Venetian",
             self.OSCILLATING_AWNING: "Oscillating Awning",
             self.DUAL_PANEL: "Dual Panel",
+            self.SPLIT_PANEL: "Split Panel",
         }[self]
 
 
