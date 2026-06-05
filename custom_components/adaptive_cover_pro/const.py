@@ -718,6 +718,25 @@ DEFAULT_VENETIAN_MODE = VENETIAN_MODE_POSITION_AND_TILT  # default mode
 VENETIAN_MODES = (VENETIAN_MODE_POSITION_AND_TILT, VENETIAN_MODE_TILT_ONLY)
 
 
+# Dual-panel covers drive two SEPARATE HA cover entities layered front-to-back:
+# a sheer/light-filtering FRONT that tracks the sun like a normal blind, and a
+# blackout BACK that deploys (closes) only when conditions call for a full
+# block. Each role is a dedicated single-entity picker; the policy merges them
+# into CONF_ENTITIES=[front, back] and records the role map.
+CONF_DUAL_PANEL_FRONT = "dual_panel_front"  # entity_id of the sheer/front layer
+CONF_DUAL_PANEL_BACK = "dual_panel_back"  # entity_id of the blackout/back layer
+# Which conditions deploy the blackout back. A subset of the trigger keys below;
+# the back closes when ANY selected trigger is active, else it retracts (opens).
+CONF_DUAL_PANEL_BLACKOUT_TRIGGERS = "dual_panel_blackout_triggers"
+DUAL_PANEL_TRIGGER_CLIMATE = "climate"  # climate strategy wants a full heat block
+DUAL_PANEL_TRIGGER_SUNSET = "sunset"  # astronomical sunset / return window active
+DUAL_PANEL_BLACKOUT_TRIGGERS = (
+    DUAL_PANEL_TRIGGER_CLIMATE,
+    DUAL_PANEL_TRIGGER_SUNSET,
+)
+DEFAULT_DUAL_PANEL_BLACKOUT_TRIGGERS = list(DUAL_PANEL_BLACKOUT_TRIGGERS)
+
+
 # =============================================================================
 # 22. Debug & Diagnostics
 # =============================================================================
@@ -950,6 +969,7 @@ class CoverType(StrEnum):
     TILT = "cover_tilt"
     VENETIAN = "cover_venetian"
     OSCILLATING_AWNING = "cover_oscillating_awning"
+    DUAL_PANEL = "cover_dual_panel"
 
     @property
     def display_name(self) -> str:
@@ -965,7 +985,22 @@ class CoverType(StrEnum):
             self.TILT: "Tilt",
             self.VENETIAN: "Venetian",
             self.OSCILLATING_AWNING: "Oscillating Awning",
+            self.DUAL_PANEL: "Dual Panel",
         }[self]
+
+
+class PanelRole(StrEnum):
+    """Role of a single HA entity within a multi-entity cover instance.
+
+    A dual-/split-panel instance controls two separate HA cover entities, each
+    tagged with its role so the policy can route the right computed value to
+    each. ``CoverTypePolicy.panel_role_map`` builds the entity_id → role map.
+    """
+
+    FRONT = "front"  # dual panel: sheer/light-filtering layer (tracks sun)
+    BACK = "back"  # dual panel: blackout layer (deploys on condition)
+    TOP = "top"  # split panel: upper section
+    BOTTOM = "bottom"  # split panel: lower section
 
 
 class TiltMode(StrEnum):

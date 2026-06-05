@@ -130,6 +130,7 @@ class TestPolicyAxesDeclarations:
             ("cover_awning", (AXIS_NAME_POSITION,)),
             ("cover_tilt", (AXIS_NAME_TILT,)),
             ("cover_venetian", (AXIS_NAME_POSITION, AXIS_NAME_TILT)),
+            ("cover_dual_panel", (AXIS_NAME_POSITION,)),
         ],
     )
     def test_axes_declaration(self, cover_type, expected_axis_names):
@@ -414,6 +415,7 @@ def test_is_in_tilt_suppression_uniform_signature(cover_type: str) -> None:
         ("cover_awning", True),
         ("cover_tilt", False),
         ("cover_venetian", False),
+        ("cover_dual_panel", False),
     ],
 )
 def test_supports_return_to_default_switch(cover_type: str, expected: bool) -> None:
@@ -590,6 +592,7 @@ def test_no_tilt_mode_string_branching_outside_cover_types() -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_dual_panel", False),
     ],
 )
 def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
@@ -610,6 +613,7 @@ def test_exposes_dual_axis_sensor(cover_type: str, expected: bool) -> None:
         ("cover_awning", False),
         ("cover_tilt", False),
         ("cover_venetian", True),
+        ("cover_dual_panel", False),
     ],
 )
 def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
@@ -630,6 +634,7 @@ def test_custom_position_includes_tilt(cover_type: str, expected: bool) -> None:
         ("cover_awning", "Configuration-Horizontal"),
         ("cover_tilt", "Configuration-Tilt"),
         ("cover_venetian", "Venetian-Blinds"),
+        ("cover_dual_panel", "Dual-Panel-Covers"),
     ],
 )
 def test_wiki_anchor(cover_type: str, anchor: str) -> None:
@@ -685,6 +690,7 @@ class TestLiftTravelMetres:
         ("cover_awning", "Horizontal Awning"),
         ("cover_tilt", "Venetian / Tilt Blind"),
         ("cover_venetian", "Venetian Blind (Dual-Axis)"),
+        ("cover_dual_panel", "Dual Panel (sheer + blackout)"),
     ],
 )
 def test_display_label(cover_type: str, label: str) -> None:

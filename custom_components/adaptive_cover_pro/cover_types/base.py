@@ -212,6 +212,7 @@ class CoverTypePolicy(ABC):
         state: int,
         entities: list[str],
         panel_role: dict[str, str],  # noqa: ARG002
+        inverse_state: bool = False,  # noqa: ARG002
     ) -> list[AxisTarget]:
         """Resolve the per-entity axis targets to dispatch this cycle.
 
@@ -222,13 +223,17 @@ class CoverTypePolicy(ABC):
         broadcast loop exactly, so single-axis covers are behaviourally
         unchanged.
 
+        ``inverse_state`` is the coordinator's inverse flag. The default
+        ignores it (``state`` is already post-processed); multi-entity types
+        use it to map their own raw open/closed values into the dispatched
+        coordinate space, since those values bypass the coordinator ``state``
+        property.
+
         Multi-target cover types override this:
         - venetian appends a tilt target with
           ``DispatchStrategy.SEQUENCE_AFTER_PRIMARY`` on the same entity;
         - dual-/split-panel emit one position target per *separate* entity,
-          each with its own engine-computed value (and apply inverse-state
-          themselves, since those values bypass the coordinator ``state``
-          property).
+          each with its own engine-computed value.
         """
         primary = self.axes[0] if self.axes else POSITION_AXIS
         return [
@@ -245,6 +250,30 @@ class CoverTypePolicy(ABC):
         ``resolve_axis_targets`` can route the right value to each.
         """
         return {}
+
+    def entity_step_schema(
+        self,
+        hass: HomeAssistant | None = None,  # noqa: ARG002
+    ) -> vol.Schema | None:
+        """Return a custom config-flow entity-selection schema, or ``None``.
+
+        Default ``None`` → the config flow uses its standard single
+        multi-select cover picker (``CONF_ENTITIES``). Multi-entity cover
+        types override to present one dedicated single-entity picker per role
+        (e.g. Front + Back), which ``normalize_entities`` then folds back into
+        ``CONF_ENTITIES``.
+        """
+        return None
+
+    def normalize_entities(self, options: dict) -> dict:
+        """Normalise the configured entities into ``CONF_ENTITIES``.
+
+        Called by the config flow on submit. Default: identity (the standard
+        picker already writes ``CONF_ENTITIES``). Multi-entity types override
+        to merge their per-role single-entity keys into the ``CONF_ENTITIES``
+        list the rest of the integration iterates.
+        """
+        return options
 
     def post_pipeline_resolve(
         self,

@@ -1565,7 +1565,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # entity carrying ``state``); multi-entity types emit per-entity
         # values. The coordinator never branches on cover type.
         targets = self._policy.resolve_axis_targets(
-            self._pipeline_result, state, self.entities, self._panel_role
+            self._pipeline_result,
+            state,
+            self.entities,
+            self._panel_role,
+            self._inverse_state,
         )
         for target in targets:
             ctx = self._build_position_context(

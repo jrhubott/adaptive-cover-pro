@@ -98,6 +98,7 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     coord.entities = [MagicMock()]
     coord._policy = get_policy("cover_blind")
     coord._panel_role = {}
+    coord._inverse_state = False
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))

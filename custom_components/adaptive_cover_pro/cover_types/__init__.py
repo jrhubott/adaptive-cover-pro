@@ -16,6 +16,7 @@ from .base import POLICY_REGISTRY, CoverTypePolicy
 # type is added simply by creating its module and importing it here.
 from .blind import BlindPolicy
 from .awning import AwningPolicy
+from .dual_panel import DualPanelPolicy
 from .oscillating_awning import OscillatingAwningPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
@@ -48,6 +49,7 @@ __all__ = [
     "AwningPolicy",
     "BlindPolicy",
     "CoverTypePolicy",
+    "DualPanelPolicy",
     "OscillatingAwningPolicy",
     "TiltPolicy",
     "VenetianPolicy",
