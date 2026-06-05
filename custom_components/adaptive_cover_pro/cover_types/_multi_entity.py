@@ -43,6 +43,22 @@ class MultiEntityPolicy(CoverTypePolicy):
     # Multi-entity types surface per-role target sensors.
     exposes_dual_panel_sensors: ClassVar[bool] = True
 
+    def multi_entity_extra_keys(self) -> tuple[str, ...]:
+        """Extra CONF_* keys this multi-entity type owns beyond the role keys.
+
+        Folded into ``live_option_keys`` so the options surface recognises
+        them. Default none; concrete types (e.g. dual-panel's blackout
+        triggers) override.
+        """
+        return ()
+
+    def live_option_keys(self) -> frozenset[str]:
+        """Include the per-role pickers and any extra keys as valid options."""
+        keys = set(super().live_option_keys())
+        keys.update(conf_key for conf_key, _role in self.role_conf_keys)
+        keys.update(self.multi_entity_extra_keys())
+        return frozenset(keys)
+
     def panel_role_map(self, options: dict) -> dict[str, str]:
         """Map each configured role entity_id to its role string."""
         mapping: dict[str, str] = {}

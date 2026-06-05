@@ -87,6 +87,10 @@ class DualPanelPolicy(MultiEntityPolicy, register=True):
         )
         return super().panel_role_map(options)
 
+    def multi_entity_extra_keys(self) -> tuple[str, ...]:
+        """Expose the blackout-trigger selection as a valid option key."""
+        return (CONF_DUAL_PANEL_BLACKOUT_TRIGGERS,)
+
     def _active_blackout_triggers(self, result: PipelineResult) -> set[str]:
         """Map the pipeline result onto the set of currently-active triggers."""
         active: set[str] = set()

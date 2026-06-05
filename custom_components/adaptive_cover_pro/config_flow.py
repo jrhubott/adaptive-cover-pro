@@ -1957,13 +1957,21 @@ def _build_cover_entity_schema(
     When devices is provided and non-empty, a device association selector is
     appended so both fields appear on the same form.
     """
-    entity_selector = selector.EntitySelector(
-        selector.EntitySelectorConfig(
-            multiple=True,
-            filter=get_policy(sensor_type).entity_selector_filter(),
+    policy = get_policy(sensor_type)
+    # Multi-entity cover types (dual-/split-panel) present one dedicated picker
+    # per role instead of the single CONF_ENTITIES multi-select; the per-role
+    # picks are folded back into CONF_ENTITIES on submit via normalize_entities.
+    role_schema = policy.entity_step_schema()
+    if role_schema is not None:
+        schema_dict: dict = dict(role_schema.schema)
+    else:
+        entity_selector = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                multiple=True,
+                filter=policy.entity_selector_filter(),
+            )
         )
-    )
-    schema_dict: dict = {vol.Optional(CONF_ENTITIES, default=[]): entity_selector}
+        schema_dict = {vol.Optional(CONF_ENTITIES, default=[]): entity_selector}
     if devices:
         options_list = [
             {"value": _STANDALONE_SENTINEL, "label": "None (standalone device)"}
@@ -2129,6 +2137,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         and the flow proceeds to geometry.
         """
         if user_input is not None:
+            # Multi-entity types fold their per-role picks into CONF_ENTITIES so
+            # the rest of the flow (auto-naming, device detection) and runtime
+            # see the standard flat entity list.
+            user_input = get_policy(self.type_blind).normalize_entities(user_input)
             if self._has_device_options:
                 # Pass 2: process entity + device selection
                 self.config.update(user_input)
