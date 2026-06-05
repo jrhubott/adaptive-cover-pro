@@ -194,6 +194,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.logger.set_config_name(self.config_entry.data.get("name"))
         self._cover_type = self.config_entry.data.get("sensor_type")
         self._policy: CoverTypePolicy = get_policy(self._cover_type)
+        # Maps controlled entity_id → panel role for multi-entity cover types
+        # (dual-/split-panel). Empty for single-entity-list types. Refreshed
+        # each cycle in _update_options.
+        self._panel_role: dict[str, str] = self._policy.panel_role_map(
+            self.config_entry.options
+        )
         self._climate_mode = self.config_entry.options.get(CONF_CLIMATE_MODE, False)
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)
         self._inverse_tilt = self.config_entry.options.get(CONF_INVERSE_TILT, False)
@@ -1554,15 +1560,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 if self._pipeline_bypasses_auto_control
                 else "solar"
             )
-        for cover in self.entities:
+        # Cover-type policy resolves the per-entity targets to dispatch. The
+        # default reproduces the historic broadcast (one position target per
+        # entity carrying ``state``); multi-entity types emit per-entity
+        # values. The coordinator never branches on cover type.
+        targets = self._policy.resolve_axis_targets(
+            self._pipeline_result, state, self.entities, self._panel_role
+        )
+        for target in targets:
             ctx = self._build_position_context(
-                cover,
+                target.entity_id,
                 options,
                 force=use_force,
                 is_safety=is_safety,
                 sun_just_appeared=sun_just_appeared,
             )
-            await self._dispatch_to_cover(cover, state, reason, ctx)
+            await self._dispatch_to_cover(target.entity_id, target.value, reason, ctx)
         self.state_change = False
         self._last_state_change_entity = None
         self.logger.debug("State change handled")
@@ -1773,6 +1786,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         rc = RuntimeConfig.from_options(options)
 
         self.entities = rc.entities
+        self._panel_role = self._policy.panel_role_map(options)
         self.min_change = rc.tracking.min_change
         self.time_threshold = rc.tracking.time_threshold
         self.manual_reset = rc.manual_override.reset

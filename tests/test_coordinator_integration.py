@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 # ---------------------------------------------------------------------------
@@ -98,6 +99,10 @@ def _make_coordinator(
     coordinator._pending_cover_events = [state_data]
     coordinator._target_just_reached = set()
     coordinator._cover_type = "cover_blind"
+    # Real policy so resolve_axis_targets() produces the broadcast targets the
+    # dispatch loop iterates (one position target per entity carrying state).
+    coordinator._policy = get_policy(coordinator._cover_type)
+    coordinator._panel_role = {}
     coordinator.manual_reset = False
     coordinator.manual_threshold = None
     coordinator.manager = MagicMock()

@@ -21,6 +21,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.cover_types import get_policy
+
 UTC = dt.UTC
 
 
@@ -333,6 +335,8 @@ def _make_state_change_coordinator(
     coordinator.check_adaptive_time = check_adaptive_time
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
+    coordinator._policy = get_policy("cover_blind")
+    coordinator._panel_role = {}
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coordinator._build_position_context = MagicMock(return_value=MagicMock())

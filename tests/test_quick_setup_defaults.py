@@ -60,6 +60,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_INVERSE_STATE,
 )
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -426,6 +427,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
         coord.manager = MagicMock()
+        coord._policy = get_policy("cover_blind")
 
         coord._update_options(self._POISONED_OPTIONS)
 
@@ -451,6 +453,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
         coord.manager = MagicMock()
+        coord._policy = get_policy("cover_blind")
 
         coord._update_options(self._POISONED_OPTIONS)
 
@@ -476,6 +479,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
         coord.manager = MagicMock()
+        coord._policy = get_policy("cover_blind")
 
         coord._update_options(self._POISONED_OPTIONS)
 
@@ -498,6 +502,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
         coord.manager = MagicMock()
+        coord._policy = get_policy("cover_blind")
 
         coord._update_options({**self._POISONED_OPTIONS, CONF_POSITION_TOLERANCE: 12})
 
@@ -516,6 +521,7 @@ class TestCoordinatorInitWithNoneOptions:
         coord._motion_mgr = MagicMock()
         coord._weather_mgr = MagicMock()
         coord.manager = MagicMock()
+        coord._policy = get_policy("cover_blind")
 
         coord._update_options(self._POISONED_OPTIONS)
 

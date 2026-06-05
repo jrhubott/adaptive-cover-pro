@@ -26,6 +26,7 @@ from homeassistant.helpers import selector
 
 from ..const import ATTR_POSITION, ATTR_TILT_POSITION, POSITION_CLOSED, POSITION_OPEN
 from ..helpers import get_open_close_state, should_use_tilt, state_attr
+from .axis_target import AxisTarget
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
@@ -185,6 +186,12 @@ class CoverTypePolicy(ABC):
     # in ``config_flow._build_custom_position_schema_dict``.
     custom_position_includes_tilt: ClassVar[bool] = False
 
+    # Whether the diagnostic surface exposes per-role target sensors for a
+    # multi-*entity* cover type (one sensor per panel role, e.g. Front/Back or
+    # Top/Bottom). Distinct from ``exposes_dual_axis_sensor`` (the venetian
+    # single-entity tilt sensor). Dual-/split-panel policies flip this on.
+    exposes_dual_panel_sensors: ClassVar[bool] = False
+
     @abstractmethod
     def build_calc_engine(
         self,
@@ -198,6 +205,46 @@ class CoverTypePolicy(ABC):
         options: dict,
     ) -> AdaptiveGeneralCover:
         """Instantiate the calculation engine for this cover type."""
+
+    def resolve_axis_targets(
+        self,
+        result: PipelineResult,  # noqa: ARG002
+        state: int,
+        entities: list[str],
+        panel_role: dict[str, str],  # noqa: ARG002
+    ) -> list[AxisTarget]:
+        """Resolve the per-entity axis targets to dispatch this cycle.
+
+        ``state`` is the final cover position after the coordinator's
+        interpolation + inverse-state post-processing (the value historically
+        broadcast to every entity). The default emits one primary-position
+        target per entity carrying that value — reproducing the legacy
+        broadcast loop exactly, so single-axis covers are behaviourally
+        unchanged.
+
+        Multi-target cover types override this:
+        - venetian appends a tilt target with
+          ``DispatchStrategy.SEQUENCE_AFTER_PRIMARY`` on the same entity;
+        - dual-/split-panel emit one position target per *separate* entity,
+          each with its own engine-computed value (and apply inverse-state
+          themselves, since those values bypass the coordinator ``state``
+          property).
+        """
+        primary = self.axes[0] if self.axes else POSITION_AXIS
+        return [
+            AxisTarget(entity_id=entity, axis=primary, value=state)
+            for entity in entities
+        ]
+
+    def panel_role_map(self, options: dict) -> dict[str, str]:  # noqa: ARG002
+        """Map each controlled entity_id to its panel role.
+
+        Default empty: single-entity-list cover types have no per-entity
+        roles. Multi-entity types (dual-/split-panel) override to tag each
+        configured entity with its role ("front"/"back", "top"/"bottom") so
+        ``resolve_axis_targets`` can route the right value to each.
+        """
+        return {}
 
     def post_pipeline_resolve(
         self,

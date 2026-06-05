@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
@@ -46,8 +47,8 @@ def _make_coord_with_stale_default():
     coord._toggles = ToggleManager()
     coord.automatic_control = False
     coord.entities = ["cover.test_1"]
-    coord._policy = MagicMock()
-    coord._policy.sequencer = None
+    coord._policy = get_policy("cover_blind")
+    coord._panel_role = {}
     coord._inverse_state = False
     coord._use_interpolation = False  # ``coord.state`` post-processing
     coord._pending_cover_events = []

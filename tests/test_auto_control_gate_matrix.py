@@ -70,6 +70,7 @@ from custom_components.adaptive_cover_pro.coordinator import (
     AdaptiveDataUpdateCoordinator,
 )
 from custom_components.adaptive_cover_pro.const import ControlMethod
+from custom_components.adaptive_cover_pro.cover_types import get_policy
 from custom_components.adaptive_cover_pro.managers.cover_command import PositionContext
 from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
@@ -95,6 +96,8 @@ def _base_coord() -> AdaptiveDataUpdateCoordinator:
     coord._toggles = ToggleManager()
     coord.automatic_control = False
     coord.entities = [MagicMock()]
+    coord._policy = get_policy("cover_blind")
+    coord._panel_role = {}
 
     cmd_svc = MagicMock()
     cmd_svc.apply_position = AsyncMock(return_value=("sent", ""))

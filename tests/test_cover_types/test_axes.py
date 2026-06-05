@@ -147,6 +147,50 @@ class TestPolicyAxesDeclarations:
 
 
 # ---------------------------------------------------------------------------
+# resolve_axis_targets — the unified dispatch model's base default
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAxisTargetsDefault:
+    """Base default reproduces the historic broadcast: one primary-position
+    target per entity carrying the already post-processed ``state`` value.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", ALL_COVER_TYPES)
+    def test_broadcasts_state_to_each_entity(self, cover_type):
+        from custom_components.adaptive_cover_pro.cover_types.axis_target import (
+            DispatchStrategy,
+        )
+
+        policy = get_policy(cover_type)
+        entities = ["cover.a", "cover.b", "cover.c"]
+        targets = policy.resolve_axis_targets(
+            result=None, state=42, entities=entities, panel_role={}
+        )
+        assert [t.entity_id for t in targets] == entities
+        assert all(t.value == 42 for t in targets)
+        assert all(t.axis is policy.axes[0] for t in targets)
+        assert all(t.strategy is DispatchStrategy.INDEPENDENT for t in targets)
+        assert all(t.role is None for t in targets)
+
+    @pytest.mark.unit
+    def test_empty_entities_yields_no_targets(self):
+        policy = get_policy("cover_blind")
+        assert (
+            policy.resolve_axis_targets(
+                result=None, state=10, entities=[], panel_role={}
+            )
+            == []
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("cover_type", ALL_COVER_TYPES)
+    def test_single_entity_types_have_no_panel_roles(self, cover_type):
+        assert get_policy(cover_type).panel_role_map({}) == {}
+
+
+# ---------------------------------------------------------------------------
 # select_default_axis — parity with the legacy should_use_tilt routing rule
 # ---------------------------------------------------------------------------
 
