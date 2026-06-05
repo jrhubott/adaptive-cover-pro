@@ -370,6 +370,33 @@ class TestConfigurationToggleFields:
         assert result["configuration"]["enabled_toggle"] is True
 
 
+class TestPanelTargetsDiagnostics:
+    """Per-role panel targets surface in diagnostics for multi-entity covers."""
+
+    @staticmethod
+    def _find(obj, key):
+        if isinstance(obj, dict):
+            if key in obj:
+                return obj[key]
+            for v in obj.values():
+                found = TestPanelTargetsDiagnostics._find(v, key)
+                if found is not None:
+                    return found
+        return None
+
+    def test_panel_targets_emitted_when_present(self):
+        builder = DiagnosticsBuilder()
+        ctx = _base_ctx(panel_targets={"front": 40, "back": 100})
+        result, _ = builder.build(ctx)
+        assert self._find(result, "panel_targets") == {"front": 40, "back": 100}
+
+    def test_panel_targets_absent_for_single_entity(self):
+        builder = DiagnosticsBuilder()
+        ctx = _base_ctx()  # default: no panel targets
+        result, _ = builder.build(ctx)
+        assert self._find(result, "panel_targets") is None
+
+
 # ---------------------------------------------------------------------------
 # DiagnosticsBuilder — debug info section
 # ---------------------------------------------------------------------------

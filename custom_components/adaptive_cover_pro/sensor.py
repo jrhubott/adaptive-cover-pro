@@ -45,7 +45,7 @@ from .const import (
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
-from .const import ControlMethod
+from .const import ControlMethod, PanelRole
 from .unit_system import length_display_unit, to_display_length
 
 
@@ -98,6 +98,27 @@ def _exposes_dual_axis_sensor(entry: ConfigEntry) -> bool:
     if sensor_type not in POLICY_REGISTRY:
         return False
     return get_policy(sensor_type).exposes_dual_axis_sensor
+
+
+def _exposes_panel_role(role: str) -> Callable[[ConfigEntry], bool]:
+    """Gate a per-role Target sensor on the instance actually using that role.
+
+    A dual-panel instance has front/back roles; a split-panel instance has
+    top/bottom. Each per-role sensor is enabled only when the configured
+    policy's ``panel_role_map`` includes its role, so single-entity types and
+    the other multi-entity type carry zero extra sensors.
+    """
+
+    def _gate(entry: ConfigEntry) -> bool:
+        from .cover_types import POLICY_REGISTRY, get_policy
+
+        sensor_type = entry.data.get(CONF_SENSOR_TYPE)
+        if sensor_type not in POLICY_REGISTRY:
+            return False
+        roles = get_policy(sensor_type).panel_role_map(dict(entry.options))
+        return role in roles.values()
+
+    return _gate
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +383,15 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
 def _cover_tilt_value(s: _ACPSensor) -> int | None:
     pr = s.coordinator._pipeline_result  # noqa: SLF001
     return None if pr is None else pr.tilt
+
+
+def _panel_target_value(role: str) -> Callable[[_ACPSensor], int | None]:
+    """Read the last-resolved target for one panel role (multi-entity types)."""
+
+    def _v(s: _ACPSensor) -> int | None:
+        return s.coordinator._panel_targets.get(role)  # noqa: SLF001
+
+    return _v
 
 
 def _time_value(key: str) -> Callable[[_ACPSensor], Any]:
@@ -992,6 +1022,53 @@ _STANDARD_SPECS: tuple[_SensorSpec, ...] = (
         value_fn=_cover_tilt_value,
         diagnostic=False,
         enabled_when=_exposes_dual_axis_sensor,
+    ),
+    # Per-role target sensors for multi-entity covers. Each is enabled only when
+    # the configured policy uses that role (dual-panel: front/back; split-panel:
+    # top/bottom), so single-entity types expose none of them.
+    _SensorSpec(
+        suffix="Panel_Front",
+        display_name="Target Front",
+        icon="mdi:window-shutter",
+        state_class=SensorStateClass.MEASUREMENT,
+        unit=PERCENTAGE,
+        suggested_display_precision=0,
+        value_fn=_panel_target_value(PanelRole.FRONT),
+        diagnostic=False,
+        enabled_when=_exposes_panel_role(PanelRole.FRONT),
+    ),
+    _SensorSpec(
+        suffix="Panel_Back",
+        display_name="Target Back",
+        icon="mdi:window-shutter",
+        state_class=SensorStateClass.MEASUREMENT,
+        unit=PERCENTAGE,
+        suggested_display_precision=0,
+        value_fn=_panel_target_value(PanelRole.BACK),
+        diagnostic=False,
+        enabled_when=_exposes_panel_role(PanelRole.BACK),
+    ),
+    _SensorSpec(
+        suffix="Panel_Top",
+        display_name="Target Top",
+        icon="mdi:window-shutter",
+        state_class=SensorStateClass.MEASUREMENT,
+        unit=PERCENTAGE,
+        suggested_display_precision=0,
+        value_fn=_panel_target_value(PanelRole.TOP),
+        diagnostic=False,
+        enabled_when=_exposes_panel_role(PanelRole.TOP),
+    ),
+    _SensorSpec(
+        suffix="Panel_Bottom",
+        display_name="Target Bottom",
+        icon="mdi:window-shutter",
+        state_class=SensorStateClass.MEASUREMENT,
+        unit=PERCENTAGE,
+        suggested_display_precision=0,
+        value_fn=_panel_target_value(PanelRole.BOTTOM),
+        diagnostic=False,
+        enabled_when=_exposes_panel_role(PanelRole.BOTTOM),
     ),
     _SensorSpec(
         suffix="Start Sun",

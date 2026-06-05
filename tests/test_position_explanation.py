@@ -809,6 +809,7 @@ class TestPositionExplanationChangeDetection:
         coord.pos_sun = [180.0, 45.0]
         coord._cover_data = _make_cover()
         coord._climate_mode = False
+        coord._panel_targets = {}
         coord._pipeline_result = _make_pr()
         type(coord).check_adaptive_time = PropertyMock(return_value=True)
         type(coord).after_start_time = PropertyMock(return_value=True)

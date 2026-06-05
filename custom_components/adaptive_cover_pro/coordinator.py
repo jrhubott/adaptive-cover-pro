@@ -200,6 +200,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._panel_role: dict[str, str] = self._policy.panel_role_map(
             self.config_entry.options
         )
+        # Last resolved per-role panel targets (role → position), for the
+        # per-role Target sensors. Populated each cycle in _calculate_cover_state.
+        self._panel_targets: dict[str, int] = {}
         self._climate_mode = self.config_entry.options.get(CONF_CLIMATE_MODE, False)
         self._inverse_state = self.config_entry.options.get(CONF_INVERSE_STATE, False)
         self._inverse_tilt = self.config_entry.options.get(CONF_INVERSE_TILT, False)
@@ -1066,7 +1069,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._pipeline_result.position,
         )
 
-        return self.state
+        final_state = self.state
+        # Cache the per-role panel targets (multi-entity covers) so the
+        # per-role Target sensors can surface them. Empty for single-entity
+        # types — the resolved targets carry role=None.
+        self._panel_targets = {
+            target.role: target.value
+            for target in self._policy.resolve_axis_targets(
+                self._pipeline_result,
+                final_state,
+                self.entities,
+                self._panel_role,
+                self._inverse_state,
+            )
+            if target.role is not None
+        }
+
+        return final_state
 
     async def _update_solar_times_if_needed(
         self, normal_cover
@@ -2107,6 +2126,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             inverse_state=self._inverse_state,
             use_interpolation=self._use_interpolation,
             final_state=self.state,
+            panel_targets=dict(self._panel_targets),
             config_options=dict(self.config_entry.options),
             motion_detected=self.is_motion_detected,
             motion_timeout_active=self._motion_mgr.is_motion_timeout_active,

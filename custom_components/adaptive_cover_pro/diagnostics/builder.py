@@ -77,6 +77,10 @@ class DiagnosticContext:
     cover_command_state: dict[str, dict] | None = None
     debug_config: dict | None = None
 
+    # Per-role panel targets for multi-entity covers (dual-/split-panel):
+    # role → resolved position. Empty for single-entity cover types.
+    panel_targets: dict[str, int] = field(default_factory=dict)
+
     # Meta — integration identity and coordinator health
     integration_version: str | None = None
     cover_type: str | None = None
@@ -304,6 +308,8 @@ class DiagnosticsBuilder:
             diagnostics["use_my_position"] = True
         if result is not None and result.tilt is not None:
             diagnostics["tilt"] = result.tilt
+        if ctx.panel_targets:
+            diagnostics["panel_targets"] = dict(ctx.panel_targets)
 
         diagnostics["position_explanation"] = cls._build_position_explanation(ctx)
         return diagnostics
