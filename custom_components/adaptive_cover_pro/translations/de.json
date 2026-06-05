@@ -21,12 +21,20 @@
         "data": {
           "group": "Beschattungsentitäten",
           "linked_device_id": "An Gerät anhängen",
-          "enable_proxy_cover": "Proxy-Beschattungsentität freigeben"
+          "enable_proxy_cover": "Proxy-Beschattungsentität freigeben",
+          "dual_panel_front": "Vorderfeld (transparent)",
+          "dual_panel_back": "Rückfeld (Verdunkelung)",
+          "split_panel_top": "Oberer Abschnitt",
+          "split_panel_bottom": "Unterer Abschnitt"
         },
         "data_description": {
           "group": "Wählen Sie die Beschattungsentitäten, die diese Integrationsinstanz steuern soll. Sie können mehrere Beschattungen auswählen, um sie als Gruppe zu steuern (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Beschattungen aus, die diesem bestimmten Fenster dienen – erstellen Sie separate Integrationsinstanzen für verschiedene Fenster.",
           "linked_device_id": "Wählen Sie ein physisches Gerät, in das die Entitäten dieser Integration zusammengeführt werden. Die Sensoren, Schalter und Schaltflächen der Integration werden direkt unter diesem Gerät in Home Assistant angezeigt. Wählen Sie „Keine (eigenständiges Gerät)“, um zu einem separaten virtuellen Adaptive Cover-Gerät zurückzukehren. Es werden nur Geräte angezeigt, die die ausgewählten Beschattungsentitäten besitzen.",
-          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit manuelle Befehle die Mindestpositionen respektieren. Standard: aus."
+          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit manuelle Befehle die Mindestpositionen respektieren. Standard: aus.",
+          "dual_panel_front": "Das transparente / lichtdurchlässige Vorderfeld. Es folgt der Sonne wie eine normale Jalousie, um Blendung zu filtern und gleichzeitig diffuses Licht durchzulassen.",
+          "dual_panel_back": "Das Verdunkelungsrückfeld. Es bleibt offen und wird nur geschlossen, wenn ein konfigurierter Auslöser aktiv ist — ein Klima-Vollschutz oder das Sonnenuntergangs-/Datenschutzfenster.",
+          "split_panel_top": "Der obere Abschnitt der geteilten Jalousie. Er bleibt tagsüber offen für Tageslicht und Aussicht.",
+          "split_panel_bottom": "Der untere Abschnitt der geteilten Jalousie. Er folgt der Sonne wie eine normale Jalousie und hebt sich von der Fensterbank ab, um direkte Sonneneinstrahlung zu blockieren."
         }
       },
       "geometry": {
@@ -554,12 +562,20 @@
         "data": {
           "group": "Beschattungsentitäten",
           "linked_device_id": "An Gerät anhängen",
-          "enable_proxy_cover": "Proxy-Beschattungsentität freigeben"
+          "enable_proxy_cover": "Proxy-Beschattungsentität freigeben",
+          "dual_panel_front": "Vorderfeld (transparent)",
+          "dual_panel_back": "Rückfeld (Verdunkelung)",
+          "split_panel_top": "Oberer Abschnitt",
+          "split_panel_bottom": "Unterer Abschnitt"
         },
         "data_description": {
           "group": "Wählen Sie die Cover-Entitäten aus, die von dieser Integrationsinstanz gesteuert werden sollen. Sie können mehrere Abdeckungen auswählen, um sie als Gruppe zu steuern (alle erhalten dieselben Positionsbefehle). Wählen Sie nur Abdeckungen aus, die diesem bestimmten Fenster dienen - erstellen Sie separate Integrationsinstanzen für verschiedene Fenster.",
           "linked_device_id": "Wählen Sie ein physisches Gerät aus, um die Entitäten dieser Integration zusammenzuführen. Die Sensoren, Schalter und Schaltflächen der Integration werden direkt unter diesem Gerät in Home Assistant angezeigt. Wählen Sie „Keine (eigenständiges Gerät)“, um auf ein separates virtuelles Adaptive Cover-Gerät zurückzukehren. Nur Geräte, die die ausgewählten Cover-Entitäten besitzen, werden angezeigt.",
-          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit manuelle Befehle die Mindestpositionen respektieren. Standard: aus."
+          "enable_proxy_cover": "Geben Sie eine Proxy-Beschattungsentität pro physischer Beschattung frei. Verwenden Sie diese auf Dashboards statt der physischen Beschattung, damit manuelle Befehle die Mindestpositionen respektieren. Standard: aus.",
+          "dual_panel_front": "Das transparente / lichtdurchlässige Vorderfeld. Es folgt der Sonne wie eine normale Jalousie, um Blendung zu filtern und gleichzeitig diffuses Licht durchzulassen.",
+          "dual_panel_back": "Das Verdunkelungsrückfeld. Es bleibt offen und wird nur geschlossen, wenn ein konfigurierter Auslöser aktiv ist — ein Klima-Vollschutz oder das Sonnenuntergangs-/Datenschutzfenster.",
+          "split_panel_top": "Der obere Abschnitt der geteilten Jalousie. Er bleibt tagsüber offen für Tageslicht und Aussicht.",
+          "split_panel_bottom": "Der untere Abschnitt der geteilten Jalousie. Er folgt der Sonne wie eine normale Jalousie und hebt sich von der Fensterbank ab, um direkte Sonneneinstrahlung zu blockieren."
         }
       },
       "geometry": {
@@ -1125,7 +1141,9 @@
         "cover_awning": "Horizontale Markise",
         "cover_tilt": "Dreh-Jalousie",
         "cover_venetian": "Jalousette (zweiachsig)",
-        "cover_oscillating_awning": "Gelenkarmmarkise (drop-arm)"
+        "cover_oscillating_awning": "Gelenkarmmarkise (drop-arm)",
+        "cover_dual_panel": "Doppelfeld (transparent + Verdunkelung)",
+        "cover_split_panel": "Geteiltes Feld (oben + unten)"
       }
     },
     "tilt_mode": {
