@@ -553,6 +553,9 @@ MAX_TRANSIT_TIMEOUT = 600  # seconds — UI upper bound
 # CONF_MOTION_TIMEOUT seconds, behavior depends on CONF_MOTION_TIMEOUT_MODE.
 
 CONF_MOTION_SENSORS = "motion_sensors"  # binary_sensor list; empty=disabled
+CONF_MOTION_MEDIA_PLAYERS = (
+    "motion_media_players"  # media_player list; non-off=occupied
+)
 CONF_MOTION_TIMEOUT = "motion_timeout"  # no-motion window, s (30-3600)
 CONF_MOTION_TIMEOUT_MODE = "motion_timeout_mode"  # one of MOTION_TIMEOUT_MODE_*
 

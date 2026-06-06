@@ -6,6 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from custom_components.adaptive_cover_pro.const import (
+    CONF_MOTION_MEDIA_PLAYERS,
+    CONF_MOTION_SENSORS,
+)
 from custom_components.adaptive_cover_pro.helpers import (
     check_cover_features,
     check_time_passed,
@@ -16,9 +20,40 @@ from custom_components.adaptive_cover_pro.helpers import (
     get_open_close_state,
     get_safe_state,
     get_timedelta_str,
+    motion_entities,
     should_use_tilt,
 )
 from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
+
+
+@pytest.mark.unit
+def test_motion_entities_combines_sensors_and_media_players():
+    """motion_entities concatenates the sensor and media_player lists."""
+    options = {
+        CONF_MOTION_SENSORS: ["binary_sensor.motion"],
+        CONF_MOTION_MEDIA_PLAYERS: ["media_player.tv"],
+    }
+    assert motion_entities(options) == ["binary_sensor.motion", "media_player.tv"]
+
+
+@pytest.mark.unit
+def test_motion_entities_media_player_only():
+    """A media-player-only config is still 'configured' (non-empty result)."""
+    options = {CONF_MOTION_MEDIA_PLAYERS: ["media_player.tv"]}
+    assert motion_entities(options) == ["media_player.tv"]
+
+
+@pytest.mark.unit
+def test_motion_entities_sensors_only():
+    """A sensor-only config returns just the sensors."""
+    options = {CONF_MOTION_SENSORS: ["binary_sensor.motion"]}
+    assert motion_entities(options) == ["binary_sensor.motion"]
+
+
+@pytest.mark.unit
+def test_motion_entities_empty_when_nothing_configured():
+    """No motion entities → empty list (feature disabled)."""
+    assert motion_entities({}) == []
 
 
 @pytest.mark.unit

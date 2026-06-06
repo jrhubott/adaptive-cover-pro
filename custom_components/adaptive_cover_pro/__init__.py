@@ -20,7 +20,6 @@ from .const import (
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
-    CONF_MOTION_SENSORS,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_TEMP_ENTITY,
@@ -37,6 +36,7 @@ from .const import (
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
+from .helpers import motion_entities
 from .migrations import async_prune_legacy_entities, async_prune_legacy_sensor_entities
 from .services import async_setup_services, async_unload_services
 
@@ -77,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _start_time_entity = entry.options.get(CONF_START_ENTITY)
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _force_override_sensors = entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
-    _motion_sensors = entry.options.get(CONF_MOTION_SENSORS, [])
+    _motion_sensors = motion_entities(entry.options)
     _cloud_coverage_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
     _lux_entity = entry.options.get(CONF_LUX_ENTITY)
     _irradiance_entity = entry.options.get(CONF_IRRADIANCE_ENTITY)

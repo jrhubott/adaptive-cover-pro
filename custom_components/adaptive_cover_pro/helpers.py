@@ -2,6 +2,7 @@
 
 import datetime as dt
 import logging
+from collections.abc import Mapping
 from datetime import UTC, timedelta
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,8 @@ from dateutil import parser
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
+
+from .const import CONF_MOTION_MEDIA_PLAYERS, CONF_MOTION_SENSORS
 
 if TYPE_CHECKING:
     from homeassistant.core import State
@@ -21,6 +24,19 @@ _LOGGER = logging.getLogger(__name__)
 # Entity states that mean "no usable value" — used by the safe-read helpers
 # below so the same set is checked everywhere instead of inline literals.
 _INVALID_STATES: frozenset[str] = frozenset({STATE_UNKNOWN, STATE_UNAVAILABLE})
+
+
+def motion_entities(options: Mapping) -> list[str]:
+    """Return the combined motion sensor + media_player entity IDs.
+
+    Single source of truth for "is motion configured?": any non-empty result
+    means motion tracking is active. Media players count as occupancy under the
+    same OR logic as binary sensors (see ``MotionManager.update_config``), so
+    every "motion configured" gate must consider both lists, not sensors alone.
+    """
+    return list(options.get(CONF_MOTION_SENSORS, [])) + list(
+        options.get(CONF_MOTION_MEDIA_PLAYERS, [])
+    )
 
 
 def get_safe_state(hass: HomeAssistant, entity_id: str):
@@ -58,14 +74,23 @@ def is_entity_active(hass: HomeAssistant, entity_id: str | None) -> bool:
       - device_tracker / person → state == "home"
       - zone                    → occupant count > 0
       - binary_sensor / input_boolean / switch / schedule → state == "on"
+      - media_player → any state but off / unavailable / unknown (fail-closed)
       - None / missing / unknown / unavailable / other domains → True (fail-open)
     """
     if entity_id is None:
         return True
+    domain = get_domain(entity_id)
+    if domain == "media_player":
+        # Occupancy via playback: a missing/unavailable/unknown/off player is
+        # NOT occupancy (fail-closed) — read state directly to bypass the
+        # fail-open None handling below.
+        state = hass.states.get(entity_id)
+        return bool(
+            state and state.state not in _INVALID_STATES and state.state != "off"
+        )
     raw = get_safe_state(hass, entity_id)
     if raw is None:
         return True
-    domain = get_domain(entity_id)
     if domain in ("device_tracker", "person"):
         return raw == "home"
     if domain == "zone":

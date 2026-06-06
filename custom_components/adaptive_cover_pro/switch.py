@@ -19,7 +19,6 @@ from .const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
-    CONF_MOTION_SENSORS,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
@@ -28,6 +27,7 @@ from .const import (
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
+from .helpers import motion_entities
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +82,7 @@ def _supports_return_to_default_switch(entry: ConfigEntry) -> bool:
 
 
 def _has_motion_sensors(entry: ConfigEntry) -> bool:
-    return bool(entry.options.get(CONF_MOTION_SENSORS, []))
+    return bool(motion_entities(entry.options))
 
 
 # Order matches the pre-refactor instantiation order in async_setup_entry so

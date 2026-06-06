@@ -62,18 +62,26 @@ class MotionManager:
 
     # --- Configuration ---
 
-    def update_config(self, sensors: list[str], timeout_seconds: int) -> None:
-        """Update sensor list and timeout duration.
+    def update_config(
+        self,
+        sensors: list[str],
+        timeout_seconds: int,
+        media_players: list[str] = (),
+    ) -> None:
+        """Update tracked entity list and timeout duration.
 
         Called whenever config options change so the manager stays in sync
-        without recreating it.
+        without recreating it. Media players are folded into the same tracked
+        list as motion sensors — ``is_entity_active`` handles each domain, so
+        any non-off media player counts as occupancy under the same OR logic.
 
         Args:
             sensors: Entity IDs of binary motion/occupancy sensors to track
             timeout_seconds: Seconds to wait after last motion before setting active
+            media_players: media_player entity IDs treated as occupancy when on
 
         """
-        self._sensors = list(sensors)
+        self._sensors = list(sensors) + list(media_players)
         self._timeout_seconds = timeout_seconds
 
     # --- Properties ---

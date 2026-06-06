@@ -119,6 +119,7 @@ class TestSummaryGeometryLines:
             "min tilt 0%",
             "max tilt 100%",
             "post-settle hold 3.0s",
+            "back-rotate publish lag 45.0s",
         ]
 
     def test_empty_config_renders_nothing(self):
@@ -133,6 +134,7 @@ class TestSummaryGeometryLines:
             "min tilt 0%",
             "max tilt 100%",
             "post-settle hold 3.0s",
+            "back-rotate publish lag 45.0s",
         ]
 
     def test_venetian_summary_shows_inverse_tilt_when_set(self):

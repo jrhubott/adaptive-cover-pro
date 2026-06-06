@@ -166,6 +166,8 @@ class OscillatingAwningPolicy(CoverTypePolicy, register=True):
             parts.append(f"sweep {lo}°–{hi}°")
         if (v := config.get(CONF_HEIGHT_WIN)) is not None:
             parts.append(f"{v}m window height")
+        if (v := config.get(CONF_AWNING_HOUSING_OFFSET)) is not None:
+            parts.append(f"{v}m housing offset")
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

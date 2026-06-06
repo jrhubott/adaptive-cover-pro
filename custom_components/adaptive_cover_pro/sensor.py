@@ -29,7 +29,6 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_LUX_ENTITY,
-    CONF_MOTION_SENSORS,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -46,6 +45,7 @@ from .const import (
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod, PanelRole
+from .helpers import motion_entities
 from .unit_system import length_display_unit, to_display_length
 
 
@@ -648,7 +648,7 @@ def _position_verification_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] |
 
 
 def _motion_status_value(s: _ACPDiagnosticSensor) -> str:
-    if not s.config_entry.options.get(CONF_MOTION_SENSORS):
+    if not motion_entities(s.config_entry.options):
         return "not_configured"
     mgr = s.coordinator._motion_mgr  # noqa: SLF001
     if mgr.is_motion_timeout_active:
@@ -666,7 +666,7 @@ def _motion_status_value(s: _ACPDiagnosticSensor) -> str:
 
 
 def _motion_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
-    if not s.config_entry.options.get(CONF_MOTION_SENSORS):
+    if not motion_entities(s.config_entry.options):
         return None
     mgr = s.coordinator._motion_mgr  # noqa: SLF001
     attrs: dict[str, Any] = {
@@ -790,7 +790,7 @@ def _configured_handlers(opts: Mapping[str, Any]) -> list[str]:
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
     ):
         enabled.append("custom_position")
-    if opts.get(CONF_MOTION_SENSORS):
+    if motion_entities(opts):
         enabled.append("motion")
     if opts.get(CONF_CLOUD_SUPPRESSION) and any(
         opts.get(k)

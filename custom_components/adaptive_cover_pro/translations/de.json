@@ -281,16 +281,18 @@
       },
       "motion_override": {
         "title": "Bewegungsübersteuerung",
-        "description": "Aktivieren Sie anwesenheitsbasierte Steuerung. Wenn alle konfigurierten Sensoren keine Bewegung melden, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente nach Ablauf des Timeouts in ihre Standardposition. Wenn ein Sensor Bewegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nJede Mischung aus Bewegungs-, Anwesenheits- oder Binär-Präsenzsensoren kann verwendet werden. Die Logik ist ODER — jeder einzelne aktive Sensor zählt als anwesend. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich Beschattungselemente anpassen, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
+        "description": "Aktivieren Sie die Anwesenheitskontrolle. Wenn alle konfigurierten Quellen keine Bewegung melden, stoppt die Integration die Sonnennachverfolgung und bewegt die Beschattung nach Ablauf des Timeouts auf ihre Standardposition. Wenn eine Quelle Anwesenheit erkennt, wird die automatische Positionierung fortgesetzt.\n\nEine beliebige Mischung aus Bewegungsmeldern, Anwesenheits- oder Binärpräsenzsensoren kann verwendet werden, plus Medienplayer (ein aktiver Player zählt als Anwesenheit). Die Logik ist ODER – jede einzelne aktive Quelle zählt als besetzt. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich die Beschattung bewegt, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
           "motion_timeout": "Bewegungs-Timeout-Dauer",
-          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft"
+          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft",
+          "motion_media_players": "Medienplayer für Anwesenheitskontrolle"
         },
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenposititionierung aktivieren/deaktivieren, basierend auf Belegung. Wenn EIN Sensor Bewegung erkennt, verwenden Beschattungen automatische sonnenbasierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung anzeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
           "motion_timeout": "Dauer (in Sekunden), die gewartet werden soll, nachdem die letzte Bewegung erkannt wurde, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig wechseln. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standardwert: 300 Sekunden (5 Minuten).",
-          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet."
+          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet.",
+          "motion_media_players": "Medienplayer als Anwesenheit behandelt. JEDER Player, dessen Status etwas anderes ist als aus (wird wiedergegeben, unterbrochen, untätig, an, …), zählt als besetzt und hält die automatische Sonnennachverfolgung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Mit den Bewegungsmeldern oben unter der gleichen ODER-Logik kombiniert. Zum Deaktivieren leer lassen."
         }
       },
       "weather_override": {
@@ -800,16 +802,18 @@
       },
       "motion_override": {
         "title": "Bewegungsübersteuerung",
-        "description": "Aktivieren Sie anwesenheitsbasierte Steuerung. Wenn alle konfigurierten Sensoren keine Bewegung melden, stoppt die Integration die Sonnenverfolgung und bewegt Beschattungselemente nach Ablauf des Timeouts in ihre Standardposition. Wenn ein Sensor Bewegung erkennt, wird die automatische Positionierung fortgesetzt.\n\nJede Mischung aus Bewegungs-, Anwesenheits- oder Binär-Präsenzsensoren kann verwendet werden. Die Logik ist ODER — jeder einzelne aktive Sensor zählt als anwesend. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich Beschattungselemente anpassen, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
+        "description": "Aktivieren Sie die Anwesenheitskontrolle. Wenn alle konfigurierten Quellen keine Bewegung melden, stoppt die Integration die Sonnennachverfolgung und bewegt die Beschattung nach Ablauf des Timeouts auf ihre Standardposition. Wenn eine Quelle Anwesenheit erkennt, wird die automatische Positionierung fortgesetzt.\n\nEine beliebige Mischung aus Bewegungsmeldern, Anwesenheits- oder Binärpräsenzsensoren kann verwendet werden, plus Medienplayer (ein aktiver Player zählt als Anwesenheit). Die Logik ist ODER – jede einzelne aktive Quelle zählt als besetzt. Dies ist nützlich für Räume, in denen Sie nicht möchten, dass sich die Beschattung bewegt, wenn niemand anwesend ist.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "motion_sensors": "Bewegungs-/Belegungssensoren für belegungsbasierte Steuerung",
           "motion_timeout": "Bewegungs-Timeout-Dauer",
-          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft"
+          "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft",
+          "motion_media_players": "Medienplayer für Anwesenheitskontrolle"
         },
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenverfolgung basierend auf Anwesenheit aktivieren/deaktivieren. Wenn EIN Sensor Bewegung erkennt, verwenden Behänge automatische sonnengesteuerte Positionierung. Wenn ALLE Sensoren zeigen, dass keine Bewegung für die Timeout-Dauer vorhanden ist, kehren Behänge zu Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
           "motion_timeout": "Dauer (in Sekunden), um nach der letzten Bewegung zu warten, bevor Behänge zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
-          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet."
+          "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet.",
+          "motion_media_players": "Medienplayer als Anwesenheit behandelt. JEDER Player, dessen Status etwas anderes ist als aus (wird wiedergegeben, unterbrochen, untätig, an, …), zählt als besetzt und hält die automatische Sonnennachverfolgung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Mit den Bewegungsmeldern oben unter der gleichen ODER-Logik kombiniert. Zum Deaktivieren leer lassen."
         }
       },
       "weather_override": {

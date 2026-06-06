@@ -80,6 +80,7 @@ from .const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MODE,
+    CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_MOTION_TIMEOUT_MODE,
@@ -494,6 +495,9 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOTION_SENSORS, default=[]): _presence_like_selector(
             multiple=True
         ),
+        vol.Optional(
+            CONF_MOTION_MEDIA_PLAYERS, default=[]
+        ): config_fields.media_player_selector(multiple=True),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
         ): selector.NumberSelector(
@@ -938,7 +942,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
         ]
     )
-    has_motion = bool(config.get(CONF_MOTION_SENSORS))
+    from .helpers import motion_entities
+
+    _motion_sources = motion_entities(config)
+    has_motion = bool(_motion_sources)
     # Build per-slot custom position data:
     # list of (slot, entity_id, position, priority, use_my, tilt, tilt_only)
     _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool]] = []
@@ -1000,6 +1007,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     _sunrise_eff = sun_times.get("sunrise_eff") if sun_times else None
 
     lines: list[str] = []
+
+    # Dry-run banner — surfaced first because it overrides everything below: when
+    # on, the full decision chain is still computed and logged but no commands are
+    # sent, so covers never move. Without this the summary reads as if it drives
+    # covers regardless of the dry-run toggle on the Debug screen.
+    if config.get(CONF_DRY_RUN):
+        lines.append(
+            "⚠️ **Dry-run mode is ON** — positions are computed and logged, but "
+            "no commands are sent and covers will NOT move."
+        )
+        lines.append("")
 
     # =========================================================================
     # Section 1: Your Cover
@@ -1154,8 +1172,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Motion timeout (75)
     timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
     if has_motion:
-        n = len(config.get(CONF_MOTION_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
+        n = len(_motion_sources)
+        sensor_word = "source" if n == 1 else "sources"
         if timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
             action = (
                 "covers hold current position (return to default when sun leaves FOV)"
@@ -1169,8 +1187,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         )
     elif timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
         lines.append(
-            "⚠️ hold_position mode is set but no motion sensors are configured "
-            "— the setting has no effect until sensors are added"
+            "⚠️ hold_position mode is set but no motion sensors or media "
+            "players are configured — the setting has no effect until a "
+            "motion source is added"
         )
 
     # Cloud suppression (60)
@@ -1456,6 +1475,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         limit_parts.append(f"Min change: {delta_pos}%")
     if delta_time is not None:
         limit_parts.append(f"Min interval: {delta_time} min")
+    pos_tol = config.get(CONF_POSITION_TOLERANCE)
+    if pos_tol is not None:
+        limit_parts.append(f"Position tolerance: {pos_tol}%")
     if config.get(CONF_INVERSE_STATE):
         limit_parts.append("Inverse state")
     oc_thresh = config.get(CONF_OPEN_CLOSE_THRESHOLD)
@@ -1545,7 +1567,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # =========================================================================
     # Section 4: Decision Priority (compact reference)
     # =========================================================================
-    def _ch(active: bool, short: str, pri: int) -> str:
+    def _ch(active: bool, short: str) -> str:
         mark = "✅" if active else "❌"
         return f"{mark}{short}"
 
@@ -1568,7 +1590,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
     # Sort highest priority first
     _chain_entries.sort(key=lambda e: e[0], reverse=True)
-    chain = [_ch(active, short, pri) for pri, short, active in _chain_entries]
+    chain = [_ch(active, short) for _pri, short, active in _chain_entries]
 
     lines.append("")
     lines.append("**Decision Priority** (highest wins, ✅ active ❌ not configured)")
@@ -1744,12 +1766,14 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "motion_override_sensors": frozenset(
         {
             CONF_MOTION_SENSORS,
+            CONF_MOTION_MEDIA_PLAYERS,
         }
     ),
     # Legacy alias: full union of motion_override_values + motion_override_sensors
     "motion_override": frozenset(
         {
             CONF_MOTION_SENSORS,
+            CONF_MOTION_MEDIA_PLAYERS,
             CONF_MOTION_TIMEOUT,
             CONF_MOTION_TIMEOUT_MODE,
         }

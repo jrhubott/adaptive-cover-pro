@@ -281,12 +281,15 @@ async def test_async_check_motion_state_change_on():
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator, _ = _make_coordinator_with_motion_mgr(
+    coordinator, hass = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
     coordinator._motion_mgr.set_no_motion()  # active flag on, no timer pending
     coordinator.state_change = False
     coordinator.async_refresh = AsyncMock()
+
+    # The state machine reflects the new state before the listener fires.
+    hass.states.get.return_value = MagicMock(state="on")
 
     # Create event with motion detected
     event = MagicMock()
@@ -321,7 +324,7 @@ async def test_async_check_motion_state_change_on_during_timeout_pending():
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator, _ = _make_coordinator_with_motion_mgr(
+    coordinator, hass = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
     # Timer is PENDING: started but has NOT expired yet (long timeout).
@@ -331,6 +334,9 @@ async def test_async_check_motion_state_change_on_during_timeout_pending():
 
     coordinator.state_change = False
     coordinator.async_refresh = AsyncMock()
+
+    # The state machine reflects the new state before the listener fires.
+    hass.states.get.return_value = MagicMock(state="on")
 
     event = MagicMock()
     event.data = {
@@ -364,7 +370,7 @@ async def test_async_check_motion_state_change_on_no_timeout_no_refresh():
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator, _ = _make_coordinator_with_motion_mgr(
+    coordinator, hass = _make_coordinator_with_motion_mgr(
         sensors=["binary_sensor.motion_living_room"]
     )
     # Neither timer pending nor fallback active — already in motion_detected state.
@@ -374,6 +380,9 @@ async def test_async_check_motion_state_change_on_no_timeout_no_refresh():
 
     coordinator.state_change = False
     coordinator.async_refresh = AsyncMock()
+
+    # The state machine reflects the new state before the listener fires.
+    hass.states.get.return_value = MagicMock(state="on")
 
     event = MagicMock()
     event.data = {
@@ -1133,3 +1142,156 @@ def test_is_motion_detected_schedule_off():
 def test_is_motion_detected_sensor_unavailable_fail_open():
     """Unavailable sensor (state=None) → True (fail-open, matches presence semantics)."""
     assert _motion_result_missing("binary_sensor.motion_living_room") is True
+
+
+@pytest.mark.parametrize(
+    ("player_state", "expected"),
+    [
+        ("playing", True),
+        ("paused", True),
+        ("idle", True),
+        ("buffering", True),
+        ("standby", True),
+        ("on", True),
+        ("off", False),
+        ("unavailable", False),
+        ("unknown", False),
+    ],
+)
+def test_is_motion_detected_media_player_states(player_state, expected):
+    """media_player counts as occupancy unless off/unavailable/unknown (fail-closed)."""
+    assert _motion_result(player_state, "media_player.living_room") is expected
+
+
+def test_is_motion_detected_media_player_missing_fail_closed():
+    """Missing media_player (state=None) → False (fail-closed, unlike binary sensors)."""
+    assert _motion_result_missing("media_player.living_room") is False
+
+
+@pytest.mark.asyncio
+async def test_async_check_motion_state_change_media_player_playing():
+    """A media player turning on (playing) is treated as occupancy detected."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, hass = _make_coordinator_with_motion_mgr()
+    coordinator._motion_mgr.update_config(
+        sensors=[], timeout_seconds=300, media_players=["media_player.tv"]
+    )
+    coordinator._motion_mgr.set_no_motion()
+    coordinator.state_change = False
+    coordinator.async_refresh = AsyncMock()
+
+    hass.states.get.return_value = MagicMock(state="playing")
+
+    event = MagicMock()
+    event.data = {
+        "entity_id": "media_player.tv",
+        "new_state": MagicMock(state="playing"),
+    }
+
+    await AdaptiveDataUpdateCoordinator.async_check_motion_state_change(
+        coordinator, event
+    )
+
+    assert coordinator._motion_mgr.last_motion_time is not None
+    coordinator.async_refresh.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_check_motion_state_change_media_player_off_starts_timeout():
+    """A media player turning off (no other source) starts the no-motion timeout."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator, hass = _make_coordinator_with_motion_mgr()
+    coordinator._motion_mgr.update_config(
+        sensors=[], timeout_seconds=300, media_players=["media_player.tv"]
+    )
+    type(coordinator).is_motion_detected = property(lambda self: False)
+    coordinator._start_motion_timeout = Mock()
+
+    hass.states.get.return_value = MagicMock(state="off")
+
+    event = MagicMock()
+    event.data = {
+        "entity_id": "media_player.tv",
+        "new_state": MagicMock(state="off"),
+    }
+
+    await AdaptiveDataUpdateCoordinator.async_check_motion_state_change(
+        coordinator, event
+    )
+
+    coordinator._start_motion_timeout.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Media-player-only configuration enables every "is motion configured?" gate.
+#
+# Regression for: "When adding a media player only to the motion sensor
+# configuration, motion detection is not enabled." Several gates used to check
+# CONF_MOTION_SENSORS alone and ignored CONF_MOTION_MEDIA_PLAYERS, so a
+# media-player-only config left the Motion Control switch hidden and the
+# Motion Status sensor reporting ``not_configured``. All gates now route
+# through helpers.motion_entities, which considers both lists.
+# ---------------------------------------------------------------------------
+
+
+def _media_player_only_options():
+    """Options dict with a media player but no binary motion sensor."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MOTION_MEDIA_PLAYERS,
+        CONF_MOTION_SENSORS,
+    )
+
+    return {
+        CONF_MOTION_SENSORS: [],
+        CONF_MOTION_MEDIA_PLAYERS: ["media_player.tv"],
+    }
+
+
+def test_check_initial_motion_state_media_player_only_seeds_state():
+    """_check_initial_motion_state seeds state for a media-player-only config."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options = _media_player_only_options()
+    type(coordinator).is_motion_detected = property(lambda self: False)
+
+    AdaptiveDataUpdateCoordinator._check_initial_motion_state(coordinator)
+
+    coordinator._motion_mgr.set_no_motion.assert_called_once()
+
+
+def test_motion_status_sensor_media_player_only_is_configured():
+    """Motion Status sensor reports a real state (not not_configured) for media-player-only."""
+    coordinator = MagicMock()
+    coordinator._motion_mgr = _make_motion_mgr(last_motion_time=None)
+
+    sensor = _make_motion_status_sensor(coordinator)
+    sensor.config_entry.options = _media_player_only_options()
+
+    assert sensor.native_value != "not_configured"
+    assert sensor.extra_state_attributes is not None
+
+
+def test_motion_control_switch_enabled_for_media_player_only():
+    """The Motion Control switch is enabled when only a media player is configured."""
+    from custom_components.adaptive_cover_pro.switch import _has_motion_sensors
+
+    entry = MagicMock()
+    entry.options = _media_player_only_options()
+
+    assert _has_motion_sensors(entry) is True
+
+
+def test_configured_handlers_includes_motion_for_media_player_only():
+    """The enabled-features list includes 'motion' for a media-player-only config."""
+    from custom_components.adaptive_cover_pro.sensor import _configured_handlers
+
+    assert "motion" in _configured_handlers(_media_player_only_options())

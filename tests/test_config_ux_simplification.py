@@ -464,6 +464,16 @@ class TestSelectorDomains:
             == _PRESENCE_LIKE_EXPECTED
         )
 
+    def test_motion_media_players_media_player_domain(self):
+        """motion_media_players is restricted to the media_player domain."""
+        from custom_components.adaptive_cover_pro.config_flow import (
+            MOTION_OVERRIDE_SCHEMA,
+        )
+
+        assert _domain_for(MOTION_OVERRIDE_SCHEMA, "motion_media_players") == {
+            "media_player"
+        }
+
     # --- WEATHER_OVERRIDE_SCHEMA ---
 
     def test_weather_wind_speed_numeric_domains(self):

@@ -153,6 +153,5 @@ class AdaptiveCoverMyPositionButton(AdaptiveCoverBaseEntity, ButtonEntity):
                 int(my_position_value),
                 trigger="my_position_recall",
                 force=False,
-                bypass_auto_control=True,
                 use_my_position=True,
             )
