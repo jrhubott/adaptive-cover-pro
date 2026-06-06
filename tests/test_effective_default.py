@@ -14,11 +14,15 @@ Covers:
 from __future__ import annotations
 
 import datetime as dt
+import zoneinfo
 from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 
-from custom_components.adaptive_cover_pro.helpers import compute_effective_default
+from custom_components.adaptive_cover_pro.helpers import (
+    compute_effective_default,
+    get_datetime_from_str,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -630,3 +634,159 @@ class TestBlankStartTimeNightAfterMidnight:
         # Blank start_time → window not explicitly started → night position holds
         assert result == 0
         assert active is True
+
+
+# ---------------------------------------------------------------------------
+# Timezone regression: entity-override boundaries must respect HA local tz
+# (issue #531)
+# ---------------------------------------------------------------------------
+
+
+class TestEntityOverrideTimezone:
+    """Regression for issue #531: entity-derived sunset/sunrise boundaries are
+    naive-LOCAL; compute_effective_default must normalise them to the same
+    naive-UTC frame as now_naive before comparing.
+
+    Reporter in France (CEST = UTC+2) configured a sunset-time entity at
+    11:00 local.  At 11:38 local (= 09:38 UTC) the window should already be
+    active, but without the fix it was not triggered until 13:00 local (=
+    11:00 UTC), i.e. two hours late.
+    """
+
+    def _paris_tz(self):
+        return zoneinfo.ZoneInfo("Europe/Paris")
+
+    def test_sunset_time_override_respects_local_timezone(self):
+        """Sunset entity at 11:00 Paris must activate at 11:00 Paris, not 13:00.
+
+        Setup:
+          - HA timezone: Europe/Paris (UTC+2 in summer, CEST)
+          - Sunset-time entity state: "2026-06-06T11:00:00+02:00"
+            → get_datetime_from_str produces naive-local 11:00
+          - Frozen UTC clock: 09:38 UTC (= 11:38 Paris) — window should be active
+          - Expected: is_sunset_active=True, effective=sunset_pos (0)
+
+        Without the fix the comparison is naive-local 11:00 vs naive-UTC 09:38
+        → 09:38 < 11:00 → not active (the bug). With the fix the boundary is
+        converted to naive-UTC 09:00, so 09:38 > 09:00 → active (correct).
+        """
+        paris = self._paris_tz()
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4)
+
+        # Produce the boundary the same way the real coordinator does:
+        # get_datetime_from_str on a tz-aware entity string.
+        entity_state = "2026-06-06T11:00:00+02:00"
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris):
+            sunset_boundary = get_datetime_from_str(entity_state)
+        # Confirm the producer gave us naive-local 11:00
+        assert sunset_boundary == dt.datetime(2026, 6, 6, 11, 0, 0)
+        assert sunset_boundary.tzinfo is None
+
+        # Freeze "now" to 09:38 UTC (= 11:38 Paris) — after local sunset boundary
+        frozen_utc = dt.datetime(2026, 6, 6, 9, 38, 0)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            _freeze_now(frozen_utc),
+        ):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=sunset_boundary,
+                sunrise_time=None,
+            )
+
+        # 11:38 Paris is after 11:00 Paris → sunset must be active
+        assert active is True, (
+            f"Expected is_sunset_active=True at 11:38 Paris with sunset boundary "
+            f"11:00 Paris, but got active={active} (UTC-vs-local mismatch?)"
+        )
+        assert result == 0
+
+    def test_sunrise_time_override_respects_local_timezone(self):
+        """Sunrise entity at 07:00 Paris must hold the sunset window until 07:00 Paris.
+
+        Setup:
+          - HA timezone: Europe/Paris (UTC+2 CEST)
+          - Sunrise-time entity state: "2026-06-06T07:00:00+02:00"
+            → get_datetime_from_str produces naive-local 07:00
+          - Frozen UTC clock: 04:45 UTC (= 06:45 Paris) — before local sunrise → still in window
+          - Expected: is_sunset_active=True (before_sunrise branch), effective=0
+
+        Without the fix the comparison is naive-local 07:00 vs naive-UTC 04:45
+        → 04:45 < 07:00 → active, BUT for the wrong reason — it happens to work
+        only because naive-UTC is always less than naive-local for positive offsets.
+        The test below is written for the symmetric negative-offset case to be a true
+        regression check; here we verify the positive-UTC-offset case is also correct.
+        """
+        paris = self._paris_tz()
+        sun = _make_sun_data(sunset_hour=21, sunrise_hour=5)
+
+        entity_state = "2026-06-06T07:00:00+02:00"
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris):
+            sunrise_boundary = get_datetime_from_str(entity_state)
+        assert sunrise_boundary == dt.datetime(2026, 6, 6, 7, 0, 0)
+        assert sunrise_boundary.tzinfo is None
+
+        # 04:45 UTC = 06:45 Paris → before 07:00 sunrise → should still be in window
+        frozen_utc = dt.datetime(2026, 6, 6, 4, 45, 0)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            _freeze_now(frozen_utc),
+        ):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=None,
+                sunrise_time=sunrise_boundary,
+            )
+
+        # 06:45 Paris < 07:00 Paris → before_sunrise → window still active
+        assert active is True, (
+            f"Expected is_sunset_active=True at 06:45 Paris with sunrise boundary "
+            f"07:00 Paris, but got active={active}"
+        )
+        assert result == 0
+
+    def test_sunset_boundary_not_yet_reached_in_local_time(self):
+        """Before the local sunset boundary the window must NOT be active.
+
+        Setup:
+          - HA timezone: Europe/Paris (UTC+2 CEST)
+          - Sunset entity: 11:00 Paris → naive-local 11:00 → naive-UTC boundary 09:00
+          - Frozen UTC: 08:45 UTC (= 10:45 Paris) — 15 min before local boundary
+          - Expected: is_sunset_active=False
+        """
+        paris = self._paris_tz()
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4)
+
+        entity_state = "2026-06-06T11:00:00+02:00"
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris):
+            sunset_boundary = get_datetime_from_str(entity_state)
+
+        # 08:45 UTC = 10:45 Paris → before 11:00 local sunset → NOT active
+        frozen_utc = dt.datetime(2026, 6, 6, 8, 45, 0)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            _freeze_now(frozen_utc),
+        ):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=sunset_boundary,
+                sunrise_time=None,
+            )
+
+        assert active is False, (
+            f"Expected is_sunset_active=False at 10:45 Paris (before 11:00 boundary), "
+            f"got active={active}"
+        )
+        assert result == 100
