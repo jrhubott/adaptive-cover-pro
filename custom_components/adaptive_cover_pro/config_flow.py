@@ -903,6 +903,13 @@ async def _compute_todays_sun_times(hass: HomeAssistant, config: dict) -> dict |
     return await hass.async_add_executor_job(_compute)
 
 
+def _cover_type_label(sensor_type: str | None) -> str:
+    """Return the human-readable label for a cover type, falling back to 'Cover'."""
+    if sensor_type is not None and sensor_type in POLICY_REGISTRY:
+        return get_policy(sensor_type).display_label()
+    return "Cover"
+
+
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     config: dict,
     sensor_type: str | None,
@@ -919,11 +926,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
       4. Decision Priority — compact chain showing active/inactive handlers
     """
     # ---- Gather all values up front ----------------------------------------
-    type_label = (
-        get_policy(sensor_type).display_label()
-        if sensor_type in POLICY_REGISTRY
-        else "Cover"
-    )
+    type_label = _cover_type_label(sensor_type)
 
     entities: list[str] = config.get(CONF_ENTITIES) or []
     default_pos = config.get(CONF_DEFAULT_HEIGHT, 0)
@@ -2531,16 +2534,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             msg = "type_blind must be set before calling async_step_update"
             raise ValueError(msg)
 
-        type_mapping = {
-            "cover_blind": "Vertical",
-            "cover_awning": "Horizontal",
-            "cover_tilt": "Tilt",
-            "cover_venetian": "Venetian",
-        }
         if self.config.pop("_title_is_device_name", False):
             title = self.config["name"]
         else:
-            title = f"{type_mapping[self.type_blind]} {self.config['name']}"
+            title = f"{_cover_type_label(self.type_blind)} {self.config['name']}"
         return self.async_create_entry(
             title=title,
             data={
@@ -2697,15 +2694,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             sensor_type = source_entry.data.get(CONF_SENSOR_TYPE)
             new_name = await self._ensure_unique_name(user_input["name"], suffix="Copy")
 
-            type_mapping = {
-                "cover_blind": "Vertical",
-                "cover_awning": "Horizontal",
-                "cover_tilt": "Tilt",
-                "cover_venetian": "Venetian",
-            }
-
             return self.async_create_entry(  # type: ignore[return-value]
-                title=f"{type_mapping.get(sensor_type, 'Cover')} {new_name}",
+                title=f"{_cover_type_label(sensor_type)} {new_name}",
                 data={"name": new_name, CONF_SENSOR_TYPE: sensor_type},
                 options={
                     **shared_options,

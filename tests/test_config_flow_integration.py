@@ -20,6 +20,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from unittest.mock import patch
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_ARM_LENGTH,
+    CONF_AWNING_MAX_ANGLE,
+    CONF_AWNING_MIN_ANGLE,
     CONF_AZIMUTH,
     CONF_CLIMATE_MODE,
     CONF_DEFAULT_HEIGHT,
@@ -304,6 +307,112 @@ async def test_quick_setup_tilt_creates_entry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
     assert result["result"].data[CONF_SENSOR_TYPE] == CoverType.TILT
+
+
+# ---------------------------------------------------------------------------
+# Phase 2a: Quick-setup — oscillating awning (cover_oscillating_awning)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_quick_setup_oscillating_awning(hass: HomeAssistant) -> None:
+    """Quick-setup path for an oscillating awning creates a config entry.
+
+    Regression test for issue #530: async_step_update raised KeyError because the
+    hardcoded type_mapping dict did not include 'cover_oscillating_awning'.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Test Oscillating", CONF_MODE: CoverType.OSCILLATING_AWNING},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "quick_setup"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    assert result["step_id"] == "geometry"
+    # Oscillating awning geometry: arm length + min/max angle
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_ARM_LENGTH: 0.8,
+            CONF_AWNING_MIN_ANGLE: 0,
+            CONF_AWNING_MAX_ANGLE: 175,
+        },
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _SUN_TRACKING
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _POSITION
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+    assert result["result"].data[CONF_SENSOR_TYPE] == CoverType.OSCILLATING_AWNING
+    assert "Oscillating Awning" in result["title"]
+
+
+@pytest.mark.integration
+async def test_duplicate_oscillating_awning(hass: HomeAssistant) -> None:
+    """Duplicate flow for an oscillating awning produces the correct title.
+
+    Regression test for issue #530: async_step_duplicate_configure used .get()
+    with a 'Cover' fallback, so oscillating awning copies were titled 'Cover <name>'
+    instead of 'Oscillating Awning <name>'.
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    # Seed an existing oscillating awning entry to duplicate from
+    source_options = {
+        **VERTICAL_OPTIONS,
+        CONF_ARM_LENGTH: 0.8,
+        CONF_AWNING_MIN_ANGLE: 0,
+        CONF_AWNING_MAX_ANGLE: 175,
+    }
+    source_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Oscillating", CONF_SENSOR_TYPE: CoverType.OSCILLATING_AWNING},
+        options=source_options,
+        entry_id="osc_dup_src_01",
+        title="Oscillating Awning My Oscillating",
+    )
+    source_entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(source_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Start the duplicate flow
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "duplicate_existing"}
+        )
+
+    # Select the source entry
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"source_entry": source_entry.entry_id}
+    )
+
+    # Configure the duplicate — provide name and azimuth
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "My Oscillating Copy", CONF_AZIMUTH: 180},
+    )
+    assert result["type"] == "create_entry"
+    assert result["title"].startswith("Oscillating Awning")
 
 
 # ---------------------------------------------------------------------------
@@ -1659,7 +1768,7 @@ async def test_create_flow_title_falls_back_to_adaptive_prefix_without_device(
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == "create_entry"
     entry = result["result"]
-    assert entry.title == "Vertical Adaptive Living Room Blind"
+    assert entry.title == "Vertical Blind Adaptive Living Room Blind"
     assert entry.data["name"] == "Adaptive Living Room Blind"
 
 
@@ -1714,7 +1823,7 @@ async def test_create_flow_user_typed_name_overrides_device_name(
     assert result["type"] == "create_entry"
     entry = result["result"]
     # User name wins — device name is ignored
-    assert entry.title == "Vertical My Cover"
+    assert entry.title == "Vertical Blind My Cover"
     assert entry.data["name"] == "My Cover"
 
 
