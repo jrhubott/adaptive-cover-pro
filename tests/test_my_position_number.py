@@ -62,7 +62,7 @@ async def test_number_entity_created_when_entities_configured():
         CONF_ENTITIES: ["cover.test1"],
         CONF_ENABLE_MY_POSITION_ENTITIES: True,
     }
-    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
 
     coordinator = MagicMock()
     hass.data = {DOMAIN: {"test_entry": coordinator}}
@@ -93,7 +93,7 @@ def _make_number_entity():
     config_entry = MagicMock()
     config_entry.entry_id = "test_entry"
     config_entry.options = {CONF_ENTITIES: ["cover.test1"]}
-    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
 
     coordinator = MagicMock()
     hass = MagicMock()

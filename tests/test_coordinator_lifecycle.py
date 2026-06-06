@@ -149,7 +149,7 @@ async def test_options_update_triggers_reload(hass: HomeAssistant) -> None:
     coord_before = hass.data[DOMAIN][entry.entry_id]
 
     new_opts = dict(VERTICAL_OPTIONS)
-    new_opts["azimuth"] = 200  # Changed value
+    new_opts["set_azimuth"] = 200  # Changed value
 
     with _patch_coordinator_refresh():
         hass.config_entries.async_update_entry(entry, options=new_opts)

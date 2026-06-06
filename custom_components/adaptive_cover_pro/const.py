@@ -76,8 +76,8 @@ CONF_BLUEPRINT = "blueprint"
 # Identifies which cover type a config entry models and which HA device, if
 # any, the entities should be linked to.
 
-CONF_COVER_TYPE = "cover_type"  # one of CoverType.* (defined in section 27)
-CONF_SENSOR_TYPE = CONF_COVER_TYPE  # deprecated alias, removed next minor release
+CONF_SENSOR_TYPE = "sensor_type"  # one of CoverType.* (defined in section 27)
+CONF_COVER_TYPE = CONF_SENSOR_TYPE  # newer name for the same key (back-compat alias)
 CONF_DEVICE_ID = "linked_device_id"  # HA device_id to link this instance to
 
 # =============================================================================
@@ -86,7 +86,7 @@ CONF_DEVICE_ID = "linked_device_id"  # HA device_id to link this instance to
 # Window-frame dimensions and sun-tracking field-of-view. Consumed by
 # `engine/sun_geometry.py` and the vertical-blind calc path.
 
-CONF_AZIMUTH = "azimuth"  # window azimuth, degrees 0-359 (south=180)
+CONF_AZIMUTH = "set_azimuth"  # window azimuth, degrees 0-359 (south=180)
 CONF_HEIGHT_WIN = "window_height"  # window height, metres (0.1-50.0)
 CONF_WINDOW_WIDTH = "window_width"  # window width, metres (0.1-50.0)
 CONF_WINDOW_DEPTH = "window_depth"  # window recess depth, metres (0.0-5.0)
@@ -96,8 +96,8 @@ CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
 DEFAULT_FOV_RIGHT = 90  # degrees; matches config flow default
-CONF_COVERS = "covers"  # list of HA cover entity_ids controlled
-CONF_ENTITIES = CONF_COVERS  # deprecated alias, removed next minor release
+CONF_ENTITIES = "group"  # list of HA cover entity_ids controlled
+CONF_COVERS = CONF_ENTITIES  # newer name for the same key (back-compat alias)
 CONF_ENABLE_PROXY_COVER = "enable_proxy_cover"  # opt-in proxy cover platform
 DEFAULT_ENABLE_PROXY_COVER = False
 TRIGGER_PROXY_POSITION = "proxy_managed"
@@ -143,12 +143,10 @@ CONF_MIN_POSITION = "min_position"  # lower clamp on commanded position (0-99)
 # When set, overrides CONF_MIN_POSITION for sun-tracking paths only.
 # None (unset) means fall back to CONF_MIN_POSITION.
 CONF_MIN_POSITION_SUN_TRACKING = "min_position_sun_tracking"
-# If True, min_position / max_position are only enforced during active sun tracking.
-# Replaces the v3 pair (CONF_ENABLE_MIN_POSITION + CONF_ENABLE_MAX_POSITION).
-CONF_APPLY_LIMITS_TRACKING_ONLY = "apply_limits_during_tracking_only"
-# Deprecated aliases — kept for one minor release; both point at the merged key.
-CONF_ENABLE_MAX_POSITION = CONF_APPLY_LIMITS_TRACKING_ONLY
-CONF_ENABLE_MIN_POSITION = CONF_APPLY_LIMITS_TRACKING_ONLY
+# If True, max_position is only enforced during active sun tracking.
+CONF_ENABLE_MAX_POSITION = "enable_max_position"
+# If True, min_position is only enforced during active sun tracking.
+CONF_ENABLE_MIN_POSITION = "enable_min_position"
 # Fallback position when no override applies, % (range 0-100).
 CONF_DEFAULT_HEIGHT = "default_percentage"
 # Effective default position when no `default_percentage` is configured.

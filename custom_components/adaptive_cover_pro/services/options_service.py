@@ -723,7 +723,7 @@ def _make_section_handler(hass: HomeAssistant, allowed_keys: frozenset[str]):
         patch = _build_patch(call.data, allowed_keys)
         targets = _resolve_targets(hass, call)
         for coord in targets:
-            sensor_type = coord.config_entry.data.get("cover_type")
+            sensor_type = coord.config_entry.data.get("sensor_type")
             validate_options_patch(patch, dict(coord.config_entry.options), sensor_type)
             await apply_options_patch(hass, coord, patch)
             _LOGGER.debug(
@@ -800,7 +800,7 @@ async def _handle_set_option(hass: HomeAssistant, call: ServiceCall) -> None:
 
     targets = _resolve_targets(hass, call)
     for coord in targets:
-        sensor_type = coord.config_entry.data.get("cover_type")
+        sensor_type = coord.config_entry.data.get("sensor_type")
         validate_options_patch(patch, dict(coord.config_entry.options), sensor_type)
         await apply_options_patch(hass, coord, patch)
         _LOGGER.debug(

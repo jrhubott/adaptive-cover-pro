@@ -26,20 +26,20 @@
         "title": "What kind of cover is this?",
         "description": "The cover's device class (`blind`) could be either a roller blind or a venetian blind. Pick the one that matches your hardware so the right calculation engine is used.",
         "data": {
-          "cover_type": "Cover type"
+          "sensor_type": "Cover type"
         }
       },
       "window_basics": {
         "title": "Window Basics",
         "description": "Three quick measurements so Adaptive Cover Pro can do the geometry. The rest can be tuned later from the integration's options.",
         "data": {
-          "azimuth": "Window azimuth",
+          "set_azimuth": "Window azimuth",
           "window_height": "Window height",
           "length_awning": "Awning extension length",
           "distance_shaded_area": "Maximum sunlight reach into the room"
         },
         "data_description": {
-          "azimuth": "Compass bearing of the window (0=N, 90=E, 180=S, 270=W). Use a compass app or check where the sun is at noon.",
+          "set_azimuth": "Compass bearing of the window (0=N, 90=E, 180=S, 270=W). Use a compass app or check where the sun is at noon.",
           "window_height": "Top-to-bottom height of the glass.",
           "length_awning": "How far the awning extends when fully open.",
           "distance_shaded_area": "How far into the room you want direct sunlight prevented from reaching."

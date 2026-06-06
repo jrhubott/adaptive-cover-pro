@@ -28,7 +28,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_GLARE_ZONES,
-    CONF_APPLY_LIMITS_TRACKING_ONLY,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_ENTITIES,
@@ -967,11 +966,12 @@ def test_position_limits_section_present_with_values():
 
 
 def test_position_limits_sun_tracking_qualifier():
-    """'during sun tracking only' appears when apply_limits_during_tracking_only is set."""
+    """'during sun tracking only' appears when enable_min or enable_max is set."""
     cfg = {
         CONF_MIN_POSITION: 5,
+        CONF_ENABLE_MIN_POSITION: True,
         CONF_MAX_POSITION: 90,
-        CONF_APPLY_LIMITS_TRACKING_ONLY: True,
+        CONF_ENABLE_MAX_POSITION: False,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "during sun tracking only" in summary
@@ -1922,15 +1922,28 @@ def test_interp_without_start_end_falls_back():
     assert "Position calibration on" in summary
 
 
-def test_position_limits_no_qualifier_when_toggle_off():
-    """No qualifier when apply_limits_during_tracking_only is False."""
+def test_min_only_qualifier_is_min_specific():
+    """When only enable_min_position is True, qualifier reads 'min during sun tracking only'."""
     cfg = {
         CONF_MIN_POSITION: 10,
         CONF_MAX_POSITION: 90,
-        CONF_APPLY_LIMITS_TRACKING_ONLY: False,
+        CONF_ENABLE_MIN_POSITION: True,
+        CONF_ENABLE_MAX_POSITION: False,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "during sun tracking only" not in summary
+    assert "(min during sun tracking only)" in summary
+
+
+def test_max_only_qualifier_is_max_specific():
+    """When only enable_max_position is True, qualifier reads 'max during sun tracking only'."""
+    cfg = {
+        CONF_MIN_POSITION: 10,
+        CONF_MAX_POSITION: 90,
+        CONF_ENABLE_MIN_POSITION: False,
+        CONF_ENABLE_MAX_POSITION: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "(max during sun tracking only)" in summary
 
 
 async def test_compute_todays_sun_times_returns_expected_shape():

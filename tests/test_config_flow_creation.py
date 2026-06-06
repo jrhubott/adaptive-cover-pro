@@ -1,6 +1,6 @@
-"""Config-flow creation tests for the v4 redesign (2-screen flow).
+"""Config-flow creation tests for the simplified 2-screen flow.
 
-The v4 redesign collapsed creation to two screens — cover-entity picker
+The redesign collapsed creation to two screens — cover-entity picker
 (Screen 1) and minimum window geometry (Screen 2). The cover type is
 inferred from the entity's HA ``device_class`` and the cover's parent
 device is auto-attached unless the user opts out. Older multi-step tests

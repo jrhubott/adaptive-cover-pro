@@ -486,20 +486,20 @@
       },
       "disambiguate_cover_type": {
         "data": {
-          "cover_type": "Beschattungstyp"
+          "sensor_type": "Beschattungstyp"
         },
         "description": "Die Geräteclass der Beschattung (`blind`) könnte entweder ein Rollladen oder eine Lamellenjalousie sein. Wählen Sie denjenigen aus, der zu Ihrer Hardware passt, damit die richtige Berechnungs-Engine verwendet wird.",
         "title": "Welche Art von Beschattung ist dies?"
       },
       "window_basics": {
         "data": {
-          "azimuth": "Fenster-Azimut",
+          "set_azimuth": "Fenster-Azimut",
           "distance_shaded_area": "Maximale Eindringtiefe des Sonnenlichts in den Raum",
           "length_awning": "Ausfahrlänge der Markise",
           "window_height": "Fensterhöhe"
         },
         "data_description": {
-          "azimuth": "Kompassrichtung des Fensters (0=N, 90=O, 180=S, 270=W). Nutzen Sie eine Kompass-App oder überprüfen Sie, wo die Sonne mittags steht.",
+          "set_azimuth": "Kompassrichtung des Fensters (0=N, 90=O, 180=S, 270=W). Nutzen Sie eine Kompass-App oder überprüfen Sie, wo die Sonne mittags steht.",
           "distance_shaded_area": "Wie weit in den Raum Sie verhindern möchten, dass direktes Sonnenlicht eindringt.",
           "length_awning": "Wie weit sich die Markise bei vollständiger Öffnung erstreckt.",
           "window_height": "Höhe des Fensters von oben nach unten."

@@ -19,7 +19,6 @@ from homeassistant.helpers import selector
 
 from .const import (
     BLANK_TIME,
-    CONF_APPLY_LIMITS_TRACKING_ONLY,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -1803,11 +1802,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     limit_parts = []
     min_pos = config.get(CONF_MIN_POSITION)
     max_pos = config.get(CONF_MAX_POSITION)
-    limits_only = config.get(CONF_APPLY_LIMITS_TRACKING_ONLY)
+    enable_min = config.get(CONF_ENABLE_MIN_POSITION)
+    enable_max = config.get(CONF_ENABLE_MAX_POSITION)
     if min_pos is not None or max_pos is not None:
         lo_str = f"{min_pos}%" if min_pos is not None else "0%"
         hi_str = f"{max_pos}%" if max_pos is not None else "100%"
-        qualifier = " (during sun tracking only)" if limits_only else ""
+        # Per-side tracking-only qualifier for precision
+        if enable_min and enable_max:
+            qualifier = " (during sun tracking only)"
+        elif enable_min and not enable_max:
+            qualifier = " (min during sun tracking only)"
+        elif enable_max and not enable_min:
+            qualifier = " (max during sun tracking only)"
+        else:
+            qualifier = ""
         limit_parts.append(f"Range: {lo_str}–{hi_str}{qualifier}")
     if default_pos is not None:
         limit_parts.append(f"Default: {default_pos}%")
@@ -2579,7 +2587,7 @@ def _build_glare_zones_schema(
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
-    VERSION = 4
+    VERSION = 3
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -3157,6 +3165,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_SENSOR_TYPE: self.type_blind,
             },
             options={
+                CONF_MODE: self.mode,
                 CONF_AZIMUTH: self.config.get(CONF_AZIMUTH),
                 CONF_HEIGHT_WIN: self.config.get(CONF_HEIGHT_WIN),
                 CONF_DISTANCE: self.config.get(CONF_DISTANCE),
@@ -3164,10 +3173,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 CONF_SILL_HEIGHT: self.config.get(CONF_SILL_HEIGHT),
                 CONF_DEFAULT_HEIGHT: self.config.get(CONF_DEFAULT_HEIGHT),
                 CONF_MAX_POSITION: self.config.get(CONF_MAX_POSITION),
+                CONF_ENABLE_MAX_POSITION: self.config.get(CONF_ENABLE_MAX_POSITION),
                 CONF_MIN_POSITION: self.config.get(CONF_MIN_POSITION),
-                CONF_APPLY_LIMITS_TRACKING_ONLY: self.config.get(
-                    CONF_APPLY_LIMITS_TRACKING_ONLY
-                ),
+                CONF_ENABLE_MIN_POSITION: self.config.get(CONF_ENABLE_MIN_POSITION),
                 CONF_FOV_LEFT: self.config.get(CONF_FOV_LEFT),
                 CONF_FOV_RIGHT: self.config.get(CONF_FOV_RIGHT),
                 CONF_ENTITIES: self.config.get(CONF_ENTITIES),

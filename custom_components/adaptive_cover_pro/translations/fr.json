@@ -486,20 +486,20 @@
       },
       "disambiguate_cover_type": {
         "data": {
-          "cover_type": "Type de store"
+          "sensor_type": "Type de store"
         },
         "description": "La classe d'appareil du store (`blind`) pourrait être soit un store enroulable soit un store vénitien. Choisissez celui qui correspond à votre matériel afin que le bon moteur de calcul soit utilisé.",
         "title": "Quel type de store est-ce ?"
       },
       "window_basics": {
         "data": {
-          "azimuth": "Azimut de la fenêtre",
+          "set_azimuth": "Azimut de la fenêtre",
           "distance_shaded_area": "Portée maximale de la lumière solaire dans la pièce",
           "length_awning": "Longueur d'extension de la store banne",
           "window_height": "Hauteur de la fenêtre"
         },
         "data_description": {
-          "azimuth": "Orientation de la fenêtre (0=N, 90=E, 180=S, 270=O). Utilisez une application de boussole ou vérifiez où le soleil se trouve à midi.",
+          "set_azimuth": "Orientation de la fenêtre (0=N, 90=E, 180=S, 270=O). Utilisez une application de boussole ou vérifiez où le soleil se trouve à midi.",
           "distance_shaded_area": "À quelle distance dans la pièce vous voulez empêcher la lumière solaire directe de pénétrer.",
           "length_awning": "À quelle distance la store banne s'étend lorsqu'elle est complètement ouverte.",
           "window_height": "Hauteur du haut en bas du verre."

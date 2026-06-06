@@ -43,7 +43,7 @@ async def test_v1_window_width_converted_to_metres(hass: HomeAssistant) -> None:
     entry = _make_entry(hass, {CONF_WINDOW_WIDTH: 100})
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_WINDOW_WIDTH] == 1.0
-    assert entry.version == 4
+    assert entry.version == 3
 
 
 async def test_v1_glare_zone_coordinates_converted_to_metres(
@@ -87,7 +87,7 @@ async def test_values_at_or_below_sentinel_left_alone(hass: HomeAssistant) -> No
     assert entry.options["glare_zone_1_x"] == 0.5
     assert entry.options["glare_zone_1_y"] == 2.0
     assert entry.options["glare_zone_1_radius"] == 0.3
-    assert entry.version == 4
+    assert entry.version == 3
 
 
 async def test_migration_is_idempotent(hass: HomeAssistant) -> None:
@@ -101,7 +101,7 @@ async def test_migration_is_idempotent(hass: HomeAssistant) -> None:
     # Second run — entry is already at head so migration short-circuits
     await async_migrate_entry(hass, entry)
     assert entry.options == snapshot
-    assert entry.version == 4
+    assert entry.version == 3
 
 
 async def test_migration_with_no_affected_fields_only_bumps_version(
@@ -120,7 +120,7 @@ async def test_migration_with_no_affected_fields_only_bumps_version(
     assert entry.options["fov_left"] == 90
     assert entry.options["fov_right"] == 90
     assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True
-    assert entry.version == 4
+    assert entry.version == 3
 
 
 async def test_negative_x_coordinate_migrated(hass: HomeAssistant) -> None:
@@ -158,7 +158,7 @@ async def test_migrate_v2_to_v3_sets_my_position_entities_true_for_existing_entr
     entry = _make_entry(hass, {"my_position_value": 50}, version=2)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True
-    assert entry.version == 4
+    assert entry.version == 3
 
 
 async def test_migrate_v3_no_op_when_key_already_set_true(
@@ -176,7 +176,7 @@ async def test_migrate_v3_no_op_when_key_already_set_true(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True
-    assert entry.version == 4
+    assert entry.version == 3
 
 
 async def test_migrate_v3_no_op_when_key_already_set_false(
@@ -194,11 +194,11 @@ async def test_migrate_v3_no_op_when_key_already_set_false(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is False
-    assert entry.version == 4
+    assert entry.version == 3
 
 
-async def test_migrate_v1_cascades_through_v4(hass: HomeAssistant) -> None:
-    """A genuine v1 entry runs through cm→m migration AND v2→v3 toggle setdefault and v3→v4 renames."""
+async def test_migrate_v1_cascades_through_v3(hass: HomeAssistant) -> None:
+    """A genuine v1 entry runs through cm→m migration AND v2→v3 toggle setdefault."""
     from custom_components.adaptive_cover_pro.const import (
         CONF_ENABLE_MY_POSITION_ENTITIES,
     )
@@ -207,116 +207,4 @@ async def test_migrate_v1_cascades_through_v4(hass: HomeAssistant) -> None:
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0  # cm → m applied
     assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True  # toggle preserved
-    assert entry.version == 4
-
-
-# ---------------------------------------------------------------------------
-# Migration: v3 → v4 — key renames + merged limits toggle + cover_type move
-# ---------------------------------------------------------------------------
-
-
-async def test_migrate_v3_to_v4_renames_options_keys(hass: HomeAssistant) -> None:
-    """Group → covers, set_azimuth → azimuth on a v3 entry."""
-    entry = _make_entry(
-        hass,
-        {"group": ["cover.living"], "set_azimuth": 180, "fov_left": 90},
-        version=3,
-    )
-    assert await async_migrate_entry(hass, entry) is True
-    assert entry.options["covers"] == ["cover.living"]
-    assert entry.options["azimuth"] == 180
-    assert "group" not in entry.options
-    assert "set_azimuth" not in entry.options
-    assert entry.options["fov_left"] == 90  # untouched
-    assert entry.version == 4
-
-
-async def test_migrate_v3_to_v4_collapses_enable_min_max_position(
-    hass: HomeAssistant,
-) -> None:
-    """enable_min_position OR enable_max_position → apply_limits_during_tracking_only."""
-    # Both True → merged True
-    entry = _make_entry(
-        hass,
-        {"enable_min_position": True, "enable_max_position": True},
-        version=3,
-    )
-    await async_migrate_entry(hass, entry)
-    assert entry.options["apply_limits_during_tracking_only"] is True
-    assert "enable_min_position" not in entry.options
-    assert "enable_max_position" not in entry.options
-
-    # One True, one False → merged True (OR-merge keeps the more conservative behavior)
-    entry2 = _make_entry(
-        hass,
-        {"enable_min_position": True, "enable_max_position": False},
-        version=3,
-    )
-    await async_migrate_entry(hass, entry2)
-    assert entry2.options["apply_limits_during_tracking_only"] is True
-
-    # Both False → merged False
-    entry3 = _make_entry(
-        hass,
-        {"enable_min_position": False, "enable_max_position": False},
-        version=3,
-    )
-    await async_migrate_entry(hass, entry3)
-    assert entry3.options["apply_limits_during_tracking_only"] is False
-
-
-async def test_migrate_v3_to_v4_drops_mode_mirror(hass: HomeAssistant) -> None:
-    """The redundant 'mode' mirror in options is removed."""
-    entry = _make_entry(hass, {"mode": "cover_blind", "fov_left": 90}, version=3)
-    await async_migrate_entry(hass, entry)
-    assert "mode" not in entry.options
-    assert entry.options["fov_left"] == 90  # other keys untouched
-
-
-async def test_migrate_v3_to_v4_moves_sensor_type_to_cover_type(
-    hass: HomeAssistant,
-) -> None:
-    """The cover-type key moves from sensor_type → cover_type in entry.data."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"name": "Migration Test", "sensor_type": CoverType.AWNING},
-        options={},
-        version=3,
-        title="Migration Test",
-    )
-    entry.add_to_hass(hass)
-    await async_migrate_entry(hass, entry)
-    assert entry.data["cover_type"] == CoverType.AWNING
-    assert "sensor_type" not in entry.data
-    assert entry.version == 4
-
-
-async def test_migrate_v3_to_v4_idempotent(hass: HomeAssistant) -> None:
-    """Running v3→v4 twice on an already-migrated entry is a no-op."""
-    entry = _make_entry(
-        hass,
-        {"group": ["cover.x"], "set_azimuth": 90, "enable_min_position": True},
-        version=3,
-    )
-    await async_migrate_entry(hass, entry)
-    snapshot = dict(entry.options)
-    await async_migrate_entry(hass, entry)
-    assert entry.options == snapshot
-    assert entry.version == 4
-
-
-async def test_migrate_v3_to_v4_partial_migration_preserves_new_keys(
-    hass: HomeAssistant,
-) -> None:
-    """If a new key (covers) is already set, the old key (group) is removed without overwriting."""
-    entry = _make_entry(
-        hass,
-        {"group": ["old"], "covers": ["new"], "set_azimuth": 200, "azimuth": 100},
-        version=3,
-    )
-    await async_migrate_entry(hass, entry)
-    # New keys preserved, old keys removed
-    assert entry.options["covers"] == ["new"]
-    assert entry.options["azimuth"] == 100
-    assert "group" not in entry.options
-    assert "set_azimuth" not in entry.options
+    assert entry.version == 3

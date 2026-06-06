@@ -20,7 +20,6 @@ from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
-    CONF_APPLY_LIMITS_TRACKING_ONLY,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
@@ -28,6 +27,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_DELTA_POSITION,
+    CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
@@ -554,14 +554,15 @@ class TestSetPositionLimits:
                 "set_position_limits",
                 {
                     CONF_MIN_POSITION: 10,
+                    CONF_ENABLE_MIN_POSITION: True,
                     CONF_MAX_POSITION: 95,
-                    CONF_APPLY_LIMITS_TRACKING_ONLY: True,
+                    CONF_ENABLE_MAX_POSITION: False,
                 },
             )
 
         new_opts = mock_update.call_args[1]["options"]
         assert new_opts[CONF_MIN_POSITION] == 10
-        assert new_opts[CONF_APPLY_LIMITS_TRACKING_ONLY] is True
+        assert new_opts[CONF_ENABLE_MIN_POSITION] is True
         assert new_opts[CONF_MAX_POSITION] == 95
 
     async def test_invalid_min_position_rejected(self, hass: HomeAssistant):

@@ -38,7 +38,7 @@ async def test_my_position_button_created_when_entities_configured():
         CONF_ENTITIES: ["cover.test1"],
         CONF_ENABLE_MY_POSITION_ENTITIES: True,
     }
-    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
 
     coordinator = MagicMock()
     hass.data = {DOMAIN: {"test_entry": coordinator}}
@@ -77,7 +77,7 @@ def _make_my_position_button(*, options=None, entities=None):
     config_entry = MagicMock()
     config_entry.entry_id = "test_entry"
     config_entry.options = options
-    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
 
     coordinator = MagicMock()
     coordinator.async_apply_user_position = AsyncMock(
@@ -279,7 +279,7 @@ async def test_my_position_button_passes_bypass_kwargs():
     config_entry = MagicMock()
     config_entry.entry_id = "test_entry"
     config_entry.options = {CONF_MY_POSITION_VALUE: 50, CONF_ENTITIES: ["cover.test"]}
-    config_entry.data = {"name": "Test Cover", "cover_type": "cover_blind"}
+    config_entry.data = {"name": "Test Cover", "sensor_type": "cover_blind"}
 
     coordinator = MagicMock()
     coordinator.async_apply_user_position = AsyncMock(
