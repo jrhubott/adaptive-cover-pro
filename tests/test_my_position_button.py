@@ -230,40 +230,37 @@ def _make_my_position_coord():
 async def test_my_position_button_bypasses_auto_control():
     """My Position button must send the command even when auto_control is off.
 
-    Regression test for issue #430: async_apply_user_position called without
-    bypass_auto_control=True fires the auto_control_off gate and silently
-    drops the command. The button must pass bypass_auto_control=True so the
-    gate is skipped.
+    Regression test for issue #430. ``async_apply_user_position`` bypasses the
+    auto_control_off gate intrinsically for every user-initiated command, so a
+    My Position recall sends even with automatic control off — no per-caller
+    bypass_auto_control flag is needed.
     """
     coord = _make_my_position_coord()
 
-    # Confirm gate fires (produces "skipped", "auto_control_off") without bypass.
-    outcome_without_bypass = await coord.async_apply_user_position(
-        "cover.test", 50, trigger="my_position_recall", force=False
-    )
-    assert outcome_without_bypass == (
-        "skipped",
-        "auto_control_off",
-    ), f"Pre-fix baseline broken — expected gate to fire but got: {outcome_without_bypass}"
-
-    # After the fix the button calls with bypass_auto_control=True + use_my_position=True.
     outcome = await coord.async_apply_user_position(
         "cover.test",
         50,
         trigger="my_position_recall",
         force=False,
-        bypass_auto_control=True,
         use_my_position=True,
     )
 
     assert (
         outcome[0] == "sent"
-    ), f"Expected command to be sent with bypass_auto_control=True, but got: {outcome}"
+    ), f"Expected command to be sent even with auto_control off, but got: {outcome}"
+    # The dispatched context bypassed the gate without being classified safety.
+    ctx = coord._captured_contexts[-1]
+    assert ctx.bypass_auto_control is True
+    assert ctx.is_safety is False
 
 
 @pytest.mark.asyncio
 async def test_my_position_button_passes_bypass_kwargs():
-    """async_press must forward bypass_auto_control=True and use_my_position=True.
+    """async_press must forward use_my_position=True (force=False).
+
+    The auto_control_off bypass is intrinsic to async_apply_user_position now,
+    so the button no longer passes bypass_auto_control — it only flags the
+    My Position recall via use_my_position.
 
     Drives the button's real async_press with the real coordinator method bound
     so we can assert the kwargs land on _build_position_context.
@@ -296,8 +293,8 @@ async def test_my_position_button_passes_bypass_kwargs():
     coordinator.async_apply_user_position.assert_awaited_once()
     _, kwargs = coordinator.async_apply_user_position.call_args
     assert (
-        kwargs.get("bypass_auto_control") is True
-    ), "async_press must pass bypass_auto_control=True to async_apply_user_position"
-    assert (
         kwargs.get("use_my_position") is True
     ), "async_press must pass use_my_position=True to async_apply_user_position"
+    assert (
+        "bypass_auto_control" not in kwargs
+    ), "bypass is intrinsic now — button must not pass bypass_auto_control"

@@ -37,6 +37,7 @@ from .helpers import (
     compute_effective_default,
     get_datetime_from_str,
     get_safe_state,
+    is_entity_active,
     state_attr,
 )
 from .config_context_adapter import ConfigContextAdapter
@@ -799,7 +800,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_check_motion_state_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
-        """Handle motion sensor changes: immediate on detection, debounced on stop."""
+        """Handle occupancy-source changes: immediate on detection, debounced on stop.
+
+        Evaluates the changed entity through the same domain-aware
+        ``is_entity_active`` predicate the manager uses, so motion sensors
+        (state "on") and media players (any non-off state) are handled
+        uniformly without branching on literal state strings here.
+        """
         data = event.data
         entity_id = data["entity_id"]
         new_state = data["new_state"]
@@ -808,13 +815,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
 
         self.logger.debug(
-            "Motion sensor %s state changed to %s",
+            "Occupancy source %s state changed to %s",
             entity_id,
             new_state.state,
         )
 
-        if new_state.state == "on":
-            # Motion detected - immediate response
+        if is_entity_active(self.hass, entity_id):
+            # Occupancy detected - immediate response.
             # Returns True if timeout was active (expired) or pending (task
             # still running), so we refresh in both cases, not just when the
             # timeout had already fully expired.
@@ -825,15 +832,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.state_change = True
                 await self.async_refresh()
 
-        elif new_state.state == "off":
-            # Motion stopped - check if any other sensors still active
-            if not self.is_motion_detected:
-                self._start_motion_timeout()
-            else:
-                self.logger.debug(
-                    "Motion stopped on %s but another sensor still active — timeout not started",
-                    entity_id,
-                )
+        elif not self.is_motion_detected:
+            # This source cleared and no other source is active - start timeout.
+            self._start_motion_timeout()
+        else:
+            self.logger.debug(
+                "Occupancy cleared on %s but another source still active — timeout not started",
+                entity_id,
+            )
 
     def process_entity_state_change(self):
         """Check if cover position change was user-initiated (manual override detection).
@@ -1800,6 +1806,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._motion_mgr.update_config(
             sensors=rc.motion.sensors,
             timeout_seconds=rc.motion.timeout_seconds,
+            media_players=rc.motion.media_players,
         )
         self._weather_mgr.update_config(
             wind_speed_sensor=rc.weather.wind_speed_sensor,
@@ -1913,16 +1920,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         trigger: str,
         options: dict | None = None,
         force: bool = False,
-        bypass_auto_control: bool = False,
         use_my_position: bool = False,
     ) -> tuple[str, str]:
         """Apply a user-initiated position to a single cover.
 
         Single delegation point for any user-facing command (the
-        ``set_position`` service, the opt-in proxy cover entity, future
-        external triggers). Owns the min-mode floor clamp, the pipeline
-        preemption check, manual-override engagement, and dispatch to
-        ``CoverCommandService.apply_position``.
+        ``set_position`` service, the opt-in proxy cover entity, the My
+        Position button, future external triggers). Owns the min-mode floor
+        clamp, the pipeline preemption check, manual-override engagement, and
+        dispatch to ``CoverCommandService.apply_position``.
+
+        Because every caller is an explicit user action, the dispatch always
+        bypasses the ``auto_control_off`` gate (``bypass_auto_control=True``):
+        "automatic control off" suppresses the integration's own sun tracking,
+        not the user directly commanding a cover. This is distinct from the
+        internal ``force=True`` callers (solar update, override-clear) that go
+        through ``apply_position`` directly and stay blocked when auto control
+        is off (issue #293).
 
         Default behavior (``force=False``): engages manual override and
         consults the pipeline. When a handler with priority strictly greater
@@ -2003,7 +2017,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entity_id,
             opts,
             force=True,
-            bypass_auto_control=bypass_auto_control,
+            bypass_auto_control=True,
             use_my_position=use_my_position,
         )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)

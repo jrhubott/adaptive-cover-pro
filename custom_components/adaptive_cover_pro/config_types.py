@@ -236,6 +236,7 @@ class MotionSlice:
 
     sensors: list[str]
     timeout_seconds: int
+    media_players: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +323,7 @@ class RuntimeConfig:
             CONF_MANUAL_OVERRIDE_DURATION,
             CONF_MANUAL_OVERRIDE_RESET,
             CONF_MANUAL_THRESHOLD,
+            CONF_MOTION_MEDIA_PLAYERS,
             CONF_MOTION_SENSORS,
             CONF_MOTION_TIMEOUT,
             CONF_OPEN_CLOSE_THRESHOLD,
@@ -388,6 +390,7 @@ class RuntimeConfig:
                 timeout_seconds=options.get(
                     CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
                 ),
+                media_players=options.get(CONF_MOTION_MEDIA_PLAYERS, []),
             ),
             weather=WeatherSlice(
                 wind_speed_sensor=options.get(CONF_WEATHER_WIND_SPEED_SENSOR),
