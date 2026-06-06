@@ -1508,9 +1508,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # gate would otherwise drop the return-to-calculated command.  Short-
         # circuit when the set is empty so callers that bypass __init__ (e.g.
         # gate-matrix fixtures) don't need to wire _last_state_change_entity.
+        # When the manual-override hold is the winner, a floor sensor releasing
+        # must NOT take the release force-path — otherwise the override's
+        # theoretical default (e.g. 90%) would be force-driven onto the cover.
+        # The cover stays where the floor left it; the override keeps holding
+        # the (now recomputed) physical position (#534).
+        override_holding = (
+            self._pipeline_result is not None
+            and self._pipeline_result.control_method is ControlMethod.MANUAL
+        )
         trigger_entity: str | None = None
         custom_position_released = False
-        if custom_position_released_entities:
+        if custom_position_released_entities and not override_holding:
             trigger_entity = self._last_state_change_entity
             custom_position_released = (
                 trigger_entity is not None
@@ -1534,11 +1543,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Outside time window — skipping position update")
             return
 
+        # A floor-clamp raised the winner this cycle (#534).  When manual
+        # override holds the cover below an active floor, the clamped value is
+        # already in cover-position space and must bypass the time/position
+        # delta gates so the raise reaches the cover.
+        floor_clamp = bool(
+            self._pipeline_result is not None
+            and self._pipeline_result.floor_clamp_applied
+        )
         use_force = (
             is_safety
             or force_override_released
             or custom_position_sensor_triggered
             or custom_position_released
+            or floor_clamp
         )
         if force_override_released:
             reason = "force_override_cleared"
@@ -1553,6 +1571,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "Custom-position sensor %s released — bypassing time/position "
                 "delta gates to return to calculated position %s",
                 trigger_entity,
+                state,
+            )
+        elif floor_clamp:
+            reason = "floor_clamp"
+            self.logger.debug(
+                "Floor clamp active — bypassing time/position delta gates to "
+                "raise cover to floor position %s",
                 state,
             )
         else:

@@ -30,12 +30,14 @@ def _make_pipeline_result(
     position: int = 50,
     control_method: ControlMethod = ControlMethod.SOLAR,
     bypass_auto_control: bool = False,
+    floor_clamp_applied: bool = False,
 ) -> PipelineResult:
     return PipelineResult(
         position=position,
         control_method=control_method,
         reason="test",
         bypass_auto_control=bypass_auto_control,
+        floor_clamp_applied=floor_clamp_applied,
     )
 
 
@@ -394,6 +396,80 @@ class TestCustomPositionSensorEdgeTriggerBypassesGate:
         )
 
         coordinator._cmd_svc.apply_position.assert_not_called()
+
+
+class TestFloorClampUnderManualOverride:
+    """A floor-clamp under an armed manual override must dispatch and not snap to default (#534)."""
+
+    @pytest.mark.asyncio
+    async def test_floor_clamp_forces_dispatch_under_manual_override(self):
+        """A floor-clamped position under manual override calls context with force=True."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=80,
+            control_method=ControlMethod.MANUAL,
+            floor_clamp_applied=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator.manager.is_cover_manual.return_value = True
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=80, options={}
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=True,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
+    async def test_floor_release_under_armed_override_does_not_force_to_default(self):
+        """Floor sensor off while override armed: stay at floor, no force to default (#534).
+
+        When the floor sensor releases and manual override is still the winner,
+        the manual-hold winner re-emits its theoretical default (90).  The
+        coordinator must NOT take the custom_position_released force path —
+        otherwise it would drive the cover to that default.  force stays False.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=90,
+            control_method=ControlMethod.MANUAL,
+            floor_clamp_applied=False,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator.manager.is_cover_manual.return_value = True
+        coordinator._last_state_change_entity = "binary_sensor.cp1"
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=90,
+            options={},
+            custom_position_released_entities={"binary_sensor.cp1"},
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=False,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
 
 
 class TestCustomPositionSensorReleaseEdgeBypassesGate:

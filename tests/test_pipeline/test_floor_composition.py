@@ -22,6 +22,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
+from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
+    ManualOverrideHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
     WeatherOverrideHandler,
 )
@@ -584,6 +587,89 @@ def test_inactive_floor_below_winner_keeps_flag_false() -> None:
     result = registry.evaluate(snap)
     assert result.position == 80
     assert result.floor_clamp_applied is False
+
+
+def test_floor_raises_manual_override_held_below_floor() -> None:
+    """A floor raises the cover when manual override holds it below the floor (#534).
+
+    Manual override wins with ``position`` = theoretical default (90) but
+    ``held_position`` = the cover's actual physical position (50).  A min-mode
+    floor at 80% must be measured against the *physical* 50%, not the
+    theoretical 90% — so the floor fires and raises the cover to 80%.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=50,
+        default_position=90,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=80,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [
+        _cp_handler(1, "binary_sensor.cp1", 80),
+        ManualOverrideHandler(),
+    ]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "manual_override"
+    assert result.position == 80
+    assert result.floor_clamp_applied is True
+    clamp_steps = [
+        s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
+    ]
+    assert len(clamp_steps) == 1
+
+
+def test_floor_above_held_position_is_inert_under_manual_override() -> None:
+    """Floor below the cover's physical position does NOT clamp (#534 inert branch).
+
+    Manual override holds the cover at 85% (physical), floor is 80% — the cover
+    already sits above the floor, so no clamp is applied.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=85,
+        default_position=90,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=80,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [
+        _cp_handler(1, "binary_sensor.cp1", 80),
+        ManualOverrideHandler(),
+    ]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "manual_override"
+    # No clamp: the held physical position (85) is already above the floor (80).
+    assert result.floor_clamp_applied is False
+    assert not any(
+        s.handler == "floor_clamp" and s.matched for s in result.decision_trace
+    )
 
 
 def test_decision_trace_does_not_mislabel_winner() -> None:

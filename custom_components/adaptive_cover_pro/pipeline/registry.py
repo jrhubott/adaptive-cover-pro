@@ -138,15 +138,26 @@ class PipelineRegistry:
         # arithmetic lives in exactly one place (pipeline/floors.py).
         active_floors = gather_active_floors(snapshot)
         floor_pos, floor_info = effective_floor(active_floors)
+        # The position the floor must raise: where the cover will actually end
+        # up.  manual_override holds the cover at held_position (its physical
+        # position), not winner.position (the theoretical default it shadows),
+        # so the floor must clamp against held_position when present (#534).
+        # Every other handler leaves held_position=None, so this preserves the
+        # existing behaviour exactly.
+        effective_winner_pos = (
+            winner.held_position
+            if winner.held_position is not None
+            else winner.position
+        )
         clamped_position = winner.position
-        if floor_info is not None and floor_pos > winner.position:
+        if floor_info is not None and floor_pos > effective_winner_pos:
             clamped_position = floor_pos
             trace.append(
                 DecisionStep(
                     handler="floor_clamp",
                     matched=True,
                     reason=(
-                        f"floor raised winner from {winner.position}% to "
+                        f"floor raised winner from {effective_winner_pos}% to "
                         f"{floor_pos}% by {floor_info.label}"
                     ),
                     position=floor_pos,
@@ -162,7 +173,7 @@ class PipelineRegistry:
             if (
                 floor_info is not None
                 and info is floor_info
-                and floor_pos > winner.position
+                and floor_pos > effective_winner_pos
             ):
                 continue  # this floor *did* win — already emitted as floor_clamp
             trace.append(
@@ -171,7 +182,7 @@ class PipelineRegistry:
                     matched=False,
                     reason=(
                         f"floor {info.position}% inactive "
-                        f"(winner {winner.position}% above floor)"
+                        f"(winner {effective_winner_pos}% above floor)"
                     ),
                     position=info.position,
                 )
