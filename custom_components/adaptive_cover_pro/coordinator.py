@@ -1913,16 +1913,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         trigger: str,
         options: dict | None = None,
         force: bool = False,
-        bypass_auto_control: bool = False,
         use_my_position: bool = False,
     ) -> tuple[str, str]:
         """Apply a user-initiated position to a single cover.
 
         Single delegation point for any user-facing command (the
-        ``set_position`` service, the opt-in proxy cover entity, future
-        external triggers). Owns the min-mode floor clamp, the pipeline
-        preemption check, manual-override engagement, and dispatch to
-        ``CoverCommandService.apply_position``.
+        ``set_position`` service, the opt-in proxy cover entity, the My
+        Position button, future external triggers). Owns the min-mode floor
+        clamp, the pipeline preemption check, manual-override engagement, and
+        dispatch to ``CoverCommandService.apply_position``.
+
+        Because every caller is an explicit user action, the dispatch always
+        bypasses the ``auto_control_off`` gate (``bypass_auto_control=True``):
+        "automatic control off" suppresses the integration's own sun tracking,
+        not the user directly commanding a cover. This is distinct from the
+        internal ``force=True`` callers (solar update, override-clear) that go
+        through ``apply_position`` directly and stay blocked when auto control
+        is off (issue #293).
 
         Default behavior (``force=False``): engages manual override and
         consults the pipeline. When a handler with priority strictly greater
@@ -2003,7 +2010,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entity_id,
             opts,
             force=True,
-            bypass_auto_control=bypass_auto_control,
+            bypass_auto_control=True,
             use_my_position=use_my_position,
         )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
