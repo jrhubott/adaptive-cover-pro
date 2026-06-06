@@ -193,6 +193,22 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
     }
 
 
+def _local_naive_to_utc_naive(local_naive: dt.datetime) -> dt.datetime:
+    """Convert a naive-local wall-clock datetime to a naive-UTC datetime.
+
+    Interprets *local_naive* as a wall-clock time in HA's configured local
+    timezone (``dt_util.DEFAULT_TIME_ZONE``), converts it to UTC, and strips
+    tzinfo so the result is comparable to other naive-UTC values.
+
+    This is the single conversion point for entity-derived sunset/sunrise
+    boundaries inside ``compute_effective_default``.  DST transitions are
+    handled correctly because ``dt_util.as_local`` / ``dt_util.as_utc`` use
+    the HA-configured zoneinfo database.
+    """
+    aware_local = local_naive.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return dt_util.as_utc(aware_local).replace(tzinfo=None)
+
+
 def compute_effective_default(
     h_def: int,
     sunset_pos: int | None,
@@ -249,12 +265,12 @@ def compute_effective_default(
         return h_def, False
 
     sunset = (
-        sunset_time
+        _local_naive_to_utc_naive(sunset_time)
         if sunset_time is not None
         else sun_data.sunset().replace(tzinfo=None)
     )
     sunrise = (
-        sunrise_time
+        _local_naive_to_utc_naive(sunrise_time)
         if sunrise_time is not None
         else sun_data.sunrise().replace(tzinfo=None)
     )
