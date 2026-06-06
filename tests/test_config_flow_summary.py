@@ -211,6 +211,27 @@ def test_empty_config_returns_string():
     assert len(summary) > 0
 
 
+def test_dry_run_banner_shown_when_enabled():
+    """Dry-run banner is surfaced (and first) when dry_run is on."""
+    from custom_components.adaptive_cover_pro.const import CONF_DRY_RUN
+
+    summary = _build_config_summary({CONF_DRY_RUN: True}, CoverType.BLIND)
+    assert "Dry-run mode is ON" in summary
+    assert "covers will NOT move" in summary
+    # Must lead the summary, above the Your Cover section.
+    assert summary.index("Dry-run mode is ON") < summary.index("**Your Cover**")
+
+
+def test_dry_run_banner_absent_when_disabled():
+    """No dry-run banner when the flag is off or unset."""
+    from custom_components.adaptive_cover_pro.const import CONF_DRY_RUN
+
+    assert "Dry-run mode" not in _build_config_summary(
+        {CONF_DRY_RUN: False}, CoverType.BLIND
+    )
+    assert "Dry-run mode" not in _build_config_summary({}, CoverType.BLIND)
+
+
 def test_entity_included_in_your_cover():
     """Cover entity ID appears in the Your Cover line."""
     cfg = {CONF_ENTITIES: ["cover.living_room"]}
@@ -335,6 +356,38 @@ def test_geometry_venetian_shows_post_settle_hold_custom():
     cfg = {CONF_VENETIAN_POST_SETTLE_HOLD: 5.5}
     summary = _build_config_summary(cfg, CoverType.VENETIAN)
     assert "post-settle hold 5.5s" in summary
+
+
+def test_geometry_venetian_shows_backrotate_lag_default():
+    """Venetian summary includes back-rotate publish lag at the default (45.0 s)."""
+    summary = _build_config_summary({}, CoverType.VENETIAN)
+    assert "back-rotate publish lag 45.0s" in summary
+
+
+def test_geometry_venetian_shows_backrotate_lag_custom():
+    """Venetian summary reflects a custom back-rotate publish lag value."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    )
+
+    cfg = {CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: 60.0}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "back-rotate publish lag 60.0s" in summary
+
+
+def test_geometry_oscillating_awning_shows_housing_offset():
+    """Oscillating-awning summary renders the housing offset when configured."""
+    from custom_components.adaptive_cover_pro.const import CONF_AWNING_HOUSING_OFFSET
+
+    cfg = {CONF_AWNING_HOUSING_OFFSET: 0.25}
+    summary = _build_config_summary(cfg, CoverType.OSCILLATING_AWNING)
+    assert "0.25m housing offset" in summary
+
+
+def test_geometry_oscillating_awning_housing_offset_omitted_when_unset():
+    """Housing offset line is absent when the field is not configured."""
+    summary = _build_config_summary({}, CoverType.OSCILLATING_AWNING)
+    assert "housing offset" not in summary
 
 
 # ---------------------------------------------------------------------------
@@ -989,6 +1042,22 @@ def test_position_inverse_state_hidden_when_false():
     cfg = {CONF_INVERSE_STATE: False}
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "Inverse state" not in summary
+
+
+def test_position_tolerance_shown_when_configured():
+    """Position tolerance appears in Position Limits when set."""
+    from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
+
+    cfg = {CONF_DEFAULT_HEIGHT: 60, CONF_POSITION_TOLERANCE: 5}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Position tolerance: 5%" in summary
+
+
+def test_position_tolerance_hidden_when_unset():
+    """Position tolerance line is absent when the field is not configured."""
+    cfg = {CONF_DEFAULT_HEIGHT: 60}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Position tolerance" not in summary
 
 
 def test_position_interp_shown():

@@ -261,6 +261,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             CONF_VENETIAN_POST_SETTLE_HOLD, DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
         )
         post_settle_line = [f"post-settle hold {round(hold, 1)}s"]
+        lag = config.get(
+            CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
+            DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
+        )
+        backrotate_line = [f"back-rotate publish lag {round(lag, 1)}s"]
         return (
             window_dimensions_lines(config)
             + slat_line
@@ -270,6 +275,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             + min_tilt_line
             + max_tilt_line
             + post_settle_line
+            + backrotate_line
         )
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
