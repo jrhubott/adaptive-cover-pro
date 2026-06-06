@@ -470,6 +470,15 @@ def _control_status_value(s: _ACPDiagnosticSensor) -> str | None:
     return s.data.diagnostics.get("control_status")
 
 
+def _iso_or_none(value: dt.datetime | None) -> str | None:
+    """Return a tz-aware ISO-8601 string for a naive-local datetime, or None."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = dt_util.as_local(value)
+    return value.isoformat()
+
+
 def _control_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     if s.data.diagnostics is None:
         return None
@@ -486,6 +495,8 @@ def _control_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     )
     attrs["after_start_time"] = time_window.get("after_start_time")
     attrs["before_end_time"] = time_window.get("before_end_time")
+    attrs["schedule_start"] = _iso_or_none(time_window.get("start_time"))
+    attrs["schedule_end"] = _iso_or_none(time_window.get("end_time"))
 
     sun_validity = diagnostics.get("sun_validity", {})
     if sun_validity:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import MagicMock
 
 import pytest
@@ -373,6 +374,125 @@ def test_control_status_attrs_expose_cover_type(sensor_type):
     attrs = sensor.extra_state_attributes
     assert attrs is not None
     assert attrs.get("cover_type") == sensor_type
+
+
+# ---------------------------------------------------------------------------
+# AdaptiveCoverControlStatusSensor — schedule_start / schedule_end attrs
+# ---------------------------------------------------------------------------
+
+
+def _make_control_status_sensor(diagnostics: dict):
+    """Build a control_status sensor with the given diagnostics dict."""
+    coord = _make_coordinator(diagnostics=diagnostics)
+    entry = _make_config_entry()
+    return AdaptiveCoverControlStatusSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+
+
+@pytest.mark.unit
+def test_control_status_attrs_schedule_start_end_static():
+    """schedule_start and schedule_end are tz-aware ISO strings for static times."""
+    # Use naive-local datetimes as TimeWindowManager produces them
+    start_naive = dt.datetime(2026, 6, 6, 6, 30, 0)  # 06:30 naive-local
+    end_naive = dt.datetime(2026, 6, 6, 21, 0, 0)  # 21:00 naive-local
+    sensor = _make_control_status_sensor(
+        {
+            "control_status": "active",
+            "time_window": {
+                "check_adaptive_time": True,
+                "after_start_time": True,
+                "before_end_time": True,
+                "start_time": start_naive,
+                "end_time": end_naive,
+            },
+        }
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert "schedule_start" in attrs
+    assert "schedule_end" in attrs
+    # Must be tz-aware ISO strings (contain "+" or "Z" or offset info, not bare naive)
+    assert attrs["schedule_start"] is not None
+    assert attrs["schedule_end"] is not None
+    # Parse back and verify the local time component is preserved
+    parsed_start = dt.datetime.fromisoformat(attrs["schedule_start"])
+    parsed_end = dt.datetime.fromisoformat(attrs["schedule_end"])
+    assert parsed_start.tzinfo is not None, "schedule_start must be tz-aware"
+    assert parsed_end.tzinfo is not None, "schedule_end must be tz-aware"
+    assert parsed_start.hour == 6 and parsed_start.minute == 30
+    assert parsed_end.hour == 21 and parsed_end.minute == 0
+
+
+@pytest.mark.unit
+def test_control_status_attrs_schedule_start_none_when_blank():
+    """schedule_start is None when no start time is configured (blank start)."""
+    sensor = _make_control_status_sensor(
+        {
+            "control_status": "active",
+            "time_window": {
+                "check_adaptive_time": True,
+                "after_start_time": True,
+                "before_end_time": True,
+                "start_time": None,
+                "end_time": dt.datetime(2026, 6, 6, 21, 0, 0),
+            },
+        }
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["schedule_start"] is None
+
+
+@pytest.mark.unit
+def test_control_status_attrs_schedule_end_none_when_not_configured():
+    """schedule_end is None when no end time is configured."""
+    sensor = _make_control_status_sensor(
+        {
+            "control_status": "active",
+            "time_window": {
+                "check_adaptive_time": True,
+                "after_start_time": True,
+                "before_end_time": True,
+                "start_time": dt.datetime(2026, 6, 6, 6, 30, 0),
+                "end_time": None,
+            },
+        }
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["schedule_end"] is None
+
+
+@pytest.mark.unit
+def test_control_status_attrs_schedule_end_midnight_next_day():
+    """schedule_end with midnight end (00:00) reflects next-day datetime."""
+    # TimeWindowManager rolls midnight end to next day: 00:00 next day
+    next_day_midnight = dt.datetime(2026, 6, 7, 0, 0, 0)  # next day 00:00
+    sensor = _make_control_status_sensor(
+        {
+            "control_status": "active",
+            "time_window": {
+                "check_adaptive_time": True,
+                "after_start_time": True,
+                "before_end_time": True,
+                "start_time": dt.datetime(2026, 6, 6, 6, 30, 0),
+                "end_time": next_day_midnight,
+            },
+        }
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    assert attrs["schedule_end"] is not None
+    parsed = dt.datetime.fromisoformat(attrs["schedule_end"])
+    assert parsed.tzinfo is not None
+    # The day is next day (June 7) and time is midnight
+    assert parsed.day == 7
+    assert parsed.hour == 0 and parsed.minute == 0
 
 
 # ---------------------------------------------------------------------------
