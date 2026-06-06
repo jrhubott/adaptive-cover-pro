@@ -103,6 +103,7 @@ from .const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MIN_TILT,
+    CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_MOTION_TIMEOUT_MODE,
@@ -217,6 +218,13 @@ def presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector
     """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
     return selector.EntitySelector(
         selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
+    )
+
+
+def media_player_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a selector for media_player entities (occupancy via playback)."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=["media_player"], multiple=multiple)
     )
 
 
@@ -804,6 +812,13 @@ _MOTION_OVERRIDE_SPECS = _spec(
         ValidatorKind.ENTITIES,
         default=[],
         make_selector=_const(lambda: presence_like_selector(multiple=True)),
+    ),
+    FieldSpec(
+        CONF_MOTION_MEDIA_PLAYERS,
+        SECTION_MOTION_OVERRIDE,
+        ValidatorKind.ENTITIES,
+        default=[],
+        make_selector=_const(lambda: media_player_selector(multiple=True)),
     ),
     FieldSpec(
         CONF_MOTION_TIMEOUT,

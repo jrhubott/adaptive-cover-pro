@@ -58,14 +58,23 @@ def is_entity_active(hass: HomeAssistant, entity_id: str | None) -> bool:
       - device_tracker / person → state == "home"
       - zone                    → occupant count > 0
       - binary_sensor / input_boolean / switch / schedule → state == "on"
+      - media_player → any state but off / unavailable / unknown (fail-closed)
       - None / missing / unknown / unavailable / other domains → True (fail-open)
     """
     if entity_id is None:
         return True
+    domain = get_domain(entity_id)
+    if domain == "media_player":
+        # Occupancy via playback: a missing/unavailable/unknown/off player is
+        # NOT occupancy (fail-closed) — read state directly to bypass the
+        # fail-open None handling below.
+        state = hass.states.get(entity_id)
+        return bool(
+            state and state.state not in _INVALID_STATES and state.state != "off"
+        )
     raw = get_safe_state(hass, entity_id)
     if raw is None:
         return True
-    domain = get_domain(entity_id)
     if domain in ("device_tracker", "person"):
         return raw == "home"
     if domain == "zone":
