@@ -93,6 +93,70 @@ def test_is_motion_detected_or_logic(mock_hass, logger):
     assert mgr.is_motion_detected is True
 
 
+# --- media players (occupancy via playback) ---
+
+
+@pytest.mark.parametrize(
+    ("player_state", "expected"),
+    [
+        ("playing", True),
+        ("paused", True),
+        ("idle", True),
+        ("buffering", True),
+        ("standby", True),
+        ("on", True),
+        ("off", False),
+        ("unavailable", False),
+        ("unknown", False),
+    ],
+)
+def test_is_motion_detected_media_player_states(
+    mock_hass, logger, player_state, expected
+):
+    """Any non-off/-unavailable/-unknown media_player state counts as occupancy."""
+    mgr = MotionManager(hass=mock_hass, logger=logger)
+    mgr.update_config(
+        sensors=[], timeout_seconds=300, media_players=["media_player.tv"]
+    )
+
+    state = MagicMock()
+    state.state = player_state
+    mock_hass.states.get.return_value = state
+
+    assert mgr.is_motion_detected is expected
+
+
+def test_is_motion_detected_media_player_missing(mock_hass, logger):
+    """A missing media player is not occupancy (fail-closed)."""
+    mgr = MotionManager(hass=mock_hass, logger=logger)
+    mgr.update_config(
+        sensors=[], timeout_seconds=300, media_players=["media_player.tv"]
+    )
+
+    mock_hass.states.get.return_value = None
+
+    assert mgr.is_motion_detected is False
+
+
+def test_is_motion_detected_sensor_off_media_player_playing(mock_hass, logger):
+    """Media players OR with motion sensors: playing player wins over an off sensor."""
+    mgr = MotionManager(hass=mock_hass, logger=logger)
+    mgr.update_config(
+        sensors=["binary_sensor.motion_room"],
+        timeout_seconds=300,
+        media_players=["media_player.tv"],
+    )
+
+    def get_state(entity_id):
+        s = MagicMock()
+        s.state = "playing" if entity_id == "media_player.tv" else "off"
+        return s
+
+    mock_hass.states.get.side_effect = get_state
+
+    assert mgr.is_motion_detected is True
+
+
 # --- is_motion_timeout_active ---
 
 

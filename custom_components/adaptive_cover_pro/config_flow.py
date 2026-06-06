@@ -80,6 +80,7 @@ from .const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MODE,
+    CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TIMEOUT,
     CONF_MOTION_TIMEOUT_MODE,
@@ -494,6 +495,9 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOTION_SENSORS, default=[]): _presence_like_selector(
             multiple=True
         ),
+        vol.Optional(
+            CONF_MOTION_MEDIA_PLAYERS, default=[]
+        ): config_fields.media_player_selector(multiple=True),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
         ): selector.NumberSelector(
@@ -938,7 +942,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
         ]
     )
-    has_motion = bool(config.get(CONF_MOTION_SENSORS))
+    has_motion = bool(config.get(CONF_MOTION_SENSORS)) or bool(
+        config.get(CONF_MOTION_MEDIA_PLAYERS)
+    )
     # Build per-slot custom position data:
     # list of (slot, entity_id, position, priority, use_my, tilt, tilt_only)
     _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool]] = []
@@ -1154,8 +1160,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Motion timeout (75)
     timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
     if has_motion:
-        n = len(config.get(CONF_MOTION_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
+        n = len(config.get(CONF_MOTION_SENSORS) or []) + len(
+            config.get(CONF_MOTION_MEDIA_PLAYERS) or []
+        )
+        sensor_word = "source" if n == 1 else "sources"
         if timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
             action = (
                 "covers hold current position (return to default when sun leaves FOV)"
@@ -1744,12 +1752,14 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "motion_override_sensors": frozenset(
         {
             CONF_MOTION_SENSORS,
+            CONF_MOTION_MEDIA_PLAYERS,
         }
     ),
     # Legacy alias: full union of motion_override_values + motion_override_sensors
     "motion_override": frozenset(
         {
             CONF_MOTION_SENSORS,
+            CONF_MOTION_MEDIA_PLAYERS,
             CONF_MOTION_TIMEOUT,
             CONF_MOTION_TIMEOUT_MODE,
         }
