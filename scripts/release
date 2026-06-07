@@ -849,6 +849,36 @@ verify_zip_asset() {
             fi
         fi
 
+        # Verify internal ZIP structure: manifest.json must be at archive root,
+        # no folder-prefixed entries (guards against the double-nesting footgun — see #544).
+        local tmp_dir
+        tmp_dir=$(mktemp -d)
+
+        if gh release download "$tag" -p "$asset_name" -D "$tmp_dir" 2>/dev/null; then
+            local zip_listing
+            zip_listing=$(unzip -Z1 "$tmp_dir/$asset_name" 2>/dev/null)
+
+            if ! echo "$zip_listing" | grep -qx "manifest.json"; then
+                log_error "ZIP structure invalid: manifest.json not found at archive root"
+                log_error "This would cause a double-nested HACS install path (see issue #544)"
+                rm -rf "$tmp_dir"
+                exit 1
+            fi
+
+            if echo "$zip_listing" | grep -qE "^(custom_components|adaptive_cover_pro)/"; then
+                log_error "ZIP structure invalid: entries are wrapped in a folder prefix"
+                log_error "This would cause a double-nested HACS install path (see issue #544)"
+                rm -rf "$tmp_dir"
+                exit 1
+            fi
+
+            log_success "ZIP structure verified: manifest.json at archive root, no folder nesting"
+        else
+            log_warning "ZIP structure could not be verified (download failed); asset existence already confirmed"
+        fi
+
+        rm -rf "$tmp_dir"
+
         return 0
     else
         log_error "ZIP asset not found: $asset_name"
