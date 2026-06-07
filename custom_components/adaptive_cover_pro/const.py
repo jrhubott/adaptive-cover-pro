@@ -76,9 +76,9 @@ CONF_BLUEPRINT = "blueprint"
 # Identifies which cover type a config entry models and which HA device, if
 # any, the entities should be linked to.
 
-CONF_SENSOR_TYPE = "sensor_type"  # one of CoverType.* (see section 27)
+CONF_SENSOR_TYPE = "sensor_type"  # one of CoverType.* (defined in section 27)
+CONF_COVER_TYPE = CONF_SENSOR_TYPE  # newer name for the same key (back-compat alias)
 CONF_DEVICE_ID = "linked_device_id"  # HA device_id to link this instance to
-
 
 # =============================================================================
 # 3. Window / Vertical-Blind Geometry
@@ -97,6 +97,7 @@ CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
 DEFAULT_FOV_RIGHT = 90  # degrees; matches config flow default
 CONF_ENTITIES = "group"  # list of HA cover entity_ids controlled
+CONF_COVERS = CONF_ENTITIES  # newer name for the same key (back-compat alias)
 CONF_ENABLE_PROXY_COVER = "enable_proxy_cover"  # opt-in proxy cover platform
 DEFAULT_ENABLE_PROXY_COVER = False
 TRIGGER_PROXY_POSITION = "proxy_managed"

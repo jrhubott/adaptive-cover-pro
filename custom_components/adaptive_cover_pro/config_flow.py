@@ -197,6 +197,10 @@ from .cover_types import (  # noqa: E402
     TiltPolicy,
     get_policy,
 )
+from .cover_types._helpers import (  # noqa: E402
+    INFERENCE_UNSUPPORTED,
+    infer_cover_type_from_device_class,
+)
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
 from .cover_types.tilt import GEOMETRY_TILT_SCHEMA  # noqa: E402, F401
@@ -1642,6 +1646,103 @@ async def _get_device_name_for_entity(
     return device_entry.name_by_user or device_entry.name or None
 
 
+def _get_cover_device_class(hass: HomeAssistant, entity_id: str) -> str | None:
+    """Return the device_class for a cover entity, falling back through registry/state."""
+    entity_reg = er.async_get(hass)
+    entity_entry = entity_reg.async_get(entity_id)
+    if entity_entry and (
+        entity_entry.device_class or entity_entry.original_device_class
+    ):
+        return entity_entry.device_class or entity_entry.original_device_class
+    state = hass.states.get(entity_id)
+    if state:
+        return state.attributes.get("device_class")
+    return None
+
+
+def _attach_device_to_config(
+    config: dict[str, Any], entity_id: str, hass: HomeAssistant, attach: bool
+) -> None:
+    """Populate CONF_DEVICE_ID with the entity's parent device when ``attach`` is True.
+
+    No-op when the user opted out or the entity has no parent device — the
+    coordinator falls back to the standalone virtual SERVICE device in that case.
+    """
+    if not attach:
+        return
+    entity_reg = er.async_get(hass)
+    entity_entry = entity_reg.async_get(entity_id)
+    if entity_entry and entity_entry.device_id:
+        config[CONF_DEVICE_ID] = entity_entry.device_id
+
+
+async def _derive_name_for_new_entry(
+    hass: HomeAssistant, entity_id: str, cover_type: str
+) -> tuple[str, bool]:
+    """Choose a sensible title for a brand-new entry.
+
+    Returns ``(name, title_is_device_name)``. When the cover belongs to a named
+    device, use that name verbatim (no type prefix). Otherwise fall back to
+    "Adaptive {entity name}" with the type prefix added at title-build time.
+    """
+    device_name = await _get_device_name_for_entity(hass, entity_id)
+    if device_name:
+        return device_name, True
+    entity_reg = er.async_get(hass)
+    entity_entry = entity_reg.async_get(entity_id)
+    entity_name = None
+    if entity_entry:
+        entity_name = entity_entry.original_name or entity_entry.name
+    if not entity_name:
+        entity_name = entity_id.split(".")[-1].replace("_", " ").title()
+    return f"Adaptive {entity_name}", False
+
+
+def _build_window_basics_schema(
+    hass: HomeAssistant, cover_type: str | None
+) -> vol.Schema:
+    """Build the second creation screen — three geometry questions.
+
+    Per-cover-type length field is sourced from the policy's
+    ``creation_primary_length_key`` (e.g. ``window_height`` for blinds,
+    ``length_awning`` for awnings).
+    """
+    from .unit_system import length_default
+
+    policy = get_policy(cover_type) if cover_type else get_policy(CoverType.BLIND)
+    lo, hi = policy.creation_primary_length_bounds
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_AZIMUTH, default=DEFAULT_WINDOW_AZIMUTH
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=359,
+                    step=1,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="°",
+                )
+            ),
+            vol.Required(
+                policy.creation_primary_length_key,
+                default=length_default(policy.creation_primary_length_default, hass),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=lo, max=hi, step=0.01, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
+                CONF_DISTANCE, default=length_default(0.5, hass)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0, max=50.0, step=0.01, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+    )
+
+
 _SHARED_OPTIONS_EXCLUDED = frozenset({CONF_ENTITIES, CONF_AZIMUTH, CONF_DEVICE_ID})
 
 # Maps each syncable category (matching options menu names) to its config keys.
@@ -2117,35 +2218,115 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return await self.async_step_create_new()
 
     async def async_step_create_new(self, user_input: dict[str, Any] | None = None):
-        """Handle create new cover flow."""
-        if user_input:
-            self.config = user_input
-            self.type_blind = self.config[CONF_MODE]
-            return await self.async_step_setup_mode()
+        """Screen 1: pick the cover entity (and optionally name / disable device attach).
+
+        The cover type is inferred from the entity's HA device_class. When the class
+        is ambiguous (most commonly device_class=blind), the flow routes through
+        async_step_disambiguate_cover_type. Helper entities attach to the cover's
+        parent device by default; users can opt out with the checkbox.
+        """
+        if user_input is not None:
+            cover_entity = user_input["cover_entity"]
+            self.config[CONF_ENTITIES] = [cover_entity]
+            attach = user_input.get("attach_to_device", True)
+            _attach_device_to_config(self.config, cover_entity, self.hass, attach)
+
+            device_class = _get_cover_device_class(self.hass, cover_entity)
+            inferred = infer_cover_type_from_device_class(device_class)
+            if inferred == INFERENCE_UNSUPPORTED:
+                return self.async_abort(reason="unsupported_cover_device_class")
+
+            name = (user_input.get("name") or "").strip()
+            if not name:
+                # Type known or not, derive a sensible name now and refine the
+                # title prefix at create-entry time once self.type_blind is set.
+                derived, title_is_device = await _derive_name_for_new_entry(
+                    self.hass, cover_entity, inferred or CoverType.BLIND
+                )
+                self.config["name"] = derived
+                if title_is_device:
+                    self.config["_title_is_device_name"] = True
+            else:
+                self.config["name"] = name
+
+            if inferred is None:
+                # Ambiguous device_class — ask the user.
+                return await self.async_step_disambiguate_cover_type()
+            self.type_blind = inferred
+            return await self.async_step_window_basics()
+
+        schema = vol.Schema(
+            {
+                vol.Required("cover_entity"): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="cover", multiple=False)
+                ),
+                vol.Optional("name", default=""): str,
+                vol.Optional(
+                    "attach_to_device", default=True
+                ): selector.BooleanSelector(),
+            }
+        )
         return self.async_show_form(
             step_id="create_new",
-            data_schema=CONFIG_SCHEMA,
-        )
-
-    async def async_step_setup_mode(self, user_input: dict[str, Any] | None = None):
-        """Choose between quick and full setup."""
-        return self.async_show_menu(
-            step_id="setup_mode",
-            menu_options=["quick_setup", "full_setup"],
+            data_schema=schema,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/First-Time-Setup"
             },
         )
 
-    async def async_step_quick_setup(self, user_input: dict[str, Any] | None = None):
-        """Start quick setup — minimal steps."""
-        self.setup_mode = "quick"
-        return await self.async_step_cover_entities()
+    async def async_step_disambiguate_cover_type(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Resolve cover-type ambiguity (e.g. device_class=blind → roller or venetian?)."""
+        if user_input is not None:
+            self.type_blind = user_input[CONF_SENSOR_TYPE]
+            return await self.async_step_window_basics()
 
-    async def async_step_full_setup(self, user_input: dict[str, Any] | None = None):
-        """Start full setup — all configuration steps."""
-        self.setup_mode = "full"
-        return await self.async_step_cover_entities()
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_SENSOR_TYPE, default=CoverType.BLIND
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {
+                                "value": CoverType.BLIND,
+                                "label": "Roller blind / shade",
+                            },
+                            {
+                                "value": CoverType.VENETIAN,
+                                "label": "Venetian (slatted) blind",
+                            },
+                            {"value": CoverType.AWNING, "label": "Awning"},
+                            {"value": CoverType.TILT, "label": "Tilt-only"},
+                        ],
+                        mode=selector.SelectSelectorMode.LIST,
+                        translation_key="cover_type",
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="disambiguate_cover_type",
+            data_schema=schema,
+        )
+
+    async def async_step_window_basics(self, user_input: dict[str, Any] | None = None):
+        """Screen 2: minimum window geometry — azimuth, primary length, shaded distance."""
+        policy = get_policy(self.type_blind)
+        if user_input is not None:
+            canonical = user_input_to_canonical(
+                self.hass,
+                user_input,
+                length_keys=policy.creation_window_basics_length_keys(),
+            )
+            self.config.update(canonical)
+            return await self.async_step_summary()
+
+        return self.async_show_form(
+            step_id="window_basics",
+            data_schema=_build_window_basics_schema(self.hass, self.type_blind),
+        )
 
     async def async_step_cover_entities(self, user_input: dict[str, Any] | None = None):
         """Select cover entities and optionally link to a physical device.

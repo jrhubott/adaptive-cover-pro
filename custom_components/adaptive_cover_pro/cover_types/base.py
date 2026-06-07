@@ -568,6 +568,18 @@ class CoverTypePolicy(ABC):
         """
         return vol.Schema({})
 
+    # Initial-creation second screen (azimuth + one primary length + shaded
+    # distance). The default below is "window-style" — vertical blinds and
+    # most slatted covers ask for window height. Awnings override with
+    # length_awning. Three fields max keeps the screen tight.
+    creation_primary_length_key: ClassVar[str] = "window_height"
+    creation_primary_length_bounds: ClassVar[tuple[float, float]] = (0.1, 50.0)
+    creation_primary_length_default: ClassVar[float] = 2.1
+
+    def creation_window_basics_length_keys(self) -> tuple[str, ...]:
+        """Length-typed keys collected on the Screen 2 form, for unit conversion."""
+        return (self.creation_primary_length_key, "distance_shaded_area")
+
     def geometry_length_keys(self) -> tuple[str, ...]:
         """Return option keys stored as canonical metres.
 

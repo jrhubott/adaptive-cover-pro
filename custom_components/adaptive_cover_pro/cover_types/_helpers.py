@@ -1,10 +1,44 @@
-"""Shared helpers for cover-type policy summary rendering."""
+"""Shared helpers for cover-type policy summary rendering and cover-type inference."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from ..const import CONF_DISTANCE, CONF_HEIGHT_WIN, CONF_SILL_HEIGHT, CONF_WINDOW_DEPTH
+from ..const import (
+    CONF_DISTANCE,
+    CONF_HEIGHT_WIN,
+    CONF_SILL_HEIGHT,
+    CONF_WINDOW_DEPTH,
+    CoverType,
+)
+
+INFERENCE_UNSUPPORTED = "_unsupported"
+
+
+def infer_cover_type_from_device_class(device_class: str | None) -> str | None:
+    """Map an HA cover device_class to one of the integration's CoverType values.
+
+    Returns:
+        - A CoverType value when the mapping is unambiguous.
+        - ``INFERENCE_UNSUPPORTED`` for cover-domain classes the integration cannot drive
+          (garage/gate/door/damper).
+        - ``None`` when the class is missing or could reasonably map to multiple types
+          (e.g. ``blind`` could be a roller blind or a venetian); the caller should
+          ask the user to disambiguate.
+
+    """
+    if device_class is None:
+        return None
+    match device_class:
+        case "awning":
+            return CoverType.AWNING
+        case "shutter" | "curtain" | "shade":
+            return CoverType.BLIND
+        case "blind":
+            return None
+        case "garage" | "gate" | "door" | "damper":
+            return INFERENCE_UNSUPPORTED
+    return None
 
 
 def window_dimensions_lines(config: dict[str, Any]) -> list[str]:
