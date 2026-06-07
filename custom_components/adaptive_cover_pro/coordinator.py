@@ -31,6 +31,7 @@ except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .config_types import RuntimeConfig
 from .helpers import (
@@ -131,6 +132,14 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
 
     Returns naive-local datetime on success; None if entity_id is None,
     the entity is unavailable, or the state cannot be parsed.
+
+    The entity's *time-of-day* is re-anchored onto today's local date and the
+    original date component is discarded. This makes a "next-event" sensor
+    (e.g. ``sensor.sun_next_setting``, which rolls over to *tomorrow's*
+    setting the instant today's sun sets) behave like a fixed daily wall-clock
+    time. ``compute_effective_default`` already compares the boundary against
+    *today's* clock, so a future-dated boundary would otherwise make the
+    ``after_sunset`` comparison structurally unreachable (issue #531 follow-up).
     """
     if entity_id is None:
         return None
@@ -138,7 +147,13 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
     if raw is None:
         return None
     try:
-        return get_datetime_from_str(raw)
+        parsed = get_datetime_from_str(raw)
+        today_local = dt_util.now().date()
+        return parsed.replace(
+            year=today_local.year,
+            month=today_local.month,
+            day=today_local.day,
+        )
     except Exception:  # noqa: BLE001
         _LOGGER.debug(
             "Could not parse time entity %s state %r as datetime",

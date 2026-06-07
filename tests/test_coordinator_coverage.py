@@ -735,7 +735,12 @@ def test_read_time_entity_returns_none_for_unavailable():
 
 @pytest.mark.unit
 def test_read_time_entity_parses_iso_datetime():
-    """_read_time_entity returns a naive-local datetime for a valid ISO-8601 string."""
+    """_read_time_entity re-anchors a parsed datetime onto today's local date.
+
+    The entity's time-of-day is preserved; its date is replaced with today's
+    local date so "next-event" sensors behave like a fixed daily wall-clock
+    time (issue #531 follow-up).
+    """
     import datetime as dt
 
     from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
@@ -745,13 +750,190 @@ def test_read_time_entity_parses_iso_datetime():
     mock_state.state = "2026-05-22T21:00:00"
     mock_hass = MagicMock()
     mock_hass.states.get.return_value = mock_state
-    result = _read_time_entity(mock_hass, "sensor.sunset_entity")
+
+    today_local = dt.datetime(2026, 6, 7, 12, 0, 0)
+    with patch(
+        "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+        return_value=today_local,
+    ):
+        result = _read_time_entity(mock_hass, "sensor.sunset_entity")
     assert result is not None
     assert isinstance(result, dt.datetime)
     assert result.year == 2026
-    assert result.month == 5
-    assert result.day == 22
+    assert result.month == 6
+    assert result.day == 7
     assert result.hour == 21
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
+def test_read_time_entity_reanchors_future_next_setting_to_today():
+    """A future-dated ``sensor.sun_next_setting`` re-anchors to today's date.
+
+    Regression for issue #531 follow-up: a "next setting" sensor rolls over to
+    *tomorrow* once today's sun has set. The boundary must keep the entity's
+    time-of-day but be projected onto today's local date so the
+    ``after_sunset`` comparison stays reachable.
+    """
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    paris = ZoneInfo("Europe/Paris")
+    mock_state = MagicMock()
+    mock_state.state = "2026-06-08T19:01:00+00:00"  # tomorrow UTC = 21:01 Paris
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    now_local = dt.datetime(2026, 6, 7, 21, 30, 0, tzinfo=paris)
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+            return_value=now_local,
+        ),
+    ):
+        result = _read_time_entity(mock_hass, "sensor.sun_next_setting")
+
+    assert result is not None
+    assert result.date() == dt.date(2026, 6, 7)
+    assert result.hour == 21
+    assert result.minute == 1
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
+def test_read_time_entity_reanchors_future_next_rising_to_today():
+    """A future-dated ``sensor.sun_next_rising`` re-anchors to today's date."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    paris = ZoneInfo("Europe/Paris")
+    mock_state = MagicMock()
+    mock_state.state = "2026-06-08T04:46:00+00:00"  # tomorrow UTC = 06:46 Paris
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    now_local = dt.datetime(2026, 6, 7, 21, 30, 0, tzinfo=paris)
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+            return_value=now_local,
+        ),
+    ):
+        result = _read_time_entity(mock_hass, "sensor.sun_next_rising")
+
+    assert result is not None
+    assert result.date() == dt.date(2026, 6, 7)
+    assert result.hour == 6
+    assert result.minute == 46
+    assert result.tzinfo is None
+
+
+@pytest.mark.unit
+def test_read_time_entity_today_dated_entity_unchanged_time_of_day():
+    """A today-dated entity keeps its time-of-day after re-anchoring."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    paris = ZoneInfo("Europe/Paris")
+    mock_state = MagicMock()
+    mock_state.state = "2026-06-07T21:00:00+02:00"  # today 21:00 Paris
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    now_local = dt.datetime(2026, 6, 7, 21, 30, 0, tzinfo=paris)
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+            return_value=now_local,
+        ),
+    ):
+        result = _read_time_entity(mock_hass, "sensor.sunset_entity")
+
+    assert result is not None
+    assert result.date() == dt.date(2026, 6, 7)
+    assert result.hour == 21
+
+
+@pytest.mark.unit
+def test_read_time_entity_dst_spring_forward_boundary():
+    """Re-anchoring onto a spring-forward day yields a valid post-transition instant.
+
+    On 2026-03-29 Paris springs forward (02:00 CET → 03:00 CEST). A boundary
+    time-of-day of 03:30 is valid post-transition (CEST, +02:00). Re-anchoring
+    must not raise, and ``_local_naive_to_utc_naive`` on the result must yield
+    01:30 UTC.
+    """
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+    from custom_components.adaptive_cover_pro.helpers import _local_naive_to_utc_naive
+
+    paris = ZoneInfo("Europe/Paris")
+    # Future-dated entity whose local time-of-day is 03:30 Paris (CEST +02:00).
+    mock_state = MagicMock()
+    mock_state.state = "2026-04-05T01:30:00+00:00"  # = 03:30 Paris CEST, future date
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    now_local = dt.datetime(2026, 3, 29, 12, 0, 0, tzinfo=paris)
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+            return_value=now_local,
+        ),
+    ):
+        result = _read_time_entity(mock_hass, "sensor.sun_next_setting")
+
+        assert result is not None
+        assert result.date() == dt.date(2026, 3, 29)
+        assert result.hour == 3
+        assert result.minute == 30
+        utc_naive = _local_naive_to_utc_naive(result)
+
+    assert utc_naive == dt.datetime(2026, 3, 29, 1, 30, 0)
+
+
+@pytest.mark.unit
+def test_read_time_entity_near_midnight_sunset_projects_to_today():
+    """A near-midnight time-of-day (00:15) projects onto today's date."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+    paris = ZoneInfo("Europe/Paris")
+    mock_state = MagicMock()
+    mock_state.state = (
+        "2026-06-08T22:15:00+00:00"  # tomorrow UTC = 00:15 Paris (+1 day)
+    )
+    mock_hass = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    now_local = dt.datetime(2026, 6, 7, 21, 30, 0, tzinfo=paris)
+    with (
+        patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+        patch(
+            "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+            return_value=now_local,
+        ),
+    ):
+        result = _read_time_entity(mock_hass, "sensor.sun_next_setting")
+
+    assert result is not None
+    assert result.date() == dt.date(2026, 6, 7)
+    assert result.hour == 0
+    assert result.minute == 15
 
 
 # ---------------------------------------------------------------------------

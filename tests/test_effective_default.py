@@ -35,9 +35,16 @@ def _make_sun_data(
     sunset_minute: int = 0,
     sunrise_hour: int = 6,
     sunrise_minute: int = 0,
+    day: dt.date | None = None,
 ) -> MagicMock:
-    """Return a mock SunData with controllable sunset/sunrise times (naive UTC)."""
-    today = dt.date.today()
+    """Return a mock SunData with controllable sunset/sunrise times (naive UTC).
+
+    ``day`` pins the astral fallback date; defaults to ``dt.date.today()``.
+    Tests that freeze ``now`` to an explicit calendar date must pass the same
+    ``day`` so the astral sunrise/sunset fallback stays on that date (otherwise
+    the comparison drifts when the real wall-clock date rolls over).
+    """
+    today = day or dt.date.today()
     sunset_dt = dt.datetime(
         today.year, today.month, today.day, sunset_hour, sunset_minute, 0
     )
@@ -671,7 +678,7 @@ class TestEntityOverrideTimezone:
         converted to naive-UTC 09:00, so 09:38 > 09:00 → active (correct).
         """
         paris = self._paris_tz()
-        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4)
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4, day=dt.date(2026, 6, 6))
 
         # Produce the boundary the same way the real coordinator does:
         # get_datetime_from_str on a tz-aware entity string.
@@ -722,7 +729,7 @@ class TestEntityOverrideTimezone:
         regression check; here we verify the positive-UTC-offset case is also correct.
         """
         paris = self._paris_tz()
-        sun = _make_sun_data(sunset_hour=21, sunrise_hour=5)
+        sun = _make_sun_data(sunset_hour=21, sunrise_hour=5, day=dt.date(2026, 6, 6))
 
         entity_state = "2026-06-06T07:00:00+02:00"
         with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris):
@@ -763,7 +770,7 @@ class TestEntityOverrideTimezone:
           - Expected: is_sunset_active=False
         """
         paris = self._paris_tz()
-        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4)
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4, day=dt.date(2026, 6, 6))
 
         entity_state = "2026-06-06T11:00:00+02:00"
         with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris):
@@ -790,3 +797,104 @@ class TestEntityOverrideTimezone:
             f"got active={active}"
         )
         assert result == 100
+
+    def test_future_next_setting_entity_activates_night_position(self):
+        """A future-dated ``sensor.sun_next_setting`` still activates the night position.
+
+        Issue #531 follow-up: once today's sun has set, a "next setting" sensor
+        reports *tomorrow's* setting. The coordinator re-anchors that onto
+        today's date, so after dusk the after-sunset branch fires correctly.
+        """
+        from unittest.mock import MagicMock as _MagicMock
+
+        from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+        paris = self._paris_tz()
+        sun = _make_sun_data(sunset_hour=20, sunrise_hour=4, day=dt.date(2026, 6, 7))
+
+        mock_state = _MagicMock()
+        mock_state.state = "2026-06-08T19:01:00+00:00"  # tomorrow UTC = 21:01 Paris
+        mock_hass = _MagicMock()
+        mock_hass.states.get.return_value = mock_state
+
+        now_local = dt.datetime(2026, 6, 7, 21, 30, 0, tzinfo=paris)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            patch(
+                "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+                return_value=now_local,
+            ),
+        ):
+            sunset_boundary = _read_time_entity(mock_hass, "sensor.sun_next_setting")
+
+        # 19:30 UTC = 21:30 Paris → after the 21:01 Paris (= 19:01 UTC) boundary
+        frozen_utc = dt.datetime(2026, 6, 7, 19, 30, 0)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            _freeze_now(frozen_utc),
+        ):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=sunset_boundary,
+                sunrise_time=None,
+            )
+
+        assert active is True, (
+            f"Expected is_sunset_active=True after dusk with a future next_setting "
+            f"boundary, got active={active}"
+        )
+        assert result == 0
+
+    def test_future_next_rising_entity_holds_then_releases(self):
+        """A future-dated ``sensor.sun_next_rising`` holds the night position pre-dawn.
+
+        Before the re-anchored sunrise the overnight window must remain active.
+        """
+        from unittest.mock import MagicMock as _MagicMock
+
+        from custom_components.adaptive_cover_pro.coordinator import _read_time_entity
+
+        paris = self._paris_tz()
+        sun = _make_sun_data(sunset_hour=21, sunrise_hour=5, day=dt.date(2026, 6, 7))
+
+        mock_state = _MagicMock()
+        mock_state.state = "2026-06-08T04:46:00+00:00"  # tomorrow UTC = 06:46 Paris
+        mock_hass = _MagicMock()
+        mock_hass.states.get.return_value = mock_state
+
+        now_local = dt.datetime(2026, 6, 7, 3, 0, 0, tzinfo=paris)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            patch(
+                "custom_components.adaptive_cover_pro.coordinator.dt_util.now",
+                return_value=now_local,
+            ),
+        ):
+            sunrise_boundary = _read_time_entity(mock_hass, "sensor.sun_next_rising")
+
+        # 01:00 UTC = 03:00 Paris → before the 06:46 Paris (= 04:46 UTC) boundary
+        frozen_utc = dt.datetime(2026, 6, 7, 1, 0, 0)
+        with (
+            patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", paris),
+            _freeze_now(frozen_utc),
+        ):
+            result, active = compute_effective_default(
+                h_def=100,
+                sunset_pos=0,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                sunset_time=None,
+                sunrise_time=sunrise_boundary,
+                window_explicitly_started=False,
+            )
+
+        assert active is True, (
+            f"Expected is_sunset_active=True before a future next_rising boundary, "
+            f"got active={active}"
+        )
+        assert result == 0
