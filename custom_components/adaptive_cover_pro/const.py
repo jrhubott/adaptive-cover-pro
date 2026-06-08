@@ -1048,3 +1048,20 @@ class ControlMethod(StrEnum):
 
     GLARE_ZONE = "glare_zone"
     """Glare zone protection active; cover extends to shield a floor zone."""
+
+
+class SunState(StrEnum):
+    """Authoritative sun classification for the companion Lovelace card.
+
+    Matches the card's three legend states (polar-chart dot colour).
+    Values are part of the diagnostics wire format — must stay byte-stable.
+    """
+
+    OUTSIDE_FOV = "outside_fov"
+    """Sun azimuth is outside the window's field of view."""
+
+    IN_FOV_NOT_VALID = "in_fov_not_valid"
+    """Sun azimuth is inside FOV but direct-sun is blocked (elevation, sunset offset, or blind spot)."""
+
+    HITTING = "hitting"
+    """Sun is directly hitting the window (direct_sun_valid is True)."""

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..const import ControlStatus
-from ..const import ClimateStrategy, ControlMethod
+from ..const import ClimateStrategy, ControlMethod, SunState
 
 # ---------------------------------------------------------------------------
 # Context dataclass – the coordinator populates this before calling build()
@@ -384,19 +384,33 @@ class DiagnosticsBuilder:
     @staticmethod
     def _build_sun_validity(ctx: DiagnosticContext) -> dict:
         """Build sun validity diagnostics."""
-        diagnostics: dict = {}
-        if ctx.cover:
-            diagnostics["sun_validity"] = {
-                "valid": ctx.cover.valid,
-                "valid_elevation": ctx.cover.valid_elevation,
-                "in_blind_spot": getattr(ctx.cover, "is_sun_in_blind_spot", None),
+        if not ctx.cover:
+            return {}
+        cover = ctx.cover
+        in_fov = getattr(cover, "in_fov", None)
+        direct_sv = getattr(cover, "direct_sun_valid", None)
+        # Derive sun_state from primitives (not from control_state_reason string)
+        if direct_sv:
+            sun_state = SunState.HITTING
+        elif in_fov:
+            sun_state = SunState.IN_FOV_NOT_VALID
+        else:
+            sun_state = SunState.OUTSIDE_FOV
+        return {
+            "sun_validity": {
+                "valid": cover.valid,
+                "valid_elevation": cover.valid_elevation,
+                "in_blind_spot": getattr(cover, "is_sun_in_blind_spot", None),
                 # True when current time is within the astronomical sunset window
                 # (after sunset+offset or before sunrise+offset). When True, the
                 # solar handler is suppressed (direct_sun_valid is False) even if
                 # the sun is geometrically in front of the window.
-                "sunset_window_active": getattr(ctx.cover, "sunset_valid", None),
+                "sunset_window_active": getattr(cover, "sunset_valid", None),
+                "in_fov": in_fov,
+                "direct_sun_valid": direct_sv,
+                "sun_state": sun_state.value,
             }
-        return diagnostics
+        }
 
     @staticmethod
     def _build_climate(ctx: DiagnosticContext) -> dict:

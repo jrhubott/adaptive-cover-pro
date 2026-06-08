@@ -160,6 +160,11 @@ class AdaptiveGeneralCover(ABC):
         """Delegate to SunGeometry.is_sun_in_blind_spot."""
         return self.solar.is_sun_in_blind_spot
 
+    @property
+    def in_fov(self) -> bool:
+        """Delegate to SunGeometry.in_fov."""
+        return self.solar.in_fov
+
     def solar_times(self) -> tuple[datetime | None, datetime | None]:
         """Delegate to the SunGeometry solar_times helper."""
         return self.solar.solar_times()

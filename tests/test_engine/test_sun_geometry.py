@@ -375,3 +375,33 @@ class TestBlindSpot:
         )
         sg = SunGeometry(160.0, 45.0, _make_sun_data(), config, _make_logger())
         assert sg.is_sun_in_blind_spot is False
+
+
+# ------------------------------------------------------------------
+# in_fov
+# ------------------------------------------------------------------
+
+
+class TestInFov:
+    """Tests for in_fov azimuth-only FOV membership."""
+
+    def test_in_fov_true_when_azimuth_in_fov_regardless_of_elevation(self):
+        """in_fov is True even when elevation is below horizon (valid_elevation=False)."""
+        # sol_elev=-5 means below horizon → valid_elevation=False, valid=False
+        # But azimuth is directly ahead (180) which is within the FOV
+        sg = SunGeometry(180.0, -5.0, _make_sun_data(), _make_config(), _make_logger())
+        assert sg.valid_elevation is False
+        assert sg.valid is False
+        assert sg.in_fov is True
+
+    def test_in_fov_false_when_azimuth_outside_fov(self):
+        """in_fov is False when azimuth is clearly outside the window FOV."""
+        # Window at 180, FOV ±45. Sun at azimuth 10 → gamma ≈ 170 → outside FOV
+        sg = SunGeometry(10.0, 45.0, _make_sun_data(), _make_config(), _make_logger())
+        assert sg.in_fov is False
+
+    def test_in_fov_true_when_valid_is_true(self):
+        """When valid=True (both azimuth and elevation pass), in_fov must also be True."""
+        sg = SunGeometry(180.0, 45.0, _make_sun_data(), _make_config(), _make_logger())
+        assert sg.valid is True
+        assert sg.in_fov is True

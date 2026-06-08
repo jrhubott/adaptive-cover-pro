@@ -141,6 +141,18 @@ class SunGeometry:
         return valid
 
     @property
+    def in_fov(self) -> bool:
+        """Check if sun azimuth is within the window's field of view (elevation ignored).
+
+        Returns True when the sun's azimuth projects into the FOV regardless of
+        whether the elevation is valid. Used by the companion card to distinguish
+        "outside FOV" from "in FOV but blocked by elevation/sunset/blind-spot".
+        """
+        azi_min = self.config.fov_left
+        azi_max = self.config.fov_right
+        return bool((self.gamma < azi_min) & (self.gamma > -azi_max))
+
+    @property
     def sunset_valid(self) -> bool:
         """Check if current time is within sunset/sunrise offset period.
 
