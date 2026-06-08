@@ -927,6 +927,9 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             attrs["elevation_valid"] = sun_validity.get("valid_elevation")
             attrs["in_blind_spot"] = sun_validity.get("in_blind_spot")
             attrs["sunset_window_active"] = sun_validity.get("sunset_window_active")
+            # Promote the #552/#553 sun_state derivation onto the wire so the
+            # companion card reads it as the authoritative sky-compass dot state.
+            attrs["sun_state"] = sun_validity.get("sun_state")
         if s.coordinator._cover_data is not None:  # noqa: SLF001
             attrs["direct_sun_valid"] = (
                 s.coordinator._cover_data.direct_sun_valid
