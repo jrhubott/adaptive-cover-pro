@@ -1465,3 +1465,77 @@ class TestCoverOnlineTransitionRetrigger:
         )
 
         coordinator.async_request_refresh.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Issue #546: cover coming back from unavailable must not be a state change
+# ---------------------------------------------------------------------------
+
+
+class TestCoverComebackFromUnavailable:
+    """A cover returning from ``unavailable``/``unknown`` to a real position is a
+    reconnection artifact, not a user move. It must not be processed as a real
+    cover state change (which would feed numeric manual-override detection).
+    """
+
+    def _make_event(self, entity_id: str, old_state_value, new_state_value):
+        event = MagicMock()
+        old_state = MagicMock(state=old_state_value)
+        new_state = MagicMock(state=new_state_value)
+        event.data = {
+            "entity_id": entity_id,
+            "old_state": old_state,
+            "new_state": new_state,
+        }
+        return event
+
+    @pytest.mark.asyncio
+    async def test_unavailable_comeback_does_not_process_as_state_change(self):
+        """old_state 'unavailable' → '25' must NOT process as a real state change."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.test"])
+        coordinator.process_entity_state_change = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.test", "unavailable", "25")
+        )
+
+        coordinator.process_entity_state_change.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unknown_comeback_still_filtered(self):
+        """old_state 'unknown' → '25' stays filtered (existing behavior)."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.test"])
+        coordinator.process_entity_state_change = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.test", "unknown", "25")
+        )
+
+        coordinator.process_entity_state_change.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_real_state_change_still_processed(self):
+        """A genuine transition (open → 25) must still be processed."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.test"])
+        coordinator.process_entity_state_change = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.test", "open", "25")
+        )
+
+        coordinator.process_entity_state_change.assert_called_once()

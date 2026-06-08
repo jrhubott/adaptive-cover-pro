@@ -40,6 +40,7 @@ def _ctx(
     primary_suppress: bool = False,
     seconds_since_command: float | None = None,
     new_state_str: str = "open",
+    has_recorded_target: bool = True,
 ) -> DetectionContext:
     """Build a DetectionContext for pure-unit detector tests."""
     policy = MagicMock()
@@ -55,6 +56,7 @@ def _ctx(
         caps=MagicMock(),
         policy=policy,
         manual_threshold=manual_threshold,
+        has_recorded_target=has_recorded_target,
         allow_reset=True,
         is_acp_context=False,
         context_user_id=None,
@@ -181,6 +183,39 @@ def test_position_delta_threshold_floored_at_tolerance():
     )
     assert d.mark_manual is False
     assert d.event_name == "manual_override_rejected_within_threshold"
+
+
+def test_position_delta_no_recorded_target_suppresses_override():
+    """No recorded command target → numeric delta is meaningless, no override.
+
+    Issue #546: when ACP never sent a command, ``our_state`` is the pipeline's
+    theoretical default, not a commanded position. Comparing a real cover
+    position against it is meaningless and must NOT mark manual override.
+    """
+    d = PositionDeltaDetector().detect(
+        _ctx(
+            our_state=100,
+            new_position=25,
+            manual_threshold=3,
+            has_recorded_target=False,
+        )
+    )
+    assert d.mark_manual is False
+    assert d.event_name == "manual_override_rejected_no_command_target"
+
+
+def test_position_delta_with_recorded_target_still_marks_large_delta():
+    """A recorded target with a large delta still marks manual override (regression)."""
+    d = PositionDeltaDetector().detect(
+        _ctx(
+            our_state=100,
+            new_position=25,
+            manual_threshold=3,
+            has_recorded_target=True,
+        )
+    )
+    assert d.mark_manual is True
+    assert d.event_name == "manual_override_set"
 
 
 # ---------------------------------------------------------------------------

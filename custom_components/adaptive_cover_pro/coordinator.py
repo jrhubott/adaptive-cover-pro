@@ -163,6 +163,13 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
         return None
 
 
+# Cover states that carry no usable position. A transition whose *old* state is
+# one of these is a reconnection/initialization artifact (issue #342 covers the
+# online-from-None case; issue #546 the unavailable-comeback case), not a real
+# position change — it must not feed numeric manual-override detection.
+_NON_POSITION_COVER_STATES = ("unavailable", "unknown")
+
+
 @dataclass
 class StateChangedData:
     """StateChangedData class."""
@@ -671,9 +678,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # initial first_refresh likely skipped this entity with
             # cover_unavailable; recompute now that it's reachable.
             new_state = data["new_state"]
-            if new_state is not None and new_state.state not in (
-                "unavailable",
-                "unknown",
+            if (
+                new_state is not None
+                and new_state.state not in _NON_POSITION_COVER_STATES
             ):
                 self.logger.debug(
                     "Cover %s came online (%s); requesting refresh",
@@ -687,7 +694,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change_data = StateChangedData(
             data["entity_id"], data["old_state"], data["new_state"]
         )
-        if self.state_change_data.old_state.state != "unknown":
+        old_state_str = self.state_change_data.old_state.state
+        if old_state_str not in _NON_POSITION_COVER_STATES:
             self.cover_state_change = True
             self.process_entity_state_change()
             # Keep a per-event copy so async_handle_cover_state_change() can
@@ -696,7 +704,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._pending_cover_events.append(self.state_change_data)
             await self.async_refresh()
         else:
-            self.logger.debug("Old state is unknown, not processing")
+            # Issue #546: a cover returning from unavailable/unknown to a real
+            # position is a reconnection artifact, not a user move.
+            self.logger.debug(
+                "Old state is %s, not processing as a position change",
+                old_state_str,
+            )
 
     async def async_check_cover_service_call(self, event: Event) -> None:
         """Detect user-initiated cover.stop_cover and start manual override.
@@ -1734,6 +1747,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.manual_reset,
                 self._cmd_svc.is_waiting_for_target,
                 self.manual_threshold,
+                has_recorded_target=recorded_target is not None,
                 secondary_axis_check=secondary_axis_check,
                 is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
                 is_in_transit=self._cmd_svc._is_cover_in_transit,
