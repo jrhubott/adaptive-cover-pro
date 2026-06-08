@@ -1347,6 +1347,17 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             f"☀️ Tracks the sun{sun_desc} and calculates position to block "
             f"direct sunlight{today_str}{_badge(40)}"
         )
+        if config.get(CONF_MINIMIZE_MOVEMENTS, False):
+            steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
+            indent = "\u00a0" * 4
+            if steps <= 1:
+                detail = "moves straight to full coverage and holds (1 step)"
+            else:
+                detail = f"reaches full coverage in up to {steps} steps"
+            lines.append(
+                f"{indent}🪟 Minimize movements — {detail}, rounding toward more "
+                "coverage to reduce motor movements."
+            )
     else:
         lines.append(
             "☀️ Sun tracking disabled — covers hold position; climate, manual override, "

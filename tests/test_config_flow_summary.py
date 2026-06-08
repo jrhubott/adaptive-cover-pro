@@ -426,6 +426,63 @@ def test_sun_tracking_elevation_shown_when_set():
     assert "below 70°" in summary
 
 
+def test_minimize_movements_omitted_when_disabled():
+    """No minimize-movements line when the feature is off (default)."""
+    summary = _build_config_summary({CONF_AZIMUTH: 180}, CoverType.BLIND)
+    assert "Minimize movements" not in summary
+
+
+def test_minimize_movements_single_step():
+    """N=1 surfaces the 'straight to full coverage' wording."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_COVERAGE_STEPS,
+        CONF_MINIMIZE_MOVEMENTS,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_MINIMIZE_MOVEMENTS: True,
+        CONF_MAX_COVERAGE_STEPS: 1,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Minimize movements" in summary
+    assert "full coverage" in summary
+    assert "1 step" in summary
+
+
+def test_minimize_movements_multi_step():
+    """N>1 surfaces the step count."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_COVERAGE_STEPS,
+        CONF_MINIMIZE_MOVEMENTS,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_MINIMIZE_MOVEMENTS: True,
+        CONF_MAX_COVERAGE_STEPS: 3,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Minimize movements" in summary
+    assert "up to 3 steps" in summary
+
+
+def test_minimize_movements_absent_when_sun_tracking_disabled():
+    """The line lives under the ☀️ tracking branch; gone when tracking is off."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_SUN_TRACKING,
+        CONF_MINIMIZE_MOVEMENTS,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_ENABLE_SUN_TRACKING: False,
+        CONF_MINIMIZE_MOVEMENTS: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Minimize movements" not in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 2: Timing
 # ---------------------------------------------------------------------------
