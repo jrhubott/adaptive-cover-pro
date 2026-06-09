@@ -385,7 +385,7 @@ class TestEdgeCasesAtThreshold:
     def test_elevation_below_threshold_edge_case_overrides_sill(
         self, base_cover_params
     ):
-        """At sol_elev < 2° (edge case), result is h_win regardless of sill_height."""
+        """At sol_elev < 2° (edge case), result is 0.0 (closed) regardless of sill_height."""
         # Edge case handler runs BEFORE sill_height calculation, so sill_height is irrelevant
         cover_no_sill = make_vertical_cover(base_cover_params, gamma=0.0, sol_elev=1.0)
         cover_with_sill = make_vertical_cover(
@@ -395,9 +395,9 @@ class TestEdgeCasesAtThreshold:
         pos_no_sill = cover_no_sill.calculate_position()
         pos_with_sill = cover_with_sill.calculate_position()
 
-        # Both should return h_win (edge case handler fires first)
-        assert pos_no_sill == cover_no_sill.h_win
-        assert pos_with_sill == cover_with_sill.h_win
+        # Both should return 0.0 (fully closed — edge case handler fires first, position 0 = closed)
+        assert pos_no_sill == 0.0
+        assert pos_with_sill == 0.0
 
     def test_elevation_below_threshold_different_sill_heights_same_result(
         self, base_cover_params

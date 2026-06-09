@@ -65,13 +65,13 @@ def _edge_case(
 
     Companion to :func:`_safety_margin`; see it for the caching rationale.
     """
-    # Very low elevation: sun nearly horizontal, full coverage safest
+    # Very low elevation: sun nearly horizontal, full coverage safest (position 0 = closed)
     if sol_elev < EDGE_CASE_LOW_ELEVATION:
-        return (True, h_win)
+        return (True, 0.0)
 
-    # Extreme gamma: sun perpendicular to window, full coverage
+    # Extreme gamma: sun perpendicular to window, full coverage (position 0 = closed)
     if abs(gamma) > EDGE_CASE_EXTREME_GAMMA:
-        return (True, h_win)
+        return (True, 0.0)
 
     # Very high elevation: sun nearly overhead, use simplified calculation
     if sol_elev > EDGE_CASE_HIGH_ELEVATION:

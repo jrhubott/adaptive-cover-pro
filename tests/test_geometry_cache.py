@@ -70,12 +70,12 @@ def test_safety_margin_distinct_keys_distinct_results():
 
 @pytest.mark.unit
 def test_edge_case_low_elevation():
-    assert EdgeCaseHandler.check_and_handle(1.0, 0.0, 2.0, 10.0) == (True, 10.0)
+    assert EdgeCaseHandler.check_and_handle(1.0, 0.0, 2.0, 10.0) == (True, 0.0)
 
 
 @pytest.mark.unit
 def test_edge_case_extreme_gamma():
-    assert EdgeCaseHandler.check_and_handle(45.0, 90.0, 2.0, 10.0) == (True, 10.0)
+    assert EdgeCaseHandler.check_and_handle(45.0, 90.0, 2.0, 10.0) == (True, 0.0)
 
 
 @pytest.mark.unit
