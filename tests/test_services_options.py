@@ -1426,3 +1426,172 @@ class TestSetVenetian:
         assert CONF_VENETIAN_BACKROTATE_PUBLISH_LAG in _SECTION_VENETIAN
         # Skip CONF_VENETIAN_TILT_SKIP_ABOVE import — use length check
         assert len(_SECTION_VENETIAN) == 4
+
+
+# ---------------------------------------------------------------------------
+# Issue #570 — string entity_id regression tests (end-to-end service path)
+# ---------------------------------------------------------------------------
+
+
+class TestStringEntityIdRegression:
+    """Regression tests for issue #570: bare-string entity_id must work.
+
+    Before the fix, list("cover.test_blind") char-splits, matches no coordinator,
+    and the service returns success having changed nothing (silent no-op).
+    """
+
+    async def test_set_automation_timing_string_entity_id(self, hass: HomeAssistant):
+        """set_automation_timing with a STRING entity_id (not list) must apply the patch."""
+        await _setup(hass, entry_id="str_eid_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            # Pass entity_id as a bare string (not a list) — mirrors what HA
+            # services called from YAML/templates can deliver.
+            await hass.services.async_call(
+                DOMAIN,
+                "set_automation_timing",
+                {CONF_DELTA_POSITION: 7},
+                blocking=True,
+                target={"entity_id": "cover.test_blind"},  # <-- string, not list
+            )
+            await hass.async_block_till_done()
+
+        mock_update.assert_called_once(), "async_update_entry must be called once"
+        new_opts = mock_update.call_args[1]["options"]
+        assert (
+            new_opts[CONF_DELTA_POSITION] == 7
+        ), f"Expected delta_position=7 in options, got: {new_opts.get(CONF_DELTA_POSITION)}"
+
+    async def test_set_automation_timing_list_entity_id_still_works(
+        self, hass: HomeAssistant
+    ):
+        """Existing list entity_id path must remain green after the fix."""
+        await _setup(hass, entry_id="str_eid_list_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_automation_timing", {CONF_DELTA_POSITION: 5})
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_DELTA_POSITION] == 5
+
+
+# ---------------------------------------------------------------------------
+# Issue #570 secondary gap — sunset_time_entity / sunrise_time_entity
+# ---------------------------------------------------------------------------
+
+
+class TestSunsetSunriseTimeEntity:
+    """Tests for set_option and set_sunset_sunrise with *_time_entity keys.
+
+    These are valid config-flow options (CONF_SUNSET_TIME_ENTITY,
+    CONF_SUNRISE_TIME_ENTITY) that were missing from FIELD_VALIDATORS and
+    _SECTION_SUNSET_SUNRISE, causing set_option to reject them as "Unknown
+    option" and set_sunset_sunrise to silently drop them.
+    """
+
+    def test_sunset_time_entity_in_field_validators(self):
+        """CONF_SUNSET_TIME_ENTITY must be in FIELD_VALIDATORS."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TIME_ENTITY
+
+        assert (
+            CONF_SUNSET_TIME_ENTITY in FIELD_VALIDATORS
+        ), "sunset_time_entity missing from FIELD_VALIDATORS"
+
+    def test_sunrise_time_entity_in_field_validators(self):
+        """CONF_SUNRISE_TIME_ENTITY must be in FIELD_VALIDATORS."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_TIME_ENTITY
+
+        assert (
+            CONF_SUNRISE_TIME_ENTITY in FIELD_VALIDATORS
+        ), "sunrise_time_entity missing from FIELD_VALIDATORS"
+
+    def test_sunset_time_entity_in_all_settable_keys(self):
+        """CONF_SUNSET_TIME_ENTITY must be in ALL_SETTABLE_KEYS (via _SECTION_SUNSET_SUNRISE)."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TIME_ENTITY
+
+        assert (
+            CONF_SUNSET_TIME_ENTITY in ALL_SETTABLE_KEYS
+        ), "sunset_time_entity missing from ALL_SETTABLE_KEYS"
+
+    def test_sunrise_time_entity_in_all_settable_keys(self):
+        """CONF_SUNRISE_TIME_ENTITY must be in ALL_SETTABLE_KEYS (via _SECTION_SUNSET_SUNRISE)."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_TIME_ENTITY
+
+        assert (
+            CONF_SUNRISE_TIME_ENTITY in ALL_SETTABLE_KEYS
+        ), "sunrise_time_entity missing from ALL_SETTABLE_KEYS"
+
+    async def test_set_option_sunset_time_entity_accepted(self, hass: HomeAssistant):
+        """set_option must accept sunset_time_entity without 'Unknown option' error."""
+        await _setup(hass, entry_id="ste_opt_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_option",
+                {"option": "sunset_time_entity", "value": "sensor.my_sunset"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunset_time_entity") == "sensor.my_sunset"
+
+    async def test_set_option_sunrise_time_entity_accepted(self, hass: HomeAssistant):
+        """set_option must accept sunrise_time_entity without 'Unknown option' error."""
+        await _setup(hass, entry_id="ste_opt_02")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_option",
+                {"option": "sunrise_time_entity", "value": "sensor.my_sunrise"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunrise_time_entity") == "sensor.my_sunrise"
+
+    async def test_set_sunset_sunrise_carries_time_entity(self, hass: HomeAssistant):
+        """set_sunset_sunrise must persist sunset_time_entity into options."""
+        await _setup(hass, entry_id="ste_ss_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_sunset_sunrise",
+                {"sunset_time_entity": "sensor.custom_sunset"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunset_time_entity") == "sensor.custom_sunset"
+
+    async def test_set_sunset_sunrise_carries_sunrise_time_entity(
+        self, hass: HomeAssistant
+    ):
+        """set_sunset_sunrise must persist sunrise_time_entity into options."""
+        await _setup(hass, entry_id="ste_ss_02")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_sunset_sunrise",
+                {"sunrise_time_entity": "sensor.custom_sunrise"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunrise_time_entity") == "sensor.custom_sunrise"

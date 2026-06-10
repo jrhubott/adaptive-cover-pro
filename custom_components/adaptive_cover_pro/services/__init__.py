@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.core import ServiceCall, SupportsResponse
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 if TYPE_CHECKING:
@@ -41,9 +42,9 @@ def _resolve_targets(
     """
     all_coordinators: dict = hass.data.get(DOMAIN, {})
 
-    entity_ids: list[str] = list(call.data.get("entity_id", []))
-    device_ids: list[str] = list(call.data.get("device_id", []))
-    area_ids: list[str] = list(call.data.get("area_id", []))
+    entity_ids: list[str] = cv.ensure_list(call.data.get("entity_id"))
+    device_ids: list[str] = cv.ensure_list(call.data.get("device_id"))
+    area_ids: list[str] = cv.ensure_list(call.data.get("area_id"))
 
     # Expand area_ids → device_ids
     if area_ids:
@@ -92,6 +93,14 @@ def _resolve_targets(
                 "integration_service: entity %s is not managed by any ACP instance — skipping",
                 eid,
             )
+
+    if (entity_ids or device_ids or area_ids) and not result:
+        _LOGGER.warning(
+            "integration_service: target %s/%s/%s resolved to no ACP instances — nothing updated",
+            entity_ids,
+            device_ids,
+            area_ids,
+        )
 
     return result
 

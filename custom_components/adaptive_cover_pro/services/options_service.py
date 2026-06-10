@@ -90,8 +90,10 @@ from ..const import (
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUNRISE_OFFSET,
+    CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
@@ -249,6 +251,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_SUNSET_USE_MY: _bool_v(),
     CONF_SUNSET_OFFSET: _range(CONF_SUNSET_OFFSET),
     CONF_SUNRISE_OFFSET: _range(CONF_SUNRISE_OFFSET),
+    CONF_SUNSET_TIME_ENTITY: _entity_v(),
+    CONF_SUNRISE_TIME_ENTITY: _entity_v(),
     CONF_OPEN_CLOSE_THRESHOLD: _range(CONF_OPEN_CLOSE_THRESHOLD),
     CONF_INVERSE_STATE: _bool_v(),
     # Explicit tilt (venetian only) — None means use solar-computed tilt.
@@ -379,6 +383,8 @@ _SECTION_SUNSET_SUNRISE = frozenset(
         CONF_SUNRISE_OFFSET,
         CONF_SUNSET_USE_MY,
         CONF_MY_POSITION_VALUE,
+        CONF_SUNSET_TIME_ENTITY,
+        CONF_SUNRISE_TIME_ENTITY,
     }
 )
 
