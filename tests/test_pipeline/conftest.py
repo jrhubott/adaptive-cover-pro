@@ -87,6 +87,7 @@ def make_snapshot(
     current_cover_position: int | None = None,
     default_tilt: int | None = None,
     sunset_tilt: int | None = None,
+    solar_floor_active: bool = True,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -135,4 +136,5 @@ def make_snapshot(
         current_cover_position=current_cover_position,
         default_tilt=default_tilt,
         sunset_tilt=sunset_tilt,
+        solar_floor_active=solar_floor_active,
     )

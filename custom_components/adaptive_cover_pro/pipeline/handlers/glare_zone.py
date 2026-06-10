@@ -17,7 +17,11 @@ from ...engine.covers.vertical import (
 )
 from ...const import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import apply_snapshot_limits, compute_raw_calculated_position
+from ..helpers import (
+    apply_snapshot_limits,
+    compute_raw_calculated_position,
+    solar_floor,
+)
 from ..types import PipelineResult, PipelineSnapshot
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,7 +109,7 @@ class GlareZoneHandler(OverrideHandler):
         state = int(
             round(cover.calculate_percentage(effective_distance_override=min_distance))
         )
-        state = max(state, 1)
+        state = solar_floor(state, floor_active=snapshot.solar_floor_active)
         position = apply_snapshot_limits(snapshot, state, sun_valid=True)
 
         zone_names = ", ".join(contributing_zones)

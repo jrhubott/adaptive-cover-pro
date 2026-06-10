@@ -10,10 +10,12 @@ from types import SimpleNamespace
 
 
 from custom_components.adaptive_cover_pro.pipeline.helpers import (
+    SOLAR_TRACKING_FLOOR_PCT,
     apply_snapshot_limits,
     compute_default_position,
     compute_raw_calculated_position,
     compute_solar_position,
+    solar_floor,
 )
 
 # ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ def _make_snapshot(
     min_pos_sun_tracking=None,
     is_sunset_active=False,
     enable_sun_tracking=True,
+    solar_floor_active=True,
 ):
     return SimpleNamespace(
         cover=_make_cover(direct_sun_valid=direct_sun_valid, calc_pct=calc_pct),
@@ -71,6 +74,7 @@ def _make_snapshot(
         default_position=default_position,
         is_sunset_active=is_sunset_active,
         enable_sun_tracking=enable_sun_tracking,
+        solar_floor_active=solar_floor_active,
     )
 
 
@@ -126,6 +130,30 @@ class TestApplySnapshotLimits:
 
 
 # ---------------------------------------------------------------------------
+# solar_floor — the named, capability-gated floor primitive (#569)
+# ---------------------------------------------------------------------------
+
+
+class TestSolarFloor:
+    """The single source of truth for the solar-tracking 1 % floor."""
+
+    def test_constant_is_one(self):
+        assert SOLAR_TRACKING_FLOOR_PCT == 1
+
+    def test_floors_zero_when_active(self):
+        assert solar_floor(0, floor_active=True) == 1
+
+    def test_passes_through_above_floor_when_active(self):
+        assert solar_floor(40, floor_active=True) == 40
+
+    def test_reaches_zero_when_inactive(self):
+        assert solar_floor(0, floor_active=False) == 0
+
+    def test_passes_through_above_floor_when_inactive(self):
+        assert solar_floor(40, floor_active=False) == 40
+
+
+# ---------------------------------------------------------------------------
 # compute_solar_position
 # ---------------------------------------------------------------------------
 
@@ -140,7 +168,7 @@ class TestComputeSolarPosition:
 
     def test_floors_at_1(self):
         """Result is never 0 — floored to 1 to prevent open/close-only covers closing."""
-        snap = _make_snapshot(calc_pct=0.2)
+        snap = _make_snapshot(calc_pct=0.2, solar_floor_active=True)
         assert compute_solar_position(snap) == 1
 
     def test_applies_max_limit(self):
@@ -159,9 +187,19 @@ class TestComputeSolarPosition:
         assert compute_solar_position(snap) == 46
 
     def test_exactly_zero_floors_to_one(self):
-        """Exactly 0% from calculate_percentage becomes 1%."""
-        snap = _make_snapshot(calc_pct=0.0)
+        """Exactly 0% from calculate_percentage becomes 1% when the floor is active."""
+        snap = _make_snapshot(calc_pct=0.0, solar_floor_active=True)
         assert compute_solar_position(snap) == 1
+
+    def test_positionable_reaches_zero(self):
+        """Set-position-capable instance (floor off) reaches a true 0% (#569)."""
+        snap = _make_snapshot(calc_pct=0.0, solar_floor_active=False)
+        assert compute_solar_position(snap) == 0
+
+    def test_positionable_low_value_not_floored(self):
+        """A sub-1% geometry rounds to 0 and is NOT floored when positionable (#569)."""
+        snap = _make_snapshot(calc_pct=0.4, solar_floor_active=False)
+        assert compute_solar_position(snap) == 0
 
 
 # ---------------------------------------------------------------------------

@@ -559,8 +559,21 @@ class TestForecastFloorAndRound:
             cover_factory=_solar_cover_factory(0),
             config=_make_config(),
             now=_NOW,
+            floor_active=True,
         )
         assert all(s.handler == "solar" and s.position == 1 for s in f.samples)
+
+    def test_positionable_solar_reaches_zero(self):
+        """A 0% geometry reaches a true 0% when the instance is positionable (#569)."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(0),
+            config=_make_config(),
+            now=_NOW,
+            floor_active=False,
+        )
+        assert all(s.handler == "solar" and s.position == 0 for s in f.samples)
 
     def test_solar_percentage_is_rounded_not_truncated(self):
         """54.6% rounds to 55 (the live branch rounds; the old forecast truncated)."""

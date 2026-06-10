@@ -447,6 +447,93 @@ def test_build_consults_is_glare_zone_enabled_callable():
     assert snapshot.active_zone_names == frozenset({"zone_a"})
 
 
+# ---------------------------------------------------------------------------
+# solar_floor_active rollup (#569)
+# ---------------------------------------------------------------------------
+
+
+def _caps(*, has_set_position: bool):
+    from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
+
+    return CoverCapabilities(
+        has_set_position=has_set_position,
+        has_set_tilt_position=False,
+        has_open=True,
+        has_close=True,
+    )
+
+
+def _build_with_caps(builder, caps_map):
+    """Run ``builder.build`` with a given cover_capabilities map.
+
+    Wires ``policy.position_axis_supported`` to read ``has_set_position`` so
+    the rollup is exercised against realistic per-entity capability data.
+    """
+    builder._policy.position_axis_supported.side_effect = lambda c: c.has_set_position
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    return builder.build(
+        {},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+        cover_capabilities=caps_map,
+    )
+
+
+@pytest.mark.unit
+def test_solar_floor_inactive_when_all_entities_positionable():
+    """All bound entities support set_position → floor off (reaches 0%)."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(
+        builder,
+        {
+            "cover.a": _caps(has_set_position=True),
+            "cover.b": _caps(has_set_position=True),
+        },
+    )
+    assert snap.solar_floor_active is False
+
+
+@pytest.mark.unit
+def test_solar_floor_active_when_any_entity_open_close_only():
+    """A single open/close-only entity keeps the floor active (conservative)."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(
+        builder,
+        {
+            "cover.a": _caps(has_set_position=True),
+            "cover.b": _caps(has_set_position=False),
+        },
+    )
+    assert snap.solar_floor_active is True
+
+
+@pytest.mark.unit
+def test_solar_floor_active_when_caps_empty():
+    """Empty caps map → floor active (no positive evidence of positionability)."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(builder, {})
+    assert snap.solar_floor_active is True
+
+
+@pytest.mark.unit
+def test_solar_floor_active_when_caps_none():
+    """None caps (entities not readable) → floor active."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(builder, None)
+    assert snap.solar_floor_active is True
+
+
 @pytest.mark.unit
 def test_read_climate_use_lux_inferred_from_cloud_suppression():
     """Phase D preserves the Issue #268 cloud-suppression override."""

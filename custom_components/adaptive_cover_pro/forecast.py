@@ -100,6 +100,7 @@ def build_forecast(
     step_minutes: int = FORECAST_STEP_MINUTES,
     minimize_movements: bool = False,
     max_coverage_steps: int = 1,
+    floor_active: bool = True,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
@@ -133,6 +134,7 @@ def build_forecast(
         step_minutes=step_minutes,
         minimize_movements=minimize_movements,
         max_coverage_steps=max_coverage_steps,
+        floor_active=floor_active,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -149,6 +151,7 @@ def _build_samples(
     step_minutes: int,
     minimize_movements: bool = False,
     max_coverage_steps: int = 1,
+    floor_active: bool = True,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -201,6 +204,7 @@ def _build_samples(
                 minimize_movements=minimize_movements,
                 max_coverage_steps=max_coverage_steps,
                 policy=policy,
+                floor_active=floor_active,
             )
             samples.append(ForecastSample(t=t, position=pos, handler="solar"))
         else:
@@ -361,6 +365,15 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
             options=options,
         )
 
+    # Sun-tracking floor rollup (#569): mirror the live snapshot builder so the
+    # forecast strip matches what the cover is actually commanded to. The floor
+    # is off only when every bound entity supports the policy's position axis;
+    # missing caps (snapshot not built yet) default to floor active.
+    caps = getattr(coord._snapshot, "cover_capabilities", None) or {}  # noqa: SLF001
+    all_positionable = bool(caps) and all(
+        coord._policy.position_axis_supported(c) for c in caps.values()  # noqa: SLF001
+    )
+
     # The coverage direction the primitives need is read from the policy's
     # primary axis (single source of truth), so the shim passes the policy
     # straight through rather than precomputing full_coverage_at_zero.
@@ -376,4 +389,5 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         max_coverage_steps=int(
             options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
         ),
+        floor_active=not all_positionable,
     )

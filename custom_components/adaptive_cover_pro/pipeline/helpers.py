@@ -25,6 +25,27 @@ if TYPE_CHECKING:
     from ..engine.covers.base import AdaptiveGeneralCover
 
 
+# The minimum sun-tracked position (%) for open/close-only covers. Keeping a
+# binary cover at >= 1 % stops it from fully retracting while the sun is still
+# in the field of view (a 0 % command means "open/retract" on a cover with no
+# set_position). Set-position-capable covers can reach a true 0 %, so the
+# floor is gated off for them at instance compute time (issue #569).
+SOLAR_TRACKING_FLOOR_PCT = 1
+
+
+def solar_floor(value: int, *, floor_active: bool) -> int:
+    """Apply the sun-tracking minimum-position floor when *floor_active*.
+
+    Single source of truth for the former ``max(state, 1)`` clamp that lived
+    in both :func:`solar_position_from_geometry` and the glare-zone handler.
+    When ``floor_active`` is False (every bound entity supports set_position),
+    the value passes through untouched so the cover can reach a true 0 %.
+    """
+    if floor_active:
+        return max(value, SOLAR_TRACKING_FLOOR_PCT)
+    return value
+
+
 def apply_config_limits(
     value: int,
     config: CoverConfig,
@@ -87,6 +108,7 @@ def solar_position_from_geometry(
     minimize_movements: bool,
     max_coverage_steps: int,
     policy: CoverTypePolicy | None,
+    floor_active: bool = True,
 ) -> int:
     """Sun-tracked position from raw geometry, with all standard transforms.
 
@@ -96,14 +118,16 @@ def solar_position_from_geometry(
     1. Calls ``cover.calculate_percentage()`` (pure geometry), rounded.
     2. Optionally quantizes into the configured number of discrete coverage
        levels (movement minimization — opt-in, rounds toward coverage).
-    3. Floors at 1 % so open/close-only covers never close while the sun is
-       still in the field of view.
+    3. Floors at ``SOLAR_TRACKING_FLOOR_PCT`` (1 %) so open/close-only covers
+       never close while the sun is still in the field of view — but only when
+       ``floor_active``. Set-position-capable instances pass ``floor_active``
+       False so the cover can reach a true 0 % (issue #569).
     4. Applies the configured min/max position limits (``sun_valid=True``).
 
     Should only be called when ``cover.direct_sun_valid`` is True.
 
     Returns:
-        Sun-tracked position (1–100 after floor, then limited).
+        Sun-tracked position (0–100; >= 1 only when ``floor_active``), limited.
 
     """
     state = int(round(cover.calculate_percentage()))
@@ -113,7 +137,7 @@ def solar_position_from_geometry(
             max_coverage_steps,
             full_coverage_at_zero=not policy.axes[0].open_blocks_sun,
         )
-    state = max(state, 1)
+    state = solar_floor(state, floor_active=floor_active)
     return apply_config_limits(state, config, sun_valid=True)
 
 
@@ -126,7 +150,8 @@ def compute_solar_position(snapshot: PipelineSnapshot) -> int:
         snapshot: Current pipeline snapshot.
 
     Returns:
-        Sun-tracked position (1–100 after floor, then limited).
+        Sun-tracked position (>= 1 only when ``snapshot.solar_floor_active``),
+        then limited.
 
     """
     return solar_position_from_geometry(
@@ -135,6 +160,7 @@ def compute_solar_position(snapshot: PipelineSnapshot) -> int:
         minimize_movements=getattr(snapshot, "minimize_movements", False),
         max_coverage_steps=getattr(snapshot, "max_coverage_steps", 1),
         policy=getattr(snapshot, "policy", None),
+        floor_active=getattr(snapshot, "solar_floor_active", True),
     )
 
 

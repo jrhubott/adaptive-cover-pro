@@ -261,6 +261,7 @@ class PipelineSnapshotBuilder:
         is_glare_zone_enabled: Callable[[int], bool],
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
+        cover_capabilities: dict | None = None,
     ) -> PipelineSnapshot:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
@@ -276,6 +277,13 @@ class PipelineSnapshotBuilder:
         owns those switch attributes (``glare_zone_0``, ``glare_zone_1`` …);
         the builder reads them through this callable so it never reaches back
         into ``coordinator.self``.
+
+        ``cover_capabilities`` maps each bound entity_id to its
+        ``CoverCapabilities``.  It drives the sun-tracking floor rollup
+        (issue #569): the 1 % floor is switched off only when *every* bound
+        entity supports the policy's position axis (conservative
+        mixed-instance rule), so positionable covers reach a true 0 %.  ``None``
+        / empty leaves the floor active.
         """
         if effective_default is None or is_sunset_active is None:
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
@@ -298,6 +306,16 @@ class PipelineSnapshotBuilder:
             for idx, zone in enumerate(glare_zones_cfg.zones):
                 if is_glare_zone_enabled(idx):
                     active_zone_names.add(zone.name)
+
+        # Sun-tracking floor rollup (#569): switch the 1 % floor off only when
+        # every bound entity supports the policy's position axis. A mixed
+        # instance (any open/close-only entity) or unknown caps keeps the floor
+        # active, so a binary cover never fully retracts with sun in the FOV.
+        caps = cover_capabilities or {}
+        all_positionable = bool(caps) and all(
+            self._policy.position_axis_supported(c) for c in caps.values()
+        )
+        solar_floor_active = not all_positionable
 
         return PipelineSnapshot(
             cover=cover_data,
@@ -348,4 +366,5 @@ class PipelineSnapshotBuilder:
             ),
             default_tilt=options.get(CONF_DEFAULT_TILT),
             sunset_tilt=options.get(CONF_SUNSET_TILT),
+            solar_floor_active=solar_floor_active,
         )

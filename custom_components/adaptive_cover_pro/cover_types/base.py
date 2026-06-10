@@ -350,6 +350,22 @@ class CoverTypePolicy(ABC):
             return TILT_AXIS
         return primary
 
+    def position_axis_supported(self, caps: Any) -> bool:
+        """Whether *this entity* exposes the policy's primary (position) axis.
+
+        Reads the capability flag named by ``axes[0].capability_key`` so the
+        check stays behind the policy/axis abstraction — no hardcoded
+        capability-key literal at the call site. Used by the
+        solar floor gate (#569): a set-position-capable cover can be commanded
+        to a true 0 % during sun tracking, so the 1 % open/close-only floor
+        must not apply to it.
+
+        ``caps=None`` (entity not yet readable) defaults to ``True`` — the
+        instance-level rollup in the snapshot builder applies the conservative
+        mixed-instance rule on top of this.
+        """
+        return _caps_get(caps, self.axes[0].capability_key, default=True)
+
     def position_for_intent(self, *, sun_through: bool) -> int:
         """Map a semantic intent to the numeric value for the primary axis.
 

@@ -201,6 +201,15 @@ class PipelineSnapshot:
     minimize_movements: bool = False
     max_coverage_steps: int = 1
 
+    # Whether the sun-tracking 1 % floor applies this cycle (issue #569). The
+    # solar branch and the glare-zone handler floor the geometric position at
+    # ``SOLAR_TRACKING_FLOOR_PCT`` so open/close-only covers never fully retract
+    # while the sun is in the FOV. The snapshot builder sets this False only
+    # when *every* bound entity supports set_position (conservative
+    # mixed-instance rollup) so positionable covers reach a true 0 %. Defaults
+    # to True so the floor stays in effect for snapshots that don't set it.
+    solar_floor_active: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Output types

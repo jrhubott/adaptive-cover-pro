@@ -336,6 +336,78 @@ class TestReadAxisValue:
 
 
 # ---------------------------------------------------------------------------
+# position_axis_supported — does this entity expose the policy's primary axis?
+# ---------------------------------------------------------------------------
+
+
+class TestPositionAxisSupported:
+    """``position_axis_supported`` reads the primary axis capability per entity.
+
+    Used by the solar floor gate (#569): a set-position-capable cover can be
+    commanded to a true 0 % during sun tracking, so the 1 % floor must not
+    apply. The signal routes through the policy's ``axes[0].capability_key``
+    so no ``caps.get("has_set_position")`` literal leaks outside cover_types/.
+    """
+
+    @pytest.mark.unit
+    def test_blind_positionable_dict_true(self):
+        policy = get_policy("cover_blind")
+        assert policy.position_axis_supported({"has_set_position": True}) is True
+
+    @pytest.mark.unit
+    def test_blind_positionable_dict_false(self):
+        policy = get_policy("cover_blind")
+        assert policy.position_axis_supported({"has_set_position": False}) is False
+
+    @pytest.mark.unit
+    def test_blind_positionable_dataclass_true(self):
+        policy = get_policy("cover_blind")
+        caps = CoverCapabilities(
+            has_set_position=True,
+            has_set_tilt_position=False,
+            has_open=True,
+            has_close=True,
+        )
+        assert policy.position_axis_supported(caps) is True
+
+    @pytest.mark.unit
+    def test_blind_positionable_dataclass_false(self):
+        policy = get_policy("cover_blind")
+        caps = CoverCapabilities(
+            has_set_position=False,
+            has_set_tilt_position=False,
+            has_open=True,
+            has_close=True,
+        )
+        assert policy.position_axis_supported(caps) is False
+
+    @pytest.mark.unit
+    def test_none_caps_defaults_supported(self):
+        # caps unknown (entity not ready) → assume supported (default=True) so
+        # the floor is NOT spuriously applied. The instance-level rollup in the
+        # snapshot builder applies the conservative mixed-instance rule.
+        assert get_policy("cover_blind").position_axis_supported(None) is True
+
+    @pytest.mark.unit
+    def test_tilt_routes_to_tilt_capability(self):
+        # cover_tilt's primary axis is the tilt axis, so the "position axis"
+        # support check reads has_set_tilt_position, not has_set_position.
+        policy = get_policy("cover_tilt")
+        assert (
+            policy.position_axis_supported(
+                {"has_set_position": True, "has_set_tilt_position": False}
+            )
+            is False
+        )
+        assert (
+            policy.position_axis_supported(
+                {"has_set_position": False, "has_set_tilt_position": True}
+            )
+            is True
+        )
+
+
+# ---------------------------------------------------------------------------
 # Regression guard for CODING_GUIDELINES.md "no hardcoded capability strings"
 # ---------------------------------------------------------------------------
 

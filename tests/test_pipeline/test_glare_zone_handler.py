@@ -383,7 +383,7 @@ class TestGlareZoneBoundaryAtBaseDistance:
 
 
 class TestGlareZonePositionFloor:
-    """Verify the max(state, 1) clamp prevents position 0."""
+    """Verify the solar floor clamp prevents position 0 for open/close-only covers."""
 
     handler = GlareZoneHandler()
 
@@ -404,6 +404,7 @@ class TestGlareZonePositionFloor:
             cover_type="cover_blind",
             glare_zones=glare_cfg,
             active_zone_names={"desk"},
+            solar_floor_active=True,
         )
         result = self.handler.evaluate(snap)
         assert result is not None
@@ -426,10 +427,34 @@ class TestGlareZonePositionFloor:
             cover_type="cover_blind",
             glare_zones=glare_cfg,
             active_zone_names={"desk"},
+            solar_floor_active=True,
         )
         result = self.handler.evaluate(snap)
         assert result is not None
         assert result.position >= 1
+
+    def test_positionable_glare_zone_reaches_zero(self) -> None:
+        """Set-position-capable instance (floor off) reaches a true 0% (#569)."""
+        cover = _make_vertical_cover(
+            distance=5.0,
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=0.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="desk", x=0.0, y=0.5, radius=0.0)],  # 0.5 m
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            glare_zones=glare_cfg,
+            active_zone_names={"desk"},
+            solar_floor_active=False,
+        )
+        result = self.handler.evaluate(snap)
+        assert result is not None
+        assert result.position == 0
 
 
 class TestGlareZonePositionLimits:

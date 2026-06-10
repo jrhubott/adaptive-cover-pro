@@ -1058,6 +1058,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             is_glare_zone_enabled=self._is_glare_zone_enabled,
             effective_default=effective_default,
             is_sunset_active=is_sunset_active,
+            cover_capabilities=getattr(
+                getattr(self, "_snapshot", None), "cover_capabilities", None
+            ),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -2031,6 +2034,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             in_time_window=self.check_adaptive_time,
             current_cover_position=self._compute_mean_cover_position(),
             is_glare_zone_enabled=self._is_glare_zone_enabled,
+            cover_capabilities=getattr(
+                getattr(self, "_snapshot", None), "cover_capabilities", None
+            ),
         )
         floors = gather_active_floors(snapshot)
         effective_floor_pos, _ = effective_floor(floors)
