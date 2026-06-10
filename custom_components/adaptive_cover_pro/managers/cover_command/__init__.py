@@ -949,21 +949,26 @@ class CoverCommandService:
 
         # Same-position band — applies to ALL callers, including force=True and
         # is_safety=True.  Issuing set_cover_position when the cover is already
-        # at (or within user-configured tolerance of) the target is a physical
-        # no-op that causes audible relay clicks on many motors (issue #290).
-        # The band is governed by _position_tolerance (CONF_POSITION_TOLERANCE,
-        # default POSITION_TOLERANCE_PERCENT = 3) so the user controls the
-        # dead-band width; raising it suppresses repeated commands when a motor
-        # physically cannot reach the commanded special-position target (issue
-        # #507).  At the default of 3 this also gives the main command gate the
-        # same tolerance the reconciliation path already used.
+        # EXACTLY at the target is a true no-op that causes audible relay clicks
+        # on many motors (issue #290), so we suppress it here.
+        #
+        # This gate keys off EXACT equality only — it is NOT a hysteresis band.
+        # Movement hysteresis (how big a move must be before we re-command) is
+        # owned solely by _check_position_delta below, governed by the user's
+        # CONF_DELTA_POSITION.  Using the reconciliation tolerance here conflated
+        # the two concepts and suppressed legitimate small tracking moves (issue
+        # #567).  The relay-click / unreachable-target suppression that motivated
+        # the old tolerance band (issue #507) lives in the reconciliation path
+        # (run_reconciliation_pass: tolerance match + max_retries give-up), where
+        # _position_tolerance correctly belongs — not here.
+        #
         # sun_just_appeared is the one exception: the sun transitioning in/out of
         # validity is a sentinel that we must re-confirm the cover position even
         # if it hasn't changed numerically.
         if (
             not context.sun_just_appeared
             and _current is not None
-            and abs(_current - position) <= self._position_tolerance
+            and _current == position
         ):
             if context.policy is not None and context.tilt is not None:
                 await context.policy.maybe_update_tilt_only(

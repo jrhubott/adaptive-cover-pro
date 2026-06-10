@@ -468,6 +468,9 @@ CONF_DELTA_TIME = "delta_time"  # min seconds between commands, range 2-60
 # reconciliation pass treats the cover as "not arrived" and resends the
 # command. Distinct from CONF_DELTA_POSITION (movement hysteresis). Default
 # is POSITION_TOLERANCE_PERCENT (see section 20). Range 0-20. Issue #507.
+# NOTE: this is a reconciliation-only tolerance. The command-emission
+# same-position gate must NOT use it — it keys off exact equality, and
+# movement hysteresis is owned by CONF_DELTA_POSITION (issue #567).
 CONF_POSITION_TOLERANCE = "position_tolerance"
 CONF_START_TIME = "start_time"  # active-window start "HH:MM:SS"
 CONF_START_ENTITY = "start_entity"  # input_datetime overriding start_time

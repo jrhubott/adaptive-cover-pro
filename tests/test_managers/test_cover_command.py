@@ -671,7 +671,7 @@ async def test_apply_position_proceeds_when_state_loaded_with_unknown_position(
     assert reason != "cover_unavailable"
 
 
-# --- position_tolerance same-position band (issue #507) ---
+# --- same-position exact-equality gate + reconciliation tolerance (issues #507/#567) ---
 
 
 def _ctx_with_special() -> PositionContext:
@@ -711,43 +711,55 @@ def _stub_state(mock_hass, current_position: int) -> None:
 
 
 @pytest.mark.asyncio
-async def test_apply_position_within_tolerance_skips_normal_path(
+async def test_apply_position_within_tolerance_band_now_sends(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #507 — cover at 98, target 100, tolerance=8: storm-repro, normal path.
+    """Issue #567 (was #507) — cover at 98, target 100, tolerance=8: now SENT.
 
-    With |98-100|=2 <= tolerance=8 the same-position band must suppress the
-    command.  No set_cover_position service call is made and last_skipped_action
-    records the skip.  This is the exact scenario from the diagnostics report.
+    The same-position SEND gate uses exact equality, not the reconciliation
+    tolerance.  98 != 100, so with the special target bypassing the movement
+    delta gate (#127) the command is sent.  Under the old #507 tolerance band
+    (|98-100|=2 <= 8) this was wrongly suppressed as same_position; the
+    relay-click / unreachable-target suppression now lives in the
+    reconciliation path, not in this command-emission gate.
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
     _stub_state(mock_hass, current_position=98)
 
-    with patch.object(svc, "_get_current_position", return_value=98):
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
         outcome, reason = await svc.apply_position(
             "cover.test", 100, "default", _ctx_with_special()
         )
 
-    assert outcome == "skipped"
-    assert reason == "same_position"
-    mock_hass.services.async_call.assert_not_called()
-    assert svc.last_skipped_action["entity_id"] == "cover.test"
-    assert svc.last_skipped_action["reason"] == "same_position"
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_apply_position_within_tolerance_skips_force_path(
+async def test_unreachable_target_suppressed_by_reconcile_not_command_gate(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #507 — force=True within tolerance is ALSO suppressed (user decision).
+    """Issue #567 (was #507) — #507's relay-click suppression lives in reconcile.
 
-    The user owns position_tolerance, so if the cover is already within tolerance
-    of the target no command should be sent regardless of force/safety.
+    A force/safety target within the reconciliation tolerance but not exactly at
+    the cover's rest position is SENT through the command gate (exact-equality
+    gate doesn't suppress it).  The repeated re-commanding of an unreachable
+    target is what #507 was really about, and that is suppressed by the
+    reconciliation give-up path (max_retries) — not by the command-emission
+    gate.  Here we assert the command gate sends; the give-up behavior is
+    covered by ``test_reconcile_gives_up_on_unreachable_target``.
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
     _stub_state(mock_hass, current_position=98)
 
-    ctx = _ctx_with_special()
     ctx = PositionContext(
         auto_control=True,
         manual_override=False,
@@ -759,19 +771,30 @@ async def test_apply_position_within_tolerance_skips_force_path(
         is_safety=True,
     )
 
-    with patch.object(svc, "_get_current_position", return_value=98):
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
         outcome, reason = await svc.apply_position(
             "cover.test", 100, "force_override", ctx
         )
 
-    assert outcome == "skipped"
-    assert reason == "same_position"
-    mock_hass.services.async_call.assert_not_called()
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_apply_position_exact_equality_still_skips(mock_hass, logger, grace_mgr):
-    """Exact-equality case still skips with default tolerance=0."""
+    """The same-position SEND gate suppresses true no-ops (exact equality).
+
+    Cover at exactly 100 commanded to 100 is a relay-click no-op and is
+    skipped regardless of tolerance (issues #290/#567).
+    """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=0)
     _stub_state(mock_hass, current_position=100)
 
@@ -787,9 +810,10 @@ async def test_apply_position_exact_equality_still_skips(mock_hass, logger, grac
 
 @pytest.mark.asyncio
 async def test_apply_position_out_of_band_sends_command(mock_hass, logger, grace_mgr):
-    """Issue #507 — cover at 90, target 100, tolerance=8: |90-100|=10 > 8, genuine move.
+    """Cover at 90, target 100 (not equal): genuine move, command is sent.
 
-    A cover genuinely far from the target must still be commanded (#127 preserved).
+    A cover not exactly at the target must be commanded (#127 preserved).  The
+    reconciliation tolerance (8) plays no role in the SEND decision (#567).
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
     _stub_state(mock_hass, current_position=90)
@@ -816,10 +840,10 @@ async def test_apply_position_out_of_band_sends_command(mock_hass, logger, grace
 async def test_apply_position_zero_tolerance_sends_command(
     mock_hass, logger, grace_mgr
 ):
-    """Issue #507 — position_tolerance=0 (default): backward-compat, genuine moves proceed.
+    """position_tolerance=0 (default): genuine moves proceed.
 
-    Covers at 98 targeting 100 with default tolerance=0 must still be commanded,
-    so that existing behaviour is unchanged when the option is not configured.
+    Cover at 98 targeting 100 (not equal) is commanded regardless of the
+    reconciliation tolerance setting (#567).
     """
     svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=0)
     _stub_state(mock_hass, current_position=98)
@@ -840,3 +864,176 @@ async def test_apply_position_zero_tolerance_sends_command(
 
     assert outcome == "sent"
     mock_hass.services.async_call.assert_called_once()
+
+
+# --- same-position SEND gate uses exact equality (issue #567) ---
+
+
+def _ctx_tracking(min_change: int = 1) -> PositionContext:
+    """PositionContext for a normal solar tracking move.
+
+    Passes every gate except possibly the real movement-delta gate.
+    """
+    return PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=min_change,
+        time_threshold=0,
+        special_positions=[0, 100],
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_position_tracking_move_within_tolerance_is_sent(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #567 — a 3% tracking move with delta_position=1 must be SENT.
+
+    Cover at 24 commanded to 21 (gap=3) with position_tolerance=3 and the
+    user's delta_position=1.  The same-position SEND gate must use exact
+    equality, so this is NOT a no-op; the real movement-delta gate
+    (abs(24-21)=3 >= 1) passes and the command is sent.  Before the fix the
+    tolerance band (3 <= 3) swallowed it as same_position.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=24)
+
+    # NOTE: _check_position_delta is intentionally NOT patched — the real
+    # movement-delta gate runs and must pass (abs(24-21)=3 >= min_change=1).
+    with (
+        patch.object(svc, "_get_current_position", return_value=24),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 21, "solar", _ctx_tracking(min_change=1)
+        )
+
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_position_one_percent_tracking_move_is_sent(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #567 — a 1% tracking move (gap=1) with delta_position=1 must be SENT.
+
+    Cover at 28 commanded to 27 (gap=1), position_tolerance=3, min_change=1.
+    The real movement-delta gate (abs(28-27)=1 >= 1) passes → command sent.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=3)
+    _stub_state(mock_hass, current_position=28)
+
+    with (
+        patch.object(svc, "_get_current_position", return_value=28),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 27, "solar", _ctx_tracking(min_change=1)
+        )
+
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_same_position_band_uses_exact_equality_not_tolerance(
+    mock_hass, logger, grace_mgr
+):
+    """Issue #567 — the same-position band keys off exact equality, not tolerance.
+
+    Cover at 98 commanded to 100 (a special position) with tolerance=8 and
+    min_change=10.  98 != 100 so the same-position band does NOT fire; the
+    special target bypasses the movement-delta gate (#127), so the command is
+    sent.  Before the fix the tolerance band (|98-100|=2 <= 8) suppressed it.
+    """
+    svc = _make_svc_with_tolerance(mock_hass, logger, grace_mgr, tolerance=8)
+    _stub_state(mock_hass, current_position=98)
+
+    # _check_position_delta is NOT patched — the special target (100) bypasses
+    # the delta gate via special_positions, so the real gate is exercised.
+    with (
+        patch.object(svc, "_get_current_position", return_value=98),
+        patch.object(svc, "_check_time_delta", return_value=True),
+        patch.object(
+            svc,
+            "_prepare_service_call",
+            return_value=("set_cover_position", {"entity_id": "cover.test"}, True),
+        ),
+    ):
+        outcome, reason = await svc.apply_position(
+            "cover.test", 100, "solar", _ctx_tracking(min_change=10)
+        )
+
+    assert outcome == "sent"
+    mock_hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_gives_up_on_unreachable_target(mock_hass, logger, grace_mgr):
+    """Issue #507's relay-click suppression lives in the reconciliation path.
+
+    Characterization test for the proper home of #507 suppression (so the
+    command-emission gate no longer needs to carry it):
+
+    1. A motor pinned at 97 when commanded to 100 (gap=3 ≤ tolerance=3) is
+       treated as arrived → no resend, retry_count stays 0.
+    2. An unreachable target outside tolerance (pinned at 96, gap=4 > 3) that
+       has already exhausted max_retries gives up — no further _execute_command
+       and gave_up flips True.
+    """
+    svc = CoverCommandService(
+        hass=mock_hass,
+        logger=logger,
+        cover_type="cover_blind",
+        grace_mgr=grace_mgr,
+        open_close_threshold=50,
+        check_interval_minutes=1,
+        position_tolerance=3,
+        max_retries=2,
+    )
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+
+    caps = patch(
+        "custom_components.adaptive_cover_pro.managers.cover_command.check_cover_features",
+        return_value={
+            "has_set_position": True,
+            "has_set_tilt_position": False,
+            "has_open": True,
+            "has_close": True,
+        },
+    )
+
+    # (1) Reachable rest within tolerance (97, gap=3 ≤ 3) → arrived, no resend.
+    svc.set_target("cover.reachable", 100)
+    svc.set_waiting("cover.reachable", False)
+    with patch.object(svc, "_get_current_position", return_value=97), caps:
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.state("cover.reachable").retry_count == 0
+
+    # Clear scenario (1)'s target so it doesn't participate in scenario (2)'s
+    # pass (where _get_current_position is patched globally to a different value).
+    svc.set_target("cover.reachable", None)
+
+    # (2) Unreachable (96, gap=4 > 3) already at max_retries → give up silently.
+    svc.set_target("cover.unreachable", 100)
+    svc.set_waiting("cover.unreachable", False)
+    svc.state("cover.unreachable").retry_count = 2  # already at max_retries=2
+    with patch.object(svc, "_get_current_position", return_value=96), caps:
+        await svc.run_reconciliation_pass(dt.datetime.now(dt.UTC))
+
+    mock_hass.services.async_call.assert_not_called()
+    assert svc.state("cover.unreachable").gave_up is True
+    assert svc.state("cover.unreachable").retry_count == 2  # not incremented
