@@ -31,7 +31,7 @@
       },
       "geometry": {
         "title": "Beschattungsgeometrie",
-        "description": "Geben Sie Ihre Maße für Beschattungselemente und Fenster ein. Die Integration berechnet damit genau, wie weit das Beschattungselement herunterfahren oder ausfahren muss, um direkte Sonneneinstrahlung zu blockieren und gleichzeitig natürliches Licht zu maximieren.\n\n**Fensterhöhe** und **schattierter Bereich** sind erforderlich für Jalousien und Markisen. **Fenstertiefe** und **Fenstersillhöhe** verbessern die geometrische Genauigkeit für tiefer liegende Fenster. **Markisenspanne** und **Winkel** gelten für horizontale Markisen. **Lamellendicke** und **Lamellenschranke** sind erforderlich für Neigungs-/Venetian-Beschattungselemente.\n\n{geometry_wiki_link}",
+        "description": "Geben Sie Ihre Maße für Beschattungselemente und Fenster ein. Die Integration berechnet damit genau, wie weit das Beschattungselement herunterfahren oder ausfahren muss, um direkte Sonneneinstrahlung zu blockieren und gleichzeitig natürliches Licht zu maximieren.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Fensterhöhe",
           "distance_shaded_area": "Beschatteter Bereich",
@@ -576,7 +576,7 @@
       },
       "geometry": {
         "title": "Beschattungsgeometrie",
-        "description": "Geben Sie Ihre Maße für Beschattungselemente und Fenster ein. Die Integration berechnet damit genau, wie weit das Beschattungselement herunterfahren oder ausfahren muss, um direkte Sonneneinstrahlung zu blockieren und gleichzeitig natürliches Licht zu maximieren.\n\n**Fensterhöhe** und **schattierter Bereich** sind erforderlich für Jalousien und Markisen. **Fenstertiefe** und **Fenstersillhöhe** verbessern die geometrische Genauigkeit für tiefer liegende Fenster. **Markisenspanne** und **Winkel** gelten für horizontale Markisen. **Lamellendicke** und **Lamellenschranke** sind erforderlich für Neigungs-/Venetian-Beschattungselemente.\n\n{geometry_wiki_link}",
+        "description": "Geben Sie Ihre Maße für Beschattungselemente und Fenster ein. Die Integration berechnet damit genau, wie weit das Beschattungselement herunterfahren oder ausfahren muss, um direkte Sonneneinstrahlung zu blockieren und gleichzeitig natürliches Licht zu maximieren.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Fensterhöhe",
           "distance_shaded_area": "Beschatteter Bereich",

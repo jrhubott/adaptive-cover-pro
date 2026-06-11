@@ -31,7 +31,7 @@
       },
       "geometry": {
         "title": "Géométrie du store",
-        "description": "Saisissez vos mesures de protection et de fenêtre. L'intégration les utilise pour calculer exactement la distance à laquelle abaisser ou dérouler la protection afin de bloquer la lumière directe du soleil tout en maximisant la lumière naturelle.\n\n**Hauteur de fenêtre** et **zone ombrée** sont obligatoires pour les stores verticaux et les stores bannes. **Profondeur de révélation** et **hauteur d'appui** améliorent la précision géométrique pour les fenêtres encastrées dans le mur. **Largeur et angle de store banne** s'appliquent aux stores bannes horizontaux. **Profondeur et espacement des lamelles** sont obligatoires pour les stores inclinables/vénitiens.\n\n{geometry_wiki_link}",
+        "description": "Saisissez vos mesures de protection et de fenêtre. L'intégration les utilise pour calculer exactement la distance à laquelle abaisser ou dérouler la protection afin de bloquer la lumière directe du soleil tout en maximisant la lumière naturelle.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Hauteur de la fenêtre",
           "distance_shaded_area": "Zone ombragée",
@@ -576,7 +576,7 @@
       },
       "geometry": {
         "title": "Géométrie du store",
-        "description": "Saisissez vos mesures de protection et de fenêtre. L'intégration les utilise pour calculer exactement la distance à laquelle abaisser ou dérouler la protection afin de bloquer la lumière directe du soleil tout en maximisant la lumière naturelle.\n\n**Hauteur de fenêtre** et **zone ombrée** sont obligatoires pour les stores verticaux et les stores bannes. **Profondeur de révélation** et **hauteur d'appui** améliorent la précision géométrique pour les fenêtres encastrées dans le mur. **Largeur et angle de store banne** s'appliquent aux stores bannes horizontaux. **Profondeur et espacement des lamelles** sont obligatoires pour les stores inclinables/vénitiens.\n\n{geometry_wiki_link}",
+        "description": "Saisissez vos mesures de protection et de fenêtre. L'intégration les utilise pour calculer exactement la distance à laquelle abaisser ou dérouler la protection afin de bloquer la lumière directe du soleil tout en maximisant la lumière naturelle.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Hauteur de la fenêtre",
           "distance_shaded_area": "Zone ombragée",

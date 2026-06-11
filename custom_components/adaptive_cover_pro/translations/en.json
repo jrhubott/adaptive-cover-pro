@@ -31,7 +31,7 @@
       },
       "geometry": {
         "title": "Cover Geometry",
-        "description": "Enter your cover and window measurements. The integration uses these to calculate exactly how far to lower or extend the cover to block direct sunlight while maximising natural light.\n\n**Window height** and **shaded area** are required for vertical blinds and awnings. **Reveal depth** and **sill height** improve geometric accuracy for windows set back into the wall. **Awning span** and **angle** apply to horizontal awnings. **Slat depth** and **spacing** are required for tilt/venetian covers.\n\n{geometry_wiki_link}",
+        "description": "Enter your cover and window measurements. The integration uses these to calculate exactly how far to lower or extend the cover to block direct sunlight while maximising natural light.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Window Height",
           "distance_shaded_area": "Shaded area",
@@ -576,7 +576,7 @@
       },
       "geometry": {
         "title": "Cover Geometry",
-        "description": "Enter your cover and window measurements. The integration uses these to calculate exactly how far to lower or extend the cover to block direct sunlight while maximising natural light.\n\n**Window height** and **shaded area** are required for vertical blinds and awnings. **Reveal depth** and **sill height** improve geometric accuracy for windows set back into the wall. **Awning span** and **angle** apply to horizontal awnings. **Slat depth** and **spacing** are required for tilt/venetian covers.\n\n{geometry_wiki_link}",
+        "description": "Enter your cover and window measurements. The integration uses these to calculate exactly how far to lower or extend the cover to block direct sunlight while maximising natural light.\n\n{geometry_wiki_link}",
         "data": {
           "window_height": "Window Height",
           "distance_shaded_area": "Shaded area",
