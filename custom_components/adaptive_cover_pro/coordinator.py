@@ -22,8 +22,6 @@ from homeassistant.core import (
     State,
     callback,
 )
-from homeassistant.exceptions import TemplateError
-from homeassistant.helpers.template import result_as_boolean
 
 # EventStateChangedData was added in Home Assistant 2024.4+
 # For backwards compatibility with older versions
@@ -40,7 +38,6 @@ from .helpers import (
     compute_effective_default,
     get_datetime_from_str,
     get_safe_state,
-    is_entity_active,
     state_attr,
 )
 from .config_context_adapter import ConfigContextAdapter
@@ -837,10 +834,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> None:
         """Handle occupancy-source changes: immediate on detection, debounced on stop.
 
-        Evaluates the changed entity through the same domain-aware
-        ``is_entity_active`` predicate the manager uses, so motion sensors
-        (state "on") and media players (any non-off state) are handled
-        uniformly without branching on literal state strings here.
+        Delegates to ``_handle_occupancy_change``, which re-reads the combined
+        occupancy state (sensors + template per the configured combine mode)
+        rather than branching on this single entity's state here.
         """
         data = event.data
         entity_id = data["entity_id"]
@@ -854,9 +850,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entity_id,
             new_state.state,
         )
-        await self._handle_occupancy_change(
-            active=is_entity_active(self.hass, entity_id), source=entity_id
-        )
+        await self._handle_occupancy_change(source=entity_id)
 
     async def async_check_motion_template_change(
         self, event: Event | None, updates: list
@@ -865,23 +859,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         Routed from ``async_track_template_result`` so a template flipping truthy
         resumes positioning instantly — the same immediacy as a motion sensor,
-        with no polling. A render error is treated as not-occupied.
+        with no polling. The tracked result only signals *that* the template
+        changed; ``_handle_occupancy_change`` re-reads the combined occupancy
+        state live (the template re-renders, mapping a render error to
+        not-occupied) so the AND/OR combine mode is honoured.
         """
-        result = updates[-1].result if updates else None
-        active = (
-            False if isinstance(result, TemplateError) else result_as_boolean(result)
-        )
-        await self._handle_occupancy_change(active=active, source="occupancy template")
+        await self._handle_occupancy_change(source="occupancy template")
 
-    async def _handle_occupancy_change(self, *, active: bool, source: str) -> None:
+    async def _handle_occupancy_change(self, *, source: str) -> None:
         """Apply an occupancy-source transition shared by sensors and the template.
 
-        Single source for the detect/clear policy: on detection, record motion
-        and refresh if needed; on clear, start the debounce timeout only when no
-        other occupancy source is still active.
+        Acts on the *combined* :attr:`is_motion_detected` after the change rather
+        than the single source that fired — required so the template's AND/OR
+        combine mode is respected (in AND mode one source going active does not
+        mean occupied). The combined property re-reads live state, so it is at
+        least as fresh as any captured event value and current state always wins.
         """
-        if active:
-            # Occupancy detected - immediate response.
+        if self.is_motion_detected:
             # record_motion_detected() returns True if the timeout was active
             # (expired) or pending (task still running), so we refresh in both
             # cases, not just when the timeout had already fully expired.
@@ -891,14 +885,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 )
                 self.state_change = True
                 await self.async_refresh()
-        elif not self.is_motion_detected:
-            # This source cleared and no other source is active - start timeout.
-            self._start_motion_timeout()
+            else:
+                self.logger.debug(
+                    "Occupancy still active after change on %s — no action", source
+                )
         else:
-            self.logger.debug(
-                "Occupancy cleared on %s but another source still active — timeout not started",
-                source,
-            )
+            # Combined occupancy cleared - start the debounce timeout.
+            self._start_motion_timeout()
 
     def process_entity_state_change(self):
         """Check if cover position change was user-initiated (manual override detection).
@@ -1904,6 +1897,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             timeout_seconds=rc.motion.timeout_seconds,
             media_players=rc.motion.media_players,
             template=rc.motion.template,
+            template_mode=rc.motion.template_mode,
         )
         self._weather_mgr.update_config(
             wind_speed_sensor=rc.weather.wind_speed_sensor,

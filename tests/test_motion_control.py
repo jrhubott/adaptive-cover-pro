@@ -1316,9 +1316,14 @@ def test_configured_handlers_includes_motion_for_media_player_only():
 class TestMotionTemplate:
     """MotionManager treats an optional truthy template as an occupancy source."""
 
-    def _mgr(self, hass, *, sensors=None, template=None):
+    def _mgr(self, hass, *, sensors=None, template=None, template_mode="or"):
         mgr = MotionManager(hass=hass, logger=MagicMock())
-        mgr.update_config(sensors=sensors or [], timeout_seconds=300, template=template)
+        mgr.update_config(
+            sensors=sensors or [],
+            timeout_seconds=300,
+            template=template,
+            template_mode=template_mode,
+        )
         return mgr
 
     async def test_disabled_when_nothing_configured(self, hass):
@@ -1353,6 +1358,45 @@ class TestMotionTemplate:
         hass.states.async_set("input_boolean.guest", "off")
         await hass.async_block_till_done()
         assert mgr.is_motion_detected is False
+
+    async def test_default_combine_mode_is_or(self, hass):
+        mgr = self._mgr(hass, template="{{ true }}")
+        assert mgr.template_mode == "or"
+
+    async def test_and_mode_requires_both_template_and_sensor(self, hass):
+        hass.states.async_set("binary_sensor.motion", "off")
+        await hass.async_block_till_done()
+        mgr = self._mgr(
+            hass,
+            sensors=["binary_sensor.motion"],
+            template="{{ true }}",
+            template_mode="and",
+        )
+        # Template truthy but sensor off → AND not satisfied.
+        assert mgr.is_motion_detected is False
+        # Both truthy → occupied.
+        hass.states.async_set("binary_sensor.motion", "on")
+        await hass.async_block_till_done()
+        assert mgr.is_motion_detected is True
+
+    async def test_and_mode_template_falsy_blocks_active_sensor(self, hass):
+        hass.states.async_set("binary_sensor.motion", "on")
+        await hass.async_block_till_done()
+        mgr = self._mgr(
+            hass,
+            sensors=["binary_sensor.motion"],
+            template="{{ false }}",
+            template_mode="and",
+        )
+        # Sensor active but template gates it off → not occupied.
+        assert mgr.is_motion_detected is False
+
+    async def test_and_mode_template_only_degenerates_to_template(self, hass):
+        # No sensors: AND has nothing to gate against, so the template decides.
+        mgr = self._mgr(hass, template="{{ true }}", template_mode="and")
+        assert mgr.is_motion_detected is True
+        mgr_off = self._mgr(hass, template="{{ false }}", template_mode="and")
+        assert mgr_off.is_motion_detected is False
 
 
 @pytest.mark.asyncio
@@ -1413,3 +1457,66 @@ async def test_async_check_motion_template_change_error_is_falsy():
     )
 
     coordinator._start_motion_timeout.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_reactive_and_mode_gates_sensor_until_template_truthy(hass):
+    """AND mode: a sensor going active does not resume until the template agrees.
+
+    Exercises the combined-state reactive path end-to-end with a real
+    MotionManager and real template rendering.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    hass.states.async_set("input_boolean.gate", "off")
+    hass.states.async_set("binary_sensor.motion", "off")
+    await hass.async_block_till_done()
+
+    coordinator = MagicMock()
+    coordinator.hass = hass
+    coordinator.logger = MagicMock()
+    mgr = MotionManager(hass=hass, logger=MagicMock())
+    mgr.update_config(
+        sensors=["binary_sensor.motion"],
+        timeout_seconds=300,
+        template="{{ is_state('input_boolean.gate', 'on') }}",
+        template_mode="and",
+    )
+    coordinator._motion_mgr = mgr
+    coordinator._handle_occupancy_change = (
+        AdaptiveDataUpdateCoordinator._handle_occupancy_change.__get__(coordinator)
+    )
+    # Combined occupancy reads the real manager (sensors + template per mode).
+    type(coordinator).is_motion_detected = (
+        AdaptiveDataUpdateCoordinator.is_motion_detected
+    )
+    coordinator.state_change = False
+    coordinator.async_refresh = AsyncMock()
+    coordinator._start_motion_timeout = Mock()
+
+    # Sensor turns on while the template gate is still off → AND unsatisfied,
+    # so the handler must start the timeout, not resume.
+    hass.states.async_set("binary_sensor.motion", "on")
+    await hass.async_block_till_done()
+    event = MagicMock()
+    event.data = {
+        "entity_id": "binary_sensor.motion",
+        "new_state": MagicMock(state="on"),
+    }
+    await AdaptiveDataUpdateCoordinator.async_check_motion_state_change(
+        coordinator, event
+    )
+    coordinator._start_motion_timeout.assert_called_once()
+    coordinator.async_refresh.assert_not_called()
+
+    # Template flips truthy with the sensor still on → both satisfied → resume.
+    coordinator._motion_mgr.set_no_motion()  # timeout active so a refresh is due
+    hass.states.async_set("input_boolean.gate", "on")
+    await hass.async_block_till_done()
+    await AdaptiveDataUpdateCoordinator.async_check_motion_template_change(
+        coordinator, None, [SimpleNamespace(result="on")]
+    )
+    coordinator.async_refresh.assert_called_once()
+    assert coordinator.state_change is True

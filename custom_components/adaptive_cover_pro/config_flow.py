@@ -87,8 +87,10 @@ from .const import (
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TEMPLATE,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_MOTION_TIMEOUT_MODE,
+    DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_MOTION_TIMEOUT_MODE,
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
@@ -149,6 +151,7 @@ from .const import (
     DOMAIN,
     CoverType,
     FovMode,
+    TemplateCombineMode,
 )
 from .engine.sun_geometry import computed_fov_line, fov_from_reveal
 
@@ -506,6 +509,15 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
             CONF_MOTION_MEDIA_PLAYERS, default=[]
         ): config_fields.media_player_selector(multiple=True),
         vol.Optional(CONF_MOTION_TEMPLATE): selector.TemplateSelector(),
+        vol.Optional(
+            CONF_MOTION_TEMPLATE_MODE, default=DEFAULT_MOTION_TEMPLATE_MODE
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[m.value for m in TemplateCombineMode],
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="template_combine_mode",
+            )
+        ),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
         ): selector.NumberSelector(
@@ -2147,6 +2159,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     ),
     "motion_override_values": frozenset(
         {
+            CONF_MOTION_TEMPLATE_MODE,
             CONF_MOTION_TIMEOUT,
             CONF_MOTION_TIMEOUT_MODE,
         }
@@ -2164,6 +2177,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MOTION_SENSORS,
             CONF_MOTION_MEDIA_PLAYERS,
             CONF_MOTION_TEMPLATE,
+            CONF_MOTION_TEMPLATE_MODE,
             CONF_MOTION_TIMEOUT,
             CONF_MOTION_TIMEOUT_MODE,
         }

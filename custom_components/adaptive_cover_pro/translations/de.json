@@ -285,14 +285,16 @@
           "motion_timeout": "Bewegungs-Timeout-Dauer",
           "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft",
           "motion_media_players": "Medienplayer für Anwesenheitskontrolle",
-          "motion_template": "Anwesenheits-Vorlage (optional)"
+          "motion_template": "Anwesenheits-Vorlage (optional)",
+          "motion_template_mode": "Logik für Anwesenheitsvorlage"
         },
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenposititionierung aktivieren/deaktivieren, basierend auf Belegung. Wenn EIN Sensor Bewegung erkennt, verwenden Beschattungen automatische sonnenbasierte Positionierung. Wenn ALLE Sensoren für die Timeout-Dauer keine Bewegung anzeigen, kehren Beschattungen zur Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
           "motion_timeout": "Dauer (in Sekunden), die gewartet werden soll, nachdem die letzte Bewegung erkannt wurde, bevor Beschattungen zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig wechseln. Bereich: 30-3600 Sekunden (0,5-60 Minuten). Standardwert: 300 Sekunden (5 Minuten).",
           "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet.",
           "motion_media_players": "Medienplayer als Anwesenheit behandelt. JEDER Player, dessen Status etwas anderes ist als aus (wird wiedergegeben, unterbrochen, untätig, an, …), zählt als besetzt und hält die automatische Sonnennachverfolgung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Mit den Bewegungsmeldern oben unter der gleichen ODER-Logik kombiniert. Zum Deaktivieren leer lassen.",
-          "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahrhaft ist (on/true/1), zählt der Raum als bewohnt, OR-verknüpft mit den Sensoren und Medienplayern oben; wenn sie falsch ist, beginnt das Timeout wie bei jeder anderen Quelle, die endet. Sie wird sofort neu bewertet, wenn eine referenzierte Entität sich ändert – kein Polling – daher triggert sie so schnell wie ein Sensor und kann eigenständig ohne konfigurierte Sensoren funktionieren. Beispiel: Eine Vorlage, die wahr ist, während ein input_boolean-Helper aktiviert ist. Leer lassen zum Deaktivieren."
+          "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahr ergibt (on/true/1) zählt der Raum als anwesend; wie das mit den obigen Sensoren und Medienplayern kombiniert wird (ODER oder UND) wird durch 'Logik für Anwesenheitsvorlage' unten gesetzt. Wenn sie falsch ergibt, startet das Timeout wie bei jeder anderen Quelle. Sie wird jedes Mal neu bewertet, wenn sich eine referenzierte Entität ändert — kein Polling — daher wird sie so sofort ausgelöst wie ein Sensor und kann allein ohne konfigurierte Sensoren funktionieren. Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist. Leer lassen zum Deaktivieren.",
+          "motion_template_mode": "Wie die Anwesenheitsvorlage mit den obigen Bewegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten bei — anwesend, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate — anwesend nur, wenn die Vorlage wahr ist und mindestens ein Sensor oder Player auch aktiv ist, so dass die Vorlage für die Anwesenheitserkennung erforderlich ist. Ohne konfigurierte Sensoren oder Player entscheidet die Vorlage allein in beiden Modi. Hat nur eine Auswirkung, wenn oben eine Anwesenheitsvorlage gesetzt ist."
         }
       },
       "weather_override": {
@@ -806,14 +808,16 @@
           "motion_timeout": "Bewegungs-Timeout-Dauer",
           "motion_timeout_mode": "Wenn die Bewegung zeitlich abläuft",
           "motion_media_players": "Medienplayer für Anwesenheitskontrolle",
-          "motion_template": "Anwesenheits-Vorlage (optional)"
+          "motion_template": "Anwesenheits-Vorlage (optional)",
+          "motion_template_mode": "Logik für Anwesenheitsvorlage"
         },
         "data_description": {
           "motion_sensors": "Binärsensoren, die die automatische Sonnenverfolgung basierend auf Anwesenheit aktivieren/deaktivieren. Wenn EIN Sensor Bewegung erkennt, verwenden Behänge automatische sonnengesteuerte Positionierung. Wenn ALLE Sensoren zeigen, dass keine Bewegung für die Timeout-Dauer vorhanden ist, kehren Behänge zu Standardposition zurück. Leer lassen, um diese Funktion zu deaktivieren.",
           "motion_timeout": "Dauer (in Sekunden), um nach der letzten Bewegung zu warten, bevor Behänge zur Standardposition zurückkehren. Verhindert schnelle Positionsänderungen, wenn Bewegungssensoren häufig umschalten. Bereich: 30–3600 Sekunden (0,5–60 Minuten). Standard: 300 Sekunden (5 Minuten).",
           "motion_timeout_mode": "Aktion, wenn keine Bewegung für die eingestellte Dauer erkannt wird. „Standardposition zurückkehren\" fährt die Jalousien in die Standardposition. „Position halten\" behält die aktuelle Position bei, während die Sonne im Sichtfeld ist (damit eine zurückkehrende Person die Jalousien so findet, wie sie sie hinterlassen hat). Die Jalousien kehren trotzdem zur Standardposition zurück, wenn die Sonne das Sichtfeld verlässt oder das Zeitfenster endet.",
           "motion_media_players": "Medienplayer als Anwesenheit behandelt. JEDER Player, dessen Status etwas anderes ist als aus (wird wiedergegeben, unterbrochen, untätig, an, …), zählt als besetzt und hält die automatische Sonnennachverfolgung aktiv. Player, die aus, nicht verfügbar oder unbekannt sind, zählen nicht. Mit den Bewegungsmeldern oben unter der gleichen ODER-Logik kombiniert. Zum Deaktivieren leer lassen.",
-          "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahrhaft ist (on/true/1), zählt der Raum als bewohnt, OR-verknüpft mit den Sensoren und Medienplayern oben; wenn sie falsch ist, beginnt das Timeout wie bei jeder anderen Quelle, die endet. Sie wird sofort neu bewertet, wenn eine referenzierte Entität sich ändert – kein Polling – daher triggert sie so schnell wie ein Sensor und kann eigenständig ohne konfigurierte Sensoren funktionieren. Beispiel: Eine Vorlage, die wahr ist, während ein input_boolean-Helper aktiviert ist. Leer lassen zum Deaktivieren."
+          "motion_template": "Optionale Home Assistant Jinja2-Vorlage, die als zusätzliche Anwesenheitsquelle fungiert. Wenn sie wahr ergibt (on/true/1) zählt der Raum als anwesend; wie das mit den obigen Sensoren und Medienplayern kombiniert wird (ODER oder UND) wird durch 'Logik für Anwesenheitsvorlage' unten gesetzt. Wenn sie falsch ergibt, startet das Timeout wie bei jeder anderen Quelle. Sie wird jedes Mal neu bewertet, wenn sich eine referenzierte Entität ändert — kein Polling — daher wird sie so sofort ausgelöst wie ein Sensor und kann allein ohne konfigurierte Sensoren funktionieren. Beispiel: eine Vorlage, die wahr zurückgibt, während ein input_boolean-Helfer an ist. Leer lassen zum Deaktivieren.",
+          "motion_template_mode": "Wie die Anwesenheitsvorlage mit den obigen Bewegungssensoren und Medienplayern kombiniert wird. 'ODER' (Standard) behält das ursprüngliche Verhalten bei — anwesend, wenn die Vorlage wahr ist oder ein Sensor oder Player aktiv ist. 'UND' macht die Vorlage zu einem Gate — anwesend nur, wenn die Vorlage wahr ist und mindestens ein Sensor oder Player auch aktiv ist, so dass die Vorlage für die Anwesenheitserkennung erforderlich ist. Ohne konfigurierte Sensoren oder Player entscheidet die Vorlage allein in beiden Modi. Hat nur eine Auswirkung, wenn oben eine Anwesenheitsvorlage gesetzt ist."
         }
       },
       "weather_override": {
@@ -1204,6 +1208,12 @@
       "options": {
         "angles": "Nach Winkeln (Sichtfeld von links/rechts direkt einstellen)",
         "measurements": "Aus Messungen (Sichtfeld aus Fensterbreite und Laibungstiefe ableiten)"
+      }
+    },
+    "template_combine_mode": {
+      "options": {
+        "or": "ODER — anwesend, wenn die Vorlage wahr ist oder ein Sensor aktiv ist (Standard)",
+        "and": "UND — Vorlage muss wahr sein und ein Sensor aktiv"
       }
     }
   },

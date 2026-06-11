@@ -285,14 +285,16 @@
           "motion_timeout": "Durée du délai d'inactivité du mouvement",
           "motion_timeout_mode": "Lors de l'expiration du délai de mouvement",
           "motion_media_players": "Lecteurs multimédias pour le contrôle basé sur la présence",
-          "motion_template": "Modèle de présence (optionnel)"
+          "motion_template": "Modèle de présence (optionnel)",
+          "motion_template_mode": "Logique du modèle de présence"
         },
         "data_description": {
           "motion_sensors": "Capteurs binaires qui activent/désactivent le positionnement solaire automatique en fonction de l'occupation. Quand N'IMPORTE QUEL capteur détecte le mouvement, les stores utilisent le positionnement automatique basé sur le soleil. Quand TOUS les capteurs n'indiquent aucun mouvement pendant la durée du délai, les stores retournent à la position par défaut. Laissez vide pour désactiver cette fonction.",
           "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes).",
           "motion_timeout_mode": "Action à effectuer lorsqu'aucun mouvement n'a été détecté pendant la durée du délai. « Retourner à la position par défaut » déplace les stores à la position par défaut. « Maintenir la position » laisse les stores où ils sont tandis que le soleil est dans le champ de vision (de sorte qu'un occupant qui revient les trouve comme il les a laissés) ; les stores retournent néanmoins à la position par défaut une fois que le soleil quitte le champ de vision ou que la fenêtre de temps se ferme.",
           "motion_media_players": "Lecteurs multimédias traités comme présence. TOUT lecteur dont l'état est différent de éteint (en lecture, en pause, inactif, allumé, ...) est considéré comme occupé et maintient le positionnement automatique actif. Les lecteurs éteints, indisponibles ou inconnus ne comptent pas. Combiné avec les détecteurs de mouvement ci-dessus sous la même logique OU. Laissez vide pour désactiver.",
-          "motion_template": "Modèle optionnel Jinja2 de Home Assistant qui agit comme une source de présence supplémentaire. Lorsqu'il s'évalue comme truthy (on/true/1), la pièce est considérée comme occupée, OR'é avec les capteurs et lecteurs multimédia ci-dessus ; lorsqu'il s'évalue comme falsy, le délai démarre comme n'importe quelle autre source disparaît. Il est réévalué instantanément lorsqu'une entité référencée change — pas de sondage — donc il se déclenche aussi immédiatement qu'un capteur et peut fonctionner seul sans aucun capteur configuré. Par exemple, un modèle qui retourne true lorsqu'un helper input_boolean est activé. Laissez vide pour désactiver."
+          "motion_template": "Modèle Home Assistant Jinja2 facultatif qui agit comme une source de présence supplémentaire. Lorsqu'il s'évalue à vrai (on/true/1), la pièce est considérée comme occupée ; comment cela se combine avec les détecteurs et lecteurs ci-dessus (OU ou ET) est défini par 'Logique du modèle de présence' ci-dessous. Lorsqu'il s'évalue à faux, le délai d'expiration démarre comme pour toute autre source d'effacement. Il est réévalué dès qu'une entité référencée change — sans interrogation — il se déclenche donc aussi rapidement qu'un détecteur et peut fonctionner seul sans aucun détecteur configuré. Par exemple, un modèle qui retourne vrai si un assistant input_boolean est activé. Laissez vide pour désactiver.",
+          "motion_template_mode": "Comment le modèle de présence se combine avec les détecteurs de mouvement et lecteurs multimédias ci-dessus. 'OU' (par défaut) conserve le comportement original — la pièce est considérée comme occupée si le modèle est vrai ou si un détecteur ou un lecteur est actif. 'ET' fait du modèle une condition préalable — la pièce n'est occupée que si le modèle est vrai ET qu'au moins un détecteur ou un lecteur est actif, de sorte que le modèle doit être vrai pour que la présence soit enregistrée. Sans aucun détecteur ni lecteur configuré, le modèle seul décide dans les deux modes. N'a d'effet que si un modèle de présence est défini ci-dessus."
         }
       },
       "weather_override": {
@@ -806,14 +808,16 @@
           "motion_timeout": "Durée du délai d'inactivité du mouvement",
           "motion_timeout_mode": "Lors de l'expiration du délai de mouvement",
           "motion_media_players": "Lecteurs multimédias pour le contrôle basé sur la présence",
-          "motion_template": "Modèle de présence (optionnel)"
+          "motion_template": "Modèle de présence (optionnel)",
+          "motion_template_mode": "Logique du modèle de présence"
         },
         "data_description": {
           "motion_sensors": "Capteurs binaires qui activent/désactivent le positionnement solaire automatique en fonction de l'occupation. Quand N'IMPORTE QUEL capteur détecte le mouvement, les stores utilisent le positionnement automatique basé sur le soleil. Quand TOUS les capteurs n'indiquent aucun mouvement pendant la durée du délai, les stores retournent à la position par défaut. Laissez vide pour désactiver cette fonction.",
           "motion_timeout": "Durée (en secondes) à attendre après le dernier mouvement avant de retourner les stores à la position par défaut. Empêche les changements rapides de position quand les capteurs de mouvement basculent fréquemment. Plage : 30-3600 secondes (0,5-60 minutes). Par défaut : 300 secondes (5 minutes).",
           "motion_timeout_mode": "Action à effectuer lorsqu'aucun mouvement n'a été détecté pendant la durée du délai. « Retourner à la position par défaut » déplace les stores à la position par défaut. « Maintenir la position » laisse les stores où ils sont tandis que le soleil est dans le champ de vision (de sorte qu'un occupant qui revient les trouve comme il les a laissés) ; les stores retournent néanmoins à la position par défaut une fois que le soleil quitte le champ de vision ou que la fenêtre de temps se ferme.",
           "motion_media_players": "Lecteurs multimédias traités comme présence. TOUT lecteur dont l'état est différent de éteint (en lecture, en pause, inactif, allumé, ...) est considéré comme occupé et maintient le positionnement automatique actif. Les lecteurs éteints, indisponibles ou inconnus ne comptent pas. Combiné avec les détecteurs de mouvement ci-dessus sous la même logique OU. Laissez vide pour désactiver.",
-          "motion_template": "Modèle optionnel Jinja2 de Home Assistant qui agit comme une source de présence supplémentaire. Lorsqu'il s'évalue comme truthy (on/true/1), la pièce est considérée comme occupée, OR'é avec les capteurs et lecteurs multimédia ci-dessus ; lorsqu'il s'évalue comme falsy, le délai démarre comme n'importe quelle autre source disparaît. Il est réévalué instantanément lorsqu'une entité référencée change — pas de sondage — donc il se déclenche aussi immédiatement qu'un capteur et peut fonctionner seul sans aucun capteur configuré. Par exemple, un modèle qui retourne true lorsqu'un helper input_boolean est activé. Laissez vide pour désactiver."
+          "motion_template": "Modèle Home Assistant Jinja2 facultatif qui agit comme une source de présence supplémentaire. Lorsqu'il s'évalue à vrai (on/true/1), la pièce est considérée comme occupée ; comment cela se combine avec les détecteurs et lecteurs ci-dessus (OU ou ET) est défini par 'Logique du modèle de présence' ci-dessous. Lorsqu'il s'évalue à faux, le délai d'expiration démarre comme pour toute autre source d'effacement. Il est réévalué dès qu'une entité référencée change — sans interrogation — il se déclenche donc aussi rapidement qu'un détecteur et peut fonctionner seul sans aucun détecteur configuré. Par exemple, un modèle qui retourne vrai si un assistant input_boolean est activé. Laissez vide pour désactiver.",
+          "motion_template_mode": "Comment le modèle de présence se combine avec les détecteurs de mouvement et lecteurs multimédias ci-dessus. 'OU' (par défaut) conserve le comportement original — la pièce est considérée comme occupée si le modèle est vrai ou si un détecteur ou un lecteur est actif. 'ET' fait du modèle une condition préalable — la pièce n'est occupée que si le modèle est vrai ET qu'au moins un détecteur ou un lecteur est actif, de sorte que le modèle doit être vrai pour que la présence soit enregistrée. Sans aucun détecteur ni lecteur configuré, le modèle seul décide dans les deux modes. N'a d'effet que si un modèle de présence est défini ci-dessus."
         }
       },
       "weather_override": {
@@ -1204,6 +1208,12 @@
       "options": {
         "angles": "Par angles (définir directement le champ de vision gauche/droite)",
         "measurements": "À partir de mesures (dériver le champ de vision à partir de la largeur de la fenêtre et de la profondeur de tableau)"
+      }
+    },
+    "template_combine_mode": {
+      "options": {
+        "or": "OU — la pièce est occupée si le modèle est vrai ou un détecteur est actif (par défaut)",
+        "and": "ET — exiger que le modèle soit vrai et qu'un détecteur soit actif"
       }
     }
   },

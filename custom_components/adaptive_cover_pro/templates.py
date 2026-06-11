@@ -47,6 +47,35 @@ def render_condition(
     return result_as_boolean(result)
 
 
+def combine_with_mode(
+    template_truthy: bool,
+    others_truthy: bool,
+    mode: str,
+    *,
+    has_template: bool,
+    has_others: bool,
+) -> bool:
+    """Combine a condition template's result with the screen's other conditions.
+
+    The reusable counterpart to :func:`render_condition`: once a field renders
+    to a bool, this decides how it folds into the rest of that screen's signal.
+    ``mode`` is a :class:`~const.TemplateCombineMode` value.
+
+    * ``"and"`` *only* when both a template and other conditions are present →
+      ``template_truthy and others_truthy`` (the template gates the others).
+    * Everything else (``"or"``, an unknown value, or only one source present) →
+      ``template_truthy or others_truthy``. With a single source the absent
+      operand is falsy, so OR collapses to that source — which is also why
+      ``AND`` degenerates to the lone source rather than being stuck false.
+
+    ``mode`` is taken as a plain string so this module needs no enum import;
+    callers pass the enum's value (``StrEnum`` compares equal to its value).
+    """
+    if has_template and has_others and mode == "and":
+        return template_truthy and others_truthy
+    return template_truthy or others_truthy
+
+
 def is_template_string(value) -> bool:
     """Return True if *value* is a string carrying Jinja2 template markup.
 

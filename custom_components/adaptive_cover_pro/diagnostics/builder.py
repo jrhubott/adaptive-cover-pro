@@ -585,7 +585,9 @@ class DiagnosticsBuilder:
             CONF_MIN_POSITION_SUN_TRACKING,
             CONF_MOTION_SENSORS,
             CONF_MOTION_TEMPLATE,
+            CONF_MOTION_TEMPLATE_MODE,
             CONF_MOTION_TIMEOUT,
+            DEFAULT_MOTION_TEMPLATE_MODE,
             DEFAULT_MOTION_TIMEOUT,
         )
 
@@ -619,6 +621,9 @@ class DiagnosticsBuilder:
                 "motion_sensors": options.get(CONF_MOTION_SENSORS, []),
                 "motion_template": options.get(CONF_MOTION_TEMPLATE),
                 "motion_template_active": ctx.motion_template_active,
+                "motion_template_mode": options.get(
+                    CONF_MOTION_TEMPLATE_MODE, DEFAULT_MOTION_TEMPLATE_MODE
+                ),
                 "motion_timeout": options.get(
                     CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
                 ),

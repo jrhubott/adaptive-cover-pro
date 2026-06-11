@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MOTION_SENSORS,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_OPEN_CLOSE_THRESHOLD,
     CONF_POSITION_TOLERANCE,
@@ -78,6 +79,8 @@ def test_from_options_uses_const_defaults_for_empty_input() -> None:
 
     assert rc.motion.sensors == []
     assert rc.motion.timeout_seconds == DEFAULT_MOTION_TIMEOUT
+    # Combine mode defaults to OR (additive) for back-compat with old entries.
+    assert rc.motion.template_mode == "or"
 
     assert rc.weather.wind_speed_threshold == DEFAULT_WEATHER_WIND_SPEED_THRESHOLD
     assert (
@@ -127,6 +130,7 @@ def test_from_options_reads_every_field_from_provided_dict() -> None:
         CONF_END_TIME: "20:00",
         CONF_END_ENTITY: "input_datetime.e",
         CONF_MOTION_SENSORS: ["binary_sensor.m"],
+        CONF_MOTION_TEMPLATE_MODE: "and",
         CONF_MOTION_TIMEOUT: 600,
         CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
         CONF_WEATHER_WIND_DIRECTION_SENSOR: "sensor.dir",
@@ -156,6 +160,7 @@ def test_from_options_reads_every_field_from_provided_dict() -> None:
     assert rc.time_window.start_time == "08:00"
     assert rc.time_window.end_time_entity == "input_datetime.e"
     assert rc.motion.sensors == ["binary_sensor.m"]
+    assert rc.motion.template_mode == "and"
     assert rc.motion.timeout_seconds == 600
     assert rc.weather.wind_speed_threshold == 25.0
     assert rc.weather.win_azi == 200

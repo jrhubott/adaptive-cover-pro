@@ -568,6 +568,9 @@ CONF_MOTION_MEDIA_PLAYERS = (
     "motion_media_players"  # media_player list; non-off=occupied
 )
 CONF_MOTION_TEMPLATE = "motion_template"  # optional Jinja2 condition; truthy=occupied
+CONF_MOTION_TEMPLATE_MODE = (
+    "motion_template_mode"  # how the template combines; one of TemplateCombineMode
+)
 CONF_MOTION_TIMEOUT = "motion_timeout"  # no-motion window, s (30-3600)
 CONF_MOTION_TIMEOUT_MODE = "motion_timeout_mode"  # one of MOTION_TIMEOUT_MODE_*
 
@@ -576,6 +579,8 @@ MOTION_TIMEOUT_MODE_HOLD = "hold_position"  # hold current position
 
 DEFAULT_MOTION_TIMEOUT = 300  # 5 minutes — default no-motion window
 DEFAULT_MOTION_TIMEOUT_MODE = MOTION_TIMEOUT_MODE_RETURN  # default mode
+# DEFAULT_MOTION_TEMPLATE_MODE lives with the TemplateCombineMode enum (defined
+# above the config_fields import, since config_fields reads it at import time).
 
 
 # =============================================================================
@@ -949,6 +954,30 @@ class FovMode(StrEnum):
 
     ANGLES = "angles"
     MEASUREMENTS = "measurements"
+
+
+# Defined here (above the ``config_fields`` import) for the same reason as
+# ``FovMode``: ``config_fields`` reads it at module-import time to build the
+# combine-mode FieldSpec. Generic on purpose — any template-based condition
+# field can reuse this enum (and the shared ``template_combine_mode`` selector
+# translation key) to offer the same OR/AND choice; the occupancy template
+# (#577 follow-up) is the first consumer.
+class TemplateCombineMode(StrEnum):
+    """How a condition template combines with the screen's other conditions.
+
+    ``OR`` (default) is additive — the source is occupied/active when the
+    template is truthy **or** any other condition is met. ``AND`` makes the
+    template a gate — it must be truthy **and** at least one other condition
+    must be met. When only one source exists (template-only or others-only),
+    ``AND`` degenerates to that single source so a lone template is never
+    permanently false. Absent from a config entry → treated as ``OR``.
+    """
+
+    OR = "or"
+    AND = "and"
+
+
+DEFAULT_MOTION_TEMPLATE_MODE = TemplateCombineMode.OR.value  # additive (back-compat)
 
 
 # ``OPTION_RANGES`` is now assembled from the single field registry in

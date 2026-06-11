@@ -109,6 +109,7 @@ from .const import (
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TEMPLATE,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_MOTION_TIMEOUT_MODE,
     CONF_MY_POSITION_VALUE,
@@ -165,6 +166,7 @@ from .const import (
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
@@ -861,6 +863,20 @@ _MOTION_OVERRIDE_SPECS = _spec(
         ValidatorKind.NONE,
         clearable=True,
         make_selector=_const(lambda: selector.TemplateSelector()),
+    ),
+    # Shared ``template_combine_mode`` translation key (not field-specific) so any
+    # future template field reusing TemplateCombineMode shows the same OR/AND labels.
+    FieldSpec(
+        CONF_MOTION_TEMPLATE_MODE,
+        SECTION_MOTION_OVERRIDE,
+        ValidatorKind.SELECT,
+        default=DEFAULT_MOTION_TEMPLATE_MODE,
+        select_options=tuple(m.value for m in const.TemplateCombineMode),
+        make_selector=_select(
+            *[m.value for m in const.TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        ),
     ),
     FieldSpec(
         CONF_MOTION_TIMEOUT,

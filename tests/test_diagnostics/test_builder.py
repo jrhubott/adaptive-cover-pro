@@ -762,6 +762,7 @@ class TestConfigurationDiagnostics:
             "motion_sensors",
             "motion_template",
             "motion_template_active",
+            "motion_template_mode",
             "motion_timeout",
             "motion_detected",
             "motion_timeout_active",

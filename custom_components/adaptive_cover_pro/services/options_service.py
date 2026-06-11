@@ -79,6 +79,7 @@ from ..const import (
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TEMPLATE,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
@@ -110,6 +111,7 @@ from ..const import (
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     VENETIAN_MODES,
+    TemplateCombineMode,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
@@ -385,6 +387,7 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_MOTION_SENSORS: _entities_v(),
     CONF_MOTION_MEDIA_PLAYERS: _entities_v(),
     CONF_MOTION_TEMPLATE: _template_or_none,
+    CONF_MOTION_TEMPLATE_MODE: _select_v(*[m.value for m in TemplateCombineMode]),
     CONF_MOTION_TIMEOUT: _range(CONF_MOTION_TIMEOUT),
     # Light & Cloud
     CONF_WEATHER_ENTITY: _entity_v(),

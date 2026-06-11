@@ -284,13 +284,15 @@
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
           "motion_media_players": "Media players for occupancy-based control",
           "motion_template": "Occupancy template (optional)",
+          "motion_template_mode": "Occupancy template logic",
           "motion_timeout": "Motion timeout duration",
           "motion_timeout_mode": "When motion times out"
         },
         "data_description": {
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
           "motion_media_players": "Media players treated as occupancy. ANY player whose state is something other than off (playing, paused, idle, on, …) counts as occupied and keeps automatic sun positioning active. Players that are off, unavailable, or unknown do not count. Combined with the motion sensors above under the same OR logic. Leave empty to disable.",
-          "motion_template": "Optional Home Assistant Jinja2 template that acts as an extra occupancy source. When it renders truthy (on/true/1) the room counts as occupied, OR'd with the sensors and media players above; when it renders falsy the timeout starts like any other source clearing. It is re-evaluated the instant a referenced entity changes — no polling — so it triggers as immediately as a sensor, and can stand alone with no sensors configured. For example, a template that returns true while an input_boolean helper is on. Leave empty to disable.",
+          "motion_template": "Optional Home Assistant Jinja2 template that acts as an extra occupancy source. When it renders truthy (on/true/1) the room counts as occupied; how that combines with the sensors and media players above (OR or AND) is set by 'Occupancy template logic' below. When it renders falsy the timeout starts like any other source clearing. It is re-evaluated the instant a referenced entity changes — no polling — so it triggers as immediately as a sensor, and can stand alone with no sensors configured. For example, a template that returns true while an input_boolean helper is on. Leave empty to disable.",
+          "motion_template_mode": "How the occupancy template combines with the motion sensors and media players above. 'OR' (default) keeps the original behaviour — occupied when the template is truthy or any sensor or player is active. 'AND' makes the template a gate — occupied only when the template is truthy and at least one sensor or player is also active, so the template must hold for occupancy to register. With no sensors or players configured, the template alone decides in either mode. Only has an effect when an occupancy template is set above.",
           "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
           "motion_timeout_mode": "What to do when motion has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
         }
@@ -805,13 +807,15 @@
           "motion_sensors": "Motion/occupancy sensors for occupancy-based control",
           "motion_media_players": "Media players for occupancy-based control",
           "motion_template": "Occupancy template (optional)",
+          "motion_template_mode": "Occupancy template logic",
           "motion_timeout": "Motion timeout duration",
           "motion_timeout_mode": "When motion times out"
         },
         "data_description": {
           "motion_sensors": "Binary sensors that enable/disable automatic sun positioning based on occupancy. When ANY sensor detects motion, covers use automatic sun-based positioning. When ALL sensors show no motion for the timeout duration, covers return to default position. Leave empty to disable this feature.",
           "motion_media_players": "Media players treated as occupancy. ANY player whose state is something other than off (playing, paused, idle, on, …) counts as occupied and keeps automatic sun positioning active. Players that are off, unavailable, or unknown do not count. Combined with the motion sensors above under the same OR logic. Leave empty to disable.",
-          "motion_template": "Optional Home Assistant Jinja2 template that acts as an extra occupancy source. When it renders truthy (on/true/1) the room counts as occupied, OR'd with the sensors and media players above; when it renders falsy the timeout starts like any other source clearing. It is re-evaluated the instant a referenced entity changes — no polling — so it triggers as immediately as a sensor, and can stand alone with no sensors configured. For example, a template that returns true while an input_boolean helper is on. Leave empty to disable.",
+          "motion_template": "Optional Home Assistant Jinja2 template that acts as an extra occupancy source. When it renders truthy (on/true/1) the room counts as occupied; how that combines with the sensors and media players above (OR or AND) is set by 'Occupancy template logic' below. When it renders falsy the timeout starts like any other source clearing. It is re-evaluated the instant a referenced entity changes — no polling — so it triggers as immediately as a sensor, and can stand alone with no sensors configured. For example, a template that returns true while an input_boolean helper is on. Leave empty to disable.",
+          "motion_template_mode": "How the occupancy template combines with the motion sensors and media players above. 'OR' (default) keeps the original behaviour — occupied when the template is truthy or any sensor or player is active. 'AND' makes the template a gate — occupied only when the template is truthy and at least one sensor or player is also active, so the template must hold for occupancy to register. With no sensors or players configured, the template alone decides in either mode. Only has an effect when an occupancy template is set above.",
           "motion_timeout": "Duration (in seconds) to wait after last motion before returning covers to default position. Prevents rapid position changes when motion sensors toggle frequently. Range: 30-3600 seconds (0.5-60 minutes). Default: 300 seconds (5 minutes).",
           "motion_timeout_mode": "What to do when motion has been absent for the timeout duration. 'Return to default' moves covers to the default position. 'Hold position' leaves covers where they are while the sun is in the FOV (so an occupant who returns finds them how they left them); covers still return to default once the sun leaves the FOV or the time window closes."
         }
@@ -1158,6 +1162,12 @@
       "options": {
         "angles": "By angles (set left/right field of view directly)",
         "measurements": "From measurements (derive field of view from window width and reveal depth)"
+      }
+    },
+    "template_combine_mode": {
+      "options": {
+        "or": "OR — occupied if the template is true or a sensor is active (default)",
+        "and": "AND — require the template to be true and a sensor active"
       }
     },
     "debug_categories": {

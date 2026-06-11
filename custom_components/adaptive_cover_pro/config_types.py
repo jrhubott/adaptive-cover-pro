@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .const import TiltMode
+from .const import DEFAULT_MOTION_TEMPLATE_MODE, TiltMode
 
 
 def _num_or(value: Any, default: float) -> float:
@@ -253,6 +253,7 @@ class MotionSlice:
     timeout_seconds: int
     media_players: list[str]
     template: str | None = None
+    template_mode: str = DEFAULT_MOTION_TEMPLATE_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +348,7 @@ class RuntimeConfig:
             CONF_MOTION_MEDIA_PLAYERS,
             CONF_MOTION_SENSORS,
             CONF_MOTION_TEMPLATE,
+            CONF_MOTION_TEMPLATE_MODE,
             CONF_MOTION_TIMEOUT,
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_POSITION_TOLERANCE,
@@ -422,6 +424,9 @@ class RuntimeConfig:
                 ),
                 media_players=options.get(CONF_MOTION_MEDIA_PLAYERS, []),
                 template=options.get(CONF_MOTION_TEMPLATE),
+                template_mode=options.get(
+                    CONF_MOTION_TEMPLATE_MODE, DEFAULT_MOTION_TEMPLATE_MODE
+                ),
             ),
             weather=WeatherSlice(
                 wind_speed_sensor=options.get(CONF_WEATHER_WIND_SPEED_SENSOR),

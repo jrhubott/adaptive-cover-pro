@@ -27,6 +27,7 @@ from custom_components.adaptive_cover_pro.services.options_service import (
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateProvider
 from custom_components.adaptive_cover_pro.templates import (
     TemplateResolver,
+    combine_with_mode,
     is_template_string,
     render_condition,
 )
@@ -172,6 +173,56 @@ class TestRenderCondition:
     async def test_render_error_returns_default(self, hass: HomeAssistant):
         # References an undefined function → render raises → default.
         assert render_condition(hass, "{{ nonexistent_fn() }}") is False
+
+
+# ---------------------------------------------------------------------------
+# combine_with_mode — fold a condition template into the screen's other signals
+# ---------------------------------------------------------------------------
+
+
+class TestCombineWithMode:
+    """Generic OR/AND combination used by any template-based condition field."""
+
+    # (template, others, mode, has_template, has_others) -> expected
+    @pytest.mark.parametrize(
+        "template,others,mode,has_template,has_others,expected",
+        [
+            # Both sources present — OR is additive.
+            (True, False, "or", True, True, True),
+            (False, True, "or", True, True, True),
+            (False, False, "or", True, True, False),
+            (True, True, "or", True, True, True),
+            # Both sources present — AND requires both.
+            (True, True, "and", True, True, True),
+            (True, False, "and", True, True, False),
+            (False, True, "and", True, True, False),
+            (False, False, "and", True, True, False),
+            # Template only — AND degenerates to the template alone.
+            (True, False, "and", True, False, True),
+            (False, False, "and", True, False, False),
+            (True, False, "or", True, False, True),
+            # Others only — mode irrelevant, the sensors decide.
+            (False, True, "and", False, True, True),
+            (False, False, "and", False, True, False),
+            (False, True, "or", False, True, True),
+            # Unknown mode falls back to OR.
+            (True, False, "weird", True, True, True),
+            (False, False, "weird", True, True, False),
+        ],
+    )
+    def test_truth_table(
+        self, template, others, mode, has_template, has_others, expected
+    ):
+        assert (
+            combine_with_mode(
+                template,
+                others,
+                mode,
+                has_template=has_template,
+                has_others=has_others,
+            )
+            is expected
+        )
 
 
 # ---------------------------------------------------------------------------
