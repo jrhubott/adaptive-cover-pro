@@ -1,0 +1,221 @@
+{
+  "banner": {
+    "dry_run": "⚠️ **Mode essai activé** — les positions sont calculées et enregistrées, mais aucune commande n'est envoyée et les stores ne bougeront PAS."
+  },
+  "headers": {
+    "your_cover": "**Votre store**",
+    "cover_warnings": "**Avertissements du store**",
+    "how_it_decides": "**Comment ça décide** (première règle correspondante gagne)",
+    "position_limits": "**Limites de position**",
+    "proxy_enabled": "**Store mandataire** : activé",
+    "proxy_disabled": "**Store mandataire** : désactivé",
+    "decision_priority": "**Priorité de décision** (la plus élevée gagne, ✅ actif ❌ non configuré)"
+  },
+  "cover": {
+    "type_with_entities": "{type_label} contrôlant {entity_str}"
+  },
+  "words": {
+    "sensor_singular": "détecteur",
+    "sensor_plural": "détecteurs",
+    "source_singular": "source",
+    "source_plural": "sources"
+  },
+  "fragments": {
+    "as_minimum": " (comme minimum)"
+  },
+  "rules": {
+    "force": "🔒 Dérogation forcée : si l'un des {n} {sensor_word} est activé → stores vont à {force_pos}%{min_mode} (remplace tout)",
+    "weather": "🌧️ Sécurité météo : si {wx_condition} → stores se rétractent à {weather_pos}%{weather_min}{delay}{bypass}",
+    "manual": "✋ Dérogation manuelle : pause le contrôle automatique quand vous bougez le store{detail}",
+    "custom_tilt_only": "🎯 Personnalisé #{slot} : si {eid} est activé → inclinaison seulement (lamelle fixée à {slat}% ; position pilotée par le suivi solaire)",
+    "custom": "🎯 Personnalisé #{slot} : si {eid} est activé → {target}{cp_min}{tilt_note} — contourne les portes delta et le contrôle automatique",
+    "motion": "🚶 Basé sur le mouvement : si pas de présence pendant {motion_timeout}s ({sources}) → {action}",
+    "cloud": "☁️ Suppression de nuages : ignore le suivi solaire{cloud} → {fallback}",
+    "climate": "🌡️ Mode climatique : ajuste la stratégie pour le chauffage/refroidissement{detail}",
+    "glare": "🔆 Zones d'éblouissement : baisse davantage le store pour protéger les zones du sol contre l'éblouissement{detail}",
+    "solar": "☀️ Suit le soleil{sun_desc} et calcule la position pour bloquer la lumière directe{today}",
+    "solar_disabled": "☀️ Suivi solaire désactivé — les stores maintiennent la position ; mode climatique, dérogation manuelle, positions personnalisées et autres dérogations restent actifs",
+    "default": "🌙 Par défaut (aucune règle ne correspond) → {default_pos}%"
+  },
+  "weather": {
+    "wind": "vent > {thresh}",
+    "wind_dir": " de la fenêtre ±{tol}°",
+    "rain": "pluie > {thresh}",
+    "is_raining": "est-pluvieux",
+    "is_windy": "est-venteux",
+    "severe": "{count} détecteur(s) météo sévère",
+    "condition_default": "condition météorologique",
+    "condition_join": " ou ",
+    "delay": " (attend {delay}s après dégagement)",
+    "bypass": " ⚠️ arrête toute automatisation pendant l'activation"
+  },
+  "manual": {
+    "pauses_for": "pause pendant {duration}",
+    "threshold": "seuil {threshold}%",
+    "resets_on_move": "réinitialise au prochain mouvement",
+    "ignore_intermediate": "ignore les positions intermédiaires",
+    "ignore_external": "ACP uniquement (ignore les mouvements externes)",
+    "transit_timeout": "délai d'attente de transit : {seconds}s"
+  },
+  "custom": {
+    "tilt_note": ", inclinaison {tilt}%"
+  },
+  "warnings": {
+    "custom_tilt_only_conflict": "⚠️ Personnalisé #{slot} : inclinaison seulement est activé — Utiliser comme minimum / Utiliser ma position sont ignorés pour cet emplacement.",
+    "motion_hold_no_sensors": "⚠️ mode retenue est défini mais aucun détecteur de mouvement ou lecteur multimédia n'est configuré — le paramètre n'a aucun effet tant qu'une source de mouvement n'est pas ajoutée",
+    "cloudy_pos_ignored": "⚠️ Position nuageux ({pos}%) configurée mais suppression de nuages est désactivée — la valeur sera ignorée.",
+    "sun_track_min_below_floor": "⚠️ Min suivi solaire {sun_min}% < position min {min_pos}% — le plancher toujours actif domine ; le plancher suivi solaire sera relevé à {min_pos}%.",
+    "mode2_min_position": "⚠️ Inclinaison MODE2 + position min {min_pos}% — en MODE2 l'angle de lamelle ouvert (horizontal) EST 50%, donc toute position min ≥ 50 réduit à néant chaque décision de contrôle climatique/éblouissement au plancher et le store cesse de bloquer la chaleur.",
+    "somfy_my_unset": "⚠️ Préréglage Somfy My est activé pour une ou plusieurs cibles mais Valeur du préréglage My n'est pas définie — revient au % configuré.",
+    "proxy_no_min": "⚠️ Store mandataire est activé mais aucun emplacement de position personnalisée n'a Utiliser comme minimum activé — le store géré ne limitera pas."
+  },
+  "motion": {
+    "action_hold": "stores maintiennent la position actuelle (reviennent au défaut quand le soleil quitte le FOV)",
+    "action_return": "stores reviennent au défaut ({default_pos}%)",
+    "template_source": "modèle de présence"
+  },
+  "cloud": {
+    "is_sunny": "est_ensoleillé={value}",
+    "lux": "lux < {thresh} lx",
+    "lux_no_thresh": "lux ({entity})",
+    "irradiance": "rayonnement < {thresh} W/m²",
+    "irradiance_no_thresh": "rayonnement ({entity})",
+    "coverage": "nuages > {thresh}%",
+    "coverage_no_thresh": "nuages ({entity})",
+    "weather_in": "météo dans {{{states}}}",
+    "when": " quand {parts}",
+    "fallback_cloudy": "position nuageux {pos}%",
+    "fallback_default": "défaut ({default_pos}%)"
+  },
+  "info": {
+    "light_sensors_off": "📊 Détecteurs de lumière configurés ({names}) mais suppression de nuages est désactivée.",
+    "light_lux": "lux",
+    "light_irradiance": "rayonnement",
+    "light_cloud_coverage": "couverture nuageuse"
+  },
+  "climate": {
+    "comfort_range": "plage de confort {lo}–{hi}°C",
+    "using": "utilisant {entity}",
+    "outside_thresh": "extérieur : {entity} > {thresh}°C",
+    "outside": "extérieur : {entity}",
+    "weather": "météo : {entity}",
+    "presence": "présence : {entity}",
+    "transparent": "store transparent",
+    "winter_close": "ferme complètement en hiver pour l'isolation"
+  },
+  "glare": {
+    "zones": "zones : {names}",
+    "window": "fenêtre {width:.2f}m",
+    "z_height": "Hauteur Z : {values}",
+    "z_value": "{z:.2f}m"
+  },
+  "solar": {
+    "azimuth": "azimut {azimuth}°",
+    "fov": "±{fov_l}°/{fov_r}° champ de vision",
+    "elev_above": "au-dessus {elev}°",
+    "elev_below": "au-dessous {elev}°",
+    "elevation": "élévation {parts}",
+    "elev_join": " et ",
+    "today_window": " (aujourd'hui : soleil dans la fenêtre {start} → {end})",
+    "today_no_window": " (aujourd'hui : le soleil n'entre pas dans la fenêtre)",
+    "minimize_one_step": "se déplace directement à la couverture complète et se maintient (1 étape)",
+    "minimize_steps": "atteint la couverture complète en jusqu'à {steps} étapes",
+    "minimize": "{indent}🪟 Minimiser les mouvements — {detail}, arrondi vers plus de couverture pour réduire les mouvements moteur."
+  },
+  "timing": {
+    "from_entity": "de {entity}",
+    "from_time": "de {time}",
+    "until_entity": "jusqu'à {entity}",
+    "until_time": "jusqu'à {time}",
+    "active_daylight": "Actif pendant la lumière du jour",
+    "line": "{indent}🕒 {timing}.",
+    "ann_via": "via {entity}",
+    "ann_today": "aujourd'hui ~{time}",
+    "offset_plus": "+{minutes} min",
+    "offset_minus": "{minutes} min",
+    "after_end_to_default": "{indent}🔚 Après heure de fin → {default_pos}%.",
+    "after_sunset": "{indent}🌅 Après coucher{ann} → {target}.",
+    "after_label": "{indent}🌅 Après {label}{ann} → {target}.",
+    "label_end_or_sunset": "heure de fin/coucher",
+    "label_sunset": "coucher",
+    "after_sunrise": "{indent}🌄 Après lever{ann} → {default_pos}% (suivi reprend).",
+    "return_sunset": "{indent}🔚 Retour à la position coucher à l'heure de fin : activé"
+  },
+  "blind_spot": {
+    "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur depuis la gauche FOV (par ex. arbre ou avant-toit).",
+    "range": "{left}°–{right}°",
+    "elevation": "jusqu'à {elev}° élévation"
+  },
+  "default": {
+    "tilt": "  ↳ Inclinaison par défaut : {tilt}% (explicite ; remplace calculé solaire)",
+    "sunset_tilt": "  ↳ Inclinaison coucher : {tilt}% (explicite ; remplace calculé solaire)"
+  },
+  "limits": {
+    "range": "Plage : {lo}–{hi}{qualifier}",
+    "qualifier_both": " (pendant suivi solaire seulement)",
+    "qualifier_min": " (min pendant suivi solaire seulement)",
+    "qualifier_max": " (max pendant suivi solaire seulement)",
+    "default": "Défaut : {pos}%",
+    "min_change": "Min changement : {delta}%",
+    "min_interval": "Min intervalle : {delta} min",
+    "position_tolerance": "Tolérance position : {tol}%",
+    "inverse_state": "État inverse",
+    "open_close_threshold": "Seuil ouverture/fermeture : {thresh}%",
+    "calibration": "Étalonnage {lo}→{hi}",
+    "calibration_on": "Étalonnage position activé",
+    "sun_tracking_min": "Min suivi solaire : {pos}%",
+    "separator": " · "
+  },
+  "my": {
+    "entities_enabled": "🎛️ Entités préréglage My : activées",
+    "entities_disabled": "🎛️ Entités préréglage My : désactivées",
+    "somfy_preset": "🎛️ Préréglage Somfy My : {pos}% (utilisé où activé ci-dessus)",
+    "label_my_set": "My ({pos}%)",
+    "label_my_unset": "My (non défini → {pct}%)",
+    "label_plain": "{pct}%"
+  },
+  "cover_types": {
+    "blind": "Store vertical",
+    "awning": "Store banne horizontal",
+    "tilt": "Store vénitien / inclinaison",
+    "oscillating_awning": "Store oscillant",
+    "venetian": "Store vénitien (deux axes)"
+  },
+  "geometry": {
+    "window": {
+      "tall": "fenêtre de {h}m de haut",
+      "blocking_glass": "bloque le soleil {d}m de la vitre",
+      "reveal": "tableau {depth}m",
+      "sill": "appui {sill}m",
+      "height": "hauteur de fenêtre {v}m"
+    },
+    "awning": {
+      "length": "store banne de {v}m",
+      "angle": "incliné à {v}°",
+      "blocking_wall": "bloque le soleil {v}m du mur"
+    },
+    "slat": {
+      "depth": "profondeur de lamelle {v}cm",
+      "spacing": "espacement {v}cm",
+      "mode": "mode : {v}"
+    },
+    "oscillating": {
+      "arm": "bras {v}m",
+      "sweep": "amplitude {lo}°–{hi}°",
+      "housing_offset": "décalage du boîtier {v}m"
+    },
+    "venetian": {
+      "skip_tilt": "sauter l'inclinaison quand position > {skip_above}%",
+      "mode_position_and_tilt": "position et inclinaison",
+      "mode_tilt_only": "inclinaison seule",
+      "inverse_tilt": "Inclinaison inversée",
+      "max_tilt": "inclinaison max {max_tilt}%",
+      "min_tilt": "inclinaison min {min_tilt}%",
+      "post_settle_hold": "maintien post-stabilisation {hold}s",
+      "backrotate_lag": "délai de publication back-rotate {lag}s"
+    },
+    "fov": {
+      "computed": "FOV calculé ≈ {deg}°/{deg}° (largeur {w}m, profondeur tableau {d}m)"
+    }
+  }
+}

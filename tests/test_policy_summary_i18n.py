@@ -7,8 +7,8 @@ from #258 as policy-owned. This file covers the new machinery:
 * the ``labels`` override param on ``display_label`` and
   ``summary_geometry_lines`` (and the shared ``window_dimensions_lines``),
 * English back-compat when ``labels`` is ``None`` or a key is untranslated,
-* a drift guard that ``en.json``'s ``config_summary.cover_types`` /
-  ``config_summary.geometry`` subtrees are byte-identical to the code-owned
+* a drift guard that ``summary_i18n/en.json``'s ``cover_types`` /
+  ``geometry`` subtrees are byte-identical to the code-owned
   ``COVER_TYPE_LABELS_EN`` / ``GEOMETRY_LABELS_EN`` dicts.
 """
 
@@ -42,11 +42,11 @@ from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
 
 pytestmark = pytest.mark.unit
 
-TRANSLATIONS_DIR = (
+SUMMARY_I18N_DIR = (
     Path(__file__).parent.parent
     / "custom_components"
     / "adaptive_cover_pro"
-    / "translations"
+    / "summary_i18n"
 )
 
 
@@ -122,12 +122,12 @@ def _flatten(node: object, prefix: str = "") -> dict[str, str]:
 
 
 def _en_config_summary() -> dict:
-    with (TRANSLATIONS_DIR / "en.json").open(encoding="utf-8") as fh:
-        return json.load(fh)["config_summary"]
+    with (SUMMARY_I18N_DIR / "en.json").open(encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def test_cover_type_labels_match_en_json() -> None:
-    """``en.json['config_summary']['cover_types']`` == ``COVER_TYPE_LABELS_EN``."""
+    """``summary_i18n/en.json['cover_types']`` == ``COVER_TYPE_LABELS_EN``."""
     en = _flatten(_en_config_summary().get("cover_types", {}))
     expected = {
         k.removeprefix("cover_types."): v for k, v in COVER_TYPE_LABELS_EN.items()
@@ -136,7 +136,7 @@ def test_cover_type_labels_match_en_json() -> None:
 
 
 def test_geometry_labels_match_en_json() -> None:
-    """``en.json['config_summary']['geometry']`` == ``GEOMETRY_LABELS_EN``."""
+    """``summary_i18n/en.json['geometry']`` == ``GEOMETRY_LABELS_EN``."""
     en = _flatten(_en_config_summary().get("geometry", {}))
     expected = {k.removeprefix("geometry."): v for k, v in GEOMETRY_LABELS_EN.items()}
     assert en == expected

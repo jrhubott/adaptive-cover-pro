@@ -120,7 +120,6 @@ def test_en_json_has_expected_top_level_sections() -> None:
         "selector",
         "entity",
         "services",
-        "config_summary",
     ):
         assert section in en_data, f"en.json missing '{section}' section"
 

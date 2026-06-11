@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from functools import cache
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -13,7 +16,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
@@ -969,9 +971,12 @@ def _cover_type_label(
 #     tests in test_config_flow_summary.py stay byte-identical), AND
 #   * the per-key fallback used when a translated key is missing/dropped.
 #
-# ``en.json["config_summary"]`` mirrors these exact keys/values. The flattened
-# HA keys (``config_summary.rules.force`` → tail ``rules.force``) match the
-# dotted keys here verbatim — see ``_load_summary_labels``.
+# ``summary_i18n/en.json`` mirrors these exact keys/values as a nested tree. The
+# flattened dotted keys (``rules`` → ``force`` → ``rules.force``) match the
+# dotted keys here verbatim — see ``_load_summary_labels``. This data lives in a
+# dedicated ``summary_i18n/`` bundle rather than under ``translations/`` because
+# hassfest validates ``translations/en.json`` against HA's strict schema, which
+# forbids a custom ``config_summary`` top-level category.
 #
 # Each value is a Python ``str.format`` template. Literal ``{`` / ``}`` that are
 # NOT format fields (the cloud "weather in {set}" notation) are escaped as
@@ -1211,29 +1216,63 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
 }
 
 
+_SUMMARY_I18N_DIR = Path(__file__).parent / "summary_i18n"
+
+
+def _flatten_summary_labels(node: object, prefix: str = "") -> dict[str, str]:
+    """Flatten a nested label tree to dotted keys (``rules.force`` → template)."""
+    out: dict[str, str] = {}
+    if isinstance(node, dict):
+        for key, value in node.items():
+            out.update(
+                _flatten_summary_labels(value, f"{prefix}.{key}" if prefix else key)
+            )
+    elif isinstance(node, str):
+        out[prefix] = node
+    return out
+
+
+@cache
+def _summary_label_overlay(language: str) -> tuple[tuple[str, str], ...]:
+    """Return the flattened ``summary_i18n/<language>.json`` bundle.
+
+    Cached (the bundles are shipped, read-only) and returned as a tuple of items
+    so the cached value cannot be mutated by callers. ``en`` and any missing or
+    malformed file yield an empty overlay — the English defaults then apply.
+    """
+    if not language or language == "en":
+        return ()
+    path = _SUMMARY_I18N_DIR / f"{language}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    return tuple(_flatten_summary_labels(data).items())
+
+
+def _load_summary_labels_sync(language: str) -> dict[str, str]:
+    """Build the config-summary labels for ``language``.
+
+    English defaults overlaid with the translated bundle. Pure/synchronous —
+    safe to unit-test directly.
+    """
+    return {**_SUMMARY_LABELS_EN, **dict(_summary_label_overlay(language))}
+
+
 async def _load_summary_labels(hass: HomeAssistant, language: str) -> dict[str, str]:
     """Load the translated config-summary labels for ``language``.
 
-    This is the ONLY place ``async_get_translations`` is called. It fetches the
-    ``config_summary`` category for this integration, strips the
-    ``component.{DOMAIN}.config_summary.`` prefix from each returned key, and
-    overlays the result onto the English defaults so any missing/dropped key
-    falls back to English. ``language`` is the per-user flow language
-    (``self.context.get("language", "en")``) — never the system language.
+    The labels live in the integration's ``summary_i18n/`` bundle (a custom
+    ``config_summary`` category cannot live under ``translations/`` — hassfest
+    rejects it). This overlays the language bundle onto the English defaults so
+    any missing key falls back to English. ``language`` is the per-user flow
+    language (``self.context.get("language", "en")``) — never the system
+    language. File I/O is offloaded to the executor.
 
     Both ``ConfigFlow.async_step_summary`` and ``OptionsFlow.async_step_summary``
     call this single helper (no duplication).
     """
-    raw = await async_get_translations(
-        hass, language, category="config_summary", integrations=[DOMAIN]
-    )
-    prefix = f"component.{DOMAIN}.config_summary."
-    loaded = {
-        key[len(prefix) :]: value
-        for key, value in raw.items()
-        if key.startswith(prefix)
-    }
-    return {**_SUMMARY_LABELS_EN, **loaded}
+    return await hass.async_add_executor_job(_load_summary_labels_sync, language)
 
 
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915

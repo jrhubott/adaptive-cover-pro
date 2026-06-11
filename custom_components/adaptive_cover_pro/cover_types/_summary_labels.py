@@ -23,10 +23,10 @@ it receives:
 so English is used when ``labels`` is ``None`` (e.g. sensor names with no flow
 context) or when a key is untranslated — fully backward-compatible.
 
-``en.json["config_summary"]["cover_types"]`` and ``...["geometry"]`` mirror
+``summary_i18n/en.json["cover_types"]`` and ``...["geometry"]`` mirror
 these exact keys/values (prefix-stripped). A drift test in
 ``tests/test_policy_summary_i18n.py`` keeps the two in lockstep, exactly like
-#258's ``_SUMMARY_LABELS_EN`` ↔ en.json byte-identity guard.
+#258's ``_SUMMARY_LABELS_EN`` ↔ ``summary_i18n/en.json`` byte-identity guard.
 """
 
 from __future__ import annotations
