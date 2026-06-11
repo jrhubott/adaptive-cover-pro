@@ -806,20 +806,26 @@ async def test_options_flow_menu_returns_list_not_dict(
     ), f"menu_options should be a list for client-side translation, got {type(result['menu_options'])}"
 
 
-def test_config_flow_does_not_import_async_get_translations() -> None:
-    """config_flow must not import async_get_translations (issue #227).
+def test_config_flow_does_not_use_system_language() -> None:
+    """config_flow must not read the system language (issue #227).
 
-    Server-side translation fetching used self.hass.config.language (system language)
-    rather than the per-user language. The fix removes the import entirely and lets
-    HA's frontend translate menu labels client-side.
+    The #227 bug was server-side translation fetching keyed on
+    ``self.hass.config.language`` (the system language) instead of the per-user
+    flow language. The config-summary i18n (issue #258) legitimately imports
+    ``async_get_translations``, but must select the language via
+    ``self.context.get("language", ...)`` — never ``hass.config.language``.
+
+    Guard the source text directly so any reintroduction of the system-language
+    read fails here.
     """
-    import importlib
+    import inspect
+
     import custom_components.adaptive_cover_pro.config_flow as cf_module
 
-    importlib.reload(cf_module)
-    assert not hasattr(cf_module, "async_get_translations"), (
-        "config_flow must not import async_get_translations — "
-        "menu translation should be handled client-side by HA's frontend"
+    source = inspect.getsource(cf_module)
+    assert "config.language" not in source, (
+        "config_flow must not read hass.config.language (system language) — "
+        "the flow user's language comes from self.context['language'] (issue #227)"
     )
 
 

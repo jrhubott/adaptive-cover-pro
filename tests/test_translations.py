@@ -113,7 +113,15 @@ def test_translation_file_valid_json(lang_file: Path) -> None:
 def test_en_json_has_expected_top_level_sections() -> None:
     """English must contain the standard HA sections plus services."""
     en_data = _load(TRANSLATIONS_DIR / "en.json")
-    for section in ("title", "config", "options", "selector", "entity", "services"):
+    for section in (
+        "title",
+        "config",
+        "options",
+        "selector",
+        "entity",
+        "services",
+        "config_summary",
+    ):
         assert section in en_data, f"en.json missing '{section}' section"
 
 

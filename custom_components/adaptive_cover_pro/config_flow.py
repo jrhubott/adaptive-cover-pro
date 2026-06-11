@@ -13,6 +13,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
@@ -915,11 +916,288 @@ def _cover_type_label(sensor_type: str | None) -> str:
     return "Cover"
 
 
+# ---------------------------------------------------------------------------
+# Configuration-summary i18n (issue #258)
+# ---------------------------------------------------------------------------
+#
+# Every user-facing phrase rendered by ``_build_config_summary`` lives here as a
+# dotted-key → English template. This dict is BOTH:
+#   * the single source of truth for the English output (so the 188 regression
+#     tests in test_config_flow_summary.py stay byte-identical), AND
+#   * the per-key fallback used when a translated key is missing/dropped.
+#
+# ``en.json["config_summary"]`` mirrors these exact keys/values. The flattened
+# HA keys (``config_summary.rules.force`` → tail ``rules.force``) match the
+# dotted keys here verbatim — see ``_load_summary_labels``.
+#
+# Each value is a Python ``str.format`` template. Literal ``{`` / ``}`` that are
+# NOT format fields (the cloud "weather in {set}" notation) are escaped as
+# ``{{`` / ``}}``. Priority badges are NOT baked in — ``_badge(N)`` is appended
+# AFTER ``.format()`` so handler-priority integers stay imported, never
+# duplicated into translation strings.
+#
+# DEFERRED (stay English / policy-owned, translated in a follow-up):
+#   * cover-type label (``policy.display_label()``)
+#   * physical-dimension block (``policy.summary_geometry_lines()``)
+#   * decision-priority short labels (Force/Weather/...) and the ✅/❌/→ marks
+#   * cover-capability warning lines built in ``_check_cover_capabilities``
+_SUMMARY_LABELS_EN: dict[str, str] = {
+    # --- banners / section headers ---
+    "banner.dry_run": (
+        "⚠️ **Dry-run mode is ON** — positions are computed and logged, but "
+        "no commands are sent and covers will NOT move."
+    ),
+    "headers.your_cover": "**Your Cover**",
+    "cover.type_with_entities": "{type_label} controlling {entity_str}",
+    "headers.cover_warnings": "**Cover Warnings**",
+    "headers.how_it_decides": "**How It Decides** (first matching rule wins)",
+    # --- singular/plural words ---
+    "words.sensor_singular": "sensor",
+    "words.sensor_plural": "sensors",
+    "words.source_singular": "source",
+    "words.source_plural": "sources",
+    # --- shared fragments ---
+    "fragments.as_minimum": " (as minimum)",
+    # --- Force override (100) ---
+    "rules.force": (
+        "🔒 Force override: if any of {n} {sensor_word} is on → covers go to "
+        "{force_pos}%{min_mode} (overrides everything else)"
+    ),
+    # --- Weather safety (90) ---
+    "rules.weather": (
+        "🌧️ Weather safety: if {wx_condition} → covers retract to "
+        "{weather_pos}%{weather_min}{delay}{bypass}"
+    ),
+    "weather.wind": "wind > {thresh}",
+    "weather.wind_dir": " from window ±{tol}°",
+    "weather.rain": "rain > {thresh}",
+    "weather.is_raining": "is-raining",
+    "weather.is_windy": "is-windy",
+    "weather.severe": "{count} severe weather sensor(s)",
+    "weather.condition_default": "weather condition",
+    "weather.condition_join": " or ",
+    "weather.delay": " (waits {delay}s after clearing)",
+    "weather.bypass": " ⚠️ halts all automation while triggered",
+    # --- Manual override (80) ---
+    "rules.manual": (
+        "✋ Manual override: pauses automatic control when you move the cover"
+        "{detail}"
+    ),
+    "manual.pauses_for": "pauses for {duration}",
+    "manual.threshold": "threshold {threshold}%",
+    "manual.resets_on_move": "resets on next move",
+    "manual.ignore_intermediate": "ignores intermediate positions",
+    "manual.ignore_external": "ACP-only (ignores external moves)",
+    "manual.transit_timeout": "transit timeout: {seconds}s",
+    # --- Custom positions ---
+    "rules.custom_tilt_only": (
+        "🎯 Custom #{slot}: if {eid} is on → tilt only "
+        "(slat fixed at {slat}%; position driven by sun tracking)"
+    ),
+    "rules.custom": (
+        "🎯 Custom #{slot}: if {eid} is on → {target}{cp_min}{tilt_note}"
+        " — bypasses delta gates and auto-control"
+    ),
+    "custom.tilt_note": ", tilt {tilt}%",
+    "warnings.custom_tilt_only_conflict": (
+        "⚠️ Custom #{slot}: tilt only is on — "
+        "Use as minimum / Use My position are ignored for this slot."
+    ),
+    # --- Motion (75) ---
+    "rules.motion": (
+        "🚶 Motion-based: if no occupancy for {motion_timeout}s "
+        "({n} {sensor_word}) → {action}"
+    ),
+    "motion.action_hold": (
+        "covers hold current position (return to default when sun leaves FOV)"
+    ),
+    "motion.action_return": "covers return to default ({default_pos}%)",
+    "warnings.motion_hold_no_sensors": (
+        "⚠️ hold_position mode is set but no motion sensors or media "
+        "players are configured — the setting has no effect until a "
+        "motion source is added"
+    ),
+    # --- Cloud suppression (60) ---
+    "rules.cloud": ("☁️ Cloud suppression: skips sun tracking{cloud} → {fallback}"),
+    "cloud.is_sunny": "is_sunny={value}",
+    "cloud.lux": "lux < {thresh} lx",
+    "cloud.lux_no_thresh": "lux ({entity})",
+    "cloud.irradiance": "irradiance < {thresh} W/m²",
+    "cloud.irradiance_no_thresh": "irradiance ({entity})",
+    "cloud.coverage": "cloud > {thresh}%",
+    "cloud.coverage_no_thresh": "cloud ({entity})",
+    "cloud.weather_in": "weather in {{{states}}}",
+    "cloud.when": " when {parts}",
+    "cloud.fallback_cloudy": "cloudy position {pos}%",
+    "cloud.fallback_default": "default ({default_pos}%)",
+    "info.light_sensors_off": (
+        "📊 Light sensors configured ({names}) but cloud suppression is off."
+    ),
+    "info.light_lux": "lux",
+    "info.light_irradiance": "irradiance",
+    "info.light_cloud_coverage": "cloud coverage",
+    "warnings.cloudy_pos_ignored": (
+        "⚠️ Cloudy position ({pos}%) configured but cloud suppression is "
+        "disabled — value will be ignored."
+    ),
+    # --- Climate (50) ---
+    "rules.climate": ("🌡️ Climate mode: adjusts strategy for heating/cooling{detail}"),
+    "climate.comfort_range": "comfort range {lo}–{hi}°C",
+    "climate.using": "using {entity}",
+    "climate.outside_thresh": "outside: {entity} > {thresh}°C",
+    "climate.outside": "outside: {entity}",
+    "climate.weather": "weather: {entity}",
+    "climate.presence": "presence: {entity}",
+    "climate.transparent": "transparent blind",
+    "climate.winter_close": "closes fully in winter for insulation",
+    # --- Glare (45) ---
+    "rules.glare": (
+        "🔆 Glare zones: lowers blind further to protect floor areas from "
+        "glare{detail}"
+    ),
+    "glare.zones": "zones: {names}",
+    "glare.window": "{width:.2f}m window",
+    "glare.z_height": "Z height: {values}",
+    "glare.z_value": "{z:.2f}m",
+    # --- Solar (40) ---
+    "rules.solar": (
+        "☀️ Tracks the sun{sun_desc} and calculates position to block "
+        "direct sunlight{today}"
+    ),
+    "rules.solar_disabled": (
+        "☀️ Sun tracking disabled — covers hold position; climate, manual "
+        "override, custom positions, and other overrides remain active"
+    ),
+    "solar.azimuth": "azimuth {azimuth}°",
+    "solar.fov": "±{fov_l}°/{fov_r}° field of view",
+    "solar.elev_above": "above {elev}°",
+    "solar.elev_below": "below {elev}°",
+    "solar.elevation": "elevation {parts}",
+    "solar.elev_join": " and ",
+    "solar.today_window": (" (today: sun in window {start} → {end})"),
+    "solar.today_no_window": " (today: sun does not enter window)",
+    "solar.minimize_one_step": "moves straight to full coverage and holds (1 step)",
+    "solar.minimize_steps": "reaches full coverage in up to {steps} steps",
+    "solar.minimize": (
+        "{indent}🪟 Minimize movements — {detail}, rounding toward more "
+        "coverage to reduce motor movements."
+    ),
+    # --- Timing window ---
+    "timing.from_entity": "from {entity}",
+    "timing.from_time": "from {time}",
+    "timing.until_entity": "until {entity}",
+    "timing.until_time": "until {time}",
+    "timing.active_daylight": "Active during daylight",
+    "timing.line": "{indent}🕒 {timing}.",
+    "timing.ann_via": "via {entity}",
+    "timing.ann_today": "today ~{time}",
+    "timing.offset_plus": "+{minutes} min",
+    "timing.offset_minus": "{minutes} min",
+    "timing.after_end_to_default": "{indent}🔚 After end time → {default_pos}%.",
+    "timing.after_sunset": "{indent}🌅 After sunset{ann} → {target}.",
+    "timing.after_label": "{indent}🌅 After {label}{ann} → {target}.",
+    "timing.label_end_or_sunset": "end time/sunset",
+    "timing.label_sunset": "sunset",
+    "timing.after_sunrise": (
+        "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes)."
+    ),
+    "timing.return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    # --- Blind spot ---
+    "blind_spot.line": (
+        "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree "
+        "or roof overhang)."
+    ),
+    "blind_spot.range": "{left}°–{right}°",
+    "blind_spot.elevation": "up to {elev}° elevation",
+    # --- Default fallback (0) ---
+    "rules.default": "🌙 Default (no rule matches) → {default_pos}%",
+    "default.tilt": ("  ↳ Default tilt: {tilt}% (explicit; overrides solar-computed)"),
+    "default.sunset_tilt": (
+        "  ↳ Sunset tilt: {tilt}% (explicit; overrides solar-computed)"
+    ),
+    # --- Position limits ---
+    "headers.position_limits": "**Position Limits**",
+    "limits.range": "Range: {lo}–{hi}{qualifier}",
+    "limits.qualifier_both": " (during sun tracking only)",
+    "limits.qualifier_min": " (min during sun tracking only)",
+    "limits.qualifier_max": " (max during sun tracking only)",
+    "limits.default": "Default: {pos}%",
+    "limits.min_change": "Min change: {delta}%",
+    "limits.min_interval": "Min interval: {delta} min",
+    "limits.position_tolerance": "Position tolerance: {tol}%",
+    "limits.inverse_state": "Inverse state",
+    "limits.open_close_threshold": "Open/close threshold: {thresh}%",
+    "limits.calibration": "Calibration {lo}→{hi}",
+    "limits.calibration_on": "Position calibration on",
+    "limits.sun_tracking_min": "Sun-tracking min: {pos}%",
+    "limits.separator": " · ",
+    "warnings.sun_track_min_below_floor": (
+        "⚠️ Sun-tracking min {sun_min}% < min position {min_pos}% — "
+        "always-on floor dominates; sun-tracking floor will be raised to "
+        "{min_pos}%."
+    ),
+    "warnings.mode2_min_position": (
+        "⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open "
+        "(horizontal) slat angle IS 50%, so any min position ≥ 50 "
+        "collapses every climate/glare-control decision to the floor "
+        "and the cover stops blocking heat."
+    ),
+    # --- My preset / Somfy ---
+    "my.entities_enabled": "🎛️ My-preset entities: enabled",
+    "my.entities_disabled": "🎛️ My-preset entities: disabled",
+    "my.somfy_preset": "🎛️ Somfy My preset: {pos}% (used where enabled above)",
+    "my.label_my_set": "My ({pos}%)",
+    "my.label_my_unset": "My (not set → {pct}%)",
+    "my.label_plain": "{pct}%",
+    "warnings.somfy_my_unset": (
+        "⚠️ Somfy My preset is enabled for one or more targets but "
+        "My Preset Value is not set — falls back to configured %."
+    ),
+    # --- Proxy cover ---
+    "headers.proxy_enabled": "**Proxy cover**: enabled",
+    "headers.proxy_disabled": "**Proxy cover**: disabled",
+    "warnings.proxy_no_min": (
+        "⚠️ Proxy cover is enabled but no custom-position slot has "
+        "Use as minimum on — the managed cover will not clamp."
+    ),
+    # --- Decision priority chain ---
+    "headers.decision_priority": (
+        "**Decision Priority** (highest wins, ✅ active ❌ not configured)"
+    ),
+}
+
+
+async def _load_summary_labels(hass: HomeAssistant, language: str) -> dict[str, str]:
+    """Load the translated config-summary labels for ``language``.
+
+    This is the ONLY place ``async_get_translations`` is called. It fetches the
+    ``config_summary`` category for this integration, strips the
+    ``component.{DOMAIN}.config_summary.`` prefix from each returned key, and
+    overlays the result onto the English defaults so any missing/dropped key
+    falls back to English. ``language`` is the per-user flow language
+    (``self.context.get("language", "en")``) — never the system language.
+
+    Both ``ConfigFlow.async_step_summary`` and ``OptionsFlow.async_step_summary``
+    call this single helper (no duplication).
+    """
+    raw = await async_get_translations(
+        hass, language, category="config_summary", integrations=[DOMAIN]
+    )
+    prefix = f"component.{DOMAIN}.config_summary."
+    loaded = {
+        key[len(prefix) :]: value
+        for key, value in raw.items()
+        if key.startswith(prefix)
+    }
+    return {**_SUMMARY_LABELS_EN, **loaded}
+
+
 def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     config: dict,
     sensor_type: str | None,
     hass: HomeAssistant | None = None,
     sun_times: dict | None = None,
+    labels: dict[str, str] | None = None,
 ) -> str:
     """Build a narrative summary of the current configuration.
 
@@ -929,7 +1207,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
          today's sun times inline; priority badge [N] at end of each rule
       3. Position Limits — compact one-liner for range/default/delta/flags
       4. Decision Priority — compact chain showing active/inactive handlers
+
+    ``labels`` maps the summary's dotted keys to translated templates. When
+    ``None`` (unit tests, no hass) the English defaults in ``_SUMMARY_LABELS_EN``
+    are used, so the output is byte-identical to the pre-i18n strings.
     """
+    L = labels or _SUMMARY_LABELS_EN
     # ---- Gather all values up front ----------------------------------------
     type_label = _cover_type_label(sensor_type)
 
@@ -988,10 +1271,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     def _pos_label(raw_pct: int, use_my: bool) -> str:
         """Render a target as 'My (N%)' when the My preset flag is active."""
         if use_my and my_pos is not None:
-            return f"My ({my_pos}%)"
+            return L["my.label_my_set"].format(pos=my_pos)
         if use_my:
-            return f"My (not set → {raw_pct}%)"
-        return f"{raw_pct}%"
+            return L["my.label_my_unset"].format(pct=raw_pct)
+        return L["my.label_plain"].format(pct=raw_pct)
 
     def _badge(priority: int) -> str:
         """Render a priority badge suffix: two nbsp + [N]."""
@@ -1004,9 +1287,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     def _offset_str(minutes: int) -> str:
         """Format a minutes offset as (+N min) / (-N min); 0 → empty."""
         if minutes > 0:
-            return f"+{minutes} min"
+            return L["timing.offset_plus"].format(minutes=minutes)
         if minutes < 0:
-            return f"{minutes} min"
+            return L["timing.offset_minus"].format(minutes=minutes)
         return ""
 
     _solar_start = sun_times.get("solar_start") if sun_times else None
@@ -1021,21 +1304,22 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # sent, so covers never move. Without this the summary reads as if it drives
     # covers regardless of the dry-run toggle on the Debug screen.
     if config.get(CONF_DRY_RUN):
-        lines.append(
-            "⚠️ **Dry-run mode is ON** — positions are computed and logged, but "
-            "no commands are sent and covers will NOT move."
-        )
+        lines.append(L["banner.dry_run"])
         lines.append("")
 
     # =========================================================================
     # Section 1: Your Cover
     # =========================================================================
-    lines.append("**Your Cover**")
+    lines.append(L["headers.your_cover"])
 
     # Type + entities
     if entities:
         entity_str = ", ".join(entities)
-        lines.append(f"{type_label} controlling {entity_str}")
+        lines.append(
+            L["cover.type_with_entities"].format(
+                type_label=type_label, entity_str=entity_str
+            )
+        )
     else:
         lines.append(type_label)
 
@@ -1051,26 +1335,32 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     _, cap_warnings = _check_cover_capabilities(config, sensor_type, hass)
     if cap_warnings:
         lines.append("")
-        lines.append("**Cover Warnings**")
+        lines.append(L["headers.cover_warnings"])
         lines.extend(cap_warnings)
 
     # =========================================================================
     # Section 2: How It Decides
     # =========================================================================
     lines.append("")
-    lines.append("**How It Decides** (first matching rule wins)")
+    lines.append(L["headers.how_it_decides"])
 
     # Force override — highest priority safety (100)
     if has_force:
         n = len(config.get(CONF_FORCE_OVERRIDE_SENSORS) or [])
-        sensor_word = "sensor" if n == 1 else "sensors"
+        sensor_word = L["words.sensor_singular"] if n == 1 else L["words.sensor_plural"]
         min_mode_str = (
-            " (as minimum)" if config.get(CONF_FORCE_OVERRIDE_MIN_MODE) else ""
+            L["fragments.as_minimum"]
+            if config.get(CONF_FORCE_OVERRIDE_MIN_MODE)
+            else ""
         )
         lines.append(
-            f"🔒 Force override: if any of {n} {sensor_word} is on → covers go to "
-            f"{force_pos}%{min_mode_str} (overrides everything else)"
-            f"{_badge(100)}"
+            L["rules.force"].format(
+                n=n,
+                sensor_word=sensor_word,
+                force_pos=force_pos,
+                min_mode=min_mode_str,
+            )
+            + _badge(100)
         )
 
     # Weather safety override (90)
@@ -1086,84 +1376,102 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
         if wind_sensor and wind_thresh is not None:
-            wind_part = f"wind > {wind_thresh}"
+            wind_part = L["weather.wind"].format(thresh=wind_thresh)
             if wind_dir_sensor and wind_dir_tol is not None:
-                wind_part += f" from window ±{wind_dir_tol}°"
+                wind_part += L["weather.wind_dir"].format(tol=wind_dir_tol)
             wx_parts.append(wind_part)
         if rain_sensor and rain_thresh is not None:
-            wx_parts.append(f"rain > {rain_thresh}")
+            wx_parts.append(L["weather.rain"].format(thresh=rain_thresh))
         if is_rain:
-            wx_parts.append("is-raining")
+            wx_parts.append(L["weather.is_raining"])
         if is_wind:
-            wx_parts.append("is-windy")
+            wx_parts.append(L["weather.is_windy"])
         if severe:
-            wx_parts.append(f"{len(severe)} severe weather sensor(s)")
-        wx_condition = " or ".join(wx_parts) if wx_parts else "weather condition"
-        wx_delay = config.get(CONF_WEATHER_TIMEOUT)
-        delay_str = f" (waits {wx_delay}s after clearing)" if wx_delay else ""
-        weather_min_str = (
-            " (as minimum)" if config.get(CONF_WEATHER_OVERRIDE_MIN_MODE) else ""
+            wx_parts.append(L["weather.severe"].format(count=len(severe)))
+        wx_condition = (
+            L["weather.condition_join"].join(wx_parts)
+            if wx_parts
+            else L["weather.condition_default"]
         )
-        bypass_str = (
-            " ⚠️ halts all automation while triggered"
-            if config.get(CONF_WEATHER_BYPASS_AUTO_CONTROL)
+        wx_delay = config.get(CONF_WEATHER_TIMEOUT)
+        delay_str = L["weather.delay"].format(delay=wx_delay) if wx_delay else ""
+        weather_min_str = (
+            L["fragments.as_minimum"]
+            if config.get(CONF_WEATHER_OVERRIDE_MIN_MODE)
             else ""
         )
+        bypass_str = (
+            L["weather.bypass"] if config.get(CONF_WEATHER_BYPASS_AUTO_CONTROL) else ""
+        )
         lines.append(
-            f"🌧️ Weather safety: if {wx_condition} → covers retract to "
-            f"{weather_pos}%{weather_min_str}{delay_str}{bypass_str}"
-            f"{_badge(90)}"
+            L["rules.weather"].format(
+                wx_condition=wx_condition,
+                weather_pos=weather_pos,
+                weather_min=weather_min_str,
+                delay=delay_str,
+                bypass=bypass_str,
+            )
+            + _badge(90)
         )
 
     # Manual override (80)
     mo_parts = []
     if manual_dur is not None:
-        mo_parts.append(f"pauses for {_format_duration(manual_dur)}")
+        mo_parts.append(
+            L["manual.pauses_for"].format(duration=_format_duration(manual_dur))
+        )
     threshold = config.get(CONF_MANUAL_THRESHOLD)
     if threshold is not None:
-        mo_parts.append(f"threshold {threshold}%")
+        mo_parts.append(L["manual.threshold"].format(threshold=threshold))
     if config.get(CONF_MANUAL_OVERRIDE_RESET):
-        mo_parts.append("resets on next move")
+        mo_parts.append(L["manual.resets_on_move"])
     if config.get(CONF_MANUAL_IGNORE_INTERMEDIATE):
-        mo_parts.append("ignores intermediate positions")
+        mo_parts.append(L["manual.ignore_intermediate"])
     if config.get(CONF_MANUAL_IGNORE_EXTERNAL):
-        mo_parts.append("ACP-only (ignores external moves)")
+        mo_parts.append(L["manual.ignore_external"])
     transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
     if (
         transit_timeout is not None
         and int(transit_timeout) != DEFAULT_TRANSIT_TIMEOUT_SECONDS
     ):
-        mo_parts.append(f"transit timeout: {int(transit_timeout)}s")
+        mo_parts.append(
+            L["manual.transit_timeout"].format(seconds=int(transit_timeout))
+        )
     mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
-    lines.append(
-        f"✋ Manual override: pauses automatic control when you move the cover"
-        f"{mo_str}{_badge(80)}"
-    )
+    lines.append(L["rules.manual"].format(detail=mo_str) + _badge(80))
 
     # Custom positions — each slot at its own configured priority
     if has_custom_position:
         for _slot, _eid, _pos, _pri, _use_my, _slot_tilt, _tilt_only in _custom_slots:
-            tilt_note = f", tilt {_slot_tilt}%" if _slot_tilt is not None else ""
+            tilt_note = (
+                L["custom.tilt_note"].format(tilt=_slot_tilt)
+                if _slot_tilt is not None
+                else ""
+            )
             if _tilt_only:
                 # Tilt-only fixes the slat angle and lets the position pipeline
                 # (solar etc.) drive the carriage — min_mode/use_my are ignored.
                 slat = _slot_tilt if _slot_tilt is not None else 0
                 lines.append(
-                    f"🎯 Custom #{_slot}: if {_eid} is on → tilt only "
-                    f"(slat fixed at {slat}%; position driven by sun tracking)"
-                    f"{_badge(_pri)}"
+                    L["rules.custom_tilt_only"].format(slot=_slot, eid=_eid, slat=slat)
+                    + _badge(_pri)
                 )
             else:
                 target = _pos_label(_pos, _use_my)
                 cp_min = (
-                    " (as minimum)"
+                    L["fragments.as_minimum"]
                     if config.get(f"custom_position_min_mode_{_slot}")
                     else ""
                 )
                 lines.append(
-                    f"🎯 Custom #{_slot}: if {_eid} is on → {target}{cp_min}{tilt_note}"
-                    f" — bypasses delta gates and auto-control"
-                    f"{_badge(_pri)}"
+                    L["rules.custom"].format(
+                        slot=_slot,
+                        eid=_eid,
+                        target=target,
+                        cp_min=cp_min,
+                        tilt_note=tilt_note,
+                    )
+                    + _badge(_pri)
                 )
         # Mutual-exclusion warning: tilt_only wins over min_mode / use_my
         # (issue #514). Surface the conflict so the user knows the latter two
@@ -1172,62 +1480,71 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             if _tilt_only and (
                 config.get(f"custom_position_min_mode_{_slot}") or _use_my
             ):
-                lines.append(
-                    f"⚠️ Custom #{_slot}: tilt only is on — "
-                    "Use as minimum / Use My position are ignored for this slot."
-                )
+                lines.append(L["warnings.custom_tilt_only_conflict"].format(slot=_slot))
 
     # Motion timeout (75)
     timeout_mode = config.get(CONF_MOTION_TIMEOUT_MODE, DEFAULT_MOTION_TIMEOUT_MODE)
     if has_motion:
         n = len(_motion_sources)
-        sensor_word = "source" if n == 1 else "sources"
+        sensor_word = L["words.source_singular"] if n == 1 else L["words.source_plural"]
         if timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
-            action = (
-                "covers hold current position (return to default when sun leaves FOV)"
-            )
+            action = L["motion.action_hold"]
         else:
-            action = f"covers return to default ({default_pos}%)"
+            action = L["motion.action_return"].format(default_pos=default_pos)
         lines.append(
-            f"🚶 Motion-based: if no occupancy for {motion_timeout}s "
-            f"({n} {sensor_word}) → {action}"
-            f"{_badge(75)}"
+            L["rules.motion"].format(
+                motion_timeout=motion_timeout,
+                n=n,
+                sensor_word=sensor_word,
+                action=action,
+            )
+            + _badge(75)
         )
     elif timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
-        lines.append(
-            "⚠️ hold_position mode is set but no motion sensors or media "
-            "players are configured — the setting has no effect until a "
-            "motion source is added"
-        )
+        lines.append(L["warnings.motion_hold_no_sensors"])
 
     # Cloud suppression (60)
     if has_cloud:
         cloud_parts = []
         if v := config.get(CONF_IS_SUNNY_SENSOR):
-            cloud_parts.append(f"is_sunny={v}")
+            cloud_parts.append(L["cloud.is_sunny"].format(value=v))
         if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
-            cloud_parts.append(f"lux < {t} lx" if t is not None else f"lux ({v})")
+            cloud_parts.append(
+                L["cloud.lux"].format(thresh=t)
+                if t is not None
+                else L["cloud.lux_no_thresh"].format(entity=v)
+            )
         if v := config.get(CONF_IRRADIANCE_ENTITY):
             t = config.get(CONF_IRRADIANCE_THRESHOLD)
             cloud_parts.append(
-                f"irradiance < {t} W/m²" if t is not None else f"irradiance ({v})"
+                L["cloud.irradiance"].format(thresh=t)
+                if t is not None
+                else L["cloud.irradiance_no_thresh"].format(entity=v)
             )
         if v := config.get(CONF_CLOUD_COVERAGE_ENTITY):
             t = config.get(CONF_CLOUD_COVERAGE_THRESHOLD)
-            cloud_parts.append(f"cloud > {t}%" if t is not None else f"cloud ({v})")
+            cloud_parts.append(
+                L["cloud.coverage"].format(thresh=t)
+                if t is not None
+                else L["cloud.coverage_no_thresh"].format(entity=v)
+            )
         wx_states = config.get(CONF_WEATHER_STATE) or []
         if wx_states and config.get(CONF_WEATHER_ENTITY):
-            cloud_parts.append(f"weather in {{{', '.join(wx_states)}}}")
-        cloud_str = f" when {', '.join(cloud_parts)}" if cloud_parts else ""
+            cloud_parts.append(
+                L["cloud.weather_in"].format(states=", ".join(wx_states))
+            )
+        cloud_str = (
+            L["cloud.when"].format(parts=", ".join(cloud_parts)) if cloud_parts else ""
+        )
         cloudy_pos = config.get(CONF_CLOUDY_POSITION)
         if cloudy_pos is not None:
-            fallback_label = f"cloudy position {cloudy_pos}%"
+            fallback_label = L["cloud.fallback_cloudy"].format(pos=cloudy_pos)
         else:
-            fallback_label = f"default ({default_pos}%)"
+            fallback_label = L["cloud.fallback_default"].format(default_pos=default_pos)
         lines.append(
-            f"☁️ Cloud suppression: skips sun tracking{cloud_str} → "
-            f"{fallback_label}{_badge(60)}"
+            L["rules.cloud"].format(cloud=cloud_str, fallback=fallback_label)
+            + _badge(60)
         )
     elif any(
         [
@@ -1240,23 +1557,19 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         # Sensors configured but suppression toggle off — mention them as informational
         sensor_names = []
         if config.get(CONF_LUX_ENTITY):
-            sensor_names.append("lux")
+            sensor_names.append(L["info.light_lux"])
         if config.get(CONF_IRRADIANCE_ENTITY):
-            sensor_names.append("irradiance")
+            sensor_names.append(L["info.light_irradiance"])
         if config.get(CONF_CLOUD_COVERAGE_ENTITY):
-            sensor_names.append("cloud coverage")
+            sensor_names.append(L["info.light_cloud_coverage"])
         if v := config.get(CONF_IS_SUNNY_SENSOR):
             sensor_names.append(v)
-        lines.append(
-            f"📊 Light sensors configured ({', '.join(sensor_names)}) but cloud suppression is off."
-        )
+        lines.append(L["info.light_sensors_off"].format(names=", ".join(sensor_names)))
 
     # Warn if cloudy_position set but cloud suppression is disabled
     cloudy_pos_cfg = config.get(CONF_CLOUDY_POSITION)
     if cloudy_pos_cfg is not None and not has_cloud:
-        lines.append(
-            f"⚠️ Cloudy position ({cloudy_pos_cfg}%) configured but cloud suppression is disabled — value will be ignored."
-        )
+        lines.append(L["warnings.cloudy_pos_ignored"].format(pos=cloudy_pos_cfg))
 
     # Climate mode (50)
     if has_climate:
@@ -1265,30 +1578,32 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         hi = config.get(CONF_TEMP_HIGH)
         temp_entity = config.get(CONF_TEMP_ENTITY)
         if lo is not None and hi is not None:
-            cl_parts.append(f"comfort range {lo}–{hi}°C")
+            cl_parts.append(L["climate.comfort_range"].format(lo=lo, hi=hi))
         if temp_entity:
-            cl_parts.append(f"using {temp_entity}")
+            cl_parts.append(L["climate.using"].format(entity=temp_entity))
         outside = config.get(CONF_OUTSIDETEMP_ENTITY)
         if outside:
             out_thresh = config.get(CONF_OUTSIDE_THRESHOLD)
             if out_thresh is not None:
-                cl_parts.append(f"outside: {outside} > {out_thresh}°C")
+                cl_parts.append(
+                    L["climate.outside_thresh"].format(
+                        entity=outside, thresh=out_thresh
+                    )
+                )
             else:
-                cl_parts.append(f"outside: {outside}")
+                cl_parts.append(L["climate.outside"].format(entity=outside))
         weather_ent = config.get(CONF_WEATHER_ENTITY)
         if weather_ent:
-            cl_parts.append(f"weather: {weather_ent}")
+            cl_parts.append(L["climate.weather"].format(entity=weather_ent))
         presence = config.get(CONF_PRESENCE_ENTITY)
         if presence:
-            cl_parts.append(f"presence: {presence}")
+            cl_parts.append(L["climate.presence"].format(entity=presence))
         if config.get(CONF_TRANSPARENT_BLIND):
-            cl_parts.append("transparent blind")
+            cl_parts.append(L["climate.transparent"])
         if config.get(CONF_WINTER_CLOSE_INSULATION):
-            cl_parts.append("closes fully in winter for insulation")
+            cl_parts.append(L["climate.winter_close"])
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
-        lines.append(
-            f"🌡️ Climate mode: adjusts strategy for heating/cooling{cl_str}{_badge(50)}"
-        )
+        lines.append(L["rules.climate"].format(detail=cl_str) + _badge(50))
 
     # Glare zones — vertical only (45, below climate)
     if has_glare:
@@ -1300,21 +1615,22 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         width = config.get(CONF_WINDOW_WIDTH)
         gz_parts = []
         if zone_names:
-            gz_parts.append(f"zones: {', '.join(zone_names)}")
+            gz_parts.append(L["glare.zones"].format(names=", ".join(zone_names)))
         if width:
-            gz_parts.append(f"{float(width):.2f}m window")
+            gz_parts.append(L["glare.window"].format(width=float(width)))
         z_values = [
             float(config.get(f"glare_zone_{i}_z") or 0.0)
             for i in range(1, 5)
             if config.get(f"glare_zone_{i}_name")
         ]
         if any(z > 0 for z in z_values):
-            gz_parts.append("Z height: " + ", ".join(f"{z:.2f}m" for z in z_values))
+            gz_parts.append(
+                L["glare.z_height"].format(
+                    values=", ".join(L["glare.z_value"].format(z=z) for z in z_values)
+                )
+            )
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
-        lines.append(
-            f"🔆 Glare zones: lowers blind further to protect floor areas from glare"
-            f"{gz_str}{_badge(45)}"
-        )
+        lines.append(L["rules.glare"].format(detail=gz_str) + _badge(45))
 
     # Solar tracking — baseline calculation (40)
     azimuth = config.get(CONF_AZIMUTH)
@@ -1325,47 +1641,41 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     if sun_tracking_enabled:
         sun_parts = []
         if azimuth is not None:
-            sun_parts.append(f"azimuth {azimuth}°")
+            sun_parts.append(L["solar.azimuth"].format(azimuth=azimuth))
         if fov_l is not None and fov_r is not None:
-            sun_parts.append(f"±{fov_l}°/{fov_r}° field of view")
+            sun_parts.append(L["solar.fov"].format(fov_l=fov_l, fov_r=fov_r))
         elev_parts = []
         if min_elev is not None:
-            elev_parts.append(f"above {min_elev}°")
+            elev_parts.append(L["solar.elev_above"].format(elev=min_elev))
         if max_elev is not None:
-            elev_parts.append(f"below {max_elev}°")
+            elev_parts.append(L["solar.elev_below"].format(elev=max_elev))
         if elev_parts:
-            sun_parts.append(f"elevation {' and '.join(elev_parts)}")
+            sun_parts.append(
+                L["solar.elevation"].format(parts=L["solar.elev_join"].join(elev_parts))
+            )
         sun_desc = f" ({', '.join(sun_parts)})" if sun_parts else ""
         # Today's solar window annotation
         if _solar_start is not None and _solar_end is not None:
-            today_str = (
-                f" (today: sun in window {_fmt_sun_dt(_solar_start)} → "
-                f"{_fmt_sun_dt(_solar_end)})"
+            today_str = L["solar.today_window"].format(
+                start=_fmt_sun_dt(_solar_start), end=_fmt_sun_dt(_solar_end)
             )
         elif sun_times is not None:
-            today_str = " (today: sun does not enter window)"
+            today_str = L["solar.today_no_window"]
         else:
             today_str = ""
         lines.append(
-            f"☀️ Tracks the sun{sun_desc} and calculates position to block "
-            f"direct sunlight{today_str}{_badge(40)}"
+            L["rules.solar"].format(sun_desc=sun_desc, today=today_str) + _badge(40)
         )
         if config.get(CONF_MINIMIZE_MOVEMENTS, False):
             steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
             indent = "\u00a0" * 4
             if steps <= 1:
-                detail = "moves straight to full coverage and holds (1 step)"
+                detail = L["solar.minimize_one_step"]
             else:
-                detail = f"reaches full coverage in up to {steps} steps"
-            lines.append(
-                f"{indent}🪟 Minimize movements — {detail}, rounding toward more "
-                "coverage to reduce motor movements."
-            )
+                detail = L["solar.minimize_steps"].format(steps=steps)
+            lines.append(L["solar.minimize"].format(indent=indent, detail=detail))
     else:
-        lines.append(
-            "☀️ Sun tracking disabled — covers hold position; climate, manual override, "
-            f"custom positions, and other overrides remain active{_badge(40)}"
-        )
+        lines.append(L["rules.solar_disabled"] + _badge(40))
 
     # Timing window (sub-bullet under ☀️)
     start_time = config.get(CONF_START_TIME)
@@ -1379,13 +1689,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     sunrise_time_entity = config.get(CONF_SUNRISE_TIME_ENTITY)
     timing_parts = []
     if start_entity:
-        timing_parts.append(f"from {start_entity}")
+        timing_parts.append(L["timing.from_entity"].format(entity=start_entity))
     elif start_time and start_time != BLANK_TIME:
-        timing_parts.append(f"from {start_time}")
+        timing_parts.append(L["timing.from_time"].format(time=start_time))
     if end_entity:
-        timing_parts.append(f"until {end_entity}")
+        timing_parts.append(L["timing.until_entity"].format(entity=end_entity))
     elif end_time and end_time != BLANK_TIME:
-        timing_parts.append(f"until {end_time}")
+        timing_parts.append(L["timing.until_time"].format(time=end_time))
     # A schedule key present but blank (cleared TimeSelector → "00:00:00") still
     # means the user configured the automation window — show "Active during
     # daylight" rather than nothing, so the summary reflects the real behavior
@@ -1396,10 +1706,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     ) or any(key in config for key in (CONF_START_TIME, CONF_END_TIME))
     if timing_parts or sunset_pos is not None or schedule_configured:
         timing_str = (
-            " ".join(timing_parts) if timing_parts else "Active during daylight"
+            " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
         indent = "\u00a0" * 4
-        lines.append(f"{indent}🕒 {timing_str}.")
+        lines.append(L["timing.line"].format(indent=indent, timing=timing_str))
         if sunset_pos is not None:
             # Merge today's effective time (or entity ID) and offset into one parenthetical
             def _sun_annotation(
@@ -1407,9 +1717,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             ) -> str:
                 parts = []
                 if entity_id is not None:
-                    parts.append(f"via {entity_id}")
+                    parts.append(L["timing.ann_via"].format(entity=entity_id))
                 elif today_dt is not None:
-                    parts.append(f"today ~{_fmt_sun_dt(today_dt)}")
+                    parts.append(
+                        L["timing.ann_today"].format(time=_fmt_sun_dt(today_dt))
+                    )
                 off = _offset_str(int(offset_min))
                 if off:
                     parts.append(off)
@@ -1423,18 +1735,37 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             _sunset_use_my = bool(config.get(CONF_SUNSET_USE_MY))
             _sunset_target = _pos_label(int(sunset_pos), _sunset_use_my)
             if has_end_time and int(sunset_pos) != int(default_pos):
-                lines.append(f"{indent}🔚 After end time → {default_pos}%.")
-                lines.append(f"{indent}🌅 After sunset{sunset_ann} → {_sunset_target}.")
-            else:
-                label = "end time/sunset" if has_end_time else "sunset"
                 lines.append(
-                    f"{indent}🌅 After {label}{sunset_ann} → {_sunset_target}."
+                    L["timing.after_end_to_default"].format(
+                        indent=indent, default_pos=default_pos
+                    )
+                )
+                lines.append(
+                    L["timing.after_sunset"].format(
+                        indent=indent, ann=sunset_ann, target=_sunset_target
+                    )
+                )
+            else:
+                label = (
+                    L["timing.label_end_or_sunset"]
+                    if has_end_time
+                    else L["timing.label_sunset"]
+                )
+                lines.append(
+                    L["timing.after_label"].format(
+                        indent=indent,
+                        label=label,
+                        ann=sunset_ann,
+                        target=_sunset_target,
+                    )
                 )
             lines.append(
-                f"{indent}🌄 After sunrise{sunrise_ann} → {default_pos}% (tracking resumes)."
+                L["timing.after_sunrise"].format(
+                    indent=indent, ann=sunrise_ann, default_pos=default_pos
+                )
             )
             if config.get(CONF_RETURN_SUNSET):
-                lines.append(f"{indent}🔚 Return to sunset position at end time: on")
+                lines.append(L["timing.return_sunset"].format(indent=indent))
 
     # Blind spot (sub-bullet / informational, no priority of its own)
     if config.get(CONF_ENABLE_BLIND_SPOT):
@@ -1443,27 +1774,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         bs_e = config.get(CONF_BLIND_SPOT_ELEVATION)
         bs_parts = []
         if bs_l is not None and bs_r is not None:
-            bs_parts.append(f"{bs_l}°–{bs_r}°")
+            bs_parts.append(L["blind_spot.range"].format(left=bs_l, right=bs_r))
         if bs_e is not None:
-            bs_parts.append(f"up to {bs_e}° elevation")
+            bs_parts.append(L["blind_spot.elevation"].format(elev=bs_e))
         bs_str = " ".join(bs_parts)
-        lines.append(
-            f"🟥 Blind spot: ignores sun at {bs_str} inward from FOV left (e.g. tree or roof overhang)."
-        )
+        lines.append(L["blind_spot.line"].format(bs=bs_str))
 
     # Default fallback (priority 0) — shown as the final row of the chain
-    lines.append(f"🌙 Default (no rule matches) → {default_pos}%{_badge(0)}")
+    lines.append(L["rules.default"].format(default_pos=default_pos) + _badge(0))
     # Explicit tilt for venetian covers (solar-computed when absent)
     _default_tilt = config.get(CONF_DEFAULT_TILT)
     _sunset_tilt = config.get(CONF_SUNSET_TILT)
     if _default_tilt is not None:
-        lines.append(
-            f"  ↳ Default tilt: {_default_tilt}% (explicit; overrides solar-computed)"
-        )
+        lines.append(L["default.tilt"].format(tilt=_default_tilt))
     if _sunset_tilt is not None:
-        lines.append(
-            f"  ↳ Sunset tilt: {_sunset_tilt}% (explicit; overrides solar-computed)"
-        )
+        lines.append(L["default.sunset_tilt"].format(tilt=_sunset_tilt))
 
     # =========================================================================
     # Section 3: Position Limits
@@ -1478,44 +1803,48 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         hi_str = f"{max_pos}%" if max_pos is not None else "100%"
         # Per-side tracking-only qualifier for precision
         if enable_min and enable_max:
-            qualifier = " (during sun tracking only)"
+            qualifier = L["limits.qualifier_both"]
         elif enable_min and not enable_max:
-            qualifier = " (min during sun tracking only)"
+            qualifier = L["limits.qualifier_min"]
         elif enable_max and not enable_min:
-            qualifier = " (max during sun tracking only)"
+            qualifier = L["limits.qualifier_max"]
         else:
             qualifier = ""
-        limit_parts.append(f"Range: {lo_str}–{hi_str}{qualifier}")
+        limit_parts.append(
+            L["limits.range"].format(lo=lo_str, hi=hi_str, qualifier=qualifier)
+        )
     if default_pos is not None:
-        limit_parts.append(f"Default: {default_pos}%")
+        limit_parts.append(L["limits.default"].format(pos=default_pos))
     delta_pos = config.get(CONF_DELTA_POSITION)
     delta_time = config.get(CONF_DELTA_TIME)
     if delta_pos is not None:
-        limit_parts.append(f"Min change: {delta_pos}%")
+        limit_parts.append(L["limits.min_change"].format(delta=delta_pos))
     if delta_time is not None:
-        limit_parts.append(f"Min interval: {delta_time} min")
+        limit_parts.append(L["limits.min_interval"].format(delta=delta_time))
     pos_tol = config.get(CONF_POSITION_TOLERANCE)
     if pos_tol is not None:
-        limit_parts.append(f"Position tolerance: {pos_tol}%")
+        limit_parts.append(L["limits.position_tolerance"].format(tol=pos_tol))
     if config.get(CONF_INVERSE_STATE):
-        limit_parts.append("Inverse state")
+        limit_parts.append(L["limits.inverse_state"])
     oc_thresh = config.get(CONF_OPEN_CLOSE_THRESHOLD)
     if oc_thresh is not None:
-        limit_parts.append(f"Open/close threshold: {oc_thresh}%")
+        limit_parts.append(L["limits.open_close_threshold"].format(thresh=oc_thresh))
     if config.get(CONF_INTERP):
         interp_lo = config.get(CONF_INTERP_START)
         interp_hi = config.get(CONF_INTERP_END)
         if interp_lo is not None and interp_hi is not None:
-            limit_parts.append(f"Calibration {interp_lo}→{interp_hi}")
+            limit_parts.append(
+                L["limits.calibration"].format(lo=interp_lo, hi=interp_hi)
+            )
         else:
-            limit_parts.append("Position calibration on")
+            limit_parts.append(L["limits.calibration_on"])
     min_pos_sun_track = config.get(CONF_MIN_POSITION_SUN_TRACKING)
     if min_pos_sun_track is not None:
-        limit_parts.append(f"Sun-tracking min: {min_pos_sun_track}%")
+        limit_parts.append(L["limits.sun_tracking_min"].format(pos=min_pos_sun_track))
     if limit_parts:
         lines.append("")
-        lines.append("**Position Limits**")
-        lines.append(" · ".join(limit_parts))
+        lines.append(L["headers.position_limits"])
+        lines.append(L["limits.separator"].join(limit_parts))
 
     # Footgun: sun-tracking floor below always-on floor is a no-op (issue #467).
     # The always-on min_pos dominates, so min_pos_sun_tracking < min_pos is a
@@ -1526,9 +1855,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         and min_pos > min_pos_sun_track
     ):
         lines.append(
-            f"⚠️ Sun-tracking min {min_pos_sun_track}% < min position {min_pos}% — "
-            "always-on floor dominates; sun-tracking floor will be raised to "
-            f"{min_pos}%."
+            L["warnings.sun_track_min_below_floor"].format(
+                sun_min=min_pos_sun_track, min_pos=min_pos
+            )
         )
 
     # MODE2 + min_position footgun warning (issue #373).
@@ -1542,12 +1871,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         and min_pos is not None
         and min_pos >= MODE2_OPEN_HORIZONTAL_PERCENT
     ):
-        lines.append(
-            f"⚠️ Tilt MODE2 + min position {min_pos}% — in MODE2 the open "
-            "(horizontal) slat angle IS 50%, so any min position ≥ 50 "
-            "collapses every climate/glare-control decision to the floor "
-            "and the cover stops blocking heat."
-        )
+        lines.append(L["warnings.mode2_min_position"].format(min_pos=min_pos))
 
     # Somfy My preset info / warning
     _any_use_my = bool(config.get(CONF_SUNSET_USE_MY)) or any(
@@ -1559,29 +1883,25 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         )
     )
     lines.append(
-        f"🎛️ My-preset entities: {'enabled' if _my_entities_enabled else 'disabled'}"
+        L["my.entities_enabled"] if _my_entities_enabled else L["my.entities_disabled"]
     )
     if my_pos is not None:
-        lines.append(f"🎛️ Somfy My preset: {my_pos}% (used where enabled above)")
+        lines.append(L["my.somfy_preset"].format(pos=my_pos))
     elif _any_use_my or _my_entities_enabled:
-        lines.append(
-            "⚠️ Somfy My preset is enabled for one or more targets but "
-            "My Preset Value is not set — falls back to configured %."
-        )
+        lines.append(L["warnings.somfy_my_unset"])
 
     # Proxy cover toggle (system-wide; not part of the decision chain)
     proxy_enabled = bool(config.get(CONF_ENABLE_PROXY_COVER))
     lines.append("")
-    lines.append(f"**Proxy cover**: {'enabled' if proxy_enabled else 'disabled'}")
+    lines.append(
+        L["headers.proxy_enabled"] if proxy_enabled else L["headers.proxy_disabled"]
+    )
     if proxy_enabled:
         _any_min_mode = any(
             bool(config.get(f"custom_position_min_mode_{_i}")) for _i in range(1, 5)
         )
         if not _any_min_mode:
-            lines.append(
-                "⚠️ Proxy cover is enabled but no custom-position slot has "
-                "Use as minimum on — the managed cover will not clamp."
-            )
+            lines.append(L["warnings.proxy_no_min"])
 
     # =========================================================================
     # Section 4: Decision Priority (compact reference)
@@ -1612,7 +1932,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     chain = [_ch(active, short) for _pri, short, active in _chain_entries]
 
     lines.append("")
-    lines.append("**Decision Priority** (highest wins, ✅ active ❌ not configured)")
+    lines.append(L["headers.decision_priority"])
     lines.append(" → ".join(chain))
 
     return "\n".join(lines)
@@ -2629,8 +2949,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return await self.async_step_update()
         sun_times = await _compute_todays_sun_times(self.hass, self.config)
+        labels = await _load_summary_labels(
+            self.hass, self.context.get("language", "en")
+        )
         summary_text = _build_config_summary(
-            self.config, self.type_blind, self.hass, sun_times
+            self.config, self.type_blind, self.hass, sun_times, labels=labels
         )
         return self.async_show_form(
             step_id="summary",
@@ -3461,8 +3784,11 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             return await self.async_step_init()
         sun_times = await _compute_todays_sun_times(self.hass, self.options)
+        labels = await _load_summary_labels(
+            self.hass, self.context.get("language", "en")
+        )
         summary_text = _build_config_summary(
-            self.options, self.sensor_type, self.hass, sun_times
+            self.options, self.sensor_type, self.hass, sun_times, labels=labels
         )
         return self.async_show_form(
             step_id="summary",
