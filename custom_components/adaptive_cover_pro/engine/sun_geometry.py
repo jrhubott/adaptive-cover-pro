@@ -34,17 +34,31 @@ def fov_from_reveal(width_m: float, depth_m: float) -> int:
     return int(round(min(max(deg, lo), hi)))
 
 
-def computed_fov_line(width_m: float | None, depth_m: float | None) -> str:
+def computed_fov_line(
+    width_m: float | None,
+    depth_m: float | None,
+    labels: dict[str, str] | None = None,
+) -> str:
     """Read-only "Computed FOV ≈ 50°/50° (…)" line for Measurements mode (#565).
 
     The single formatter shared by the sun-tracking page placeholder and the
     config-flow summary. Delegates the angle to :func:`fov_from_reveal` so the
     arctan lives in exactly one place.
+
+    ``labels`` overlays a translated ``geometry.fov.computed`` template on the
+    English base (``GEOMETRY_LABELS_EN``); ``None`` or a missing key keeps
+    English. The engine has 0 HA imports — ``labels`` is a plain dict, so this
+    stays decoupled from ``config_flow``/``hass``.
     """
+    # Local import keeps the cover_types → engine dependency one-directional at
+    # module load (engine is imported by cover_types, not the reverse).
+    from ..cover_types._summary_labels import GEOMETRY_LABELS_EN
+
     w = float(width_m or 0.0)
     d = float(depth_m or 0.0)
     deg = fov_from_reveal(w, d)
-    return f"Computed FOV ≈ {deg}°/{deg}° ({w:g} m width, {d:g} m reveal depth)"
+    L = {**GEOMETRY_LABELS_EN, **(labels or {})}
+    return L["geometry.fov.computed"].format(deg=deg, w=f"{w:g}", d=f"{d:g}")
 
 
 class SunGeometry:

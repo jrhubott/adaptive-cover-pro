@@ -1933,6 +1933,50 @@
       "label_my_set": "My ({pos}%)",
       "label_my_unset": "My (not set → {pct}%)",
       "label_plain": "{pct}%"
+    },
+    "cover_types": {
+      "blind": "Vertical Blind",
+      "awning": "Horizontal Awning",
+      "tilt": "Venetian / Tilt Blind",
+      "oscillating_awning": "Oscillating Awning",
+      "venetian": "Venetian Blind (Dual-Axis)"
+    },
+    "geometry": {
+      "window": {
+        "tall": "{h}m tall window",
+        "blocking_glass": "blocking sun {d}m from the glass",
+        "reveal": "reveal {depth}m",
+        "sill": "sill {sill}m",
+        "height": "{v}m window height"
+      },
+      "awning": {
+        "length": "{v}m awning",
+        "angle": "angled at {v}°",
+        "blocking_wall": "blocking sun {v}m from wall"
+      },
+      "slat": {
+        "depth": "slat depth {v}cm",
+        "spacing": "spacing {v}cm",
+        "mode": "mode: {v}"
+      },
+      "oscillating": {
+        "arm": "{v}m arm",
+        "sweep": "sweep {lo}°–{hi}°",
+        "housing_offset": "{v}m housing offset"
+      },
+      "venetian": {
+        "skip_tilt": "skip tilt when position > {skip_above}%",
+        "mode_position_and_tilt": "position and tilt",
+        "mode_tilt_only": "tilt only",
+        "inverse_tilt": "Inverse tilt",
+        "max_tilt": "max tilt {max_tilt}%",
+        "min_tilt": "min tilt {min_tilt}%",
+        "post_settle_hold": "post-settle hold {hold}s",
+        "backrotate_lag": "back-rotate publish lag {lag}s"
+      },
+      "fov": {
+        "computed": "Computed FOV ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"
+      }
     }
   }
 }

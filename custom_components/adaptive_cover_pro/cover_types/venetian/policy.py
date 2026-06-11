@@ -55,6 +55,7 @@ from ...managers.manual_override import SecondaryAxisCheck
 from ...pipeline.types import DecisionStep
 from ...position_utils import PositionConverter
 from .._helpers import window_dimensions_lines
+from .._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from ..base import (
     CAP_HAS_SET_POSITION,
     CAP_HAS_SET_TILT_POSITION,
@@ -178,9 +179,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         """Dual-axis venetian wiki page."""
         return "Venetian-Blinds"
 
-    def display_label(self) -> str:
+    def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for dual-axis venetians."""
-        return "Venetian Blind (Dual-Axis)"
+        L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
+        return L["cover_types.venetian"]
 
     def __init__(self) -> None:
         """Initialise without a sequencer; ``attach()`` wires one up later."""
@@ -235,44 +237,57 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         """
         return TILT_CAPABLE_ENTITY_FILTER
 
-    def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
+    def summary_geometry_lines(
+        self, config: dict[str, Any], labels: dict[str, str] | None = None
+    ) -> list[str]:
         """Render window dimensions plus the slat-config block."""
         from ...const import CONF_TILT_DEPTH, CONF_TILT_DISTANCE, CONF_TILT_MODE
 
+        L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         tilt_parts: list[str] = []
         if (v := config.get(CONF_TILT_DEPTH)) is not None:
-            tilt_parts.append(f"slat depth {v}cm")
+            tilt_parts.append(L["geometry.slat.depth"].format(v=v))
         if (v := config.get(CONF_TILT_DISTANCE)) is not None:
-            tilt_parts.append(f"spacing {v}cm")
+            tilt_parts.append(L["geometry.slat.spacing"].format(v=v))
         if (v := config.get(CONF_TILT_MODE)) is not None:
-            tilt_parts.append(f"mode: {v}")
+            tilt_parts.append(L["geometry.slat.mode"].format(v=v))
         slat_line = [", ".join(tilt_parts)] if tilt_parts else []
         skip_above = config.get(
             CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
         )
-        retract_line = [f"skip tilt when position > {skip_above}%"]
+        retract_line = [L["geometry.venetian.skip_tilt"].format(skip_above=skip_above)]
         venetian_mode = config.get(CONF_VENETIAN_MODE, DEFAULT_VENETIAN_MODE)
         _mode_label = {
-            VENETIAN_MODE_POSITION_AND_TILT: "position and tilt",
-            VENETIAN_MODE_TILT_ONLY: "tilt only",
+            VENETIAN_MODE_POSITION_AND_TILT: L[
+                "geometry.venetian.mode_position_and_tilt"
+            ],
+            VENETIAN_MODE_TILT_ONLY: L["geometry.venetian.mode_tilt_only"],
         }.get(venetian_mode, venetian_mode)
-        mode_line = [f"mode: {_mode_label}"]
-        inverse_tilt_line = ["Inverse tilt"] if config.get(CONF_INVERSE_TILT) else []
+        mode_line = [L["geometry.slat.mode"].format(v=_mode_label)]
+        inverse_tilt_line = (
+            [L["geometry.venetian.inverse_tilt"]]
+            if config.get(CONF_INVERSE_TILT)
+            else []
+        )
         max_tilt = config.get(CONF_MAX_TILT, DEFAULT_MAX_TILT)
-        max_tilt_line = [f"max tilt {max_tilt}%"]
+        max_tilt_line = [L["geometry.venetian.max_tilt"].format(max_tilt=max_tilt)]
         min_tilt = config.get(CONF_MIN_TILT, DEFAULT_MIN_TILT)
-        min_tilt_line = [f"min tilt {min_tilt}%"]
+        min_tilt_line = [L["geometry.venetian.min_tilt"].format(min_tilt=min_tilt)]
         hold = config.get(
             CONF_VENETIAN_POST_SETTLE_HOLD, DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
         )
-        post_settle_line = [f"post-settle hold {round(hold, 1)}s"]
+        post_settle_line = [
+            L["geometry.venetian.post_settle_hold"].format(hold=round(hold, 1))
+        ]
         lag = config.get(
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
         )
-        backrotate_line = [f"back-rotate publish lag {round(lag, 1)}s"]
+        backrotate_line = [
+            L["geometry.venetian.backrotate_lag"].format(lag=round(lag, 1))
+        ]
         return (
-            window_dimensions_lines(config)
+            window_dimensions_lines(config, labels)
             + slat_line
             + retract_line
             + mode_line

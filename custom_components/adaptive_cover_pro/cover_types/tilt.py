@@ -16,6 +16,7 @@ from ..const import (
 from ..engine.covers import AdaptiveTiltCover
 from ..const import TiltMode
 from ..unit_system import slat_default, slat_selector
+from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_TILT_POSITION,
     TILT_AXIS,
@@ -86,9 +87,10 @@ class TiltPolicy(CoverTypePolicy, register=True):
         """Slat-tilt geometry page."""
         return "Configuration-Tilt"
 
-    def display_label(self) -> str:
+    def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for tilt-only covers."""
-        return "Venetian / Tilt Blind"
+        L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
+        return L["cover_types.tilt"]
 
     def disallowed_geometry_fields(
         self,
@@ -122,15 +124,18 @@ class TiltPolicy(CoverTypePolicy, register=True):
         """Require entities that advertise ``set_tilt_position``."""
         return TILT_CAPABLE_ENTITY_FILTER
 
-    def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
+    def summary_geometry_lines(
+        self, config: dict[str, Any], labels: dict[str, str] | None = None
+    ) -> list[str]:
         """Render the slat-depth / spacing / mode block."""
+        L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         parts: list[str] = []
         if (v := config.get(CONF_TILT_DEPTH)) is not None:
-            parts.append(f"slat depth {v}cm")
+            parts.append(L["geometry.slat.depth"].format(v=v))
         if (v := config.get(CONF_TILT_DISTANCE)) is not None:
-            parts.append(f"spacing {v}cm")
+            parts.append(L["geometry.slat.spacing"].format(v=v))
         if (v := config.get(CONF_TILT_MODE)) is not None:
-            parts.append(f"mode: {v}")
+            parts.append(L["geometry.slat.mode"].format(v=v))
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

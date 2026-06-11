@@ -1933,6 +1933,50 @@
       "label_my_set": "My ({pos}%)",
       "label_my_unset": "My (non défini → {pct}%)",
       "label_plain": "{pct}%"
+    },
+    "cover_types": {
+      "blind": "Store vertical",
+      "awning": "Store banne horizontal",
+      "tilt": "Store vénitien / inclinaison",
+      "oscillating_awning": "Store oscillant",
+      "venetian": "Store vénitien (deux axes)"
+    },
+    "geometry": {
+      "window": {
+        "tall": "fenêtre de {h}m de haut",
+        "blocking_glass": "bloque le soleil {d}m de la vitre",
+        "reveal": "tableau {depth}m",
+        "sill": "appui {sill}m",
+        "height": "hauteur de fenêtre {v}m"
+      },
+      "awning": {
+        "length": "store banne de {v}m",
+        "angle": "incliné à {v}°",
+        "blocking_wall": "bloque le soleil {v}m du mur"
+      },
+      "slat": {
+        "depth": "profondeur de lamelle {v}cm",
+        "spacing": "espacement {v}cm",
+        "mode": "mode : {v}"
+      },
+      "oscillating": {
+        "arm": "bras {v}m",
+        "sweep": "amplitude {lo}°–{hi}°",
+        "housing_offset": "décalage du boîtier {v}m"
+      },
+      "venetian": {
+        "skip_tilt": "sauter l'inclinaison quand position > {skip_above}%",
+        "mode_position_and_tilt": "position et inclinaison",
+        "mode_tilt_only": "inclinaison seule",
+        "inverse_tilt": "Inclinaison inversée",
+        "max_tilt": "inclinaison max {max_tilt}%",
+        "min_tilt": "inclinaison min {min_tilt}%",
+        "post_settle_hold": "maintien post-stabilisation {hold}s",
+        "backrotate_lag": "délai de publication back-rotate {lag}s"
+      },
+      "fov": {
+        "computed": "FOV calculé ≈ {deg}°/{deg}° (largeur {w}m, profondeur tableau {d}m)"
+      }
     }
   }
 }

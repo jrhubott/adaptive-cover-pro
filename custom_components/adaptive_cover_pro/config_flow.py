@@ -909,10 +909,17 @@ async def _compute_todays_sun_times(hass: HomeAssistant, config: dict) -> dict |
     return await hass.async_add_executor_job(_compute)
 
 
-def _cover_type_label(sensor_type: str | None) -> str:
-    """Return the human-readable label for a cover type, falling back to 'Cover'."""
+def _cover_type_label(
+    sensor_type: str | None, labels: dict[str, str] | None = None
+) -> str:
+    """Return the human-readable label for a cover type, falling back to 'Cover'.
+
+    ``labels`` is the translated ``cover_types.*`` bundle threaded from
+    ``_build_config_summary``; ``None`` (entry titles, no flow context) keeps
+    the policy's English default.
+    """
     if sensor_type is not None and sensor_type in POLICY_REGISTRY:
-        return get_policy(sensor_type).display_label()
+        return get_policy(sensor_type).display_label(labels)
     return "Cover"
 
 
@@ -1214,7 +1221,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     """
     L = labels or _SUMMARY_LABELS_EN
     # ---- Gather all values up front ----------------------------------------
-    type_label = _cover_type_label(sensor_type)
+    # ``L`` here is the FULL flow bundle (``_SUMMARY_LABELS_EN`` keys + the
+    # policy-owned ``cover_types.*`` / ``geometry.*`` keys when a translated
+    # bundle is loaded). The policies layer it over their own English base
+    # (``COVER_TYPE_LABELS_EN`` / ``GEOMETRY_LABELS_EN``), so passing ``L`` —
+    # even the policy-key-less ``_SUMMARY_LABELS_EN`` default — still yields
+    # English for the policy lines while translating everything present.
+    type_label = _cover_type_label(sensor_type, L)
 
     entities: list[str] = config.get(CONF_ENTITIES) or []
     default_pos = config.get(CONF_DEFAULT_HEIGHT, 0)
@@ -1326,8 +1339,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Physical dimensions in plain English. The render mode is per-cover-type;
     # each ``CoverTypePolicy.summary_geometry_lines`` owns its block. Legacy
     # configs without ``sensor_type`` fall back to the vertical-blind layout
-    # via ``summary_policy`` chosen at the top of this function.
-    lines.extend(summary_policy.summary_geometry_lines(config))
+    # via ``summary_policy`` chosen at the top of this function. ``L`` threads
+    # the translated ``geometry.*`` bundle (or the policy-key-less EN default,
+    # which still renders English over the policy's own base layer).
+    lines.extend(summary_policy.summary_geometry_lines(config, L))
 
     # =========================================================================
     # Section 1c: Cover Capability Warnings

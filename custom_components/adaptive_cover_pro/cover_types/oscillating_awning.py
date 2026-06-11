@@ -36,6 +36,7 @@ from ..const import (
 )
 from ..engine.covers import AdaptiveOscillatingCover
 from ..unit_system import length_default, length_selector
+from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_POSITION,
     POSITION_AXIS_OPEN_BLOCKS_SUN,
@@ -123,9 +124,10 @@ class OscillatingAwningPolicy(CoverTypePolicy, register=True):
         """Oscillating-awning geometry page."""
         return "Configuration-Oscillating-Awning"
 
-    def display_label(self) -> str:
+    def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for oscillating awnings."""
-        return "Oscillating Awning"
+        L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
+        return L["cover_types.oscillating_awning"]
 
     def disallowed_geometry_fields(
         self,
@@ -155,19 +157,22 @@ class OscillatingAwningPolicy(CoverTypePolicy, register=True):
         """Plain ``cover`` domain — no extra capability requirement."""
         return selector.EntityFilterSelectorConfig(domain="cover")
 
-    def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
+    def summary_geometry_lines(
+        self, config: dict[str, Any], labels: dict[str, str] | None = None
+    ) -> list[str]:
         """Render the arm-length / sweep / window block."""
+        L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         parts: list[str] = []
         if (v := config.get(CONF_ARM_LENGTH)) is not None:
-            parts.append(f"{v}m arm")
+            parts.append(L["geometry.oscillating.arm"].format(v=v))
         lo = config.get(CONF_AWNING_MIN_ANGLE)
         hi = config.get(CONF_AWNING_MAX_ANGLE)
         if lo is not None and hi is not None:
-            parts.append(f"sweep {lo}°–{hi}°")
+            parts.append(L["geometry.oscillating.sweep"].format(lo=lo, hi=hi))
         if (v := config.get(CONF_HEIGHT_WIN)) is not None:
-            parts.append(f"{v}m window height")
+            parts.append(L["geometry.window.height"].format(v=v))
         if (v := config.get(CONF_AWNING_HOUSING_OFFSET)) is not None:
-            parts.append(f"{v}m housing offset")
+            parts.append(L["geometry.oscillating.housing_offset"].format(v=v))
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

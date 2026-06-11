@@ -19,6 +19,7 @@ from ..const import (
 from ..engine.covers import AdaptiveVerticalCover
 from ..unit_system import length_default, length_selector
 from ._helpers import window_dimensions_lines
+from ._summary_labels import COVER_TYPE_LABELS_EN
 from .base import (
     CAP_HAS_SET_POSITION,
     POSITION_AXIS,
@@ -161,9 +162,10 @@ class BlindPolicy(CoverTypePolicy, register=True):
         """Vertical-blind geometry page."""
         return "Configuration-Vertical"
 
-    def display_label(self) -> str:
+    def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for vertical blinds."""
-        return "Vertical Blind"
+        L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
+        return L["cover_types.blind"]
 
     def disallowed_geometry_fields(
         self,
@@ -209,7 +211,9 @@ class BlindPolicy(CoverTypePolicy, register=True):
         """Plain ``cover`` domain — no extra capability requirement."""
         return selector.EntityFilterSelectorConfig(domain="cover")
 
-    def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
+    def summary_geometry_lines(
+        self, config: dict[str, Any], labels: dict[str, str] | None = None
+    ) -> list[str]:
         """Render the window-dimensions block, plus the computed FOV (#565).
 
         In Measurements FOV mode the FOV is derived from the window width +
@@ -220,12 +224,13 @@ class BlindPolicy(CoverTypePolicy, register=True):
         from ..const import CONF_FOV_MODE, FovMode
         from ..engine.sun_geometry import computed_fov_line
 
-        lines = window_dimensions_lines(config)
+        lines = window_dimensions_lines(config, labels)
         if str(config.get(CONF_FOV_MODE)) == FovMode.MEASUREMENTS:
             lines.append(
                 computed_fov_line(
                     config.get(CONF_WINDOW_WIDTH),
                     config.get(CONF_WINDOW_DEPTH),
+                    labels,
                 )
             )
         return lines

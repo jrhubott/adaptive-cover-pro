@@ -1933,6 +1933,50 @@
       "label_my_set": "My ({pos}%)",
       "label_my_unset": "My (nicht gesetzt → {pct}%)",
       "label_plain": "{pct}%"
+    },
+    "cover_types": {
+      "blind": "Vertikale Jalousie",
+      "awning": "Horizontale Markise",
+      "tilt": "Jalousie / Neigung",
+      "oscillating_awning": "Schwenkmarkise",
+      "venetian": "Jalousie (Zwei-Achsen)"
+    },
+    "geometry": {
+      "window": {
+        "tall": "{h}m hohes Fenster",
+        "blocking_glass": "Sonne {d}m vor dem Glas blockiert",
+        "reveal": "Laibung {depth}m",
+        "sill": "Fensterbank {sill}m",
+        "height": "{v}m Fensterhöhe"
+      },
+      "awning": {
+        "length": "{v}m Markise",
+        "angle": "Winkel {v}°",
+        "blocking_wall": "Sonne {v}m vor der Wand blockiert"
+      },
+      "slat": {
+        "depth": "Lamellentiefe {v}cm",
+        "spacing": "Abstand {v}cm",
+        "mode": "Modus: {v}"
+      },
+      "oscillating": {
+        "arm": "{v}m Arm",
+        "sweep": "Schwenkbereich {lo}°–{hi}°",
+        "housing_offset": "{v}m Gehäuseversatz"
+      },
+      "venetian": {
+        "skip_tilt": "Neigung überspringen wenn Position > {skip_above}%",
+        "mode_position_and_tilt": "Position und Neigung",
+        "mode_tilt_only": "Nur Neigung",
+        "inverse_tilt": "Inverse Neigung",
+        "max_tilt": "max. Neigung {max_tilt}%",
+        "min_tilt": "min. Neigung {min_tilt}%",
+        "post_settle_hold": "Nach-Stabilisierungshalte {hold}s",
+        "backrotate_lag": "Rück-Rotationsverzögerung {lag}s"
+      },
+      "fov": {
+        "computed": "Berechnetes Sichtfeld ≈ {deg}°/{deg}° ({w}m Breite, {d}m Laibungstiefe)"
+      }
     }
   }
 }

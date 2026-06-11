@@ -626,12 +626,16 @@ class CoverTypePolicy(ABC):
         return ()
 
     def summary_geometry_lines(
-        self, config: dict[str, Any]
-    ) -> list[str]:  # noqa: ARG002
+        self,
+        config: dict[str, Any],  # noqa: ARG002
+        labels: dict[str, str] | None = None,  # noqa: ARG002
+    ) -> list[str]:
         """Return the user-facing geometry summary lines for the config flow.
 
         Default: no geometry summary. Override to render the
         cover-type-specific geometry block in ``_build_config_summary``.
+        ``labels`` overlays translated ``geometry.*`` templates on the English
+        base; ``None`` keeps English (back-compat).
         """
         return []
 
@@ -646,7 +650,9 @@ class CoverTypePolicy(ABC):
         """
         return "Cover-Types"
 
-    def display_label(self) -> str:
+    def display_label(
+        self, labels: dict[str, str] | None = None
+    ) -> str:  # noqa: ARG002
         """Return the human-readable label for this cover type.
 
         Used by ``config_flow._build_config_summary`` and any other UI
@@ -654,5 +660,9 @@ class CoverTypePolicy(ABC):
         ``cover_type`` slug for stub policies; every concrete policy
         overrides to its user-facing name. Replaces the legacy
         ``type_labels`` dict in ``config_flow.py``.
+
+        ``labels`` is the translated ``cover_types.*`` bundle; the base
+        default is only reached for unknown/stub types and has no key, so it
+        ignores ``labels`` and returns the titlecased slug.
         """
         return self.cover_type.removeprefix("cover_").replace("_", " ").title()
