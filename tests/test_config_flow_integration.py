@@ -34,6 +34,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
+    CONF_FOV_MODE,
     CONF_FOV_RIGHT,
     CONF_HEIGHT_WIN,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
@@ -57,9 +58,11 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_INVERSE_STATE,
     CONF_IS_SUNNY_SENSOR,
     CONF_WINDOW_DEPTH,
+    CONF_WINDOW_WIDTH,
     CUSTOM_POSITION_SLOTS,
     DOMAIN,
     CoverType,
+    FovMode,
 )
 
 pytestmark = pytest.mark.integration
@@ -1982,3 +1985,172 @@ async def test_options_flow_position_step_clears_sunset_pos_when_omitted(
     assert (
         saved.get(CONF_SUNSET_POS) is None
     ), "sunset_position must be None after clearing, not retain previous value 0"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #565 — create-flow persistence drop (Defect A & B)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_full_setup_persists_fov_mode_and_window_width(
+    hass: HomeAssistant,
+) -> None:
+    """Create flow must persist CONF_FOV_MODE and CONF_WINDOW_WIDTH to entry.options.
+
+    Regression guard for issue #565 Defect A: the hardcoded 73-key allowlist in
+    async_step_update silently dropped keys not in the list, including fov_mode
+    and window_width. Feeding them in the multi-step flow and asserting they land
+    in entry.options catches any re-introduction of the allowlist pattern.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "create_new"}
+        )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Persist Test Blind", CONF_MODE: CoverType.BLIND},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "full_setup"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ENTITIES: []}
+    )
+    # Feed CONF_WINDOW_WIDTH in the geometry step
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {**_VERTICAL_GEOMETRY, CONF_WINDOW_WIDTH: 1.6},
+    )
+    # First sun_tracking submit: switch mode from default (ANGLES) to MEASUREMENTS.
+    # This triggers a re-render — the MEASUREMENTS schema hides fov_left/fov_right.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_AZIMUTH: 180,
+            CONF_FOV_LEFT: 45,
+            CONF_FOV_RIGHT: 45,
+            CONF_DISTANCE: 0.5,
+            "blind_spot": False,
+            "enable_glare_zones": False,
+            CONF_FOV_MODE: FovMode.MEASUREMENTS,
+        },
+    )
+    # Re-render is expected on mode switch; second submit in MEASUREMENTS mode
+    # must not include fov_left/fov_right (hidden by MEASUREMENTS schema).
+    assert (
+        result.get("step_id") == "sun_tracking"
+    ), f"expected re-render on mode switch, got {result!r}"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_AZIMUTH: 180,
+            CONF_DISTANCE: 0.5,
+            "blind_spot": False,
+            "enable_glare_zones": False,
+            CONF_FOV_MODE: FovMode.MEASUREMENTS,
+        },
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _POSITION
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _AUTOMATION
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MANUAL_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _FORCE_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _CUSTOM_POSITION
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MOTION_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _WEATHER_OVERRIDE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _LIGHT_CLOUD
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _TEMPERATURE_CLIMATE
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "summary"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+
+    opts = result["result"].options
+    assert opts.get(CONF_FOV_MODE) == FovMode.MEASUREMENTS, (
+        f"CONF_FOV_MODE was dropped by async_step_update allowlist; "
+        f"got {opts.get(CONF_FOV_MODE)!r}"
+    )
+    assert opts.get(CONF_WINDOW_WIDTH) == 1.6, (
+        f"CONF_WINDOW_WIDTH was dropped by async_step_update allowlist; "
+        f"got {opts.get(CONF_WINDOW_WIDTH)!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_flow_sun_tracking_rerender_keeps_typed_azimuth() -> None:
+    """Create-flow FOV-mode re-render must not discard the azimuth the user typed.
+
+    Regression guard for issue #565 Defect B: the create-flow _show_sun_tracking_form
+    took no ``values`` argument and never called add_suggested_values_to_schema, so
+    after a mode-switch re-render the form redrew with the bare schema defaults
+    (DEFAULT_WINDOW_AZIMUTH) instead of the user's just-typed value.
+
+    After the fix, the re-rendered form carries the typed azimuth as a suggested value
+    and self.config[CONF_AZIMUTH] is preserved on the subsequent same-mode submit.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
+
+    flow = ConfigFlowHandler.__new__(ConfigFlowHandler)
+    flow.hass = MagicMock()
+    flow.hass.config.units = MagicMock()
+    flow.hass.config.units.is_metric = True
+    flow.hass.states.get.return_value = None
+    flow.type_blind = CoverType.BLIND
+    flow.config = {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}
+    flow.async_step_position = AsyncMock(
+        return_value={"type": "form", "step_id": "position"}
+    )
+
+    # First submit: no stored fov_mode (None → ANGLES default), user switches to
+    # MEASUREMENTS and types azimuth 137.  _resolve_fov_mode_submit detects a mode
+    # change → re-render path.
+    result = await flow.async_step_sun_tracking(
+        {
+            CONF_AZIMUTH: 137,
+            CONF_FOV_LEFT: 30,
+            CONF_FOV_RIGHT: 30,
+            CONF_FOV_MODE: FovMode.MEASUREMENTS,
+            CONF_DISTANCE: 0.5,
+        }
+    )
+    assert result["type"] == "form", "expected re-render on mode switch"
+    assert result["step_id"] == "sun_tracking"
+
+    # After the fix: the re-rendered form must carry 137 as suggested_value for
+    # CONF_AZIMUTH — the user's just-typed input must not be discarded.
+    schema = result.get("data_schema")
+    assert schema is not None, "re-render must return a data_schema"
+    suggested_azimuth = None
+    for marker in schema.schema:
+        if str(marker) == CONF_AZIMUTH and marker.description:
+            suggested_azimuth = marker.description.get("suggested_value")
+            break
+    assert suggested_azimuth == 137, (
+        f"Re-rendered form must carry typed azimuth 137 as suggested_value, "
+        f"got {suggested_azimuth!r}. "
+        "Defect B: create-flow _show_sun_tracking_form discards typed input."
+    )

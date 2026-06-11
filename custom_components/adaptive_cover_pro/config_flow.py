@@ -137,6 +137,9 @@ from .const import (
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    DEFAULT_DELTA_POSITION,
+    DEFAULT_DELTA_TIME,
+    DEFAULT_MANUAL_OVERRIDE_DURATION,
     DEFAULT_MOTION_TIMEOUT,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
@@ -2779,37 +2782,48 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             rerender = _resolve_fov_mode_submit(
                 self.type_blind, prior_mode, user_input, self.config
             )
+            # Canonicalize once: ``_show_sun_tracking_form`` re-displays via
+            # ``options_to_display``, so feeding it raw (already display-unit)
+            # input would convert metres->inches a second time and the value
+            # would compound on every rerender (#565). Canonical here keeps the
+            # rerender re-feed symmetric with the initial render and save path.
+            canonical = user_input_to_canonical(
+                self.hass, user_input, length_keys=_SUN_TRACKING_LENGTH_KEYS
+            )
             if rerender is not None:
                 self.config[CONF_FOV_MODE] = rerender
-                return self._show_sun_tracking_form(mode=rerender)
+                return self._show_sun_tracking_form(canonical, mode=rerender)
             if (
                 user_input.get(CONF_MAX_ELEVATION) is not None
                 and user_input.get(CONF_MIN_ELEVATION) is not None
                 and user_input[CONF_MAX_ELEVATION] <= user_input[CONF_MIN_ELEVATION]
             ):
                 return self._show_sun_tracking_form(
+                    canonical,
                     mode=user_input.get(CONF_FOV_MODE, prior_mode),
                     errors={
                         CONF_MAX_ELEVATION: "Must be greater than 'Minimal Elevation'"
                     },
                 )
-            canonical = user_input_to_canonical(
-                self.hass, user_input, length_keys=_SUN_TRACKING_LENGTH_KEYS
-            )
             self.config.update(canonical)
             return await self.async_step_position()
-        return self._show_sun_tracking_form(mode=prior_mode)
+        return self._show_sun_tracking_form(self.config, mode=prior_mode)
 
     def _show_sun_tracking_form(
         self,
+        values: dict[str, Any] | None = None,
         *,
         mode: str | None = None,
         errors: dict | None = None,
     ):
         """Render the create-flow sun-tracking form for the given FOV *mode*."""
+        schema = _get_sun_tracking_schema(self.type_blind, self.hass, mode)
+        suggested = options_to_display(
+            self.hass, values or self.config, length_keys=_SUN_TRACKING_LENGTH_KEYS
+        )
         return self.async_show_form(
             step_id="sun_tracking",
-            data_schema=_get_sun_tracking_schema(self.type_blind, self.hass, mode),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
             description_placeholders=_sun_tracking_placeholders(
                 self.type_blind, mode, self.config
@@ -3073,110 +3087,37 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             title = self.config["name"]
         else:
             title = f"{_cover_type_label(self.type_blind)} {self.config['name']}"
+
+        # Build options from the full accumulated config dict, mirroring the
+        # options-flow contract (data=self.options).  Strip only the data-level
+        # keys that belong in entry.data rather than entry.options; override
+        # CONF_MODE (which holds the cover-type string in self.config) with the
+        # strategy-mode value stored on self.mode.
+        _DATA_KEYS = {"name", CONF_SENSOR_TYPE}
+        options = {k: v for k, v in self.config.items() if k not in _DATA_KEYS}
+        # CONF_MODE in self.config is the cover-type selector value (CoverType.*).
+        # entry.options["mode"] must carry the strategy mode ("basic" / "advanced").
+        options[CONF_MODE] = self.mode
+
+        # Quick setup skips some steps (e.g. automation) leaving critical keys
+        # absent from self.config.  Apply constant-backed defaults so the
+        # coordinator never receives None for gating values (issue #133).
+        options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
+        options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
+        options.setdefault(
+            CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION
+        )
+        options.setdefault(CONF_MOTION_SENSORS, [])
+        options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
+        options.setdefault(CONF_FORCE_OVERRIDE_SENSORS, [])
+
         return self.async_create_entry(
             title=title,
             data={
                 "name": self.config["name"],
                 CONF_SENSOR_TYPE: self.type_blind,
             },
-            options={
-                CONF_MODE: self.mode,
-                CONF_AZIMUTH: self.config.get(CONF_AZIMUTH),
-                CONF_HEIGHT_WIN: self.config.get(CONF_HEIGHT_WIN),
-                CONF_DISTANCE: self.config.get(CONF_DISTANCE),
-                CONF_WINDOW_DEPTH: self.config.get(CONF_WINDOW_DEPTH),
-                CONF_SILL_HEIGHT: self.config.get(CONF_SILL_HEIGHT),
-                CONF_DEFAULT_HEIGHT: self.config.get(CONF_DEFAULT_HEIGHT),
-                CONF_MAX_POSITION: self.config.get(CONF_MAX_POSITION),
-                CONF_ENABLE_MAX_POSITION: self.config.get(CONF_ENABLE_MAX_POSITION),
-                CONF_MIN_POSITION: self.config.get(CONF_MIN_POSITION),
-                CONF_ENABLE_MIN_POSITION: self.config.get(CONF_ENABLE_MIN_POSITION),
-                CONF_FOV_LEFT: self.config.get(CONF_FOV_LEFT),
-                CONF_FOV_RIGHT: self.config.get(CONF_FOV_RIGHT),
-                CONF_ENTITIES: self.config.get(CONF_ENTITIES),
-                CONF_INVERSE_STATE: self.config.get(CONF_INVERSE_STATE),
-                CONF_SUNSET_POS: self.config.get(CONF_SUNSET_POS),
-                CONF_SUNSET_OFFSET: self.config.get(CONF_SUNSET_OFFSET),
-                CONF_SUNRISE_OFFSET: self.config.get(CONF_SUNRISE_OFFSET),
-                CONF_SUNSET_TIME_ENTITY: self.config.get(CONF_SUNSET_TIME_ENTITY),
-                CONF_SUNRISE_TIME_ENTITY: self.config.get(CONF_SUNRISE_TIME_ENTITY),
-                CONF_LENGTH_AWNING: self.config.get(CONF_LENGTH_AWNING),
-                CONF_AWNING_ANGLE: self.config.get(CONF_AWNING_ANGLE),
-                CONF_TILT_DISTANCE: self.config.get(CONF_TILT_DISTANCE),
-                CONF_TILT_DEPTH: self.config.get(CONF_TILT_DEPTH),
-                CONF_TILT_MODE: self.config.get(CONF_TILT_MODE),
-                CONF_TEMP_ENTITY: self.config.get(CONF_TEMP_ENTITY),
-                CONF_PRESENCE_ENTITY: self.config.get(CONF_PRESENCE_ENTITY),
-                CONF_WEATHER_ENTITY: self.config.get(CONF_WEATHER_ENTITY),
-                CONF_TEMP_LOW: self.config.get(CONF_TEMP_LOW),
-                CONF_TEMP_HIGH: self.config.get(CONF_TEMP_HIGH),
-                CONF_OUTSIDETEMP_ENTITY: self.config.get(CONF_OUTSIDETEMP_ENTITY),
-                CONF_CLIMATE_MODE: self.config.get(CONF_CLIMATE_MODE),
-                CONF_WEATHER_STATE: self.config.get(CONF_WEATHER_STATE),
-                CONF_DELTA_POSITION: self.config.get(CONF_DELTA_POSITION) or 2,
-                CONF_DELTA_TIME: self.config.get(CONF_DELTA_TIME) or 2,
-                CONF_START_TIME: self.config.get(CONF_START_TIME),
-                CONF_START_ENTITY: self.config.get(CONF_START_ENTITY),
-                CONF_END_TIME: self.config.get(CONF_END_TIME),
-                CONF_END_ENTITY: self.config.get(CONF_END_ENTITY),
-                CONF_FORCE_OVERRIDE_SENSORS: self.config.get(
-                    CONF_FORCE_OVERRIDE_SENSORS, []
-                ),
-                CONF_FORCE_OVERRIDE_POSITION: self.config.get(
-                    CONF_FORCE_OVERRIDE_POSITION, 0
-                ),
-                CONF_MOTION_SENSORS: self.config.get(CONF_MOTION_SENSORS, []),
-                CONF_MOTION_TIMEOUT: self.config.get(
-                    CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT
-                ),
-                CONF_MANUAL_OVERRIDE_DURATION: self.config.get(
-                    CONF_MANUAL_OVERRIDE_DURATION
-                )
-                or {"hours": 2},
-                CONF_MANUAL_OVERRIDE_RESET: self.config.get(CONF_MANUAL_OVERRIDE_RESET),
-                CONF_MANUAL_THRESHOLD: self.config.get(CONF_MANUAL_THRESHOLD),
-                CONF_MANUAL_IGNORE_INTERMEDIATE: self.config.get(
-                    CONF_MANUAL_IGNORE_INTERMEDIATE
-                ),
-                CONF_MANUAL_IGNORE_EXTERNAL: self.config.get(
-                    CONF_MANUAL_IGNORE_EXTERNAL
-                ),
-                CONF_OPEN_CLOSE_THRESHOLD: self.config.get(
-                    CONF_OPEN_CLOSE_THRESHOLD, 50
-                ),
-                CONF_BLIND_SPOT_RIGHT: self.config.get(CONF_BLIND_SPOT_RIGHT, None),
-                CONF_BLIND_SPOT_LEFT: self.config.get(CONF_BLIND_SPOT_LEFT, None),
-                CONF_BLIND_SPOT_ELEVATION: self.config.get(
-                    CONF_BLIND_SPOT_ELEVATION, None
-                ),
-                CONF_ENABLE_BLIND_SPOT: self.config.get(CONF_ENABLE_BLIND_SPOT),
-                CONF_ENABLE_SUN_TRACKING: self.config.get(
-                    CONF_ENABLE_SUN_TRACKING, True
-                ),
-                CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
-                CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
-                CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),
-                CONF_WINTER_CLOSE_INSULATION: self.config.get(
-                    CONF_WINTER_CLOSE_INSULATION, False
-                ),
-                CONF_INTERP: self.config.get(CONF_INTERP),
-                CONF_INTERP_START: self.config.get(CONF_INTERP_START, None),
-                CONF_INTERP_END: self.config.get(CONF_INTERP_END, None),
-                CONF_INTERP_LIST: self.config.get(CONF_INTERP_LIST, []),
-                CONF_INTERP_LIST_NEW: self.config.get(CONF_INTERP_LIST_NEW, []),
-                CONF_LUX_ENTITY: self.config.get(CONF_LUX_ENTITY),
-                CONF_LUX_THRESHOLD: self.config.get(CONF_LUX_THRESHOLD),
-                CONF_IRRADIANCE_ENTITY: self.config.get(CONF_IRRADIANCE_ENTITY),
-                CONF_IRRADIANCE_THRESHOLD: self.config.get(CONF_IRRADIANCE_THRESHOLD),
-                CONF_CLOUD_COVERAGE_ENTITY: self.config.get(CONF_CLOUD_COVERAGE_ENTITY),
-                CONF_CLOUD_COVERAGE_THRESHOLD: self.config.get(
-                    CONF_CLOUD_COVERAGE_THRESHOLD
-                ),
-                CONF_OUTSIDE_THRESHOLD: self.config.get(CONF_OUTSIDE_THRESHOLD),
-                CONF_DEVICE_ID: self.config.get(CONF_DEVICE_ID),
-                CONF_RETURN_SUNSET: self.config.get(CONF_RETURN_SUNSET, False),
-                CONF_CLOUD_SUPPRESSION: self.config.get(CONF_CLOUD_SUPPRESSION, False),
-            },
+            options=options,
         )
 
     async def async_step_duplicate_existing(

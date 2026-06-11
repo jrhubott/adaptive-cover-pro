@@ -465,6 +465,8 @@ DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
 
 CONF_DELTA_POSITION = "delta_position"  # min % change to emit, range 1-90
 CONF_DELTA_TIME = "delta_time"  # min seconds between commands, range 2-60
+DEFAULT_DELTA_POSITION = 2  # minimum percentage change threshold
+DEFAULT_DELTA_TIME = 2  # minimum seconds between commands
 # Allowed gap between commanded and reported position before the periodic
 # reconciliation pass treats the cover as "not arrived" and resends the
 # command. Distinct from CONF_DELTA_POSITION (movement hysteresis). Default
@@ -505,6 +507,7 @@ CONF_INTERP_LIST_NEW = "interp_list_new"  # new-format control points
 
 # How long a manual override stays active before automation resumes.
 CONF_MANUAL_OVERRIDE_DURATION = "manual_override_duration"
+DEFAULT_MANUAL_OVERRIDE_DURATION: dict = {"hours": 2}  # default hold duration
 # If True, the manual override is reset when end_time is reached.
 CONF_MANUAL_OVERRIDE_RESET = "manual_override_reset"
 CONF_MANUAL_THRESHOLD = "manual_threshold"  # % delta = manual touch, 0-99
