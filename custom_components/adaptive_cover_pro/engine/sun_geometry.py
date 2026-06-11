@@ -16,11 +16,19 @@ from ..sun import SunData
 def fov_from_reveal(width_m: float, depth_m: float) -> int:
     """Symmetric FOV half-angle (degrees) from reveal width and depth.
 
-    Models the oblique-sun cutoff geometry of a cover mounted inside a reveal:
-    the recess depth ``depth_m`` in front of the cover blocks sun arriving at a
-    grazing azimuth, and the opening ``width_m`` sets how wide that gap is. The
-    half-angle is ``atan((width/2) / depth)`` — the angle at which the sun first
-    clears the reveal edge.
+    Models the full-exit cutoff geometry of a cover mounted inside a reveal
+    (top-down / plan view): as the sun swings to a grazing azimuth ``θ`` off the
+    window normal, the near reveal jamb casts a shadow that creeps across the
+    recessed cover. The cover is fully in shadow — no direct sun anywhere on it —
+    when the shadow reaches the **far** cover edge. The horizontal offset between
+    the near jamb and the far edge equals the full opening width ``w``; the recess
+    depth is ``d``. The sun fully exits when ``d·tan(θ) = w``, so::
+
+        θ_exit = arctan(w / d)
+
+    Using ``arctan((w/2)/d)`` (half-width) would give the angle at which the
+    shadow reaches only the center of the cover — an earlier, narrower cutoff that
+    under-reports the tracking FOV.
 
     A flush reveal (``depth_m <= 0``) or a degenerate opening (``width_m <= 0``)
     blocks nothing, so the FOV is the full hemisphere (the default half-angle).
@@ -29,7 +37,7 @@ def fov_from_reveal(width_m: float, depth_m: float) -> int:
     """
     if depth_m <= 0 or width_m <= 0:
         return DEFAULT_FOV_LEFT
-    deg = degrees(atan((width_m / 2) / depth_m))
+    deg = degrees(atan(width_m / depth_m))
     lo, hi = OPTION_RANGES[CONF_FOV_LEFT]
     return int(round(min(max(deg, lo), hi)))
 

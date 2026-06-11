@@ -2566,9 +2566,9 @@ def test_summary_shows_computed_fov_in_measurements_mode():
     cfg[CONF_WINDOW_WIDTH] = 1.2
     cfg[CONF_WINDOW_DEPTH] = 0.5
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    # width 1.2 / depth 0.5 → atan(1.2) ≈ 50.19° → 50
+    # width 1.2 / depth 0.5 → atan(1.2/0.5) = atan(2.4) ≈ 67.38° → 67
     assert "Computed FOV" in summary
-    assert "50°/50°" in summary
+    assert "67°/67°" in summary
     assert "1.2 m width" in summary
     assert "0.5 m reveal depth" in summary
 
