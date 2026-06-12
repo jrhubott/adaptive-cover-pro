@@ -2593,3 +2593,96 @@ def test_summary_omits_computed_fov_when_mode_absent():
     cfg[CONF_WINDOW_DEPTH] = 0.5
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "Computed FOV" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Jinja2 template placeholder tests (issue #577)
+# ---------------------------------------------------------------------------
+
+
+def test_cloud_irradiance_template_shows_placeholder():
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IRRADIANCE_ENTITY: "sensor.irr",
+        CONF_IRRADIANCE_THRESHOLD: "{% set s = states('sensor.season') %}{{ 300 if s == 'winter' else 500 }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_cloud_lux_template_shows_placeholder():
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: "{% if true %}300{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_cloud_coverage_template_shows_placeholder():
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
+        CONF_CLOUD_COVERAGE_THRESHOLD: "{% if true %}60{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_weather_wind_template_shows_placeholder():
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: "{% if true %}50{% endif %}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_weather_rain_template_shows_placeholder():
+    cfg = {
+        CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+        CONF_WEATHER_RAIN_THRESHOLD: "{% if true %}2.0{% endif %}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_climate_temp_low_template_shows_placeholder():
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW: "{% if true %}16{% endif %}",
+        CONF_TEMP_HIGH: 24,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_climate_temp_high_template_shows_placeholder():
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW: 16,
+        CONF_TEMP_HIGH: "{% if true %}24{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_climate_outside_threshold_template_shows_placeholder():
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_OUTSIDETEMP_ENTITY: "sensor.outdoor",
+        CONF_OUTSIDE_THRESHOLD: "{% if true %}28{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary

@@ -999,6 +999,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     # --- shared fragments ---
     "fragments.as_minimum": " (as minimum)",
     "fragments.safety": " 🔒 safety: acts outside the time window too",
+    "fragments.template_value": "[template]",
     # --- Weather safety (90) ---
     "rules.weather": (
         "🌧️ Weather safety: if {wx_condition} → covers retract to "
@@ -1291,6 +1292,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     are used, so the output is byte-identical to the pre-i18n strings.
     """
     L = labels or _SUMMARY_LABELS_EN
+    _ph = L["fragments.template_value"]
     # ---- Gather all values up front ----------------------------------------
     # ``L`` here is the FULL flow bundle (``_SUMMARY_LABELS_EN`` keys + the
     # policy-owned ``cover_types.*`` / ``geometry.*`` keys when a translated
@@ -1317,6 +1319,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     )
     from .helpers import motion_entities
     from .templates import is_template_string
+
+    def _thresh_display(value: Any, *, placeholder: str) -> str:
+        return placeholder if is_template_string(str(value)) else str(value)
 
     _motion_sources = motion_entities(config)
     _has_motion_template = is_template_string(config.get(CONF_MOTION_TEMPLATE))
@@ -1460,12 +1465,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
         if wind_sensor and wind_thresh is not None:
-            wind_part = L["weather.wind"].format(thresh=wind_thresh)
+            wind_part = L["weather.wind"].format(
+                thresh=_thresh_display(wind_thresh, placeholder=_ph)
+            )
             if wind_dir_sensor and wind_dir_tol is not None:
-                wind_part += L["weather.wind_dir"].format(tol=wind_dir_tol)
+                wind_part += L["weather.wind_dir"].format(
+                    tol=_thresh_display(wind_dir_tol, placeholder=_ph)
+                )
             wx_parts.append(wind_part)
         if rain_sensor and rain_thresh is not None:
-            wx_parts.append(L["weather.rain"].format(thresh=rain_thresh))
+            wx_parts.append(
+                L["weather.rain"].format(
+                    thresh=_thresh_display(rain_thresh, placeholder=_ph)
+                )
+            )
         if is_rain:
             wx_parts.append(L["weather.is_raining"])
         if is_wind:
@@ -1628,21 +1641,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
             cloud_parts.append(
-                L["cloud.lux"].format(thresh=t)
+                L["cloud.lux"].format(thresh=_thresh_display(t, placeholder=_ph))
                 if t is not None
                 else L["cloud.lux_no_thresh"].format(entity=v)
             )
         if v := config.get(CONF_IRRADIANCE_ENTITY):
             t = config.get(CONF_IRRADIANCE_THRESHOLD)
             cloud_parts.append(
-                L["cloud.irradiance"].format(thresh=t)
+                L["cloud.irradiance"].format(thresh=_thresh_display(t, placeholder=_ph))
                 if t is not None
                 else L["cloud.irradiance_no_thresh"].format(entity=v)
             )
         if v := config.get(CONF_CLOUD_COVERAGE_ENTITY):
             t = config.get(CONF_CLOUD_COVERAGE_THRESHOLD)
             cloud_parts.append(
-                L["cloud.coverage"].format(thresh=t)
+                L["cloud.coverage"].format(thresh=_thresh_display(t, placeholder=_ph))
                 if t is not None
                 else L["cloud.coverage_no_thresh"].format(entity=v)
             )
@@ -1695,7 +1708,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         hi = config.get(CONF_TEMP_HIGH)
         temp_entity = config.get(CONF_TEMP_ENTITY)
         if lo is not None and hi is not None:
-            cl_parts.append(L["climate.comfort_range"].format(lo=lo, hi=hi))
+            cl_parts.append(
+                L["climate.comfort_range"].format(
+                    lo=_thresh_display(lo, placeholder=_ph),
+                    hi=_thresh_display(hi, placeholder=_ph),
+                )
+            )
         if temp_entity:
             cl_parts.append(L["climate.using"].format(entity=temp_entity))
         outside = config.get(CONF_OUTSIDETEMP_ENTITY)
@@ -1704,7 +1722,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             if out_thresh is not None:
                 cl_parts.append(
                     L["climate.outside_thresh"].format(
-                        entity=outside, thresh=out_thresh
+                        entity=outside,
+                        thresh=_thresh_display(out_thresh, placeholder=_ph),
                     )
                 )
             else:

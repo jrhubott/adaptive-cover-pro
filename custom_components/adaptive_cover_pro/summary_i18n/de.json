@@ -22,7 +22,8 @@
   },
   "fragments": {
     "as_minimum": " (als Minimum)",
-    "safety": " 🔒 Sicherheit: wirkt auch außerhalb des Zeitfensters"
+    "safety": " 🔒 Sicherheit: wirkt auch außerhalb des Zeitfensters",
+    "template_value": "[template]"
   },
   "rules": {
     "weather": "🌧️ Wetterschutz: wenn {wx_condition} → Beschattungen fahren auf {weather_pos}%{weather_min}{delay}{bypass}",

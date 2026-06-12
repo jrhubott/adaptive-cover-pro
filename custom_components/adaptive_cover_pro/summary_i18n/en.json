@@ -22,7 +22,8 @@
   },
   "fragments": {
     "as_minimum": " (as minimum)",
-    "safety": " 🔒 safety: acts outside the time window too"
+    "safety": " 🔒 safety: acts outside the time window too",
+    "template_value": "[template]"
   },
   "rules": {
     "weather": "🌧️ Weather safety: if {wx_condition} → covers retract to {weather_pos}%{weather_min}{delay}{bypass}",

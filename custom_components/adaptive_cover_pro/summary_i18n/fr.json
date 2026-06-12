@@ -22,7 +22,8 @@
   },
   "fragments": {
     "as_minimum": " (comme minimum)",
-    "safety": " 🔒 sécurité : agit aussi en dehors de la fenêtre horaire"
+    "safety": " 🔒 sécurité : agit aussi en dehors de la fenêtre horaire",
+    "template_value": "[template]"
   },
   "rules": {
     "weather": "🌧️ Sécurité météo : si {wx_condition} → stores se rétractent à {weather_pos}%{weather_min}{delay}{bypass}",
