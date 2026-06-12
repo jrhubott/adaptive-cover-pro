@@ -127,7 +127,7 @@ def _options_flow(options: dict) -> OptionsFlowHandler:
 
 @pytest.mark.asyncio
 async def test_measurements_mode_stores_derived_fov():
-    # width 2.0 / depth 0.5 → atan(2) ≈ 63°. The form was already in
+    # width 2.0 / depth 0.5 → atan(4) ≈ 76°. The form was already in
     # Measurements mode (stored mode == MEASUREMENTS), so submitting it derives
     # and saves rather than re-rendering.
     flow = _options_flow(
@@ -145,8 +145,8 @@ async def test_measurements_mode_stores_derived_fov():
             "distance_shaded_area": 0.5,
         }
     )
-    assert flow.options[CONF_FOV_LEFT] == 63
-    assert flow.options[CONF_FOV_RIGHT] == 63
+    assert flow.options[CONF_FOV_LEFT] == 76
+    assert flow.options[CONF_FOV_RIGHT] == 76
     # window_depth itself is untouched.
     assert flow.options[CONF_WINDOW_DEPTH] == 0.5
     assert flow.options[CONF_FOV_MODE] == FovMode.MEASUREMENTS
@@ -243,8 +243,8 @@ async def test_measurements_mode_submittable_without_fov():
         {CONF_FOV_MODE: FovMode.MEASUREMENTS, "distance_shaded_area": 0.5}
     )
     assert result["type"] == "menu"  # advanced (saved), not re-rendered
-    assert flow.options[CONF_FOV_LEFT] == 63
-    assert flow.options[CONF_FOV_RIGHT] == 63
+    assert flow.options[CONF_FOV_LEFT] == 76
+    assert flow.options[CONF_FOV_RIGHT] == 76
 
 
 # ----------------------------------------------------------------------------
@@ -313,7 +313,7 @@ async def test_switching_to_measurements_then_submitting_saves():
     # #565: seed flow in ANGLES; submit MEASUREMENTS once (expect re-render);
     # submit MEASUREMENTS a SECOND time and assert it advances out of
     # sun_tracking and persists the derived fov values.
-    # width 2.0 / depth 0.5 → atan(2) ≈ 63°.
+    # width 2.0 / depth 0.5 → atan(4) ≈ 76°.
     flow = _options_flow(
         {
             CONF_WINDOW_WIDTH: 2.0,
@@ -345,7 +345,7 @@ async def test_switching_to_measurements_then_submitting_saves():
         result2["type"] == "menu"
     ), f"expected save (menu) on second submit, got {result2!r}"
     assert flow.options[CONF_FOV_MODE] == FovMode.MEASUREMENTS
-    assert flow.options[CONF_FOV_LEFT] == 63
+    assert flow.options[CONF_FOV_LEFT] == 76
 
 
 @pytest.mark.asyncio
