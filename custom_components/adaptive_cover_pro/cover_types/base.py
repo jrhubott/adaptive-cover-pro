@@ -196,14 +196,18 @@ class CoverTypePolicy(ABC):
         self,
         base: vol.Schema,
         mode: str | None = None,  # noqa: ARG002
+        *,
+        source_config: dict | None = None,  # noqa: ARG002
     ) -> vol.Schema:
         """Shape the sun-tracking schema's FOV fields for the given mode.
 
         The default (every cover type except vertical blinds) returns *base*
         unchanged — no mode selector, plain fov_left/right sliders. BlindPolicy
-        overrides this to insert the mode selector and hide the fov sliders in
-        Measurements mode. Keeping the logic on the policy keeps cover-type
-        branching inside ``cover_types/`` (cover-type-abstraction guideline).
+        overrides this to insert the mode selector and, in Measurements mode,
+        show the fov sliders pre-populated with the derived angle as a
+        suggested_value so the user can override either angle independently.
+        Keeping the logic on the policy keeps cover-type branching inside
+        ``cover_types/`` (cover-type-abstraction guideline).
         """
         return base
 

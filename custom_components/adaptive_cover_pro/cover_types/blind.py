@@ -105,19 +105,31 @@ class BlindPolicy(CoverTypePolicy, register=True):
         self,
         base: vol.Schema,
         mode: str | None = None,
+        *,
+        source_config: dict | None = None,
     ) -> vol.Schema:
-        """Insert the FOV-mode selector; hide the fov sliders in Measurements.
+        """Insert the FOV-mode selector; show fov sliders with suggested_value.
 
-        The mode selector is placed immediately before the fov sliders. In
-        ``MEASUREMENTS`` mode the ``fov_left``/``fov_right`` sliders are dropped
-        (the FOV is derived from window width + reveal depth at save time); in
-        ``ANGLES`` mode they stay exactly as today.
+        The mode selector is placed immediately before the fov sliders. In both
+        ``ANGLES`` and ``MEASUREMENTS`` modes the sliders are shown. In
+        ``MEASUREMENTS`` mode they carry a ``suggested_value`` derived from the
+        window width + reveal depth so the user sees the geometric starting point
+        and can override either angle independently (#565). On save the user's
+        typed values are used when present; the derived value is the fallback.
         """
         from .. import config_fields as cf
         from ..const import CONF_FOV_LEFT, CONF_FOV_MODE, CONF_FOV_RIGHT, FovMode
+        from ..engine.sun_geometry import fov_from_reveal
 
         resolved = mode if mode is not None else FovMode.ANGLES
-        hide_sliders = str(resolved) == FovMode.MEASUREMENTS
+        in_measurements_mode = str(resolved) == FovMode.MEASUREMENTS
+
+        # Derive the suggested FOV once from width/depth when in Measurements.
+        derived: int | None = None
+        if in_measurements_mode:
+            width = float((source_config or {}).get(CONF_WINDOW_WIDTH) or 0.0)
+            depth = float((source_config or {}).get(CONF_WINDOW_DEPTH) or 0.0)
+            derived = round(fov_from_reveal(width, depth)) if depth > 0 else None
 
         spec = cf.FIELD_SPECS[CONF_FOV_MODE]
         mode_marker, mode_selector = spec.to_marker(None, None)
@@ -130,11 +142,16 @@ class BlindPolicy(CoverTypePolicy, register=True):
                 if not inserted:
                     rebuilt[mode_marker] = mode_selector
                     inserted = True
-                if hide_sliders:
-                    continue
-                # Optional so the frontend Required check never blocks a mode
-                # switch (#565); default preserved, so ANGLES is unchanged.
-                rebuilt[_as_optional(marker)] = sel
+                if in_measurements_mode and derived is not None:
+                    # Show slider pre-populated with derived angle as an editable
+                    # starting point; user can override either angle independently.
+                    rebuilt[
+                        vol.Optional(key, description={"suggested_value": derived})
+                    ] = sel
+                else:
+                    # Optional so the frontend Required check never blocks a mode
+                    # switch (#565); default preserved, so ANGLES is unchanged.
+                    rebuilt[_as_optional(marker)] = sel
                 continue
             rebuilt[marker] = sel
         if not inserted:

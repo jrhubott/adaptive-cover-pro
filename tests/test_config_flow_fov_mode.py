@@ -62,13 +62,33 @@ def test_blind_angles_mode_shows_fov_sliders():
     assert CONF_FOV_MODE in keys
 
 
-def test_blind_measurements_mode_hides_fov_sliders():
+def test_blind_measurements_mode_shows_fov_sliders():
     schema = _get_sun_tracking_schema(CoverType.BLIND, mode=FovMode.MEASUREMENTS)
     keys = _keys(schema)
-    assert CONF_FOV_LEFT not in keys
-    assert CONF_FOV_RIGHT not in keys
+    assert CONF_FOV_LEFT in keys
+    assert CONF_FOV_RIGHT in keys
     # The mode selector itself stays so the user can switch back.
     assert CONF_FOV_MODE in keys
+
+
+def test_blind_measurements_mode_sliders_have_suggested_value():
+    import math
+
+    schema = _get_sun_tracking_schema(
+        CoverType.BLIND,
+        mode=FovMode.MEASUREMENTS,
+        source_config={CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5},
+    )
+    expected = round(math.degrees(math.atan(2.0 / 0.5)))  # ≈ 76
+
+    def _get_suggested(schema, key):
+        for m in schema.schema:
+            if str(m) == key and m.description:
+                return m.description.get("suggested_value")
+        raise AssertionError(f"no suggested_value for {key!r}")
+
+    assert _get_suggested(schema, CONF_FOV_LEFT) == expected
+    assert _get_suggested(schema, CONF_FOV_RIGHT) == expected
 
 
 def test_blind_default_mode_is_angles():
@@ -153,6 +173,32 @@ async def test_measurements_mode_stores_derived_fov():
 
 
 @pytest.mark.asyncio
+async def test_measurements_mode_stores_user_override_fov():
+    # When sliders are shown in MEASUREMENTS mode and the user types explicit
+    # values, those values must be stored — NOT overwritten by the derived angle.
+    flow = _options_flow(
+        {
+            CONF_WINDOW_WIDTH: 2.0,
+            CONF_WINDOW_DEPTH: 0.5,
+            CONF_FOV_LEFT: 90,
+            CONF_FOV_RIGHT: 90,
+            CONF_FOV_MODE: FovMode.MEASUREMENTS,
+        }
+    )
+    await flow.async_step_sun_tracking(
+        {
+            CONF_FOV_MODE: FovMode.MEASUREMENTS,
+            CONF_FOV_LEFT: 90,
+            CONF_FOV_RIGHT: 60,
+            "distance_shaded_area": 0.5,
+        }
+    )
+    # User typed 90 and 60 — derived would be 76. Must keep user values.
+    assert flow.options[CONF_FOV_LEFT] == 90
+    assert flow.options[CONF_FOV_RIGHT] == 60
+
+
+@pytest.mark.asyncio
 async def test_angles_mode_keeps_typed_fov():
     flow = _options_flow(
         {
@@ -223,8 +269,10 @@ async def test_switching_to_measurements_rerenders_form_not_next_step():
     assert advanced is False
     assert result["type"] == "form"
     assert result["step_id"] == "sun_tracking"
-    # The re-rendered form is in MEASUREMENTS mode (sliders hidden).
-    assert CONF_FOV_LEFT not in _keys(result["data_schema"])
+    # The re-rendered form is in MEASUREMENTS mode (sliders shown with
+    # suggested_value derived from window width + reveal depth).
+    assert CONF_FOV_LEFT in _keys(result["data_schema"])
+    assert CONF_FOV_RIGHT in _keys(result["data_schema"])
 
 
 @pytest.mark.asyncio

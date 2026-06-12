@@ -2593,9 +2593,11 @@ def _resolve_fov_mode_submit(
     if submitted == FovMode.MEASUREMENTS:
         width = float(source_config.get(CONF_WINDOW_WIDTH) or 0.0)
         depth = float(source_config.get(CONF_WINDOW_DEPTH) or 0.0)
-        derived = fov_from_reveal(width, depth)
-        user_input[CONF_FOV_LEFT] = derived
-        user_input[CONF_FOV_RIGHT] = derived
+        derived = round(fov_from_reveal(width, depth))
+        if CONF_FOV_LEFT not in user_input:
+            user_input[CONF_FOV_LEFT] = derived
+        if CONF_FOV_RIGHT not in user_input:
+            user_input[CONF_FOV_RIGHT] = derived
     return None
 
 
@@ -2603,17 +2605,22 @@ def _get_sun_tracking_schema(
     sensor_type: str | None,
     hass: HomeAssistant | None = None,
     mode: str | None = None,
+    source_config: dict | None = None,
 ) -> vol.Schema:
     """Return sun tracking schema for *sensor_type* in the given FOV *mode*.
 
     Adds the glare-zones toggle for cover types that support it, and routes the
     FOV-field shaping (mode selector + per-mode slider visibility, #565) through
     the cover-type policy so no cover-type string branching leaks out here.
+
+    *source_config* is forwarded to the policy so that, in Measurements mode,
+    the fov sliders can be pre-populated with the geometric suggested_value
+    derived from the stored window width + reveal depth.
     """
     base = sun_tracking_schema(hass) if hass is not None else SUN_TRACKING_SCHEMA
     if sensor_type in POLICY_REGISTRY:
         policy = get_policy(sensor_type)
-        base = policy.fov_mode_schema(base, mode)
+        base = policy.fov_mode_schema(base, mode, source_config=source_config)
         if policy.supports_glare_zones:
             base = base.extend(
                 {
@@ -2859,7 +2866,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         errors: dict | None = None,
     ):
         """Render the create-flow sun-tracking form for the given FOV *mode*."""
-        schema = _get_sun_tracking_schema(self.type_blind, self.hass, mode)
+        schema = _get_sun_tracking_schema(
+            self.type_blind, self.hass, mode, source_config=self.config
+        )
         suggested = options_to_display(
             self.hass, values or self.config, length_keys=_SUN_TRACKING_LENGTH_KEYS
         )
@@ -3452,7 +3461,9 @@ class OptionsFlowHandler(OptionsFlow):
         errors: dict | None = None,
     ):
         """Render the sun-tracking form for the given FOV *mode* (#565)."""
-        schema = _get_sun_tracking_schema(self.sensor_type, self.hass, mode)
+        schema = _get_sun_tracking_schema(
+            self.sensor_type, self.hass, mode, source_config=self.options
+        )
         suggested = options_to_display(
             self.hass, values, length_keys=_SUN_TRACKING_LENGTH_KEYS
         )
