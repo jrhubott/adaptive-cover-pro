@@ -28,7 +28,10 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_LUX_ENTITY,
+    CONF_OUTSIDE_THRESHOLD,
     CONF_SENSOR_TYPE,
+    CONF_TEMP_HIGH,
+    CONF_TEMP_LOW,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
@@ -684,11 +687,40 @@ def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
     return "intermediate"
 
 
-def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
-    if s.data.diagnostics is None:
+def _round_threshold(value: float | None) -> float | None:
+    """Round a threshold value to 1 decimal place at the presentation boundary."""
+    if value is None:
         return None
+    return round(value, 1)
+
+
+def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any]:
+    """Return extra_state_attributes for the climate_status sensor.
+
+    Always returns a non-None dict so that threshold setpoints and
+    inactive_reason are visible even in standby (when diagnostics is None).
+    """
+    from .pipeline.handlers.climate import inactive_reason_from_result
+
+    opts = s.config_entry.options
+
+    # --- Threshold setpoints: always present, even in standby ---
+    # Read from config_entry.options — the canonical live source.
+    # Rounded to 1 decimal place at the sensor boundary (Display-Rounding rule).
+    attrs: dict[str, Any] = {
+        "temp_low": _round_threshold(opts.get(CONF_TEMP_LOW)),
+        "temp_high": _round_threshold(opts.get(CONF_TEMP_HIGH)),
+        "temp_summer_outside": _round_threshold(opts.get(CONF_OUTSIDE_THRESHOLD)),
+    }
+
+    # --- inactive_reason: always present ---
+    result = s.coordinator._pipeline_result  # noqa: SLF001
+    attrs["inactive_reason"] = inactive_reason_from_result(result)
+
+    # --- Active-state attributes (only when diagnostics are populated) ---
     diagnostics = s.data.diagnostics
-    attrs: dict[str, Any] = {}
+    if diagnostics is None:
+        return attrs
 
     active_temp = diagnostics.get("active_temperature")
     if active_temp is not None:
@@ -722,7 +754,7 @@ def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         if climate_conditions.get("irradiance_active") is not None:
             attrs["irradiance_active"] = climate_conditions["irradiance_active"]
 
-    return attrs or None
+    return attrs
 
 
 def _decision_trace_value(s: _ACPDiagnosticSensor) -> str:

@@ -821,6 +821,27 @@ class ControlStatus:
     MOTION_TIMEOUT = "motion_timeout"  # priority-75 handler fired
 
 
+class ClimateInactiveReason:
+    """Machine-readable slugs for why the climate handler is not driving.
+
+    Exposed as the ``inactive_reason`` attribute on the ``sensor.climate_status``
+    entity so downstream consumers (Lovelace card, automations) can branch on
+    structured values rather than parsing human-readable prose.
+
+    The card localises the slugs; do not rename without updating downstream
+    consumers.
+    """
+
+    ACTIVE = "active"  # climate handler is the winning pipeline handler
+    MODE_OFF = "mode_off"  # climate mode switch is disabled
+    OUTSIDE_TIME_WINDOW = (
+        "outside_time_window"  # reuses ControlStatus value — same concept
+    )
+    THRESHOLDS_NOT_MET = "thresholds_not_met"  # climate active, no season threshold hit (deferred)
+    OTHER_MODE_ACTIVE = "other_mode_active"  # outprioritized by a higher handler
+    READINGS_UNAVAILABLE = "readings_unavailable"  # sensors misconfigured/unavailable
+
+
 # =============================================================================
 # 24. Geometric Accuracy (calc engine)
 # =============================================================================

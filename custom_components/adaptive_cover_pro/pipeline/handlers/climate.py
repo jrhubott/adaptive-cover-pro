@@ -15,7 +15,7 @@ import numpy as np
 from ...cover_types import get_policy
 from ...cover_types.base import AXIS_NAME_TILT, CoverTypePolicy
 from ...engine.covers import AdaptiveTiltCover
-from ...const import ClimateStrategy, ControlMethod
+from ...const import ClimateInactiveReason, ClimateStrategy, ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
@@ -229,6 +229,95 @@ class ClimateCoverState:
 
 
 # ---------------------------------------------------------------------------
+# Inactive-reason slug derivation — shared by ClimateHandler and sensor.py
+# ---------------------------------------------------------------------------
+
+# Maps each ClimateInactiveReason slug to a human-readable prose string.
+# This is the single source of truth so that describe_skip and the slug helper
+# stay in sync without duplicating branch logic.
+_SLUG_TO_PROSE: dict[str, str] = {
+    ClimateInactiveReason.MODE_OFF: "climate mode not enabled",
+    ClimateInactiveReason.OUTSIDE_TIME_WINDOW: "outside time window",
+    ClimateInactiveReason.READINGS_UNAVAILABLE: "climate readings or options unavailable",
+    ClimateInactiveReason.THRESHOLDS_NOT_MET: "deferred glare-control to solar/glare handlers",
+    # ACTIVE and OTHER_MODE_ACTIVE have no describe_skip prose (handler wins / outprioritized)
+}
+
+# Reverse map for deriving a slug from a describe_skip prose string (sensor.py use).
+# Built once at module load from _SLUG_TO_PROSE — stays in sync automatically.
+_PROSE_TO_SLUG: dict[str, str] = {v: k for k, v in _SLUG_TO_PROSE.items()}
+
+
+def inactive_reason(
+    snapshot: PipelineSnapshot,
+    pipeline_result: PipelineResult | None,
+) -> str:
+    """Derive a ClimateInactiveReason slug from pipeline state.
+
+    Priority order mirrors the _build_climate_data gating so the slug and
+    the describe_skip prose always agree:
+
+        not in_time_window            → OUTSIDE_TIME_WINDOW
+        not climate_mode_enabled      → MODE_OFF
+        readings/options unavailable  → READINGS_UNAVAILABLE
+        climate step outprioritized   → OTHER_MODE_ACTIVE
+        climate step deferred         → THRESHOLDS_NOT_MET
+        climate handler won           → ACTIVE
+    """
+    # Time-window check takes precedence over mode-enabled check (mirrors
+    # _build_climate_data which returns None for outside-window first).
+    if not snapshot.in_time_window:
+        return ClimateInactiveReason.OUTSIDE_TIME_WINDOW
+
+    if not snapshot.climate_mode_enabled:
+        return ClimateInactiveReason.MODE_OFF
+
+    if snapshot.climate_readings is None or snapshot.climate_options is None:
+        return ClimateInactiveReason.READINGS_UNAVAILABLE
+
+    # Inspect the decision trace for the climate step.
+    if pipeline_result is not None:
+        for step in pipeline_result.decision_trace:
+            if step.handler == "climate":
+                if step.matched:
+                    return ClimateInactiveReason.ACTIVE
+                if step.reason.startswith("outprioritized by"):
+                    return ClimateInactiveReason.OTHER_MODE_ACTIVE
+                # Present but not matched and not outprioritized → deferred
+                return ClimateInactiveReason.THRESHOLDS_NOT_MET
+
+    # No climate step in trace (e.g. climate deferred without a trace entry)
+    return ClimateInactiveReason.THRESHOLDS_NOT_MET
+
+
+def inactive_reason_from_result(
+    pipeline_result: PipelineResult | None,
+) -> str:
+    """Derive a ClimateInactiveReason slug from a PipelineResult alone.
+
+    Used by sensor.py where no PipelineSnapshot is in scope.  Inspects the
+    decision_trace climate step and maps via _PROSE_TO_SLUG (the reverse of
+    the _SLUG_TO_PROSE map that describe_skip uses) — single source of truth.
+
+    Falls back to MODE_OFF when the result is None or has no climate step.
+    """
+    if pipeline_result is None:
+        return ClimateInactiveReason.MODE_OFF
+
+    for step in pipeline_result.decision_trace:
+        if step.handler == "climate":
+            if step.matched:
+                return ClimateInactiveReason.ACTIVE
+            if step.reason.startswith("outprioritized by"):
+                return ClimateInactiveReason.OTHER_MODE_ACTIVE
+            # Map the prose reason back to a slug via the reverse map.
+            return _PROSE_TO_SLUG.get(step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET)
+
+    # No climate step in trace → climate was never considered → mode off or not applicable.
+    return ClimateInactiveReason.MODE_OFF
+
+
+# ---------------------------------------------------------------------------
 # ClimateHandler
 # ---------------------------------------------------------------------------
 
@@ -336,11 +425,12 @@ class ClimateHandler(OverrideHandler):
         return {"climate_data": climate_data}
 
     def describe_skip(self, snapshot: PipelineSnapshot) -> str:
-        """Reason when climate handler does not match."""
-        if not snapshot.in_time_window:
-            return "outside time window"
-        if not snapshot.climate_mode_enabled:
-            return "climate mode not enabled"
-        if snapshot.climate_readings is None or snapshot.climate_options is None:
-            return "climate readings or options unavailable"
-        return "deferred glare-control to solar/glare handlers"
+        """Reason when climate handler does not match.
+
+        Delegates to the inactive_reason slug helper (single source of truth)
+        and maps each slug to its prose via _SLUG_TO_PROSE.  The other_mode_active
+        and active slugs never reach describe_skip (those paths win the handler),
+        so their prose entries are omitted from the map.
+        """
+        slug = inactive_reason(snapshot, pipeline_result=None)
+        return _SLUG_TO_PROSE.get(slug, slug)
