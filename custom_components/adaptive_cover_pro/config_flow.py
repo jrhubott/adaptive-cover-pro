@@ -2915,7 +2915,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="position",
             data_schema=POSITION_SCHEMA,
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
+                "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
             },
         )
 
@@ -3501,7 +3502,8 @@ class OptionsFlowHandler(OptionsFlow):
                 POSITION_SCHEMA, user_input or self.options
             ),
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
+                "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
             },
         )
 

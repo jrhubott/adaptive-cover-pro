@@ -311,7 +311,9 @@ def inactive_reason_from_result(
             if step.reason.startswith("outprioritized by"):
                 return ClimateInactiveReason.OTHER_MODE_ACTIVE
             # Map the prose reason back to a slug via the reverse map.
-            return _PROSE_TO_SLUG.get(step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET)
+            return _PROSE_TO_SLUG.get(
+                step.reason, ClimateInactiveReason.THRESHOLDS_NOT_MET
+            )
 
     # No climate step in trace → climate was never considered → mode off or not applicable.
     return ClimateInactiveReason.MODE_OFF
