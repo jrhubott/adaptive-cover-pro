@@ -35,6 +35,19 @@ if TYPE_CHECKING:
     from ..services.configuration_service import ConfigurationService
 
 
+def _as_optional(marker: vol.Marker) -> vol.Optional:
+    """Re-emit *marker* as ``vol.Optional``, preserving its default if any.
+
+    Used so the fov sliders are not ``vol.Required`` (#565): a Required field
+    triggers HA's frontend client-side "all required fields filled" check, which
+    can block the "Generate FOV from measurements" button's re-render submit. The
+    existing ``default`` callable is reused so no ``90`` literal is duplicated.
+    """
+    if marker.default is vol.UNDEFINED:
+        return vol.Optional(str(marker))
+    return vol.Optional(str(marker), default=marker.default)
+
+
 # ---------------------------------------------------------------------------
 # Axis-related string constants
 # ---------------------------------------------------------------------------
@@ -185,31 +198,48 @@ class CoverTypePolicy(ABC):
     # in ``config_flow._build_custom_position_schema_dict``.
     custom_position_includes_tilt: ClassVar[bool] = False
 
-    # Whether the sun-tracking step exposes the two-mode FOV selector (#565):
-    # "Angles" (manual fov_left/right sliders) vs "Measurements" (FOV derived
-    # from window width + reveal depth). Only meaningful for vertical blinds —
-    # awnings/tilt always use the plain fov sliders. BlindPolicy flips this on
-    # and overrides ``fov_mode_schema`` to do the per-mode field shaping.
-    supports_fov_mode: ClassVar[bool] = False
+    # Whether the sun-tracking step exposes the "Generate FOV from measurements"
+    # button (#565) — a toggle that fills fov_left/right from the window width +
+    # reveal depth. Set on the cover types that carry window geometry (vertical
+    # blinds + venetians); awnings/tilt keep the plain fov sliders.
+    supports_fov_compute: ClassVar[bool] = False
 
-    def fov_mode_schema(
-        self,
-        base: vol.Schema,
-        mode: str | None = None,  # noqa: ARG002
-        *,
-        source_config: dict | None = None,  # noqa: ARG002
-    ) -> vol.Schema:
-        """Shape the sun-tracking schema's FOV fields for the given mode.
+    def fov_compute_schema(self, base: vol.Schema) -> vol.Schema:
+        """Insert the "Generate FOV from measurements" toggle before the sliders.
 
-        The default (every cover type except vertical blinds) returns *base*
-        unchanged — no mode selector, plain fov_left/right sliders. BlindPolicy
-        overrides this to insert the mode selector and, in Measurements mode,
-        show the fov sliders pre-populated with the derived angle as a
-        suggested_value so the user can override either angle independently.
-        Keeping the logic on the policy keeps cover-type branching inside
-        ``cover_types/`` (cover-type-abstraction guideline).
+        Returns *base* unchanged unless this policy sets
+        ``supports_fov_compute``. When it does, the ``CONF_FOV_COMPUTE`` toggle
+        is inserted immediately before the ``fov_left``/``fov_right`` sliders.
+        The toggle is a transient button: ticking it fills the sliders from the
+        window width + reveal depth on submit (handled in
+        ``config_flow._resolve_fov_compute_submit``), after which the form
+        re-renders un-ticked with the sliders populated. The sliders are always
+        shown and editable; they are made ``vol.Optional`` so the frontend
+        Required check never blocks the button's re-render submit (#565). Shared
+        here so vertical blinds and venetians get identical behaviour with no
+        duplication.
         """
-        return base
+        if not self.supports_fov_compute:
+            return base
+        from .. import config_fields as cf
+        from ..const import CONF_FOV_COMPUTE, CONF_FOV_LEFT, CONF_FOV_RIGHT
+
+        spec = cf.FIELD_SPECS[CONF_FOV_COMPUTE]
+        toggle_marker, toggle_selector = spec.to_marker(None, None)
+
+        rebuilt: dict = {}
+        inserted = False
+        for marker, sel in base.schema.items():
+            if str(marker) in (CONF_FOV_LEFT, CONF_FOV_RIGHT):
+                if not inserted:
+                    rebuilt[toggle_marker] = toggle_selector
+                    inserted = True
+                rebuilt[_as_optional(marker)] = sel
+                continue
+            rebuilt[marker] = sel
+        if not inserted:
+            rebuilt[toggle_marker] = toggle_selector
+        return vol.Schema(rebuilt)
 
     @abstractmethod
     def build_calc_engine(

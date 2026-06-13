@@ -79,7 +79,7 @@
       },
       "sun_tracking": {
         "title": "Suivi du soleil",
-        "description": "Définissez la direction boussole de votre fenêtre et la plage angulaire où le soleil est visible. L'intégration suit le soleil dans ce champ de vision et maintient la protection à sa position par défaut lorsque le soleil est en dehors de celui-ci.\n\n**Azimut** est l'orientation boussole vers laquelle votre fenêtre fait face (0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest). **FOV** définit la distance à gauche et à droite du centre suivie par le soleil. **Limites d'élévation** filtrent les angles très bas (éblouissement au lever du soleil) ou très hauts (zénith) où le blocage peut ne pas être nécessaire.\n\n[Learn more]({learn_more})",
+        "description": "Définissez la direction de votre fenêtre par rapport au nord magnétique et la plage angulaire où le soleil est visible. L'intégration suit le soleil dans ce champ de vision et maintient la couverture à sa position par défaut lorsque le soleil sort de ce champ.\n\n**Azimut** est le relèvement du compas auquel fait face votre fenêtre (0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest). **Champ de vision** définit jusqu'où à gauche et à droite du centre le soleil est suivi. Définissez les angles gauche et droit directement, ou activez **Générer le champ de vision à partir des mesures** pour les remplir à partir de la largeur de la fenêtre et de la profondeur de tableau (définis sur la page Géométrie de la couverture) — vous pouvez ensuite affiner l'un ou l'autre angle. **Limites d'élévation** éliminent les angles très bas (éblouissement du lever de soleil) ou très élevés (zénith) où le blocage peut ne pas être nécessaire.\n\n{computed_fov}\n\n[En savoir plus]({learn_more})",
         "data": {
           "enable_sun_tracking": "Activer le suivi du soleil",
           "set_azimuth": "Azimut de la fenêtre",
@@ -92,7 +92,7 @@
           "distance_shaded_area": "Zone ombragée",
           "minimize_movements": "Minimiser les mouvements",
           "max_coverage_steps": "Étapes de couverture maximale",
-          "fov_mode": "Définir le champ de vision par"
+          "fov_compute": "Générer le champ de vision à partir des mesures"
         },
         "data_description": {
           "enable_sun_tracking": "Lorsqu'il est activé, les stores suivent le soleil dans les limites de FOV et d'élévation configurées (positionnement solaire). Désactivez pour ignorer le positionnement solaire basé sur la distance tout en gardant les zones d'éblouissement (contrôlées par leur propre commutateur), le climat, le mouvement, la dérogation manuelle, les positions personnalisées et autres dérogations actifs. Par défaut : activé.",
@@ -106,7 +106,7 @@
           "distance_shaded_area": "Jusqu'où vous souhaitez AUTORISER la lumière directe du soleil à pénétrer dans la pièce. Affichée dans l'unité configurée pour Home Assistant. Cela définit votre « zone d'éblouissement » acceptable — la zone où la lumière du soleil peut atteindre le sol. La position de la store s'ajuste pour maintenir cette limite alors que le soleil se déplace dans le ciel. Configurations courantes : Zéro (0 m / 0 in) empêche la lumière directe du soleil de dépasser le plan de vitre (fermeture complète les jours chauds) ; Petite zone d'éblouissement (0,3–0,5 m / 12–20 in) garde le soleil très près de la fenêtre ; Zone d'éblouissement moyenne (0,5–1,0 m / 20–40 in) permet au soleil d'atteindre le bureau ou la zone de repos ; Grande zone d'éblouissement (2,0–3,0 m / 79–118 in) permet à la lumière du soleil de pénétrer profondément dans la pièce. CONCEPT CLÉ : PLUS GRANDE valeur = PLUS de lumière du soleil autorisée plus profondément dans la pièce = la store reste PLUS HAUTE/PLUS OUVERTE ; PLUS PETITE valeur = MOINS de lumière du soleil dans la pièce = la store descend PLUS BAS/PLUS FERMÉE. Mesurez de l'intérieur de votre fenêtre jusqu'au point où vous souhaitez que la limite solaire se situe.",
           "minimize_movements": "Réduire la fréquence de repositionnement de la protection lors du suivi du soleil en s'accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. Arrondit vers PLUS de couverture, donc le soleil direct ne s'échappe jamais de l'arrondi. Échange un peu de lumière naturelle contre beaucoup moins de mouvements moteurs. Par défaut : désactivé.",
           "max_coverage_steps": "Nombre de positions distinctes que la protection peut utiliser pour atteindre la couverture complète lorsque « Minimiser les mouvements » est activé (1-10). 1 = sauter directement à la couverture complète dès que le soleil entre dans le champ de vision et rester là jusqu'à ce qu'il quitte (mouvements les moins nombreux). Les valeurs plus élevées suivent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
-          "fov_mode": "Comment le champ de vision gauche/droite est défini. **Par angles** (par défaut) conserve les curseurs manuels ci-dessous. **À partir de mesures** masque les curseurs et dérive un champ de vision symétrique à partir de la largeur de la fenêtre et de la profondeur de tableau — la profondeur de tableau est mesurée à partir de la face extérieure du mur, où la store est réellement situé. Définissez la largeur de la fenêtre et la profondeur de tableau sur la page Géométrie de la couverture ; le champ de vision calculé s'affiche ci-dessus."
+          "fov_compute": "Remplit les champs de vision gauche/droit ci-dessous à partir de la largeur de la fenêtre et de la profondeur de tableau — la profondeur de tableau est mesurée depuis le parement extérieur du mur, où se trouve la couverture. Définissez la largeur de la fenêtre et la profondeur de tableau sur la page Géométrie de la couverture (la valeur calculée est affichée en aperçu ci-dessus), puis activez cette option et soumettez pour l'appliquer. Les curseurs restent modifiables, vous pouvez donc ajuster l'un ou l'autre angle par la suite."
         }
       },
       "position": {
@@ -643,7 +643,7 @@
       },
       "sun_tracking": {
         "title": "Suivi du soleil",
-        "description": "Définissez la direction boussole de votre fenêtre et la plage angulaire où le soleil est visible. L'intégration suit le soleil dans ce champ de vision et maintient la protection à sa position par défaut lorsque le soleil est en dehors de celui-ci.\n\n**Azimut** est l'orientation boussole vers laquelle votre fenêtre fait face (0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest). **FOV** définit la distance à gauche et à droite du centre suivie par le soleil. **Limites d'élévation** filtrent les angles très bas (éblouissement au lever du soleil) ou très hauts (zénith) où le blocage peut ne pas être nécessaire.\n\n[Learn more]({learn_more})",
+        "description": "Définissez la direction de votre fenêtre par rapport au nord magnétique et la plage angulaire où le soleil est visible. L'intégration suit le soleil dans ce champ de vision et maintient la couverture à sa position par défaut lorsque le soleil sort de ce champ.\n\n**Azimut** est le relèvement du compas auquel fait face votre fenêtre (0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest). **Champ de vision** définit jusqu'où à gauche et à droite du centre le soleil est suivi. Définissez les angles gauche et droit directement, ou activez **Générer le champ de vision à partir des mesures** pour les remplir à partir de la largeur de la fenêtre et de la profondeur de tableau (définis sur la page Géométrie de la couverture) — vous pouvez ensuite affiner l'un ou l'autre angle. **Limites d'élévation** éliminent les angles très bas (éblouissement du lever de soleil) ou très élevés (zénith) où le blocage peut ne pas être nécessaire.\n\n{computed_fov}\n\n[En savoir plus]({learn_more})",
         "data": {
           "enable_sun_tracking": "Activer le suivi du soleil",
           "set_azimuth": "Azimut de la fenêtre",
@@ -656,7 +656,7 @@
           "distance_shaded_area": "Zone ombragée",
           "minimize_movements": "Minimiser les mouvements",
           "max_coverage_steps": "Étapes de couverture maximale",
-          "fov_mode": "Définir le champ de vision par"
+          "fov_compute": "Générer le champ de vision à partir des mesures"
         },
         "data_description": {
           "enable_sun_tracking": "Lorsqu'il est activé, les stores suivent le soleil dans les limites de FOV et d'élévation configurées (positionnement solaire). Désactivez pour ignorer le positionnement solaire basé sur la distance tout en gardant les zones d'éblouissement (contrôlées par leur propre commutateur), le climat, le mouvement, la dérogation manuelle, les positions personnalisées et autres dérogations actifs. Par défaut : activé.",
@@ -670,7 +670,7 @@
           "distance_shaded_area": "Jusqu'où vous souhaitez AUTORISER la lumière directe du soleil à pénétrer dans la pièce. Affichée dans l'unité configurée pour Home Assistant. Cela définit votre « zone d'éblouissement » acceptable — la zone où la lumière du soleil peut atteindre le sol. La position de la store s'ajuste pour maintenir cette limite alors que le soleil se déplace dans le ciel. Configurations courantes : Zéro (0 m / 0 in) empêche la lumière directe du soleil de dépasser le plan de vitre (fermeture complète les jours chauds) ; Petite zone d'éblouissement (0,3–0,5 m / 12–20 in) garde le soleil très près de la fenêtre ; Zone d'éblouissement moyenne (0,5–1,0 m / 20–40 in) permet au soleil d'atteindre le bureau ou la zone de repos ; Grande zone d'éblouissement (2,0–3,0 m / 79–118 in) permet à la lumière du soleil de pénétrer profondément dans la pièce. CONCEPT CLÉ : PLUS GRANDE valeur = PLUS de lumière du soleil autorisée plus profondément dans la pièce = la store reste PLUS HAUTE/PLUS OUVERTE ; PLUS PETITE valeur = MOINS de lumière du soleil dans la pièce = la store descend PLUS BAS/PLUS FERMÉE. Mesurez de l'intérieur de votre fenêtre jusqu'au point où vous souhaitez que la limite solaire se situe.",
           "minimize_movements": "Réduire la fréquence de repositionnement de la protection lors du suivi du soleil en s'accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. Arrondit vers PLUS de couverture, donc le soleil direct ne s'échappe jamais de l'arrondi. Échange un peu de lumière naturelle contre beaucoup moins de mouvements moteurs. Par défaut : désactivé.",
           "max_coverage_steps": "Nombre de positions distinctes que la protection peut utiliser pour atteindre la couverture complète lorsque « Minimiser les mouvements » est activé (1-10). 1 = sauter directement à la couverture complète dès que le soleil entre dans le champ de vision et rester là jusqu'à ce qu'il quitte (mouvements les moins nombreux). Les valeurs plus élevées suivent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
-          "fov_mode": "Comment le champ de vision gauche/droite est défini. **Par angles** (par défaut) conserve les curseurs manuels ci-dessous. **À partir de mesures** masque les curseurs et dérive un champ de vision symétrique à partir de la largeur de la fenêtre et de la profondeur de tableau — la profondeur de tableau est mesurée à partir de la face extérieure du mur, où la store est réellement situé. Définissez la largeur de la fenêtre et la profondeur de tableau sur la page Géométrie de la couverture ; le champ de vision calculé s'affiche ci-dessus."
+          "fov_compute": "Remplit les champs de vision gauche/droit ci-dessous à partir de la largeur de la fenêtre et de la profondeur de tableau — la profondeur de tableau est mesurée depuis le parement extérieur du mur, où se trouve la couverture. Définissez la largeur de la fenêtre et la profondeur de tableau sur la page Géométrie de la couverture (la valeur calculée est affichée en aperçu ci-dessus), puis activez cette option et soumettez pour l'appliquer. Les curseurs restent modifiables, vous pouvez donc ajuster l'un ou l'autre angle par la suite."
         }
       },
       "position": {
@@ -1243,12 +1243,6 @@
       "options": {
         "return_to_default": "Retourner à la position par défaut",
         "hold_position": "Maintenir la position actuelle"
-      }
-    },
-    "fov_mode": {
-      "options": {
-        "angles": "Par angles (définir directement le champ de vision gauche/droite)",
-        "measurements": "À partir de mesures (dériver le champ de vision à partir de la largeur de la fenêtre et de la profondeur de tableau)"
       }
     },
     "template_combine_mode": {

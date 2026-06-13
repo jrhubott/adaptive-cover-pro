@@ -79,13 +79,13 @@
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Choose **By angles** to set the field of view directly, or **From measurements** to derive it from the window width and reveal depth. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n{computed_fov}\n\n[Learn more]({learn_more})",
+        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n{computed_fov}\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
           "minimize_movements": "Minimize movements",
           "max_coverage_steps": "Maximum coverage steps",
           "set_azimuth": "Window Azimuth",
-          "fov_mode": "Define field of view by",
+          "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
           "fov_right": "Field of view right",
           "min_elevation": "Minimum Elevation of the sun",
@@ -96,7 +96,7 @@
         },
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
-          "fov_mode": "How the left/right field of view is set. **By angles** (default) keeps the manual sliders below. **From measurements** hides the sliders and derives a symmetric field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the actual cover is located. Set the window width and reveal depth on the Cover Geometry page; the computed field of view is shown above.",
+          "fov_compute": "Fills the left/right field of view below from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page (the computed value is previewed above), then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
           "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
           "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
@@ -643,13 +643,13 @@
       },
       "sun_tracking": {
         "title": "Sun Tracking",
-        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Choose **By angles** to set the field of view directly, or **From measurements** to derive it from the window width and reveal depth. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n{computed_fov}\n\n[Learn more]({learn_more})",
+        "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n{computed_fov}\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
           "minimize_movements": "Minimize movements",
           "max_coverage_steps": "Maximum coverage steps",
           "set_azimuth": "Window Azimuth",
-          "fov_mode": "Define field of view by",
+          "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
           "fov_right": "Field of view right",
           "min_elevation": "Minimum Elevation of the sun",
@@ -660,7 +660,7 @@
         },
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
-          "fov_mode": "How the left/right field of view is set. **By angles** (default) keeps the manual sliders below. **From measurements** hides the sliders and derives a symmetric field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the actual cover is located. Set the window width and reveal depth on the Cover Geometry page; the computed field of view is shown above.",
+          "fov_compute": "Fills the left/right field of view below from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page (the computed value is previewed above), then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
           "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
           "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
@@ -1199,12 +1199,6 @@
       "options": {
         "mode1": "single direction (0% = closed / 100% = open)",
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
-      }
-    },
-    "fov_mode": {
-      "options": {
-        "angles": "By angles (set left/right field of view directly)",
-        "measurements": "From measurements (derive field of view from window width and reveal depth)"
       }
     },
     "template_combine_mode": {

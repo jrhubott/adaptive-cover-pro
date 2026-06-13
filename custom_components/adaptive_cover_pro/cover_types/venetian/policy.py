@@ -166,6 +166,11 @@ class VenetianPolicy(CoverTypePolicy, register=True):
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS, TILT_AXIS)
     exposes_dual_axis_sensor: ClassVar[bool] = True
     custom_position_includes_tilt: ClassVar[bool] = True
+    # Venetians carry the same window geometry (width + reveal depth) and fov
+    # sliders as vertical blinds, so they get the "Generate FOV from
+    # measurements" button too (#565). The toggle is inserted by the shared
+    # ``fov_compute_schema`` on the base policy.
+    supports_fov_compute: ClassVar[bool] = True
 
     def extra_field_keys(self, section: str) -> tuple[str, ...]:
         """Venetians add per-slot + global tilt fields to custom position."""
