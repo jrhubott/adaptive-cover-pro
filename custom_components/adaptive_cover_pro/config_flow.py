@@ -2563,20 +2563,23 @@ def _sun_tracking_placeholders(
     Always includes ``learn_more``. For cover types with the FOV-from-
     measurements button (#565) it adds a read-only ``computed_fov`` preview of
     the angle the button would produce from the window width + reveal depth, so
-    the user sees it before pressing. Shown only when a reveal depth is set —
-    with a flush window (depth 0) there is nothing to derive.
+    the user sees it before pressing — rendered in the button's own help text
+    (``data_description.fov_compute``), which receives the same placeholders.
+
+    The preview is shown for *every* depth, including a flush window (depth 0):
+    that is not "nothing to derive" — ``fov_from_reveal`` returns the full
+    hemisphere (90°/90°) there, which is the correct, informative answer. Only
+    cover types without the button get an empty ``computed_fov``.
     """
-    # ``computed_fov`` is referenced unconditionally in the step description
-    # template, so it must always be present — empty string when there is no
-    # preview to show (HA raises if a referenced placeholder is missing).
+    # ``computed_fov`` is referenced unconditionally in the template, so it must
+    # always be present — empty string for cover types without the button (HA
+    # raises if a referenced placeholder is missing).
     computed = ""
     if _fov_compute_supported(sensor_type):
-        depth = source_config.get(CONF_WINDOW_DEPTH)
-        if depth is not None and float(depth) > 0:
-            computed = computed_fov_line(
-                source_config.get(CONF_WINDOW_WIDTH),
-                depth,
-            )
+        computed = computed_fov_line(
+            source_config.get(CONF_WINDOW_WIDTH),
+            source_config.get(CONF_WINDOW_DEPTH),
+        )
     return {"learn_more": _SUN_TRACKING_WIKI, "computed_fov": computed}
 
 

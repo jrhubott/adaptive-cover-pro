@@ -18,6 +18,7 @@ from custom_components.adaptive_cover_pro.config_flow import (
     ConfigFlowHandler,
     OptionsFlowHandler,
     _get_sun_tracking_schema,
+    _sun_tracking_placeholders,
 )
 from custom_components.adaptive_cover_pro.const import (
     CONF_DISTANCE,
@@ -40,6 +41,38 @@ def _suggested(result, key):
         if str(m) == key and m.description:
             return m.description.get("suggested_value")
     raise AssertionError(f"no suggested_value for {key!r}")
+
+
+# ----------------------------------------------------------------------------
+# Computed-FOV preview placeholder (rendered in the fov_compute help text, #565)
+# ----------------------------------------------------------------------------
+
+
+def test_preview_shows_hemisphere_at_zero_depth():
+    # A flush window (depth 0, the default) is not "nothing to derive" — it is
+    # the full hemisphere, 90°/90°. The preview must always render, never be
+    # blank, so the button's help text fulfils its "computed value" promise.
+    ph = _sun_tracking_placeholders(
+        CoverType.BLIND, {CONF_WINDOW_WIDTH: 0, CONF_WINDOW_DEPTH: 0}
+    )
+    assert "90°/90°" in ph["computed_fov"]
+
+
+def test_preview_narrows_with_reveal_depth():
+    # width 2.0 / depth 0.5 → atan(4) ≈ 76°.
+    ph = _sun_tracking_placeholders(
+        CoverType.BLIND, {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}
+    )
+    assert "76°/76°" in ph["computed_fov"]
+
+
+def test_preview_empty_for_type_without_button():
+    # Awnings have no FOV-from-measurements button → no computed preview, but
+    # the placeholder key is still present (HA raises on a missing reference).
+    ph = _sun_tracking_placeholders(
+        CoverType.AWNING, {CONF_WINDOW_WIDTH: 2.0, CONF_WINDOW_DEPTH: 0.5}
+    )
+    assert ph["computed_fov"] == ""
 
 
 # ----------------------------------------------------------------------------
