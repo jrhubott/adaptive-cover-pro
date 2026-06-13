@@ -53,7 +53,6 @@ from custom_components.adaptive_cover_pro.sensor import (
     AdaptiveCoverClimateStatusSensor,
     AdaptiveCoverControlStatusSensor,
     AdaptiveCoverDecisionTraceSensor,
-    AdaptiveCoverForceOverrideTriggerSensor,
     AdaptiveCoverLastActionSensor,
     AdaptiveCoverLastSkippedActionSensor,
     AdaptiveCoverManualOverrideEndSensor,
@@ -158,9 +157,6 @@ ENTITY_FACTORIES: dict[type, object] = {
     ),
     AdaptiveCoverMotionStatusSensor: lambda: _std_sensor_factory(
         AdaptiveCoverMotionStatusSensor
-    ),
-    AdaptiveCoverForceOverrideTriggerSensor: lambda: _std_sensor_factory(
-        AdaptiveCoverForceOverrideTriggerSensor
     ),
     AdaptiveCoverDecisionTraceSensor: lambda: _std_sensor_factory(
         AdaptiveCoverDecisionTraceSensor

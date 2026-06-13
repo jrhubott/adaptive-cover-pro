@@ -22,8 +22,10 @@ from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from .const import (
-    CONF_DEFAULT_HEIGHT,
-    DEFAULT_DEFAULT_HEIGHT,
+    CONF_MAX_COVERAGE_STEPS,
+    CONF_MINIMIZE_MOVEMENTS,
+    DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MINIMIZE_MOVEMENTS,
     EVENT_FOV_ENTER,
     EVENT_FOV_EXIT,
     EVENT_SUNRISE,
@@ -31,9 +33,16 @@ from .const import (
     FORECAST_STEP_MINUTES,
     SUN_DATA_STEP_SECONDS,
 )
+from .helpers import compute_effective_default
+from .pipeline.helpers import (
+    default_position_with_limits,
+    solar_position_from_geometry,
+)
 
 if TYPE_CHECKING:
+    from .config_types import CoverConfig
     from .coordinator import AdaptiveDataUpdateCoordinator
+    from .cover_types.base import CoverTypePolicy
     from .engine.covers.base import AdaptiveGeneralCover
     from .sun import SunData
 
@@ -85,15 +94,27 @@ def build_forecast(
     *,
     sun_data: SunData,
     cover_factory: Callable[[float, float], AdaptiveGeneralCover],
-    default_position: int,
+    config: CoverConfig,
+    policy: CoverTypePolicy | None = None,
     now: datetime,
     step_minutes: int = FORECAST_STEP_MINUTES,
+    minimize_movements: bool = False,
+    max_coverage_steps: int = 1,
+    floor_active: bool = True,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
     Walks the full local calendar day (00:00 → 24:00) using the solar position
     table already stored in *sun_data*, so the companion card's elevation chart
     and sample strip share the same time axis.
+
+    Each sample's position is computed through the **same** shared primitives
+    the live pipeline uses (``solar_position_from_geometry`` /
+    ``default_position_with_limits`` in :mod:`pipeline.helpers`), so the
+    forecast strip matches what the cover is actually commanded to — including
+    min/max position limits, the 1 % floor, movement minimization, and the
+    sunset-aware effective default. *config* and *policy* supply everything
+    those primitives need.
 
     ``cover_factory`` is a closure that builds a cover engine for an
     arbitrary (sol_azi, sol_elev) pair; the caller is responsible for
@@ -108,8 +129,12 @@ def build_forecast(
     samples = _build_samples(
         sun_data=sun_data,
         cover_factory=cover_factory,
-        default_position=default_position,
+        config=config,
+        policy=policy,
         step_minutes=step_minutes,
+        minimize_movements=minimize_movements,
+        max_coverage_steps=max_coverage_steps,
+        floor_active=floor_active,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -121,8 +146,12 @@ def _build_samples(
     *,
     sun_data: SunData,
     cover_factory: Callable[[float, float], AdaptiveGeneralCover],
-    default_position: int,
+    config: CoverConfig,
+    policy: CoverTypePolicy | None = None,
     step_minutes: int,
+    minimize_movements: bool = False,
+    max_coverage_steps: int = 1,
+    floor_active: bool = True,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -130,6 +159,19 @@ def _build_samples(
     ``times[-1]`` (next midnight 24:00) as the loop end, so the sample
     strip always covers the same 24-hour window as the companion card's
     elevation chart regardless of what time ``build_forecast`` is called.
+
+    Each sample routes through the same ``pipeline.helpers`` primitives the live
+    pipeline uses, so positions are identical to runtime. The effective default
+    (and whether the sunset position is active) is recomputed at *each sample's*
+    time via :func:`compute_effective_default`, mirroring the live snapshot
+    builder rather than holding a static default. Note: the forecast projects
+    solar tracking whenever the sun is in the FOV regardless of the
+    ``enable_sun_tracking`` toggle — the card's purpose is to show where the
+    cover *would* sit, so that mode gate is deliberately not applied here.
+    For the same reason the operational start/end-time window is not modeled,
+    so ``compute_effective_default`` is called without ``window_explicitly_started``
+    (defaults False) — the night position is governed purely by the
+    astronomical sunset/sunrise window at each sample time.
     """
     times = list(sun_data.times)
     azis = list(sun_data.solar_azimuth)
@@ -156,15 +198,30 @@ def _build_samples(
         # and every sample collapses to the default position (issue #516).
         cover.eval_time = t
         if cover.direct_sun_valid:
-            samples.append(
-                ForecastSample(
-                    t=t, position=int(cover.calculate_percentage()), handler="solar"
-                )
+            pos = solar_position_from_geometry(
+                cover,
+                config,
+                minimize_movements=minimize_movements,
+                max_coverage_steps=max_coverage_steps,
+                policy=policy,
+                floor_active=floor_active,
             )
+            samples.append(ForecastSample(t=t, position=pos, handler="solar"))
         else:
-            samples.append(
-                ForecastSample(t=t, position=int(default_position), handler="default")
+            # Sunset-aware effective default at this sample's projected time,
+            # then the same limit treatment the live default branch applies.
+            eff_default, is_sunset = compute_effective_default(
+                config.h_def,
+                config.sunset_pos,
+                sun_data,
+                config.sunset_off,
+                config.sunrise_off,
+                eval_time=t,
             )
+            pos = default_position_with_limits(
+                eff_default, config, is_sunset_active=is_sunset
+            )
+            samples.append(ForecastSample(t=t, position=pos, handler="default"))
         t += step
     return samples
 
@@ -308,9 +365,29 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
             options=options,
         )
 
+    # Sun-tracking floor rollup (#569): mirror the live snapshot builder so the
+    # forecast strip matches what the cover is actually commanded to. The floor
+    # is off only when every bound entity supports the policy's position axis;
+    # missing caps (snapshot not built yet) default to floor active.
+    caps = getattr(coord._snapshot, "cover_capabilities", None) or {}  # noqa: SLF001
+    all_positionable = bool(caps) and all(
+        coord._policy.position_axis_supported(c) for c in caps.values()  # noqa: SLF001
+    )
+
+    # The coverage direction the primitives need is read from the policy's
+    # primary axis (single source of truth), so the shim passes the policy
+    # straight through rather than precomputing full_coverage_at_zero.
     return build_forecast(
         sun_data=sun_data,
         cover_factory=make_cover,
-        default_position=int(options.get(CONF_DEFAULT_HEIGHT, DEFAULT_DEFAULT_HEIGHT)),
+        config=config,
+        policy=coord._policy,  # noqa: SLF001
         now=dt_util.now(),
+        minimize_movements=bool(
+            options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
+        ),
+        max_coverage_steps=int(
+            options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+        ),
+        floor_active=not all_positionable,
     )

@@ -34,8 +34,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_END_TIME,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
-    CONF_FORCE_OVERRIDE_POSITION,
-    CONF_FORCE_OVERRIDE_SENSORS,
     CONF_HEIGHT_WIN,
     CONF_INTERP,
     CONF_INVERSE_STATE,
@@ -54,6 +52,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MOTION_SENSORS,
+    CONF_MOTION_TEMPLATE,
     CONF_MOTION_TIMEOUT,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
@@ -141,8 +140,10 @@ def _full_vertical() -> dict:
             CONF_MANUAL_OVERRIDE_RESET: True,
             CONF_MOTION_SENSORS: ["binary_sensor.motion_1", "binary_sensor.motion_2"],
             CONF_MOTION_TIMEOUT: 300,
-            CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind_alert"],
-            CONF_FORCE_OVERRIDE_POSITION: 100,
+            # Safety-priority slot 5 — the merged force override (issue #563)
+            "custom_position_sensors_5": ["binary_sensor.wind_alert"],
+            "custom_position_5": 100,
+            "custom_position_priority_5": 100,
             CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind_speed",
             CONF_WEATHER_WIND_SPEED_THRESHOLD: 50,
             CONF_WEATHER_RAIN_SENSOR: "sensor.rain_rate",
@@ -230,6 +231,31 @@ def test_dry_run_banner_absent_when_disabled():
         {CONF_DRY_RUN: False}, CoverType.BLIND
     )
     assert "Dry-run mode" not in _build_config_summary({}, CoverType.BLIND)
+
+
+def test_summary_shows_position_matching_on_when_enabled():
+    """Enabling matching surfaces the 'on' line in the summary (issue #591)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_POSITION_MATCHING,
+    )
+
+    summary = _build_config_summary(
+        {CONF_ENABLE_POSITION_MATCHING: True}, CoverType.BLIND
+    )
+    assert "Position matching on" in summary
+    assert "Position matching off" not in summary
+
+
+def test_summary_shows_position_matching_off_by_default():
+    """Default/unset → matching is off, summary shows the 'off' line (issue #591)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_POSITION_MATCHING,
+    )
+
+    for cfg in ({CONF_ENABLE_POSITION_MATCHING: False}, {}):
+        summary = _build_config_summary(cfg, CoverType.BLIND)
+        assert "Position matching off" in summary
+        assert "Position matching on" not in summary
 
 
 def test_entity_included_in_your_cover():
@@ -424,6 +450,63 @@ def test_sun_tracking_elevation_shown_when_set():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "above 5°" in summary
     assert "below 70°" in summary
+
+
+def test_minimize_movements_omitted_when_disabled():
+    """No minimize-movements line when the feature is off (default)."""
+    summary = _build_config_summary({CONF_AZIMUTH: 180}, CoverType.BLIND)
+    assert "Minimize movements" not in summary
+
+
+def test_minimize_movements_single_step():
+    """N=1 surfaces the 'straight to full coverage' wording."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_COVERAGE_STEPS,
+        CONF_MINIMIZE_MOVEMENTS,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_MINIMIZE_MOVEMENTS: True,
+        CONF_MAX_COVERAGE_STEPS: 1,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Minimize movements" in summary
+    assert "full coverage" in summary
+    assert "1 step" in summary
+
+
+def test_minimize_movements_multi_step():
+    """N>1 surfaces the step count."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MAX_COVERAGE_STEPS,
+        CONF_MINIMIZE_MOVEMENTS,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_MINIMIZE_MOVEMENTS: True,
+        CONF_MAX_COVERAGE_STEPS: 3,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Minimize movements" in summary
+    assert "up to 3 steps" in summary
+
+
+def test_minimize_movements_absent_when_sun_tracking_disabled():
+    """The line lives under the ☀️ tracking branch; gone when tracking is off."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENABLE_SUN_TRACKING,
+        CONF_MINIMIZE_MOVEMENTS,
+    )
+
+    cfg = {
+        CONF_AZIMUTH: 180,
+        CONF_ENABLE_SUN_TRACKING: False,
+        CONF_MINIMIZE_MOVEMENTS: True,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Minimize movements" not in summary
 
 
 # ---------------------------------------------------------------------------
@@ -991,16 +1074,19 @@ def test_force_override_section_hidden_when_no_sensors():
     assert "Force override" not in summary
 
 
-def test_force_override_shown_with_position():
-    """Force override bullet appears with sensor count and position."""
+def test_safety_priority_slot_shown_with_position():
+    """A priority-100 slot renders with multi-sensor trigger, position, safety note."""
     cfg = {
-        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
-        CONF_FORCE_OVERRIDE_POSITION: 100,
+        "custom_position_sensors_5": ["binary_sensor.wind", "binary_sensor.hail"],
+        "custom_position_5": 100,
+        "custom_position_priority_5": 100,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "Force override" in summary
+    assert "Custom #5" in summary
+    assert "any of 2 sensors" in summary
     assert "100%" in summary
-    assert "overrides everything else" in summary
+    assert "safety: acts outside the time window" in summary
+    assert "[100]" in summary
 
 
 # ---------------------------------------------------------------------------
@@ -1135,20 +1221,22 @@ def test_priority_always_on_handlers_active():
     assert "✅Default" in summary
 
 
-def test_priority_force_override_active_with_sensors():
-    """Force Override shows ✅ when sensors are configured."""
+def test_priority_safety_slot_in_chain():
+    """A priority-100 slot appears at the head of the priority chain."""
     cfg = {
-        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.wind"],
-        CONF_FORCE_OVERRIDE_POSITION: 100,
+        "custom_position_sensors_5": ["binary_sensor.wind"],
+        "custom_position_5": 100,
+        "custom_position_priority_5": 100,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    assert "✅Force" in summary
+    assert "✅Custom#5(100)" in summary
 
 
-def test_priority_force_override_not_configured():
-    """Force Override shows ❌ when no sensors are set."""
+def test_priority_no_force_entry_remains():
+    """The standalone Force chain entry is gone (merged into custom slots, #563)."""
     summary = _build_config_summary({}, CoverType.BLIND)
-    assert "❌Force" in summary
+    assert "Force" not in summary
+    assert "Custom#" not in summary
 
 
 def test_priority_weather_override_active_with_sensors():
@@ -1219,7 +1307,7 @@ def test_priority_all_nine_handlers_full_config():
     cfg = _full_vertical()
     summary = _build_config_summary(cfg, CoverType.BLIND)
     for token in [
-        "✅Force",
+        "✅Custom#5(100)",
         "✅Weather",
         "✅Motion",
         "✅Manual",
@@ -1279,8 +1367,9 @@ def test_full_vertical_config_smoke():
     # Cloud suppression
     assert "Cloud suppression" in summary
     assert "1000 lx" in summary
-    # Force override
-    assert "Force override" in summary
+    # Safety-priority custom position (merged force override)
+    assert "Custom #5" in summary
+    assert "safety: acts outside the time window" in summary
     # Position limits
     assert "10%" in summary
     assert "95%" in summary
@@ -1872,20 +1961,17 @@ def test_weather_override_min_mode_shown():
     assert "(as minimum)" in wx_line
 
 
-def test_force_override_min_mode_shown():
-    """CONF_FORCE_OVERRIDE_MIN_MODE renders '(as minimum)' on the force line."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_FORCE_OVERRIDE_MIN_MODE,
-    )
-
+def test_safety_slot_min_mode_shown():
+    """Min mode on a priority-100 slot renders '(as minimum)' on its line."""
     cfg = {
-        CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.safety"],
-        CONF_FORCE_OVERRIDE_POSITION: 100,
-        CONF_FORCE_OVERRIDE_MIN_MODE: True,
+        "custom_position_sensors_5": ["binary_sensor.safety"],
+        "custom_position_5": 100,
+        "custom_position_priority_5": 100,
+        "custom_position_min_mode_5": True,
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
-    force_line = next(ln for ln in summary.splitlines() if "Force override" in ln)
-    assert "(as minimum)" in force_line
+    slot_line = next(ln for ln in summary.splitlines() if "Custom #5" in ln)
+    assert "(as minimum)" in slot_line
 
 
 def test_custom_position_min_mode_shown():
@@ -2283,6 +2369,32 @@ def test_motion_summary_default_mode_says_return_to_default():
     assert "return to default" in motion_line.lower()
 
 
+def test_motion_summary_template_only():
+    """An occupancy-template-only config still shows the motion rule (#577 f/u)."""
+    cfg = {
+        CONF_MOTION_TEMPLATE: "{{ is_state('input_boolean.guest', 'on') }}",
+        CONF_MOTION_TIMEOUT: 120,
+        CONF_DEFAULT_HEIGHT: 45,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    assert "occupancy template" in motion_line
+
+
+def test_motion_summary_sensors_plus_template():
+    """Sensors and a template are both listed as occupancy sources."""
+    cfg = {
+        CONF_MOTION_SENSORS: ["binary_sensor.motion"],
+        CONF_MOTION_TEMPLATE: "{{ true }}",
+        CONF_MOTION_TIMEOUT: 120,
+        CONF_DEFAULT_HEIGHT: 45,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    motion_line = next((ln for ln in summary.splitlines() if "Motion-based" in ln), "")
+    assert "1 source" in motion_line
+    assert "occupancy template" in motion_line
+
+
 def test_motion_summary_hold_mode_says_hold_position():
     """hold_position mode shows a hold description in motion bullet."""
     from custom_components.adaptive_cover_pro.const import CONF_MOTION_TIMEOUT_MODE
@@ -2466,3 +2578,115 @@ def test_summary_without_entities_uses_offset_annotation():
     assert "+30" in summary or "30 min" in summary
     # The entity IDs should NOT appear
     assert "sun2" not in summary
+
+
+# ---------------------------------------------------------------------------
+# FOV summary (#565)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_omits_computed_fov_line():
+    """The FOV is stored as concrete angles, so the summary shows no computed line.
+
+    The "Generate FOV from measurements" button writes ``fov_left``/``fov_right``
+    on submit, so the summary's sun-tracking block reflects the actual angles —
+    there is no separate "Computed FOV ≈ …" geometry line any more (#565).
+    """
+    cfg = _minimal_vertical()
+    cfg[CONF_WINDOW_WIDTH] = 1.2
+    cfg[CONF_WINDOW_DEPTH] = 0.5
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "Computed FOV" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Jinja2 template placeholder tests (issue #577)
+# ---------------------------------------------------------------------------
+
+
+def test_cloud_irradiance_template_shows_placeholder():
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IRRADIANCE_ENTITY: "sensor.irr",
+        CONF_IRRADIANCE_THRESHOLD: "{% set s = states('sensor.season') %}{{ 300 if s == 'winter' else 500 }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_cloud_lux_template_shows_placeholder():
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_LUX_ENTITY: "sensor.lux",
+        CONF_LUX_THRESHOLD: "{% if true %}300{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_cloud_coverage_template_shows_placeholder():
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
+        CONF_CLOUD_COVERAGE_THRESHOLD: "{% if true %}60{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_weather_wind_template_shows_placeholder():
+    cfg = {
+        CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind",
+        CONF_WEATHER_WIND_SPEED_THRESHOLD: "{% if true %}50{% endif %}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_weather_rain_template_shows_placeholder():
+    cfg = {
+        CONF_WEATHER_RAIN_SENSOR: "sensor.rain",
+        CONF_WEATHER_RAIN_THRESHOLD: "{% if true %}2.0{% endif %}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_climate_temp_low_template_shows_placeholder():
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW: "{% if true %}16{% endif %}",
+        CONF_TEMP_HIGH: 24,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_climate_temp_high_template_shows_placeholder():
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_TEMP_LOW: 16,
+        CONF_TEMP_HIGH: "{% if true %}24{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary
+
+
+def test_climate_outside_threshold_template_shows_placeholder():
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_OUTSIDETEMP_ENTITY: "sensor.outdoor",
+        CONF_OUTSIDE_THRESHOLD: "{% if true %}28{% endif %}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "[template]" in summary
+    assert "{%" not in summary

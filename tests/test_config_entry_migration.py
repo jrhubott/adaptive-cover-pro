@@ -25,13 +25,14 @@ pytestmark = pytest.mark.integration
 
 
 def _make_entry(
-    hass: HomeAssistant, options: dict, version: int = 1
+    hass: HomeAssistant, options: dict, version: int = 1, minor_version: int = 1
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"name": "Migration Test", CONF_SENSOR_TYPE: CoverType.BLIND},
         options=options,
         version=version,
+        minor_version=minor_version,
         title="Migration Test",
     )
     entry.add_to_hass(hass)
@@ -208,3 +209,131 @@ async def test_migrate_v1_cascades_through_v3(hass: HomeAssistant) -> None:
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0  # cm → m applied
     assert entry.options[CONF_ENABLE_MY_POSITION_ENTITIES] is True  # toggle preserved
     assert entry.version == 3
+
+
+# ---------------------------------------------------------------------------
+# Migration: v3.1 → v3.2 — force override merged into custom-position slot 5
+# (issue #563). Additive + rollback-safe: legacy keys must survive untouched.
+# ---------------------------------------------------------------------------
+
+from custom_components.adaptive_cover_pro.const import (  # noqa: E402
+    CONF_FORCE_OVERRIDE_MIN_MODE,
+    CONF_FORCE_OVERRIDE_POSITION,
+    CONF_FORCE_OVERRIDE_SENSORS,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    CUSTOM_POSITION_SLOTS,
+)
+
+_SLOT5 = CUSTOM_POSITION_SLOTS[5]
+_FORCE_OPTIONS = {
+    CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.rain", "binary_sensor.alarm"],
+    CONF_FORCE_OVERRIDE_POSITION: 90,
+    CONF_FORCE_OVERRIDE_MIN_MODE: True,
+}
+
+
+async def test_migrate_v3_2_copies_force_override_into_slot_5(
+    hass: HomeAssistant,
+) -> None:
+    """Force override config lands in slot 5 at safety priority."""
+    entry = _make_entry(hass, dict(_FORCE_OPTIONS), version=3, minor_version=1)
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.options[_SLOT5["sensors"]] == [
+        "binary_sensor.rain",
+        "binary_sensor.alarm",
+    ]
+    assert entry.options[_SLOT5["position"]] == 90
+    assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
+    assert entry.options[_SLOT5["min_mode"]] is True
+    assert entry.version == 3
+    assert entry.minor_version == 2
+
+
+async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
+    hass: HomeAssistant,
+) -> None:
+    """Legacy force_override_* and custom_position_sensor_N keys are byte-identical.
+
+    Rollback contract: an older release must find its config exactly as it
+    left it — the old ForceOverrideHandler reads the legacy keys and ignores
+    the slot-5 keys (it only iterates slots 1–4).
+    """
+    options = {
+        **_FORCE_OPTIONS,
+        "custom_position_sensor_1": "binary_sensor.table",
+        "custom_position_1": 60,
+    }
+    entry = _make_entry(hass, dict(options), version=3, minor_version=1)
+    await async_migrate_entry(hass, entry)
+    for key, value in options.items():
+        assert entry.options[key] == value, f"legacy key {key} changed"
+    # No new-format list keys are written for slots 1-4 — the read fallback
+    # covers them, and skipping the wrap avoids stale copies after rollback
+    # edits to the legacy keys.
+    for slot_n in (1, 2, 3, 4):
+        assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
+
+
+async def test_migrate_v3_2_no_force_config_is_a_noop(hass: HomeAssistant) -> None:
+    """Absent force override config → minor bump only, slot 5 stays free."""
+    entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=1)
+    await async_migrate_entry(hass, entry)
+    assert _SLOT5["sensors"] not in entry.options
+    assert _SLOT5["position"] not in entry.options
+    assert entry.minor_version == 2
+
+
+async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> None:
+    """An empty force_override_sensors list does not create slot 5."""
+    entry = _make_entry(
+        hass,
+        {CONF_FORCE_OVERRIDE_SENSORS: [], CONF_FORCE_OVERRIDE_POSITION: 50},
+        version=3,
+        minor_version=1,
+    )
+    await async_migrate_entry(hass, entry)
+    assert _SLOT5["sensors"] not in entry.options
+    assert entry.minor_version == 2
+
+
+async def test_migrate_v3_2_missing_position_defaults_to_zero(
+    hass: HomeAssistant,
+) -> None:
+    """Sensors without a configured position default to 0 (old snapshot default)."""
+    entry = _make_entry(
+        hass,
+        {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.rain"]},
+        version=3,
+        minor_version=1,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.options[_SLOT5["position"]] == 0
+    assert entry.options[_SLOT5["min_mode"]] is False
+
+
+async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
+    """A v1 entry with force override config ends at 3.2 with slot 5 populated."""
+    entry = _make_entry(
+        hass,
+        {CONF_WINDOW_WIDTH: 200, **_FORCE_OPTIONS},
+        version=1,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.version == 3
+    assert entry.minor_version == 2
+    assert entry.options[CONF_WINDOW_WIDTH] == 2.0
+    assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
+
+
+async def test_migrate_v3_2_is_idempotent(hass: HomeAssistant) -> None:
+    """Re-running migration on a 3.2 entry changes nothing (slot-5 edits survive)."""
+    entry = _make_entry(hass, dict(_FORCE_OPTIONS), version=3, minor_version=1)
+    await async_migrate_entry(hass, entry)
+    # User later edits slot 5 through the new UI…
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, _SLOT5["position"]: 25}
+    )
+    snapshot = dict(entry.options)
+    # …a second migration run must not clobber it.
+    await async_migrate_entry(hass, entry)
+    assert entry.options == snapshot

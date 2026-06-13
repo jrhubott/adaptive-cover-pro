@@ -274,7 +274,7 @@ async def test_min_mode_slot_off_no_clamping() -> None:
     )
 
     slot = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=False,
         position=60,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -312,7 +312,7 @@ async def test_min_mode_slot_on_clamps_up() -> None:
     )
 
     slot = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=50,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -350,7 +350,7 @@ async def test_request_equals_floor_no_extra_clamping() -> None:
     )
 
     slot = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=50,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -383,7 +383,7 @@ async def test_request_above_floor_no_clamping() -> None:
     )
 
     slot = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=50,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -421,7 +421,7 @@ async def test_two_floors_request_below_highest_clamped() -> None:
     )
 
     slot_a = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=40,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -429,7 +429,7 @@ async def test_two_floors_request_below_highest_clamped() -> None:
         use_my=False,
     )
     slot_b = CustomPositionSensorState(
-        entity_id="binary_sensor.slot2",
+        entity_ids=("binary_sensor.slot2",),
         is_on=True,
         position=65,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -462,7 +462,7 @@ async def test_two_floors_request_above_highest_not_clamped() -> None:
     )
 
     slot_a = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=40,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -470,7 +470,7 @@ async def test_two_floors_request_above_highest_not_clamped() -> None:
         use_my=False,
     )
     slot_b = CustomPositionSensorState(
-        entity_id="binary_sensor.slot2",
+        entity_ids=("binary_sensor.slot2",),
         is_on=True,
         position=65,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -565,7 +565,7 @@ async def test_clamp_emits_info_log(caplog) -> None:
     )
 
     slot = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=50,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -689,7 +689,7 @@ async def test_non_min_mode_slot_on_does_not_clamp() -> None:
     )
 
     slot = CustomPositionSensorState(
-        entity_id="binary_sensor.slot1",
+        entity_ids=("binary_sensor.slot1",),
         is_on=True,
         position=80,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -769,8 +769,8 @@ async def test_service_force_true_bypasses_pipeline() -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_force_default_preempted_by_force_override() -> None:
-    """With force=False (default) and force_override winning, the call is rejected."""
+async def test_service_force_default_preempted_by_safety_custom_position() -> None:
+    """With force=False (default) and a priority-100 custom slot winning, the call is rejected."""
     from custom_components.adaptive_cover_pro.pipeline.types import (
         DecisionStep,
         PipelineResult,
@@ -785,17 +785,21 @@ async def test_service_force_default_preempted_by_force_override() -> None:
     # preemption branch resolves a real priority value.
     coord._pipeline.evaluate.return_value = PipelineResult(
         position=10,
-        control_method=ControlMethod.FORCE,
-        reason="force",
+        control_method=ControlMethod.CUSTOM_POSITION,
+        reason="custom_position",
         decision_trace=[
             DecisionStep(
-                handler="force_override", matched=True, reason="force", position=10
+                handler="custom_position_5",
+                matched=True,
+                reason="custom_position",
+                position=10,
             )
         ],
+        is_safety=True,
     )
     handler = MagicMock()
     handler.priority = 100
-    coord._handler_by_name = {"force_override": handler}
+    coord._handler_by_name = {"custom_position_5": handler}
     coord._cmd_svc.record_preempted_skip = MagicMock()
 
     call = MagicMock()
@@ -813,7 +817,7 @@ async def test_service_force_default_preempted_by_force_override() -> None:
         "cover.test_blind",
         50,
         trigger="set_position",
-        winner_name="force_override",
+        winner_name="custom_position_5",
     )
 
 

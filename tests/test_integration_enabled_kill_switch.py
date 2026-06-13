@@ -47,7 +47,7 @@ def grace_mgr():
 
 @pytest.fixture
 def svc(mock_hass, grace_mgr):
-    return CoverCommandService(
+    service = CoverCommandService(
         hass=mock_hass,
         logger=MagicMock(),
         cover_type="cover_blind",
@@ -57,6 +57,10 @@ def svc(mock_hass, grace_mgr):
         position_tolerance=3,
         max_retries=3,
     )
+    # This suite exercises reconciliation resends; opt into matching (default
+    # is off per issue #591).
+    service.enable_position_matching = True
+    return service
 
 
 def _ctx(**overrides) -> PositionContext:

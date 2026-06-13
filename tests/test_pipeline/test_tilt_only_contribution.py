@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+
 from custom_components.adaptive_cover_pro.const import (
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     ControlMethod,
@@ -48,7 +49,7 @@ def _cp_state(
     sensor_name: str | None = None,
 ) -> CustomPositionSensorState:
     return CustomPositionSensorState(
-        entity_id=entity_id,
+        entity_ids=(entity_id,),
         is_on=is_on,
         position=position,
         priority=priority,
@@ -58,12 +59,12 @@ def _cp_state(
         tilt_only=tilt_only,
         sensor_name=sensor_name,
         slot=slot,
+        active_entity_ids=(entity_id,) if is_on else (),
     )
 
 
 def _cp_handler(
     slot: int,
-    entity_id: str,
     position: int = 50,
     *,
     priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -71,7 +72,6 @@ def _cp_handler(
 ) -> CustomPositionHandler:
     return CustomPositionHandler(
         slot=slot,
-        entity_id=entity_id,
         position=position,
         priority=priority,
         tilt=tilt,
@@ -120,7 +120,7 @@ class TestSensorStateTiltOnlyField:
 
     def test_tilt_only_defaults_false(self) -> None:
         state = CustomPositionSensorState(
-            entity_id="binary_sensor.a",
+            entity_ids=("binary_sensor.a",),
             is_on=True,
             position=50,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -131,7 +131,7 @@ class TestSensorStateTiltOnlyField:
 
     def test_tilt_only_set_true(self) -> None:
         state = CustomPositionSensorState(
-            entity_id="binary_sensor.a",
+            entity_ids=("binary_sensor.a",),
             is_on=True,
             position=50,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -159,7 +159,7 @@ class TestHandlerDefersInTiltOnly:
                 )
             ]
         )
-        handler = _cp_handler(1, "binary_sensor.t", 80, tilt=30)
+        handler = _cp_handler(1, 80, tilt=30)
         assert handler.evaluate(snap) is None
 
     def test_active_without_tilt_only_still_claims(self) -> None:
@@ -169,7 +169,7 @@ class TestHandlerDefersInTiltOnly:
                 _cp_state("binary_sensor.t", is_on=True, position=80, tilt=30)
             ]
         )
-        handler = _cp_handler(1, "binary_sensor.t", 80, tilt=30)
+        handler = _cp_handler(1, 80, tilt=30)
         result = handler.evaluate(snap)
         assert result is not None
         assert result.position == 80
@@ -245,6 +245,7 @@ class TestResolveTiltAxis:
                     tilt_only=True,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     slot=1,
+                    sensor_name="Low slot",
                 ),
                 _cp_state(
                     "binary_sensor.high",
@@ -253,6 +254,7 @@ class TestResolveTiltAxis:
                     tilt_only=True,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY + 10,
                     slot=2,
+                    sensor_name="High slot",
                 ),
             ]
         )
@@ -273,6 +275,21 @@ class TestResolveTiltAxis:
             ]
         )
         assert resolve_tilt_axis(snap) is None
+
+    def test_label_falls_back_to_entity_id_when_unnamed(self) -> None:
+        """Unnamed tilt-only slot: label should fall back to the entity_id."""
+        from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
+            resolve_tilt_axis,
+        )
+
+        snap = make_snapshot(
+            custom_position_sensors=[
+                _cp_state("binary_sensor.unnamed", is_on=True, tilt=30, tilt_only=True)
+            ]
+        )
+        info = resolve_tilt_axis(snap)
+        assert info is not None
+        assert info.label == "binary_sensor.unnamed"
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +320,7 @@ class TestRegistryOverlaysTilt:
                 )
             ],
         )
-        handler = _cp_handler(1, "binary_sensor.t", 80, tilt=25)
+        handler = _cp_handler(1, 80, tilt=25)
         result = _registry([handler]).evaluate(snap)
         # Solar drives position; tilt-only slot fixes the slat.
         assert result.control_method == ControlMethod.SOLAR
@@ -327,7 +344,7 @@ class TestRegistryOverlaysTilt:
                 )
             ],
         )
-        handler = _cp_handler(1, "binary_sensor.t", 80, tilt=25)
+        handler = _cp_handler(1, 80, tilt=25)
         result = _registry([handler]).evaluate(snap)
         cp_steps = [
             s for s in result.decision_trace if s.handler == "custom_position_1"
@@ -373,19 +390,18 @@ class TestFillWhenUnset:
                     tilt_only=True,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     slot=2,
+                    sensor_name="Tilt-only slot",
                 ),
             ],
         )
         winner_handler = _cp_handler(
             1,
-            "binary_sensor.winner",
             40,
             tilt=70,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY + 10,
         )
         tiltonly_handler = _cp_handler(
             2,
-            "binary_sensor.tiltonly",
             80,
             tilt=25,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -456,7 +472,7 @@ class TestEndToEndTiltOnly:
 
         cover = _solar_cover(calculate_percentage_return=60.0)
         snap = make_snapshot(cover=cover, custom_position_sensors=states)
-        handler = _cp_handler(1, "binary_sensor.glare", 80, tilt=25)
+        handler = _cp_handler(1, 80, tilt=25)
         result = _registry([handler]).evaluate(snap)
 
         assert result.control_method == ControlMethod.SOLAR

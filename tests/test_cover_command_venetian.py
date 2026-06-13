@@ -56,6 +56,9 @@ def svc(hass):
         open_close_threshold=50,
     )
     s._enabled = True
+    # This suite exercises reconciliation resends; opt into matching (default
+    # is off per issue #591).
+    s.enable_position_matching = True
     return s
 
 

@@ -18,6 +18,7 @@ from ..const import (
 )
 from ..engine.covers import AdaptiveHorizontalCover
 from ..unit_system import length_default, length_selector
+from ._summary_labels import COVER_TYPE_LABELS_EN, GEOMETRY_LABELS_EN
 from .base import (
     CAP_HAS_SET_POSITION,
     POSITION_AXIS_OPEN_BLOCKS_SUN,
@@ -84,9 +85,10 @@ class AwningPolicy(CoverTypePolicy, register=True):
         """Horizontal-awning geometry page."""
         return "Configuration-Horizontal"
 
-    def display_label(self) -> str:
+    def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for horizontal awnings."""
-        return "Horizontal Awning"
+        L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
+        return L["cover_types.awning"]
 
     def disallowed_geometry_fields(
         self,
@@ -120,17 +122,20 @@ class AwningPolicy(CoverTypePolicy, register=True):
         """Plain ``cover`` domain — no extra capability requirement."""
         return selector.EntityFilterSelectorConfig(domain="cover")
 
-    def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
+    def summary_geometry_lines(
+        self, config: dict[str, Any], labels: dict[str, str] | None = None
+    ) -> list[str]:
         """Render the awning-length / angle / window block."""
+        L = {**GEOMETRY_LABELS_EN, **(labels or {})}
         parts: list[str] = []
         if (v := config.get(CONF_LENGTH_AWNING)) is not None:
-            parts.append(f"{v}m awning")
+            parts.append(L["geometry.awning.length"].format(v=v))
         if (v := config.get(CONF_AWNING_ANGLE)) is not None:
-            parts.append(f"angled at {v}°")
+            parts.append(L["geometry.awning.angle"].format(v=v))
         if (v := config.get(CONF_HEIGHT_WIN)) is not None:
-            parts.append(f"{v}m window height")
+            parts.append(L["geometry.window.height"].format(v=v))
         if (v := config.get(CONF_DISTANCE)) is not None:
-            parts.append(f"blocking sun {v}m from wall")
+            parts.append(L["geometry.awning.blocking_wall"].format(v=v))
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

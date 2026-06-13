@@ -48,7 +48,6 @@ ENTRY_ID = "snap_entry"
 # - climate_mode + temp/lux/irradiance entities: 4 climate-related switches +
 #   climate_status sensor
 # - motion_sensors: motion_control switch
-# - force_override_sensors: force_override_triggers sensor
 # - 2 named glare zones: 2 glare-zone switches with user-text in the unique_id
 MAX_OPTIONS = {
     **VERTICAL_OPTIONS,
@@ -92,7 +91,6 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         "manual_override_end_time",
         "position_verification",
         "motion_status",
-        "force_override_triggers",
         "climate_status",
         "position_forecast",
         # --- switch platform (uses display switch_name, not translation key) ---

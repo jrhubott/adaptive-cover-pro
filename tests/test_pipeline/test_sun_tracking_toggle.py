@@ -63,12 +63,12 @@ def test_sun_tracking_disabled_removes_solar_handler():
 
 @pytest.mark.unit
 def test_sun_tracking_disabled_preserves_other_handlers():
-    """Other handlers (ForceOverride, Climate, Default, etc.) remain when flag is False."""
+    """Other handlers (Weather, Climate, Default, etc.) remain when flag is False."""
     from custom_components.adaptive_cover_pro.pipeline.handlers import (
         DefaultHandler,
         ClimateHandler,
-        ForceOverrideHandler,
         ManualOverrideHandler,
+        WeatherOverrideHandler,
     )
 
     coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
@@ -76,7 +76,7 @@ def test_sun_tracking_disabled_preserves_other_handlers():
     handler_types = {type(h) for h in registry._handlers}
     assert DefaultHandler in handler_types
     assert ClimateHandler in handler_types
-    assert ForceOverrideHandler in handler_types
+    assert WeatherOverrideHandler in handler_types
     assert ManualOverrideHandler in handler_types
 
 
@@ -127,24 +127,50 @@ def test_sun_tracking_disabled_pipeline_falls_through_to_default():
 
 
 @pytest.mark.unit
-def test_force_override_min_mode_with_sun_tracking_off_uses_default():
-    """Force override defers in min_mode; with sun tracking off, the winner
-    is DefaultHandler (position=100). The floor of 80 is below the default,
-    so no clamp is applied. End-to-end regression test for #264 + #463.
+def test_safety_slot_min_mode_with_sun_tracking_off_uses_default():
+    """A priority-100 safety slot (migrated force override, #563) defers in
+    min_mode; with sun tracking off, the winner is DefaultHandler
+    (position=100). The floor of 80 is below the default, so no clamp is
+    applied. End-to-end regression test for #264 + #463.
     """
-    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.const import (
+        CUSTOM_POSITION_SAFETY_PRIORITY,
+        CUSTOM_POSITION_SLOTS,
+        ControlMethod,
+    )
+    from custom_components.adaptive_cover_pro.pipeline.types import (
+        CustomPositionSensorState,
+    )
     from tests.test_pipeline.conftest import make_snapshot
 
-    coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
+    slot5 = CUSTOM_POSITION_SLOTS[5]
+    coord = _make_coordinator(
+        {
+            CONF_ENABLE_SUN_TRACKING: False,
+            slot5["sensors"]: ["binary_sensor.wind"],
+            slot5["position"]: 80,
+            slot5["priority"]: CUSTOM_POSITION_SAFETY_PRIORITY,
+            slot5["min_mode"]: True,
+        }
+    )
     registry = coord._build_pipeline()
 
     snap = make_snapshot(
         direct_sun_valid=True,
         calculate_percentage_return=29.0,
         default_position=100,
-        force_override_sensors={"binary_sensor.wind": True},
-        force_override_position=80,
-        force_override_min_mode=True,
+        custom_position_sensors=[
+            CustomPositionSensorState(
+                entity_ids=("binary_sensor.wind",),
+                is_on=True,
+                position=80,
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                min_mode=True,
+                use_my=False,
+                slot=5,
+                active_entity_ids=("binary_sensor.wind",),
+            )
+        ],
         enable_sun_tracking=False,
     )
     result = registry.evaluate(snap)

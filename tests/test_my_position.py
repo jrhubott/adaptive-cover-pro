@@ -321,12 +321,14 @@ def _snapshot_custom(
     return make_snapshot(
         custom_position_sensors=[
             CustomPositionSensorState(
-                entity_id=entity_id,
+                entity_ids=(entity_id,),
                 is_on=is_on,
                 position=position,
                 priority=priority,
                 min_mode=False,
                 use_my=use_my,
+                slot=1,
+                active_entity_ids=(entity_id,) if is_on else (),
             )
         ],
         my_position_value=my_position_value,
@@ -339,7 +341,6 @@ class TestCustomPositionHandlerUseMy:
     def _handler(self, position: int = 50) -> CustomPositionHandler:
         return CustomPositionHandler(
             slot=1,
-            entity_id=_ENTITY,
             position=position,
             priority=_DEFAULT_PRIORITY,
         )

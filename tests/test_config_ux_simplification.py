@@ -42,8 +42,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENTITIES,
-    CONF_FORCE_OVERRIDE_POSITION,
-    CONF_FORCE_OVERRIDE_SENSORS,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_HEIGHT_WIN,
@@ -341,16 +339,17 @@ class TestPositionMapInSummary:
         result = _build_config_summary(config, CoverType.BLIND)
         assert "After sunset" in result
 
-    def test_position_map_shows_force_override(self):
-        """Force override row renders under How It Decides."""
+    def test_position_map_shows_safety_custom_position(self):
+        """A priority-100 custom slot row renders under How It Decides (#563)."""
         config = self._base_config(
             **{
-                CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.rain"],
-                CONF_FORCE_OVERRIDE_POSITION: 100,
+                "custom_position_sensors_5": ["binary_sensor.rain"],
+                "custom_position_5": 100,
+                "custom_position_priority_5": 100,
             }
         )
         result = _build_config_summary(config, CoverType.BLIND)
-        assert "Force override" in result
+        assert "Custom #5" in result
         assert "100%" in result
 
     def test_position_map_shows_weather_override(self):
@@ -426,30 +425,22 @@ class TestSelectorDomains:
 
     # --- FORCE_OVERRIDE_SCHEMA ---
 
-    def test_force_override_sensors_binary_on_domains(self):
-        """force_override_sensors accepts binary_on domains (binary_sensor, input_boolean, switch, schedule)."""
-        from custom_components.adaptive_cover_pro.config_flow import (
-            FORCE_OVERRIDE_SCHEMA,
-        )
-
-        assert (
-            _domain_for(FORCE_OVERRIDE_SCHEMA, "force_override_sensors")
-            == _BINARY_ON_EXPECTED
-        )
-
     # --- CUSTOM_POSITION_SCHEMA ---
 
     def test_custom_position_sensors_binary_on_domains(self):
-        """All four custom_position_sensor_N selectors accept binary_on domains."""
+        """All five custom_position_sensors_N multi-selectors accept binary_on domains."""
         from custom_components.adaptive_cover_pro.config_flow import (
             CUSTOM_POSITION_SCHEMA,
         )
+        from custom_components.adaptive_cover_pro.const import (
+            CUSTOM_POSITION_SLOT_NUMBERS,
+        )
 
-        for n in range(1, 5):
+        for n in CUSTOM_POSITION_SLOT_NUMBERS:
             assert (
-                _domain_for(CUSTOM_POSITION_SCHEMA, f"custom_position_sensor_{n}")
+                _domain_for(CUSTOM_POSITION_SCHEMA, f"custom_position_sensors_{n}")
                 == _BINARY_ON_EXPECTED
-            ), f"custom_position_sensor_{n} domain mismatch"
+            ), f"custom_position_sensors_{n} domain mismatch"
 
     # --- MOTION_OVERRIDE_SCHEMA ---
 

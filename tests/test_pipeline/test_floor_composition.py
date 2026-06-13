@@ -1,9 +1,10 @@
 """Tests for cross-handler floor-mode composition (issue #463).
 
-The pipeline registry composes floor (min-mode) clamps from custom-position,
-weather-override, and force-override sources as a post-decision pass. A floor
-no longer wins the priority chain — it raises the winner's position when the
-winner is below the highest active floor.
+The pipeline registry composes floor (min-mode) clamps from custom-position
+and weather-override sources as a post-decision pass. A floor no longer wins
+the priority chain — it raises the winner's position when the winner is below
+the highest active floor. A priority-100 (safety) slot's floor composes
+exactly like any other custom-position floor (issue #563).
 """
 
 from __future__ import annotations
@@ -11,16 +12,19 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from custom_components.adaptive_cover_pro.const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
     DefaultHandler,
-    ForceOverrideHandler,
     SolarHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
+)
+from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
+    ManualOverrideHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.weather import (
     WeatherOverrideHandler,
@@ -93,10 +97,10 @@ def _cp_state(
     sensor_name: str | None = None,
     use_my: bool = False,
     priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
-    slot: int = 0,
+    slot: int = 1,
 ) -> CustomPositionSensorState:
     return CustomPositionSensorState(
-        entity_id=entity_id,
+        entity_ids=(entity_id,),
         is_on=is_on,
         position=position,
         priority=priority,
@@ -104,19 +108,18 @@ def _cp_state(
         use_my=use_my,
         sensor_name=sensor_name,
         slot=slot,
+        active_entity_ids=(entity_id,) if is_on else (),
     )
 
 
 def _cp_handler(
     slot: int,
-    entity_id: str,
     position: int,
     *,
     priority: int = DEFAULT_CUSTOM_POSITION_PRIORITY,
 ) -> CustomPositionHandler:
     return CustomPositionHandler(
         slot=slot,
-        entity_id=entity_id,
         position=position,
         priority=priority,
     )
@@ -152,7 +155,7 @@ def test_custom_position_floor_clamps_climate_winner() -> None:
             )
         ],
     )
-    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     # ClimateHandler in summer-without-presence returns position_for_intent
     # (sun_through=False) — for a blind that's 0; but with config min_pos=None
@@ -203,7 +206,7 @@ def test_custom_position_floor_above_climate_is_inert() -> None:
             )
         ],
     )
-    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     assert result.position == 80
@@ -237,12 +240,13 @@ def test_two_custom_floors_pick_highest() -> None:
                 position=60,
                 min_mode=True,
                 sensor_name="Floor60",
+                slot=2,
             ),
         ],
     )
     handlers = [
-        _cp_handler(1, "binary_sensor.cp1", 40),
-        _cp_handler(2, "binary_sensor.cp2", 60),
+        _cp_handler(1, 40),
+        _cp_handler(2, 60),
     ]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
@@ -293,8 +297,8 @@ def test_gapped_custom_floor_slots_label_real_slot() -> None:
         ],
     )
     handlers = [
-        _cp_handler(4, "binary_sensor.cp4", 80),
-        _cp_handler(3, "binary_sensor.cp3", 100),
+        _cp_handler(4, 80),
+        _cp_handler(3, 100),
     ]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
@@ -360,12 +364,13 @@ def test_real_position_custom_slot_clamped_by_floor_slot() -> None:
                 position=60,
                 min_mode=True,  # floor
                 sensor_name="Floor",
+                slot=2,
             ),
         ],
     )
     handlers = [
-        _cp_handler(1, "binary_sensor.cp1", 30),
-        _cp_handler(2, "binary_sensor.cp2", 60),
+        _cp_handler(1, 30),
+        _cp_handler(2, 60),
     ]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
@@ -408,18 +413,32 @@ def test_weather_override_min_mode_clamps_climate() -> None:
     assert "weather override" in clamp_steps[0].reason
 
 
-def test_force_override_min_mode_clamps_solar() -> None:
-    """Force-override floor 60% clamps a Solar winner at 25%."""
+def test_safety_slot_min_mode_clamps_solar() -> None:
+    """A priority-100 (safety) slot floor 60% clamps a Solar winner at 25%.
+
+    Parity with the old force-override min-mode floor (issue #563): the floor
+    from a safety-priority slot composes exactly like any custom-position floor.
+    """
     cover = _climate_cover(direct_sun_valid=True, calculate_percentage_return=25.0)
     snap = make_snapshot(
         cover=cover,
         direct_sun_valid=True,
         calculate_percentage_return=25.0,
-        force_override_sensors={"binary_sensor.s": True},
-        force_override_position=60,
-        force_override_min_mode=True,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.s",
+                is_on=True,
+                position=60,
+                min_mode=True,
+                sensor_name="Wind alarm",
+                priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+                slot=5,
+            )
+        ],
     )
-    registry = _registry_with_custom([ForceOverrideHandler()])
+    registry = _registry_with_custom(
+        [_cp_handler(5, 60, priority=CUSTOM_POSITION_SAFETY_PRIORITY)]
+    )
     result = registry.evaluate(snap)
     assert result.position == 60
     winner_step = next(
@@ -430,7 +449,7 @@ def test_force_override_min_mode_clamps_solar() -> None:
         s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
     ]
     assert len(clamp_steps) == 1
-    assert "force override" in clamp_steps[0].reason
+    assert "Wind alarm" in clamp_steps[0].reason
 
 
 def test_floor_sources_combined_picks_max() -> None:
@@ -456,7 +475,7 @@ def test_floor_sources_combined_picks_max() -> None:
         weather_override_min_mode=True,
     )
     handlers = [
-        _cp_handler(1, "binary_sensor.cp1", 50),
+        _cp_handler(1, 50),
         WeatherOverrideHandler(),
     ]
     registry = _registry_with_custom(handlers)
@@ -504,7 +523,7 @@ def test_floor_inactive_when_sensor_off() -> None:
             )
         ],
     )
-    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     assert result.position == 30  # solar
@@ -530,7 +549,7 @@ def test_floor_clamp_sets_floor_clamp_applied_flag() -> None:
             )
         ],
     )
-    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     assert result.floor_clamp_applied is True
@@ -579,11 +598,123 @@ def test_inactive_floor_below_winner_keeps_flag_false() -> None:
             )
         ],
     )
-    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     assert result.position == 80
     assert result.floor_clamp_applied is False
+
+
+def test_floor_raises_manual_override_held_below_floor() -> None:
+    """A floor raises the cover when manual override holds it below the floor (#534).
+
+    Manual override wins with ``position`` = theoretical default (90) but
+    ``held_position`` = the cover's actual physical position (50).  A min-mode
+    floor at 80% must be measured against the *physical* 50%, not the
+    theoretical 90% — so the floor fires and raises the cover to 80%.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=50,
+        default_position=90,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=80,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [
+        _cp_handler(1, 80),
+        ManualOverrideHandler(),
+    ]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "manual_override"
+    assert result.position == 80
+    assert result.floor_clamp_applied is True
+    clamp_steps = [
+        s for s in result.decision_trace if s.handler == "floor_clamp" and s.matched
+    ]
+    assert len(clamp_steps) == 1
+
+
+def test_floor_above_held_position_is_inert_under_manual_override() -> None:
+    """Floor below the cover's physical position does NOT clamp (#534 inert branch).
+
+    Manual override holds the cover at 85% (physical), floor is 80% — the cover
+    already sits above the floor, so no clamp is applied.
+    """
+    cover = _climate_cover(direct_sun_valid=False)
+    snap = make_snapshot(
+        cover=cover,
+        manual_override_active=True,
+        current_cover_position=85,
+        default_position=90,
+        direct_sun_valid=False,
+        custom_position_sensors=[
+            _cp_state(
+                "binary_sensor.cp1",
+                is_on=True,
+                position=80,
+                min_mode=True,
+                sensor_name="Table",
+            )
+        ],
+    )
+    handlers = [
+        _cp_handler(1, 80),
+        ManualOverrideHandler(),
+    ]
+    registry = _registry_with_custom(handlers)
+    result = registry.evaluate(snap)
+    winner_step = next(
+        s for s in result.decision_trace if s.matched and s.handler != "floor_clamp"
+    )
+    assert winner_step.handler == "manual_override"
+    # No clamp: the held physical position (85) is already above the floor (80).
+    assert result.floor_clamp_applied is False
+    assert not any(
+        s.handler == "floor_clamp" and s.matched for s in result.decision_trace
+    )
+
+
+def test_floor_label_falls_back_to_entity_id_then_template() -> None:
+    """Floor label: sensor_name, else first bound entity_id, else 'template'."""
+    from custom_components.adaptive_cover_pro.pipeline.floors import (
+        gather_active_floors,
+    )
+
+    snap = make_snapshot(
+        custom_position_sensors=[
+            # No sensor_name → label falls back to the first bound entity_id.
+            _cp_state("binary_sensor.cp1", is_on=True, position=60, min_mode=True),
+            # Template-only slot (no sensors) → label is "template".
+            CustomPositionSensorState(
+                entity_ids=(),
+                is_on=True,
+                position=40,
+                priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+                min_mode=True,
+                use_my=False,
+                slot=2,
+                template_active=True,
+            ),
+        ]
+    )
+    floors = gather_active_floors(snap)
+    assert [f.source for f in floors] == ["custom_position_1", "custom_position_2"]
+    assert floors[0].label == "binary_sensor.cp1"
+    assert floors[1].label == "template"
 
 
 def test_decision_trace_does_not_mislabel_winner() -> None:
@@ -605,7 +736,7 @@ def test_decision_trace_does_not_mislabel_winner() -> None:
             )
         ],
     )
-    handlers = [_cp_handler(1, "binary_sensor.cp1", 60)]
+    handlers = [_cp_handler(1, 60)]
     registry = _registry_with_custom(handlers)
     result = registry.evaluate(snap)
     # Exactly one matched=True step that isn't floor_clamp.

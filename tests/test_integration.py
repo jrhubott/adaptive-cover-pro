@@ -23,7 +23,6 @@ from custom_components.adaptive_cover_pro.const import ClimateStrategy, ControlM
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
     DefaultHandler,
-    ForceOverrideHandler,
     ManualOverrideHandler,
     MotionTimeoutHandler,
     SolarHandler,
@@ -102,11 +101,39 @@ def _make_climate_data(**overrides) -> ClimateCoverData:
     return ClimateCoverData(**defaults)
 
 
-def _make_pipeline() -> PipelineRegistry:
-    """Real PipelineRegistry with all six exported handler classes."""
+_SAFETY_SLOT = 5
+
+
+def _safety_slot_state(
+    is_on: bool,
+    *,
+    position: int = 0,
+    entity_id: str = "binary_sensor.force",
+) -> CustomPositionSensorState:
+    """Slot-5 safety (priority-100) trigger state — force-override parity (#563)."""
+    return CustomPositionSensorState(
+        entity_ids=(entity_id,),
+        is_on=is_on,
+        position=position,
+        priority=100,
+        min_mode=False,
+        use_my=False,
+        slot=_SAFETY_SLOT,
+        active_entity_ids=(entity_id,) if is_on else (),
+    )
+
+
+def _make_pipeline(safety_position: int = 75) -> PipelineRegistry:
+    """Real PipelineRegistry with all six handler classes.
+
+    The priority-100 custom-position slot (slot 5) replaces the deleted
+    ForceOverrideHandler (issue #563).
+    """
     return PipelineRegistry(
         [
-            ForceOverrideHandler(),
+            CustomPositionHandler(
+                slot=_SAFETY_SLOT, position=safety_position, priority=100
+            ),
             MotionTimeoutHandler(),
             ManualOverrideHandler(),
             ClimateHandler(),
@@ -122,8 +149,7 @@ def _build_pipeline_snapshot(
     climate_mode_enabled: bool = False,
     climate_readings: ClimateReadings | None = None,
     climate_options: ClimateOptions | None = None,
-    force_override_sensors: dict[str, bool] | None = None,
-    force_override_position: int = 0,
+    custom_position_sensors: list[CustomPositionSensorState] | None = None,
     motion_timeout_active: bool = False,
     manual_override_active: bool = False,
     weather_override_active: bool = False,
@@ -140,8 +166,7 @@ def _build_pipeline_snapshot(
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,
-        force_override_sensors=force_override_sensors or {},
-        force_override_position=force_override_position,
+        custom_position_sensors=custom_position_sensors or [],
         manual_override_active=manual_override_active,
         motion_timeout_active=motion_timeout_active,
         weather_override_active=weather_override_active,
@@ -156,7 +181,6 @@ def _build_diagnostic_context(
     pipeline_result,
     *,
     climate_mode: bool = False,
-    force_override_position: int = 0,
     final_state: int = 0,
 ) -> DiagnosticContext:
     """Build a DiagnosticContext from real cover and pipeline result objects."""
@@ -172,7 +196,6 @@ def _build_diagnostic_context(
         end_time=None,
         automatic_control=True,
         final_state=final_state,
-        force_override_position=force_override_position,
     )
 
 
@@ -436,8 +459,8 @@ class TestEndToEndIntegration:
             assert diag_dict["control_status"] == "active"
             assert diag_dict.get("calculated_position_climate") == 0
 
-    def test_force_override_trumps_solar(self):
-        """ForceOverrideHandler wins even when sun is in FOV; decision trace shows it."""
+    def test_safety_custom_position_trumps_solar(self):
+        """The priority-100 custom position wins even when sun is in FOV; decision trace shows it."""
         logger = _make_logger()
         sun_data = _make_sun_data()
 
@@ -464,29 +487,28 @@ class TestEndToEndIntegration:
 
             assert cover.direct_sun_valid is True
 
-            pipeline = _make_pipeline()
+            pipeline = _make_pipeline(safety_position=75)
             snapshot = _build_pipeline_snapshot(
                 cover,
                 cover_type="cover_blind",
-                force_override_sensors={"binary_sensor.force": True},
-                force_override_position=75,
+                custom_position_sensors=[_safety_slot_state(True, position=75)],
             )
             result = pipeline.evaluate(snapshot)
 
-            assert result.control_method == ControlMethod.FORCE
+            assert result.control_method == ControlMethod.CUSTOM_POSITION
+            assert result.is_safety is True
             assert result.position == 75
             assert result.decision_trace[0].matched is True
-            assert result.decision_trace[0].handler == ForceOverrideHandler().name
+            assert result.decision_trace[0].handler == "custom_position_5"
             for step in result.decision_trace[1:]:
                 assert step.matched is False
 
-            diag_ctx = _build_diagnostic_context(
-                cover, result, force_override_position=75, final_state=75
-            )
+            diag_ctx = _build_diagnostic_context(cover, result, final_state=75)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
 
-            assert diag_dict["control_status"] == "force_override_active"
-            assert "force override" in explanation.lower()
+            # Reason/diagnostics surface the active trigger sensor (parity with
+            # the old force-override reason format).
+            assert "binary_sensor.force" in explanation
             assert "75%" in explanation
 
     def test_manual_override(self):
@@ -843,7 +865,6 @@ class TestCustomPositionEndToEnd:
                 [
                     CustomPositionHandler(
                         slot=1,
-                        entity_id="binary_sensor.scene",
                         position=33,
                         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     ),
@@ -860,8 +881,6 @@ class TestCustomPositionEndToEnd:
                 climate_readings=None,
                 climate_mode_enabled=False,
                 climate_options=None,
-                force_override_sensors={},
-                force_override_position=0,
                 manual_override_active=False,
                 motion_timeout_active=False,
                 weather_override_active=False,
@@ -870,12 +889,14 @@ class TestCustomPositionEndToEnd:
                 active_zone_names=frozenset(),
                 custom_position_sensors=[
                     CustomPositionSensorState(
-                        entity_id="binary_sensor.scene",
+                        entity_ids=("binary_sensor.scene",),
                         is_on=True,
                         position=33,
                         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                         min_mode=False,
                         use_my=False,
+                        slot=1,
+                        active_entity_ids=("binary_sensor.scene",),
                     )
                 ],
             )
@@ -977,8 +998,8 @@ class TestClimateGlareControlEndToEnd:
 class TestMultipleOverridesHighestPriorityWins:
     """When multiple overrides are active simultaneously, the highest-priority wins."""
 
-    def test_force_beats_manual_and_motion(self):
-        """Force (100) > Manual (80) > Motion (75): force wins with full trace."""
+    def test_safety_slot_beats_manual_and_motion(self):
+        """Safety slot (100) > Manual (80) > Motion (75): safety slot wins with full trace."""
         logger = _make_logger()
         sun_data = _make_sun_data()
 
@@ -1005,7 +1026,7 @@ class TestMultipleOverridesHighestPriorityWins:
 
             pipeline = PipelineRegistry(
                 [
-                    ForceOverrideHandler(),
+                    CustomPositionHandler(slot=_SAFETY_SLOT, position=0, priority=100),
                     ManualOverrideHandler(),
                     MotionTimeoutHandler(),
                     SolarHandler(),
@@ -1015,33 +1036,33 @@ class TestMultipleOverridesHighestPriorityWins:
             snapshot = _build_pipeline_snapshot(
                 cover,
                 cover_type="cover_blind",
-                force_override_sensors={"binary_sensor.wind": True},
-                force_override_position=0,
+                custom_position_sensors=[
+                    _safety_slot_state(True, entity_id="binary_sensor.wind")
+                ],
                 manual_override_active=True,
                 motion_timeout_active=True,
             )
             result = pipeline.evaluate(snapshot)
 
-            assert result.control_method == ControlMethod.FORCE
+            assert result.control_method == ControlMethod.CUSTOM_POSITION
+            assert result.is_safety is True
             assert result.position == 0
             assert result.bypass_auto_control is True
 
-            # Only first step (force) matched; all others did not
+            # Only first step (safety slot) matched; all others did not
             matched = [s for s in result.decision_trace if s.matched]
             assert len(matched) == 1
-            assert matched[0].handler == "force_override"
+            assert matched[0].handler == "custom_position_5"
 
             # Full trace has all handlers
             handler_names = {s.handler for s in result.decision_trace}
-            assert "force_override" in handler_names
+            assert "custom_position_5" in handler_names
             assert "manual_override" in handler_names
             assert "motion_timeout" in handler_names
 
-            diag_ctx = _build_diagnostic_context(
-                cover, result, force_override_position=0, final_state=0
-            )
+            diag_ctx = _build_diagnostic_context(cover, result, final_state=0)
             diag_dict, explanation = DiagnosticsBuilder().build(diag_ctx)
-            assert diag_dict["control_status"] == "force_override_active"
+            assert "binary_sensor.wind" in explanation
 
 
 # ---------------------------------------------------------------------------

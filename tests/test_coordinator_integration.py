@@ -31,12 +31,16 @@ def _make_pipeline_result(
     position: int = 50,
     control_method: ControlMethod = ControlMethod.SOLAR,
     bypass_auto_control: bool = False,
+    floor_clamp_applied: bool = False,
+    is_safety: bool = False,
 ) -> PipelineResult:
     return PipelineResult(
         position=position,
         control_method=control_method,
         reason="test",
         bypass_auto_control=bypass_auto_control,
+        floor_clamp_applied=floor_clamp_applied,
+        is_safety=is_safety,
     )
 
 
@@ -64,10 +68,7 @@ def _make_coordinator(
         pipeline_result = _make_pipeline_result()
     coordinator._pipeline_result = pipeline_result
     coordinator._pipeline_bypasses_auto_control = pipeline_result.bypass_auto_control
-    coordinator._pipeline_is_safety_handler = pipeline_result.control_method in (
-        ControlMethod.FORCE,
-        ControlMethod.WEATHER,
-    )
+    coordinator._pipeline_is_safety_handler = pipeline_result.is_safety
 
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
     coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=False)
@@ -401,6 +402,80 @@ class TestCustomPositionSensorEdgeTriggerBypassesGate:
         coordinator._cmd_svc.apply_position.assert_not_called()
 
 
+class TestFloorClampUnderManualOverride:
+    """A floor-clamp under an armed manual override must dispatch and not snap to default (#534)."""
+
+    @pytest.mark.asyncio
+    async def test_floor_clamp_forces_dispatch_under_manual_override(self):
+        """A floor-clamped position under manual override calls context with force=True."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=80,
+            control_method=ControlMethod.MANUAL,
+            floor_clamp_applied=True,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator.manager.is_cover_manual.return_value = True
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator, state=80, options={}
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=True,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+    @pytest.mark.asyncio
+    async def test_floor_release_under_armed_override_does_not_force_to_default(self):
+        """Floor sensor off while override armed: stay at floor, no force to default (#534).
+
+        When the floor sensor releases and manual override is still the winner,
+        the manual-hold winner re-emits its theoretical default (90).  The
+        coordinator must NOT take the custom_position_released force path —
+        otherwise it would drive the cover to that default.  force stays False.
+        """
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        result = _make_pipeline_result(
+            position=90,
+            control_method=ControlMethod.MANUAL,
+            floor_clamp_applied=False,
+        )
+        coordinator = _make_coordinator(
+            entities=["cover.blind"],
+            pipeline_result=result,
+        )
+        coordinator.manager.is_cover_manual.return_value = True
+        coordinator._last_state_change_entity = "binary_sensor.cp1"
+
+        await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+            coordinator,
+            state=90,
+            options={},
+            custom_position_released_entities={"binary_sensor.cp1"},
+        )
+
+        coordinator._build_position_context.assert_called_once_with(
+            "cover.blind",
+            {},
+            force=False,
+            is_safety=False,
+            sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
+        )
+
+
 class TestCustomPositionSensorReleaseEdgeBypassesGate:
     """Custom-position sensor release-edge mirrors force-override release (#365).
 
@@ -410,9 +485,8 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
     handling, force=True is never threaded, and CoverCommandService drops the
     return-to-solar command on the time-delta gate.
 
-    The fix mirrors the existing _prev_force_override_active pattern: the
-    coordinator captures last cycle's per-sensor active state and computes a
-    set of sensors that flipped from on to off this cycle.  When the released
+    The coordinator captures last cycle's per-slot trigger states and computes
+    a set of sensors that flipped from on to off this cycle.  When the released
     sensor IS the entity that triggered this refresh, force=True is passed.
     """
 
@@ -424,7 +498,7 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
         """Coordinator where a custom-position sensor just transitioned on → off.
 
         Pipeline result is SOLAR because the sensor is off this cycle —
-        CustomPositionHandler returned None at custom_position.py:92.
+        CustomPositionHandler returned None (slot found but not active).
         """
         result = _make_pipeline_result(
             position=55,
@@ -433,7 +507,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
         )
         coordinator = _make_coordinator(entities=["cover.test"], pipeline_result=result)
         coordinator.check_adaptive_time = True
-        coordinator.is_force_override_active = False
         coordinator._last_state_change_entity = last_state_change_entity
         return coordinator
 
@@ -450,7 +523,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
@@ -475,7 +547,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
@@ -496,7 +567,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,
             custom_position_released_entities=set(),
         )
 
@@ -523,7 +593,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
@@ -557,7 +626,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
@@ -585,7 +653,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
@@ -612,7 +679,6 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
             coordinator,
             state=40,
             options={},
-            prev_force_override=False,
             custom_position_released_entities={"binary_sensor.movie_time"},
         )
 
@@ -810,10 +876,10 @@ class TestFirstRefreshSendsStartupCommands:
 
     @pytest.mark.asyncio
     async def test_reload_still_dispatches_on_active_safety_override(self):
-        """Safety overrides (force/weather) must still fire on config-entry reload.
+        """Safety overrides (safety custom position/weather) must still fire on config-entry reload.
 
-        Even when _is_reload=True, a force-override or weather handler that sets
-        bypass_auto_control=True must move the cover immediately.
+        Even when _is_reload=True, a safety-priority custom position or weather
+        handler that sets bypass_auto_control=True must move the cover immediately.
         """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
@@ -821,8 +887,9 @@ class TestFirstRefreshSendsStartupCommands:
 
         result = _make_pipeline_result(
             position=0,
-            control_method=ControlMethod.FORCE,
+            control_method=ControlMethod.CUSTOM_POSITION,
             bypass_auto_control=True,
+            is_safety=True,
         )
         coordinator = _make_coordinator(
             entities=["cover.blind_1"],
@@ -877,19 +944,20 @@ class TestFirstRefreshSendsStartupCommands:
 
 
 class TestStateChangeWithSafetyHandlerBypass:
-    """Safety handlers (force/weather) pass force=True to position context."""
+    """Safety handlers (safety custom position/weather) pass force=True to position context."""
 
     @pytest.mark.asyncio
-    async def test_force_override_uses_force_true_context(self):
-        """ForceOverrideHandler result triggers force=True in position context."""
+    async def test_safety_custom_position_uses_force_true_context(self):
+        """A safety-priority custom-position result triggers force=True in position context."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
         result = _make_pipeline_result(
             position=75,
-            control_method=ControlMethod.FORCE,
+            control_method=ControlMethod.CUSTOM_POSITION,
             bypass_auto_control=True,
+            is_safety=True,
         )
         coordinator = _make_coordinator(
             entities=["cover.test"],
@@ -919,6 +987,7 @@ class TestStateChangeWithSafetyHandlerBypass:
             position=0,
             control_method=ControlMethod.WEATHER,
             bypass_auto_control=True,
+            is_safety=True,
         )
         coordinator = _make_coordinator(
             entities=["cover.test"],
@@ -960,23 +1029,24 @@ class TestStateChangeWithSafetyHandlerBypass:
 
 
 # ---------------------------------------------------------------------------
-# Step 7b: Force override release bypasses time/position delta gates (#177)
+# Step 7b: Safety custom-position release bypasses time/position delta gates
+# (#177, migrated from force override by #563)
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverrideRelease:
-    """When force override releases, covers must return to calculated position
-    immediately — the force override's own move must not count against the
-    time delta threshold.  Regression tests for issue #177.
+class TestSafetyCustomPositionRelease:
+    """When a safety-priority custom position releases, covers must return to
+    the calculated position immediately — the safety slot's own move must not
+    count against the time delta threshold.  Regression tests for issue #177,
+    ported to the merged custom-position model (issue #563).
     """
 
     def _make_release_coordinator(
         self,
         *,
-        is_force_override_active: bool = False,
         check_adaptive_time: bool = True,
     ):
-        """Coordinator where force override just transitioned from on → off."""
+        """Coordinator where a safety slot just transitioned from on → off."""
         result = _make_pipeline_result(
             position=55,
             control_method=ControlMethod.SOLAR,
@@ -984,72 +1054,71 @@ class TestForceOverrideRelease:
         )
         coordinator = _make_coordinator(entities=["cover.test"], pipeline_result=result)
         coordinator.check_adaptive_time = check_adaptive_time
-        coordinator.is_force_override_active = is_force_override_active
         return coordinator
 
     @pytest.mark.asyncio
-    async def test_force_override_release_passes_force_true(self):
-        """When force override just released, _build_position_context gets force=True.
+    async def test_safety_release_passes_force_true(self):
+        """When the safety slot just released, _build_position_context gets force=True.
 
-        Previously the pipeline result had bypass_auto_control=False (solar won),
-        so force=False was passed and the time delta gate could block the move.
-        This test verifies the fix: prev_force_override=True causes force=True.
+        The pipeline result has bypass_auto_control=False (solar won), so
+        without the release edge force=False would be passed and the time
+        delta gate could block the move.  safety_release=True causes force=True.
         """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
-        coordinator = self._make_release_coordinator(is_force_override_active=False)
+        coordinator = self._make_release_coordinator()
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator,
             state=55,
             options={},
-            prev_force_override=True,  # was active last cycle
+            safety_release=True,  # safety slot was active last cycle
         )
 
         coordinator._build_position_context.assert_called_once_with(
             "cover.test",
             {},
             force=True,  # ← must bypass time/position delta gates
-            is_safety=False,  # ← force override release is NOT a safety target
+            is_safety=False,  # ← the release itself is NOT a safety target
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
     @pytest.mark.asyncio
-    async def test_force_override_release_uses_cleared_reason(self):
-        """Reason string must be 'force_override_cleared' on release."""
+    async def test_safety_release_uses_released_reason(self):
+        """Reason string must be 'custom_position_released' on safety release."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
-        coordinator = self._make_release_coordinator(is_force_override_active=False)
+        coordinator = self._make_release_coordinator()
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator,
             state=55,
             options={},
-            prev_force_override=True,
+            safety_release=True,
         )
 
         call = coordinator._cmd_svc.apply_position.call_args
         reason = call.args[2]
-        assert reason == "force_override_cleared"
+        assert reason == "custom_position_released"
 
     @pytest.mark.asyncio
-    async def test_no_release_without_prior_force_override(self):
-        """When prev_force_override=False, normal solar tracking uses force=False."""
+    async def test_no_release_without_prior_safety_slot(self):
+        """Without safety_release, normal solar tracking uses force=False."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
-        coordinator = self._make_release_coordinator(is_force_override_active=False)
+        coordinator = self._make_release_coordinator()
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator,
             state=55,
             options={},
-            prev_force_override=False,  # no prior force override
+            safety_release=False,  # no prior safety-slot activation
         )
 
         coordinator._build_position_context.assert_called_once_with(
@@ -1061,50 +1130,49 @@ class TestForceOverrideRelease:
         )
 
     @pytest.mark.asyncio
-    async def test_force_override_still_active_uses_bypass_auto_control(self):
-        """While force override is still active, bypass_auto_control drives force=True."""
+    async def test_safety_slot_still_active_uses_is_safety(self):
+        """While the safety slot is still active, is_safety drives force=True."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
         result = _make_pipeline_result(
             position=0,
-            control_method=ControlMethod.FORCE,
+            control_method=ControlMethod.CUSTOM_POSITION,
             bypass_auto_control=True,
+            is_safety=True,
         )
         coordinator = _make_coordinator(entities=["cover.test"], pipeline_result=result)
         coordinator.check_adaptive_time = True
-        coordinator.is_force_override_active = True
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator,
             state=0,
             options={},
-            prev_force_override=True,  # was also active last cycle — still on
         )
 
         coordinator._build_position_context.assert_called_once_with(
             "cover.test",
             {},
-            force=True,  # ← safety bypass from bypass_auto_control
-            is_safety=True,  # ← force override active = safety target
+            force=True,  # ← safety bypass
+            is_safety=True,  # ← safety slot active = safety target
             sun_just_appeared=coordinator._check_sun_validity_transition.return_value,
         )
 
     @pytest.mark.asyncio
-    async def test_force_override_release_outside_time_window_still_sends(self):
-        """Force override release must move covers even outside the active time window.
+    async def test_safety_release_outside_time_window_still_sends(self):
+        """Safety-slot release must move covers even outside the active time window.
 
-        The time-window guard skips non-safety state changes, but a force override
-        release is a special transition: the cover must return to its calculated
-        position regardless of the time window.
+        The time-window guard skips non-safety state changes, but a safety
+        release is a special transition: the cover must return to its
+        calculated position regardless of the time window (force-override
+        parity, issue #563).
         """
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
         coordinator = self._make_release_coordinator(
-            is_force_override_active=False,
             check_adaptive_time=False,  # outside time window
         )
 
@@ -1112,7 +1180,7 @@ class TestForceOverrideRelease:
             coordinator,
             state=55,
             options={},
-            prev_force_override=True,
+            safety_release=True,
         )
 
         # Must send even though we're outside the time window
@@ -1394,3 +1462,77 @@ class TestCoverOnlineTransitionRetrigger:
         )
 
         coordinator.async_request_refresh.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Issue #546: cover coming back from unavailable must not be a state change
+# ---------------------------------------------------------------------------
+
+
+class TestCoverComebackFromUnavailable:
+    """A cover returning from ``unavailable``/``unknown`` to a real position is a
+    reconnection artifact, not a user move. It must not be processed as a real
+    cover state change (which would feed numeric manual-override detection).
+    """
+
+    def _make_event(self, entity_id: str, old_state_value, new_state_value):
+        event = MagicMock()
+        old_state = MagicMock(state=old_state_value)
+        new_state = MagicMock(state=new_state_value)
+        event.data = {
+            "entity_id": entity_id,
+            "old_state": old_state,
+            "new_state": new_state,
+        }
+        return event
+
+    @pytest.mark.asyncio
+    async def test_unavailable_comeback_does_not_process_as_state_change(self):
+        """old_state 'unavailable' → '25' must NOT process as a real state change."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.test"])
+        coordinator.process_entity_state_change = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.test", "unavailable", "25")
+        )
+
+        coordinator.process_entity_state_change.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unknown_comeback_still_filtered(self):
+        """old_state 'unknown' → '25' stays filtered (existing behavior)."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.test"])
+        coordinator.process_entity_state_change = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.test", "unknown", "25")
+        )
+
+        coordinator.process_entity_state_change.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_real_state_change_still_processed(self):
+        """A genuine transition (open → 25) must still be processed."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coordinator = _make_coordinator(entities=["cover.test"])
+        coordinator.process_entity_state_change = MagicMock()
+        coordinator.async_refresh = AsyncMock()
+
+        await AdaptiveDataUpdateCoordinator.async_check_cover_state_change(
+            coordinator, self._make_event("cover.test", "open", "25")
+        )
+
+        coordinator.process_entity_state_change.assert_called_once()

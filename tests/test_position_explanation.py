@@ -148,8 +148,6 @@ def _base_ctx(**overrides):
         "config_options": {},
         "motion_detected": True,
         "motion_timeout_active": False,
-        "force_override_sensors": [],
-        "force_override_position": 0,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)
@@ -611,17 +609,17 @@ class TestClimateStrategyNormalWithoutPresence:
 class TestBuildPositionExplanation:
     """DiagnosticsBuilder._build_position_explanation returns correct strings."""
 
-    def test_force_override(self, builder):
-        """Force override active → explains override position."""
+    def test_safety_custom_position(self, builder):
+        """Safety-priority custom position active → explains slot position (#563)."""
         pr = _make_pr(
-            control_method=ControlMethod.FORCE,
-            reason="force override active (sensor.x) — position 0% [bypasses automatic control]",
+            control_method=ControlMethod.CUSTOM_POSITION,
+            reason="custom position #5 active (sensor.x) — position 0% [bypasses automatic control]",
             position=0,
         )
         result = DiagnosticsBuilder._build_position_explanation(
             _base_ctx(pipeline_result=pr)
         )
-        assert "force override" in result.lower()
+        assert "custom position #5" in result.lower()
         assert "0%" in result
 
     def test_motion_timeout(self, builder):
@@ -828,6 +826,7 @@ class TestPositionExplanationChangeDetection:
         type(coord).state = PropertyMock(return_value=50)
         coord.config_entry = MagicMock()
         coord.config_entry.options = {}
+        coord._resolved_options = {}
         type(coord).is_motion_detected = PropertyMock(return_value=True)
         coord._motion_mgr = MagicMock()
         coord._motion_mgr._motion_timeout_active = False

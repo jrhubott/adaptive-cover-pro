@@ -80,6 +80,32 @@ def _make_cover_factory(*, solar_valid: bool, percentage: int = 40):
     return factory
 
 
+def _make_config(**overrides):
+    """Build a minimal CoverConfig, overriding individual fields by name.
+
+    Starts from ``CoverConfig.from_options({})`` (all sane defaults:
+    ``min_pos=0``, ``max_pos=100``, ``sunset_pos=None``, etc.) so tests only
+    name the fields they care about — e.g. ``_make_config(h_def=10)`` or
+    ``_make_config(min_pos=30, min_pos_sun_tracking=40)``.
+    """
+    import dataclasses
+
+    from custom_components.adaptive_cover_pro.config_types import CoverConfig
+
+    return dataclasses.replace(CoverConfig.from_options({}), **overrides)
+
+
+def _make_policy(*, open_blocks_sun: bool = False):
+    """Stub CoverTypePolicy exposing the single axis attribute the solar
+    primitive reads for coverage direction (``full_coverage_at_zero``).
+    """
+    policy = MagicMock()
+    axis = MagicMock()
+    axis.open_blocks_sun = open_blocks_sun
+    policy.axes = [axis]
+    return policy
+
+
 # ---------------------------------------------------------------------------
 # Sample series shape
 # ---------------------------------------------------------------------------
@@ -93,7 +119,7 @@ class TestBuildForecastSamples:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=10,
+            config=_make_config(h_def=10),
             now=_NOW,
         )
         # Full calendar day (00:00 → 24:00) at 15-minute steps inclusive = 24 * 60 / 15 + 1 = 97.
@@ -107,17 +133,62 @@ class TestBuildForecastSamples:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
-            default_position=10,
+            config=_make_config(h_def=10),
             now=_NOW,
         )
         assert all(s.position == 55 and s.handler == "solar" for s in f.samples)
+
+    def test_minimize_movements_quantizes_solar_samples(self):
+        """N=2 steps snap a 55% solar sample to the 50% coverage level.
+
+        Matches the live solar branch exactly (quantize → floor-at-1 → limits),
+        with coverage direction taken from the policy's primary axis.
+        """
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
+            config=_make_config(h_def=10),
+            policy=_make_policy(open_blocks_sun=False),  # full_coverage_at_zero
+            now=_NOW,
+            minimize_movements=True,
+            max_coverage_steps=2,
+        )
+        assert all(s.position == 50 and s.handler == "solar" for s in f.samples)
+
+    def test_minimize_movements_without_policy_is_noop(self):
+        """No policy → no quantization (matches the live `policy is None` guard)."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=True, percentage=55),
+            config=_make_config(h_def=10),
+            now=_NOW,
+            minimize_movements=True,
+            max_coverage_steps=1,
+        )
+        assert all(s.position == 55 and s.handler == "solar" for s in f.samples)
+
+    def test_minimize_movements_does_not_touch_default_samples(self):
+        """Default (non-solar) samples are never quantized."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(h_def=10),
+            policy=_make_policy(open_blocks_sun=False),
+            now=_NOW,
+            minimize_movements=True,
+            max_coverage_steps=1,
+        )
+        assert all(s.position == 10 and s.handler == "default" for s in f.samples)
 
     def test_custom_step_covers_full_day_proportionally(self):
         sd = _make_sun_data(n_samples=289, step_minutes=5)
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
             step_minutes=30,
         )
@@ -130,7 +201,7 @@ class TestBuildForecastSamples:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         assert len(f.samples) > 0, "forecast produced no samples"
@@ -152,7 +223,7 @@ class TestBuildForecastSamples:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         assert f.samples == ()
@@ -188,7 +259,7 @@ class TestForecastEvaluatesPerSampleTime:
         f = build_forecast(
             sun_data=sd,
             cover_factory=lambda _azi, _ele: _EvalTimeCover(),
-            default_position=100,
+            config=_make_config(h_def=100),
             now=datetime(2026, 6, 1, 23, 0, tzinfo=UTC),  # built late in the day
         )
         # The curve is NOT flat: midday samples track the sun...
@@ -211,7 +282,7 @@ class TestForecastEvaluatesPerSampleTime:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         sunrise_events = [e for e in f.events if e.kind == EVENT_SUNRISE]
@@ -235,7 +306,7 @@ class TestBuildForecastEvents:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         kinds = [e.kind for e in f.events]
@@ -247,7 +318,7 @@ class TestBuildForecastEvents:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         assert EVENT_SUNRISE not in [e.kind for e in f.events]
@@ -289,7 +360,7 @@ class TestBuildForecastEvents:
         f = build_forecast(
             sun_data=sd,
             cover_factory=toggling_factory,
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         kinds = [e.kind for e in f.events]
@@ -323,7 +394,7 @@ class TestBuildForecastEvents:
             return cover
 
         f = build_forecast(
-            sun_data=sd, cover_factory=factory, default_position=0, now=_NOW
+            sun_data=sd, cover_factory=factory, config=_make_config(), now=_NOW
         )
 
         enter_events = [e for e in f.events if e.kind == EVENT_FOV_ENTER]
@@ -340,7 +411,7 @@ class TestBuildForecastEvents:
         f = build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=0,
+            config=_make_config(),
             now=_NOW,
         )
         times = [e.t for e in f.events]
@@ -383,15 +454,213 @@ class TestForecastToAttrs:
 
 @pytest.mark.parametrize("default", [0, 50, 100])
 def test_default_position_round_trips_through_samples(default: int):
-    """Whatever default_position we pass appears verbatim in non-solar samples."""
+    """The configured default height appears verbatim in non-solar samples.
+
+    With no min/max limits configured and no sunset position, the default
+    branch passes the effective default through unchanged.
+    """
     sd = _make_sun_data()
     f = build_forecast(
         sun_data=sd,
         cover_factory=_make_cover_factory(solar_valid=False),
-        default_position=default,
+        config=_make_config(h_def=default),
         now=_NOW,
     )
     assert {s.position for s in f.samples} == {default}
+
+
+# ---------------------------------------------------------------------------
+# Runtime parity: limits, floor-at-1, rounding, sunset — the forecast must
+# match what the live pipeline commands, because it routes every sample
+# through the same pipeline.helpers primitives.
+# ---------------------------------------------------------------------------
+
+
+def _solar_cover_factory(percentage):
+    """Cover factory: direct sun valid, calculate_percentage() → *percentage*."""
+
+    def factory(_azi, _ele):
+        cover = MagicMock()
+        cover.direct_sun_valid = True
+        cover.calculate_percentage = MagicMock(return_value=percentage)
+        return cover
+
+    return factory
+
+
+class TestForecastLimits:
+    """min/max position settings flow into the forecast (the reported gap)."""
+
+    def test_min_position_floors_solar_samples(self):
+        """min_position=30 with a 10% geometry → solar samples floored to 30."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(10),
+            config=_make_config(min_pos=30),
+            now=_NOW,
+        )
+        assert all(s.handler == "solar" and s.position == 30 for s in f.samples)
+
+    def test_max_position_caps_solar_samples(self):
+        """max_position=70 with a 90% geometry → solar samples capped at 70."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(90),
+            config=_make_config(max_pos=70),
+            now=_NOW,
+        )
+        assert all(s.handler == "solar" and s.position == 70 for s in f.samples)
+
+    def test_sun_only_min_not_applied_to_default_samples(self):
+        """enable_min_position (sun-only) → floor skipped when sun is out of FOV."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(h_def=5, min_pos=30, min_pos_sun_only=True),
+            now=_NOW,
+        )
+        # Sun-only floor must NOT raise the default to 30 — it stays 5.
+        assert all(s.handler == "default" and s.position == 5 for s in f.samples)
+
+    def test_always_enforced_min_applied_to_default_samples(self):
+        """Always-enforce min (sun_only=False) raises default samples to the floor."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(h_def=5, min_pos=30, min_pos_sun_only=False),
+            now=_NOW,
+        )
+        assert all(s.position == 30 for s in f.samples)
+
+    def test_sun_tracking_floor_overrides_min_on_solar_samples(self):
+        """min_position_sun_tracking overrides min_position while sun-tracking."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(10),
+            config=_make_config(min_pos=20, min_pos_sun_tracking=40),
+            now=_NOW,
+        )
+        assert all(s.position == 40 for s in f.samples)
+
+
+class TestForecastFloorAndRound:
+    """Solar samples are floored at 1% and rounded, matching the live branch."""
+
+    def test_solar_floored_at_one_percent(self):
+        """A 0% geometry never closes an open/close blind — floors to 1."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(0),
+            config=_make_config(),
+            now=_NOW,
+            floor_active=True,
+        )
+        assert all(s.handler == "solar" and s.position == 1 for s in f.samples)
+
+    def test_positionable_solar_reaches_zero(self):
+        """A 0% geometry reaches a true 0% when the instance is positionable (#569)."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(0),
+            config=_make_config(),
+            now=_NOW,
+            floor_active=False,
+        )
+        assert all(s.handler == "solar" and s.position == 0 for s in f.samples)
+
+    def test_solar_percentage_is_rounded_not_truncated(self):
+        """54.6% rounds to 55 (the live branch rounds; the old forecast truncated)."""
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(54.6),
+            config=_make_config(),
+            now=_NOW,
+        )
+        assert all(s.position == 55 for s in f.samples)
+
+
+class TestForecastSunsetParity:
+    """Default samples use the sunset position inside the sunset window."""
+
+    def test_sunset_position_used_and_not_clamped_in_window(self):
+        sunrise = _DAY_START + timedelta(hours=6)
+        sunset = _DAY_START + timedelta(hours=20)
+        sd = _make_sun_data(sunrise=sunrise, sunset=sunset)
+        # sunset_pos=20 sits BELOW an always-enforced min_pos=30: the sunset
+        # window must bypass the clamp (#128), while daytime defaults still clamp.
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(
+                h_def=80, sunset_pos=20, min_pos=30, min_pos_sun_only=False
+            ),
+            now=_NOW,
+        )
+        pos_at = {s.t: s.position for s in f.samples}
+        # Deep night (before sunrise / after sunset): sunset position, unclamped.
+        assert pos_at[_DAY_START + timedelta(hours=2)] == 20
+        assert pos_at[_DAY_START + timedelta(hours=22)] == 20
+        # Midday (outside the sunset window): daytime default, clamped to min.
+        assert pos_at[_DAY_START + timedelta(hours=12)] == 80
+        assert {s.position for s in f.samples} == {20, 80}
+
+
+class TestForecastMatchesLivePipeline:
+    """Anti-drift lock: forecast samples == the live snapshot-based helpers."""
+
+    def test_solar_sample_equals_compute_solar_position(self):
+        from custom_components.adaptive_cover_pro.pipeline.helpers import (
+            compute_solar_position,
+        )
+
+        from tests.conftest import make_snapshot_for_cover
+
+        config = _make_config(min_pos=30, max_pos=90)
+        # Live snapshot over an equivalent cover at the same geometry/config.
+        live_cover = MagicMock()
+        live_cover.config = config
+        live_cover.calculate_percentage = MagicMock(return_value=10)
+        snapshot = make_snapshot_for_cover(live_cover)
+        live = compute_solar_position(snapshot)
+
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_solar_cover_factory(10),
+            config=config,
+            now=_NOW,
+        )
+        assert all(s.position == live for s in f.samples)
+
+    def test_default_sample_equals_compute_default_position(self):
+        from custom_components.adaptive_cover_pro.pipeline.helpers import (
+            compute_default_position,
+        )
+
+        from tests.conftest import make_snapshot_for_cover
+
+        config = _make_config(h_def=5, min_pos=30, min_pos_sun_only=False)
+        live_cover = MagicMock()
+        live_cover.config = config
+        snapshot = make_snapshot_for_cover(live_cover, default_position=5)
+        live = compute_default_position(snapshot)
+
+        sd = _make_sun_data()
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=config,
+            now=_NOW,
+        )
+        assert all(s.position == live for s in f.samples)
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +1025,7 @@ def test_build_forecast_with_real_sun_data_caches_timeline():
         build_forecast(
             sun_data=sd,
             cover_factory=_make_cover_factory(solar_valid=False),
-            default_position=10,
+            config=_make_config(h_def=10),
             now=_NOW,
         )
     assert (

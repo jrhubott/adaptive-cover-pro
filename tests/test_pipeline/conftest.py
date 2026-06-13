@@ -66,9 +66,6 @@ def make_snapshot(
     climate_readings=None,
     climate_mode_enabled: bool = False,
     climate_options: ClimateOptions | None = None,
-    force_override_sensors: dict[str, bool] | None = None,
-    force_override_position: int = 0,
-    force_override_min_mode: bool = False,
     manual_override_active: bool = False,
     motion_timeout_active: bool = False,
     weather_override_active: bool = False,
@@ -87,6 +84,7 @@ def make_snapshot(
     current_cover_position: int | None = None,
     default_tilt: int | None = None,
     sunset_tilt: int | None = None,
+    solar_floor_active: bool = True,
     # Convenience: configure mock cover
     direct_sun_valid: bool = False,
     calculate_percentage_return: float = 50.0,
@@ -106,11 +104,6 @@ def make_snapshot(
         climate_readings=climate_readings,
         climate_mode_enabled=climate_mode_enabled,
         climate_options=climate_options,
-        force_override_sensors=(
-            force_override_sensors if force_override_sensors is not None else {}
-        ),
-        force_override_position=force_override_position,
-        force_override_min_mode=force_override_min_mode,
         manual_override_active=manual_override_active,
         motion_timeout_active=motion_timeout_active,
         weather_override_active=weather_override_active,
@@ -135,4 +128,5 @@ def make_snapshot(
         current_cover_position=current_cover_position,
         default_tilt=default_tilt,
         sunset_tilt=sunset_tilt,
+        solar_floor_active=solar_floor_active,
     )

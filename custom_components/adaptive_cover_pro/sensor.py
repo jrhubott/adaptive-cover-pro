@@ -25,11 +25,13 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_ENABLE_GLARE_ZONES,
     CONF_ENABLE_SUN_TRACKING,
-    CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_IS_SUNNY_SENSOR,
     CONF_LUX_ENTITY,
+    CONF_OUTSIDE_THRESHOLD,
     CONF_SENSOR_TYPE,
+    CONF_TEMP_HIGH,
+    CONF_TEMP_LOW,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_WINDY_SENSOR,
@@ -39,13 +41,19 @@ from .const import (
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     DEGREES_IN_CIRCLE,
     DOMAIN,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverDiagnosticSensorBase, AdaptiveCoverSensorBase
 from .const import ControlMethod, PanelRole
-from .helpers import motion_entities
+from .helpers import (
+    custom_position_slot_configured,
+    custom_position_slot_sensors,
+    motion_entities,
+)
+from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
 
 
@@ -500,6 +508,15 @@ def _control_status_value(s: _ACPDiagnosticSensor) -> str | None:
     return s.data.diagnostics.get("control_status")
 
 
+def _iso_or_none(value: dt.datetime | None) -> str | None:
+    """Return a tz-aware ISO-8601 string for a naive-local datetime, or None."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = dt_util.as_local(value)
+    return value.isoformat()
+
+
 def _control_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     if s.data.diagnostics is None:
         return None
@@ -516,6 +533,8 @@ def _control_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     )
     attrs["after_start_time"] = time_window.get("after_start_time")
     attrs["before_end_time"] = time_window.get("before_end_time")
+    attrs["schedule_start"] = _iso_or_none(time_window.get("start_time"))
+    attrs["schedule_end"] = _iso_or_none(time_window.get("end_time"))
 
     sun_validity = diagnostics.get("sun_validity", {})
     if sun_validity:
@@ -685,28 +704,6 @@ def _motion_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
     return attrs
 
 
-def _force_override_value(s: _ACPDiagnosticSensor) -> int | None:
-    sensors = s.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
-    if not sensors:
-        return None
-    return sum(
-        1
-        for entity_id in sensors
-        if (state := s.hass.states.get(entity_id)) and state.state == "on"
-    )
-
-
-def _force_override_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
-    sensors = s.config_entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
-    if not sensors:
-        return None
-    per_sensor: dict[str, str] = {}
-    for entity_id in sensors:
-        state = s.hass.states.get(entity_id)
-        per_sensor[entity_id] = state.state if state is not None else "unavailable"
-    return {"per_sensor": per_sensor, "total_configured": len(sensors)}
-
-
 def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
     if s.data.diagnostics is None:
         return None
@@ -720,11 +717,40 @@ def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
     return "intermediate"
 
 
-def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
-    if s.data.diagnostics is None:
+def _round_threshold(value: float | None) -> float | None:
+    """Round a threshold value to 1 decimal place at the presentation boundary."""
+    if value is None:
         return None
+    return round(value, 1)
+
+
+def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any]:
+    """Return extra_state_attributes for the climate_status sensor.
+
+    Always returns a non-None dict so that threshold setpoints and
+    inactive_reason are visible even in standby (when diagnostics is None).
+    """
+    from .pipeline.handlers.climate import inactive_reason_from_result
+
+    opts = s.config_entry.options
+
+    # --- Threshold setpoints: always present, even in standby ---
+    # Read from config_entry.options — the canonical live source.
+    # Rounded to 1 decimal place at the sensor boundary (Display-Rounding rule).
+    attrs: dict[str, Any] = {
+        "temp_low": _round_threshold(opts.get(CONF_TEMP_LOW)),
+        "temp_high": _round_threshold(opts.get(CONF_TEMP_HIGH)),
+        "temp_summer_outside": _round_threshold(opts.get(CONF_OUTSIDE_THRESHOLD)),
+    }
+
+    # --- inactive_reason: always present ---
+    result = s.coordinator._pipeline_result  # noqa: SLF001
+    attrs["inactive_reason"] = inactive_reason_from_result(result)
+
+    # --- Active-state attributes (only when diagnostics are populated) ---
     diagnostics = s.data.diagnostics
-    attrs: dict[str, Any] = {}
+    if diagnostics is None:
+        return attrs
 
     active_temp = diagnostics.get("active_temperature")
     if active_temp is not None:
@@ -758,7 +784,7 @@ def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
         if climate_conditions.get("irradiance_active") is not None:
             attrs["irradiance_active"] = climate_conditions["irradiance_active"]
 
-    return attrs or None
+    return attrs
 
 
 def _decision_trace_value(s: _ACPDiagnosticSensor) -> str:
@@ -771,8 +797,6 @@ def _decision_trace_value(s: _ACPDiagnosticSensor) -> str:
 def _configured_handlers(opts: Mapping[str, Any]) -> list[str]:
     """Pipeline handlers the user has configured (card-normalized names)."""
     enabled: list[str] = ["manual", "default"]
-    if opts.get(CONF_FORCE_OVERRIDE_SENSORS):
-        enabled.append("force")
     if any(
         opts.get(k)
         for k in (
@@ -786,7 +810,7 @@ def _configured_handlers(opts: Mapping[str, Any]) -> list[str]:
     ):
         enabled.append("weather")
     if any(
-        opts.get(slot_keys["sensor"]) and opts.get(slot_keys["position"]) is not None
+        custom_position_slot_configured(opts, slot_keys)
         for slot_keys in CUSTOM_POSITION_SLOTS.values()
     ):
         enabled.append("custom_position")
@@ -846,19 +870,26 @@ def _build_custom_position_slots_snapshot(
 ) -> list[dict[str, Any]]:
     """Build a per-slot snapshot for the companion card's slot UI.
 
-    Always returns one row per slot (1-4) so the consumer can render a stable
+    Always returns one row per slot (1-5) so the consumer can render a stable
     grid. Rows for unconfigured slots have ``enabled=False`` with the other
     fields nulled out — the card uses ``sensor is not None`` to tell
     "configured but disabled" apart from "never configured".
+
+    ``sensor`` stays populated with the first trigger sensor for card
+    back-compat; ``sensors`` carries the full multi-sensor list and
+    ``template``/``template_mode`` describe the optional condition template
+    (issue #563).
     """
     snapshot: list[dict[str, Any]] = []
     for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
-        sensor = options.get(slot_keys["sensor"])
+        sensors = custom_position_slot_sensors(options, slot_keys)
         position = options.get(slot_keys["position"])
-        configured = bool(sensor) and position is not None
+        has_template = is_template_string(options.get(slot_keys["template"]))
+        configured = custom_position_slot_configured(options, slot_keys)
+        sensor = sensors[0] if sensors else None
         sensor_name: str | None = None
-        if configured:
-            state = hass.states.get(sensor) if sensor else None
+        if configured and sensor:
+            state = hass.states.get(sensor)
             if state is not None:
                 sensor_name = state.attributes.get(ATTR_FRIENDLY_NAME)
         snapshot.append(
@@ -874,6 +905,14 @@ def _build_custom_position_slots_snapshot(
                     else False
                 ),
                 "sensor": sensor if configured else None,
+                "sensors": sensors if configured else [],
+                "template": has_template if configured else False,
+                "template_mode": (
+                    options.get(slot_keys["template_mode"])
+                    or DEFAULT_TEMPLATE_COMBINE_MODE
+                    if configured and has_template
+                    else None
+                ),
                 "sensor_name": sensor_name,
                 "position": int(position) if configured else None,
                 "priority": (
@@ -946,6 +985,9 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             attrs["elevation_valid"] = sun_validity.get("valid_elevation")
             attrs["in_blind_spot"] = sun_validity.get("in_blind_spot")
             attrs["sunset_window_active"] = sun_validity.get("sunset_window_active")
+            # Promote the #552/#553 sun_state derivation onto the wire so the
+            # companion card reads it as the authoritative sky-compass dot state.
+            attrs["sun_state"] = sun_validity.get("sun_state")
         if s.coordinator._cover_data is not None:  # noqa: SLF001
             attrs["direct_sun_valid"] = (
                 s.coordinator._cover_data.direct_sun_valid
@@ -1186,16 +1228,6 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         attrs_fn=_motion_status_attrs,
     ),
     _SensorSpec(
-        suffix="force_override_triggers",
-        display_name="Force Override Triggers",
-        icon="mdi:shield-alert-outline",
-        state_class=SensorStateClass.MEASUREMENT,
-        unit="sensors",
-        value_fn=_force_override_value,
-        attrs_fn=_force_override_attrs,
-        enabled_when=lambda e: bool(e.options.get(CONF_FORCE_OVERRIDE_SENSORS)),
-    ),
-    _SensorSpec(
         suffix="climate_status",
         display_name="Climate Status",
         icon="mdi:weather-partly-cloudy",
@@ -1422,11 +1454,6 @@ AdaptiveCoverPositionVerificationSensor = _make_legacy_alias(
 )
 AdaptiveCoverMotionStatusSensor = _make_legacy_alias(
     "AdaptiveCoverMotionStatusSensor", "motion_status", _ACPDiagnosticSensor
-)
-AdaptiveCoverForceOverrideTriggerSensor = _make_legacy_alias(
-    "AdaptiveCoverForceOverrideTriggerSensor",
-    "force_override_triggers",
-    _ACPDiagnosticSensor,
 )
 AdaptiveCoverClimateStatusSensor = _make_legacy_alias(
     "AdaptiveCoverClimateStatusSensor", "climate_status", _ACPDiagnosticSensor

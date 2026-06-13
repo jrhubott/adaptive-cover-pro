@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 
@@ -60,6 +62,46 @@ class PositionConverter:
         return round(percentage)
 
     @staticmethod
+    def quantize_to_coverage_steps(
+        percentage: int,
+        n_steps: int,
+        full_coverage_at_zero: bool,
+    ) -> int:
+        """Snap an engine-orientation percentage to one of N coverage levels.
+
+        Rounds **toward full coverage** so sun protection is never reduced by the
+        quantization. The 0–100 range is divided into ``n_steps`` evenly-spaced
+        coverage levels; the calculated coverage is rounded *up* to the next
+        level. With ``n_steps == 1`` any non-zero coverage demand snaps straight
+        to full coverage, which is what the "minimize movements" feature wants.
+
+        Args:
+            percentage: Engine-orientation position (0–100) from
+                ``calculate_percentage()``.
+            n_steps: Number of discrete coverage levels (>= 1).
+            full_coverage_at_zero: True when 0% means maximum sun blocking
+                (vertical blind, tilt, venetian); False when 100% means maximum
+                blocking (awning — open/extended blocks the sun). Derived from the
+                policy's primary ``CoverAxis.open_blocks_sun`` flag.
+
+        Returns:
+            The quantized position (0–100) in the same engine orientation.
+
+        """
+        if n_steps < 1:
+            return percentage
+        # Coverage fraction: 1.0 = full coverage, 0.0 = fully open / no blocking.
+        coverage = (
+            (100 - percentage) / 100 if full_coverage_at_zero else percentage / 100
+        )
+        # ceil → round toward more coverage; clamp guards float drift past 1.0.
+        level = min(math.ceil(coverage * n_steps) / n_steps, 1.0)
+        coverage_pct = level * 100
+        if full_coverage_at_zero:
+            return round(100 - coverage_pct)
+        return round(coverage_pct)
+
+    @staticmethod
     def apply_limits(
         value: int,
         min_pos: int | None,
@@ -106,7 +148,7 @@ class PositionConverter:
         # fires when HA's NumberSelector stores a float (e.g. 25.0) — issue #475.
         # Using (int, float) rather than is-not-None avoids false-positives from
         # unspecified MagicMock attributes in tests.
-        _use_sun_tracking = isinstance(sun_tracking_min_pos, (int, float)) and sun_valid
+        _use_sun_tracking = isinstance(sun_tracking_min_pos, int | float) and sun_valid
         effective_min = int(sun_tracking_min_pos) if _use_sun_tracking else min_pos
 
         # Apply min position limit

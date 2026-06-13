@@ -1,6 +1,7 @@
 """Tests for safety override bypass of automatic control.
 
-Force Override and Weather Override set bypass_auto_control=True so they
+Safety-priority custom positions (priority 100 — the migrated force override,
+issue #563) and Weather Override set bypass_auto_control=True so they
 still operate (send cover commands) even when the Automatic Control switch
 is turned off.  These tests verify:
 
@@ -21,7 +22,6 @@ from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_P
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     DefaultHandler,
-    ForceOverrideHandler,
     SolarHandler,
     WeatherOverrideHandler,
 )
@@ -45,63 +45,86 @@ def _make_pipeline_result(*, bypass: bool) -> PipelineResult:
     """Build a minimal PipelineResult with the given bypass flag."""
     return PipelineResult(
         position=0,
-        control_method=ControlMethod.FORCE,
+        control_method=ControlMethod.CUSTOM_POSITION,
         reason="test",
         bypass_auto_control=bypass,
     )
 
 
+_SAFETY_SLOT = 5
+
+
+def _safety_handler(position: int = 0) -> CustomPositionHandler:
+    """Priority-100 custom position handler — force-override parity."""
+    return CustomPositionHandler(slot=_SAFETY_SLOT, position=position, priority=100)
+
+
+def _safety_slot_state(
+    is_on: bool,
+    *,
+    position: int = 0,
+    entity_id: str = "binary_sensor.wind",
+) -> CustomPositionSensorState:
+    """Slot-5 safety trigger state for the snapshot."""
+    return CustomPositionSensorState(
+        entity_ids=(entity_id,),
+        is_on=is_on,
+        position=position,
+        priority=100,
+        min_mode=False,
+        use_my=False,
+        slot=_SAFETY_SLOT,
+        active_entity_ids=(entity_id,) if is_on else (),
+    )
+
+
 # ---------------------------------------------------------------------------
-# 1 & 2 — ForceOverrideHandler sets bypass flag and includes text in reason
+# 1 & 2 — Safety custom position sets bypass flag and includes text in reason
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverrideBypass:
-    """ForceOverrideHandler must set bypass_auto_control=True."""
-
-    handler = ForceOverrideHandler()
+class TestSafetyCustomPositionBypass:
+    """A priority-100 CustomPositionHandler must set bypass_auto_control=True."""
 
     def test_bypass_flag_set(self) -> None:
         """Result must have bypass_auto_control=True when sensor is on."""
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.wind": True},
-            force_override_position=0,
+            custom_position_sensors=[_safety_slot_state(True)],
         )
-        result = self.handler.evaluate(snapshot)
+        result = _safety_handler().evaluate(snapshot)
         assert result is not None
         assert result.bypass_auto_control is True
+        assert result.is_safety is True
 
     def test_reason_includes_bypass_text(self) -> None:
         """Reason string must include '[bypasses automatic control]'."""
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.wind": True},
-            force_override_position=0,
+            custom_position_sensors=[_safety_slot_state(True)],
         )
-        result = self.handler.evaluate(snapshot)
+        result = _safety_handler().evaluate(snapshot)
         assert result is not None
         assert "[bypasses automatic control]" in result.reason
 
     def test_not_active_returns_none(self) -> None:
         """No result when all sensors are off — bypass flag irrelevant."""
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.wind": False},
+            custom_position_sensors=[_safety_slot_state(False)],
         )
-        result = self.handler.evaluate(snapshot)
+        result = _safety_handler().evaluate(snapshot)
         assert result is None
 
     def test_no_sensors_returns_none(self) -> None:
-        """No result when sensor list is empty."""
-        snapshot = make_snapshot(force_override_sensors={})
-        result = self.handler.evaluate(snapshot)
+        """No result when the slot is not present in the snapshot."""
+        snapshot = make_snapshot(custom_position_sensors=[])
+        result = _safety_handler().evaluate(snapshot)
         assert result is None
 
     def test_bypass_position_correct(self) -> None:
-        """Result position must match the configured force override position."""
+        """Result position must match the configured slot position."""
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.wind": True},
-            force_override_position=25,
+            custom_position_sensors=[_safety_slot_state(True, position=25)],
         )
-        result = self.handler.evaluate(snapshot)
+        result = _safety_handler(position=25).evaluate(snapshot)
         assert result is not None
         assert result.position == 25
 
@@ -297,12 +320,11 @@ class TestNonSafetyHandlersNoBypass:
 class TestRegistryPropagatesBypass:
     """PipelineRegistry must copy bypass_auto_control from the winning handler."""
 
-    def test_force_override_bypass_propagated(self) -> None:
-        """Registry result carries bypass_auto_control=True when force override wins."""
-        registry = PipelineRegistry([ForceOverrideHandler(), DefaultHandler()])
+    def test_safety_custom_position_bypass_propagated(self) -> None:
+        """Registry result carries bypass_auto_control=True when the safety slot wins."""
+        registry = PipelineRegistry([_safety_handler(), DefaultHandler()])
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.wind": True},
-            force_override_position=0,
+            custom_position_sensors=[_safety_slot_state(True)],
         )
         result = registry.evaluate(snapshot)
         assert result.bypass_auto_control is True
@@ -400,26 +422,30 @@ class TestCoordinatorBypassProperty:
 
 
 class TestPipelineIsSafetyHandlerProperty:
-    """_pipeline_is_safety_handler must return True only for genuine safety handlers.
+    """_pipeline_is_safety_handler must return True only for genuine safety results.
 
-    FORCE and WEATHER are genuine safety handlers — they bypass delta/time gates
-    via force=True because wind/rain protection must act immediately.
-    CUSTOM_POSITION (and all others) set bypass_auto_control=True only to defeat
-    the auto_control_off gate, and must NOT trigger force=True (issue #290).
+    Safety-priority custom positions (priority 100, is_safety=True) and WEATHER
+    are genuine safety results — they bypass delta/time gates via force=True
+    because wind/rain protection must act immediately.  Ordinary CUSTOM_POSITION
+    results (and all others) set bypass_auto_control=True only to defeat the
+    auto_control_off gate, and must NOT trigger force=True (issue #290).
     """
 
-    def _make_coord_with_result(self, control_method: ControlMethod) -> MagicMock:
+    def _make_coord_with_result(
+        self, control_method: ControlMethod, *, is_safety: bool = False
+    ) -> MagicMock:
         coord = MagicMock()
         coord._pipeline_result = PipelineResult(
             position=60,
             control_method=control_method,
             reason="test",
             bypass_auto_control=True,
+            is_safety=is_safety,
         )
         return coord
 
     def test_custom_position_is_not_safety_handler(self) -> None:
-        """CUSTOM_POSITION must return False — it bypasses auto_control, not delta/time gates."""
+        """Ordinary CUSTOM_POSITION must return False — it bypasses auto_control, not delta/time gates."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
@@ -428,13 +454,15 @@ class TestPipelineIsSafetyHandlerProperty:
         result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
         assert result is False
 
-    def test_force_is_safety_handler(self) -> None:
-        """FORCE must return True — wind/rain protection requires bypassing delta/time gates."""
+    def test_safety_custom_position_is_safety_handler(self) -> None:
+        """A priority-100 custom position (is_safety=True) must return True."""
         from custom_components.adaptive_cover_pro.coordinator import (
             AdaptiveDataUpdateCoordinator,
         )
 
-        coord = self._make_coord_with_result(ControlMethod.FORCE)
+        coord = self._make_coord_with_result(
+            ControlMethod.CUSTOM_POSITION, is_safety=True
+        )
         result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
         assert result is True
 
@@ -444,7 +472,7 @@ class TestPipelineIsSafetyHandlerProperty:
             AdaptiveDataUpdateCoordinator,
         )
 
-        coord = self._make_coord_with_result(ControlMethod.WEATHER)
+        coord = self._make_coord_with_result(ControlMethod.WEATHER, is_safety=True)
         result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
         assert result is True
 
@@ -458,6 +486,17 @@ class TestPipelineIsSafetyHandlerProperty:
         result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
         assert result is False
 
+    def test_no_result_is_not_safety_handler(self) -> None:
+        """None pipeline result must return False."""
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock()
+        coord._pipeline_result = None
+        result = AdaptiveDataUpdateCoordinator._pipeline_is_safety_handler.fget(coord)
+        assert result is False
+
 
 # ---------------------------------------------------------------------------
 # Trace and decision trace content
@@ -467,12 +506,11 @@ class TestPipelineIsSafetyHandlerProperty:
 class TestDecisionTraceContent:
     """Decision trace must reflect bypass status from winning handler."""
 
-    def test_force_override_trace_has_bypass_reason(self) -> None:
+    def test_safety_custom_position_trace_has_bypass_reason(self) -> None:
         """The winning trace step reason includes '[bypasses automatic control]'."""
-        registry = PipelineRegistry([ForceOverrideHandler(), DefaultHandler()])
+        registry = PipelineRegistry([_safety_handler(), DefaultHandler()])
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.wind": True},
-            force_override_position=0,
+            custom_position_sensors=[_safety_slot_state(True)],
         )
         result = registry.evaluate(snapshot)
         matched_steps = [s for s in result.decision_trace if s.matched]
@@ -517,7 +555,6 @@ class TestCustomPositionBypass:
     def _handler(self, position: int = 50) -> CustomPositionHandler:
         return CustomPositionHandler(
             slot=1,
-            entity_id=_CP_ENTITY,
             position=position,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
         )
@@ -526,12 +563,14 @@ class TestCustomPositionBypass:
         return make_snapshot(
             custom_position_sensors=[
                 CustomPositionSensorState(
-                    entity_id=_CP_ENTITY,
+                    entity_ids=(_CP_ENTITY,),
                     is_on=True,
                     position=position,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
+                    slot=1,
+                    active_entity_ids=(_CP_ENTITY,),
                 )
             ]
         )
@@ -553,12 +592,13 @@ class TestCustomPositionBypass:
         snapshot = make_snapshot(
             custom_position_sensors=[
                 CustomPositionSensorState(
-                    entity_id=_CP_ENTITY,
+                    entity_ids=(_CP_ENTITY,),
                     is_on=False,
                     position=50,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
+                    slot=1,
                 )
             ]
         )

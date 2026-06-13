@@ -20,6 +20,12 @@ if TYPE_CHECKING:
     from .coordinator import AdaptiveDataUpdateCoordinator
 
 
+# Unique marker for "no state has been written yet". A fresh object() never
+# compares equal to any render signature, so the first coordinator update
+# always writes.
+_SENTINEL = object()
+
+
 class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]):
     """Base class for all Adaptive Cover Pro entities."""
 
@@ -42,6 +48,8 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
         self._name = config_entry.data["name"]
         self._cover_type = config_entry.data[CONF_SENSOR_TYPE]
         self._device_id = entry_id
+        # Render signature of the last write; gates redundant async_write_ha_state.
+        self._acp_last_write_sig: object = _SENTINEL
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -99,8 +107,45 @@ class AdaptiveCoverBaseEntity(CoordinatorEntity["AdaptiveDataUpdateCoordinator"]
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from coordinator."""
+        """Write HA state only when this entity's render output changed.
+
+        The coordinator notifies every listener on each update cycle, but most
+        cycles leave an individual entity's rendered value unchanged (e.g. a sun
+        micro-move or a chatty temperature sensor that doesn't shift the computed
+        position). Skipping the write in that case avoids a state-machine update,
+        a bus event, and a recorder row per entity per cycle.
+
+        Fails open: any error building the signature resets the cache and writes,
+        so a comparison bug can never suppress a legitimate state update.
+        """
+        try:
+            sig = self._acp_render_signature()
+        except Exception:  # noqa: BLE001 - never let a signature error suppress a write
+            self._acp_last_write_sig = _SENTINEL
+            self.async_write_ha_state()
+            return
+        if sig == self._acp_last_write_sig:
+            return
+        self._acp_last_write_sig = sig
         self.async_write_ha_state()
+
+    def _acp_render_signature(self) -> object:
+        """Return a cheap, comparable snapshot of everything HA renders.
+
+        ``self.state`` is resolved by HA's base ``Entity`` subclass for each
+        platform (sensor native_value, binary_sensor/switch is_on, cover
+        position), so a single signature works uniformly. ``extra_state_attributes``
+        is snapshotted via ``repr`` to give a stable token even if a subclass
+        reuses a mutable mapping across cycles; the attribute values here are
+        plain dicts/lists/scalars/datetimes, so the repr is deterministic and far
+        cheaper than a full state write. ``available`` is included so the
+        coordinator-data availability flip (see :meth:`available`) forces a write.
+        """
+        return (
+            self.available,
+            self.state,
+            repr(self.extra_state_attributes),
+        )
 
 
 class AdaptiveCoverSensorBase(AdaptiveCoverBaseEntity):

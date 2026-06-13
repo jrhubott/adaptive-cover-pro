@@ -50,6 +50,7 @@ class WeatherOverrideHandler(OverrideHandler):
             control_method=ControlMethod.WEATHER,
             reason=reason,
             bypass_auto_control=bypass,
+            is_safety=True,
             raw_calculated_position=raw,
         )
 

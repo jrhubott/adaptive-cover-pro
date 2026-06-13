@@ -31,14 +31,14 @@ except ImportError:
     # Fallback for older Home Assistant versions
     EventStateChangedData = dict  # type: ignore[misc,assignment]
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .config_types import RuntimeConfig
 from .helpers import (
     compute_effective_default,
+    custom_position_slot_sensors,
     get_datetime_from_str,
     get_safe_state,
-    is_entity_active,
-    motion_entities,
     state_attr,
 )
 from .config_context_adapter import ConfigContextAdapter
@@ -57,8 +57,6 @@ from .const import (
     CONF_DEFAULT_HEIGHT,
     CONF_DRY_RUN,
     CONF_ENTITIES,
-    CONF_FORCE_OVERRIDE_POSITION,
-    CONF_FORCE_OVERRIDE_SENSORS,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_INTERP,
@@ -79,6 +77,7 @@ from .const import (
     CONF_SUNSET_POS,
     CONF_SUNSET_TIME_ENTITY,
     CONF_TRANSIT_TIMEOUT,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_MANUAL_OVERRIDE_STRATEGY,
@@ -114,6 +113,8 @@ from .pipeline.handlers import (
 from .pipeline.floors import effective_floor, gather_active_floors
 from .pipeline.registry import PipelineRegistry
 from .pipeline.snapshot_builder import PipelineSnapshotBuilder
+from .pipeline.types import CustomPositionSensorState
+from .templates import TemplateResolver
 from .const import ControlMethod
 from .state.climate_provider import ClimateProvider, ClimateReadings
 from .state.cover_provider import CoverProvider
@@ -131,6 +132,14 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
 
     Returns naive-local datetime on success; None if entity_id is None,
     the entity is unavailable, or the state cannot be parsed.
+
+    The entity's *time-of-day* is re-anchored onto today's local date and the
+    original date component is discarded. This makes a "next-event" sensor
+    (e.g. ``sensor.sun_next_setting``, which rolls over to *tomorrow's*
+    setting the instant today's sun sets) behave like a fixed daily wall-clock
+    time. ``compute_effective_default`` already compares the boundary against
+    *today's* clock, so a future-dated boundary would otherwise make the
+    ``after_sunset`` comparison structurally unreachable (issue #531 follow-up).
     """
     if entity_id is None:
         return None
@@ -138,7 +147,13 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
     if raw is None:
         return None
     try:
-        return get_datetime_from_str(raw)
+        parsed = get_datetime_from_str(raw)
+        today_local = dt_util.now().date()
+        return parsed.replace(
+            year=today_local.year,
+            month=today_local.month,
+            day=today_local.day,
+        )
     except Exception:  # noqa: BLE001
         _LOGGER.debug(
             "Could not parse time entity %s state %r as datetime",
@@ -146,6 +161,13 @@ def _read_time_entity(hass: HomeAssistant, entity_id: str | None) -> dt.datetime
             raw,
         )
         return None
+
+
+# Cover states that carry no usable position. A transition whose *old* state is
+# one of these is a reconnection/initialization artifact (issue #342 covers the
+# online-from-None case; issue #546 the unavailable-comeback case), not a real
+# position change — it must not feed numeric manual-override detection.
+_NON_POSITION_COVER_STATES = ("unavailable", "unknown")
 
 
 @dataclass
@@ -317,6 +339,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Climate state provider
         self._climate_provider = ClimateProvider(hass=self.hass, logger=self.logger)
 
+        # Renders templated threshold options to numbers once per cycle (#577).
+        self._template_resolver = TemplateResolver(self.hass)
+        # Current cycle's options after template resolution (for diagnostics).
+        self._resolved_options: dict = dict(self.config_entry.options)
+
         # Sun data provider
         self._sun_provider = SunProvider(hass=self.hass)
 
@@ -339,15 +366,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Current state snapshot (built at start of each update cycle)
         self._snapshot: CoverStateSnapshot | None = None
 
-        # Track force override state across update cycles so we can detect
-        # the release transition and bypass time/position delta gates.
-        self._prev_force_override_active: bool = False
+        # Per-slot trigger state from last cycle, keyed by slot number, so a
+        # custom-position slot that flips off can force a return to the
+        # calculated position regardless of which lower-priority handler now
+        # wins. A released slot at CUSTOM_POSITION_SAFETY_PRIORITY also lifts
+        # the outside-time-window gate (the migrated force-override release
+        # edge, issue #563).
+        self._prev_custom_position_states: dict[int, CustomPositionSensorState] = {}
 
-        # Per-sensor on/off state from last cycle.  Mirrors
-        # _prev_force_override_active so a custom-position sensor that flips
-        # off can also force a return to the calculated position regardless of
-        # which lower-priority handler now wins.  Keyed by sensor entity_id.
-        self._prev_custom_position_sensors_active: dict[str, bool] = {}
+        # Set by async_check_custom_position_template_change so the update
+        # cycle can attribute an entity-less refresh to a slot template flip.
+        # Cleared after async_handle_state_change consumes it.
+        self._custom_position_template_trigger: bool = False
 
         # Diagnostics builder (extracted from coordinator)
         self._diagnostics_builder = DiagnosticsBuilder()
@@ -475,20 +505,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def last_skipped_action(self) -> dict:
         """Delegate to CoverCommandService.last_skipped_action."""
         return self._cmd_svc.last_skipped_action
-
-    @property
-    def is_force_override_active(self) -> bool:
-        """Check if any force override sensor is active.
-
-        Returns:
-            True if any configured force override sensor is in "on" state
-
-        """
-        return any(
-            self._snapshot_builder.read_force_sensors(
-                self.config_entry.options
-            ).values()
-        )
 
     def _is_glare_zone_enabled(self, idx: int) -> bool:
         """Return the per-instance glare-zone switch for ``zone idx``.
@@ -665,9 +681,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             # initial first_refresh likely skipped this entity with
             # cover_unavailable; recompute now that it's reachable.
             new_state = data["new_state"]
-            if new_state is not None and new_state.state not in (
-                "unavailable",
-                "unknown",
+            if (
+                new_state is not None
+                and new_state.state not in _NON_POSITION_COVER_STATES
             ):
                 self.logger.debug(
                     "Cover %s came online (%s); requesting refresh",
@@ -681,7 +697,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change_data = StateChangedData(
             data["entity_id"], data["old_state"], data["new_state"]
         )
-        if self.state_change_data.old_state.state != "unknown":
+        old_state_str = self.state_change_data.old_state.state
+        if old_state_str not in _NON_POSITION_COVER_STATES:
             self.cover_state_change = True
             self.process_entity_state_change()
             # Keep a per-event copy so async_handle_cover_state_change() can
@@ -690,7 +707,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._pending_cover_events.append(self.state_change_data)
             await self.async_refresh()
         else:
-            self.logger.debug("Old state is unknown, not processing")
+            # Issue #546: a cover returning from unavailable/unknown to a real
+            # position is a reconnection artifact, not a user move.
+            self.logger.debug(
+                "Old state is %s, not processing as a position change",
+                old_state_str,
+            )
 
     async def async_check_cover_service_call(self, event: Event) -> None:
         """Detect user-initiated cover.stop_cover and start manual override.
@@ -811,10 +833,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> None:
         """Handle occupancy-source changes: immediate on detection, debounced on stop.
 
-        Evaluates the changed entity through the same domain-aware
-        ``is_entity_active`` predicate the manager uses, so motion sensors
-        (state "on") and media players (any non-off state) are handled
-        uniformly without branching on literal state strings here.
+        Delegates to ``_handle_occupancy_change``, which re-reads the combined
+        occupancy state (sensors + template per the configured combine mode)
+        rather than branching on this single entity's state here.
         """
         data = event.data
         entity_id = data["entity_id"]
@@ -828,27 +849,67 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             entity_id,
             new_state.state,
         )
+        await self._handle_occupancy_change(source=entity_id)
 
-        if is_entity_active(self.hass, entity_id):
-            # Occupancy detected - immediate response.
-            # Returns True if timeout was active (expired) or pending (task
-            # still running), so we refresh in both cases, not just when the
-            # timeout had already fully expired.
-            needs_refresh = self._motion_mgr.record_motion_detected()
+    async def async_check_motion_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Handle the occupancy template's rendered result changing (#577 follow-up).
 
-            if needs_refresh:
-                self.logger.info("Motion detected - resuming automatic sun positioning")
+        Routed from ``async_track_template_result`` so a template flipping truthy
+        resumes positioning instantly — the same immediacy as a motion sensor,
+        with no polling. The tracked result only signals *that* the template
+        changed; ``_handle_occupancy_change`` re-reads the combined occupancy
+        state live (the template re-renders, mapping a render error to
+        not-occupied) so the AND/OR combine mode is honoured.
+        """
+        await self._handle_occupancy_change(source="occupancy template")
+
+    async def async_check_custom_position_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Handle a custom-position slot template's rendered result changing (#563).
+
+        Routed from ``async_track_template_result`` so a template flipping
+        truthy applies the slot's position instantly — the same immediacy as a
+        trigger sensor, with no polling. The tracked result only signals
+        *that* the template changed; the snapshot builder re-renders all slot
+        templates live during the refresh so the OR/AND combine mode is
+        honoured. There is no triggering entity for the gate logic, so the
+        template-trigger flag attributes this refresh to a slot template flip
+        for the force-path decisions in ``async_handle_state_change``.
+        """
+        self.state_change = True
+        self._last_state_change_entity = None
+        self._custom_position_template_trigger = True
+        await self.async_refresh()
+
+    async def _handle_occupancy_change(self, *, source: str) -> None:
+        """Apply an occupancy-source transition shared by sensors and the template.
+
+        Acts on the *combined* :attr:`is_motion_detected` after the change rather
+        than the single source that fired — required so the template's AND/OR
+        combine mode is respected (in AND mode one source going active does not
+        mean occupied). The combined property re-reads live state, so it is at
+        least as fresh as any captured event value and current state always wins.
+        """
+        if self.is_motion_detected:
+            # record_motion_detected() returns True if the timeout was active
+            # (expired) or pending (task still running), so we refresh in both
+            # cases, not just when the timeout had already fully expired.
+            if self._motion_mgr.record_motion_detected():
+                self.logger.info(
+                    "Motion detected (%s) - resuming automatic sun positioning", source
+                )
                 self.state_change = True
                 await self.async_refresh()
-
-        elif not self.is_motion_detected:
-            # This source cleared and no other source is active - start timeout.
-            self._start_motion_timeout()
+            else:
+                self.logger.debug(
+                    "Occupancy still active after change on %s — no action", source
+                )
         else:
-            self.logger.debug(
-                "Occupancy cleared on %s but another source still active — timeout not started",
-                entity_id,
-            )
+            # Combined occupancy cleared - start the debounce timeout.
+            self._start_motion_timeout()
 
     def process_entity_state_change(self):
         """Check if cover position change was user-initiated (manual override detection).
@@ -937,8 +998,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
           last_motion_time so the sensor shows ``motion_detected``.
         - All entities **off** → set_no_motion() marks the timeout active so
           the sensor shows ``no_motion``.
+
+        Runs when any occupancy source is configured — sensors, media players,
+        or the occupancy template (issue #577 follow-up).
         """
-        if not motion_entities(self.config_entry.options):
+        if not self._motion_mgr.is_configured:
             return
         if self.is_motion_detected:
             self._motion_mgr.record_motion_detected()
@@ -1039,6 +1103,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             is_glare_zone_enabled=self._is_glare_zone_enabled,
             effective_default=effective_default,
             is_sunset_active=is_sunset_active,
+            cover_capabilities=getattr(
+                getattr(self, "_snapshot", None), "cover_capabilities", None
+            ),
         )
         self._pipeline_result = self._pipeline.evaluate(snapshot)
 
@@ -1147,18 +1214,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.first_refresh:
             self._cached_options = self.config_entry.options
 
-        options = self.config_entry.options
+        # Render any templated threshold options to numbers for this cycle, so
+        # every downstream consumer (RuntimeConfig, climate reads) sees a number,
+        # never a raw template string (#577).
+        options = self._template_resolver.resolve(self.config_entry.options)
+        self._resolved_options = options
         self._update_options(options)
 
-        # Capture force override state before this cycle so we can detect
-        # the release transition in async_handle_state_change().
-        prev_force_override = self._prev_force_override_active
-
-        # Capture last cycle's per-sensor active map so we can detect a custom
-        # position sensor flipping off (release edge of #365).
-        prev_custom_position_sensors_active = dict(
-            self._prev_custom_position_sensors_active
-        )
+        # Capture last cycle's per-slot trigger map so we can detect a custom
+        # position slot flipping off (release edge of #365 / #563).
+        prev_custom_position_states = dict(self._prev_custom_position_states)
 
         # Build unified state snapshot for this update cycle
         _sun_azimuth = state_attr(self.hass, "sun.sun", "azimuth")
@@ -1176,7 +1241,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.entities
             ),
             motion_detected=self.is_motion_detected,
-            force_override_active=self.is_force_override_active,
         )
 
         # Get data for the blind and update manager
@@ -1200,36 +1264,44 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Calculate cover state (pipeline runs with up-to-date override state)
         state = self._calculate_cover_state(cover_data, options)
 
-        # Update prev state for next cycle (current force override state is now
-        # captured in the snapshot we just built).
-        self._prev_force_override_active = self.is_force_override_active
-
-        # Same for custom-position sensors: stamp this cycle's on/off map so
-        # next cycle can detect the on → off transition for the release edge.
-        current_custom_position_sensors_active = {
-            s.entity_id: s.is_on
+        # Stamp this cycle's per-slot trigger map so next cycle can detect the
+        # on → off transition for the release edge.
+        current_custom_position_states = {
+            s.slot: s
             for s in self._snapshot_builder.read_custom_position_sensors(options)
         }
-        self._prev_custom_position_sensors_active = (
-            current_custom_position_sensors_active
-        )
+        self._prev_custom_position_states = current_custom_position_states
 
-        # Set of sensors that transitioned on → off this cycle.  When the
-        # triggering entity is one of these, force=True bypasses time/position
-        # delta gates so covers return to the calculated position promptly.
+        # Slots that transitioned on → off this cycle.  When the triggering
+        # entity belongs to one of these (or the trigger was a slot template),
+        # force=True bypasses time/position delta gates so covers return to
+        # the calculated position promptly.  A released safety-priority slot
+        # additionally lifts the outside-time-window gate — the migrated
+        # force-override release edge (issue #563).
+        released_slots = [
+            prev
+            for slot, prev in prev_custom_position_states.items()
+            if prev.is_on
+            and not getattr(current_custom_position_states.get(slot), "is_on", False)
+        ]
         custom_position_released_entities = {
-            eid
-            for eid, was_on in prev_custom_position_sensors_active.items()
-            if was_on and not current_custom_position_sensors_active.get(eid, False)
+            eid for prev in released_slots for eid in prev.entity_ids
         }
+        safety_release = any(
+            prev.priority >= CUSTOM_POSITION_SAFETY_PRIORITY for prev in released_slots
+        )
+        template_release = self._custom_position_template_trigger and bool(
+            released_slots
+        )
 
         # Handle types of changes
         if self.state_change:
             await self.async_handle_state_change(
                 state,
                 options,
-                prev_force_override,
                 custom_position_released_entities,
+                safety_release=safety_release,
+                template_release=template_release,
             )
         elif auto_expired:
             # One or more manual overrides just timed out.  Proactively send
@@ -1499,85 +1571,105 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self,
         state: int,
         options,
-        prev_force_override: bool = False,
         custom_position_released_entities: set[str] | None = None,
+        *,
+        safety_release: bool = False,
+        template_release: bool = False,
     ):
         """Send position commands to all covers when a tracked entity changes.
 
-        When the active pipeline result has bypass_auto_control=True (force
-        override or weather safety handler), we pass force=True to the position
-        context so that time_delta and position_delta gates cannot block
-        safety-critical commands.  The reason string also reflects the handler
-        that won rather than always saying "solar".
+        When the active pipeline result has is_safety=True (weather safety
+        handler or a safety-priority custom position), we pass force=True to
+        the position context so that time_delta and position_delta gates
+        cannot block safety-critical commands.  The reason string also
+        reflects the handler that won rather than always saying "solar".
 
-        When a force override just released (prev_force_override=True and it is
-        now inactive), force=True is also passed so the time delta check cannot
-        block the return to the calculated position.  The force override's own
-        position change should not count against the time threshold.
+        ``custom_position_released_entities`` holds the sensors of every
+        custom-position slot that flipped on → off this cycle.  When the
+        triggering entity for this refresh is one of them — or the refresh
+        came from a slot template flip (``template_release``) — force=True is
+        also passed so the return to the calculated position is not throttled
+        (#365).
 
-        ``custom_position_released_entities`` holds the set of custom-position
-        sensors that flipped on → off this cycle.  When the triggering entity
-        for this refresh is one of them, force=True is also passed so the
-        return to the calculated position is not throttled (#365).
+        ``safety_release`` is True when a released slot carries safety
+        priority (the migrated force override, issue #563): the release then
+        also lifts the outside-time-window gate so the cover returns to the
+        calculated position immediately, exactly as the old force-override
+        release did.
         """
         sun_just_appeared = self._check_sun_validity_transition()
         is_safety = self._pipeline_is_safety_handler
-        force_override_released = (
-            prev_force_override and not self.is_force_override_active
-        )
 
-        # Custom-position sensor release edge: the entity that triggered this
-        # refresh just flipped off and a lower-priority handler (solar/default)
-        # now wins, so _is_custom_position_sensor_trigger() returns False.
-        # Mirrors force_override_released for the same reason: the time-delta
-        # gate would otherwise drop the return-to-calculated command.  Short-
-        # circuit when the set is empty so callers that bypass __init__ (e.g.
-        # gate-matrix fixtures) don't need to wire _last_state_change_entity.
+        # Custom-position release edge: the trigger that fired this refresh
+        # just flipped off and a lower-priority handler (solar/default) now
+        # wins, so _is_custom_position_sensor_trigger() returns False.  The
+        # time-delta gate would otherwise drop the return-to-calculated
+        # command.  Short-circuit when the set is empty so callers that bypass
+        # __init__ (e.g. gate-matrix fixtures) don't need to wire
+        # _last_state_change_entity.
+        # When the manual-override hold is the winner, a floor sensor releasing
+        # must NOT take the release force-path — otherwise the override's
+        # theoretical default (e.g. 90%) would be force-driven onto the cover.
+        # The cover stays where the floor left it; the override keeps holding
+        # the (now recomputed) physical position (#534).
+        override_holding = (
+            self._pipeline_result is not None
+            and self._pipeline_result.control_method is ControlMethod.MANUAL
+        )
         trigger_entity: str | None = None
         custom_position_released = False
-        if custom_position_released_entities:
+        if not override_holding and (
+            custom_position_released_entities or template_release
+        ):
             trigger_entity = self._last_state_change_entity
-            custom_position_released = (
+            custom_position_released = template_release or (
                 trigger_entity is not None
+                and custom_position_released_entities is not None
                 and trigger_entity in custom_position_released_entities
             )
 
-        # Outside the configured time window, only safety handlers (force
-        # override, weather) are allowed to move covers.  All other handlers
-        # (solar, climate, cloud, default) must not reposition covers before
-        # the user's start time or after the end time.  The pipeline still
-        # evaluates so diagnostics/sensor state remain correct.
+        # Outside the configured time window, only safety results (weather,
+        # safety-priority custom positions) are allowed to move covers.  All
+        # other handlers (solar, climate, cloud, default) must not reposition
+        # covers before the user's start time or after the end time.  The
+        # pipeline still evaluates so diagnostics/sensor state remain correct.
         custom_position_sensor_triggered = self._is_custom_position_sensor_trigger()
 
-        if (
-            not self.check_adaptive_time
-            and not is_safety
-            and not force_override_released
-        ):
+        if not self.check_adaptive_time and not is_safety and not safety_release:
             self.state_change = False
             self._last_state_change_entity = None
+            self._custom_position_template_trigger = False
             self.logger.debug("Outside time window — skipping position update")
             return
 
+        # A floor-clamp raised the winner this cycle (#534).  When manual
+        # override holds the cover below an active floor, the clamped value is
+        # already in cover-position space and must bypass the time/position
+        # delta gates so the raise reaches the cover.
+        floor_clamp = bool(
+            self._pipeline_result is not None
+            and self._pipeline_result.floor_clamp_applied
+        )
         use_force = (
             is_safety
-            or force_override_released
+            or safety_release
             or custom_position_sensor_triggered
             or custom_position_released
+            or floor_clamp
         )
-        if force_override_released:
-            reason = "force_override_cleared"
-            self.logger.debug(
-                "Force override released — bypassing time/position delta gates "
-                "to return to calculated position %s",
-                state,
-            )
-        elif custom_position_released:
+        if custom_position_released or safety_release:
             reason = "custom_position_released"
             self.logger.debug(
-                "Custom-position sensor %s released — bypassing time/position "
+                "Custom-position trigger %s released — bypassing time/position "
                 "delta gates to return to calculated position %s",
-                trigger_entity,
+                trigger_entity or "(template/safety slot)",
+                state,
+            )
+        elif floor_clamp:
+            reason = "floor_clamp"
+            self.logger.debug(
+                "Floor clamp active — bypassing time/position delta gates to "
+                "raise cover to floor position %s",
                 state,
             )
         else:
@@ -1608,6 +1700,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self._dispatch_to_cover(target.entity_id, target.value, reason, ctx)
         self.state_change = False
         self._last_state_change_entity = None
+        self._custom_position_template_trigger = False
         self.logger.debug("State change handled")
 
     async def async_handle_cover_state_change(self, state: int):
@@ -1714,6 +1807,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             recorded_target = self._cmd_svc.get_target(entity_id)
             expected_position = state if recorded_target is None else recorded_target
 
+            # Issue #591: when position matching is disabled (the default), a
+            # settle beyond the position-match tolerance is the cover's final
+            # resting position (a remote stop, or a cover that won't reach
+            # target). Lower the detection threshold to the tolerance so any
+            # "not arrived" settle engages a full manual override for the
+            # configured duration — suppressing both resends (handled in
+            # reconciliation) and new sun-driven targets — instead of being
+            # retried. When matching is enabled the user manual_threshold is
+            # used unchanged (no regression to the slow-actuator reconciliation
+            # behaviour).
+            detection_threshold = self.manual_threshold
+            if not self._cmd_svc.enable_position_matching:
+                detection_threshold = (
+                    self._position_tolerance
+                    if self.manual_threshold is None
+                    else min(self.manual_threshold, self._position_tolerance)
+                )
+
             secondary_axis_check = (
                 self._policy.secondary_axis_check(self._pipeline_result, self._cmd_svc)
                 if self._pipeline_result is not None
@@ -1729,7 +1840,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self._policy,
                 self.manual_reset,
                 self._cmd_svc.is_waiting_for_target,
-                self.manual_threshold,
+                detection_threshold,
+                has_recorded_target=recorded_target is not None,
                 secondary_axis_check=secondary_axis_check,
                 is_in_command_grace=self._grace_mgr.is_in_command_grace_period,
                 is_in_transit=self._cmd_svc._is_cover_in_transit,
@@ -1823,6 +1935,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_duration = rc.manual_override.duration
         self.manual_ignore_external = rc.manual_override.ignore_external
         self.manual_threshold = rc.tracking.manual_threshold
+        # Mirror the reconciliation tolerance coordinator-side so the cover
+        # state-change handler can lower the override-detection threshold when
+        # position matching is disabled (issue #591).
+        self._position_tolerance = rc.tracking.position_tolerance
         # Apply manual-override config to the engine + active detector at
         # runtime (auto-reset duration, threshold, command window) so changes
         # take effect without a reload. The detection *strategy* itself is
@@ -1835,6 +1951,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         self._cmd_svc.update_threshold(rc.open_close_threshold)
         self._cmd_svc.update_position_tolerance(rc.tracking.position_tolerance)
+        self._cmd_svc.enable_position_matching = rc.tracking.enable_position_matching
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,
@@ -1845,6 +1962,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sensors=rc.motion.sensors,
             timeout_seconds=rc.motion.timeout_seconds,
             media_players=rc.motion.media_players,
+            template=rc.motion.template,
+            template_mode=rc.motion.template_mode,
         )
         self._weather_mgr.update_config(
             wind_speed_sensor=rc.weather.wind_speed_sensor,
@@ -1882,8 +2001,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         sun_data = self._sun_provider.create_sun_data(self.hass.config.time_zone)
         config = self._config_service.get_common_data(options)
         _raw_azi, _raw_elev = self.pos_sun
+        # When sun.sun is unavailable both attributes read as None. Falling back
+        # to 0.0/0.0 is dangerous: azimuth=0, elevation=0 is a valid-looking sun
+        # position (on the horizon, due north) that can land inside a window's FOV
+        # and trigger spurious cover commands off a phantom sun. When the entity
+        # is truly unavailable, drop elevation below the horizon (-1.0) so
+        # valid_elevation is False (for the default and min-configured cases) and
+        # no solar positioning runs until sun.sun recovers.
+        _sun_unavailable = _raw_azi is None and _raw_elev is None
+        if _sun_unavailable:
+            self.logger.warning(
+                "sun.sun attributes unavailable — solar tracking disabled until "
+                "the sun entity reports valid azimuth/elevation"
+            )
         sol_azi = _raw_azi if _raw_azi is not None else 0.0
-        sol_elev = _raw_elev if _raw_elev is not None else 0.0
+        sol_elev = (
+            _raw_elev if _raw_elev is not None else (-1.0 if _sun_unavailable else 0.0)
+        )
         return self._policy.build_calc_engine(
             logger=self.logger,
             sol_azi=sol_azi,
@@ -1999,6 +2133,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             in_time_window=self.check_adaptive_time,
             current_cover_position=self._compute_mean_cover_position(),
             is_glare_zone_enabled=self._is_glare_zone_enabled,
+            cover_capabilities=getattr(
+                getattr(self, "_snapshot", None), "cover_capabilities", None
+            ),
         )
         floors = gather_active_floors(snapshot)
         effective_floor_pos, _ = effective_floor(floors)
@@ -2143,18 +2280,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             final_state=self.state,
             panel_targets=dict(self._panel_targets),
             config_options=dict(self.config_entry.options),
+            resolved_options=dict(self._resolved_options),
             motion_detected=self.is_motion_detected,
             motion_timeout_active=self._motion_mgr.is_motion_timeout_active,
+            motion_template_active=self._motion_mgr.template_active,
             motion_hold_active=(
                 self._pipeline_result is not None
                 and self._pipeline_result.skip_command
                 and self._pipeline_result.control_method == ControlMethod.MOTION
-            ),
-            force_override_sensors=self.config_entry.options.get(
-                CONF_FORCE_OVERRIDE_SENSORS, []
-            ),
-            force_override_position=self.config_entry.options.get(
-                CONF_FORCE_OVERRIDE_POSITION, 0
             ),
             event_timeline=self._event_buffer.snapshot() or None,
             cover_command_state=self._cmd_svc.get_all_entity_state_snapshots() or None,
@@ -2295,54 +2428,53 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _pipeline_bypasses_auto_control(self) -> bool:
         """True when the active pipeline result should run even if automatic_control is OFF.
 
-        Safety handlers (ForceOverrideHandler, WeatherOverrideHandler) set
-        bypass_auto_control=True so that wind/rain/force protection still
+        Safety/override handlers (WeatherOverrideHandler, CustomPositionHandler)
+        set bypass_auto_control=True so that wind/rain/forced protection still
         operates when the user has paused normal sun-tracking automation.
-        CustomPositionHandler also sets this flag to defeat the auto_control
-        gate, but is NOT a safety handler — see _pipeline_is_safety_handler.
+        Setting this flag does NOT make a result a safety result — see
+        _pipeline_is_safety_handler.
         """
         return self._pipeline_result.bypass_auto_control
 
     @property
     def _pipeline_is_safety_handler(self) -> bool:
-        """True only when the active pipeline result came from a genuine safety handler.
+        """True only when the active pipeline result carries safety semantics.
 
-        Genuine safety handlers (ForceOverrideHandler, WeatherOverrideHandler)
-        require force=True so wind/rain/force protection bypasses delta and time
-        gates and always acts immediately.
+        Safety results (WeatherOverrideHandler, and CustomPositionHandler at
+        CUSTOM_POSITION_SAFETY_PRIORITY — the migrated force override, issue
+        #563) require force=True so wind/rain/forced protection bypasses delta
+        and time gates and always acts immediately.
 
-        Other handlers that set bypass_auto_control=True (e.g.
-        CustomPositionHandler) want to defeat the auto_control gate but must
-        still be subject to the same-position short-circuit and delta/time gates
-        so they don't issue redundant set_cover_position calls on every update
+        Other handlers that set bypass_auto_control=True (e.g. lower-priority
+        custom positions) want to defeat the auto_control gate but must still
+        be subject to the same-position short-circuit and delta/time gates so
+        they don't issue redundant set_cover_position calls on every update
         cycle (issue #290).
         """
-        if self._pipeline_result is None:
-            return False
-        return self._pipeline_result.control_method in (
-            ControlMethod.FORCE,
-            ControlMethod.WEATHER,
-        )
+        return bool(self._pipeline_result and self._pipeline_result.is_safety)
 
     def _is_custom_position_sensor_trigger(self) -> bool:
-        """Return True when this refresh was edge-triggered by a custom-position slot's own sensor.
+        """Return True when this refresh was edge-triggered by a custom-position slot's own trigger.
 
-        When a sensor toggles, the cover may be at a completely different position
-        (e.g. solar tracking just moved it).  Passing force=True lets the command
-        bypass the time-delta gate so the slot's position is actually applied.
-        The same-position short-circuit (PR #300) still suppresses redundant
-        re-sends when the sensor stays active across subsequent solar refreshes.
+        When a sensor (or slot template) toggles, the cover may be at a
+        completely different position (e.g. solar tracking just moved it).
+        Passing force=True lets the command bypass the time-delta gate so the
+        slot's position is actually applied.  The same-position short-circuit
+        (PR #300) still suppresses redundant re-sends when the trigger stays
+        active across subsequent solar refreshes.
         """
         if self._pipeline_result is None:
             return False
         if self._pipeline_result.control_method is not ControlMethod.CUSTOM_POSITION:
             return False
+        if self._custom_position_template_trigger:
+            return True
         trigger = self._last_state_change_entity
         if trigger is None:
             return False
         options = self.config_entry.options
         return any(
-            options.get(slot_keys["sensor"]) == trigger
+            trigger in custom_position_slot_sensors(options, slot_keys)
             for slot_keys in CUSTOM_POSITION_SLOTS.values()
         )
 

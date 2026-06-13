@@ -2,10 +2,11 @@
 
 Holds the original detection logic: a state change is a manual override when
 the cover's reported primary-axis position differs from the commanded position
-by more than the effective threshold, after guarding against transient states,
-in-transit reports, and slow-bus publish-lag (Issue #33). The engine handles
-the upstream gates (tracked / wait-for-target / command-grace / secondary
-axis) and resolves ``new_position`` before calling :meth:`detect`.
+by more than the effective threshold, after guarding against the absence of a
+recorded command target (Issue #546), transient states, in-transit reports,
+and slow-bus publish-lag (Issue #33). The engine handles the upstream gates
+(tracked / wait-for-target / command-grace / secondary axis) and resolves
+``new_position`` before calling :meth:`detect`.
 """
 
 from __future__ import annotations
@@ -26,6 +27,23 @@ class PositionDeltaDetector(OverrideDetector):
         entity_id = context.entity_id
         our_state = context.our_state
         new_position = context.new_position
+
+        # Issue #546: no command was ever sent for this entity, so ``our_state``
+        # is the pipeline's theoretical default rather than a commanded
+        # position. Comparing the cover's real resting position against it is
+        # meaningless and produced a false override when the cover sat at its
+        # sunset position while the pipeline default diverged. The legitimate
+        # user-move signals (HA-context fast-path, stop-to-My) never route
+        # through ``detect``, so suppressing here cannot mask a real user touch.
+        if not context.has_recorded_target:
+            return OverrideDecision(
+                event_name="manual_override_rejected_no_command_target",
+                event_kwargs={
+                    "our_state": our_state,
+                    "new_position": new_position,
+                    "reason": "no recorded command target (our_state is pipeline default)",
+                },
+            )
 
         # Position still unavailable (entity in transient state like "opening")
         # — nothing to compare against, skip override detection.

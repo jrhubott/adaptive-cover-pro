@@ -6,7 +6,7 @@ and verifies the highest-priority handler wins with the correct position.
 Covers:
 - Step 44: Weather override + motion timeout (weather 90 > motion 75)
 - Step 45: Weather override + manual override (weather 90 > manual 80)
-- Step 46: Force override + weather (force 100 > weather 90)
+- Step 46: Safety custom position + weather (safety slot 100 > weather 90)
 - Step 47: Motion timeout fires when weather inactive
 - Step 48: Custom position between manual and motion (default priority 77)
 - Step 49: Cloud suppression + climate mode (cloud 60 > climate 50)
@@ -24,9 +24,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position impo
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
-)
-from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
-    ForceOverrideHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.manual_override import (
     ManualOverrideHandler,
@@ -55,16 +52,24 @@ from tests.test_pipeline.conftest import make_snapshot
 # ---------------------------------------------------------------------------
 
 
-def _full_registry() -> PipelineRegistry:
-    """Full registry with all handlers in correct priority order."""
+SAFETY_SLOT = 5
+
+
+def _full_registry(safety_position: int = 75) -> PipelineRegistry:
+    """Full registry with all handlers in correct priority order.
+
+    Slot 5 at priority 100 is the safety custom position (the migrated force
+    override, issue #563).
+    """
     return PipelineRegistry(
         [
-            ForceOverrideHandler(),
+            CustomPositionHandler(
+                slot=SAFETY_SLOT, position=safety_position, priority=100
+            ),
             WeatherOverrideHandler(),
             ManualOverrideHandler(),
             CustomPositionHandler(
                 slot=1,
-                entity_id="binary_sensor.scene",
                 position=55,
                 priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             ),
@@ -74,6 +79,25 @@ def _full_registry() -> PipelineRegistry:
             SolarHandler(),
             DefaultHandler(),
         ]
+    )
+
+
+def _safety_state(
+    is_on: bool,
+    *,
+    position: int = 75,
+    entity_id: str = "binary_sensor.wind_sensor",
+) -> CustomPositionSensorState:
+    """Slot-5 safety trigger state (force-override parity)."""
+    return CustomPositionSensorState(
+        entity_ids=(entity_id,),
+        is_on=is_on,
+        position=position,
+        priority=100,
+        min_mode=False,
+        use_my=False,
+        slot=SAFETY_SLOT,
+        active_entity_ids=(entity_id,) if is_on else (),
     )
 
 
@@ -240,33 +264,34 @@ class TestWeatherOverridePlusManualOverride:
 
 
 # ---------------------------------------------------------------------------
-# Step 46: Force override + weather
+# Step 46: Safety custom position + weather
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverridePlusWeather:
-    """Force (100) beats weather (90) when both are active."""
+class TestSafetyCustomPositionPlusWeather:
+    """Safety slot (100) beats weather (90) when both are active."""
 
-    def test_force_wins_over_weather(self):
-        """ForceOverrideHandler fires before WeatherOverrideHandler."""
-        registry = _full_registry()
+    def test_safety_slot_wins_over_weather(self):
+        """The priority-100 CustomPositionHandler fires before WeatherOverrideHandler."""
+        registry = _full_registry(safety_position=75)
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.wind_sensor": True},
-            force_override_position=75,
+            custom_position_sensors=[_safety_state(True, position=75)],
             weather_override_active=True,
             weather_override_position=0,
         )
         result = registry.evaluate(snap)
 
-        assert result.control_method == ControlMethod.FORCE
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
+        assert result.is_safety is True
         assert result.position == 75
 
-    def test_force_override_always_bypasses_auto_control(self):
-        """Force override result has bypass_auto_control=True."""
-        registry = _full_registry()
+    def test_safety_slot_always_bypasses_auto_control(self):
+        """Safety custom-position result has bypass_auto_control=True."""
+        registry = _full_registry(safety_position=0)
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.emergency": True},
-            force_override_position=0,
+            custom_position_sensors=[
+                _safety_state(True, position=0, entity_id="binary_sensor.emergency")
+            ],
             weather_override_active=True,
             weather_override_position=0,
         )
@@ -274,11 +299,11 @@ class TestForceOverridePlusWeather:
 
         assert result.bypass_auto_control is True
 
-    def test_weather_fires_when_force_clears(self):
-        """When force override sensor turns off, weather takes over."""
+    def test_weather_fires_when_safety_slot_clears(self):
+        """When the safety slot's sensor turns off, weather takes over."""
         registry = _full_registry()
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.wind_sensor": False},  # off
+            custom_position_sensors=[_safety_state(False)],  # off
             weather_override_active=True,
             weather_override_position=0,
         )
@@ -286,19 +311,20 @@ class TestForceOverridePlusWeather:
 
         assert result.control_method == ControlMethod.WEATHER
 
-    def test_all_three_safety_active_force_wins(self):
-        """Force + weather both active + motion → force still wins."""
-        registry = _full_registry()
+    def test_all_three_safety_active_safety_slot_wins(self):
+        """Safety slot + weather both active + motion → safety slot still wins."""
+        registry = _full_registry(safety_position=50)
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.emergency": True},
-            force_override_position=50,
+            custom_position_sensors=[
+                _safety_state(True, position=50, entity_id="binary_sensor.emergency")
+            ],
             weather_override_active=True,
             weather_override_position=0,
             motion_timeout_active=True,
         )
         result = registry.evaluate(snap)
 
-        assert result.control_method == ControlMethod.FORCE
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
         assert result.position == 50
 
 
@@ -354,12 +380,14 @@ class TestCustomPositionPriorityInteractions:
         snap = make_snapshot(
             custom_position_sensors=[
                 CustomPositionSensorState(
-                    entity_id="binary_sensor.scene",
+                    entity_ids=("binary_sensor.scene",),
                     is_on=True,
                     position=55,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
+                    slot=1,
+                    active_entity_ids=("binary_sensor.scene",),
                 )
             ],
             motion_timeout_active=True,
@@ -377,12 +405,14 @@ class TestCustomPositionPriorityInteractions:
             manual_override_active=True,
             custom_position_sensors=[
                 CustomPositionSensorState(
-                    entity_id="binary_sensor.scene",
+                    entity_ids=("binary_sensor.scene",),
                     is_on=True,
                     position=55,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
+                    slot=1,
+                    active_entity_ids=("binary_sensor.scene",),
                 )
             ],
         )
@@ -396,12 +426,13 @@ class TestCustomPositionPriorityInteractions:
         snap = make_snapshot(
             custom_position_sensors=[
                 CustomPositionSensorState(
-                    entity_id="binary_sensor.scene",
+                    entity_ids=("binary_sensor.scene",),
                     is_on=False,
                     position=55,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
+                    slot=1,
                 )
             ],  # off
             motion_timeout_active=True,
@@ -418,12 +449,14 @@ class TestCustomPositionPriorityInteractions:
         snap = make_snapshot(
             custom_position_sensors=[
                 CustomPositionSensorState(
-                    entity_id="binary_sensor.scene",
+                    entity_ids=("binary_sensor.scene",),
                     is_on=True,
                     position=55,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                     min_mode=False,
                     use_my=False,
+                    slot=1,
+                    active_entity_ids=("binary_sensor.scene",),
                 )
             ],
             direct_sun_valid=True,

@@ -14,7 +14,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
     CloudSuppressionHandler,
     DefaultHandler,
-    ForceOverrideHandler,
     GlareZoneHandler,
     ManualOverrideHandler,
     MotionTimeoutHandler,
@@ -24,9 +23,9 @@ from custom_components.adaptive_cover_pro.pipeline.handlers import (
 
 # Canonical priority map. Update here (and config_flow.py + README) when a
 # priority changes. CustomPositionHandler is excluded — its priority is
-# user-configurable (1–99) and cannot be locked to a single value.
+# user-configurable (1–100; 100 = safety/force-override semantics, issue
+# #563) and cannot be locked to a single value.
 _EXPECTED_PRIORITIES: dict[type, int] = {
-    ForceOverrideHandler: 100,
     WeatherOverrideHandler: 90,
     ManualOverrideHandler: 80,
     MotionTimeoutHandler: 75,

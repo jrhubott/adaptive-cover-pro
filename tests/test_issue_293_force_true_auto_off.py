@@ -125,6 +125,7 @@ async def test_full_repro_user_recovery_observed():
     coord._cover_type = "cover_awning"
     coord.manual_reset = False
     coord.manual_threshold = 5
+    coord._position_tolerance = 3
     coord.logger = MagicMock()
     coord.cover_state_change = True
     coord._is_in_startup_grace_period = MagicMock(return_value=False)
@@ -133,6 +134,7 @@ async def test_full_repro_user_recovery_observed():
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.get_target = MagicMock(return_value=100)  # latched
     coord._cmd_svc.is_waiting_for_target = MagicMock(return_value=True)
+    coord._cmd_svc.enable_position_matching = True
 
     coord.manager = MagicMock()
     # was_manual=False before observation, became_manual=True after

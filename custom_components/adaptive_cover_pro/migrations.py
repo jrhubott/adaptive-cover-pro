@@ -20,6 +20,12 @@ _LOGGER = logging.getLogger(__name__)
 # Option key written after the prune runs so it never fires again.
 _PRUNE_V1_FLAG = "_orphan_prune_v1"
 _PRUNE_SENSORS_V1_FLAG = "_orphan_prune_sensors_v1"
+_PRUNE_SENSORS_V2_FLAG = "_orphan_prune_sensors_v2"
+
+# Sensor unique_id suffixes removed in the v2 prune pass: the Force Override
+# Triggers diagnostic sensor went away when force override merged into
+# custom-position slot 5 (issue #563).
+_LEGACY_SENSOR_SUFFIXES_V2 = ("force_override_triggers",)
 
 # Legacy unique_ids that became orphaned when binary_sensor.py was changed from
 # using display names to internal keys (commit c8c064b, v2.14.3, issue #154).
@@ -131,4 +137,37 @@ async def async_prune_legacy_sensor_entities(
     hass.config_entries.async_update_entry(
         entry,
         options={**entry.options, _PRUNE_SENSORS_V1_FLAG: True},
+    )
+
+
+async def async_prune_legacy_sensor_entities_v2(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Remove the orphaned Force Override Triggers sensor (issue #563).
+
+    Same flag-gated, idempotent pattern as the v1 sensor prune; a fresh flag
+    because the v1 flag is already consumed on existing installs.
+    """
+    if entry.options.get(_PRUNE_SENSORS_V2_FLAG):
+        return
+
+    registry = er.async_get(hass)
+    removed: list[str] = []
+    for suffix in _LEGACY_SENSOR_SUFFIXES_V2:
+        old_uid = f"{entry.entry_id}_{suffix}"
+        if entity_id := registry.async_get_entity_id("sensor", DOMAIN, old_uid):
+            registry.async_remove(entity_id)
+            removed.append(entity_id)
+
+    if removed:
+        _LOGGER.info(
+            "Pruned %d legacy sensor entity/entities for config entry %s: %s",
+            len(removed),
+            entry.entry_id,
+            removed,
+        )
+
+    hass.config_entries.async_update_entry(
+        entry,
+        options={**entry.options, _PRUNE_SENSORS_V2_FLAG: True},
     )

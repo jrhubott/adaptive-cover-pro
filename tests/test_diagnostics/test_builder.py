@@ -39,6 +39,7 @@ def _make_cover(
     direct_sun_valid: bool = True,
     sunset_valid: bool = False,
     control_state_reason: str = "Sun in FOV",
+    in_fov: bool = True,
     calc_details: dict | None = None,
 ) -> SimpleNamespace:
     """Create a minimal cover mock."""
@@ -50,6 +51,7 @@ def _make_cover(
         direct_sun_valid=direct_sun_valid,
         sunset_valid=sunset_valid,
         control_state_reason=control_state_reason,
+        in_fov=in_fov,
     )
     if calc_details is not None:
         cover._last_calc_details = calc_details
@@ -71,6 +73,7 @@ def _make_pr(
     configured_sunset_pos: int | None = None,
     configured_cloudy_pos: int | None = None,
     bypass_auto_control: bool = False,
+    is_safety: bool = False,
 ) -> PipelineResult:
     """Build a PipelineResult with sensible defaults."""
     return PipelineResult(
@@ -87,6 +90,7 @@ def _make_pr(
         configured_sunset_pos=configured_sunset_pos,
         configured_cloudy_pos=configured_cloudy_pos,
         bypass_auto_control=bypass_auto_control,
+        is_safety=is_safety,
     )
 
 
@@ -114,8 +118,6 @@ def _base_ctx(**overrides) -> DiagnosticContext:
         "config_options": {},
         "motion_detected": True,
         "motion_timeout_active": False,
-        "force_override_sensors": [],
-        "force_override_position": 0,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)
@@ -212,11 +214,11 @@ class TestControlStatus:
         diag, _ = builder.build(_base_ctx(automatic_control=False))
         assert diag["control_status"] == ControlStatus.AUTOMATIC_CONTROL_OFF
 
-    def test_force_override_active(self, builder: DiagnosticsBuilder):
-        """Returns FORCE_OVERRIDE_ACTIVE when force override is the winning method."""
-        pr = _make_pr(control_method=ControlMethod.FORCE)
+    def test_safety_custom_position_active(self, builder: DiagnosticsBuilder):
+        """A safety-priority custom position reports ACTIVE control status (#563)."""
+        pr = _make_pr(control_method=ControlMethod.CUSTOM_POSITION, is_safety=True)
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
-        assert diag["control_status"] == ControlStatus.FORCE_OVERRIDE_ACTIVE
+        assert diag["control_status"] == ControlStatus.ACTIVE
 
     def test_motion_timeout(self, builder: DiagnosticsBuilder):
         """Returns MOTION_TIMEOUT when motion timeout is the winning method."""
@@ -247,11 +249,11 @@ class TestControlStatus:
         diag, _ = builder.build(_base_ctx())
         assert diag["control_status"] == ControlStatus.ACTIVE
 
-    def test_priority_force_over_motion(self, builder: DiagnosticsBuilder):
-        """Force override takes priority over motion timeout (higher priority handler wins)."""
+    def test_deprecated_force_method_unmapped(self, builder: DiagnosticsBuilder):
+        """ControlMethod.FORCE is no longer mapped to a status (deprecated, #563)."""
         pr = _make_pr(control_method=ControlMethod.FORCE)
         diag, _ = builder.build(_base_ctx(pipeline_result=pr))
-        assert diag["control_status"] == ControlStatus.FORCE_OVERRIDE_ACTIVE
+        assert diag["control_status"] == ControlStatus.ACTIVE
 
 
 # ---------------------------------------------------------------------------
@@ -261,12 +263,6 @@ class TestControlStatus:
 
 class TestControlStateReason:
     """Control state reason string tests."""
-
-    def test_force_override(self, builder: DiagnosticsBuilder):
-        """Force override reason string."""
-        pr = _make_pr(control_method=ControlMethod.FORCE)
-        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
-        assert diag["control_state_reason"] == "Force Override"
 
     def test_motion_timeout(self, builder: DiagnosticsBuilder):
         """Motion timeout reason string."""
@@ -300,15 +296,16 @@ class TestControlStateReason:
 class TestPositionExplanation:
     """Position explanation string tests."""
 
-    def test_force_override_explanation(self, builder: DiagnosticsBuilder):
-        """Force override produces correct explanation."""
+    def test_safety_custom_position_explanation(self, builder: DiagnosticsBuilder):
+        """A safety-priority custom position produces the slot's reason (#563)."""
         pr = _make_pr(
-            control_method=ControlMethod.FORCE,
-            reason="force override active (sensor.x) — position 75% [bypasses automatic control]",
+            control_method=ControlMethod.CUSTOM_POSITION,
+            reason="custom position #5 active (sensor.x) — position 75% [bypasses automatic control]",
             position=75,
+            is_safety=True,
         )
         _, explanation = builder.build(_base_ctx(pipeline_result=pr))
-        assert "force override" in explanation.lower()
+        assert "custom position #5" in explanation.lower()
         assert "75%" in explanation
 
     def test_motion_timeout_explanation(self, builder: DiagnosticsBuilder):
@@ -490,6 +487,46 @@ class TestSunValidityDiagnostics:
         """Sun validity absent when no cover."""
         diag, _ = builder.build(_base_ctx(cover=None))
         assert "sun_validity" not in diag
+
+    def test_sun_validity_includes_in_fov(self, builder: DiagnosticsBuilder):
+        """sun_validity includes in_fov field."""
+        diag, _ = builder.build(_base_ctx())
+        sv = diag["sun_validity"]
+        assert sv["in_fov"] is True
+
+    def test_sun_validity_includes_direct_sun_valid(self, builder: DiagnosticsBuilder):
+        """sun_validity includes direct_sun_valid field."""
+        diag, _ = builder.build(_base_ctx())
+        sv = diag["sun_validity"]
+        assert sv["direct_sun_valid"] is True
+
+    def test_sun_state_hitting_when_direct_sun_valid(self, builder: DiagnosticsBuilder):
+        """sun_state is 'hitting' when direct_sun_valid=True."""
+        cover = _make_cover(direct_sun_valid=True, in_fov=True)
+        diag, _ = builder.build(_base_ctx(cover=cover))
+        assert diag["sun_validity"]["sun_state"] == "hitting"
+
+    def test_sun_state_in_fov_not_valid_when_in_fov_but_not_direct(
+        self, builder: DiagnosticsBuilder
+    ):
+        """sun_state is 'in_fov_not_valid' when in_fov=True but direct_sun_valid=False."""
+        cover = _make_cover(direct_sun_valid=False, in_fov=True, valid=True)
+        diag, _ = builder.build(_base_ctx(cover=cover))
+        assert diag["sun_validity"]["sun_state"] == "in_fov_not_valid"
+
+    def test_sun_state_outside_fov_when_not_in_fov(self, builder: DiagnosticsBuilder):
+        """sun_state is 'outside_fov' when in_fov=False."""
+        cover = _make_cover(direct_sun_valid=False, in_fov=False, valid=False)
+        diag, _ = builder.build(_base_ctx(cover=cover))
+        assert diag["sun_validity"]["sun_state"] == "outside_fov"
+
+    def test_sun_state_hitting_takes_priority_over_in_fov(
+        self, builder: DiagnosticsBuilder
+    ):
+        """sun_state is 'hitting' (not 'in_fov_not_valid') when direct_sun_valid=True."""
+        cover = _make_cover(direct_sun_valid=True, in_fov=True)
+        diag, _ = builder.build(_base_ctx(cover=cover))
+        assert diag["sun_validity"]["sun_state"] == "hitting"
 
 
 # ---------------------------------------------------------------------------
@@ -712,12 +749,15 @@ class TestConfigurationDiagnostics:
             "max_position",
             "enable_min_position",
             "enable_max_position",
+            "position_tolerance",
+            "enable_position_matching",
             "inverse_state",
             "interpolation",
-            "force_override_sensors",
-            "force_override_position",
             "force_override_active",
             "motion_sensors",
+            "motion_template",
+            "motion_template_active",
+            "motion_template_mode",
             "motion_timeout",
             "motion_detected",
             "motion_timeout_active",
@@ -728,12 +768,17 @@ class TestConfigurationDiagnostics:
             "cloud_suppression_enabled",
             "cloudy_position",
             "is_sunny_source",
+            "templated_thresholds",
         }
         assert expected_keys == set(config.keys())
 
     def test_configuration_reflects_context(self, builder: DiagnosticsBuilder):
-        """Configuration reflects pipeline result and context state values."""
-        pr = _make_pr(control_method=ControlMethod.FORCE)
+        """Configuration reflects pipeline result and context state values.
+
+        force_override_active is kept one release for the companion card and
+        is True when a safety-priority custom position wins (#563).
+        """
+        pr = _make_pr(control_method=ControlMethod.CUSTOM_POSITION, is_safety=True)
         diag, _ = builder.build(
             _base_ctx(
                 pipeline_result=pr,

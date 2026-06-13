@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.adaptive_cover_pro.const import CONF_SENSOR_TYPE, CoverType
+from custom_components.adaptive_cover_pro.const import (
+    CONF_SENSOR_TYPE,
+    CUSTOM_POSITION_SLOT_NUMBERS,
+    CoverType,
+)
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.sensor import AdaptiveCoverDecisionTraceSensor
@@ -202,8 +206,8 @@ def test_custom_position_slots_snapshot_lists_configured_slots() -> None:
 
     slots = attrs.get("custom_position_slots")
     assert isinstance(slots, list)
-    # Snapshot must include all 4 slots so the card can render an even row.
-    assert len(slots) == 4
+    # Snapshot must include every slot so the card can render an even row.
+    assert len(slots) == len(CUSTOM_POSITION_SLOT_NUMBERS)
 
     slot1 = next(s for s in slots if s["slot"] == 1)
     assert slot1["enabled"] is True  # default when key absent

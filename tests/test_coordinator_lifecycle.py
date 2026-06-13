@@ -14,6 +14,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
+    CONF_MOTION_TEMPLATE,
     CONF_SENSOR_TYPE,
     CONF_VENETIAN_MODE,
     DOMAIN,
@@ -190,6 +191,51 @@ async def test_motion_sensors_wired_as_listeners(hass: HomeAssistant) -> None:
     opts = dict(VERTICAL_OPTIONS)
     opts[CONF_MOTION_SENSORS] = ["binary_sensor.presence"]
     entry = await _setup(hass, options=opts, entry_id="wire_motion_01")
+    assert entry.entry_id in hass.data[DOMAIN]
+
+
+@pytest.mark.integration
+async def test_motion_template_wired_as_listener(hass: HomeAssistant) -> None:
+    """The occupancy template is registered via async_track_template_result (#577 f/u).
+
+    Toggling a referenced entity must drive the coordinator's motion state with
+    no polling, proving the live template result is tracked.
+    """
+    hass.states.async_set("input_boolean.guest", "off")
+    await hass.async_block_till_done()
+
+    opts = dict(VERTICAL_OPTIONS)
+    opts[CONF_MOTION_TEMPLATE] = "{{ is_state('input_boolean.guest', 'on') }}"
+    entry = await _setup(hass, options=opts, entry_id="wire_motion_tmpl_01")
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Template-only config counts as configured and currently falsy.
+    assert coordinator._motion_mgr.is_configured is True
+    assert coordinator._motion_mgr.is_motion_detected is False
+
+    # Flip the referenced entity → the tracked template result drives occupancy.
+    hass.states.async_set("input_boolean.guest", "on")
+    await hass.async_block_till_done()
+    assert coordinator._motion_mgr.is_motion_detected is True
+
+
+@pytest.mark.integration
+async def test_motion_template_registration_failure_is_caught(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    """A template that fails to register must not abort setup (#577 f/u)."""
+    from homeassistant.exceptions import TemplateError
+
+    def _boom(*args, **kwargs):
+        raise TemplateError("boom")
+
+    monkeypatch.setattr(
+        "custom_components.adaptive_cover_pro.async_track_template_result", _boom
+    )
+    opts = dict(VERTICAL_OPTIONS)
+    opts[CONF_MOTION_TEMPLATE] = "{{ true }}"
+    entry = await _setup(hass, options=opts, entry_id="wire_motion_tmpl_fail")
+    # Setup still completed despite the registration error.
     assert entry.entry_id in hass.data[DOMAIN]
 
 

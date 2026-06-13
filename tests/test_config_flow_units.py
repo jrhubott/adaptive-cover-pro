@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant.helpers import selector
 from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 
 from custom_components.adaptive_cover_pro import unit_system
@@ -15,23 +16,22 @@ from custom_components.adaptive_cover_pro.config_flow import (
     weather_override_schema,
     _build_glare_zones_schema,
     _glare_zone_length_keys,
+    _stringify_templatable,
 )
 from custom_components.adaptive_cover_pro.const import (
+    CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_DISTANCE,
     CONF_HEIGHT_WIN,
     CONF_IRRADIANCE_THRESHOLD,
-    CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_OUTSIDE_THRESHOLD,
     CONF_SILL_HEIGHT,
-    CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TILT_DEPTH,
     CONF_TILT_DISTANCE,
-    CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
-    CONF_WEATHER_WIND_SPEED_SENSOR,
+    CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
     CONF_WEATHER_WIND_SPEED_THRESHOLD,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
@@ -157,108 +157,82 @@ class TestGlareZoneSchema:
         assert "glare_zone_4_z" in keys
 
 
-# --- Sensor-driven thresholds: SENSOR's unit wins ------------------------- #
+# --- Templatable thresholds: TemplateSelector, no unit/range (#577) ------- #
+
+
+def _selector_obj(schema, key):
+    """Return the selector object bound to ``key`` in *schema*."""
+    for k, v in schema.schema.items():
+        if str(k) == key:
+            return v
+    raise AssertionError(f"key {key!r} not found in schema")
 
 
 @pytest.mark.unit
-class TestTemperatureSensorUnitLabel:
-    """Temperature threshold labels track the configured sensor's UOM."""
+class TestTemplatableThresholdSelectors:
+    """The 9 threshold fields use a TemplateSelector (number or Jinja2 template).
 
-    def _hass_with_sensor(self, *, imperial: bool, sensor_uom: str | None):
-        hass = _hass(imperial=imperial)
-        if sensor_uom is None:
-            hass.states.get.return_value = None
-        else:
-            state = MagicMock()
-            state.attributes = {"unit_of_measurement": sensor_uom}
-            hass.states.get.return_value = state
-        return hass
+    Issue #577 swapped these from unit-aware NumberSelectors to the Jinja code
+    editor so they accept a number or a template, with entity autocomplete and
+    syntax highlighting. They no longer carry a ``unit_of_measurement`` or
+    numeric range — the unit now lives in the field's translation description.
+    Legacy numeric values are stringified before the form so the editor (which
+    only renders a string) does not collapse — see
+    ``config_flow._stringify_templatable``.
+    """
 
-    def test_no_sensor_falls_back_to_ha_locale(self):
-        # Metric locale, no sensor → label is HA's locale unit.
-        hass = self._hass_with_sensor(imperial=False, sensor_uom=None)
-        schema = temperature_climate_schema(hass, {})
-        cfg = _selector_for(schema, CONF_TEMP_LOW)
-        assert cfg["unit_of_measurement"] == str(hass.config.units.temperature_unit)
+    @staticmethod
+    def _assert_template(schema, key):
+        assert isinstance(_selector_obj(schema, key), selector.TemplateSelector)
 
-    def test_metric_locale_fahrenheit_sensor_shows_fahrenheit(self):
-        """The sensor's unit governs even when HA is on metric."""
-        hass = self._hass_with_sensor(imperial=False, sensor_uom="°F")
-        schema = temperature_climate_schema(hass, {CONF_TEMP_ENTITY: "sensor.x"})
-        cfg = _selector_for(schema, CONF_TEMP_LOW)
-        assert cfg["unit_of_measurement"] == "°F"
-        # Outside-temp threshold uses a DIFFERENT sensor entity (CONF_OUTSIDETEMP_ENTITY).
-        # Not set in options → fallback to HA's locale.
-        out_cfg = _selector_for(schema, CONF_OUTSIDE_THRESHOLD)
-        assert out_cfg["unit_of_measurement"] == str(hass.config.units.temperature_unit)
+    def test_temperature_thresholds_are_template_selectors(self):
+        schema = temperature_climate_schema(_hass(imperial=False), {})
+        for key in (CONF_TEMP_LOW, CONF_TEMP_HIGH, CONF_OUTSIDE_THRESHOLD):
+            self._assert_template(schema, key)
 
-    def test_temperature_range_widened(self):
-        """Range covers both Celsius and Fahrenheit comfort thresholds."""
-        cfg = _selector_for(
-            temperature_climate_schema(_hass(imperial=False), {}), CONF_TEMP_LOW
-        )
-        # Must accommodate 70-90 °F (and well below 0 °C if the sensor reports
-        # negative outdoor temperatures elsewhere).
-        assert cfg["max"] >= 150
-        cfg_high = _selector_for(
-            temperature_climate_schema(_hass(imperial=False), {}), CONF_TEMP_HIGH
-        )
-        assert cfg_high["max"] >= 150
+    def test_weather_thresholds_are_template_selectors(self):
+        schema = weather_override_schema(_hass(imperial=False), {})
+        for key in (
+            CONF_WEATHER_WIND_SPEED_THRESHOLD,
+            CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+            CONF_WEATHER_RAIN_THRESHOLD,
+        ):
+            self._assert_template(schema, key)
 
-
-@pytest.mark.unit
-class TestWeatherSensorUnitLabels:
-    """Wind speed / rain threshold labels track the configured sensor's UOM."""
-
-    def _hass_with_uom(self, entity_id_to_uom: dict[str, str]):
-        hass = _hass(imperial=False)
-
-        def _get(entity_id):
-            uom = entity_id_to_uom.get(entity_id)
-            if uom is None:
-                return None
-            st = MagicMock()
-            st.attributes = {"unit_of_measurement": uom}
-            return st
-
-        hass.states.get.side_effect = _get
-        return hass
-
-    def test_wind_label_tracks_sensor(self):
-        hass = self._hass_with_uom({"sensor.wind": "km/h"})
-        schema = weather_override_schema(
-            hass, {CONF_WEATHER_WIND_SPEED_SENSOR: "sensor.wind"}
-        )
-        cfg = _selector_for(schema, CONF_WEATHER_WIND_SPEED_THRESHOLD)
-        assert cfg["unit_of_measurement"] == "km/h"
-
-    def test_rain_label_tracks_sensor(self):
-        hass = self._hass_with_uom({"sensor.rain": "mm/h"})
-        schema = weather_override_schema(
-            hass, {CONF_WEATHER_RAIN_SENSOR: "sensor.rain"}
-        )
-        cfg = _selector_for(schema, CONF_WEATHER_RAIN_THRESHOLD)
-        assert cfg["unit_of_measurement"] == "mm/h"
-
-
-@pytest.mark.unit
-class TestLightCloudSensorUnitLabels:
-    """Lux / irradiance threshold labels track the configured sensor's UOM."""
-
-    def test_lux_label_tracks_sensor(self):
-        hass = _hass(imperial=False)
-        st = MagicMock()
-        st.attributes = {"unit_of_measurement": "klx"}
-        hass.states.get.return_value = st
-        schema = light_cloud_schema(hass, {CONF_LUX_ENTITY: "sensor.lux"})
-        cfg = _selector_for(schema, CONF_LUX_THRESHOLD)
-        assert cfg["unit_of_measurement"] == "klx"
-
-    def test_irradiance_label_default(self):
-        """No sensor → fallback to the conventional W/m²."""
+    def test_light_cloud_thresholds_are_template_selectors(self):
         schema = light_cloud_schema(_hass(imperial=False), {})
-        cfg = _selector_for(schema, CONF_IRRADIANCE_THRESHOLD)
-        assert cfg["unit_of_measurement"] == "W/m²"
+        for key in (
+            CONF_LUX_THRESHOLD,
+            CONF_IRRADIANCE_THRESHOLD,
+            CONF_CLOUD_COVERAGE_THRESHOLD,
+        ):
+            self._assert_template(schema, key)
+
+
+@pytest.mark.unit
+class TestStringifyTemplatable:
+    """Legacy numeric thresholds are stringified so the template editor renders."""
+
+    def test_int_becomes_string(self):
+        out = _stringify_templatable({CONF_LUX_THRESHOLD: 1000})
+        assert out[CONF_LUX_THRESHOLD] == "1000"
+
+    def test_whole_float_drops_trailing_zero(self):
+        out = _stringify_templatable({CONF_WEATHER_RAIN_THRESHOLD: 1.0})
+        assert out[CONF_WEATHER_RAIN_THRESHOLD] == "1"
+
+    def test_fractional_float_kept(self):
+        out = _stringify_templatable({CONF_WEATHER_RAIN_THRESHOLD: 1.5})
+        assert out[CONF_WEATHER_RAIN_THRESHOLD] == "1.5"
+
+    def test_template_string_untouched(self):
+        out = _stringify_templatable({CONF_TEMP_LOW: "{{ 21 }}"})
+        assert out[CONF_TEMP_LOW] == "{{ 21 }}"
+
+    def test_none_and_non_templatable_untouched(self):
+        out = _stringify_templatable({CONF_TEMP_LOW: None, "name": "Office"})
+        assert out[CONF_TEMP_LOW] is None
+        assert out["name"] == "Office"
 
 
 # --- Dict-level conversion: imperial round-trip --------------------------- #

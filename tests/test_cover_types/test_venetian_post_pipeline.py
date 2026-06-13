@@ -152,6 +152,60 @@ class TestPostPipelineResolveTiltOnlyMode:
         assert out.position == 80
         assert out.tilt is None
 
+
+class TestPostPipelineResolveCoverageSteps:
+    """Movement minimization quantizes the slat tilt toward full coverage."""
+
+    @staticmethod
+    def _patch_tilt(monkeypatch, value: int) -> None:
+        """Force the engine-computed slat angle to a known intermediate value."""
+        from custom_components.adaptive_cover_pro.engine.covers import (
+            VenetianCoverCalculation,
+        )
+
+        monkeypatch.setattr(
+            VenetianCoverCalculation,
+            "tilt_for_position",
+            lambda self, position: value,
+        )
+
+    def test_n1_snaps_tilt_fully_closed(self, monkeypatch):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_MAX_COVERAGE_STEPS,
+            CONF_MINIMIZE_MOVEMENTS,
+        )
+
+        self._patch_tilt(monkeypatch, 70)
+        policy = _make_policy()
+        kwargs = _solar_kwargs()
+        kwargs["options"] = {CONF_MINIMIZE_MOVEMENTS: True, CONF_MAX_COVERAGE_STEPS: 1}
+        out = policy.post_pipeline_resolve(_make_result(ControlMethod.SOLAR), **kwargs)
+        assert out.tilt == 0  # tilt 0% = slats fully closed = full coverage
+
+    def test_n2_rounds_tilt_toward_coverage(self, monkeypatch):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_MAX_COVERAGE_STEPS,
+            CONF_MINIMIZE_MOVEMENTS,
+        )
+
+        self._patch_tilt(monkeypatch, 70)
+        policy = _make_policy()
+        kwargs = _solar_kwargs()
+        kwargs["options"] = {CONF_MINIMIZE_MOVEMENTS: True, CONF_MAX_COVERAGE_STEPS: 2}
+        out = policy.post_pipeline_resolve(_make_result(ControlMethod.SOLAR), **kwargs)
+        # coverage 0.30 → rounds up to the 0.50 level → tilt 50%.
+        assert out.tilt == 50
+
+    def test_disabled_leaves_tilt_unquantized(self, monkeypatch):
+        from custom_components.adaptive_cover_pro.const import CONF_MINIMIZE_MOVEMENTS
+
+        self._patch_tilt(monkeypatch, 70)
+        policy = _make_policy()
+        kwargs = _solar_kwargs()
+        kwargs["options"] = {CONF_MINIMIZE_MOVEMENTS: False}
+        out = policy.post_pipeline_resolve(_make_result(ControlMethod.SOLAR), **kwargs)
+        assert out.tilt == 70
+
     def test_position_and_tilt_mode_does_not_rewrite_position(self):
         """Default mode must not collapse position to 0."""
         policy = _make_policy()

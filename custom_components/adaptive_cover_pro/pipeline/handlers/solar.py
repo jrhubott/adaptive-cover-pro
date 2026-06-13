@@ -28,10 +28,14 @@ class SolarHandler(OverrideHandler):
             return None
 
         position = compute_solar_position(snapshot)
+        reason = f"sun in FOV — position {position}%"
+        if getattr(snapshot, "minimize_movements", False):
+            steps = getattr(snapshot, "max_coverage_steps", 1)
+            reason += f" (coverage step, max {steps})"
         return PipelineResult(
             position=position,
             control_method=ControlMethod.SOLAR,
-            reason=f"sun in FOV — position {position}%",
+            reason=reason,
             raw_calculated_position=position,
         )
 

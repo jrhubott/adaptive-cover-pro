@@ -19,6 +19,7 @@ from ..const import (
 from ..engine.covers import AdaptiveVerticalCover
 from ..unit_system import length_default, length_selector
 from ._helpers import window_dimensions_lines
+from ._summary_labels import COVER_TYPE_LABELS_EN
 from .base import (
     CAP_HAS_SET_POSITION,
     POSITION_AXIS,
@@ -84,6 +85,7 @@ class BlindPolicy(CoverTypePolicy, register=True):
     axes: ClassVar[tuple[CoverAxis, ...]] = (POSITION_AXIS,)
     supports_glare_zones = True
     supports_return_to_default_switch = True
+    supports_fov_compute = True
 
     def section_order(self, options: dict | None = None) -> tuple[str, ...]:
         """Vertical blinds add the glare-zones section after the blind spot."""
@@ -94,7 +96,12 @@ class BlindPolicy(CoverTypePolicy, register=True):
         return tuple(order)
 
     def extra_field_keys(self, section: str) -> tuple[str, ...]:
-        """Add the glare-zones enable toggle to the sun-tracking section."""
+        """Add the glare-zones toggle to sun tracking.
+
+        The "Generate FOV from measurements" button is *not* listed here — it is
+        a transient form field inserted by ``fov_compute_schema`` and popped
+        before save, so it must stay out of ``live_option_keys`` (#565).
+        """
         from .. import config_fields as cf
         from ..const import CONF_ENABLE_GLARE_ZONES
 
@@ -106,9 +113,10 @@ class BlindPolicy(CoverTypePolicy, register=True):
         """Vertical-blind geometry page."""
         return "Configuration-Vertical"
 
-    def display_label(self) -> str:
+    def display_label(self, labels: dict[str, str] | None = None) -> str:
         """User-facing label for vertical blinds."""
-        return "Vertical Blind"
+        L = {**COVER_TYPE_LABELS_EN, **(labels or {})}
+        return L["cover_types.blind"]
 
     def disallowed_geometry_fields(
         self,
@@ -154,9 +162,17 @@ class BlindPolicy(CoverTypePolicy, register=True):
         """Plain ``cover`` domain — no extra capability requirement."""
         return selector.EntityFilterSelectorConfig(domain="cover")
 
-    def summary_geometry_lines(self, config: dict[str, Any]) -> list[str]:
-        """Render the window-dimensions block."""
-        return window_dimensions_lines(config)
+    def summary_geometry_lines(
+        self, config: dict[str, Any], labels: dict[str, str] | None = None
+    ) -> list[str]:
+        """Render the window-dimensions block.
+
+        The FOV is stored as concrete ``fov_left``/``fov_right`` angles (the
+        "Generate FOV from measurements" button writes them on submit, #565), so
+        the summary shows those values via the sun-tracking block — no separate
+        computed-FOV line is needed here.
+        """
+        return window_dimensions_lines(config, labels)
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
         """Warn when no bound entity advertises ``set_position``."""

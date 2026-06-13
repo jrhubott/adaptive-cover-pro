@@ -63,7 +63,7 @@ def grace_mgr():
 
 
 def _make_svc(mock_hass, grace_mgr) -> CoverCommandService:
-    return CoverCommandService(
+    service = CoverCommandService(
         hass=mock_hass,
         logger=MagicMock(),
         cover_type="cover_blind",
@@ -73,6 +73,10 @@ def _make_svc(mock_hass, grace_mgr) -> CoverCommandService:
         position_tolerance=3,
         max_retries=3,
     )
+    # This suite exercises reconciliation resends; opt into matching (default
+    # is off per issue #591).
+    service.enable_position_matching = True
+    return service
 
 
 def _ctx(**overrides) -> PositionContext:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
+from custom_components.adaptive_cover_pro.const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+)
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers.climate import (
     ClimateCoverData,
@@ -13,9 +16,6 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression im
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
-)
-from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
-    ForceOverrideHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
@@ -46,6 +46,9 @@ from tests.test_pipeline.conftest import make_snapshot
 
 # Entity ID used by the default custom position handler in integration tests.
 _CUSTOM_SENSOR = "binary_sensor.scene"
+# Entity ID + slot for the priority-100 safety slot (migrated force override, #563).
+_SAFETY_SENSOR = "binary_sensor.alert"
+_SAFETY_SLOT = 5
 
 
 def _cps(
@@ -56,31 +59,52 @@ def _cps(
     *,
     min_mode: bool = False,
     use_my: bool = False,
+    slot: int = 1,
 ) -> CustomPositionSensorState:
     """Compact CustomPositionSensorState builder for integration tests."""
     return CustomPositionSensorState(
-        entity_id=entity_id,
+        entity_ids=(entity_id,),
         is_on=is_on,
         position=position,
         priority=priority,
         min_mode=min_mode,
         use_my=use_my,
+        slot=slot,
+        active_entity_ids=(entity_id,) if is_on else (),
+    )
+
+
+def _safety_handler(position: int = 0) -> CustomPositionHandler:
+    """Slot-5 CustomPositionHandler at safety priority 100."""
+    return CustomPositionHandler(
+        slot=_SAFETY_SLOT,
+        position=position,
+        priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+    )
+
+
+def _safety_state(position: int = 0) -> CustomPositionSensorState:
+    """Active slot-5 sensor state matching ``_safety_handler``."""
+    return _cps(
+        _SAFETY_SENSOR,
+        True,
+        position,
+        CUSTOM_POSITION_SAFETY_PRIORITY,
+        slot=_SAFETY_SLOT,
     )
 
 
 def _make_registry(
-    custom_entity: str = _CUSTOM_SENSOR,
     custom_position: int = 55,
     custom_priority: int = 77,
 ) -> PipelineRegistry:
     """Build a test registry with one CustomPositionHandler slot."""
     return PipelineRegistry(
         [
-            ForceOverrideHandler(),
+            _safety_handler(),
             ManualOverrideHandler(),
             CustomPositionHandler(
                 slot=1,
-                entity_id=custom_entity,
                 position=custom_position,
                 priority=custom_priority,
             ),
@@ -96,7 +120,7 @@ def _make_climate_registry() -> PipelineRegistry:
     """Registry that includes the ClimateHandler for climate-specific tests."""
     return PipelineRegistry(
         [
-            ForceOverrideHandler(),
+            _safety_handler(),
             MotionTimeoutHandler(),
             ManualOverrideHandler(),
             ClimateHandler(),
@@ -159,16 +183,16 @@ class TestPipelineIntegration:
 
     registry = _make_registry()
 
-    def test_force_override_beats_everything(self) -> None:
-        """FORCE fires even when solar is valid and motion is active."""
+    def test_safety_slot_beats_everything(self) -> None:
+        """The priority-100 safety slot fires even when solar is valid and motion is active."""
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.alert": True},
-            force_override_position=0,
+            custom_position_sensors=[_safety_state(0)],
             direct_sun_valid=True,
             motion_timeout_active=True,
         )
         result = self.registry.evaluate(snap)
-        assert result.control_method == ControlMethod.FORCE
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
+        assert result.is_safety is True
         assert result.position == 0
 
     def test_motion_timeout_beats_solar(self) -> None:
@@ -230,7 +254,7 @@ class TestPipelineIntegration:
         result = self.registry.evaluate(snap)
         handler_names = {step.handler for step in result.decision_trace}
         expected = {
-            "force_override",
+            "custom_position_5",  # safety slot (migrated force override, #563)
             "manual_override",
             "custom_position_1",  # per-instance name includes slot number
             "motion_timeout",
@@ -438,9 +462,7 @@ class TestCustomPositionConfigurablePriority:
 
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1, entity_id="binary_sensor.scene", position=30, priority=95
-                ),
+                CustomPositionHandler(slot=1, position=30, priority=95),
                 WeatherOverrideHandler(),
                 SolarHandler(),
                 DefaultHandler(),
@@ -459,9 +481,7 @@ class TestCustomPositionConfigurablePriority:
         """Custom slot at priority 35 (below solar 40) does not fire when sun is valid."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1, entity_id="binary_sensor.scene", position=80, priority=35
-                ),
+                CustomPositionHandler(slot=1, position=80, priority=35),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -478,20 +498,16 @@ class TestCustomPositionConfigurablePriority:
         """When two custom slots are active, the higher-priority slot wins."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1, entity_id="binary_sensor.slot1", position=20, priority=85
-                ),
-                CustomPositionHandler(
-                    slot=2, entity_id="binary_sensor.slot2", position=60, priority=70
-                ),
+                CustomPositionHandler(slot=1, position=20, priority=85),
+                CustomPositionHandler(slot=2, position=60, priority=70),
                 SolarHandler(),
                 DefaultHandler(),
             ]
         )
         snap = make_snapshot(
             custom_position_sensors=[
-                _cps("binary_sensor.slot1", True, 20, 85),
-                _cps("binary_sensor.slot2", True, 60, 70),
+                _cps("binary_sensor.slot1", True, 20, 85, slot=1),
+                _cps("binary_sensor.slot2", True, 60, 70, slot=2),
             ],
         )
         result = registry.evaluate(snap)
@@ -502,20 +518,16 @@ class TestCustomPositionConfigurablePriority:
         """When the higher-priority slot is off, the lower-priority slot wins."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1, entity_id="binary_sensor.slot1", position=20, priority=85
-                ),
-                CustomPositionHandler(
-                    slot=2, entity_id="binary_sensor.slot2", position=60, priority=70
-                ),
+                CustomPositionHandler(slot=1, position=20, priority=85),
+                CustomPositionHandler(slot=2, position=60, priority=70),
                 SolarHandler(),
                 DefaultHandler(),
             ]
         )
         snap = make_snapshot(
             custom_position_sensors=[
-                _cps("binary_sensor.slot1", False, 20, 85),
-                _cps("binary_sensor.slot2", True, 60, 70),
+                _cps("binary_sensor.slot1", False, 20, 85, slot=1),
+                _cps("binary_sensor.slot2", True, 60, 70, slot=2),
             ],
         )
         result = registry.evaluate(snap)
@@ -529,7 +541,6 @@ class TestCustomPositionConfigurablePriority:
                 ManualOverrideHandler(),
                 CustomPositionHandler(
                     slot=1,
-                    entity_id="binary_sensor.scene",
                     position=45,
                     priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
                 ),
@@ -575,18 +586,13 @@ class TestFieldPropagationThroughRegistry:
         """
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=2,
-                    entity_id="binary_sensor.slot2",
-                    position=50,
-                    priority=77,
-                ),
+                CustomPositionHandler(slot=2, position=50, priority=77),
                 SolarHandler(),
                 DefaultHandler(),
             ]
         )
         snap = make_snapshot(
-            custom_position_sensors=[_cps("binary_sensor.slot2", True, 50, 77)],
+            custom_position_sensors=[_cps("binary_sensor.slot2", True, 50, 77, slot=2)],
         )
         result = registry.evaluate(snap)
         assert result.control_method == ControlMethod.CUSTOM_POSITION
@@ -601,12 +607,7 @@ class TestFieldPropagationThroughRegistry:
         """
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1,
-                    entity_id="binary_sensor.slot1",
-                    position=50,
-                    priority=77,
-                ),
+                CustomPositionHandler(slot=1, position=50, priority=77),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -630,12 +631,7 @@ class TestFieldPropagationThroughRegistry:
         """floor=50, solar=80 → floor is inert, no clamp, no floor_clamp step."""
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1,
-                    entity_id="binary_sensor.slot1",
-                    position=50,
-                    priority=77,
-                ),
+                CustomPositionHandler(slot=1, position=50, priority=77),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -662,12 +658,7 @@ class TestFieldPropagationThroughRegistry:
         """
         registry = PipelineRegistry(
             [
-                CustomPositionHandler(
-                    slot=1,
-                    entity_id="binary_sensor.slot1",
-                    position=55,
-                    priority=77,
-                ),
+                CustomPositionHandler(slot=1, position=55, priority=77),
                 SolarHandler(),
                 DefaultHandler(),
             ]
@@ -690,7 +681,7 @@ class TestFieldPropagationThroughRegistry:
         """
         registry = PipelineRegistry(
             [
-                ForceOverrideHandler(),
+                _safety_handler(),
                 ManualOverrideHandler(),
                 MotionTimeoutHandler(),
                 SolarHandler(),
@@ -715,7 +706,7 @@ class TestFieldPropagationThroughRegistry:
         """
         registry = PipelineRegistry(
             [
-                ForceOverrideHandler(),
+                _safety_handler(),
                 ManualOverrideHandler(),
                 SolarHandler(),
                 DefaultHandler(),
@@ -1242,7 +1233,7 @@ class TestGlareZoneVsClimatePriority:
     def _make_registry(self) -> PipelineRegistry:
         return PipelineRegistry(
             [
-                ForceOverrideHandler(),
+                _safety_handler(),
                 ManualOverrideHandler(),
                 MotionTimeoutHandler(),
                 CloudSuppressionHandler(),

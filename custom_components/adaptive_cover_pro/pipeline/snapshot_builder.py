@@ -35,14 +35,13 @@ from ..const import (
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_ENABLE_SUN_TRACKING,
-    CONF_FORCE_OVERRIDE_MIN_MODE,
-    CONF_FORCE_OVERRIDE_POSITION,
-    CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_MAX_COVERAGE_STEPS,
+    CONF_MINIMIZE_MOVEMENTS,
     CONF_MOTION_TIMEOUT_MODE,
     CONF_MY_POSITION_VALUE,
     CONF_OUTSIDE_THRESHOLD,
@@ -67,9 +66,17 @@ from ..const import (
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
     DEFAULT_CUSTOM_POSITION_TILT_ONLY,
+    DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
 )
-from ..helpers import compute_effective_default
+from ..helpers import (
+    compute_effective_default,
+    custom_position_slot_configured,
+    custom_position_slot_sensors,
+)
+from ..templates import combine_with_mode, is_template_string, render_condition
 from .types import (
     ClimateOptions,
     CustomPositionSensorState,
@@ -151,24 +158,17 @@ class PipelineSnapshotBuilder:
             is_sunny_sensor=options.get(CONF_IS_SUNNY_SENSOR),
         )
 
-    def read_force_sensors(self, options: dict) -> dict[str, bool]:
-        """Read force override sensor states from HA into a plain dict."""
-        sensors = options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
-        return {
-            sensor: bool(
-                (state := self._hass.states.get(sensor)) and state.state == "on"
-            )
-            for sensor in sensors
-        }
-
     def read_custom_position_sensors(
         self, options: dict
     ) -> list[CustomPositionSensorState]:
-        """Read custom position sensor states from HA into an ordered list.
+        """Read custom position trigger states from HA into an ordered list.
 
         Returns one :class:`CustomPositionSensorState` per configured slot
-        (sensor and position both set).  Priority defaults to
-        ``DEFAULT_CUSTOM_POSITION_PRIORITY`` (77) when not set so existing
+        (a trigger — sensors and/or template — plus a position).  Slot
+        activation is the OR of the bound sensors, folded with the optional
+        condition template via :func:`templates.combine_with_mode` — template
+        rendering happens here so the handlers stay pure.  Priority defaults
+        to ``DEFAULT_CUSTOM_POSITION_PRIORITY`` (77) when not set so existing
         installations behave identically.  ``min_mode`` defaults to False;
         ``use_my`` defaults to False (when True the slot triggers the cover's
         hardware "My" preset via ``stop_cover`` instead of the slot's numeric
@@ -176,53 +176,79 @@ class PipelineSnapshotBuilder:
         """
         result: list[CustomPositionSensorState] = []
         for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
-            sensor = options.get(slot_keys["sensor"])
-            position = options.get(slot_keys["position"])
             enabled = bool(
                 options.get(slot_keys["enabled"], DEFAULT_CUSTOM_POSITION_ENABLED)
             )
-            if sensor and position is not None and enabled:
-                state = self._hass.states.get(sensor)
-                is_on = bool(state and state.state == "on")
-                sensor_name = (
-                    state.attributes.get(ATTR_FRIENDLY_NAME) if state else None
+            if not (custom_position_slot_configured(options, slot_keys) and enabled):
+                continue
+            sensors = custom_position_slot_sensors(options, slot_keys)
+            states = {s: self._hass.states.get(s) for s in sensors}
+            states_on = {
+                s: bool(state and state.state == "on") for s, state in states.items()
+            }
+            active = tuple(s for s, on in states_on.items() if on)
+            sensors_on = bool(active)
+
+            template = options.get(slot_keys["template"])
+            has_template = is_template_string(template)
+            template_active = (
+                render_condition(self._hass, template) if has_template else None
+            )
+            mode = (
+                options.get(slot_keys["template_mode"]) or DEFAULT_TEMPLATE_COMBINE_MODE
+            )
+            is_on = combine_with_mode(
+                bool(template_active),
+                sensors_on,
+                mode,
+                has_template=has_template,
+                has_others=bool(sensors),
+            )
+
+            # Friendly name of the first active sensor (else the first sensor)
+            # so diagnostics label the slot by what actually triggered it.
+            name_source = (
+                states.get(active[0] if active else sensors[0]) if sensors else None
+            )
+            sensor_name = (
+                name_source.attributes.get(ATTR_FRIENDLY_NAME) if name_source else None
+            )
+
+            priority = int(
+                options.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
+            )
+            min_mode = bool(options.get(slot_keys["min_mode"], False))
+            use_my = bool(options.get(slot_keys["use_my"], False))
+            raw_tilt = options.get(slot_keys["tilt"])
+            tilt = int(raw_tilt) if raw_tilt is not None else None
+            tilt_only = bool(
+                options.get(slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY)
+            )
+            # Mutual exclusion: tilt_only wins over min_mode / use_my
+            # (decision Q3). A slot can fix only the slat angle OR claim
+            # position as a floor / via My — not both. Normalize here, the
+            # single read site, mirroring the existing use_my-over-min_mode
+            # precedent. The config-summary surfaces a warning when a user
+            # configured a conflicting combination.
+            if tilt_only:
+                min_mode = False
+                use_my = False
+            result.append(
+                CustomPositionSensorState(
+                    entity_ids=tuple(sensors),
+                    is_on=is_on,
+                    position=int(options.get(slot_keys["position"])),
+                    priority=priority,
+                    min_mode=min_mode,
+                    use_my=use_my,
+                    tilt=tilt,
+                    tilt_only=tilt_only,
+                    sensor_name=sensor_name,
+                    slot=slot,
+                    active_entity_ids=active,
+                    template_active=template_active,
                 )
-                priority = int(
-                    options.get(slot_keys["priority"])
-                    or DEFAULT_CUSTOM_POSITION_PRIORITY
-                )
-                min_mode = bool(options.get(slot_keys["min_mode"], False))
-                use_my = bool(options.get(slot_keys["use_my"], False))
-                raw_tilt = options.get(slot_keys["tilt"])
-                tilt = int(raw_tilt) if raw_tilt is not None else None
-                tilt_only = bool(
-                    options.get(
-                        slot_keys["tilt_only"], DEFAULT_CUSTOM_POSITION_TILT_ONLY
-                    )
-                )
-                # Mutual exclusion: tilt_only wins over min_mode / use_my
-                # (decision Q3). A slot can fix only the slat angle OR claim
-                # position as a floor / via My — not both. Normalize here, the
-                # single read site, mirroring the existing use_my-over-min_mode
-                # precedent. The config-summary surfaces a warning when a user
-                # configured a conflicting combination.
-                if tilt_only:
-                    min_mode = False
-                    use_my = False
-                result.append(
-                    CustomPositionSensorState(
-                        entity_id=sensor,
-                        is_on=is_on,
-                        position=int(position),
-                        priority=priority,
-                        min_mode=min_mode,
-                        use_my=use_my,
-                        tilt=tilt,
-                        tilt_only=tilt_only,
-                        sensor_name=sensor_name,
-                        slot=slot,
-                    )
-                )
+            )
         return result
 
     # ---- Pure assembly ----------------------------------------------------
@@ -257,6 +283,7 @@ class PipelineSnapshotBuilder:
         is_glare_zone_enabled: Callable[[int], bool],
         effective_default: int | None = None,
         is_sunset_active: bool | None = None,
+        cover_capabilities: dict | None = None,
     ) -> PipelineSnapshot:
         """Assemble the per-cycle :class:`PipelineSnapshot`.
 
@@ -272,6 +299,13 @@ class PipelineSnapshotBuilder:
         owns those switch attributes (``glare_zone_0``, ``glare_zone_1`` …);
         the builder reads them through this callable so it never reaches back
         into ``coordinator.self``.
+
+        ``cover_capabilities`` maps each bound entity_id to its
+        ``CoverCapabilities``.  It drives the sun-tracking floor rollup
+        (issue #569): the 1 % floor is switched off only when *every* bound
+        entity supports the policy's position axis (conservative
+        mixed-instance rule), so positionable covers reach a true 0 %.  ``None``
+        / empty leaves the floor active.
         """
         if effective_default is None or is_sunset_active is None:
             h_def = int(options.get(CONF_DEFAULT_HEIGHT, 0))
@@ -295,6 +329,16 @@ class PipelineSnapshotBuilder:
                 if is_glare_zone_enabled(idx):
                     active_zone_names.add(zone.name)
 
+        # Sun-tracking floor rollup (#569): switch the 1 % floor off only when
+        # every bound entity supports the policy's position axis. A mixed
+        # instance (any open/close-only entity) or unknown caps keeps the floor
+        # active, so a binary cover never fully retracts with sun in the FOV.
+        caps = cover_capabilities or {}
+        all_positionable = bool(caps) and all(
+            self._policy.position_axis_supported(c) for c in caps.values()
+        )
+        solar_floor_active = not all_positionable
+
         return PipelineSnapshot(
             cover=cover_data,
             config=cover_data.config,
@@ -308,11 +352,6 @@ class PipelineSnapshotBuilder:
             climate_readings=climate_readings,
             climate_mode_enabled=self._toggles.switch_mode,
             climate_options=self.build_climate_options(options),
-            force_override_sensors=self.read_force_sensors(options),
-            force_override_position=options.get(CONF_FORCE_OVERRIDE_POSITION, 0),
-            force_override_min_mode=bool(
-                options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False)
-            ),
             manual_override_active=manual_override_active,
             motion_timeout_active=motion_timeout_active,
             weather_override_active=weather_override_active,
@@ -336,6 +375,13 @@ class PipelineSnapshotBuilder:
             ),
             current_cover_position=current_cover_position,
             policy=self._policy,
+            minimize_movements=bool(
+                options.get(CONF_MINIMIZE_MOVEMENTS, DEFAULT_MINIMIZE_MOVEMENTS)
+            ),
+            max_coverage_steps=int(
+                options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
+            ),
             default_tilt=options.get(CONF_DEFAULT_TILT),
             sunset_tilt=options.get(CONF_SUNSET_TILT),
+            solar_floor_active=solar_floor_active,
         )

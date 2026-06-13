@@ -5,10 +5,14 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_CALL_SERVICE, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import TemplateError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import (
+    TrackTemplate,
     async_track_state_change_event,
+    async_track_template_result,
 )
+from homeassistant.helpers.template import Template
 
 from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -17,9 +21,12 @@ from .const import (
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_START_ENTITY,
+    CONF_FORCE_OVERRIDE_MIN_MODE,
+    CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
+    CONF_MOTION_TEMPLATE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_TEMP_ENTITY,
@@ -31,13 +38,19 @@ from .const import (
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_WIND_SPEED_SENSOR,
     CONF_WINDOW_WIDTH,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     CUSTOM_POSITION_SLOTS,
     DOMAIN,
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
-from .helpers import motion_entities
-from .migrations import async_prune_legacy_entities, async_prune_legacy_sensor_entities
+from .helpers import custom_position_slot_sensors, motion_entities
+from .templates import is_template_string
+from .migrations import (
+    async_prune_legacy_entities,
+    async_prune_legacy_sensor_entities,
+    async_prune_legacy_sensor_entities_v2,
+)
 from .services import async_setup_services, async_unload_services
 
 PLATFORMS = [
@@ -76,7 +89,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
     _start_time_entity = entry.options.get(CONF_START_ENTITY)
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
-    _force_override_sensors = entry.options.get(CONF_FORCE_OVERRIDE_SENSORS, [])
     _motion_sensors = motion_entities(entry.options)
     _cloud_coverage_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
     _lux_entity = entry.options.get(CONF_LUX_ENTITY)
@@ -97,17 +109,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if entity is not None:
             _entities.append(entity)
 
-    # Add force override sensors to tracked entities
-    if _force_override_sensors:
-        _entities.extend(_force_override_sensors)
-
     # Add custom position sensors to tracked entities so the pipeline
     # re-evaluates immediately when a sensor turns on or off, rather
     # than waiting for the next periodic refresh or another entity change.
     for _slot_keys in CUSTOM_POSITION_SLOTS.values():
-        _sensor = entry.options.get(_slot_keys["sensor"])
-        if _sensor:
-            _entities.append(_sensor)
+        _entities.extend(custom_position_slot_sensors(entry.options, _slot_keys))
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 
@@ -146,6 +152,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 coordinator.async_check_motion_state_change,
             )
         )
+
+    # Register the optional occupancy template (issue #577 follow-up). Tracking
+    # the rendered result means the cover reacts the instant the template flips
+    # truthy — same immediacy as a motion sensor, no polling. Re-registered on
+    # every reload (options changes trigger a full reload).
+    _motion_template = entry.options.get(CONF_MOTION_TEMPLATE)
+    if is_template_string(_motion_template):
+        try:
+            _track_info = async_track_template_result(
+                hass,
+                [TrackTemplate(Template(_motion_template, hass), None)],
+                coordinator.async_check_motion_template_change,
+            )
+        except (TemplateError, ValueError) as err:
+            _LOGGER.warning(
+                "Motion occupancy template failed to register (%r): %s",
+                _motion_template,
+                err,
+            )
+        else:
+            entry.async_on_unload(_track_info.async_remove)
+
+    # Register each custom-position slot's optional condition template (issue
+    # #563). Same pattern as the occupancy template above: tracking the
+    # rendered result gives sensor-grade immediacy when a template flips.
+    for _slot_keys in CUSTOM_POSITION_SLOTS.values():
+        _slot_template = entry.options.get(_slot_keys["template"])
+        if not is_template_string(_slot_template):
+            continue
+        try:
+            _track_info = async_track_template_result(
+                hass,
+                [TrackTemplate(Template(_slot_template, hass), None)],
+                coordinator.async_check_custom_position_template_change,
+            )
+        except (TemplateError, ValueError) as err:
+            _LOGGER.warning(
+                "Custom position template failed to register (%r): %s",
+                _slot_template,
+                err,
+            )
+        else:
+            entry.async_on_unload(_track_info.async_remove)
 
     # Register weather sensor listeners separately (need custom handler for clear-delay)
     _weather_sensor_ids: list[str] = []
@@ -192,6 +241,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Runs before platform setup so orphans are removed before new entities register.
     await async_prune_legacy_entities(hass, entry)
     await async_prune_legacy_sensor_entities(hass, entry)
+    await async_prune_legacy_sensor_entities_v2(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -268,10 +318,32 @@ def _migrate_cm_to_m(value: float | int | None) -> float | None:
     return round(numeric / 100.0, 2)
 
 
+def _merge_force_override_into_slot_5(options: dict) -> bool:
+    """Copy legacy force-override config into custom-position slot 5 (issue #563).
+
+    Additive on purpose: the legacy ``force_override_*`` keys are left
+    untouched so a rollback to the previous integration version restores the
+    exact pre-merge behavior (the old ForceOverrideHandler reads them; slot-5
+    keys are invisible to old code, which only iterates slots 1–4).
+
+    Returns True when slot 5 was written.
+    """
+    sensors = options.get(CONF_FORCE_OVERRIDE_SENSORS) or []
+    if not sensors:
+        return False  # nothing configured (absent OR empty list) — slot 5 stays free
+    slot5 = CUSTOM_POSITION_SLOTS[5]
+    options[slot5["sensors"]] = list(sensors)
+    options[slot5["position"]] = int(options.get(CONF_FORCE_OVERRIDE_POSITION) or 0)
+    options[slot5["priority"]] = CUSTOM_POSITION_SAFETY_PRIORITY
+    options[slot5["min_mode"]] = bool(options.get(CONF_FORCE_OVERRIDE_MIN_MODE, False))
+    return True
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the current schema version."""
     new_options = dict(entry.options)
     new_version = entry.version
+    new_minor = entry.minor_version
 
     # v1 → v2: convert window/glare-zone dimensions from cm to metres.
     if new_version < 2:
@@ -300,8 +372,21 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_options.setdefault(CONF_ENABLE_MY_POSITION_ENTITIES, True)
         new_version = 3
 
+    # v3.1 → v3.2: merge the standalone force-override feature into
+    # custom-position slot 5 at safety priority (issue #563). A MINOR bump on
+    # purpose — HA lets older code load entries with a higher minor version,
+    # and the copy is additive, so a rollback to the previous release keeps a
+    # fully functioning force override.
+    if new_version == 3 and new_minor < 2:
+        if _merge_force_override_into_slot_5(new_options):
+            _LOGGER.info(
+                "Migrated force override config of %s into custom-position slot 5",
+                entry.data.get("name", entry.entry_id),
+            )
+        new_minor = 2
+
     hass.config_entries.async_update_entry(
-        entry, options=new_options, version=new_version
+        entry, options=new_options, version=new_version, minor_version=new_minor
     )
     return True
 

@@ -27,3 +27,4 @@ notebooks/test_python.ipynb
 notebooks/.ipynb_checkpoints
 notebooks/outputs/
 .hypothesis/
+.claude/worktrees

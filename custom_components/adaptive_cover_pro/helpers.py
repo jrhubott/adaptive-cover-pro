@@ -12,7 +12,12 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_MOTION_MEDIA_PLAYERS, CONF_MOTION_SENSORS
+from .const import (
+    CONF_MOTION_MEDIA_PLAYERS,
+    CONF_MOTION_SENSORS,
+    CUSTOM_POSITION_SLOTS,
+)
+from .templates import is_template_string
 
 if TYPE_CHECKING:
     from homeassistant.core import State
@@ -37,6 +42,58 @@ def motion_entities(options: Mapping) -> list[str]:
     return list(options.get(CONF_MOTION_SENSORS, [])) + list(
         options.get(CONF_MOTION_MEDIA_PLAYERS, [])
     )
+
+
+def custom_position_slot_sensors(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> list[str]:
+    """Return a custom-position slot's trigger sensors.
+
+    The new ``sensors`` list key wins whenever present (issue #563); otherwise
+    the legacy single-sensor key is wrapped, so entries never saved through the
+    multi-sensor UI keep working — including after a rollback-then-upgrade
+    cycle where only the legacy key was edited.
+    """
+    sensors = options.get(slot_keys["sensors"])
+    if sensors is not None:
+        return [s for s in sensors if s]
+    legacy = options.get(slot_keys["sensor"])
+    return [legacy] if legacy else []
+
+
+def mirror_legacy_slot_sensor_keys(options: dict) -> None:
+    """Mirror each slot's first sensor into the legacy single-sensor key.
+
+    Called after every save path that writes the ``sensors`` list (config
+    flow, options flow, ``set_custom_position`` service) so a rollback to the
+    previous integration version still finds a working single-sensor config
+    (issue #563). Slots whose list key is absent are left untouched — their
+    legacy key is still the live source via the read fallback.
+    """
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        if slot_keys["sensors"] not in options:
+            continue
+        sensors = options[slot_keys["sensors"]] or []
+        if sensors:
+            options[slot_keys["sensor"]] = sensors[0]
+        elif options.get(slot_keys["sensor"]):
+            # Slot cleared: null the stale mirror so neither old nor new code
+            # resurrects it. Never-configured slots get no key at all.
+            options[slot_keys["sensor"]] = None
+
+
+def custom_position_slot_configured(
+    options: Mapping, slot_keys: Mapping[str, str]
+) -> bool:
+    """Return True when a custom-position slot is fully configured.
+
+    Single source of truth for the "slot participates" gate: a slot needs a
+    trigger (at least one sensor, or a condition template) and a position.
+    """
+    has_trigger = bool(
+        custom_position_slot_sensors(options, slot_keys)
+    ) or is_template_string(options.get(slot_keys["template"]))
+    return has_trigger and options.get(slot_keys["position"]) is not None
 
 
 def get_safe_state(hass: HomeAssistant, entity_id: str):
@@ -218,6 +275,35 @@ def check_cover_features(hass: HomeAssistant, entity_id: str) -> dict[str, bool]
     }
 
 
+def _eval_time_to_utc_naive(eval_time: dt.datetime) -> dt.datetime:
+    """Normalize an evaluation time to naive-UTC for sunset/sunrise comparison.
+
+    Accepts either a tz-aware datetime (e.g. a sample time from
+    ``SunData.times``, which is tz-aware local) — converted to UTC — or a
+    naive-local wall-clock value, interpreted via :func:`_local_naive_to_utc_naive`.
+    Mirrors how ``compute_effective_default`` normalizes its ``now`` reference.
+    """
+    if eval_time.tzinfo is not None:
+        return dt_util.as_utc(eval_time).replace(tzinfo=None)
+    return _local_naive_to_utc_naive(eval_time)
+
+
+def _local_naive_to_utc_naive(local_naive: dt.datetime) -> dt.datetime:
+    """Convert a naive-local wall-clock datetime to a naive-UTC datetime.
+
+    Interprets *local_naive* as a wall-clock time in HA's configured local
+    timezone (``dt_util.DEFAULT_TIME_ZONE``), converts it to UTC, and strips
+    tzinfo so the result is comparable to other naive-UTC values.
+
+    This is the single conversion point for entity-derived sunset/sunrise
+    boundaries inside ``compute_effective_default``.  DST transitions are
+    handled correctly because ``dt_util.as_local`` / ``dt_util.as_utc`` use
+    the HA-configured zoneinfo database.
+    """
+    aware_local = local_naive.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return dt_util.as_utc(aware_local).replace(tzinfo=None)
+
+
 def compute_effective_default(
     h_def: int,
     sunset_pos: int | None,
@@ -228,6 +314,7 @@ def compute_effective_default(
     sunset_time: dt.datetime | None = None,
     sunrise_time: dt.datetime | None = None,
     window_explicitly_started: bool = False,
+    eval_time: dt.datetime | None = None,
 ) -> tuple[int, bool]:
     """Return the effective default cover position based on astronomical sunset/sunrise.
 
@@ -264,6 +351,11 @@ def compute_effective_default(
             maps to ``False`` here even though the active-window check treats blank
             as "no start restriction". Defaults to ``False`` for call sites without
             start_time context.
+        eval_time: Optional time at which to evaluate the sunset/sunrise window.
+            When provided (tz-aware or naive-local), it replaces wall-clock now —
+            this lets the forecast project the effective default at each future
+            sample time instead of "now". ``None`` (default) preserves the live
+            behavior of evaluating against the current moment.
 
     Returns:
         A ``(effective_default, is_sunset_active)`` tuple where
@@ -274,16 +366,20 @@ def compute_effective_default(
         return h_def, False
 
     sunset = (
-        sunset_time
+        _local_naive_to_utc_naive(sunset_time)
         if sunset_time is not None
         else sun_data.sunset().replace(tzinfo=None)
     )
     sunrise = (
-        sunrise_time
+        _local_naive_to_utc_naive(sunrise_time)
         if sunrise_time is not None
         else sun_data.sunrise().replace(tzinfo=None)
     )
-    now_naive = dt.datetime.now(UTC).replace(tzinfo=None)
+    now_naive = (
+        _eval_time_to_utc_naive(eval_time)
+        if eval_time is not None
+        else dt.datetime.now(UTC).replace(tzinfo=None)
+    )
 
     after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))
     before_sunrise = now_naive < (sunrise + timedelta(minutes=sunrise_off))

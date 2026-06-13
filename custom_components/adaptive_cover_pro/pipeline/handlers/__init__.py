@@ -17,12 +17,14 @@ from ...const import (
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
 )
+from ...helpers import (
+    custom_position_slot_configured,
+)
 from ..handler import OverrideHandler
 from .climate import ClimateHandler
 from .cloud_suppression import CloudSuppressionHandler
 from .custom_position import CustomPositionHandler
 from .default import DefaultHandler
-from .force_override import ForceOverrideHandler
 from .glare_zone import GlareZoneHandler
 from .manual_override import ManualOverrideHandler
 from .motion_timeout import MotionTimeoutHandler
@@ -43,18 +45,17 @@ def _single(cls: type[OverrideHandler]) -> HandlerFactory:
 def _custom_position_handlers(options: Mapping[str, Any]) -> list[OverrideHandler]:
     """Build one ``CustomPositionHandler`` per configured + enabled slot.
 
-    A slot contributes a handler only when it has both a sensor and a position
-    and is enabled. Each carries an independent priority so the registry sorts
-    it into the correct evaluation order alongside the rest of the chain.
+    A slot contributes a handler only when it has a trigger (sensors and/or
+    template) and a position and is enabled. Each carries an independent
+    priority so the registry sorts it into the correct evaluation order
+    alongside the rest of the chain.
     """
     handlers: list[OverrideHandler] = []
     for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
-        sensor = options.get(slot_keys["sensor"])
-        position = options.get(slot_keys["position"])
         enabled = bool(
             options.get(slot_keys["enabled"], DEFAULT_CUSTOM_POSITION_ENABLED)
         )
-        if sensor and position is not None and enabled:
+        if custom_position_slot_configured(options, slot_keys) and enabled:
             priority = int(
                 options.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
             )
@@ -63,8 +64,7 @@ def _custom_position_handlers(options: Mapping[str, Any]) -> list[OverrideHandle
             handlers.append(
                 CustomPositionHandler(
                     slot=slot,
-                    entity_id=sensor,
-                    position=int(position),
+                    position=int(options.get(slot_keys["position"])),
                     priority=priority,
                     tilt=tilt,
                 )
@@ -82,7 +82,6 @@ def _solar_handler(options: Mapping[str, Any]) -> list[OverrideHandler]:
 # The registry. Order here is for readability only — PipelineRegistry sorts by
 # each handler's declared priority. Add a new handler with one entry.
 HANDLER_FACTORIES: tuple[HandlerFactory, ...] = (
-    _single(ForceOverrideHandler),
     _single(WeatherOverrideHandler),
     _single(ManualOverrideHandler),
     _custom_position_handlers,
@@ -113,7 +112,6 @@ __all__ = [
     "CloudSuppressionHandler",
     "CustomPositionHandler",
     "DefaultHandler",
-    "ForceOverrideHandler",
     "GlareZoneHandler",
     "HandlerFactory",
     "ManualOverrideHandler",

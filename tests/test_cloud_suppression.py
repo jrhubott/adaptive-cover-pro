@@ -13,8 +13,8 @@ from __future__ import annotations
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
+    CustomPositionHandler,
     DefaultHandler,
-    ForceOverrideHandler,
     ManualOverrideHandler,
     SolarHandler,
 )
@@ -22,7 +22,10 @@ from custom_components.adaptive_cover_pro.pipeline.handlers.cloud_suppression im
     CloudSuppressionHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-from custom_components.adaptive_cover_pro.pipeline.types import ClimateOptions
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    ClimateOptions,
+    CustomPositionSensorState,
+)
 from custom_components.adaptive_cover_pro.state.climate_provider import ClimateReadings
 
 from tests.test_pipeline.conftest import _make_mock_cover, make_snapshot
@@ -224,7 +227,8 @@ class TestCloudSuppressionPipelineIntegration:
     def _make_registry(self) -> PipelineRegistry:
         return PipelineRegistry(
             [
-                ForceOverrideHandler(),
+                # Safety slot — the migrated force override (issue #563)
+                CustomPositionHandler(slot=5, position=0, priority=100),
                 ManualOverrideHandler(),
                 CloudSuppressionHandler(),
                 ClimateHandler(),
@@ -319,12 +323,22 @@ class TestCloudSuppressionPipelineIntegration:
         result = registry.evaluate(snapshot)
         assert result.position == 50
 
-    def test_cloud_suppression_defers_to_force_override(self) -> None:
-        """Force override (priority 100) beats cloud suppression (priority 60)."""
+    def test_cloud_suppression_defers_to_safety_custom_position(self) -> None:
+        """Safety custom position (priority 100) beats cloud suppression (priority 60)."""
         registry = self._make_registry()
         snapshot = make_snapshot(
-            force_override_sensors={"binary_sensor.test": True},
-            force_override_position=0,
+            custom_position_sensors=[
+                CustomPositionSensorState(
+                    entity_ids=("binary_sensor.test",),
+                    is_on=True,
+                    position=0,
+                    priority=100,
+                    min_mode=False,
+                    use_my=False,
+                    slot=5,
+                    active_entity_ids=("binary_sensor.test",),
+                )
+            ],
             default_position=80,
             climate_readings=make_weather_readings(is_sunny=False),
             climate_options=ClimateOptions(
@@ -338,7 +352,8 @@ class TestCloudSuppressionPipelineIntegration:
             ),
         )
         result = registry.evaluate(snapshot)
-        assert result.control_method == ControlMethod.FORCE
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
+        assert result.is_safety is True
 
     def test_cloud_suppression_defers_to_manual_override(self) -> None:
         """Manual override (priority 70) beats cloud suppression (priority 60)."""

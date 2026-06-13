@@ -30,7 +30,9 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SPLIT_PANEL_TOP,
 )
 from custom_components.adaptive_cover_pro.cover_types import get_policy
-from custom_components.adaptive_cover_pro.cover_types.axis_target import DispatchStrategy
+from custom_components.adaptive_cover_pro.cover_types.axis_target import (
+    DispatchStrategy,
+)
 
 EXISTING_TYPES = [
     "cover_blind",

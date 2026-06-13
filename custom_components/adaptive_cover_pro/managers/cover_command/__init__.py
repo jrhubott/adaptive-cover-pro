@@ -199,6 +199,13 @@ class CoverCommandService:
         # Synced by the coordinator each update cycle from the Integration Enabled switch.
         self._enabled: bool = True
 
+        # When True, the reconciliation pass resends on a position mismatch until
+        # the cover reaches the target. When False (the default), the cover is
+        # commanded once and left where it lands; a settled landing-delta then
+        # surfaces as a manual override instead of a retry (issue #591). Synced by
+        # the coordinator each update cycle.
+        self._enable_position_matching: bool = False
+
         # Dry-run mode — when True, no outbound cover commands are sent, but the
         # full update cycle (pipeline, diagnostics, sensors) runs normally.
         # Synced by the coordinator each update cycle from the Debug & Diagnostics option.
@@ -419,6 +426,22 @@ class CoverCommandService:
         coordinator each update cycle from the Integration Enabled switch.
         """
         self._enabled = value
+
+    @property
+    def enable_position_matching(self) -> bool:
+        """Whether the reconciliation pass resends until the cover arrives (#591)."""
+        return self._enable_position_matching
+
+    @enable_position_matching.setter
+    def enable_position_matching(self, value: bool) -> None:
+        """Update the enable-position-matching flag.
+
+        When False (the default), the reconciliation pass never resends on a
+        mismatch — the cover is commanded once and left where it lands.  When
+        True, the pass resends until the cover reaches the target.  Synced by
+        the coordinator each update cycle from the runtime config.
+        """
+        self._enable_position_matching = value
 
     @property
     def dry_run(self) -> bool:
@@ -949,21 +972,26 @@ class CoverCommandService:
 
         # Same-position band — applies to ALL callers, including force=True and
         # is_safety=True.  Issuing set_cover_position when the cover is already
-        # at (or within user-configured tolerance of) the target is a physical
-        # no-op that causes audible relay clicks on many motors (issue #290).
-        # The band is governed by _position_tolerance (CONF_POSITION_TOLERANCE,
-        # default POSITION_TOLERANCE_PERCENT = 3) so the user controls the
-        # dead-band width; raising it suppresses repeated commands when a motor
-        # physically cannot reach the commanded special-position target (issue
-        # #507).  At the default of 3 this also gives the main command gate the
-        # same tolerance the reconciliation path already used.
+        # EXACTLY at the target is a true no-op that causes audible relay clicks
+        # on many motors (issue #290), so we suppress it here.
+        #
+        # This gate keys off EXACT equality only — it is NOT a hysteresis band.
+        # Movement hysteresis (how big a move must be before we re-command) is
+        # owned solely by _check_position_delta below, governed by the user's
+        # CONF_DELTA_POSITION.  Using the reconciliation tolerance here conflated
+        # the two concepts and suppressed legitimate small tracking moves (issue
+        # #567).  The relay-click / unreachable-target suppression that motivated
+        # the old tolerance band (issue #507) lives in the reconciliation path
+        # (run_reconciliation_pass: tolerance match + max_retries give-up), where
+        # _position_tolerance correctly belongs — not here.
+        #
         # sun_just_appeared is the one exception: the sun transitioning in/out of
         # validity is a sentinel that we must re-confirm the cover position even
         # if it hasn't changed numerically.
         if (
             not context.sun_just_appeared
             and _current is not None
-            and abs(_current - position) <= self._position_tolerance
+            and _current == position
         ):
             if context.policy is not None and context.tilt is not None:
                 await context.policy.maybe_update_tilt_only(
@@ -1314,7 +1342,23 @@ class CoverCommandService:
                 )
                 continue
 
-            # 8. Mismatch — retry up to max_retries
+            # 8. Mismatch. Unless position matching is enabled, never resend
+            #    (issue #591): the cover is commanded once and left where it
+            #    lands; a settled landing-delta surfaces as a manual override
+            #    via the position-delta detector instead of a retry. Step 1's
+            #    wait_for_target timeout-clear above still runs, so the detector
+            #    stays reachable.
+            if not self._enable_position_matching:
+                self._logger.debug(
+                    "Reconcile: %s off target (actual=%s target=%s) — position "
+                    "matching disabled, leaving cover where it landed",
+                    entity_id,
+                    actual,
+                    target,
+                )
+                continue
+
+            # Otherwise retry up to max_retries.
             if s.retry_count >= self._max_retries:
                 if not s.gave_up:
                     # Log warning exactly once; subsequent ticks are silent

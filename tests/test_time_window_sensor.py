@@ -7,7 +7,8 @@ The time window only controls whether commands are sent to covers
 Key behaviors verified here:
 - Outside time window: pipeline still runs; state reflects the computed pipeline result
 - Sunset-aware default: effective default is sunset_pos when in astronomical sunset window
-- Force override bypasses the time window gate (bypass_auto_control=True)
+- Safety-priority custom position (the migrated force override, issue #563) bypasses
+  the time window gate (bypass_auto_control=True, is_safety=True)
 - Motion timeout uses snapshot.default_position (sunset-aware)
 """
 
@@ -20,18 +21,21 @@ from unittest.mock import MagicMock, patch
 
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.helpers import compute_effective_default
+from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
+    CustomPositionHandler,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
     DefaultHandler,
-)
-from custom_components.adaptive_cover_pro.pipeline.handlers.force_override import (
-    ForceOverrideHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.motion_timeout import (
     MotionTimeoutHandler,
 )
 from custom_components.adaptive_cover_pro.pipeline.handlers.solar import SolarHandler
 from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
-from custom_components.adaptive_cover_pro.pipeline.types import PipelineSnapshot
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    CustomPositionSensorState,
+    PipelineSnapshot,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -82,8 +86,7 @@ def _make_snapshot(
     default_position: int = 0,
     is_sunset_active: bool = False,
     motion_timeout_active: bool = False,
-    force_override_sensors: dict | None = None,
-    force_override_position: int = 0,
+    custom_position_sensors: list[CustomPositionSensorState] | None = None,
 ) -> PipelineSnapshot:
     return PipelineSnapshot(
         cover=cover,
@@ -94,8 +97,6 @@ def _make_snapshot(
         climate_readings=None,
         climate_mode_enabled=False,
         climate_options=None,
-        force_override_sensors=force_override_sensors or {},
-        force_override_position=force_override_position,
         manual_override_active=False,
         motion_timeout_active=motion_timeout_active,
         weather_override_active=False,
@@ -103,6 +104,7 @@ def _make_snapshot(
         weather_bypass_auto_control=True,
         glare_zones=None,
         active_zone_names=frozenset(),
+        custom_position_sensors=custom_position_sensors or [],
     )
 
 
@@ -290,31 +292,46 @@ class TestOutsideTimeWindowBehavior:
 
 
 # ---------------------------------------------------------------------------
-# Tests: Force override works outside time window (bypass_auto_control)
+# Tests: Safety custom position works outside time window (bypass_auto_control)
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverrideOutsideWindow:
-    """Force override bypasses the time window gate via bypass_auto_control=True."""
+class TestSafetyCustomPositionOutsideWindow:
+    """A priority-100 custom position bypasses the time window gate via bypass_auto_control=True."""
 
-    def test_force_override_matches_and_sets_bypass(self):
-        """ForceOverrideHandler fires and sets bypass_auto_control=True."""
+    def test_safety_custom_position_matches_and_sets_bypass(self):
+        """Priority-100 CustomPositionHandler fires with bypass + safety semantics."""
         registry = PipelineRegistry(
-            [ForceOverrideHandler(), SolarHandler(), DefaultHandler()]
+            [
+                CustomPositionHandler(slot=5, position=75, priority=100),
+                SolarHandler(),
+                DefaultHandler(),
+            ]
         )
         cover = _make_cover(direct_sun_valid=False)
         snapshot = _make_snapshot(
             cover,
             default_position=50,
-            force_override_sensors={"binary_sensor.test": True},
-            force_override_position=75,
+            custom_position_sensors=[
+                CustomPositionSensorState(
+                    entity_ids=("binary_sensor.test",),
+                    is_on=True,
+                    position=75,
+                    priority=100,
+                    min_mode=False,
+                    use_my=False,
+                    slot=5,
+                    active_entity_ids=("binary_sensor.test",),
+                )
+            ],
         )
 
         result = registry.evaluate(snapshot)
 
         assert result.bypass_auto_control is True
+        assert result.is_safety is True
         assert result.position == 75
-        assert result.control_method == ControlMethod.FORCE
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
 
 
 # ---------------------------------------------------------------------------

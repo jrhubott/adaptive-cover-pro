@@ -782,6 +782,9 @@ class TestReconcileGaveUpEvent:
             max_retries=2,
             event_buffer=buf,
         )
+        # These tests exercise reconciliation resends/give-up; opt into matching
+        # (default is off per issue #591).
+        svc.enable_position_matching = True
         return svc, buf
 
     def _prime_svc_for_reconcile(

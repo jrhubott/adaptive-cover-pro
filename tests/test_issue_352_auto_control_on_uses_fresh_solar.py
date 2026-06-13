@@ -18,7 +18,7 @@ snapshot.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -128,19 +128,12 @@ def _wire_solar_refresh(coord):
             bypass_auto_control=False,
         )
         if coord.state_change:
-            with patch.object(
-                type(coord),
-                "is_force_override_active",
-                new_callable=PropertyMock,
-                return_value=False,
-            ):
-                await AdaptiveDataUpdateCoordinator.async_handle_state_change(
-                    coord,
-                    coord.state,
-                    coord.config_entry.options,
-                    prev_force_override=False,
-                    custom_position_released_entities=set(),
-                )
+            await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+                coord,
+                coord.state,
+                coord.config_entry.options,
+                custom_position_released_entities=set(),
+            )
 
     coord.async_refresh = AsyncMock(side_effect=_fake_refresh)
 

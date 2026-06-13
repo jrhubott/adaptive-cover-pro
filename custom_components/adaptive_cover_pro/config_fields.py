@@ -70,12 +70,14 @@ from .const import (
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
     CONF_ENABLE_MY_POSITION_ENTITIES,
+    CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_END_TIME,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
     CONF_FORCE_OVERRIDE_SENSORS,
+    CONF_FOV_COMPUTE,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
     CONF_HEIGHT_WIN,
@@ -96,6 +98,7 @@ from .const import (
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
+    CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
     CONF_MAX_TILT,
@@ -103,8 +106,11 @@ from .const import (
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_MIN_TILT,
+    CONF_MINIMIZE_MOVEMENTS,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
+    CONF_MOTION_TEMPLATE,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_MOTION_TIMEOUT_MODE,
     CONF_MY_POSITION_VALUE,
@@ -159,6 +165,10 @@ from .const import (
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
+    DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MINIMIZE_MOVEMENTS,
+    DEFAULT_MOTION_TEMPLATE_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_MOTION_TIMEOUT_MODE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
@@ -257,11 +267,11 @@ def position_slider() -> selector.NumberSelector:
 
 
 def priority_slider() -> selector.NumberSelector:
-    """Return a number selector for pipeline priority (1-99)."""
+    """Return a number selector for pipeline priority (1-100; 100 = safety)."""
     return selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=1,
-            max=99,
+            max=100,
             step=1,
             mode=selector.NumberSelectorMode.SLIDER,
         )
@@ -433,6 +443,17 @@ _SUN_TRACKING_SPECS = _spec(
         required=True,
         make_selector=_number(minimum=0, maximum=359, unit="°"),
     ),
+    # "Generate FOV from measurements" button (#565). Vertical-blind only —
+    # BlindPolicy advertises it as a sun-tracking extra; awning/tilt never render
+    # it. A transient toggle: ticking it fills fov_left/right from the window
+    # width + reveal depth on submit, then re-renders un-ticked. Never persisted.
+    FieldSpec(
+        CONF_FOV_COMPUTE,
+        SECTION_SUN_TRACKING,
+        ValidatorKind.BOOL,
+        default=False,
+        make_selector=_bool(),
+    ),
     FieldSpec(
         CONF_FOV_LEFT,
         SECTION_SUN_TRACKING,
@@ -480,6 +501,21 @@ _SUN_TRACKING_SPECS = _spec(
         ValidatorKind.BOOL,
         default=False,
         make_selector=_bool(),
+    ),
+    FieldSpec(
+        CONF_MINIMIZE_MOVEMENTS,
+        SECTION_SUN_TRACKING,
+        ValidatorKind.BOOL,
+        default=DEFAULT_MINIMIZE_MOVEMENTS,
+        make_selector=_bool(),
+    ),
+    FieldSpec(
+        CONF_MAX_COVERAGE_STEPS,
+        SECTION_SUN_TRACKING,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_MAX_COVERAGE_STEPS,
+        default=DEFAULT_MAX_COVERAGE_STEPS,
+        make_selector=_number(minimum=1, maximum=10, step=1),
     ),
 )
 
@@ -680,11 +716,18 @@ _AUTOMATION_SPECS = _spec(
     ),
     FieldSpec(
         CONF_POSITION_TOLERANCE,
-        SECTION_AUTOMATION,
+        SECTION_POSITION,
         ValidatorKind.RANGE,
         rng=const._RANGE_POSITION_TOLERANCE,
         default=3,
         make_selector=_number(minimum=0, maximum=20, step=1, unit="%"),
+    ),
+    FieldSpec(
+        CONF_ENABLE_POSITION_MATCHING,
+        SECTION_POSITION,
+        ValidatorKind.BOOL,
+        default=const.DEFAULT_ENABLE_POSITION_MATCHING,
+        make_selector=_bool(),
     ),
     FieldSpec(
         CONF_DELTA_TIME,
@@ -821,6 +864,27 @@ _MOTION_OVERRIDE_SPECS = _spec(
         make_selector=_const(lambda: media_player_selector(multiple=True)),
     ),
     FieldSpec(
+        CONF_MOTION_TEMPLATE,
+        SECTION_MOTION_OVERRIDE,
+        ValidatorKind.NONE,
+        clearable=True,
+        make_selector=_const(lambda: selector.TemplateSelector()),
+    ),
+    # Shared ``template_combine_mode`` translation key (not field-specific) so any
+    # future template field reusing TemplateCombineMode shows the same OR/AND labels.
+    FieldSpec(
+        CONF_MOTION_TEMPLATE_MODE,
+        SECTION_MOTION_OVERRIDE,
+        ValidatorKind.SELECT,
+        default=DEFAULT_MOTION_TEMPLATE_MODE,
+        select_options=tuple(m.value for m in const.TemplateCombineMode),
+        make_selector=_select(
+            *[m.value for m in const.TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        ),
+    ),
+    FieldSpec(
         CONF_MOTION_TIMEOUT,
         SECTION_MOTION_OVERRIDE,
         ValidatorKind.RANGE,
@@ -889,6 +953,8 @@ def _custom_position_base_specs() -> list[FieldSpec]:
     """Per-slot base custom-position fields (no tilt)."""
     specs: list[FieldSpec] = []
     for slot in CUSTOM_POSITION_SLOTS.values():
+        # Legacy single-sensor key: still settable (rollback mirror target) but
+        # superseded by the `sensors` list in the config-flow schema.
         specs.append(
             FieldSpec(
                 slot["sensor"],
@@ -896,6 +962,38 @@ def _custom_position_base_specs() -> list[FieldSpec]:
                 ValidatorKind.ENTITY,
                 clearable=True,
                 make_selector=_const(binary_on_selector),
+            )
+        )
+        specs.append(
+            FieldSpec(
+                slot["sensors"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.ENTITIES,
+                default=[],
+                make_selector=_const(lambda: binary_on_selector(multiple=True)),
+            )
+        )
+        specs.append(
+            FieldSpec(
+                slot["template"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.NONE,
+                clearable=True,
+                make_selector=_const(lambda: selector.TemplateSelector()),
+            )
+        )
+        specs.append(
+            FieldSpec(
+                slot["template_mode"],
+                SECTION_CUSTOM_POSITION,
+                ValidatorKind.SELECT,
+                default=DEFAULT_TEMPLATE_COMBINE_MODE,
+                select_options=tuple(m.value for m in const.TemplateCombineMode),
+                make_selector=_select(
+                    *[m.value for m in const.TemplateCombineMode],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="template_combine_mode",
+                ),
             )
         )
         specs.append(
@@ -988,14 +1086,27 @@ def _custom_position_tilt_specs() -> list[FieldSpec]:
 def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     """Build the custom-position section schema (slot-interleaved).
 
-    Reproduces the legacy ``_build_custom_position_schema_dict`` ordering:
-    per-slot sensor/position/priority/min_mode/use_my, with tilt/tilt_only
-    interleaved per slot when *include_tilt* (venetian), then global
-    default/sunset tilt at the end.
+    Per-slot sensors/template/template_mode/position/priority/min_mode/use_my,
+    with tilt/tilt_only interleaved per slot when *include_tilt* (venetian),
+    then global default/sunset tilt at the end. The legacy single-sensor key
+    is deliberately absent — it lives on only as a rollback mirror written at
+    save time (issue #563).
     """
     schema: dict = {}
     for slot in CUSTOM_POSITION_SLOTS.values():
-        schema[vol.Optional(slot["sensor"])] = binary_on_selector()
+        schema[vol.Optional(slot["sensors"], default=[])] = binary_on_selector(
+            multiple=True
+        )
+        schema[vol.Optional(slot["template"])] = selector.TemplateSelector()
+        schema[
+            vol.Optional(slot["template_mode"], default=DEFAULT_TEMPLATE_COMBINE_MODE)
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[m.value for m in const.TemplateCombineMode],
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="template_combine_mode",
+            )
+        )
         schema[vol.Optional(slot["position"])] = position_slider()
         schema[vol.Optional(slot["priority"])] = priority_slider()
         schema[vol.Optional(slot["min_mode"], default=False)] = (
@@ -1440,6 +1551,27 @@ def _build_option_ranges() -> dict[str, tuple[float, float]]:
 #: ``{key: (min, max)}`` for every numeric option. ``const.OPTION_RANGES`` is
 #: a re-export of this.
 OPTION_RANGES: dict[str, tuple[float, float]] = _build_option_ranges()
+
+
+#: Threshold fields that accept a Home Assistant Jinja2 template (rendered to a
+#: number once per coordinator cycle) in place of a fixed value (issue #577).
+#: Single source consumed by the config-flow selector builder
+#: (``config_dynamic``), the service validators (``services.options_service``),
+#: and the runtime resolver (``templates.TemplateResolver``). All are values
+#: compared against live readings each cycle, so a dynamic value is meaningful.
+TEMPLATABLE_KEYS: frozenset[str] = frozenset(
+    {
+        CONF_LUX_THRESHOLD,
+        CONF_IRRADIANCE_THRESHOLD,
+        CONF_CLOUD_COVERAGE_THRESHOLD,
+        CONF_TEMP_LOW,
+        CONF_TEMP_HIGH,
+        CONF_OUTSIDE_THRESHOLD,
+        CONF_WEATHER_WIND_SPEED_THRESHOLD,
+        CONF_WEATHER_RAIN_THRESHOLD,
+        CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
+    }
+)
 
 
 def option_default(key: str, fallback: Any = None) -> Any:

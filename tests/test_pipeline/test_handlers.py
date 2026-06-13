@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
+from custom_components.adaptive_cover_pro.const import (
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+)
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import (
     ClimateHandler,
     DefaultHandler,
-    ForceOverrideHandler,
     ManualOverrideHandler,
     MotionTimeoutHandler,
     SolarHandler,
@@ -93,94 +95,131 @@ def test_pipeline_snapshot_is_importable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ForceOverrideHandler
+# Safety custom-position slot — the migrated force override (issue #563)
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverrideHandler:
-    """Tests for ForceOverrideHandler."""
+def _safety_handler(position: int = 90) -> CustomPositionHandler:
+    """Priority-100 custom-position handler (slot 5 by convention)."""
+    return CustomPositionHandler(
+        slot=5, position=position, priority=CUSTOM_POSITION_SAFETY_PRIORITY
+    )
 
-    handler = ForceOverrideHandler()
 
-    def test_returns_none_when_no_sensors(self) -> None:
-        """Return None when no force override sensors are configured."""
-        snap = make_snapshot(force_override_sensors={})
+def _safety_state(
+    sensors: dict[str, bool],
+    position: int = 90,
+    *,
+    min_mode: bool = False,
+) -> CustomPositionSensorState:
+    """Build the slot-5 sensor state from an {entity_id: is_on} map (OR logic)."""
+    active = tuple(eid for eid, on in sensors.items() if on)
+    return CustomPositionSensorState(
+        entity_ids=tuple(sensors),
+        is_on=bool(active),
+        position=position,
+        priority=CUSTOM_POSITION_SAFETY_PRIORITY,
+        min_mode=min_mode,
+        use_my=False,
+        slot=5,
+        active_entity_ids=active,
+    )
+
+
+class TestSafetyCustomPositionHandler:
+    """Behavioral parity with the deleted ForceOverrideHandler."""
+
+    handler = _safety_handler(position=90)
+
+    def test_returns_none_when_no_slot_configured(self) -> None:
+        """Return None when the safety slot is not in the snapshot."""
+        snap = make_snapshot(custom_position_sensors=[])
         assert self.handler.evaluate(snap) is None
 
     def test_returns_none_when_all_sensors_off(self) -> None:
-        """Return None when all sensors are off."""
+        """Return None when all bound sensors are off."""
         snap = make_snapshot(
-            force_override_sensors={
-                "binary_sensor.wind": False,
-                "binary_sensor.rain": False,
-            }
+            custom_position_sensors=[
+                _safety_state(
+                    {"binary_sensor.wind": False, "binary_sensor.rain": False}
+                )
+            ]
         )
         assert self.handler.evaluate(snap) is None
 
     def test_matches_when_any_sensor_on(self) -> None:
-        """Return FORCE result when any sensor is on."""
+        """Multi-sensor OR: any sensor on activates the slot."""
+        handler = _safety_handler(position=5)
         snap = make_snapshot(
-            force_override_sensors={
-                "binary_sensor.wind": False,
-                "binary_sensor.rain": True,
-            },
-            force_override_position=5,
+            custom_position_sensors=[
+                _safety_state(
+                    {"binary_sensor.wind": False, "binary_sensor.rain": True},
+                    position=5,
+                )
+            ]
         )
-        result = self.handler.evaluate(snap)
+        result = handler.evaluate(snap)
         assert result is not None
         assert result.position == 5
-        assert result.control_method == ControlMethod.FORCE
+        assert result.control_method == ControlMethod.CUSTOM_POSITION
+        assert result.is_safety is True
+        assert result.bypass_auto_control is True
 
     def test_matches_when_single_sensor_on(self) -> None:
-        """Return FORCE result when exactly one sensor is on."""
+        """A single active sensor activates the slot."""
+        handler = _safety_handler(position=75)
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.alert": True},
-            force_override_position=75,
+            custom_position_sensors=[
+                _safety_state({"binary_sensor.alert": True}, position=75)
+            ]
         )
-        result = self.handler.evaluate(snap)
+        result = handler.evaluate(snap)
         assert result is not None
         assert result.position == 75
 
-    def test_uses_force_override_position(self) -> None:
-        """Position comes from force_override_position."""
+    def test_reason_mentions_active_sensors(self) -> None:
+        """Reason string lists the active sensors (force-override parity)."""
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=10,
+            custom_position_sensors=[
+                _safety_state({"binary_sensor.wind": False, "binary_sensor.rain": True})
+            ]
         )
         result = self.handler.evaluate(snap)
         assert result is not None
-        assert result.position == 10
+        assert "binary_sensor.rain" in result.reason
+        assert "binary_sensor.wind" not in result.reason
 
-    def test_describe_skip_mentions_force(self) -> None:
-        """describe_skip mentions 'force' when skipped."""
-        snap = make_snapshot(force_override_sensors={})
+    def test_describe_skip_mentions_slot(self) -> None:
+        """describe_skip names the slot when skipped."""
+        snap = make_snapshot(custom_position_sensors=[])
         reason = self.handler.describe_skip(snap)
-        assert "force" in reason.lower()
+        assert "#5" in reason
+        assert "not active" in reason
 
     def test_priority_is_100(self) -> None:
-        """ForceOverrideHandler has priority 100 (highest)."""
-        assert ForceOverrideHandler.priority == 100
+        """Safety slot has priority 100 (highest)."""
+        assert self.handler.priority == CUSTOM_POSITION_SAFETY_PRIORITY == 100
 
     def test_name(self) -> None:
-        """ForceOverrideHandler name is 'force_override'."""
-        assert ForceOverrideHandler.name == "force_override"
+        """Slot-5 handler name is 'custom_position_5'."""
+        assert self.handler.name == "custom_position_5"
 
 
-class TestForceOverrideHandlerMinMode:
-    """ForceOverrideHandler defers in min_mode; the registry composes the floor.
+class TestSafetyCustomPositionHandlerMinMode:
+    """The safety slot defers in min_mode; the registry composes the floor.
 
     See ``tests/test_pipeline/test_floor_composition.py`` for the end-to-end
     floor-clamp composition tests.
     """
 
-    handler = ForceOverrideHandler()
+    handler = _safety_handler(position=30)
 
     def test_min_mode_off_uses_exact_position(self) -> None:
         """With min_mode off, position is always the configured value (default behavior)."""
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=30,
-            force_override_min_mode=False,
+            custom_position_sensors=[
+                _safety_state({"binary_sensor.s": True}, position=30)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=50.0,
         )
@@ -193,9 +232,9 @@ class TestForceOverrideHandlerMinMode:
         the floor as a post-decision clamp.
         """
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=30,
-            force_override_min_mode=True,
+            custom_position_sensors=[
+                _safety_state({"binary_sensor.s": True}, position=30, min_mode=True)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=50.0,
         )
@@ -208,8 +247,8 @@ class TestForceOverrideHandlerMinMode:
 # ---------------------------------------------------------------------------
 
 
-class TestForceOverrideHandlerMinModeWithSunTrackingOff:
-    """ForceOverrideHandler defers in min_mode regardless of sun-tracking toggle.
+class TestSafetyCustomPositionHandlerMinModeWithSunTrackingOff:
+    """The safety slot defers in min_mode regardless of sun-tracking toggle.
 
     Issue #264 (floor measured against default rather than solar when tracking
     off) is now handled by the registry's floor-composition pass, which clamps
@@ -217,13 +256,13 @@ class TestForceOverrideHandlerMinModeWithSunTrackingOff:
     fallback when tracking is off.
     """
 
-    handler = ForceOverrideHandler()
+    handler = _safety_handler(position=80)
 
     def test_min_mode_defers_when_tracking_off(self) -> None:
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=80,
-            force_override_min_mode=True,
+            custom_position_sensors=[
+                _safety_state({"binary_sensor.s": True}, position=80, min_mode=True)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=29.0,
             default_position=100,
@@ -234,9 +273,9 @@ class TestForceOverrideHandlerMinModeWithSunTrackingOff:
 
     def test_min_mode_defers_when_tracking_on(self) -> None:
         snap = make_snapshot(
-            force_override_sensors={"binary_sensor.s": True},
-            force_override_position=80,
-            force_override_min_mode=True,
+            custom_position_sensors=[
+                _safety_state({"binary_sensor.s": True}, position=80, min_mode=True)
+            ],
             direct_sun_valid=True,
             calculate_percentage_return=29.0,
             default_position=100,
@@ -284,24 +323,27 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
     def _make_handler(self) -> CustomPositionHandler:
         return CustomPositionHandler(
             slot=1,
-            entity_id="binary_sensor.cp1",
             position=80,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+        )
+
+    @staticmethod
+    def _min_mode_state() -> CustomPositionSensorState:
+        return CustomPositionSensorState(
+            entity_ids=("binary_sensor.cp1",),
+            is_on=True,
+            position=80,
+            priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
+            min_mode=True,
+            use_my=False,
+            slot=1,
+            active_entity_ids=("binary_sensor.cp1",),
         )
 
     def test_min_mode_defers_when_tracking_off(self) -> None:
         handler = self._make_handler()
         snap = make_snapshot(
-            custom_position_sensors=[
-                CustomPositionSensorState(
-                    entity_id="binary_sensor.cp1",
-                    is_on=True,
-                    position=80,
-                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
-                    min_mode=True,
-                    use_my=False,
-                )
-            ],
+            custom_position_sensors=[self._min_mode_state()],
             direct_sun_valid=True,
             calculate_percentage_return=29.0,
             default_position=100,
@@ -313,16 +355,7 @@ class TestCustomPositionHandlerMinModeWithSunTrackingOff:
     def test_min_mode_defers_when_tracking_on(self) -> None:
         handler = self._make_handler()
         snap = make_snapshot(
-            custom_position_sensors=[
-                CustomPositionSensorState(
-                    entity_id="binary_sensor.cp1",
-                    is_on=True,
-                    position=80,
-                    priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
-                    min_mode=True,
-                    use_my=False,
-                )
-            ],
+            custom_position_sensors=[self._min_mode_state()],
             direct_sun_valid=True,
             calculate_percentage_return=29.0,
             default_position=100,
@@ -720,7 +753,8 @@ class TestOverrideHandlerContributeDefault:
         """Unmodified handlers return {} from contribute() — no accidental merges."""
         snap = make_snapshot()
         for handler in [
-            ForceOverrideHandler(),
+            _safety_handler(),
+            WeatherOverrideHandler(),
             ManualOverrideHandler(),
             MotionTimeoutHandler(),
             SolarHandler(),

@@ -41,6 +41,7 @@ from ..const import (
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_MAX_POSITION,
     CONF_ENABLE_MIN_POSITION,
+    CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_END_TIME,
@@ -68,14 +69,18 @@ from ..const import (
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
+    CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MAX_POSITION,
     CONF_MIN_ELEVATION,
     CONF_MIN_POSITION,
     CONF_MIN_POSITION_SUN_TRACKING,
+    CONF_MINIMIZE_MOVEMENTS,
     CONF_MODE,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
+    CONF_MOTION_TEMPLATE,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_MY_POSITION_VALUE,
     CONF_OPEN_CLOSE_THRESHOLD,
@@ -88,8 +93,10 @@ from ..const import (
     CONF_START_ENTITY,
     CONF_START_TIME,
     CONF_SUNRISE_OFFSET,
+    CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_SUNSET_TILT,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
@@ -105,6 +112,7 @@ from ..const import (
     CONF_VENETIAN_POST_SETTLE_HOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     VENETIAN_MODES,
+    TemplateCombineMode,
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
@@ -124,10 +132,14 @@ from ..const import (
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
     CONF_WINTER_CLOSE_INSULATION,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
+    CUSTOM_POSITION_SLOT_NUMBERS,
     CUSTOM_POSITION_SLOTS,
     DOMAIN,
     OPTION_RANGES,
 )
+from ..helpers import custom_position_slot_sensors
+from ..templates import is_template_string as _is_template_str
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,6 +172,69 @@ def _range(key: str):
     ``config_flow.py`` in one edit.
     """
     return _num(*OPTION_RANGES[key])
+
+
+def _as_number(value: Any) -> float | None:
+    """Coerce *value* to a float for cross-field comparison, or None.
+
+    Returns None for templates (unresolvable here) and non-numeric values, so
+    callers skip ordering checks they cannot evaluate.
+    """
+    if value is None or _is_template_str(value):
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _templatable_num(key: str):
+    """Build a validator for ``None``, a number, or a Jinja2 template (#577).
+
+    A plain number (or numeric string) is validated as a number — bounded by
+    ``OPTION_RANGES[key]`` when the key has a declared range, unbounded
+    otherwise. A string containing ``{{``/``{%`` is accepted as a template after
+    a syntax check; it renders to a number at runtime via
+    ``templates.TemplateResolver``.
+    """
+    number = _range(key) if key in OPTION_RANGES else vol.Any(None, vol.Coerce(float))
+
+    def _validate(value):
+        if _is_template_str(value):
+            return _check_template_syntax(value)
+        return number(value)
+
+    return _validate
+
+
+def _check_template_syntax(value: str) -> str:
+    """Raise ``vol.Invalid`` if *value* is not syntactically valid Jinja2.
+
+    Syntax-gate via jinja2 directly — a bare HA ``Template`` here would trip the
+    frame helper (no hass at validation time) and log a usage warning. Semantic
+    rendering happens later at runtime.
+    """
+    import jinja2
+
+    try:
+        jinja2.Environment().parse(value)
+    except jinja2.TemplateError as err:
+        raise vol.Invalid(f"Invalid template: {err}") from err
+    return value
+
+
+def _template_or_none(value):
+    """Validate an optional *condition* template field (#577 follow-up).
+
+    Accepts ``None`` / empty (cleared), or a syntactically valid Jinja2 template
+    string. Unlike ``_templatable_num`` this never coerces to a number — the
+    value is rendered to a boolean at runtime by ``templates.render_condition``.
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise vol.Invalid("expected a template string")
+    return _check_template_syntax(value)
 
 
 def _bool_v():
@@ -228,6 +303,8 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_MIN_ELEVATION: _range(CONF_MIN_ELEVATION),
     CONF_MAX_ELEVATION: _range(CONF_MAX_ELEVATION),
     CONF_DISTANCE: _range(CONF_DISTANCE),
+    CONF_MINIMIZE_MOVEMENTS: _bool_v(),
+    CONF_MAX_COVERAGE_STEPS: _range(CONF_MAX_COVERAGE_STEPS),
     # Blind spot
     CONF_ENABLE_BLIND_SPOT: _bool_v(),
     CONF_BLIND_SPOT_LEFT: _range(CONF_BLIND_SPOT_LEFT),
@@ -239,12 +316,15 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_ENABLE_MAX_POSITION: _bool_v(),
     CONF_MIN_POSITION: _range(CONF_MIN_POSITION),
     CONF_ENABLE_MIN_POSITION: _bool_v(),
+    CONF_ENABLE_POSITION_MATCHING: _bool_v(),
     CONF_MIN_POSITION_SUN_TRACKING: _range(CONF_MIN_POSITION_SUN_TRACKING),
     CONF_SUNSET_POS: _range(CONF_SUNSET_POS),
     CONF_MY_POSITION_VALUE: _range(CONF_MY_POSITION_VALUE),
     CONF_SUNSET_USE_MY: _bool_v(),
     CONF_SUNSET_OFFSET: _range(CONF_SUNSET_OFFSET),
     CONF_SUNRISE_OFFSET: _range(CONF_SUNRISE_OFFSET),
+    CONF_SUNSET_TIME_ENTITY: _entity_v(),
+    CONF_SUNRISE_TIME_ENTITY: _entity_v(),
     CONF_OPEN_CLOSE_THRESHOLD: _range(CONF_OPEN_CLOSE_THRESHOLD),
     CONF_INVERSE_STATE: _bool_v(),
     # Explicit tilt (venetian only) — None means use solar-computed tilt.
@@ -275,10 +355,22 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_FORCE_OVERRIDE_SENSORS: _entities_v(),
     CONF_FORCE_OVERRIDE_POSITION: _range(CONF_FORCE_OVERRIDE_POSITION),
     CONF_FORCE_OVERRIDE_MIN_MODE: _bool_v(),
-    # Custom positions 1–4 — sensor/min_mode/use_my are non-numeric;
+    # Custom positions 1–5 — sensor(s)/template/min_mode/use_my are non-numeric;
     # position/priority pull their range from OPTION_RANGES.
     **{
         slot_keys["sensor"]: _entity_v() for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
+    **{
+        slot_keys["sensors"]: _entities_v()
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
+    **{
+        slot_keys["template"]: _template_or_none
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
+    },
+    **{
+        slot_keys["template_mode"]: _select_v(*[m.value for m in TemplateCombineMode])
+        for slot_keys in CUSTOM_POSITION_SLOTS.values()
     },
     **{
         slot_keys["position"]: _range(slot_keys["position"])
@@ -311,25 +403,27 @@ FIELD_VALIDATORS: dict[str, Any] = {
     # Motion
     CONF_MOTION_SENSORS: _entities_v(),
     CONF_MOTION_MEDIA_PLAYERS: _entities_v(),
+    CONF_MOTION_TEMPLATE: _template_or_none,
+    CONF_MOTION_TEMPLATE_MODE: _select_v(*[m.value for m in TemplateCombineMode]),
     CONF_MOTION_TIMEOUT: _range(CONF_MOTION_TIMEOUT),
     # Light & Cloud
     CONF_WEATHER_ENTITY: _entity_v(),
     CONF_WEATHER_STATE: vol.Any(None, list),
     CONF_LUX_ENTITY: _entity_v(),
-    CONF_LUX_THRESHOLD: vol.Any(None, vol.Coerce(float)),
+    CONF_LUX_THRESHOLD: _templatable_num(CONF_LUX_THRESHOLD),
     CONF_IRRADIANCE_ENTITY: _entity_v(),
-    CONF_IRRADIANCE_THRESHOLD: vol.Any(None, vol.Coerce(float)),
+    CONF_IRRADIANCE_THRESHOLD: _templatable_num(CONF_IRRADIANCE_THRESHOLD),
     CONF_CLOUD_COVERAGE_ENTITY: _entity_v(),
-    CONF_CLOUD_COVERAGE_THRESHOLD: vol.Any(None, vol.Coerce(float)),
+    CONF_CLOUD_COVERAGE_THRESHOLD: _templatable_num(CONF_CLOUD_COVERAGE_THRESHOLD),
     CONF_CLOUD_SUPPRESSION: _bool_v(),
     CONF_IS_SUNNY_SENSOR: _entity_v(),
     # Climate
     CONF_CLIMATE_MODE: _bool_v(),
     CONF_TEMP_ENTITY: _entity_v(),
-    CONF_TEMP_LOW: _range(CONF_TEMP_LOW),
-    CONF_TEMP_HIGH: _range(CONF_TEMP_HIGH),
+    CONF_TEMP_LOW: _templatable_num(CONF_TEMP_LOW),
+    CONF_TEMP_HIGH: _templatable_num(CONF_TEMP_HIGH),
     CONF_OUTSIDETEMP_ENTITY: _entity_v(),
-    CONF_OUTSIDE_THRESHOLD: _range(CONF_OUTSIDE_THRESHOLD),
+    CONF_OUTSIDE_THRESHOLD: _templatable_num(CONF_OUTSIDE_THRESHOLD),
     CONF_PRESENCE_ENTITY: _entity_v(),
     CONF_TRANSPARENT_BLIND: _bool_v(),
     CONF_WINTER_CLOSE_INSULATION: _bool_v(),
@@ -337,12 +431,14 @@ FIELD_VALIDATORS: dict[str, Any] = {
     CONF_WEATHER_BYPASS_AUTO_CONTROL: _bool_v(),
     CONF_WEATHER_WIND_SPEED_SENSOR: _entity_v(),
     CONF_WEATHER_WIND_DIRECTION_SENSOR: _entity_v(),
-    CONF_WEATHER_WIND_SPEED_THRESHOLD: _range(CONF_WEATHER_WIND_SPEED_THRESHOLD),
-    CONF_WEATHER_WIND_DIRECTION_TOLERANCE: _range(
+    CONF_WEATHER_WIND_SPEED_THRESHOLD: _templatable_num(
+        CONF_WEATHER_WIND_SPEED_THRESHOLD
+    ),
+    CONF_WEATHER_WIND_DIRECTION_TOLERANCE: _templatable_num(
         CONF_WEATHER_WIND_DIRECTION_TOLERANCE
     ),
     CONF_WEATHER_RAIN_SENSOR: _entity_v(),
-    CONF_WEATHER_RAIN_THRESHOLD: _range(CONF_WEATHER_RAIN_THRESHOLD),
+    CONF_WEATHER_RAIN_THRESHOLD: _templatable_num(CONF_WEATHER_RAIN_THRESHOLD),
     CONF_WEATHER_IS_RAINING_SENSOR: _entity_v(),
     CONF_WEATHER_IS_WINDY_SENSOR: _entity_v(),
     CONF_WEATHER_SEVERE_SENSORS: _entities_v(),
@@ -364,6 +460,7 @@ _SECTION_POSITION_LIMITS = frozenset(
         CONF_MAX_POSITION,
         CONF_ENABLE_MAX_POSITION,
         CONF_OPEN_CLOSE_THRESHOLD,
+        CONF_ENABLE_POSITION_MATCHING,
         CONF_INVERSE_STATE,
     }
 )
@@ -375,6 +472,8 @@ _SECTION_SUNSET_SUNRISE = frozenset(
         CONF_SUNRISE_OFFSET,
         CONF_SUNSET_USE_MY,
         CONF_MY_POSITION_VALUE,
+        CONF_SUNSET_TIME_ENTITY,
+        CONF_SUNRISE_TIME_ENTITY,
     }
 )
 
@@ -468,6 +567,8 @@ _SECTION_SUN_TRACKING = frozenset(
         CONF_MIN_ELEVATION,
         CONF_MAX_ELEVATION,
         CONF_DISTANCE,
+        CONF_MINIMIZE_MOVEMENTS,
+        CONF_MAX_COVERAGE_STEPS,
     }
 )
 
@@ -583,7 +684,9 @@ def _validate_fields(patch: dict) -> None:
             ) from exc
 
 
-def _cross_field_validate(patch: dict, current: dict) -> None:
+def _cross_field_validate(
+    patch: dict, current: dict, *, check_slot_completeness: bool = True
+) -> None:
     """Validate cross-field invariants on the merged options.
 
     Only checks invariants that involve at least one key present in *patch*
@@ -602,28 +705,33 @@ def _cross_field_validate(patch: dict, current: dict) -> None:
                 f"blind_spot_right ({right}) must be greater than blind_spot_left ({left})."
             )
 
-    # Temperature ordering
+    # Temperature ordering (skipped when either side is a template — #577)
     if CONF_TEMP_LOW in patch or CONF_TEMP_HIGH in patch:
-        low = merged_active.get(CONF_TEMP_LOW)
-        high = merged_active.get(CONF_TEMP_HIGH)
+        low = _as_number(merged_active.get(CONF_TEMP_LOW))
+        high = _as_number(merged_active.get(CONF_TEMP_HIGH))
         if low is not None and high is not None and low >= high:
             raise ServiceValidationError(
                 f"temp_low ({low}) must be less than temp_high ({high})."
             )
 
-    # Custom position slot completeness
-    for i in range(1, 5):
+    # Custom position slot completeness: a slot needs a trigger (sensors,
+    # legacy sensor, or template) AND a position — or neither.
+    for i in CUSTOM_POSITION_SLOT_NUMBERS if check_slot_completeness else ():
         slot = _CUSTOM_SLOT_KEYS[i]
-        s_key, p_key = slot["sensor"], slot["position"]
-        if s_key in patch or p_key in patch:
-            sensor_set = merged_active.get(s_key) is not None
+        trigger_keys = (slot["sensor"], slot["sensors"], slot["template"])
+        p_key = slot["position"]
+        if any(k in patch for k in trigger_keys) or p_key in patch:
+            has_trigger = bool(
+                custom_position_slot_sensors(merged_active, slot)
+            ) or _is_template_str(merged_active.get(slot["template"]))
             pos_set = merged_active.get(p_key) is not None
-            if sensor_set != pos_set:
-                missing = p_key if sensor_set else s_key
-                present = s_key if sensor_set else p_key
+            if has_trigger != pos_set:
+                missing = (
+                    p_key if has_trigger else f"{slot['sensors']} or {slot['template']}"
+                )
                 raise ServiceValidationError(
-                    f"Custom position slot {i}: '{present}' is set but '{missing}' is missing. "
-                    "Set both or clear both."
+                    f"Custom position slot {i}: incomplete — '{missing}' is missing. "
+                    "Set a trigger and a position, or clear both."
                 )
 
     # Time window mutual exclusion
@@ -659,11 +767,18 @@ def validate_options_patch(
     patch: dict,
     current_options: dict,
     sensor_type: str | None = None,
+    *,
+    check_slot_completeness: bool = True,
 ) -> dict:
     """Validate a patch dict and return it (unchanged).
 
     Raises ServiceValidationError if any field is invalid, out of range,
     targets an identity key, or violates a cross-field invariant.
+
+    ``check_slot_completeness=False`` skips the custom-position
+    trigger+position pairing rule — used by the deprecated
+    ``set_force_override`` shim, whose legacy contract allowed setting the
+    position/min-mode independently of the sensor list.
     """
     if not patch:
         raise ServiceValidationError("No fields provided — nothing to update.")
@@ -712,7 +827,9 @@ def validate_options_patch(
                 )
 
     _validate_fields(patch)
-    _cross_field_validate(patch, current_options)
+    _cross_field_validate(
+        patch, current_options, check_slot_completeness=check_slot_completeness
+    )
     return patch
 
 
@@ -764,17 +881,20 @@ def _make_section_handler(hass: HomeAssistant, allowed_keys: frozenset[str]):
 
 
 async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle set_custom_position — routes slot 1–4 to the right option keys."""
+    """Handle set_custom_position — routes slot 1–5 to the right option keys."""
     from . import _resolve_targets  # noqa: PLC0415
 
     slot = call.data.get("slot")
-    if slot not in (1, 2, 3, 4):
-        raise ServiceValidationError(f"'slot' must be 1, 2, 3, or 4 (got {slot!r}).")
+    if slot not in CUSTOM_POSITION_SLOT_NUMBERS:
+        valid = ", ".join(str(n) for n in CUSTOM_POSITION_SLOT_NUMBERS)
+        raise ServiceValidationError(f"'slot' must be one of {valid} (got {slot!r}).")
 
     slot_keys = _CUSTOM_SLOT_KEYS[slot]
     # Map human-readable service field names → actual option keys
     field_map = {
-        "sensor": slot_keys["sensor"],
+        "sensors": slot_keys["sensors"],
+        "template": slot_keys["template"],
+        "template_mode": slot_keys["template_mode"],
         "position": slot_keys["position"],
         "priority": slot_keys["priority"],
         "min_mode": slot_keys["min_mode"],
@@ -788,8 +908,19 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         if service_field in call.data:
             patch[option_key] = call.data[service_field]
 
+    # Deprecated single-sensor alias: `sensor` maps onto the sensors list
+    # (ignored when `sensors` is also supplied).
+    if "sensor" in call.data and "sensors" not in call.data:
+        sensor = call.data["sensor"]
+        patch[slot_keys["sensors"]] = [sensor] if sensor else []
+
     if not patch:
         raise ServiceValidationError("No slot fields provided — nothing to update.")
+
+    # Keep the legacy single-sensor key mirrored for rollback fidelity.
+    if slot_keys["sensors"] in patch:
+        sensors = patch[slot_keys["sensors"]] or []
+        patch[slot_keys["sensor"]] = sensors[0] if sensors else None
 
     targets = _resolve_targets(hass, call)
     for coord in targets:
@@ -798,6 +929,55 @@ async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) ->
         _LOGGER.debug(
             "custom_position slot %d updated for entry %s: %s",
             slot,
+            coord.config_entry.entry_id,
+            list(patch),
+        )
+
+
+async def _handle_set_force_override(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Map the deprecated set_force_override service onto slot 5 (issue #563).
+
+    The standalone force-override feature merged into custom-position slot 5
+    at safety priority. Existing automations keep working for one release;
+    they should migrate to ``set_custom_position`` with ``slot: 5``.
+    """
+    from . import _resolve_targets  # noqa: PLC0415
+
+    _LOGGER.warning(
+        "adaptive_cover_pro.set_force_override is deprecated (issue #563): "
+        "force override merged into custom-position slot 5. Use "
+        "set_custom_position with slot: 5 instead."
+    )
+    slot_keys = _CUSTOM_SLOT_KEYS[5]
+    field_map = {
+        "force_override_sensors": slot_keys["sensors"],
+        "force_override_position": slot_keys["position"],
+        "force_override_min_mode": slot_keys["min_mode"],
+    }
+    patch: dict[str, Any] = {
+        option_key: call.data[service_field]
+        for service_field, option_key in field_map.items()
+        if service_field in call.data
+    }
+    if not patch:
+        raise ServiceValidationError("No fields provided — nothing to update.")
+    # Pin the migrated slot at safety priority so behavior matches the old
+    # force override exactly.
+    patch[slot_keys["priority"]] = CUSTOM_POSITION_SAFETY_PRIORITY
+    if slot_keys["sensors"] in patch:
+        sensors = patch[slot_keys["sensors"]] or []
+        patch[slot_keys["sensor"]] = sensors[0] if sensors else None
+
+    targets = _resolve_targets(hass, call)
+    for coord in targets:
+        validate_options_patch(
+            patch,
+            dict(coord.config_entry.options),
+            check_slot_completeness=False,
+        )
+        await apply_options_patch(hass, coord, patch)
+        _LOGGER.debug(
+            "set_force_override shim updated slot 5 for entry %s: %s",
             coord.config_entry.entry_id,
             list(patch),
         )
@@ -862,9 +1042,13 @@ def register_options_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, "set_manual_override", _section_handler(_SECTION_MANUAL_OVERRIDE)
     )
-    hass.services.async_register(
-        DOMAIN, "set_force_override", _section_handler(_SECTION_FORCE_OVERRIDE)
-    )
+
+    async def _force_override_shim(call: ServiceCall) -> None:
+        await _handle_set_force_override(hass, call)
+
+    # DEPRECATED (issue #563): kept one release so existing automations don't
+    # hit service-not-found; routes onto custom-position slot 5.
+    hass.services.async_register(DOMAIN, "set_force_override", _force_override_shim)
     hass.services.async_register(
         DOMAIN, "set_motion", _section_handler(_SECTION_MOTION)
     )

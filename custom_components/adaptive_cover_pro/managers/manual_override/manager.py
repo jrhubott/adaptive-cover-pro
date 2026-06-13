@@ -49,7 +49,7 @@ _PRIMARY_AXIS_SUPPRESSION_WARN_THROTTLE = dt.timedelta(hours=1)
 
 
 def _never(_entity_id: str) -> bool:
-    """Default predicate: always False (gate disabled)."""
+    """Return False always — the default predicate when a gate is disabled."""
     return False
 
 
@@ -317,6 +317,7 @@ class AdaptiveCoverManager:
         is_waiting,
         manual_threshold,
         *,
+        has_recorded_target: bool = True,
         secondary_axis_check: SecondaryAxisCheck | None = None,
         is_in_command_grace: Callable[[str], bool] | None = None,
         is_in_transit: Callable[[str], bool] | None = None,
@@ -337,6 +338,12 @@ class AdaptiveCoverManager:
             is_waiting: Callable(entity_id) -> bool indicating whether the cover
                 is currently expected to be moving toward a commanded target.
             manual_threshold: Minimum position delta to trigger manual detection
+            has_recorded_target: Whether ACP has a recorded command target for
+                this entity. When False, ``our_state`` is the pipeline's
+                theoretical default rather than a commanded position, so the
+                numeric detector suppresses override detection (issue #546).
+                The user-context and stop-to-My channels are separate methods
+                and remain unaffected.
             secondary_axis_check: Optional ``SecondaryAxisCheck`` supplied by
                 the cover-type policy. When provided, the secondary axis is
                 evaluated up front and a manual-override match short-circuits
@@ -422,6 +429,7 @@ class AdaptiveCoverManager:
             caps=caps,
             policy=policy,
             manual_threshold=manual_threshold,
+            has_recorded_target=has_recorded_target,
             allow_reset=allow_reset,
             is_acp_context=self._is_acp_context_fn(context_id),
             context_user_id=context_user_id,

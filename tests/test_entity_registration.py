@@ -120,15 +120,15 @@ async def test_tilt_cover_creates_entities(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.integration
-async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -> None:
-    """ForceOverrideTrigger sensor only created when force_override_sensors is set."""
+async def test_force_override_sensor_never_created(hass: HomeAssistant) -> None:
+    """The Force Override Triggers sensor is gone — merged into custom positions (#563)."""
     reg = er.async_get(hass)
 
-    # Without force override sensors
-    opts_no_force = dict(VERTICAL_OPTIONS)
-    opts_no_force[CONF_FORCE_OVERRIDE_SENSORS] = []
-    entry_no = await _setup_entry(
-        hass, options=opts_no_force, entry_id="no_force_01", name="No Force"
+    # Even with legacy force override sensors configured, no sensor is created.
+    opts_force = dict(VERTICAL_OPTIONS)
+    opts_force[CONF_FORCE_OVERRIDE_SENSORS] = ["binary_sensor.rain"]
+    entry = await _setup_entry(
+        hass, options=opts_force, entry_id="force_gone_01", name="With Force"
     )
 
     # Check by unique_id suffix, not entity_id (entity_id includes entry name)
@@ -141,18 +141,8 @@ async def test_force_override_sensor_only_when_configured(hass: HomeAssistant) -
 
     reg = er.async_get(hass)
     assert not _has_force_trigger_sensor(
-        entry_no, reg
-    ), "Force override sensor should not exist without sensors"
-
-    # With force override sensor configured
-    opts_force = dict(VERTICAL_OPTIONS)
-    opts_force[CONF_FORCE_OVERRIDE_SENSORS] = ["binary_sensor.rain"]
-    entry_yes = await _setup_entry(
-        hass, options=opts_force, entry_id="force_yes_01", name="With Force"
-    )
-    assert _has_force_trigger_sensor(
-        entry_yes, reg
-    ), "Force override sensor should exist when configured"
+        entry, reg
+    ), "Force override sensor must no longer be created (issue #563)"
 
 
 @pytest.mark.integration

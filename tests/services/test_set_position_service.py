@@ -20,7 +20,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 
 def _slot(position: int, *, is_on: bool, min_mode: bool) -> CustomPositionSensorState:
     return CustomPositionSensorState(
-        entity_id=f"binary_sensor.slot_p{position}",
+        entity_ids=(f"binary_sensor.slot_p{position}",),
         is_on=is_on,
         position=position,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,

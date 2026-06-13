@@ -104,8 +104,6 @@ def _base_ctx(**overrides) -> DiagnosticContext:
         "config_options": {},
         "motion_detected": True,
         "motion_timeout_active": False,
-        "force_override_sensors": [],
-        "force_override_position": 0,
     }
     defaults.update(overrides)
     return DiagnosticContext(**defaults)

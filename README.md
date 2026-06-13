@@ -17,7 +17,7 @@ Sun-tracking cover automation with an inspectable decision pipeline, full veneti
 ## What it does
 
 - **Four cover types with full geometric modeling** — vertical blinds, horizontal awnings, tilt-only blinds, and venetian blinds; each uses real window and facade geometry, not rules of thumb.
-- **Inspectable decision pipeline** — 10 handlers run in priority order (safety, weather, manual, climate, glare, solar) and each reports its reason. A `decision_trace` sensor shows exactly why the cover is at 45% — no black boxes.
+- **Inspectable decision pipeline** — handlers run in priority order (weather safety, manual, custom positions with templated triggers, climate, glare, solar) and each reports its reason. A `decision_trace` sensor shows exactly why the cover is at 45% — no black boxes.
 - **Venetian blinds done properly** — dual-axis sequencer waits for the carriage to settle before sending tilt, handles back-rotation across a 45-second post-settle window, and pre-positions tilt on opening to eliminate flicker. Covers KNX, Shelly, and Somfy IO buses.
 - **Climate mode with a full seasonal arbiter** — winter heating, winter insulation, summer cooling, and glare comfort each have independent logic; presence, lux, irradiance, and cloud cover are all suppression inputs.
 - **Glare zones** — name the floor areas you want protected (TV, dining table); the cover deploys further than pure sun tracking when a protected zone would receive direct sun.

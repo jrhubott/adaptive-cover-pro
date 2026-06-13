@@ -113,14 +113,22 @@ def test_force_disabled_when_no_sensors_configured():
     assert "force" not in enabled
 
 
-def test_force_enabled_when_sensors_configured():
+def test_force_chip_never_emitted():
+    # Force override merged into custom positions (#563): legacy force keys no
+    # longer surface a "force" handler chip.
     enabled = _enabled({CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.x"]})
-    assert "force" in enabled
-
-
-def test_force_disabled_when_empty_list():
-    enabled = _enabled({CONF_FORCE_OVERRIDE_SENSORS: []})
     assert "force" not in enabled
+
+
+def test_safety_slot_surfaces_as_custom_position():
+    enabled = _enabled(
+        {
+            "custom_position_sensors_5": ["binary_sensor.x"],
+            "custom_position_5": 100,
+            "custom_position_priority_5": 100,
+        }
+    )
+    assert "custom_position" in enabled
 
 
 def test_motion_disabled_when_no_sensors_configured():
@@ -225,7 +233,6 @@ def test_custom_position_disabled_when_only_sensor_set():
 def test_full_configuration_enables_everything():
     enabled = _enabled(
         {
-            CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.x"],
             CONF_MOTION_SENSORS: ["binary_sensor.m"],
             CONF_CLIMATE_MODE: True,
             CONF_WEATHER_ENTITY: "weather.home",
@@ -238,7 +245,6 @@ def test_full_configuration_enables_everything():
         }
     )
     assert enabled == {
-        "force",
         "weather",
         "manual",
         "custom_position",
@@ -335,22 +341,19 @@ def test_weather_keys_absent_when_not_weather_override():
 
 
 def test_handler_names_match_card_normalized_form():
-    """Card uses 'force', 'manual', 'motion', 'cloud' — not the pipeline names
-    'force_override', 'manual_override', 'motion_timeout', 'cloud_suppression'.
+    """Card uses 'manual', 'motion', 'cloud' — not the pipeline names
+    'manual_override', 'motion_timeout', 'cloud_suppression'.
     """
     enabled = _enabled(
         {
-            CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.x"],
             CONF_MOTION_SENSORS: ["binary_sensor.m"],
             CONF_CLOUD_SUPPRESSION: True,
             CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
         }
     )
-    assert "force_override" not in enabled
     assert "manual_override" not in enabled
     assert "motion_timeout" not in enabled
     assert "cloud_suppression" not in enabled
-    assert "force" in enabled
     assert "manual" in enabled
     assert "motion" in enabled
     assert "cloud" in enabled

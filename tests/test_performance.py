@@ -222,10 +222,6 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
     snapshot.automatic_control = True
     snapshot.manual_toggle = True
     snapshot.motion_control_enabled = True
-    snapshot.force_override_active = False
-    snapshot.force_override_position = 0
-    snapshot.force_override_sensors = {}
-    snapshot.force_override_min_mode = False
     snapshot.is_weather_active = False
     snapshot.weather_position = 0
     snapshot.weather_override_active = False
@@ -235,14 +231,15 @@ def test_pipeline_1000_evaluations_under_500ms() -> None:
     snapshot.manual_override_active = False
     snapshot.custom_position_sensors = [
         CustomPositionSensorState(
-            entity_id=f"binary_sensor.cp_perf_{i}",
+            entity_ids=(f"binary_sensor.cp_perf_{i}",),
             is_on=False,
             position=0,
             priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
             min_mode=False,
             use_my=False,
+            slot=i + 1,
         )
-        for i in range(4)
+        for i in range(5)
     ]
     snapshot.motion_timeout_active = False
     snapshot.cloud_suppression_enabled = False

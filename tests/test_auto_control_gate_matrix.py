@@ -6,12 +6,12 @@ When ``automatic_control=False``, any coordinator call-site that is NOT a
 declared force bypass must NOT invoke ``apply_position`` with
 ``context.force=True``.  Force bypasses come in two distinct sub-types:
 
-* **Safety targets** (ForceOverrideHandler, WeatherOverrideHandler):
+* **Safety targets** (safety-priority CustomPositionHandler, WeatherOverrideHandler):
   ``context.force=True`` AND ``context.is_safety=True``.
   Reconciliation resends their targets even when auto_control=OFF or outside
   the time window.
 
-* **Non-safety force bypasses** (force_override_released, manual_override_clear):
+* **Non-safety force bypasses** (safety custom-position released, manual_override_clear):
   ``context.force=True`` AND ``context.is_safety=False``.
   Gate checks (delta, time, manual override) are bypassed so the command
   goes out immediately, but the target is NOT persisted across window
@@ -38,18 +38,18 @@ Decision table (all rows assume ``automatic_control=False``)
 | id                               | entry point      | is_safety_bypass | is_safety_target|
 +==================================+==================+==================+=================+
 | manual_override_expiry           | _async_send_…    | False (gated)    | False           |
-| state_change_force_override      | async_handle_…   | True             | True            |
+| state_change_safety_custom_pos   | async_handle_…   | True             | True            |
 | state_change_weather_bypass      | async_handle_…   | True             | True            |
 | first_refresh_safety             | async_handle_…   | True             | True            |
 | window_close_return_sunset       | _check_time_…    | False (gated)    | False           |
 | sunset_window_opened             | _check_sunset_…  | False (gated)    | False           |
-| state_change_force_override_rls  | async_handle_…   | True (force=True)| False (no tag)  |
+| state_change_safety_released     | async_handle_…   | True (force=True)| False (no tag)  |
 +----------------------------------+------------------+------------------+-----------------+
 
-``state_change_force_override_rls``: when force override releases, the coordinator
-must bypass gate checks (force=True) so the cover returns to calculated position
-immediately, but the resulting target is NOT a safety target (is_safety=False) —
-it should not be resent by reconciliation outside the time window.
+``state_change_safety_released``: when a safety-priority custom position releases,
+the coordinator must bypass gate checks (force=True) so the cover returns to the
+calculated position immediately, but the resulting target is NOT a safety target
+(is_safety=False) — it should not be resent by reconciliation outside the time window.
 
 Rows for state_change_solar and first_refresh_non_safety are omitted because
 those paths call apply_position with ``force=False`` and rely on the *service*
@@ -62,7 +62,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 from collections.abc import Callable, Awaitable
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -81,11 +81,13 @@ from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 
 
 def _make_pipeline_result(bypass: bool) -> PipelineResult:
+    """SOLAR result, or a safety-priority custom-position result when bypass=True."""
     return PipelineResult(
         position=50,
-        control_method=ControlMethod.FORCE if bypass else ControlMethod.SOLAR,
-        reason="force_override" if bypass else "solar",
+        control_method=ControlMethod.CUSTOM_POSITION if bypass else ControlMethod.SOLAR,
+        reason="custom position #5 active" if bypass else "solar",
         bypass_auto_control=bypass,
+        is_safety=bypass,
     )
 
 
@@ -179,7 +181,7 @@ class MatrixCase:
         is_safety=True (entity added to _safety_targets, persists across window
         boundaries).  Meaningful only when is_safety_bypass=True.  Genuine
         safety handlers (force override, weather) set this True; transitional
-        paths (force_override_released, override_clear) set this False — they
+        paths (safety custom-position released, override_clear) set this False — they
         bypass gates for a one-shot send but do not persist the target.
     """
 
@@ -197,19 +199,15 @@ async def _trigger_manual_override_expiry(coord):
     await coord._async_send_after_override_clear(50, {})
 
 
-async def _trigger_state_change_force_override(coord):
+async def _trigger_state_change_safety_custom_position(coord):
     coord._pipeline_result = _make_pipeline_result(bypass=True)
     coord._time_mgr = MagicMock()
     coord._time_mgr.is_active = True
     coord._check_sun_validity_transition = MagicMock(return_value=False)
     coord.state_change = True
-    with patch.object(
-        type(coord),
-        "is_force_override_active",
-        new_callable=PropertyMock,
-        return_value=False,
-    ):
-        await coord.async_handle_state_change(50, {}, prev_force_override=False)
+    coord._last_state_change_entity = None
+    coord._custom_position_template_trigger = False
+    await coord.async_handle_state_change(50, {})
 
 
 async def _trigger_state_change_weather_bypass(coord):
@@ -218,18 +216,15 @@ async def _trigger_state_change_weather_bypass(coord):
         control_method=ControlMethod.WEATHER,
         reason="weather_override",
         bypass_auto_control=True,
+        is_safety=True,
     )
     coord._time_mgr = MagicMock()
     coord._time_mgr.is_active = True
     coord._check_sun_validity_transition = MagicMock(return_value=False)
     coord.state_change = True
-    with patch.object(
-        type(coord),
-        "is_force_override_active",
-        new_callable=PropertyMock,
-        return_value=False,
-    ):
-        await coord.async_handle_state_change(50, {}, prev_force_override=False)
+    coord._last_state_change_entity = None
+    coord._custom_position_template_trigger = False
+    await coord.async_handle_state_change(50, {})
 
 
 async def _trigger_first_refresh_safety(coord):
@@ -314,11 +309,11 @@ async def _trigger_sunset_window_opened(coord):
     await coord._check_sunset_window_transition()
 
 
-async def _trigger_force_override_released(coord):
-    """Trigger: force override just transitioned on → off.
+async def _trigger_safety_custom_position_released(coord):
+    """Trigger: a safety-priority custom-position slot just transitioned on → off.
 
     Pipeline result is now solar (bypass_auto_control=False) but
-    prev_force_override=True.  The coordinator must send with force=True so
+    safety_release=True.  The coordinator must send with force=True so
     gate checks don't block the return to calculated position (#177), but the
     resulting context must have is_safety=False so the target is NOT persisted
     across window boundaries (#223).
@@ -328,13 +323,9 @@ async def _trigger_force_override_released(coord):
     coord._time_mgr.is_active = True
     coord._check_sun_validity_transition = MagicMock(return_value=False)
     coord.state_change = True
-    with patch.object(
-        type(coord),
-        "is_force_override_active",
-        new_callable=PropertyMock,
-        return_value=False,
-    ):
-        await coord.async_handle_state_change(50, {}, prev_force_override=True)
+    coord._last_state_change_entity = None
+    coord._custom_position_template_trigger = False
+    await coord.async_handle_state_change(50, {}, safety_release=True)
 
 
 async def _trigger_switch_auto_control_off_return(coord):
@@ -426,11 +417,11 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         trigger=_trigger_manual_override_expiry,
     ),
     MatrixCase(
-        id="state_change_force_override",
+        id="state_change_safety_custom_position",
         is_safety_bypass=True,
         is_safety_target=True,
         setup=lambda _: None,
-        trigger=_trigger_state_change_force_override,
+        trigger=_trigger_state_change_safety_custom_position,
     ),
     MatrixCase(
         id="state_change_weather_bypass",
@@ -461,11 +452,11 @@ CONTROL_GATE_MATRIX: list[MatrixCase] = [
         trigger=_trigger_sunset_window_opened,
     ),
     MatrixCase(
-        id="state_change_force_override_released",
+        id="state_change_safety_custom_position_released",
         is_safety_bypass=True,  # force=True bypasses auto_control gate
         is_safety_target=False,  # but is NOT a persistent safety target (#223)
         setup=lambda _: None,
-        trigger=_trigger_force_override_released,
+        trigger=_trigger_safety_custom_position_released,
     ),
     MatrixCase(
         # Issue #293: switch toggles auto_control off → return-to-default fires
@@ -507,7 +498,7 @@ async def test_auto_control_gate(case: MatrixCase):
     Invariant 1 — force gate:
         Non-safety-bypass paths must NOT call apply_position(force=True) when
         automatic_control=False.  The coordinator must guard the call.  Safety
-        bypasses (force/weather override, force_override_released) ARE allowed
+        bypasses (safety custom position, weather override, safety release) ARE allowed
         to call with force=True regardless of the toggle.
 
         Failure on a non-safety row → missing automatic_control gate.
@@ -515,8 +506,8 @@ async def test_auto_control_gate(case: MatrixCase):
 
     Invariant 2 — safety-target classification:
         Calls with force=True must use is_safety=True only for genuine safety
-        handlers (ForceOverride, Weather).  Transitional bypasses
-        (force_override_released, override_clear) must use is_safety=False so
+        handlers (safety-priority CustomPosition, Weather).  Transitional bypasses
+        (safety custom-position released, override_clear) must use is_safety=False so
         the target is not persisted across window boundaries (fix #223).
 
         Failure on a safety-target row → handler lost its safety classification.

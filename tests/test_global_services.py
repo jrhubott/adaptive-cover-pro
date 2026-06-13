@@ -61,19 +61,34 @@ def _get_handler(hass: MagicMock, service_name: str):
     raise ValueError(f"Service {service_name!r} was never registered")
 
 
-def _make_call(entity_id=None, device_id=None, area_id=None) -> MagicMock:
+def _make_call(entity_id=None, device_id=None, area_id=None, raw=False) -> MagicMock:
+    """Build a mock ServiceCall.
+
+    When ``raw=True`` the caller controls the exact type of entity_id/device_id/area_id
+    (string or list) — no isinstance-wrapping is applied.  This is needed to exercise
+    the string-input code path that is the subject of issue #570.
+    """
     call = MagicMock()
     call.data = {}
-    if entity_id:
-        call.data["entity_id"] = (
-            entity_id if isinstance(entity_id, list) else [entity_id]
-        )
-    if device_id:
-        call.data["device_id"] = (
-            device_id if isinstance(device_id, list) else [device_id]
-        )
-    if area_id:
-        call.data["area_id"] = area_id if isinstance(area_id, list) else [area_id]
+    if entity_id is not None:
+        if raw:
+            call.data["entity_id"] = entity_id
+        else:
+            call.data["entity_id"] = (
+                entity_id if isinstance(entity_id, list) else [entity_id]
+            )
+    if device_id is not None:
+        if raw:
+            call.data["device_id"] = device_id
+        else:
+            call.data["device_id"] = (
+                device_id if isinstance(device_id, list) else [device_id]
+            )
+    if area_id is not None:
+        if raw:
+            call.data["area_id"] = area_id
+        else:
+            call.data["area_id"] = area_id if isinstance(area_id, list) else [area_id]
     return call
 
 
@@ -172,6 +187,121 @@ def test_resolve_entity_id_within_device_coordinator_not_narrowed():
 
     # device_id set None (all covers) — entity_id should not narrow it
     assert result[coord_a] is None
+
+
+# ---------------------------------------------------------------------------
+# _resolve_targets — string input (issue #570 regression tests)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_string_entity_id_normalized():
+    """RAW string entity_id (not list-wrapped) must resolve to the owning coordinator.
+
+    Before the fix, list("cover.living") char-splits and resolves to {}.
+    """
+    coord_a = _make_coordinator(["cover.living"])
+    coord_b = _make_coordinator(["cover.bedroom"])
+    hass = _make_hass({"entry_a": coord_a, "entry_b": coord_b})
+    # raw=True passes the string directly — no isinstance wrapping
+    call = _make_call(entity_id="cover.living", raw=True)
+
+    result = _resolve_targets(hass, call)
+
+    assert (
+        coord_a in result
+    ), "owning coordinator not found when entity_id is a raw string"
+    assert coord_b not in result
+    assert result[coord_a] == {"cover.living"}
+
+
+def test_resolve_string_device_id_normalized():
+    """RAW string device_id (not list-wrapped) must resolve to the owning coordinator.
+
+    The discriminating mock only returns the real device for the FULL id string
+    "device_xyz"; single-character lookups return None (as a real registry would).
+    This ensures the fix is what makes it pass — not a permissive MagicMock.
+    """
+    coord_a = _make_coordinator(["cover.a"])
+    hass = _make_hass({"entry_abc": coord_a})
+
+    full_device_id = "device_xyz"
+
+    fake_device = MagicMock()
+    fake_device.config_entries = ["entry_abc"]
+    fake_device.area_id = None
+
+    def _discriminating_get(device_id):
+        return fake_device if device_id == full_device_id else None
+
+    dev_reg_mock = MagicMock()
+    dev_reg_mock.async_get = MagicMock(side_effect=_discriminating_get)
+
+    call = _make_call(device_id=full_device_id, raw=True)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.dr.async_get",
+        return_value=dev_reg_mock,
+    ):
+        result = _resolve_targets(hass, call)
+
+    assert coord_a in result, "coordinator not found when device_id is a raw string"
+    assert result[coord_a] is None
+
+
+def test_resolve_string_area_id_normalized():
+    """RAW string area_id (not list-wrapped) must expand and resolve correctly."""
+    coord_a = _make_coordinator(["cover.a"])
+    hass = _make_hass({"entry_abc": coord_a})
+
+    # The area device
+    area_device = MagicMock()
+    area_device.area_id = "area_living"
+    area_device.id = "device_xyz"
+
+    # Config entry device
+    config_device = MagicMock()
+    config_device.config_entries = ["entry_abc"]
+    config_device.area_id = None
+
+    dev_reg_mock = MagicMock()
+    # devices.values() used for area expansion
+    dev_reg_mock.devices = MagicMock()
+    dev_reg_mock.devices.values = MagicMock(return_value=[area_device])
+    # async_get called for device_id resolution
+    dev_reg_mock.async_get = MagicMock(return_value=config_device)
+    config_device.config_entries = ["entry_abc"]
+
+    call = _make_call(area_id="area_living", raw=True)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.dr.async_get",
+        return_value=dev_reg_mock,
+    ):
+        result = _resolve_targets(hass, call)
+
+    assert coord_a in result, "coordinator not found when area_id is a raw string"
+
+
+def test_resolve_explicit_target_no_match_logs_warning(caplog):
+    """When an explicit entity_id target resolves to no coordinators, a WARNING is logged."""
+    import logging
+
+    coord_a = _make_coordinator(["cover.living"])
+    hass = _make_hass({"entry_a": coord_a})
+    # raw=True: pass as a list still (explicit target, just no match)
+    call = _make_call(entity_id="cover.unmanaged_and_explicit")
+
+    with caplog.at_level(
+        logging.WARNING, logger="custom_components.adaptive_cover_pro.services"
+    ):
+        result = _resolve_targets(hass, call)
+
+    assert result == {}
+    assert any(
+        "resolved to no ACP" in r.message for r in caplog.records
+    ), "Expected a WARNING about unresolved targets, got: " + str(
+        [r.message for r in caplog.records]
+    )
 
 
 # ---------------------------------------------------------------------------

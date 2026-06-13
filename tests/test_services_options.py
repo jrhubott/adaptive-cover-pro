@@ -49,6 +49,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    CONF_MOTION_TEMPLATE_MODE,
     CONF_MOTION_TIMEOUT,
     CONF_MY_POSITION_VALUE,
     CONF_POSITION_TOLERANCE,
@@ -249,6 +250,15 @@ class TestFieldValidators:
     def test_tilt_mode_rejects_invalid(self):
         with pytest.raises(Exception):
             FIELD_VALIDATORS["tilt_mode"]("mode3")
+
+    def test_motion_template_mode_select(self):
+        FIELD_VALIDATORS[CONF_MOTION_TEMPLATE_MODE]("or")
+        FIELD_VALIDATORS[CONF_MOTION_TEMPLATE_MODE]("and")
+        FIELD_VALIDATORS[CONF_MOTION_TEMPLATE_MODE](None)
+
+    def test_motion_template_mode_rejects_invalid(self):
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_MOTION_TEMPLATE_MODE]("xor")
 
     def test_window_depth_bounds(self):
         FIELD_VALIDATORS[CONF_WINDOW_DEPTH](0.0)
@@ -735,9 +745,13 @@ class TestSetManualOverride:
 
 
 class TestSetForceOverride:
-    """Integration tests for set_force_override service."""
+    """Integration tests for the DEPRECATED set_force_override shim (#563).
 
-    async def test_updates_position(self, hass: HomeAssistant):
+    The shim maps the legacy fields onto custom-position slot 5 at safety
+    priority; the legacy force_override_* option keys are no longer written.
+    """
+
+    async def test_updates_position_via_slot_5(self, hass: HomeAssistant):
         await _setup(hass, entry_id="fo_01")
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
@@ -750,11 +764,15 @@ class TestSetForceOverride:
             )
 
         new_opts = mock_update.call_args[1]["options"]
-        assert new_opts[CONF_FORCE_OVERRIDE_POSITION] == 0
-        assert new_opts[CONF_FORCE_OVERRIDE_MIN_MODE] is True
+        assert new_opts["custom_position_5"] == 0
+        assert new_opts["custom_position_min_mode_5"] is True
+        assert new_opts["custom_position_priority_5"] == 100
 
     async def test_sensors_replace_not_append(self, hass: HomeAssistant):
-        opts = {**VERTICAL_OPTIONS, CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.old"]}
+        opts = {
+            **VERTICAL_OPTIONS,
+            "custom_position_sensors_5": ["binary_sensor.old"],
+        }
         await _setup(hass, entry_id="fo_list_01", options=opts)
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
@@ -763,14 +781,25 @@ class TestSetForceOverride:
             await _call(
                 hass,
                 "set_force_override",
-                {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.new"]},
+                {
+                    CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.new"],
+                    CONF_FORCE_OVERRIDE_POSITION: 90,
+                },
             )
 
         new_opts = mock_update.call_args[1]["options"]
-        assert new_opts[CONF_FORCE_OVERRIDE_SENSORS] == ["binary_sensor.new"]
+        assert new_opts["custom_position_sensors_5"] == ["binary_sensor.new"]
+        # Rollback mirror follows the list head.
+        assert new_opts["custom_position_sensor_5"] == "binary_sensor.new"
+        # Legacy force keys are NOT written by the shim.
+        assert CONF_FORCE_OVERRIDE_SENSORS not in new_opts
 
     async def test_clears_sensors_with_empty_list(self, hass: HomeAssistant):
-        opts = {**VERTICAL_OPTIONS, CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.x"]}
+        opts = {
+            **VERTICAL_OPTIONS,
+            "custom_position_sensors_5": ["binary_sensor.x"],
+            "custom_position_sensor_5": "binary_sensor.x",
+        }
         await _setup(hass, entry_id="fo_clear_01", options=opts)
         with (
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
@@ -783,7 +812,9 @@ class TestSetForceOverride:
             )
 
         new_opts = mock_update.call_args[1]["options"]
-        assert new_opts[CONF_FORCE_OVERRIDE_SENSORS] == []
+        assert new_opts["custom_position_sensors_5"] == []
+        # Mirror cleared: None values are dropped from stored options entirely.
+        assert new_opts.get("custom_position_sensor_5") is None
 
 
 class TestSetCustomPosition:
@@ -853,7 +884,7 @@ class TestSetCustomPosition:
             await _call(
                 hass,
                 "set_custom_position",
-                {"slot": 5, "sensor": "binary_sensor.x", "position": 50},
+                {"slot": 6, "sensor": "binary_sensor.x", "position": 50},
             )
 
     async def test_sensor_without_position_raises(self, hass: HomeAssistant):
@@ -1426,3 +1457,172 @@ class TestSetVenetian:
         assert CONF_VENETIAN_BACKROTATE_PUBLISH_LAG in _SECTION_VENETIAN
         # Skip CONF_VENETIAN_TILT_SKIP_ABOVE import — use length check
         assert len(_SECTION_VENETIAN) == 4
+
+
+# ---------------------------------------------------------------------------
+# Issue #570 — string entity_id regression tests (end-to-end service path)
+# ---------------------------------------------------------------------------
+
+
+class TestStringEntityIdRegression:
+    """Regression tests for issue #570: bare-string entity_id must work.
+
+    Before the fix, list("cover.test_blind") char-splits, matches no coordinator,
+    and the service returns success having changed nothing (silent no-op).
+    """
+
+    async def test_set_automation_timing_string_entity_id(self, hass: HomeAssistant):
+        """set_automation_timing with a STRING entity_id (not list) must apply the patch."""
+        await _setup(hass, entry_id="str_eid_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            # Pass entity_id as a bare string (not a list) — mirrors what HA
+            # services called from YAML/templates can deliver.
+            await hass.services.async_call(
+                DOMAIN,
+                "set_automation_timing",
+                {CONF_DELTA_POSITION: 7},
+                blocking=True,
+                target={"entity_id": "cover.test_blind"},  # <-- string, not list
+            )
+            await hass.async_block_till_done()
+
+        mock_update.assert_called_once(), "async_update_entry must be called once"
+        new_opts = mock_update.call_args[1]["options"]
+        assert (
+            new_opts[CONF_DELTA_POSITION] == 7
+        ), f"Expected delta_position=7 in options, got: {new_opts.get(CONF_DELTA_POSITION)}"
+
+    async def test_set_automation_timing_list_entity_id_still_works(
+        self, hass: HomeAssistant
+    ):
+        """Existing list entity_id path must remain green after the fix."""
+        await _setup(hass, entry_id="str_eid_list_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(hass, "set_automation_timing", {CONF_DELTA_POSITION: 5})
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_DELTA_POSITION] == 5
+
+
+# ---------------------------------------------------------------------------
+# Issue #570 secondary gap — sunset_time_entity / sunrise_time_entity
+# ---------------------------------------------------------------------------
+
+
+class TestSunsetSunriseTimeEntity:
+    """Tests for set_option and set_sunset_sunrise with *_time_entity keys.
+
+    These are valid config-flow options (CONF_SUNSET_TIME_ENTITY,
+    CONF_SUNRISE_TIME_ENTITY) that were missing from FIELD_VALIDATORS and
+    _SECTION_SUNSET_SUNRISE, causing set_option to reject them as "Unknown
+    option" and set_sunset_sunrise to silently drop them.
+    """
+
+    def test_sunset_time_entity_in_field_validators(self):
+        """CONF_SUNSET_TIME_ENTITY must be in FIELD_VALIDATORS."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TIME_ENTITY
+
+        assert (
+            CONF_SUNSET_TIME_ENTITY in FIELD_VALIDATORS
+        ), "sunset_time_entity missing from FIELD_VALIDATORS"
+
+    def test_sunrise_time_entity_in_field_validators(self):
+        """CONF_SUNRISE_TIME_ENTITY must be in FIELD_VALIDATORS."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_TIME_ENTITY
+
+        assert (
+            CONF_SUNRISE_TIME_ENTITY in FIELD_VALIDATORS
+        ), "sunrise_time_entity missing from FIELD_VALIDATORS"
+
+    def test_sunset_time_entity_in_all_settable_keys(self):
+        """CONF_SUNSET_TIME_ENTITY must be in ALL_SETTABLE_KEYS (via _SECTION_SUNSET_SUNRISE)."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNSET_TIME_ENTITY
+
+        assert (
+            CONF_SUNSET_TIME_ENTITY in ALL_SETTABLE_KEYS
+        ), "sunset_time_entity missing from ALL_SETTABLE_KEYS"
+
+    def test_sunrise_time_entity_in_all_settable_keys(self):
+        """CONF_SUNRISE_TIME_ENTITY must be in ALL_SETTABLE_KEYS (via _SECTION_SUNSET_SUNRISE)."""
+        from custom_components.adaptive_cover_pro.const import CONF_SUNRISE_TIME_ENTITY
+
+        assert (
+            CONF_SUNRISE_TIME_ENTITY in ALL_SETTABLE_KEYS
+        ), "sunrise_time_entity missing from ALL_SETTABLE_KEYS"
+
+    async def test_set_option_sunset_time_entity_accepted(self, hass: HomeAssistant):
+        """set_option must accept sunset_time_entity without 'Unknown option' error."""
+        await _setup(hass, entry_id="ste_opt_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_option",
+                {"option": "sunset_time_entity", "value": "sensor.my_sunset"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunset_time_entity") == "sensor.my_sunset"
+
+    async def test_set_option_sunrise_time_entity_accepted(self, hass: HomeAssistant):
+        """set_option must accept sunrise_time_entity without 'Unknown option' error."""
+        await _setup(hass, entry_id="ste_opt_02")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_option",
+                {"option": "sunrise_time_entity", "value": "sensor.my_sunrise"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunrise_time_entity") == "sensor.my_sunrise"
+
+    async def test_set_sunset_sunrise_carries_time_entity(self, hass: HomeAssistant):
+        """set_sunset_sunrise must persist sunset_time_entity into options."""
+        await _setup(hass, entry_id="ste_ss_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_sunset_sunrise",
+                {"sunset_time_entity": "sensor.custom_sunset"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunset_time_entity") == "sensor.custom_sunset"
+
+    async def test_set_sunset_sunrise_carries_sunrise_time_entity(
+        self, hass: HomeAssistant
+    ):
+        """set_sunset_sunrise must persist sunrise_time_entity into options."""
+        await _setup(hass, entry_id="ste_ss_02")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_sunset_sunrise",
+                {"sunrise_time_entity": "sensor.custom_sunrise"},
+            )
+
+        mock_update.assert_called_once()
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts.get("sunrise_time_entity") == "sensor.custom_sunrise"

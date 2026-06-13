@@ -148,6 +148,14 @@ set_position_limits:
           step: 1
           mode: slider
           unit_of_measurement: "%"
+    enable_position_matching:
+      name: Enable position matching
+      description: >-
+        If true, the reconciliation pass resends the target until the cover
+        reaches it. If false (the default), the cover is commanded once and a
+        settle past the position tolerance becomes a manual override.
+      selector:
+        boolean:
     inverse_state:
       name: Inverse state
       description: "Invert position (0%=open, 100%=closed) for covers that report state inversely."
@@ -306,25 +314,25 @@ set_manual_override:
         boolean:
 
 set_force_override:
-  name: Set force override
+  name: Set force override (DEPRECATED)
   description: >-
-    Update force-override sensors, position, and min-mode. When any sensor is ON,
-    the cover moves to force_override_position bypassing automatic control.
-    Pass null or an empty list to clear sensors.
+    DEPRECATED (issue #563): force override merged into custom-position slot 5.
+    This service now writes slot 5 at safety priority (100) and will be removed
+    in a future release — use set_custom_position with slot: 5 instead.
   target:
     entity:
       integration: adaptive_cover_pro
   fields:
     force_override_sensors:
       name: Force override sensors
-      description: "Binary sensors that trigger the force override. Empty list = disable."
+      description: "Binary sensors that trigger the override (written to slot 5). Empty list = disable."
       selector:
         entity:
           domain: binary_sensor
           multiple: true
     force_override_position:
       name: Force override position
-      description: "Position to move to when a force override sensor is active (0–100%)."
+      description: "Position to move to when a sensor is active (0–100%, written to slot 5)."
       selector:
         number:
           min: 0
@@ -334,38 +342,60 @@ set_force_override:
           unit_of_measurement: "%"
     force_override_min_mode:
       name: Minimum position mode
-      description: "If true, treat force_override_position as a minimum floor rather than a fixed target."
+      description: "If true, treat the position as a minimum floor rather than a fixed target (written to slot 5)."
       selector:
         boolean:
 
 set_custom_position:
   name: Set custom position slot
   description: >-
-    Update one custom position slot (1–4). A slot is active when sensor and
-    position are both set. Pass null for sensor and position to clear the slot.
+    Update one custom position slot (1–5). A slot is active when it has a
+    trigger (sensors and/or template) and a position. Pass an empty list and
+    null position to clear the slot. Priority 100 gives the slot safety
+    semantics: it acts outside the time window and bypasses delta gates.
   target:
     entity:
       integration: adaptive_cover_pro
   fields:
     slot:
       name: Slot
-      description: "Which custom position slot to update (1–4)."
+      description: "Which custom position slot to update (1–5)."
       required: true
       selector:
         number:
           min: 1
-          max: 4
+          max: 5
           step: 1
           mode: slider
-    sensor:
-      name: Trigger sensor
-      description: "Binary sensor that activates this custom position. Null = clear slot."
+    sensors:
+      name: Trigger sensors
+      description: "Binary sensors that activate this custom position (OR logic). Empty list = clear."
       selector:
         entity:
           domain: binary_sensor
+          multiple: true
+    sensor:
+      name: Trigger sensor (deprecated)
+      description: "DEPRECATED single-sensor alias — use 'sensors'. Ignored when 'sensors' is supplied."
+      selector:
+        entity:
+          domain: binary_sensor
+    template:
+      name: Condition template
+      description: "Optional Jinja2 template; when truthy it activates the slot (combined with the sensors per template_mode)."
+      selector:
+        template:
+    template_mode:
+      name: Template combine mode
+      description: "'or' (default): template OR sensors activate the slot. 'and': template must be truthy AND a sensor on."
+      selector:
+        select:
+          options:
+            - "or"
+            - "and"
     position:
       name: Position
-      description: "Target position (0–100%) when the sensor is active. Null = clear slot."
+      description: "Target position (0–100%) when the trigger is active. Null = clear slot."
       selector:
         number:
           min: 0
@@ -375,11 +405,11 @@ set_custom_position:
           unit_of_measurement: "%"
     priority:
       name: Priority
-      description: "Pipeline priority (1–99, default 77). Higher = evaluated earlier."
+      description: "Pipeline priority (1–100, default 77). Higher = evaluated earlier; 100 = safety semantics."
       selector:
         number:
           min: 1
-          max: 99
+          max: 100
           step: 1
           mode: slider
     min_mode:
@@ -389,7 +419,7 @@ set_custom_position:
         boolean:
     use_my:
       name: Use Somfy My position
-      description: "If true, use my_position_value instead of position when sensor is active."
+      description: "If true, use my_position_value instead of position when the trigger is active."
       selector:
         boolean:
 
@@ -708,6 +738,20 @@ set_sun_tracking:
       description: "Master toggle for solar-position-based cover control."
       selector:
         boolean:
+    minimize_movements:
+      name: Minimize movements
+      description: "If true, quantize the sun-tracked position into discrete coverage levels (rounding toward more coverage) to reduce motor movements."
+      selector:
+        boolean:
+    max_coverage_steps:
+      name: Maximum coverage steps
+      description: "Number of distinct positions used to reach full coverage when minimize_movements is on (1–10). 1 = jump straight to full coverage."
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+          mode: slider
     set_azimuth:
       name: Window azimuth
       description: "Compass direction the window faces (0–359°)."

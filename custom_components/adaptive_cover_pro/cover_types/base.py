@@ -36,6 +36,19 @@ if TYPE_CHECKING:
     from ..services.configuration_service import ConfigurationService
 
 
+def _as_optional(marker: vol.Marker) -> vol.Optional:
+    """Re-emit *marker* as ``vol.Optional``, preserving its default if any.
+
+    Used so the fov sliders are not ``vol.Required`` (#565): a Required field
+    triggers HA's frontend client-side "all required fields filled" check, which
+    can block the "Generate FOV from measurements" button's re-render submit. The
+    existing ``default`` callable is reused so no ``90`` literal is duplicated.
+    """
+    if marker.default is vol.UNDEFINED:
+        return vol.Optional(str(marker))
+    return vol.Optional(str(marker), default=marker.default)
+
+
 # ---------------------------------------------------------------------------
 # Axis-related string constants
 # ---------------------------------------------------------------------------
@@ -191,6 +204,49 @@ class CoverTypePolicy(ABC):
     # Top/Bottom). Distinct from ``exposes_dual_axis_sensor`` (the venetian
     # single-entity tilt sensor). Dual-/split-panel policies flip this on.
     exposes_dual_panel_sensors: ClassVar[bool] = False
+
+    # Whether the sun-tracking step exposes the "Generate FOV from measurements"
+    # button (#565) — a toggle that fills fov_left/right from the window width +
+    # reveal depth. Set on the cover types that carry window geometry (vertical
+    # blinds + venetians); awnings/tilt keep the plain fov sliders.
+    supports_fov_compute: ClassVar[bool] = False
+
+    def fov_compute_schema(self, base: vol.Schema) -> vol.Schema:
+        """Insert the "Generate FOV from measurements" toggle before the sliders.
+
+        Returns *base* unchanged unless this policy sets
+        ``supports_fov_compute``. When it does, the ``CONF_FOV_COMPUTE`` toggle
+        is inserted immediately before the ``fov_left``/``fov_right`` sliders.
+        The toggle is a transient button: ticking it fills the sliders from the
+        window width + reveal depth on submit (handled in
+        ``config_flow._resolve_fov_compute_submit``), after which the form
+        re-renders un-ticked with the sliders populated. The sliders are always
+        shown and editable; they are made ``vol.Optional`` so the frontend
+        Required check never blocks the button's re-render submit (#565). Shared
+        here so vertical blinds and venetians get identical behaviour with no
+        duplication.
+        """
+        if not self.supports_fov_compute:
+            return base
+        from .. import config_fields as cf
+        from ..const import CONF_FOV_COMPUTE, CONF_FOV_LEFT, CONF_FOV_RIGHT
+
+        spec = cf.FIELD_SPECS[CONF_FOV_COMPUTE]
+        toggle_marker, toggle_selector = spec.to_marker(None, None)
+
+        rebuilt: dict = {}
+        inserted = False
+        for marker, sel in base.schema.items():
+            if str(marker) in (CONF_FOV_LEFT, CONF_FOV_RIGHT):
+                if not inserted:
+                    rebuilt[toggle_marker] = toggle_selector
+                    inserted = True
+                rebuilt[_as_optional(marker)] = sel
+                continue
+            rebuilt[marker] = sel
+        if not inserted:
+            rebuilt[toggle_marker] = toggle_selector
+        return vol.Schema(rebuilt)
 
     @abstractmethod
     def build_calc_engine(
@@ -425,6 +481,22 @@ class CoverTypePolicy(ABC):
         if should_use_tilt(is_tilt_default, caps if caps is not None else {}):
             return TILT_AXIS
         return primary
+
+    def position_axis_supported(self, caps: Any) -> bool:
+        """Whether *this entity* exposes the policy's primary (position) axis.
+
+        Reads the capability flag named by ``axes[0].capability_key`` so the
+        check stays behind the policy/axis abstraction — no hardcoded
+        capability-key literal at the call site. Used by the
+        solar floor gate (#569): a set-position-capable cover can be commanded
+        to a true 0 % during sun tracking, so the 1 % open/close-only floor
+        must not apply to it.
+
+        ``caps=None`` (entity not yet readable) defaults to ``True`` — the
+        instance-level rollup in the snapshot builder applies the conservative
+        mixed-instance rule on top of this.
+        """
+        return _caps_get(caps, self.axes[0].capability_key, default=True)
 
     def position_for_intent(self, *, sun_through: bool) -> int:
         """Map a semantic intent to the numeric value for the primary axis.
@@ -664,12 +736,16 @@ class CoverTypePolicy(ABC):
         return ()
 
     def summary_geometry_lines(
-        self, config: dict[str, Any]
-    ) -> list[str]:  # noqa: ARG002
+        self,
+        config: dict[str, Any],  # noqa: ARG002
+        labels: dict[str, str] | None = None,  # noqa: ARG002
+    ) -> list[str]:
         """Return the user-facing geometry summary lines for the config flow.
 
         Default: no geometry summary. Override to render the
         cover-type-specific geometry block in ``_build_config_summary``.
+        ``labels`` overlays translated ``geometry.*`` templates on the English
+        base; ``None`` keeps English (back-compat).
         """
         return []
 
@@ -684,7 +760,9 @@ class CoverTypePolicy(ABC):
         """
         return "Cover-Types"
 
-    def display_label(self) -> str:
+    def display_label(
+        self, labels: dict[str, str] | None = None
+    ) -> str:  # noqa: ARG002
         """Return the human-readable label for this cover type.
 
         Used by ``config_flow._build_config_summary`` and any other UI
@@ -692,5 +770,9 @@ class CoverTypePolicy(ABC):
         ``cover_type`` slug for stub policies; every concrete policy
         overrides to its user-facing name. Replaces the legacy
         ``type_labels`` dict in ``config_flow.py``.
+
+        ``labels`` is the translated ``cover_types.*`` bundle; the base
+        default is only reached for unknown/stub types and has no key, so it
+        ignores ``labels`` and returns the titlecased slug.
         """
         return self.cover_type.removeprefix("cover_").replace("_", " ").title()

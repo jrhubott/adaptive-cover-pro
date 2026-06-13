@@ -8,7 +8,7 @@ involve a coordinator at all.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,8 +17,6 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
-    CONF_FORCE_OVERRIDE_POSITION,
-    CONF_FORCE_OVERRIDE_SENSORS,
     CONF_LUX_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_TEMP_HIGH,
@@ -96,37 +94,119 @@ def _make_builder(
     return builder, climate_provider, hass
 
 
+# ---------------------------------------------------------------------------
+# Multi-sensor OR / legacy fallback / template trigger (issue #563)
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.unit
-def test_read_force_sensors_returns_on_off_dict():
+def test_read_custom_position_sensors_multi_sensor_or():
+    """The `sensors` list key reads every sensor; OR logic drives is_on."""
     on_state = MagicMock()
     on_state.state = "on"
     off_state = MagicMock()
     off_state.state = "off"
-    builder, _, _ = _make_builder(
+    builder, _, hass = _make_builder(
         states={
             "binary_sensor.alarm": on_state,
             "binary_sensor.calm": off_state,
         }
     )
-    out = builder.read_force_sensors(
-        {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.alarm", "binary_sensor.calm"]}
-    )
-    assert out == {"binary_sensor.alarm": True, "binary_sensor.calm": False}
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["sensors"]: ["binary_sensor.alarm", "binary_sensor.calm"],
+        first_slot_keys["position"]: 42,
+    }
+    out = builder.read_custom_position_sensors(opts)
+    assert len(out) == 1
+    state = out[0]
+    assert state.entity_ids == ("binary_sensor.alarm", "binary_sensor.calm")
+    assert state.is_on is True  # OR: one sensor on suffices
+    assert state.active_entity_ids == ("binary_sensor.alarm",)
+    # One hass.states.get call per bound sensor.
+    read_entities = {c.args[0] for c in hass.states.get.call_args_list}
+    assert {"binary_sensor.alarm", "binary_sensor.calm"} <= read_entities
 
 
 @pytest.mark.unit
-def test_read_force_sensors_missing_entity_treated_as_off():
+def test_read_custom_position_sensors_multi_sensor_all_off():
+    """All sensors off (or missing) → is_on False, no active entity ids."""
     builder, _, _ = _make_builder(states={})
-    out = builder.read_force_sensors(
-        {CONF_FORCE_OVERRIDE_SENSORS: ["binary_sensor.ghost"]}
-    )
-    assert out == {"binary_sensor.ghost": False}
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["sensors"]: ["binary_sensor.ghost", "binary_sensor.gone"],
+        first_slot_keys["position"]: 42,
+    }
+    out = builder.read_custom_position_sensors(opts)
+    assert len(out) == 1
+    assert out[0].is_on is False
+    assert out[0].active_entity_ids == ()
 
 
 @pytest.mark.unit
-def test_read_force_sensors_no_config_returns_empty():
+def test_read_custom_position_sensors_legacy_single_key_fallback():
+    """The legacy single-sensor key still works when the list key is absent."""
+    on_state = MagicMock()
+    on_state.state = "on"
+    builder, _, _ = _make_builder(states={"binary_sensor.legacy": on_state})
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["sensor"]: "binary_sensor.legacy",
+        first_slot_keys["position"]: 42,
+    }
+    out = builder.read_custom_position_sensors(opts)
+    assert len(out) == 1
+    assert out[0].entity_ids == ("binary_sensor.legacy",)
+    assert out[0].is_on is True
+    assert out[0].active_entity_ids == ("binary_sensor.legacy",)
+
+
+@pytest.mark.unit
+def test_read_custom_position_sensors_template_only_slot():
+    """A slot with only a condition template (no sensors) is a valid trigger."""
     builder, _, _ = _make_builder()
-    assert builder.read_force_sensors({}) == {}
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["template"]: "{{ is_state('sun.sun', 'above_horizon') }}",
+        first_slot_keys["position"]: 42,
+    }
+    # render_condition needs a working hass; mock it at the builder's import site.
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition",
+        return_value=True,
+    ):
+        out = builder.read_custom_position_sensors(opts)
+    assert len(out) == 1
+    state = out[0]
+    assert state.entity_ids == ()
+    assert state.is_on is True
+    assert state.template_active is True
+    assert state.active_entity_ids == ()
+    assert state.sensor_name is None
+
+
+@pytest.mark.unit
+def test_read_custom_position_sensors_template_false_keeps_slot_off():
+    """A False-rendering template leaves a template-only slot inactive."""
+    builder, _, _ = _make_builder()
+
+    first_slot_keys = next(iter(CUSTOM_POSITION_SLOTS.values()))
+    opts = {
+        first_slot_keys["template"]: "{{ is_state('sun.sun', 'above_horizon') }}",
+        first_slot_keys["position"]: 42,
+    }
+    with patch(
+        "custom_components.adaptive_cover_pro.pipeline.snapshot_builder.render_condition",
+        return_value=False,
+    ):
+        out = builder.read_custom_position_sensors(opts)
+    assert len(out) == 1
+    assert out[0].is_on is False
+    assert out[0].template_active is False
 
 
 @pytest.mark.unit
@@ -181,13 +261,16 @@ def test_read_custom_position_sensors_emits_one_state_per_configured_slot():
     assert len(out) == 1
     state = out[0]
     assert isinstance(state, CustomPositionSensorState)
-    assert state.entity_id == "binary_sensor.guest"
+    assert state.entity_ids == ("binary_sensor.guest",)
     assert state.is_on is True
+    assert state.active_entity_ids == ("binary_sensor.guest",)
+    assert state.template_active is None  # no template configured
     assert state.position == 42
     assert state.priority == DEFAULT_CUSTOM_POSITION_PRIORITY
     assert state.min_mode is False
     assert state.use_my is False
     assert state.tilt is None
+    assert state.slot == 1
 
 
 @pytest.mark.unit
@@ -377,7 +460,6 @@ def test_build_forwards_explicit_effective_default():
     cover_data.config = MagicMock()
     cover_data.sun_data = MagicMock()
     opts = {
-        CONF_FORCE_OVERRIDE_POSITION: 95,
         CONF_WEATHER_OVERRIDE_POSITION: 5,
         CONF_DEFAULT_TILT: 50,
         CONF_WEATHER_BYPASS_AUTO_CONTROL: False,
@@ -399,7 +481,6 @@ def test_build_forwards_explicit_effective_default():
     )
     assert snapshot.default_position == 10
     assert snapshot.is_sunset_active is True
-    assert snapshot.force_override_position == 95
     assert snapshot.weather_override_position == 5
     assert snapshot.weather_bypass_auto_control is False
     assert snapshot.manual_override_active is True
@@ -445,6 +526,93 @@ def test_build_consults_is_glare_zone_enabled_callable():
         is_sunset_active=False,
     )
     assert snapshot.active_zone_names == frozenset({"zone_a"})
+
+
+# ---------------------------------------------------------------------------
+# solar_floor_active rollup (#569)
+# ---------------------------------------------------------------------------
+
+
+def _caps(*, has_set_position: bool):
+    from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
+
+    return CoverCapabilities(
+        has_set_position=has_set_position,
+        has_set_tilt_position=False,
+        has_open=True,
+        has_close=True,
+    )
+
+
+def _build_with_caps(builder, caps_map):
+    """Run ``builder.build`` with a given cover_capabilities map.
+
+    Wires ``policy.position_axis_supported`` to read ``has_set_position`` so
+    the rollup is exercised against realistic per-entity capability data.
+    """
+    builder._policy.position_axis_supported.side_effect = lambda c: c.has_set_position
+    cover_data = MagicMock()
+    cover_data.config = MagicMock()
+    cover_data.sun_data = MagicMock()
+    return builder.build(
+        {},
+        cover_data=cover_data,
+        cover_type="cover_blind",
+        climate_readings=None,
+        manual_override_active=False,
+        motion_timeout_active=False,
+        weather_override_active=False,
+        in_time_window=True,
+        current_cover_position=None,
+        is_glare_zone_enabled=lambda idx: False,
+        effective_default=0,
+        is_sunset_active=False,
+        cover_capabilities=caps_map,
+    )
+
+
+@pytest.mark.unit
+def test_solar_floor_inactive_when_all_entities_positionable():
+    """All bound entities support set_position → floor off (reaches 0%)."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(
+        builder,
+        {
+            "cover.a": _caps(has_set_position=True),
+            "cover.b": _caps(has_set_position=True),
+        },
+    )
+    assert snap.solar_floor_active is False
+
+
+@pytest.mark.unit
+def test_solar_floor_active_when_any_entity_open_close_only():
+    """A single open/close-only entity keeps the floor active (conservative)."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(
+        builder,
+        {
+            "cover.a": _caps(has_set_position=True),
+            "cover.b": _caps(has_set_position=False),
+        },
+    )
+    assert snap.solar_floor_active is True
+
+
+@pytest.mark.unit
+def test_solar_floor_active_when_caps_empty():
+    """Empty caps map → floor active (no positive evidence of positionability)."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(builder, {})
+    assert snap.solar_floor_active is True
+
+
+@pytest.mark.unit
+def test_solar_floor_active_when_caps_none():
+    """None caps (entities not readable) → floor active."""
+    builder, _, _ = _make_builder()
+    snap = _build_with_caps(builder, None)
+    assert snap.solar_floor_active is True
 
 
 @pytest.mark.unit

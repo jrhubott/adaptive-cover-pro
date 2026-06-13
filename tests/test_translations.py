@@ -113,7 +113,14 @@ def test_translation_file_valid_json(lang_file: Path) -> None:
 def test_en_json_has_expected_top_level_sections() -> None:
     """English must contain the standard HA sections plus services."""
     en_data = _load(TRANSLATIONS_DIR / "en.json")
-    for section in ("title", "config", "options", "selector", "entity", "services"):
+    for section in (
+        "title",
+        "config",
+        "options",
+        "selector",
+        "entity",
+        "services",
+    ):
         assert section in en_data, f"en.json missing '{section}' section"
 
 
@@ -308,3 +315,33 @@ def test_fr_cloud_suppression_decision_trace_state() -> None:
     assert (
         "nuageux" in value.lower()
     ), f"FR cloud_suppression state label should reference cloudy weather; got: {value!r}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #564 — geometry description must not contain per-cover-type field enumeration
+# ---------------------------------------------------------------------------
+
+
+def test_geometry_description_no_field_enumeration() -> None:
+    """The geometry step description must NOT contain the per-cover-type field enumeration.
+
+    The second paragraph ("**Window height** and **shaded area** are required for vertical
+    blinds and awnings...") is redundant because the form already hides irrelevant fields.
+    It must be absent from both config.step.geometry.description and
+    options.step.geometry.description in en.json (issue #564).
+    """
+    en = _load(TRANSLATIONS_DIR / "en.json")
+
+    cfg_desc = en["config"]["step"]["geometry"]["description"]
+    opt_desc = en["options"]["step"]["geometry"]["description"]
+
+    enumeration_marker = "required for vertical"
+
+    assert enumeration_marker not in cfg_desc, (
+        f"config.step.geometry.description still contains per-cover-type enumeration "
+        f"(found {enumeration_marker!r}). Remove the second paragraph (issue #564)."
+    )
+    assert enumeration_marker not in opt_desc, (
+        f"options.step.geometry.description still contains per-cover-type enumeration "
+        f"(found {enumeration_marker!r}). Remove the second paragraph (issue #564)."
+    )

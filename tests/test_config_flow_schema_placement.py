@@ -8,7 +8,7 @@ from custom_components.adaptive_cover_pro import config_flow as cf
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
-    CONF_DELTA_POSITION,
+    CONF_ENABLE_POSITION_MATCHING,
     CONF_MANUAL_OVERRIDE_DURATION,
     CONF_POSITION_TOLERANCE,
     CONF_TRANSIT_TIMEOUT,
@@ -20,16 +20,27 @@ def _schema_keys(schema) -> set[str]:
     return {str(k) for k in schema.schema}
 
 
-def test_position_tolerance_in_automation_schema_with_default_three() -> None:
-    """CONF_POSITION_TOLERANCE lives on the automation step, default 3 (issue #507)."""
-    keys = _schema_keys(cf.AUTOMATION_SCHEMA)
+def test_position_tolerance_in_position_schema_with_default_three() -> None:
+    """CONF_POSITION_TOLERANCE lives on the position step, default 3 (issue #591)."""
+    keys = _schema_keys(cf.POSITION_SCHEMA)
     assert CONF_POSITION_TOLERANCE in keys
-    # Placed alongside the movement delta on the automation step.
-    assert CONF_DELTA_POSITION in keys
+    # It is a position concept, not a timing one — must not remain on automation.
+    assert CONF_POSITION_TOLERANCE not in _schema_keys(cf.AUTOMATION_SCHEMA)
     marker = next(
-        k for k in cf.AUTOMATION_SCHEMA.schema if str(k) == CONF_POSITION_TOLERANCE
+        k for k in cf.POSITION_SCHEMA.schema if str(k) == CONF_POSITION_TOLERANCE
     )
     assert marker.default() == 3
+
+
+def test_enable_position_matching_in_position_schema() -> None:
+    """CONF_ENABLE_POSITION_MATCHING lives on the position step, default False (#591)."""
+    keys = _schema_keys(cf.POSITION_SCHEMA)
+    assert CONF_ENABLE_POSITION_MATCHING in keys
+    assert CONF_ENABLE_POSITION_MATCHING not in _schema_keys(cf.AUTOMATION_SCHEMA)
+    marker = next(
+        k for k in cf.POSITION_SCHEMA.schema if str(k) == CONF_ENABLE_POSITION_MATCHING
+    )
+    assert marker.default() is False
 
 
 @pytest.mark.parametrize(

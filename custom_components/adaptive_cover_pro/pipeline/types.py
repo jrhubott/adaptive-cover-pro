@@ -35,14 +35,18 @@ class ClimateOptions:
 
 @dataclass(frozen=True, slots=True)
 class CustomPositionSensorState:
-    """Per-slot sensor reading carried in the pipeline snapshot.
+    """Per-slot trigger reading carried in the pipeline snapshot.
 
     One instance per configured custom position slot.  Built once per update
-    cycle by ``coordinator._read_custom_position_sensor_states()`` and consumed
-    by the matching ``CustomPositionHandler`` instance via entity_id lookup.
+    cycle by ``SnapshotBuilder.read_custom_position_sensors()`` and consumed
+    by the matching ``CustomPositionHandler`` instance via slot lookup.
     """
 
-    entity_id: str
+    # All trigger sensors bound to the slot (OR logic, issue #563). May be
+    # empty for a template-only slot.
+    entity_ids: tuple[str, ...]
+    # Slot activation: OR across the sensors, folded with the optional
+    # condition template via templates.combine_with_mode() at snapshot time.
     is_on: bool
     position: int
     priority: int
@@ -55,15 +59,21 @@ class CustomPositionSensorState:
     # whichever handler wins position. Mutually exclusive with min_mode / use_my
     # (normalized in snapshot_builder — tilt_only wins).
     tilt_only: bool = False
-    # Human label of the bound sensor (its friendly_name attribute), surfaced so
-    # downstream diagnostics can show e.g. "Custom · Table extension" instead of
-    # just "Custom #1". None when the sensor isn't loaded or has no friendly_name.
+    # Human label of the first active (else first) bound sensor (its
+    # friendly_name attribute), surfaced so downstream diagnostics can show
+    # e.g. "Custom · Table extension" instead of just "Custom #1". None when
+    # no sensor is loaded / has a friendly_name (e.g. template-only slot).
     sensor_name: str | None = None
-    # Real 1-4 slot number this state was built from. The snapshot's sensor list
+    # Real 1-5 slot number this state was built from. The snapshot's sensor list
     # is compacted (gaps skipped), so the list index does NOT recover the slot;
     # carry it explicitly so the floor trace can label the correct
     # custom_position_N handler (issue #496). 0 = unset.
     slot: int = 0
+    # Sensors currently "on" — drives reason strings (mirrors the old force
+    # override's multi-sensor reason format).
+    active_entity_ids: tuple[str, ...] = ()
+    # Rendered condition-template result. None = no template configured.
+    template_active: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -106,10 +116,6 @@ class PipelineSnapshot:
     climate_mode_enabled: bool
     climate_options: ClimateOptions | None
 
-    # Force override sensor states (entity_id -> is "on")
-    force_override_sensors: dict[str, bool]
-    force_override_position: int
-
     # Manager states (inherently stateful; managers track across update cycles)
     manual_override_active: bool
     motion_timeout_active: bool
@@ -135,7 +141,6 @@ class PipelineSnapshot:
 
     # Minimum position mode: when True, the configured position acts as a floor —
     # the handler returns max(configured, raw_calculated) instead of always returning configured.
-    force_override_min_mode: bool = False
     weather_override_min_mode: bool = False
 
     # True when current time is within the configured start/end operational window.
@@ -193,6 +198,23 @@ class PipelineSnapshot:
     # working; runtime always populates it via ``coordinator._build_snapshot``.
     policy: CoverTypePolicy | None = None
 
+    # Sun-tracking movement minimization (opt-in). When True, the solar branch
+    # quantizes the calculated position into ``max_coverage_steps`` evenly-spaced
+    # coverage levels, rounding toward full coverage so protection is never
+    # reduced. ``max_coverage_steps == 1`` snaps straight to full coverage while
+    # the sun is in the FOV. Defaults preserve the un-quantized behavior.
+    minimize_movements: bool = False
+    max_coverage_steps: int = 1
+
+    # Whether the sun-tracking 1 % floor applies this cycle (issue #569). The
+    # solar branch and the glare-zone handler floor the geometric position at
+    # ``SOLAR_TRACKING_FLOOR_PCT`` so open/close-only covers never fully retract
+    # while the sun is in the FOV. The snapshot builder sets this False only
+    # when *every* bound entity supports set_position (conservative
+    # mixed-instance rollup) so positionable covers reach a true 0 %. Defaults
+    # to True so the floor stays in effect for snapshots that don't set it.
+    solar_floor_active: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Output types
@@ -243,10 +265,18 @@ class PipelineResult:
     climate_data: Any = None  # ClimateCoverData | None — avoids circular import
 
     # When True, this result is applied even when automatic_control is OFF.
-    # Set by safety handlers (ForceOverrideHandler, WeatherOverrideHandler) so
-    # that wind/rain/force protection still works when the user has paused
-    # normal sun-tracking automation.
+    # Set by safety/override handlers (WeatherOverrideHandler,
+    # CustomPositionHandler) so that wind/rain/forced protection still works
+    # when the user has paused normal sun-tracking automation.
     bypass_auto_control: bool = False
+
+    # When True, this result carries full safety semantics: the coordinator
+    # sends it outside the start/end time window and bypasses the
+    # delta-position/delta-time gates. Set by WeatherOverrideHandler and by
+    # CustomPositionHandler when the slot's priority is at or above
+    # CUSTOM_POSITION_SAFETY_PRIORITY (100) — the migrated force-override
+    # behavior (issue #563).
+    is_safety: bool = False
 
     # When True, the registry's floor-clamp composition pass raised this
     # winner's position to a user-configured floor. The coordinator's `state`

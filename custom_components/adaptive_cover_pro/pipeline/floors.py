@@ -1,9 +1,9 @@
 """Floor-mode composition helpers (issue #463).
 
 A "floor" is a minimum-position clamp contributed by an *active* override —
-custom-position slot with ``min_mode``, weather override with ``min_mode``,
-or force override with ``min_mode`` — that must raise whichever handler
-ultimately wins the pipeline, regardless of priority.
+custom-position slot with ``min_mode`` or weather override with ``min_mode``
+— that must raise whichever handler ultimately wins the pipeline, regardless
+of priority.
 
 These helpers are pure: they read a :class:`PipelineSnapshot` and return
 plain data. The registry composes the active floors after picking a winner;
@@ -26,11 +26,10 @@ class FloorClampInfo:
 
     Attributes:
         source: Stable identifier used as the ``handler`` field in the
-                decision trace — e.g. ``"custom_position_1"``,
-                ``"weather"``, ``"force_override"``.
+                decision trace — e.g. ``"custom_position_1"``, ``"weather"``.
         label:  Human-readable name used in the clamp reason string —
                 the bound sensor's friendly name, or a fixed string for
-                weather / force overrides.
+                the weather override.
         position: The floor position (0–100) in pre-inversion canonical
                 space (0 = closed, 100 = open).
 
@@ -49,16 +48,17 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
          ``snapshot.custom_position_sensors`` (matches ``_build_pipeline``
          registration order).
       2. The weather override floor, if any.
-      3. The force override floor, if any.
 
-    A custom-position floor is active when its sensor is ``is_on`` and
+    A custom-position floor is active when its trigger is ``is_on`` and
     ``min_mode`` is True. ``use_my`` floors are excluded — the "Use My"
     path is hardware-pinned and never participates in floor semantics.
     """
     floors: list[FloorClampInfo] = []
     for state in snapshot.custom_position_sensors:
         if state.is_on and state.min_mode and not state.use_my:
-            label = state.sensor_name or state.entity_id
+            label = state.sensor_name or (
+                state.entity_ids[0] if state.entity_ids else "template"
+            )
             floors.append(
                 FloorClampInfo(
                     source=custom_position_handler_name(state.slot),
@@ -72,18 +72,6 @@ def gather_active_floors(snapshot: PipelineSnapshot) -> list[FloorClampInfo]:
                 source="weather",
                 label="weather override",
                 position=snapshot.weather_override_position,
-            )
-        )
-    if (
-        snapshot.force_override_sensors
-        and any(snapshot.force_override_sensors.values())
-        and snapshot.force_override_min_mode
-    ):
-        floors.append(
-            FloorClampInfo(
-                source="force_override",
-                label="force override",
-                position=snapshot.force_override_position,
             )
         )
     return floors

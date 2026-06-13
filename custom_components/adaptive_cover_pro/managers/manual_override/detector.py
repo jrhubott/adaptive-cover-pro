@@ -39,6 +39,10 @@ class DetectionContext:
     caps: Any  # CoverCapabilities
     policy: Any  # CoverTypePolicy
     manual_threshold: int | None
+    # Whether ACP has a recorded command target for this entity. When False,
+    # ``our_state`` is the pipeline's theoretical default rather than a
+    # commanded position, so a numeric delta against it is meaningless (#546).
+    has_recorded_target: bool
     allow_reset: bool
     is_acp_context: bool  # precomputed was_acp_position_context(ctx.id)
     context_user_id: str | None

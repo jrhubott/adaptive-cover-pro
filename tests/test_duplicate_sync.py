@@ -374,7 +374,12 @@ class TestSyncCategorySplit:
     # --- UI category list ---
 
     def test_ui_categories_contains_split_keys(self):
-        """_SYNC_UI_CATEGORIES must expose all 12 new split sub-category keys."""
+        """_SYNC_UI_CATEGORIES must expose all split sub-category keys.
+
+        force_override_* dropped from the UI in #563 (merged into custom
+        positions); the categories remain in SYNC_CATEGORIES as programmatic
+        legacy aliases only.
+        """
         expected_split_keys = {
             "light_cloud_values",
             "light_cloud_sensors",
@@ -382,14 +387,14 @@ class TestSyncCategorySplit:
             "temperature_climate_sensors",
             "motion_override_values",
             "motion_override_sensors",
-            "force_override_values",
-            "force_override_sensors",
             "custom_position_values",
             "custom_position_sensors",
             "weather_override_values",
             "weather_override_sensors",
         }
         assert expected_split_keys.issubset(set(_SYNC_UI_CATEGORIES))
+        assert "force_override_values" not in _SYNC_UI_CATEGORIES
+        assert "force_override_sensors" not in _SYNC_UI_CATEGORIES
 
     def test_ui_categories_excludes_original_mixed_keys(self):
         """Mixed categories must not appear in _SYNC_UI_CATEGORIES; only split keys shown."""

@@ -178,13 +178,13 @@ class TestEdgeCases:
     """Test edge case handling for extreme angles."""
 
     def test_edge_case_very_low_elevation(self, base_cover_params):
-        """Very low elevation should return full window coverage."""
+        """Very low elevation should fully cover (position 0 = closed)."""
         cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=1.0)
 
         is_edge_case, position = cover._handle_edge_cases()
 
         assert is_edge_case is True
-        assert position == cover.h_win
+        assert position == 0.0
 
     def test_edge_case_elevation_threshold(self, base_cover_params):
         """Edge case should trigger below 2° elevation."""
@@ -199,13 +199,13 @@ class TestEdgeCases:
         assert is_edge_case is False
 
     def test_edge_case_extreme_gamma(self, base_cover_params):
-        """Extreme gamma should return full window coverage."""
+        """Extreme gamma should fully cover (position 0 = closed)."""
         cover = make_cover_with_angles(base_cover_params, gamma=86.0, sol_elev=45.0)
 
         is_edge_case, position = cover._handle_edge_cases()
 
         assert is_edge_case is True
-        assert position == cover.h_win
+        assert position == 0.0
 
     def test_edge_case_gamma_threshold(self, base_cover_params):
         """Edge case should trigger above 85° gamma."""
@@ -220,13 +220,13 @@ class TestEdgeCases:
         assert is_edge_case is False
 
     def test_edge_case_negative_gamma(self, base_cover_params):
-        """Edge case should handle negative gamma correctly."""
+        """Edge case should handle negative gamma correctly — position 0 = fully closed."""
         cover = make_cover_with_angles(base_cover_params, gamma=-86.0, sol_elev=45.0)
 
         is_edge_case, position = cover._handle_edge_cases()
 
         assert is_edge_case is True
-        assert position == cover.h_win
+        assert position == 0.0
 
     def test_edge_case_very_high_elevation(self, base_cover_params):
         """Very high elevation should use simplified calculation."""
@@ -272,20 +272,26 @@ class TestEdgeCases:
             is_edge_case is False
         ), f"False edge case at gamma={gamma}, elev={sol_elev}"
 
+    def test_low_elevation_calc_percentage_is_fully_closed(self, base_cover_params):
+        """Sub-2° sun must drive the blind CLOSED (≈0%), not open (100%) — issue #559."""
+        cover = make_cover_with_angles(base_cover_params, gamma=24.6, sol_elev=0.6)
+        pct = cover.calculate_percentage()
+        assert pct <= 1, f"low-sun edge case should be ≈0% (closed), got {pct}%"
+
 
 class TestEnhancedCalculatePosition:
     """Test the enhanced calculate_position method."""
 
     def test_calculate_position_uses_edge_case_handling(self, base_cover_params):
-        """calculate_position should use edge case handling."""
+        """calculate_position should use edge case handling — position 0 = fully closed."""
         cover = make_cover_with_angles(
             base_cover_params, gamma=0.0, sol_elev=1.5
         )  # Triggers edge case
 
         position = cover.calculate_position()
 
-        # Should return full coverage
-        assert position == cover.h_win
+        # Should return full coverage (position 0 = closed)
+        assert position == 0.0
 
     def test_calculate_position_applies_safety_margin(self, base_cover_params):
         """calculate_position should apply safety margins at extreme angles."""

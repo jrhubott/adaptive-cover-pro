@@ -34,4 +34,3 @@ class CoverStateSnapshot:
     cover_positions: dict[str, int | None]
     cover_capabilities: dict[str, CoverCapabilities]
     motion_detected: bool
-    force_override_active: bool

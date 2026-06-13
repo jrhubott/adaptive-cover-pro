@@ -44,8 +44,10 @@ from .const import (
     CONF_IS_SUNNY_SENSOR,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
+    CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MIN_ELEVATION,
+    CONF_MINIMIZE_MOVEMENTS,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
@@ -71,14 +73,15 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_GLARE_ZONE_Z,
+    DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
     DEFAULT_WINDOW_AZIMUTH,
-    OPTION_RANGES,
 )
-from .unit_system import length_default, length_selector, sensor_unit_label
+from .unit_system import length_default, length_selector
 
 # Weather condition states offered by the weather-state multi-select. Kept in
 # the documented HA order (sort=False preserves it).
@@ -100,6 +103,21 @@ _WEATHER_STATES = [
     "windy-variant",
     "exceptional",
 ]
+
+
+def _threshold_selector() -> selector.TemplateSelector:
+    """Selector for a threshold that accepts a number *or* a Jinja2 template.
+
+    Issue #577: these fields are rendered to a number once per cycle by
+    ``templates.TemplateResolver``. ``TemplateSelector`` is the Jinja code
+    editor — it gives entity autocomplete and syntax highlighting. It only
+    renders a *string* value, so the config flow stringifies legacy numeric
+    threshold values before handing them to ``add_suggested_values_to_schema``
+    (see ``config_flow._stringify_templatable``). The unit lives in the field's
+    translation description, since this selector carries no
+    ``unit_of_measurement``.
+    """
+    return selector.TemplateSelector()
 
 
 def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
@@ -170,6 +188,19 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_ENABLE_BLIND_SPOT, default=False
             ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_MINIMIZE_MOVEMENTS, default=DEFAULT_MINIMIZE_MOVEMENTS
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_MAX_COVERAGE_STEPS, default=DEFAULT_MAX_COVERAGE_STEPS
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=10,
+                    step=1,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            ),
         }
     )
 
@@ -216,20 +247,7 @@ def blind_spot_schema(options: dict | None = None) -> vol.Schema:
 def weather_override_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
-    """Weather-override schema with sensor-unit-aware threshold labels."""
-    opts = options or {}
-    wind_fallback = str(hass.config.units.wind_speed_unit) if hass is not None else ""
-    rain_fallback = (
-        str(hass.config.units.accumulated_precipitation_unit)
-        if hass is not None
-        else ""
-    )
-    wind_unit = sensor_unit_label(
-        hass, opts.get(CONF_WEATHER_WIND_SPEED_SENSOR), wind_fallback
-    )
-    rain_unit = sensor_unit_label(
-        hass, opts.get(CONF_WEATHER_RAIN_SENSOR), rain_fallback
-    )
+    """Weather-override schema. Wind/rain thresholds accept number or template."""
     return vol.Schema(
         {
             vol.Optional(
@@ -255,39 +273,16 @@ def weather_override_schema(
             ),
             vol.Optional(
                 CONF_WEATHER_WIND_SPEED_THRESHOLD,
-                default=DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=200,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement=wind_unit,
-                )
-            ),
+                default=str(DEFAULT_WEATHER_WIND_SPEED_THRESHOLD),
+            ): _threshold_selector(),
             vol.Optional(
                 CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
-                default=DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=5,
-                    max=180,
-                    step=5,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
+                default=str(DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE),
+            ): _threshold_selector(),
             vol.Optional(
-                CONF_WEATHER_RAIN_THRESHOLD, default=DEFAULT_WEATHER_RAIN_THRESHOLD
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=100,
-                    step=0.5,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement=rain_unit,
-                )
-            ),
+                CONF_WEATHER_RAIN_THRESHOLD,
+                default=str(DEFAULT_WEATHER_RAIN_THRESHOLD),
+            ): _threshold_selector(),
             vol.Optional(
                 CONF_WEATHER_OVERRIDE_POSITION, default=0
             ): selector.NumberSelector(
@@ -320,10 +315,7 @@ def weather_override_schema(
 def light_cloud_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
-    """Light/cloud schema with sensor-unit-aware lux/irradiance labels."""
-    opts = options or {}
-    lux_unit = sensor_unit_label(hass, opts.get(CONF_LUX_ENTITY), "lux")
-    irr_unit = sensor_unit_label(hass, opts.get(CONF_IRRADIANCE_ENTITY), "W/m²")
+    """Light/cloud schema. Lux/irradiance thresholds accept number or template."""
     return vol.Schema(
         {
             vol.Optional(
@@ -364,25 +356,14 @@ def light_cloud_schema(
                     options=list(_WEATHER_STATES),
                 )
             ),
-            vol.Optional(CONF_LUX_THRESHOLD, default=1000): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    mode=selector.NumberSelectorMode.BOX, unit_of_measurement=lux_unit
-                )
-            ),
+            vol.Optional(CONF_LUX_THRESHOLD, default="1000"): _threshold_selector(),
             vol.Optional(
-                CONF_IRRADIANCE_THRESHOLD, default=300
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    mode=selector.NumberSelectorMode.BOX, unit_of_measurement=irr_unit
-                )
-            ),
+                CONF_IRRADIANCE_THRESHOLD, default="300"
+            ): _threshold_selector(),
             vol.Optional(
-                CONF_CLOUD_COVERAGE_THRESHOLD, default=DEFAULT_CLOUD_COVERAGE_THRESHOLD
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
-                )
-            ),
+                CONF_CLOUD_COVERAGE_THRESHOLD,
+                default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
+            ): _threshold_selector(),
         }
     )
 
@@ -390,13 +371,7 @@ def light_cloud_schema(
 def temperature_climate_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
-    """Climate-temperature schema with sensor-unit-aware labels."""
-    opts = options or {}
-    temp_min, temp_max = OPTION_RANGES[CONF_TEMP_LOW]
-    _, outside_max = OPTION_RANGES[CONF_OUTSIDE_THRESHOLD]
-    fallback = hass.config.units.temperature_unit if hass is not None else "°"
-    inside_unit = sensor_unit_label(hass, opts.get(CONF_TEMP_ENTITY), fallback)
-    outside_unit = sensor_unit_label(hass, opts.get(CONF_OUTSIDETEMP_ENTITY), fallback)
+    """Climate-temperature schema. Temp thresholds accept number or template."""
     return vol.Schema(
         {
             vol.Optional(CONF_CLIMATE_MODE, default=False): selector.BooleanSelector(),
@@ -409,32 +384,9 @@ def temperature_climate_schema(
             vol.Optional(
                 CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
             ): presence_like_selector(),
-            vol.Optional(CONF_TEMP_LOW, default=21): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=temp_min,
-                    max=temp_max,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement=inside_unit,
-                )
-            ),
-            vol.Optional(CONF_TEMP_HIGH, default=25): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=temp_min,
-                    max=temp_max,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement=inside_unit,
-                )
-            ),
-            vol.Optional(CONF_OUTSIDE_THRESHOLD, default=25): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=temp_min,
-                    max=outside_max,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement=outside_unit,
-                )
-            ),
+            vol.Optional(CONF_TEMP_LOW, default="21"): _threshold_selector(),
+            vol.Optional(CONF_TEMP_HIGH, default="25"): _threshold_selector(),
+            vol.Optional(CONF_OUTSIDE_THRESHOLD, default="25"): _threshold_selector(),
             vol.Optional(
                 CONF_TRANSPARENT_BLIND, default=False
             ): selector.BooleanSelector(),

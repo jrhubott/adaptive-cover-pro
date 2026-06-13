@@ -150,7 +150,6 @@ class TestCoverStateSnapshot:
             cover_positions={"cover.blind_1": 50},
             cover_capabilities={"cover.blind_1": caps},
             motion_detected=False,
-            force_override_active=False,
         )
         assert snap.sun.azimuth == 180.0
         assert snap.sun.elevation == 30.0
@@ -158,7 +157,6 @@ class TestCoverStateSnapshot:
         assert snap.cover_positions == {"cover.blind_1": 50}
         assert snap.cover_capabilities == {"cover.blind_1": caps}
         assert snap.motion_detected is False
-        assert snap.force_override_active is False
 
     @pytest.mark.unit
     def test_construction_with_climate(self):
@@ -178,7 +176,6 @@ class TestCoverStateSnapshot:
             cover_positions={},
             cover_capabilities={},
             motion_detected=False,
-            force_override_active=False,
         )
         assert snap.climate is climate
         assert snap.climate.outside_temperature == 22.0
@@ -192,24 +189,21 @@ class TestCoverStateSnapshot:
             cover_positions={},
             cover_capabilities={},
             motion_detected=False,
-            force_override_active=False,
         )
         with pytest.raises(Exception):
             snap.motion_detected = True  # type: ignore[misc]
 
     @pytest.mark.unit
-    def test_motion_and_force_override_flags(self):
-        """Flags are stored accurately."""
+    def test_motion_flag(self):
+        """Motion flag is stored accurately."""
         snap = CoverStateSnapshot(
             sun=self._make_sun(),
             climate=None,
             cover_positions={},
             cover_capabilities={},
             motion_detected=True,
-            force_override_active=True,
         )
         assert snap.motion_detected is True
-        assert snap.force_override_active is True
 
     @pytest.mark.unit
     def test_multiple_covers(self):
@@ -227,7 +221,6 @@ class TestCoverStateSnapshot:
             cover_positions={"cover.blind_1": 50, "cover.blind_2": None},
             cover_capabilities={"cover.blind_1": caps1, "cover.blind_2": caps2},
             motion_detected=False,
-            force_override_active=False,
         )
         assert len(snap.cover_positions) == 2
         assert snap.cover_positions["cover.blind_2"] is None
@@ -242,7 +235,6 @@ class TestCoverStateSnapshot:
             cover_positions={},
             cover_capabilities={},
             motion_detected=False,
-            force_override_active=False,
         )
         assert snap.cover_positions == {}
         assert snap.cover_capabilities == {}

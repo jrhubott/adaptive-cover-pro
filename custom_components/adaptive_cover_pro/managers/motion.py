@@ -9,8 +9,9 @@ from collections.abc import Callable
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-from ..const import DEFAULT_MOTION_TIMEOUT
+from ..const import DEFAULT_MOTION_TEMPLATE_MODE, DEFAULT_MOTION_TIMEOUT
 from ..helpers import is_entity_active
+from ..templates import combine_with_mode, is_template_string, render_condition
 from .common import EventRecorder, TimeoutController
 
 
@@ -43,6 +44,8 @@ class MotionManager:
         self._events = EventRecorder(event_buffer, now_fn=self._now)
 
         self._sensors: list[str] = []
+        self._template: str | None = None
+        self._template_mode: str = DEFAULT_MOTION_TEMPLATE_MODE
         self._timeout_seconds: int = DEFAULT_MOTION_TIMEOUT
 
         self._timer = TimeoutController(logger, label="motion timeout")
@@ -67,38 +70,79 @@ class MotionManager:
         sensors: list[str],
         timeout_seconds: int,
         media_players: list[str] = (),
+        template: str | None = None,
+        template_mode: str = DEFAULT_MOTION_TEMPLATE_MODE,
     ) -> None:
-        """Update tracked entity list and timeout duration.
+        """Update tracked entity list, occupancy template, and timeout duration.
 
         Called whenever config options change so the manager stays in sync
         without recreating it. Media players are folded into the same tracked
         list as motion sensors — ``is_entity_active`` handles each domain, so
-        any non-off media player counts as occupancy under the same OR logic.
+        any non-off media player counts as occupancy under the same logic.
+        The optional ``template`` is an extra occupancy source: when it renders
+        truthy it counts as occupancy (issue #577 follow-up). ``template_mode``
+        (a :class:`~const.TemplateCombineMode` value) chooses how it folds in —
+        ``"or"`` (default, additive) or ``"and"`` (the template must also be
+        truthy for the sensors to count as occupancy).
 
         Args:
             sensors: Entity IDs of binary motion/occupancy sensors to track
             timeout_seconds: Seconds to wait after last motion before setting active
             media_players: media_player entity IDs treated as occupancy when on
+            template: optional Jinja2 condition; truthy result counts as occupancy
+            template_mode: how ``template`` combines with the sensors (or/and)
 
         """
         self._sensors = list(sensors) + list(media_players)
+        self._template = template
+        self._template_mode = template_mode
         self._timeout_seconds = timeout_seconds
 
     # --- Properties ---
 
     @property
+    def is_configured(self) -> bool:
+        """Return True when any occupancy source — sensor or template — is set.
+
+        Single source for "is motion control active?": the timeout machinery and
+        startup state only run when occupancy is actually configured.
+        """
+        return bool(self._sensors) or is_template_string(self._template)
+
+    @property
+    def template_active(self) -> bool:
+        """Return True when the occupancy template is set and renders truthy."""
+        return render_condition(self._hass, self._template)
+
+    @property
+    def template_mode(self) -> str:
+        """Return the configured template combine mode (a ``TemplateCombineMode``)."""
+        return self._template_mode
+
+    @property
     def is_motion_detected(self) -> bool:
-        """Check whether any configured motion sensor currently detects motion.
+        """Check whether the configured occupancy sources report presence.
 
         Returns:
-            True if no sensors configured (feature disabled → assume presence),
-            or if any sensor reports state "on".
+            True if nothing is configured (feature disabled → assume presence).
+            Otherwise the occupancy template and the sensors are combined per
+            ``template_mode``: ``"or"`` (default) is occupied when either is
+            active; ``"and"`` requires the template truthy *and* a sensor active
+            (degenerating to whichever single source exists). Media players are
+            already folded into ``self._sensors``.
 
         """
-        if not self._sensors:
+        if not self.is_configured:
             return True  # Feature disabled — assume presence
 
-        return any(is_entity_active(self._hass, sid) for sid in self._sensors)
+        others_active = any(is_entity_active(self._hass, sid) for sid in self._sensors)
+        return combine_with_mode(
+            self.template_active,
+            others_active,
+            self._template_mode,
+            has_template=is_template_string(self._template),
+            has_others=bool(self._sensors),
+        )
 
     @property
     def is_motion_timeout_active(self) -> bool:

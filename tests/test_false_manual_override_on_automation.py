@@ -54,6 +54,8 @@ def _make_coordinator(
     automatic_control: bool = True,
     manual_threshold: int | None = None,
     target_just_reached: set | None = None,
+    enable_position_matching: bool = True,
+    position_tolerance: int = 3,
 ):
     """Build a minimal mock coordinator with the attributes used by the state-change handlers."""
     coordinator = MagicMock()
@@ -64,10 +66,12 @@ def _make_coordinator(
     cmd_svc.get_target = MagicMock(return_value=target)
     cmd_svc.is_waiting_for_target = MagicMock(return_value=False)
     cmd_svc.discard_target = MagicMock()
+    cmd_svc.enable_position_matching = enable_position_matching
     coordinator._cmd_svc = cmd_svc
     coordinator._cover_type = "cover_blind"
     coordinator.manual_reset = False
     coordinator.manual_threshold = manual_threshold
+    coordinator._position_tolerance = position_tolerance
     coordinator.logger = MagicMock()
     coordinator.manager = MagicMock()
     coordinator.cover_state_change = True
@@ -203,6 +207,73 @@ async def test_different_entity_in_target_just_reached_does_not_skip_current():
     coordinator.manager.handle_state_change.assert_called_once()
     # cover.other_cover must remain in the set (not consumed)
     assert "cover.other_cover" in coordinator._target_just_reached
+
+
+# ===========================================================================
+# Issue #591: with position matching off (the default), a settle beyond the
+# position tolerance (but under the user manual-override threshold) must engage
+# a full manual override. The coordinator delivers this by lowering the
+# detection threshold it passes to handle_state_change to the position tolerance.
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_matching_off_lowers_detection_threshold_to_tolerance():
+    """Matching off (default) → detection threshold passed is the tolerance (#591).
+
+    Scenario: target 72, manual_threshold 10, tolerance 3. Cover settles at 65
+    (delta 7 — the middle band). With matching on this is "within threshold"
+    and would just retry; with matching off the coordinator lowers the
+    threshold so the detector engages a manual override.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entity_id = "cover.test"
+    coordinator = _make_coordinator(
+        entity_id=entity_id,
+        target=72,
+        manual_threshold=10,
+        enable_position_matching=False,
+        position_tolerance=3,
+    )
+    event_data = _make_state_change_data(entity_id, position=65)
+    coordinator._pending_cover_events = [event_data]
+    coordinator._target_just_reached = set()
+
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 72)
+
+    coordinator.manager.handle_state_change.assert_called_once()
+    # Positional arg 5 is the detection threshold (see the call site).
+    passed_threshold = coordinator.manager.handle_state_change.call_args.args[5]
+    assert passed_threshold == 3  # lowered to position tolerance, not 10
+
+
+@pytest.mark.asyncio
+async def test_matching_on_passes_manual_threshold_unchanged():
+    """Matching on (opt-in) → the user manual_threshold is passed unchanged (#591)."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entity_id = "cover.test"
+    coordinator = _make_coordinator(
+        entity_id=entity_id,
+        target=72,
+        manual_threshold=10,
+        enable_position_matching=True,
+        position_tolerance=3,
+    )
+    event_data = _make_state_change_data(entity_id, position=65)
+    coordinator._pending_cover_events = [event_data]
+    coordinator._target_just_reached = set()
+
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(coordinator, 72)
+
+    coordinator.manager.handle_state_change.assert_called_once()
+    passed_threshold = coordinator.manager.handle_state_change.call_args.args[5]
+    assert passed_threshold == 10  # unchanged — matching-on path untouched
 
 
 # ===========================================================================
@@ -598,3 +669,94 @@ async def test_automation_position_change_no_false_override_exact_match():
 
     coordinator.manager.handle_state_change.assert_not_called()
     assert coordinator.cover_state_change is False
+
+
+# ===========================================================================
+# Issue #546: has_recorded_target threaded into handle_state_change
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_no_recorded_target_passes_has_recorded_target_false():
+    """No recorded command target → handle_state_change gets has_recorded_target=False.
+
+    Issue #546: with no command ever sent, ``get_target`` returns None and the
+    coordinator must signal that to the detector so the numeric delta against
+    the pipeline default is not misread as a manual override.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entity_id = "cover.test"
+    coordinator = _make_coordinator(entity_id=entity_id, target=None)
+    event_data = _make_state_change_data(entity_id, position=25)
+    coordinator._pending_cover_events = [event_data]
+    coordinator._target_just_reached = set()
+
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
+        coordinator, 100
+    )
+
+    coordinator.manager.handle_state_change.assert_called_once()
+    _, kwargs = coordinator.manager.handle_state_change.call_args
+    assert kwargs["has_recorded_target"] is False
+
+
+@pytest.mark.asyncio
+async def test_recorded_target_passes_has_recorded_target_true():
+    """A recorded command target → handle_state_change gets has_recorded_target=True."""
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entity_id = "cover.test"
+    coordinator = _make_coordinator(entity_id=entity_id, target=72)
+    event_data = _make_state_change_data(entity_id, position=25)
+    coordinator._pending_cover_events = [event_data]
+    coordinator._target_just_reached = set()
+
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
+        coordinator, 100
+    )
+
+    coordinator.manager.handle_state_change.assert_called_once()
+    _, kwargs = coordinator.manager.handle_state_change.call_args
+    assert kwargs["has_recorded_target"] is True
+
+
+@pytest.mark.asyncio
+async def test_user_context_change_marks_override_even_without_recorded_target():
+    """User-context fast-path still marks override with no recorded target.
+
+    Issue #546 guard against over-suppression: a real user move (HA context
+    carries a user_id, context id not generated by ACP) must engage manual
+    override even when ``get_target`` is None — that path never routes through
+    the numeric ``handle_state_change`` detector.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    entity_id = "cover.test"
+    coordinator = _make_coordinator(entity_id=entity_id, target=None)
+    # Force the user-context fast-path: a real user_id and a context id that
+    # ACP did not generate.
+    coordinator._cmd_svc.was_acp_position_context = MagicMock(return_value=False)
+    coordinator._target_just_reached = MagicMock()
+    coordinator.manager.handle_user_initiated_state_change = MagicMock(
+        return_value=True
+    )
+
+    event_data = _make_state_change_data(entity_id, position=25)
+    event_data.new_state.context = MagicMock()
+    event_data.new_state.context.user_id = "holly"
+    event_data.new_state.context.id = "ctx-user-1"
+    coordinator._pending_cover_events = [event_data]
+
+    await AdaptiveDataUpdateCoordinator.async_handle_cover_state_change(
+        coordinator, 100
+    )
+
+    coordinator.manager.handle_user_initiated_state_change.assert_called_once()
+    coordinator.manager.handle_state_change.assert_not_called()

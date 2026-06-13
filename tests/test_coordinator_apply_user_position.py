@@ -29,7 +29,7 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 
 def _slot(pos: int, *, is_on: bool, min_mode: bool) -> CustomPositionSensorState:
     return CustomPositionSensorState(
-        entity_id=f"binary_sensor.slot_{pos}",
+        entity_ids=(f"binary_sensor.slot_{pos}",),
         is_on=is_on,
         position=pos,
         priority=DEFAULT_CUSTOM_POSITION_PRIORITY,
@@ -66,9 +66,6 @@ def _make_coord(
     weather_override_active: bool = False,
     weather_override_position: int = 0,
     weather_override_min_mode: bool = False,
-    force_override_sensors: dict[str, bool] | None = None,
-    force_override_position: int = 0,
-    force_override_min_mode: bool = False,
 ):
     """Build a coordinator-shaped mock that exposes async_apply_user_position.
 
@@ -96,9 +93,6 @@ def _make_coord(
         weather_override_active=weather_override_active,
         weather_override_position=weather_override_position,
         weather_override_min_mode=weather_override_min_mode,
-        force_override_sensors=force_override_sensors or {},
-        force_override_position=force_override_position,
-        force_override_min_mode=force_override_min_mode,
     )
     coord._snapshot_builder.build = MagicMock(return_value=snapshot)
     # Coordinator state that the builder call needs as keyword args.  These
@@ -246,19 +240,19 @@ async def test_default_engages_manual_override_when_no_preemption() -> None:
 
 
 @pytest.mark.asyncio
-async def test_default_skipped_when_force_override_active() -> None:
-    """force_override (100) wins → command dropped, manual override not engaged."""
-    coord, _ctx = _make_coord([], winner_name="force_override", winner_priority=100)
+async def test_default_skipped_when_safety_custom_position_active() -> None:
+    """Safety custom position (priority 100) wins → command dropped, manual override not engaged."""
+    coord, _ctx = _make_coord([], winner_name="custom_position_5", winner_priority=100)
 
     outcome = await coord.async_apply_user_position(
         "cover.test", 50, trigger="proxy_managed"
     )
 
-    assert outcome == ("skipped", "preempted_by_force_override")
+    assert outcome == ("skipped", "preempted_by_custom_position_5")
     coord._cmd_svc.apply_position.assert_not_awaited()
     coord.manager.mark_user_command.assert_not_called()
     coord._cmd_svc.record_preempted_skip.assert_called_once_with(
-        "cover.test", 50, trigger="proxy_managed", winner_name="force_override"
+        "cover.test", 50, trigger="proxy_managed", winner_name="custom_position_5"
     )
 
 
@@ -311,8 +305,8 @@ async def test_default_not_blocked_by_solar() -> None:
 
 @pytest.mark.asyncio
 async def test_force_true_bypasses_pipeline_check() -> None:
-    """force=True with force_override winner → command still dispatches."""
-    coord, ctx = _make_coord([], winner_name="force_override", winner_priority=100)
+    """force=True with safety custom-position winner → command still dispatches."""
+    coord, ctx = _make_coord([], winner_name="custom_position_5", winner_priority=100)
 
     outcome = await coord.async_apply_user_position(
         "cover.test", 50, trigger="set_position", force=True
@@ -359,12 +353,12 @@ async def test_snapshot_passed_to_pipeline_has_manual_override_false() -> None:
 @pytest.mark.asyncio
 async def test_preempted_skip_recorded_in_last_skipped_action() -> None:
     """When preempted, record_preempted_skip is called with the winner name."""
-    coord, _ctx = _make_coord([], winner_name="force_override", winner_priority=100)
+    coord, _ctx = _make_coord([], winner_name="custom_position_5", winner_priority=100)
 
     await coord.async_apply_user_position("cover.test", 42, trigger="proxy_managed")
 
     coord._cmd_svc.record_preempted_skip.assert_called_once_with(
-        "cover.test", 42, trigger="proxy_managed", winner_name="force_override"
+        "cover.test", 42, trigger="proxy_managed", winner_name="custom_position_5"
     )
 
 
@@ -385,7 +379,7 @@ async def test_custom_position_min_mode_does_not_preempt_request_above_floor() -
     floor-clamp composition pass (#463), they no longer act as priority winners.
     """
     state = CustomPositionSensorState(
-        entity_id="binary_sensor.cp1",
+        entity_ids=("binary_sensor.cp1",),
         is_on=True,
         position=60,
         priority=95,
@@ -417,7 +411,7 @@ async def test_custom_position_min_mode_clamps_and_dispatches_request_below_floo
     the command is clamped to the floor and dispatched — NOT preempted.
     """
     state = CustomPositionSensorState(
-        entity_id="binary_sensor.cp1",
+        entity_ids=("binary_sensor.cp1",),
         is_on=True,
         position=60,
         priority=95,
@@ -446,16 +440,15 @@ async def test_custom_position_exact_mode_still_preempts() -> None:
     """When the winning custom-position handler is NOT in min-mode, it preempts
     as before — the new exception must not fire.
     """
-    handler = CustomPositionHandler(
-        slot=1, entity_id="binary_sensor.cp1", position=60, priority=95
-    )
+    handler = CustomPositionHandler(slot=1, position=60, priority=95)
     state = CustomPositionSensorState(
-        entity_id="binary_sensor.cp1",
+        entity_ids=("binary_sensor.cp1",),
         is_on=True,
         position=60,
         priority=95,
         min_mode=False,
         use_my=False,
+        slot=1,
     )
     coord, _ctx = _make_coord(
         [state],
@@ -484,12 +477,10 @@ async def test_custom_position_min_mode_preempts_when_request_below_floor_and_ha
     priority 95 > 80 → preempts. The floor clamp on the requested value
     is irrelevant once preemption fires.
     """
-    handler = CustomPositionHandler(
-        slot=2, entity_id="binary_sensor.cp2", position=60, priority=95
-    )
+    handler = CustomPositionHandler(slot=2, position=60, priority=95)
     # Only slot 1 is the min-mode floor — slot 2 is the priority-95 winner.
     state = CustomPositionSensorState(
-        entity_id="binary_sensor.cp1",
+        entity_ids=("binary_sensor.cp1",),
         is_on=True,
         position=60,
         priority=95,

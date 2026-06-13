@@ -9,10 +9,13 @@ import pytest
 from custom_components.adaptive_cover_pro.const import (
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
+    CUSTOM_POSITION_SLOTS,
 )
 from custom_components.adaptive_cover_pro.helpers import (
     check_cover_features,
     check_time_passed,
+    custom_position_slot_configured,
+    custom_position_slot_sensors,
     dt_check_time_passed,
     get_datetime_from_str,
     get_domain,
@@ -24,6 +27,72 @@ from custom_components.adaptive_cover_pro.helpers import (
     should_use_tilt,
 )
 from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilities
+
+_SLOT1 = CUSTOM_POSITION_SLOTS[1]
+
+
+@pytest.mark.unit
+def test_slot_sensors_new_list_key_wins():
+    """The sensors list key wins over the legacy single key when present."""
+    options = {
+        _SLOT1["sensors"]: ["binary_sensor.a", "binary_sensor.b"],
+        _SLOT1["sensor"]: "binary_sensor.legacy",
+    }
+    assert custom_position_slot_sensors(options, _SLOT1) == [
+        "binary_sensor.a",
+        "binary_sensor.b",
+    ]
+
+
+@pytest.mark.unit
+def test_slot_sensors_falls_back_to_legacy_key():
+    """Absent list key → legacy single sensor wrapped in a list."""
+    options = {_SLOT1["sensor"]: "binary_sensor.legacy"}
+    assert custom_position_slot_sensors(options, _SLOT1) == ["binary_sensor.legacy"]
+
+
+@pytest.mark.unit
+def test_slot_sensors_empty_list_does_not_fall_back():
+    """An explicitly cleared (empty) list must NOT resurrect the legacy key."""
+    options = {_SLOT1["sensors"]: [], _SLOT1["sensor"]: "binary_sensor.legacy"}
+    assert custom_position_slot_sensors(options, _SLOT1) == []
+
+
+@pytest.mark.unit
+def test_slot_sensors_filters_falsy_entries_and_handles_absent():
+    """Falsy list entries are dropped; nothing configured → empty list."""
+    assert custom_position_slot_sensors(
+        {_SLOT1["sensors"]: ["binary_sensor.a", None, ""]}, _SLOT1
+    ) == ["binary_sensor.a"]
+    assert custom_position_slot_sensors({}, _SLOT1) == []
+
+
+@pytest.mark.unit
+def test_slot_configured_requires_trigger_and_position():
+    """Configured = (sensors OR template) AND position."""
+    assert not custom_position_slot_configured({}, _SLOT1)
+    # Trigger without position → not configured.
+    assert not custom_position_slot_configured(
+        {_SLOT1["sensors"]: ["binary_sensor.a"]}, _SLOT1
+    )
+    # Position without trigger → not configured.
+    assert not custom_position_slot_configured({_SLOT1["position"]: 50}, _SLOT1)
+    # Sensor + position → configured (legacy key counts as a trigger).
+    assert custom_position_slot_configured(
+        {_SLOT1["sensor"]: "binary_sensor.a", _SLOT1["position"]: 50}, _SLOT1
+    )
+    # Template + position → configured (template-only slot).
+    assert custom_position_slot_configured(
+        {
+            _SLOT1["template"]: "{{ is_state('sun.sun', 'below_horizon') }}",
+            _SLOT1["position"]: 50,
+        },
+        _SLOT1,
+    )
+    # Non-template string in the template field is not a trigger.
+    assert not custom_position_slot_configured(
+        {_SLOT1["template"]: "not a template", _SLOT1["position"]: 50}, _SLOT1
+    )
 
 
 @pytest.mark.unit
