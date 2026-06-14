@@ -198,65 +198,42 @@ class TestEdgeCases:
         is_edge_case, _ = cover._handle_edge_cases()
         assert is_edge_case is False
 
-    def test_edge_case_extreme_gamma(self, base_cover_params):
-        """Extreme gamma should fully cover (position 0 = closed)."""
-        cover = make_cover_with_angles(base_cover_params, gamma=86.0, sol_elev=45.0)
+    def test_extreme_gamma_no_longer_edge_case(self, base_cover_params):
+        """Issue #600: extreme gamma is handled by the normal clamped projection.
 
-        is_edge_case, position = cover._handle_edge_cases()
-
-        assert is_edge_case is True
-        assert position == 0.0
-
-    def test_edge_case_gamma_threshold(self, base_cover_params):
-        """Edge case should trigger above 85° gamma."""
-        # Well above threshold
-        cover = make_cover_with_angles(base_cover_params, gamma=87.0, sol_elev=45.0)
-        is_edge_case, _ = cover._handle_edge_cases()
-        assert is_edge_case is True
-
-        # Well below threshold
-        cover = make_cover_with_angles(base_cover_params, gamma=80.0, sol_elev=45.0)
-        is_edge_case, _ = cover._handle_edge_cases()
-        assert is_edge_case is False
-
-    def test_edge_case_negative_gamma(self, base_cover_params):
-        """Edge case should handle negative gamma correctly — position 0 = fully closed."""
-        cover = make_cover_with_angles(base_cover_params, gamma=-86.0, sol_elev=45.0)
-
-        is_edge_case, position = cover._handle_edge_cases()
-
-        assert is_edge_case is True
-        assert position == 0.0
+        The former |gamma|>85° full-close branch was removed; the projection's
+        cos(gamma) clamp keeps the result finite and bounded without it.
+        """
+        for gamma in (86.0, 89.0, -86.0, -89.0):
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=gamma, sol_elev=45.0
+            )
+            is_edge_case, _ = cover._handle_edge_cases()
+            assert is_edge_case is False, f"gamma={gamma} should not be an edge case"
+            assert 0.0 <= cover.calculate_percentage() <= 100.0
 
     def test_extreme_gamma_high_elevation_not_full_close(self, base_cover_params):
-        """Issue #598: extreme gamma + high sun must NOT force fully-closed.
-
-        At high elevation the ray descends steeply even at extreme gamma, so the
-        normal projection applies instead of the grazing-sun full-close.
-        """
+        """Issue #598/#600: extreme gamma + high sun is open, not slammed closed."""
         cover = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=70.0)
         is_edge_case, _ = cover._handle_edge_cases()
         assert is_edge_case is False
+        assert cover.calculate_percentage() > 50
 
-    def test_extreme_gamma_low_elevation_still_full_closes(self, base_cover_params):
-        """Grazing low sun at extreme gamma still fully closes (position 0)."""
+    def test_extreme_gamma_low_elevation_not_edge_case(self, base_cover_params):
+        """Issue #600: grazing extreme gamma above the 2° floor uses the normal path.
+
+        Below the 2° floor the low-sun guard still closes — see
+        test_edge_case_very_low_elevation.
+        """
         cover = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=20.0)
-        is_edge_case, position = cover._handle_edge_cases()
-        assert is_edge_case is True
-        assert position == 0.0
-
-    def test_extreme_gamma_elevation_boundary(self, base_cover_params):
-        """Boundary at EDGE_CASE_EXTREME_GAMMA_ELEVATION (45°): ≤45 closes, >45 falls through."""
-        at = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=45.0)
-        assert at._handle_edge_cases()[0] is True
-        above = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=45.5)
-        assert above._handle_edge_cases()[0] is False
+        is_edge_case, _ = cover._handle_edge_cases()
+        assert is_edge_case is False
 
     def test_fov_entry_no_spurious_close(self, base_cover_params):
         """Issue #598 regression: no 0→open jump across the 85° FOV edge at high sun.
 
-        Reproduces the side-yard-shade V-notch: a sample just inside the
-        extreme-gamma band (86°) at high elevation must stay open and match the
+        Reproduces the side-yard-shade V-notch: a sample just inside the former
+        extreme-gamma band (86°) at high elevation stays open and matches the
         sample just outside it (84°), rather than slamming to fully closed.
         """
         just_inside = make_cover_with_angles(
@@ -271,27 +248,37 @@ class TestEdgeCases:
         assert pct_inside > 50, f"FOV-entry sample slammed closed: {pct_inside}%"
         assert abs(pct_inside - pct_outside) <= 5
 
-    def test_edge_case_very_high_elevation(self, base_cover_params):
-        """Very high elevation should use simplified calculation."""
-        cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=88.5)
+    def test_very_high_elevation_no_longer_edge_case(self, base_cover_params):
+        """Issue #600: near-overhead sun is handled by the normal projection.
 
-        is_edge_case, position = cover._handle_edge_cases()
+        The former >88° simplified branch was redundant — the normal path
+        saturates to h_win identically — and was removed.
+        """
+        for sol_elev in (88.5, 89.0, 89.9):
+            cover = make_cover_with_angles(
+                base_cover_params, gamma=0.0, sol_elev=sol_elev
+            )
+            is_edge_case, _ = cover._handle_edge_cases()
+            assert is_edge_case is False
+            assert 0.0 <= cover.calculate_percentage() <= 100.0
 
-        assert is_edge_case is True
-        # Should be clipped to h_win
-        assert 0 <= position <= cover.h_win
+    def test_pole_regions_finite_and_bounded(self, base_cover_params):
+        """Issue #600: the self-guarding projection never returns NaN/out-of-range.
 
-    def test_edge_case_high_elevation_threshold(self, base_cover_params):
-        """Edge case should trigger above 88° elevation."""
-        # Well above threshold
-        cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=89.0)
-        is_edge_case, _ = cover._handle_edge_cases()
-        assert is_edge_case is True
-
-        # Well below threshold
-        cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=85.0)
-        is_edge_case, _ = cover._handle_edge_cases()
-        assert is_edge_case is False
+        Sweeps the trig-pole regions the removed edge cases used to short-circuit
+        (elevation → 0/90, |gamma| → 90) and asserts every result is a finite
+        percentage in [0, 100]. The only forced full-close is the sub-2° floor.
+        """
+        for sol_elev in (0.1, 1.0, 2.0, 5.0, 45.0, 85.0, 88.0, 89.9):
+            for gamma in (0.0, 45.0, 80.0, 85.0, 89.0, 89.9, -89.0):
+                cover = make_cover_with_angles(
+                    base_cover_params, gamma=gamma, sol_elev=sol_elev
+                )
+                pct = cover.calculate_percentage()
+                assert np.isfinite(pct), f"non-finite at gamma={gamma}, elev={sol_elev}"
+                assert 0.0 <= pct <= 100.0
+                is_edge_case, _ = cover._handle_edge_cases()
+                assert is_edge_case is (sol_elev < 2.0)
 
     @pytest.mark.parametrize(
         "gamma,sol_elev",

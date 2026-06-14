@@ -8,8 +8,6 @@ numeric results (caching must not change output) and confirm the cache is hit.
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from custom_components.adaptive_cover_pro.geometry import (
@@ -74,22 +72,15 @@ def test_edge_case_low_elevation():
 
 
 @pytest.mark.unit
-def test_edge_case_extreme_gamma():
-    assert EdgeCaseHandler.check_and_handle(45.0, 90.0, 2.0, 10.0) == (True, 0.0)
+def test_edge_case_extreme_gamma_not_handled():
+    # Issue #600: extreme gamma above the low-sun floor is no longer an edge case.
+    assert EdgeCaseHandler.check_and_handle(45.0, 90.0, 2.0, 10.0) == (False, 0.0)
 
 
 @pytest.mark.unit
-def test_edge_case_high_elevation():
-    is_edge, pos = EdgeCaseHandler.check_and_handle(89.0, 0.0, 0.05, 10.0)
-    assert is_edge is True
-    assert pos == pytest.approx(0.05 * math.tan(math.radians(89.0)))
-
-
-@pytest.mark.unit
-def test_edge_case_high_elevation_clipped_to_window():
-    is_edge, pos = EdgeCaseHandler.check_and_handle(89.0, 0.0, 5.0, 10.0)
-    assert is_edge is True
-    assert pos == 10.0  # clipped to h_win
+def test_edge_case_high_elevation_not_handled():
+    # Issue #600: the redundant >88° branch was removed; normal path handles it.
+    assert EdgeCaseHandler.check_and_handle(89.0, 0.0, 0.05, 10.0) == (False, 0.0)
 
 
 @pytest.mark.unit

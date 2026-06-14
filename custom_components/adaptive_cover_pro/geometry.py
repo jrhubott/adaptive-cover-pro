@@ -7,9 +7,6 @@ from functools import lru_cache
 import numpy as np
 
 from .const import (
-    EDGE_CASE_EXTREME_GAMMA,
-    EDGE_CASE_EXTREME_GAMMA_ELEVATION,
-    EDGE_CASE_HIGH_ELEVATION,
     EDGE_CASE_LOW_ELEVATION,
     SAFETY_MARGIN_GAMMA_MAX,
     SAFETY_MARGIN_GAMMA_THRESHOLD,
@@ -62,31 +59,29 @@ def _safety_margin(gamma: float, sol_elev: float) -> float:
 def _edge_case(
     sol_elev: float, gamma: float, distance: float, h_win: float
 ) -> tuple[bool, float]:
-    """Compute the extreme-angle edge-case fallback — pure, memoised.
+    """Compute the low-sun edge-case fallback — pure, memoised.
 
     Companion to :func:`_safety_margin`; see it for the caching rationale.
+
+    Only the very-low-elevation guard remains (issue #600). The former
+    extreme-gamma and very-high-elevation branches were removed: the
+    projection in ``AdaptiveVerticalCover.calculate_position`` now carries its
+    own numerical guards — ``MIN_COS_GAMMA_CLAMP`` on the ``cos(gamma)``
+    divisor, ``MIN_TAN_ELEVATION_CLAMP`` on the sill division, and the
+    ``effective_distance < 0 → 0`` clamp (#358/#559) — so those two branches
+    either duplicated the normal path (very high elevation) or contradicted it
+    (extreme gamma forced fully-closed where the grazing geometry is open,
+    the root cause of #598). The low-elevation floor is retained as a
+    deliberate policy: a sun on the horizon should drive full coverage, and
+    the normal path does not enforce that for a zero-sill window.
+
+    ``gamma``, ``distance`` and ``h_win`` are unused now but kept on the
+    signature so the cached call site and ``EdgeCaseHandler.check_and_handle``
+    contract are unchanged.
     """
-    # Very low elevation: sun nearly horizontal, full coverage safest (position 0 = closed)
+    # Very low elevation: sun on the horizon — full coverage (position 0 = closed).
     if sol_elev < EDGE_CASE_LOW_ELEVATION:
         return (True, 0.0)
-
-    # Extreme gamma with a low sun: the ray grazes in nearly parallel to the
-    # facade and penetrates deeply, so full coverage is correct (position 0).
-    # At higher elevation (issue #598) the ray descends steeply even at extreme
-    # gamma — penetration is shallow — so forcing full closure produces a
-    # spurious fully-closed sample right at the FOV-entry edge. Above
-    # EDGE_CASE_EXTREME_GAMMA_ELEVATION we fall through to the normal projection,
-    # whose cos(gamma) divisor is already clamped (MIN_COS_GAMMA_CLAMP).
-    if (
-        abs(gamma) > EDGE_CASE_EXTREME_GAMMA
-        and sol_elev <= EDGE_CASE_EXTREME_GAMMA_ELEVATION
-    ):
-        return (True, 0.0)
-
-    # Very high elevation: sun nearly overhead, use simplified calculation
-    if sol_elev > EDGE_CASE_HIGH_ELEVATION:
-        simple_height = distance * np.tan(np.radians(sol_elev))
-        return (True, float(np.clip(simple_height, 0, h_win)))
 
     return (False, 0.0)
 
