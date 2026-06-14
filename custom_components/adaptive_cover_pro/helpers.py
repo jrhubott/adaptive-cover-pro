@@ -61,6 +61,28 @@ def custom_position_slot_sensors(
     return [legacy] if legacy else []
 
 
+def copy_legacy_slot_sensors_to_list(options: dict) -> bool:
+    """Promote each slot's legacy single-sensor key into the new list key.
+
+    Called by the v3.2 → v3.3 migration (issue #563). For every custom-position
+    slot where the new ``sensors`` list key is absent AND the legacy ``sensor``
+    key holds a non-empty value, the legacy value is wrapped in a one-element
+    list and written under the ``sensors`` key. The legacy key is left intact
+    (additive / rollback-safe: same invariant as the v3.2 migration). Slots
+    whose list key already exists, or that have no legacy sensor configured,
+    are skipped. Returns ``True`` when at least one slot was updated.
+    """
+    changed = False
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        if slot_keys["sensors"] in options:
+            continue
+        legacy = options.get(slot_keys["sensor"])
+        if legacy:
+            options[slot_keys["sensors"]] = [legacy]
+            changed = True
+    return changed
+
+
 def mirror_legacy_slot_sensor_keys(options: dict) -> None:
     """Mirror each slot's first sensor into the legacy single-sensor key.
 

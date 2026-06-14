@@ -44,7 +44,11 @@ from .const import (
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
-from .helpers import custom_position_slot_sensors, motion_entities
+from .helpers import (
+    copy_legacy_slot_sensors_to_list,
+    custom_position_slot_sensors,
+    motion_entities,
+)
 from .templates import is_template_string
 from .migrations import (
     async_prune_legacy_entities,
@@ -384,6 +388,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.data.get("name", entry.entry_id),
             )
         new_minor = 2
+
+    # v3.2 → v3.3: copy each legacy custom_position_sensor_N single-sensor key
+    # into the new custom_position_sensors_N list key so pre-multi-sensor entries
+    # prefill the options-flow multi-select correctly (issue #563 trailing defect).
+    # Additive + rollback-safe: legacy keys are left intact.
+    if new_version == 3 and new_minor < 3:
+        if copy_legacy_slot_sensors_to_list(new_options):
+            _LOGGER.info(
+                "Migrated legacy single-sensor keys of %s into list keys",
+                entry.data.get("name", entry.entry_id),
+            )
+        new_minor = 3
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor
