@@ -806,6 +806,7 @@ class TestPositionExplanationChangeDetection:
         # Minimal stubs for DiagnosticContext construction
         coord.pos_sun = [180.0, 45.0]
         coord._cover_data = _make_cover()
+        coord._position_forecast = None
         coord._climate_mode = False
         coord._pipeline_result = _make_pr()
         type(coord).check_adaptive_time = PropertyMock(return_value=True)

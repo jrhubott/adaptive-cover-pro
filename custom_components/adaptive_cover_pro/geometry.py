@@ -8,6 +8,7 @@ import numpy as np
 
 from .const import (
     EDGE_CASE_EXTREME_GAMMA,
+    EDGE_CASE_EXTREME_GAMMA_ELEVATION,
     EDGE_CASE_HIGH_ELEVATION,
     EDGE_CASE_LOW_ELEVATION,
     SAFETY_MARGIN_GAMMA_MAX,
@@ -69,8 +70,17 @@ def _edge_case(
     if sol_elev < EDGE_CASE_LOW_ELEVATION:
         return (True, 0.0)
 
-    # Extreme gamma: sun perpendicular to window, full coverage (position 0 = closed)
-    if abs(gamma) > EDGE_CASE_EXTREME_GAMMA:
+    # Extreme gamma with a low sun: the ray grazes in nearly parallel to the
+    # facade and penetrates deeply, so full coverage is correct (position 0).
+    # At higher elevation (issue #598) the ray descends steeply even at extreme
+    # gamma — penetration is shallow — so forcing full closure produces a
+    # spurious fully-closed sample right at the FOV-entry edge. Above
+    # EDGE_CASE_EXTREME_GAMMA_ELEVATION we fall through to the normal projection,
+    # whose cos(gamma) divisor is already clamped (MIN_COS_GAMMA_CLAMP).
+    if (
+        abs(gamma) > EDGE_CASE_EXTREME_GAMMA
+        and sol_elev <= EDGE_CASE_EXTREME_GAMMA_ELEVATION
+    ):
         return (True, 0.0)
 
     # Very high elevation: sun nearly overhead, use simplified calculation

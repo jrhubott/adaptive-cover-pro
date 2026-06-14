@@ -867,6 +867,11 @@ class ClimateInactiveReason:
 EDGE_CASE_LOW_ELEVATION = 2.0  # deg — below this, use low-elev path
 EDGE_CASE_HIGH_ELEVATION = 88.0  # deg — above this, use high-elev path
 EDGE_CASE_EXTREME_GAMMA = 85  # deg — max horizontal angle considered
+# Extreme gamma forces full closure ONLY when elevation is at/below this value
+# (issue #598). The "extreme gamma ⇒ full coverage" assumption holds only for a
+# grazing (low) sun; at higher elevation the ray descends steeply even at
+# extreme gamma, so the normal cos(gamma)-clamped projection is trusted instead.
+EDGE_CASE_EXTREME_GAMMA_ELEVATION = 45.0  # deg — above this, skip the full-close
 
 # Safety margin thresholds and multipliers.
 SAFETY_MARGIN_GAMMA_THRESHOLD = 45  # deg — angle where gamma margins start

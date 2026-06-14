@@ -228,6 +228,49 @@ class TestEdgeCases:
         assert is_edge_case is True
         assert position == 0.0
 
+    def test_extreme_gamma_high_elevation_not_full_close(self, base_cover_params):
+        """Issue #598: extreme gamma + high sun must NOT force fully-closed.
+
+        At high elevation the ray descends steeply even at extreme gamma, so the
+        normal projection applies instead of the grazing-sun full-close.
+        """
+        cover = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=70.0)
+        is_edge_case, _ = cover._handle_edge_cases()
+        assert is_edge_case is False
+
+    def test_extreme_gamma_low_elevation_still_full_closes(self, base_cover_params):
+        """Grazing low sun at extreme gamma still fully closes (position 0)."""
+        cover = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=20.0)
+        is_edge_case, position = cover._handle_edge_cases()
+        assert is_edge_case is True
+        assert position == 0.0
+
+    def test_extreme_gamma_elevation_boundary(self, base_cover_params):
+        """Boundary at EDGE_CASE_EXTREME_GAMMA_ELEVATION (45°): ≤45 closes, >45 falls through."""
+        at = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=45.0)
+        assert at._handle_edge_cases()[0] is True
+        above = make_cover_with_angles(base_cover_params, gamma=88.0, sol_elev=45.5)
+        assert above._handle_edge_cases()[0] is False
+
+    def test_fov_entry_no_spurious_close(self, base_cover_params):
+        """Issue #598 regression: no 0→open jump across the 85° FOV edge at high sun.
+
+        Reproduces the side-yard-shade V-notch: a sample just inside the
+        extreme-gamma band (86°) at high elevation must stay open and match the
+        sample just outside it (84°), rather than slamming to fully closed.
+        """
+        just_inside = make_cover_with_angles(
+            base_cover_params, gamma=86.0, sol_elev=70.0
+        )
+        just_outside = make_cover_with_angles(
+            base_cover_params, gamma=84.0, sol_elev=70.0
+        )
+        pct_inside = just_inside.calculate_percentage()
+        pct_outside = just_outside.calculate_percentage()
+        # Pre-fix the inside sample returned 0 (spurious full-close).
+        assert pct_inside > 50, f"FOV-entry sample slammed closed: {pct_inside}%"
+        assert abs(pct_inside - pct_outside) <= 5
+
     def test_edge_case_very_high_elevation(self, base_cover_params):
         """Very high elevation should use simplified calculation."""
         cover = make_cover_with_angles(base_cover_params, gamma=0.0, sol_elev=88.5)
