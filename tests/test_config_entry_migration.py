@@ -404,3 +404,28 @@ async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
     assert entry.minor_version == 3
     for slot_n in (1, 2, 3, 4, 5):
         assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
+
+
+# ---------------------------------------------------------------------------
+# Reachability lock: config-flow handler version constants must cover every
+# migration block that exists in __init__.py.
+# ---------------------------------------------------------------------------
+
+
+def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
+    """ConfigFlowHandler.MINOR_VERSION must equal the highest minor version any
+    migration block in async_migrate_entry targets.
+
+    HA only invokes async_migrate_entry when an entry's stored
+    (version, minor_version) is strictly less than the handler's class
+    (VERSION, MINOR_VERSION).  If MINOR_VERSION is too low, entries sitting at
+    that minor are never seen as stale and the migration is dead code in
+    production.
+
+    Currently the highest target is 3 (the v3.2 → v3.3 copy of
+    custom_position_sensor_N into the list key, per issue #563).  Raise this
+    assertion whenever a new minor migration block is added.
+    """
+    from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
+
+    assert ConfigFlowHandler.MINOR_VERSION == 3

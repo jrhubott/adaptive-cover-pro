@@ -2656,10 +2656,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
     VERSION = 3
-    # 3.2 (issue #563): force override merged into custom-position slot 5.
-    # Minor bump on purpose — older releases can still load 3.2 entries, so
-    # users can roll back; the migration is additive (legacy keys retained).
-    MINOR_VERSION = 2
+    # 3.3 (issue #563 trailing defect): MINOR_VERSION raised so HA triggers
+    # async_migrate_entry for entries sitting at 3.2.  The v3.2→v3.3 block
+    # (copy legacy custom_position_sensor_N into the new list key) was already
+    # in __init__.py but was unreachable because the gate version was too low.
+    # Rollback-safe: migration is additive (legacy keys retained).
+    MINOR_VERSION = 3
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
