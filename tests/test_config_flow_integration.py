@@ -881,6 +881,35 @@ async def test_options_menu_order_follows_pipeline_layers(
     assert idx("automation") < idx("summary")
 
 
+@pytest.mark.integration
+async def test_custom_position_step_exposes_priority_scale(
+    hass: HomeAssistant,
+) -> None:
+    """The custom_position step renders the inline priority-scale visual (#613)."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Scale Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="scale_custom_01",
+        title="Scale Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "custom_position"}
+        )
+    assert result["step_id"] == "custom_position"
+    scale = result["description_placeholders"]["priority_scale"]
+    assert "Weather" in scale and "Default" in scale
+
+
 def test_config_flow_does_not_use_system_language() -> None:
     """config_flow must not read the system language (issue #227).
 

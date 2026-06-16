@@ -2116,6 +2116,45 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     return "\n".join(lines)
 
 
+def _render_priority_scale(config: dict, policy) -> str:
+    """Render the decision-priority ladder for the custom-slot step (#613).
+
+    Shows every fixed handler anchor at its declared priority plus each
+    configured custom slot interleaved at its own priority and marked with
+    ``◀``, so the user sees where a 1–100 slot priority lands. Built from the
+    shared :func:`build_priority_chain` — the priority integers live there, not
+    here. HA options flows cannot recompute live as the slider moves, so the
+    ladder reflects the *last submitted* priorities and refreshes on re-render.
+    """
+    custom_slots: list[tuple] = []
+    for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
+        if not custom_position_slot_configured(config, slot_keys):
+            continue
+        priority = int(
+            config.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
+        )
+        # build_priority_chain reads index 0 (slot) and 3 (priority).
+        custom_slots.append((slot, None, 0, priority, False, None, False))
+
+    entries = build_priority_chain(
+        has_weather=True,
+        has_motion=True,
+        has_cloud=True,
+        has_climate=True,
+        sun_tracking_enabled=True,
+        has_glare=True,
+        supports_glare=policy.supports_glare_zones,
+        custom_slots=custom_slots,
+    )
+
+    lines = ["```"]
+    for entry in entries:
+        marker = "◀" if entry.slot is not None else " "
+        lines.append(f"{entry.priority:>3} {marker} {entry.label}")
+    lines.append("```")
+    return "\n".join(lines)
+
+
 async def _get_devices_from_entities(
     hass: HomeAssistant, entity_ids: list[str]
 ) -> dict[str, str]:
@@ -3060,7 +3099,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="custom_position",
             data_schema=schema,
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
+                "priority_scale": _render_priority_scale(
+                    self.config, get_policy(self.type_blind)
+                ),
             },
         )
 
@@ -3629,7 +3671,10 @@ class OptionsFlowHandler(OptionsFlow):
                 schema, user_input or self.options
             ),
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
+                "priority_scale": _render_priority_scale(
+                    self.options, get_policy(sensor_type)
+                ),
             },
         )
 

@@ -108,3 +108,58 @@ def test_custom_slot_ties_break_after_fixed_handler():
 def test_entry_is_priority_chain_entry():
     chain = build_priority_chain(**_kwargs())
     assert all(isinstance(e, PriorityChainEntry) for e in chain)
+
+
+# ---------------------------------------------------------------------------
+# Phase D — the custom-slot priority-scale visual (#613).
+# ---------------------------------------------------------------------------
+
+
+def _blind_policy():
+    from custom_components.adaptive_cover_pro.const import CoverType
+    from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+    return get_policy(CoverType.BLIND)
+
+
+def test_priority_scale_lists_fixed_anchors():
+    from custom_components.adaptive_cover_pro.config_flow import _render_priority_scale
+
+    scale = _render_priority_scale({}, _blind_policy())
+    for anchor in (
+        "Weather",
+        "Manual",
+        "Motion",
+        "Cloud",
+        "Climate",
+        "Solar",
+        "Default",
+    ):
+        assert anchor in scale, f"{anchor} anchor missing from priority scale"
+    # Anchor priorities are shown.
+    assert "90" in scale and "80" in scale and "75" in scale
+
+
+def test_priority_scale_marks_configured_custom_slot():
+    from custom_components.adaptive_cover_pro.config_flow import _render_priority_scale
+    from custom_components.adaptive_cover_pro.const import CUSTOM_POSITION_SLOTS
+
+    slot1 = CUSTOM_POSITION_SLOTS[1]
+    config = {
+        slot1["sensors"]: ["binary_sensor.x"],
+        slot1["position"]: 40,
+        slot1["priority"]: 85,
+        slot1["enabled"]: True,
+    }
+    scale = _render_priority_scale(config, _blind_policy())
+    # The slot is shown at its priority with the "here" marker.
+    assert "85" in scale
+    assert "◀" in scale
+    assert "Custom" in scale
+
+
+def test_priority_scale_unconfigured_slots_absent():
+    from custom_components.adaptive_cover_pro.config_flow import _render_priority_scale
+
+    scale = _render_priority_scale({}, _blind_policy())
+    assert "◀" not in scale  # no custom slot configured → no marker
