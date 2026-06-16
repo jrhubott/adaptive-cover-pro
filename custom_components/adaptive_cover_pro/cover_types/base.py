@@ -437,6 +437,24 @@ class CoverTypePolicy(ABC):
             return POSITION_CLOSED if primary.open_blocks_sun else POSITION_OPEN
         return POSITION_OPEN if primary.open_blocks_sun else POSITION_CLOSED
 
+    def more_protective_position(self, a: int, b: int) -> int:
+        """Return whichever of two primary-axis positions blocks more sun.
+
+        Polymorphic over cover type via ``axes[0].open_blocks_sun``:
+
+          - ``open_blocks_sun=False`` (blind/tilt/venetian): lower % = more
+            coverage → ``min``
+          - ``open_blocks_sun=True`` (awning): higher % = more coverage → ``max``
+
+        The anticipation helper (issue #616) folds the live solar target plus
+        every valid future-window sample through this comparator so the
+        commanded position protects against the most-shaded moment in the
+        upcoming throttle interval.
+        """
+        if self.axes[0].open_blocks_sun:
+            return max(a, b)
+        return min(a, b)
+
     def read_axis_value(
         self,
         hass: HomeAssistant,

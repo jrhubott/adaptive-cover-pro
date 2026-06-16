@@ -34,6 +34,7 @@ from ..const import (
     CONF_CLOUDY_POSITION,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
+    CONF_DELTA_TIME,
     CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
@@ -384,4 +385,5 @@ class PipelineSnapshotBuilder:
             default_tilt=options.get(CONF_DEFAULT_TILT),
             sunset_tilt=options.get(CONF_SUNSET_TILT),
             solar_floor_active=solar_floor_active,
+            time_threshold_minutes=options.get(CONF_DELTA_TIME) or 0,
         )

@@ -492,9 +492,18 @@ DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
 # active time-of-day window.
 
 CONF_DELTA_POSITION = "delta_position"  # min % change to emit, range 1-90
-CONF_DELTA_TIME = "delta_time"  # min seconds between commands, range 2-60
+CONF_DELTA_TIME = "delta_time"  # min minutes between commands, range 2-60
 DEFAULT_DELTA_POSITION = 2  # minimum percentage change threshold
-DEFAULT_DELTA_TIME = 2  # minimum seconds between commands
+DEFAULT_DELTA_TIME = 2  # minimum minutes between commands
+
+# Anticipatory solar positioning (issue #616): when CONF_DELTA_TIME (the
+# minimum interval between position changes, in minutes) is the look-ahead
+# horizon, the solar handler samples this many future sun positions across
+# (now, now + delta_time] and commands the most-protective one so coverage is
+# guaranteed until the next allowed move. Bounded and small because the sun
+# moves slowly and covers step coarsely; the SunData table is only 5-min
+# resolution, so finer sampling buys nothing.
+SOLAR_ANTICIPATION_SAMPLES = 4
 # Allowed gap between commanded and reported position before the periodic
 # reconciliation pass treats the cover as "not arrived" and resends the
 # command. Distinct from CONF_DELTA_POSITION (movement hysteresis). Default
@@ -961,7 +970,7 @@ _RANGE_MAX_COVERAGE_STEPS = (1, 10)  # CONF_MAX_COVERAGE_STEPS, discrete levels
 
 # Automation timing.
 _RANGE_DELTA_POSITION = (1, 90)  # CONF_DELTA_POSITION, percent
-_RANGE_DELTA_TIME = (2, 60)  # CONF_DELTA_TIME, seconds
+_RANGE_DELTA_TIME = (2, 60)  # CONF_DELTA_TIME, minutes
 _RANGE_POSITION_TOLERANCE = (0, 20)  # CONF_POSITION_TOLERANCE, percent
 
 # Manual override.
