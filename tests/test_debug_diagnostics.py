@@ -827,3 +827,48 @@ class TestMotionHoldDiagnostics:
         trace = result["decision_trace"]
         motion_step = next(s for s in trace if s["handler"] == "motion_timeout")
         assert "holding" in motion_step["reason"].lower()
+
+    def test_decision_trace_manual_override_step_includes_held_position(self):
+        """When manual override is active, the serialized step includes held_position."""
+        pr = PipelineResult(
+            position=60,
+            control_method=ControlMethod.MANUAL,
+            reason="manual override active — holding 44% (solar would-be 60%)",
+            held_position=44,
+            decision_trace=[
+                DecisionStep(
+                    handler="manual_override",
+                    matched=True,
+                    reason="manual override active — holding 44% (solar would-be 60%)",
+                    position=60,
+                    held_position=44,
+                )
+            ],
+        )
+        ctx = _base_ctx(pipeline_result=pr)
+        result, _ = DiagnosticsBuilder().build(ctx)
+        trace = result["decision_trace"]
+        mo_step = next(s for s in trace if s["handler"] == "manual_override")
+        assert mo_step["position"] == 60
+        assert mo_step["held_position"] == 44
+
+    def test_decision_trace_non_override_steps_omit_held_position(self):
+        """Steps without held_position do not include the key in serialized output."""
+        pr = PipelineResult(
+            position=50,
+            control_method=ControlMethod.SOLAR,
+            reason="sun in FOV",
+            decision_trace=[
+                DecisionStep(
+                    handler="solar",
+                    matched=True,
+                    reason="sun in FOV",
+                    position=50,
+                )
+            ],
+        )
+        ctx = _base_ctx(pipeline_result=pr)
+        result, _ = DiagnosticsBuilder().build(ctx)
+        trace = result["decision_trace"]
+        solar_step = next(s for s in trace if s["handler"] == "solar")
+        assert "held_position" not in solar_step

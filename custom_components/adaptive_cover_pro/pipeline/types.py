@@ -230,6 +230,12 @@ class DecisionStep:
     reason: str
     position: int | None
     tilt: int | None = None
+    # Physical position the cover is held at during a manual override step.
+    # Set by PipelineRegistry only for the manual_override winning step
+    # (propagated from PipelineResult.held_position). None for all other
+    # handlers and all other steps. Consumers must use explicit is-not-None
+    # checks because 0% (fully closed) is a valid held position.
+    held_position: int | None = None
 
 
 @dataclass(frozen=True)

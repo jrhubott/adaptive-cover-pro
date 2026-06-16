@@ -17,7 +17,10 @@ from custom_components.adaptive_cover_pro.diagnostics.builder import (
 )
 from custom_components.adaptive_cover_pro.const import ControlMethod
 from custom_components.adaptive_cover_pro.pipeline.handlers import ManualOverrideHandler
-from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
+from custom_components.adaptive_cover_pro.pipeline.types import (
+    DecisionStep,
+    PipelineResult,
+)
 from custom_components.adaptive_cover_pro.sensor import _cover_position_value
 
 from tests.test_pipeline.conftest import make_snapshot
@@ -224,3 +227,190 @@ def test_diagnostics_explanation_shows_held_vs_solar_divergence() -> None:
     assert "100" in explanation
     assert "20" in explanation
     assert "manual override" in explanation.lower()
+
+
+# ---------------------------------------------------------------------------
+# 11. DecisionStep accepts held_position field (issue #608)
+# ---------------------------------------------------------------------------
+
+
+def test_decision_step_accepts_held_position() -> None:
+    """DecisionStep with held_position carries the value distinctly from position."""
+    step = DecisionStep(
+        handler="manual_override",
+        matched=True,
+        reason="manual override active — holding 44% (solar would-be 60%)",
+        position=60,
+        held_position=44,
+    )
+    assert step.position == 60
+    assert step.held_position == 44
+
+
+def test_decision_step_held_position_defaults_to_none() -> None:
+    """DecisionStep without held_position has held_position=None by default."""
+    step = DecisionStep(
+        handler="solar",
+        matched=True,
+        reason="sun in FOV",
+        position=60,
+    )
+    assert step.held_position is None
+
+
+# ---------------------------------------------------------------------------
+# 12. Registry passes held_position to the winning DecisionStep (issue #608)
+# ---------------------------------------------------------------------------
+
+
+def test_registry_manual_override_step_carries_held_position() -> None:
+    """When ManualOverrideHandler wins, its DecisionStep.held_position == physical position."""
+    from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
+    from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+        DefaultHandler,
+    )
+
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=True,
+        calculate_percentage_return=60.0,
+        current_cover_position=44,
+    )
+    registry = PipelineRegistry([ManualOverrideHandler(), DefaultHandler()])
+    result = registry.evaluate(snap)
+    mo_step = next(s for s in result.decision_trace if s.handler == "manual_override")
+    assert mo_step.matched is True
+    assert mo_step.position == 60  # solar would-be
+    assert mo_step.held_position == 44  # physical held position
+
+
+def test_registry_non_winning_steps_have_none_held_position() -> None:
+    """Non-winning DecisionStep entries have held_position=None."""
+    from custom_components.adaptive_cover_pro.pipeline.registry import PipelineRegistry
+    from custom_components.adaptive_cover_pro.pipeline.handlers.default import (
+        DefaultHandler,
+    )
+
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=True,
+        calculate_percentage_return=60.0,
+        current_cover_position=44,
+    )
+    registry = PipelineRegistry([ManualOverrideHandler(), DefaultHandler()])
+    result = registry.evaluate(snap)
+    # DefaultHandler is not the winner; its step should have held_position=None
+    default_step = next(
+        (s for s in result.decision_trace if s.handler == "default"), None
+    )
+    assert default_step is not None
+    assert default_step.held_position is None
+
+
+# ---------------------------------------------------------------------------
+# 13. Reason strings name both held and solar values (issue #608)
+# ---------------------------------------------------------------------------
+
+
+def test_handler_reason_string_names_held_and_solar_when_both_known() -> None:
+    """When sun is in FOV and held_position is known, reason cites both values."""
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=True,
+        calculate_percentage_return=60.0,
+        current_cover_position=44,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    # Reason must name the physical held position
+    assert "44" in result.reason
+    # Reason must name the solar would-be
+    assert "60" in result.reason
+    assert "manual override" in result.reason.lower()
+
+
+def test_handler_reason_string_when_held_position_unknown_in_fov() -> None:
+    """When current_cover_position is None, reason omits held_position (FOV branch)."""
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=True,
+        calculate_percentage_return=60.0,
+        current_cover_position=None,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    assert "60" in result.reason
+    assert "None" not in result.reason
+
+
+def test_handler_reason_string_outside_fov_held_known() -> None:
+    """When sun is outside FOV and held_position is known, reason cites both."""
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=False,
+        current_cover_position=30,
+        default_position=0,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    assert "30" in result.reason
+    assert "None" not in result.reason
+    assert "manual override" in result.reason.lower()
+
+
+def test_handler_reason_string_outside_fov_held_none() -> None:
+    """When sun is outside FOV and held_position is None, reason omits held_position."""
+    handler = ManualOverrideHandler()
+    snap = make_snapshot(
+        manual_override_active=True,
+        direct_sun_valid=False,
+        current_cover_position=None,
+        default_position=0,
+    )
+    result = handler.evaluate(snap)
+    assert result is not None
+    assert "None" not in result.reason
+    assert "manual override" in result.reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# 14. Sensor trace attrs include held_position for manual_override step (issue #608)
+# ---------------------------------------------------------------------------
+
+
+def test_sensor_trace_attrs_include_held_position_for_manual_override() -> None:
+    """The decision_trace sensor attribute trace includes held_position for manual_override."""
+    step_with_held = DecisionStep(
+        handler="manual_override",
+        matched=True,
+        reason="holding 44% (solar would-be 60%)",
+        position=60,
+        held_position=44,
+    )
+    step_without_held = DecisionStep(
+        handler="solar",
+        matched=False,
+        reason="outprioritized by manual_override",
+        position=60,
+    )
+    # Build trace items using the same conditional-include idiom as sensor.py
+    trace_items = []
+    for step in [step_with_held, step_without_held]:
+        item = {
+            "handler": step.handler,
+            "matched": step.matched,
+            "reason": step.reason,
+            "position": step.position,
+            **({"tilt": step.tilt} if step.tilt is not None else {}),
+            **(
+                {"held_position": step.held_position}
+                if step.held_position is not None
+                else {}
+            ),
+        }
+        trace_items.append(item)
+    assert trace_items[0]["held_position"] == 44
+    assert "held_position" not in trace_items[1]

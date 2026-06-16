@@ -83,6 +83,7 @@ class PipelineRegistry:
                             matched=True,
                             reason=result.reason,
                             position=result.position,
+                            held_position=result.held_position,
                         )
                     )
                 else:

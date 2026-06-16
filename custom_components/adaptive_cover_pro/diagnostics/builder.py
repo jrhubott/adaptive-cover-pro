@@ -536,6 +536,11 @@ class DiagnosticsBuilder:
                     "matched": step.matched,
                     "reason": step.reason,
                     "position": step.position,
+                    **(
+                        {"held_position": step.held_position}
+                        if step.held_position is not None
+                        else {}
+                    ),
                 }
                 for step in result.decision_trace
             ]

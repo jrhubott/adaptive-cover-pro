@@ -914,6 +914,11 @@ def _decision_trace_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
                 "reason": step.reason,
                 "position": step.position,
                 **({"tilt": step.tilt} if step.tilt is not None else {}),
+                **(
+                    {"held_position": step.held_position}
+                    if step.held_position is not None
+                    else {}
+                ),
             }
             for step in result.decision_trace
         ]
