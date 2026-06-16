@@ -2656,12 +2656,14 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
     VERSION = 3
-    # 3.3 (issue #563 trailing defect): MINOR_VERSION raised so HA triggers
-    # async_migrate_entry for entries sitting at 3.2.  The v3.2→v3.3 block
-    # (copy legacy custom_position_sensor_N into the new list key) was already
-    # in __init__.py but was unreachable because the gate version was too low.
-    # Rollback-safe: migration is additive (legacy keys retained).
-    MINOR_VERSION = 3
+    # 3.4 (issue #591/#606): MINOR_VERSION raised so HA triggers
+    # async_migrate_entry for entries below 3.4.  The v3.3→v3.4 block enables
+    # position matching for every pre-existing entry so upgrades keep the old
+    # reconcile/chase behavior; new installs default to off via the schema.
+    # 3.3 (issue #563 trailing defect): copy legacy custom_position_sensor_N
+    # into the new list key.
+    # Rollback-safe: every migration block is additive (existing keys retained).
+    MINOR_VERSION = 4
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -3155,6 +3157,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         )
         options.setdefault(CONF_MOTION_SENSORS, [])
         options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
+        options.setdefault(
+            CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
+        )
 
         return self.async_create_entry(
             title=title,

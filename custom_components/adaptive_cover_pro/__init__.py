@@ -18,6 +18,7 @@ from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
+    CONF_ENABLE_POSITION_MATCHING,
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_START_ENTITY,
@@ -400,6 +401,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.data.get("name", entry.entry_id),
             )
         new_minor = 3
+
+    # v3.3 → v3.4: enable position matching by default for every pre-existing
+    # entry so upgrading covers keep the old reconcile/chase behavior instead of
+    # silently flipping to the new command-once default (issue #591, #606). New
+    # installs created on v3.4 onwards default to False via the config-flow
+    # schema. Additive + rollback-safe: the key is only filled when absent.
+    if new_version == 3 and new_minor < 4:
+        new_options.setdefault(CONF_ENABLE_POSITION_MATCHING, True)
+        new_minor = 4
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

@@ -246,7 +246,7 @@ async def test_migrate_v3_2_copies_force_override_into_slot_5(
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
     assert entry.options[_SLOT5["min_mode"]] is True
     assert entry.version == 3
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
 
 
 async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
@@ -277,12 +277,12 @@ async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
 
 
 async def test_migrate_v3_2_no_force_config_is_a_noop(hass: HomeAssistant) -> None:
-    """Absent force override config → minor bumps to 3 (through v3.3), slot 5 stays free."""
+    """Absent force override config → minor bumps to 4 (through v3.4), slot 5 stays free."""
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=1)
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
     assert _SLOT5["position"] not in entry.options
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
 
 
 async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> None:
@@ -295,7 +295,7 @@ async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
 
 
 async def test_migrate_v3_2_missing_position_defaults_to_zero(
@@ -314,7 +314,7 @@ async def test_migrate_v3_2_missing_position_defaults_to_zero(
 
 
 async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
-    """A v1 entry with force override config ends at 3.3 with slot 5 populated."""
+    """A v1 entry with force override config ends at 3.4 with slot 5 populated."""
     entry = _make_entry(
         hass,
         {CONF_WINDOW_WIDTH: 200, **_FORCE_OPTIONS},
@@ -322,7 +322,7 @@ async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.version == 3
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
 
@@ -359,7 +359,7 @@ async def test_migrate_v3_3_copies_legacy_single_sensor_into_list(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CUSTOM_POSITION_SLOTS[1]["sensors"]] == ["binary_sensor.table"]
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
 
 
 async def test_migrate_v3_3_leaves_legacy_key_intact(hass: HomeAssistant) -> None:
@@ -393,7 +393,7 @@ async def test_migrate_v3_3_does_not_overwrite_existing_list(
 
 
 async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
-    """No legacy sensor keys → minor bumps to 3, no sensors_N list created."""
+    """No legacy sensor keys → minor bumps to 4, no sensors_N list created."""
     entry = _make_entry(
         hass,
         {"azimuth": 180},
@@ -401,9 +401,65 @@ async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
         minor_version=2,
     )
     await async_migrate_entry(hass, entry)
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     for slot_n in (1, 2, 3, 4, 5):
         assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
+
+
+# ---------------------------------------------------------------------------
+# Migration: v3.3 → v3.4 — enable position matching by default for existing
+# entries so upgrades keep the old reconcile/chase behavior (issue #591, #606).
+# Additive: the key is only filled when absent.
+# ---------------------------------------------------------------------------
+
+from custom_components.adaptive_cover_pro.const import (  # noqa: E402
+    CONF_ENABLE_POSITION_MATCHING,
+)
+
+
+async def test_migrate_v3_4_sets_position_matching_true_for_existing_entry(
+    hass: HomeAssistant,
+) -> None:
+    """A pre-existing entry without the key gets position matching enabled."""
+    entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=3)
+    assert await async_migrate_entry(hass, entry) is True
+    assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
+    assert entry.minor_version == 4
+
+
+async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> None:
+    """An explicit True is left untouched."""
+    entry = _make_entry(
+        hass,
+        {CONF_ENABLE_POSITION_MATCHING: True},
+        version=3,
+        minor_version=3,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
+    assert entry.minor_version == 4
+
+
+async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) -> None:
+    """A user/new-install opt-out (False) is respected, not clobbered to True."""
+    entry = _make_entry(
+        hass,
+        {CONF_ENABLE_POSITION_MATCHING: False},
+        version=3,
+        minor_version=3,
+    )
+    await async_migrate_entry(hass, entry)
+    assert entry.options[CONF_ENABLE_POSITION_MATCHING] is False
+    assert entry.minor_version == 4
+
+
+async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> None:
+    """A genuine v1 entry ends at 3.4 with position matching enabled."""
+    entry = _make_entry(hass, {CONF_WINDOW_WIDTH: 200}, version=1)
+    await async_migrate_entry(hass, entry)
+    assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
+    assert entry.version == 3
+    assert entry.minor_version == 4
 
 
 # ---------------------------------------------------------------------------
@@ -422,10 +478,10 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     that minor are never seen as stale and the migration is dead code in
     production.
 
-    Currently the highest target is 3 (the v3.2 → v3.3 copy of
-    custom_position_sensor_N into the list key, per issue #563).  Raise this
-    assertion whenever a new minor migration block is added.
+    Currently the highest target is 4 (the v3.3 → v3.4 enable-position-matching
+    setdefault, per issue #591/#606).  Raise this assertion whenever a new minor
+    migration block is added.
     """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
-    assert ConfigFlowHandler.MINOR_VERSION == 3
+    assert ConfigFlowHandler.MINOR_VERSION == 4
