@@ -241,6 +241,7 @@ from .config_dynamic import (  # noqa: E402
     temperature_climate_schema,
     weather_override_schema,
 )
+from .priority_chain import build_priority_chain  # noqa: E402
 
 
 # Module-level constant for tests / imports. Identical to the legacy
@@ -2059,25 +2060,19 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mark = "✅" if active else "❌"
         return f"{mark}{short}"
 
-    # Build the full priority chain including per-slot custom positions.
-    # Each entry is (priority, label, active) so we can sort and render.
-    _chain_entries: list[tuple[int, str, bool]] = [
-        (90, "Weather", has_weather),
-        (80, "Manual", True),
-        (75, "Motion", has_motion),
-        (60, "Cloud", has_cloud),
-        (50, "Climate", has_climate),
-        (40, "Solar", sun_tracking_enabled),
-        (0, "Default", True),
-    ]
-    if summary_policy.supports_glare_zones:
-        _chain_entries.append((45, "Glare", has_glare))
-    # Insert one entry per custom slot at its configured priority
-    for _slot, _trigger, _pos, _pri, _use_my, _slot_tilt, _tilt_only in _custom_slots:
-        _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
-    # Sort highest priority first
-    _chain_entries.sort(key=lambda e: e[0], reverse=True)
-    chain = [_ch(active, short) for _pri, short, active in _chain_entries]
+    # Build the full priority chain (fixed anchors + per-slot custom positions)
+    # via the shared helper, which owns the priority integers and ordering.
+    _chain_entries = build_priority_chain(
+        has_weather=has_weather,
+        has_motion=has_motion,
+        has_cloud=has_cloud,
+        has_climate=has_climate,
+        sun_tracking_enabled=sun_tracking_enabled,
+        has_glare=has_glare,
+        supports_glare=summary_policy.supports_glare_zones,
+        custom_slots=_custom_slots,
+    )
+    chain = [_ch(e.active, e.label) for e in _chain_entries]
 
     lines.append("")
     lines.append(L["headers.decision_priority"])
