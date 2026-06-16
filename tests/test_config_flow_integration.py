@@ -910,6 +910,59 @@ async def test_custom_position_step_exposes_priority_scale(
     assert "Weather" in scale and "Default" in scale
 
 
+@pytest.mark.integration
+async def test_options_menu_every_entry_has_a_label(
+    hass: HomeAssistant,
+) -> None:
+    """Every options-menu step must have a menu_options label (#613).
+
+    Guards against a menu entry rendering as a blank row — the symptom when a
+    new step (e.g. ``behavior``) is added to the menu but missing from
+    ``options.step.init.menu_options`` in en.json.
+    """
+    import json
+    import os
+
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    from custom_components.adaptive_cover_pro.const import CONF_INTERP
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_BLIND_SPOT] = True
+    options[CONF_ENABLE_GLARE_ZONES] = True
+    options[CONF_INTERP] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Label Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=options,
+        entry_id="menu_label_01",
+        title="Label Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    menu = result["menu_options"]
+
+    en_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "custom_components",
+        "adaptive_cover_pro",
+        "translations",
+        "en.json",
+    )
+    with open(en_path, encoding="utf-8") as f:
+        labels = json.load(f)["options"]["step"]["init"]["menu_options"]
+
+    missing = [k for k in menu if k not in labels]
+    assert not missing, f"menu entries with no label (blank rows): {missing}"
+
+
 def test_config_flow_does_not_use_system_language() -> None:
     """config_flow must not read the system language (issue #227).
 
