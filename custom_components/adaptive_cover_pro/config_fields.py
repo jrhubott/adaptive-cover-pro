@@ -502,16 +502,20 @@ _SUN_TRACKING_SPECS = _spec(
         default=False,
         make_selector=_bool(),
     ),
+    # minimize_movements / max_coverage_steps are L4 global motion constraints
+    # (config-flow automation step), not sun-tracking UI fields (#613). The
+    # acp.set_sun_tracking service still groups them (stable API) — see
+    # services/options_service._SECTION_SUN_TRACKING.
     FieldSpec(
         CONF_MINIMIZE_MOVEMENTS,
-        SECTION_SUN_TRACKING,
+        SECTION_AUTOMATION,
         ValidatorKind.BOOL,
         default=DEFAULT_MINIMIZE_MOVEMENTS,
         make_selector=_bool(),
     ),
     FieldSpec(
         CONF_MAX_COVERAGE_STEPS,
-        SECTION_SUN_TRACKING,
+        SECTION_AUTOMATION,
         ValidatorKind.RANGE,
         rng=const._RANGE_MAX_COVERAGE_STEPS,
         default=DEFAULT_MAX_COVERAGE_STEPS,

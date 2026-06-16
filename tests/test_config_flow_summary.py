@@ -2528,18 +2528,18 @@ def test_summary_shows_custom_slot_tilt_when_set():
 
 
 def test_position_schema_accepts_sunset_time_entity():
-    """POSITION_SCHEMA accepts sunset_time_entity key."""
-    from custom_components.adaptive_cover_pro.config_flow import POSITION_SCHEMA
+    """BEHAVIOR_SCHEMA accepts sunset_time_entity key (moved L2a→L2b, #613)."""
+    from custom_components.adaptive_cover_pro.config_flow import BEHAVIOR_SCHEMA
 
-    result = POSITION_SCHEMA({CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk"})
+    result = BEHAVIOR_SCHEMA({CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk"})
     assert result[CONF_SUNSET_TIME_ENTITY] == "sensor.sun2_dusk"
 
 
 def test_position_schema_accepts_sunrise_time_entity():
-    """POSITION_SCHEMA accepts sunrise_time_entity key."""
-    from custom_components.adaptive_cover_pro.config_flow import POSITION_SCHEMA
+    """BEHAVIOR_SCHEMA accepts sunrise_time_entity key (moved L2a→L2b, #613)."""
+    from custom_components.adaptive_cover_pro.config_flow import BEHAVIOR_SCHEMA
 
-    result = POSITION_SCHEMA({CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn"})
+    result = BEHAVIOR_SCHEMA({CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn"})
     assert result[CONF_SUNRISE_TIME_ENTITY] == "sensor.sun2_dawn"
 
 

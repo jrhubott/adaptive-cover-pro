@@ -91,6 +91,7 @@ _SUN_TRACKING_VERTICAL = {
     "enable_glare_zones": False,
 }
 
+# L2a positions step (% values only, #613).
 _POSITION = {
     CONF_DEFAULT_HEIGHT: 50,
     CONF_MIN_POSITION: 0,
@@ -98,12 +99,16 @@ _POSITION = {
     CONF_MAX_POSITION: 100,
     CONF_ENABLE_MAX_POSITION: False,
     # CONF_SUNSET_POS is Optional — omit to use default
+    "interp": False,
+    "open_close_threshold": 50,
+}
+
+# L2b behavior step (timing & thresholds, #613).
+_BEHAVIOR = {
     CONF_SUNSET_OFFSET: 0,
     CONF_SUNRISE_OFFSET: 0,
     CONF_RETURN_SUNSET: False,
     CONF_INVERSE_STATE: False,
-    "interp": False,
-    "open_close_threshold": 50,
 }
 
 _AUTOMATION = {
@@ -452,6 +457,10 @@ async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     # the L3 handler steps run in pipeline-priority order, then L4 (automation).
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
+    )
+    assert result["step_id"] == "behavior"  # L2b timing & thresholds
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _BEHAVIOR
     )
     assert result["step_id"] == "weather_override"  # L3 priority 90
     result = await hass.config_entries.flow.async_configure(
@@ -854,9 +863,11 @@ async def test_options_menu_order_follows_pipeline_layers(
     # L1 → L2
     assert idx("cover_entities") < idx("geometry") < idx("sun_tracking")
     assert idx("sun_tracking") < idx("blind_spot") < idx("position")
+    # L2a positions → L2b behavior
+    assert idx("position") < idx("behavior")
     # L3 handlers in priority-descending order
     assert (
-        idx("position")
+        idx("behavior")
         < idx("weather_override")
         < idx("manual_override")
         < idx("custom_position")
@@ -915,12 +926,17 @@ def test_config_flow_does_not_use_system_language() -> None:
                 CONF_ENABLE_MIN_POSITION: False,
                 CONF_MAX_POSITION: 100,
                 CONF_ENABLE_MAX_POSITION: False,
+                "interp": False,
+                "open_close_threshold": 50,
+            },
+        ),
+        (
+            "behavior",
+            {
                 CONF_SUNSET_OFFSET: 0,
                 CONF_SUNRISE_OFFSET: 0,
                 CONF_RETURN_SUNSET: False,
                 CONF_INVERSE_STATE: False,
-                "interp": False,
-                "open_close_threshold": 50,
             },
         ),
         (
@@ -1002,12 +1018,8 @@ async def test_options_flow_form_step_saves_and_returns_to_init(
 async def test_options_flow_position_saves_position_tolerance(
     hass: HomeAssistant,
 ) -> None:
-    """Submitting the position step persists CONF_POSITION_TOLERANCE (issue #591)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_ENABLE_MY_POSITION_ENTITIES,
-        CONF_POSITION_TOLERANCE,
-        CONF_SUNSET_USE_MY,
-    )
+    """Submitting the behavior step persists CONF_POSITION_TOLERANCE (#591/#613)."""
+    from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
     entry = MockConfigEntry(
@@ -1025,27 +1037,19 @@ async def test_options_flow_position_saves_position_tolerance(
         result = await hass.config_entries.options.async_init(entry.entry_id)
         if result["type"] == "menu":
             result = await hass.config_entries.options.async_configure(
-                result["flow_id"], {"next_step_id": "position"}
+                result["flow_id"], {"next_step_id": "behavior"}
             )
-        assert result["step_id"] == "position"
+        assert result["step_id"] == "behavior"
 
-        # Submit the position step with the new tolerance; returns to the menu.
+        # position_tolerance now lives on the L2b behavior step; returns to menu.
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
-                CONF_DEFAULT_HEIGHT: 60,
-                CONF_MIN_POSITION: 0,
-                CONF_ENABLE_MIN_POSITION: False,
-                CONF_MAX_POSITION: 100,
-                CONF_ENABLE_MAX_POSITION: False,
                 CONF_SUNSET_OFFSET: 0,
                 CONF_SUNRISE_OFFSET: 0,
+                CONF_RETURN_SUNSET: False,
                 CONF_INVERSE_STATE: False,
-                "interp": False,
-                "open_close_threshold": 50,
                 CONF_POSITION_TOLERANCE: 8,
-                CONF_ENABLE_MY_POSITION_ENTITIES: False,
-                CONF_SUNSET_USE_MY: False,
             },
         )
         # Finish the flow so the accumulated options are written to the entry.
@@ -1972,9 +1976,6 @@ async def test_options_flow_position_step_exposes_my_position_toggle(
             CONF_ENABLE_MIN_POSITION: False,
             CONF_MAX_POSITION: 100,
             CONF_ENABLE_MAX_POSITION: False,
-            CONF_SUNSET_OFFSET: 0,
-            CONF_SUNRISE_OFFSET: 0,
-            CONF_INVERSE_STATE: False,
             "interp": False,
             "open_close_threshold": 50,
             CONF_ENABLE_MY_POSITION_ENTITIES: True,
@@ -2039,9 +2040,6 @@ async def test_options_flow_position_step_clears_sunset_pos_when_omitted(
             CONF_ENABLE_MIN_POSITION: False,
             CONF_MAX_POSITION: 100,
             CONF_ENABLE_MAX_POSITION: False,
-            CONF_SUNSET_OFFSET: 0,
-            CONF_SUNRISE_OFFSET: 0,
-            CONF_INVERSE_STATE: False,
             "interp": False,
             "open_close_threshold": 50,
             CONF_ENABLE_MY_POSITION_ENTITIES: False,
@@ -2129,9 +2127,12 @@ async def test_full_setup_persists_fov_and_window_width(
             "enable_glare_zones": False,
         },
     )
-    # 4-layer order (#613): position → L3 handlers (priority order) → L4 automation.
+    # 4-layer order (#613): position → behavior → L3 handlers → L4 automation.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _BEHAVIOR
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _WEATHER_OVERRIDE

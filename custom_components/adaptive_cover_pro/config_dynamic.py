@@ -44,10 +44,8 @@ from .const import (
     CONF_IS_SUNNY_SENSOR,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
-    CONF_MAX_COVERAGE_STEPS,
     CONF_MAX_ELEVATION,
     CONF_MIN_ELEVATION,
-    CONF_MINIMIZE_MOVEMENTS,
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
@@ -73,8 +71,6 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     DEFAULT_CLOUD_COVERAGE_THRESHOLD,
     DEFAULT_GLARE_ZONE_Z,
-    DEFAULT_MAX_COVERAGE_STEPS,
-    DEFAULT_MINIMIZE_MOVEMENTS,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -188,19 +184,8 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_ENABLE_BLIND_SPOT, default=False
             ): selector.BooleanSelector(),
-            vol.Optional(
-                CONF_MINIMIZE_MOVEMENTS, default=DEFAULT_MINIMIZE_MOVEMENTS
-            ): selector.BooleanSelector(),
-            vol.Optional(
-                CONF_MAX_COVERAGE_STEPS, default=DEFAULT_MAX_COVERAGE_STEPS
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1,
-                    max=10,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                )
-            ),
+            # minimize_movements / max_coverage_steps moved to the L4 global
+            # motion-constraints (automation) step — see config_flow.AUTOMATION_SCHEMA (#613).
         }
     )
 

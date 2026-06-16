@@ -59,6 +59,8 @@ from .const import (
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_ENABLE_PROXY_COVER,
+    DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MINIMIZE_MOVEMENTS,
     CONF_FOV_COMPUTE,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -253,6 +255,9 @@ SUN_TRACKING_SCHEMA = sun_tracking_schema()
 # Keys in SUN_TRACKING_SCHEMA stored in canonical metres.
 _SUN_TRACKING_LENGTH_KEYS: tuple[str, ...] = (CONF_DISTANCE,)
 
+# ── Layer 2a: positions ─────────────────────────────────────────────────────
+# Every percentage target value lives here and only here (#613). Handlers and
+# the behavior step reference these positions; they never redefine one.
 POSITION_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DEFAULT_HEIGHT, default=60): selector.NumberSelector(
@@ -297,12 +302,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
-        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
         vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -312,23 +311,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=-120,
-                max=120,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="minutes",
-            )
-        ),
-        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=-120,
-                max=120,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="minutes",
-            )
-        ),
-        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
         vol.Optional(
             CONF_ENABLE_MY_POSITION_ENTITIES,
             default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
@@ -351,6 +333,39 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_INTERP, default=False): selector.BooleanSelector(),
+    }
+)
+
+# ── Layer 2b: behavior (timing & thresholds) ────────────────────────────────
+# Non-percentage tuning: sunset/sunrise timing, position tolerance/matching, and
+# inverse-state. Separated from the L2a positions so each surface is single-
+# purpose (#613).
+BEHAVIOR_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
         vol.Optional(CONF_POSITION_TOLERANCE, default=3): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -365,7 +380,6 @@ POSITION_SCHEMA = vol.Schema(
             default=DEFAULT_ENABLE_POSITION_MATCHING,
         ): selector.BooleanSelector(),
         vol.Optional(CONF_INVERSE_STATE, default=False): selector.BooleanSelector(),
-        vol.Optional(CONF_INTERP, default=False): selector.BooleanSelector(),
     }
 )
 
@@ -377,10 +391,18 @@ _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_POS,
     CONF_MY_POSITION_VALUE,
     CONF_MIN_POSITION_SUN_TRACKING,
+]
+
+# Same clear-handling for the L2b behavior step's entity pickers.
+_BEHAVIOR_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_TIME_ENTITY,
     CONF_SUNRISE_TIME_ENTITY,
 ]
 
+# ── Layer 4: global motion constraints ──────────────────────────────────────
+# Applied after the pipeline picks a position, regardless of which handler won:
+# movement deltas, the schedule window, and the movement-minimization controls
+# (relocated here from the sun-tracking step, #613).
 AUTOMATION_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DELTA_POSITION, default=2): selector.NumberSelector(
@@ -398,6 +420,19 @@ AUTOMATION_SCHEMA = vol.Schema(
                 max=60,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(
+            CONF_MINIMIZE_MOVEMENTS, default=DEFAULT_MINIMIZE_MOVEMENTS
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_MAX_COVERAGE_STEPS, default=DEFAULT_MAX_COVERAGE_STEPS
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=10,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
@@ -2893,14 +2928,29 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             # Quick setup: skip optional screens, go straight to summary
             if self.setup_mode == "quick":
                 return await self.async_step_summary()
-            # L2 calibration (interp) stays attached to positions; then the L3
-            # handler steps begin in pipeline-priority order (weather = 90 first).
+            # L2a positions → L2b behavior.
+            return await self.async_step_behavior()
+        return self.async_show_form(
+            step_id="position",
+            data_schema=POSITION_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
+            },
+        )
+
+    async def async_step_behavior(self, user_input: dict[str, Any] | None = None):
+        """Configure L2b timing & threshold behavior."""
+        if user_input is not None:
+            self.optional_entities(_BEHAVIOR_OPTIONAL_KEYS, user_input)
+            self.config.update(user_input)
+            # L2 calibration (interp) stays attached to positions/behavior; then
+            # the L3 handler steps begin in pipeline-priority order (weather = 90).
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
             return await self.async_step_weather_override()
         return self.async_show_form(
-            step_id="position",
-            data_schema=POSITION_SCHEMA,
+            step_id="behavior",
+            data_schema=BEHAVIOR_SCHEMA,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
                 "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
@@ -3313,8 +3363,9 @@ class OptionsFlowHandler(OptionsFlow):
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             keys.append("blind_spot")
 
-        # ── Layer 2: Where can I go? (positions & calibration) ───────
-        keys.append("position")
+        # ── Layer 2: Where can I go? / how do I behave? ──────────────
+        keys.append("position")  # L2a positions (% values)
+        keys.append("behavior")  # L2b timing & thresholds
         if self.options.get(CONF_INTERP):
             keys.append("interp")
 
@@ -3494,6 +3545,22 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="position",
             data_schema=self.add_suggested_values_to_schema(
                 POSITION_SCHEMA, user_input or self.options
+            ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
+            },
+        )
+
+    async def async_step_behavior(self, user_input: dict[str, Any] | None = None):
+        """Manage L2b timing & threshold behavior options."""
+        if user_input is not None:
+            self.optional_entities(_BEHAVIOR_OPTIONAL_KEYS, user_input)
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="behavior",
+            data_schema=self.add_suggested_values_to_schema(
+                BEHAVIOR_SCHEMA, user_input or self.options
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
