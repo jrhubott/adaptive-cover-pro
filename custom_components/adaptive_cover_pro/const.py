@@ -132,6 +132,21 @@ DEFAULT_AWNING_MIN_ANGLE = 0  # degrees — arm vertical / fully retracted
 DEFAULT_AWNING_MAX_ANGLE = 175  # degrees — reporter's full sweep (#412)
 DEFAULT_AWNING_HOUSING_OFFSET = 0.0  # metres
 
+# Vertical-drop (lip-height) shade model for the oscillating awning (#586).
+# The drop-arm's fabric lip descends as the arm sweeps past horizontal, shading
+# the window face down to a protected boundary. The solver scans the arm-sweep
+# arc and selects the smallest angle whose lip shadow reaches the boundary.
+#
+# Default/fallback protected boundary on the window face (window-bottom datum,
+# metres). The LIVE boundary is derived from the inherited vertical sill/depth/
+# distance solve (the exposed-glass height); this constant is only the fallback
+# when that solve leaves the whole face exposed.
+OSCILLATING_PROTECTED_BOUNDARY_DEFAULT = 0.0  # metres (window bottom)
+# Arc-scan resolution: number of arm-angle samples across the [min, max] sweep.
+# 0.1° steps over a 180° sweep — fine enough that the pinned positions are
+# stable to <0.1%.
+OSCILLATING_ARC_SCAN_SAMPLES = 1801
+
 
 # =============================================================================
 # 5. Tilt / Venetian Slat Geometry
