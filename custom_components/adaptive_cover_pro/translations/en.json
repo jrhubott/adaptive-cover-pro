@@ -82,8 +82,6 @@
         "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
-          "minimize_movements": "Minimize movements",
-          "max_coverage_steps": "Maximum coverage steps",
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
@@ -97,8 +95,6 @@
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
-          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
-          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
@@ -123,15 +119,7 @@
           "enable_my_position_entities": "Enable My-preset entities",
           "my_position_value": "My position value",
           "sunset_use_my": "Use My at sunset",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "sunset_time_entity": "Sunset Time Entity",
-          "sunrise_time_entity": "Sunrise Time Entity",
           "open_close_threshold": "Open/Close threshold",
-          "position_tolerance": "Position match tolerance",
-          "enable_position_matching": "Enable position matching",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
@@ -145,28 +133,46 @@
           "enable_my_position_entities": "Create the Managed My Position button and the Managed My Position Value number entity. Off by default — turn on if you use the Somfy-style 'My' preset and want to recall or edit the value from a dashboard.",
           "my_position_value": "The position (1–99%) you programmed on the motor remote (My/favorite preset). Leave blank to disable My-position triggering for this cover.",
           "sunset_use_my": "When the sunset/end-time window activates, trigger the cover's My preset (via stop_cover) instead of the normal open/close fallback. Requires My position value to be set. Only affects non-position-capable covers (e.g. Somfy RTS).",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time.",
-          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
-          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta on the Schedule & Timing step: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
-          "enable_position_matching": "Off by default: the integration commands the cover once, then leaves it where it lands. A cover that settles past the Position match tolerance is treated as a manual override (automatic control pauses for the override duration) instead of being re-sent. Turn this on if your cover sometimes stops short of the commanded position and you want the integration to keep re-sending the target until it arrives. Leave it off for covers that reliably reach the target on the first command, that self-heal, or that you stop with a physical remote and want the stop to stick. See [When to enable position matching]({position_matching_wiki}).",
-          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
+      "behavior": {
+        "title": "Behaviour (Timing & Thresholds)",
+        "description": "Tune how the cover behaves once a position is chosen: sunset/sunrise timing adjustments, the position-match tolerance and matching toggle, and inverse-state. These are not target positions — every percentage value lives on the Position Settings step; this step holds only the timing and threshold knobs.\n\n[Learn more]({learn_more})",
+        "data": {
+          "sunset_time_entity": "Sunset Time Entity",
+          "sunrise_time_entity": "Sunrise Time Entity",
+          "sunset_offset": "Sunset Offset",
+          "sunrise_offset": "Sunrise Offset",
+          "return_sunset": "Move covers to current default position when end time is reached",
+          "position_tolerance": "Position match tolerance",
+          "enable_position_matching": "Enable position matching",
+          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)"
+        },
+        "data_description": {
+          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
+          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time.",
+          "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta on the Schedule & Timing step: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
+          "enable_position_matching": "Off by default: the integration commands the cover once, then leaves it where it lands. A cover that settles past the Position match tolerance is treated as a manual override (automatic control pauses for the override duration) instead of being re-sent. Turn this on if your cover sometimes stops short of the commanded position and you want the integration to keep re-sending the target until it arrives. Leave it off for covers that reliably reach the target on the first command, that self-heal, or that you stop with a physical remote and want the stop to stick. See [When to enable position matching]({position_matching_wiki}).",
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this."
+        }
+      },
       "automation": {
-        "title": "Schedule & Timing",
-        "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
+        "title": "Movement & Schedule",
+        "description": "Global movement constraints applied after the pipeline picks a position, regardless of which handler won, plus the operational time window.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Minimize movements** and **Maximum coverage steps** snap sun tracking to a few fixed coverage levels instead of following the sun continuously. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
-          "end_entity": "Entity indicating ending time"
+          "end_entity": "Entity indicating ending time",
+          "minimize_movements": "Minimize movements",
+          "max_coverage_steps": "Maximum coverage steps"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -174,7 +180,9 @@
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
-          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine)."
+          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
+          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
+          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
         }
       },
       "manual_override": {
@@ -199,7 +207,7 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})",
+        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})\n\n**Decision priority** — where each configured slot's priority lands against the fixed handlers (highest wins). This reflects the last saved priorities; it refreshes when the form re-renders, not live as you drag the slider:\n{priority_scale}",
         "data": {
           "custom_position_sensors_1": "Sensors 1",
           "custom_position_template_1": "Condition template 1",
@@ -560,15 +568,17 @@
         }
       },
       "automation": {
-        "title": "Schedule & Timing",
-        "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
+        "title": "Movement & Schedule",
+        "description": "Global movement constraints applied after the pipeline picks a position, regardless of which handler won, plus the operational time window.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Minimize movements** and **Maximum coverage steps** snap sun tracking to a few fixed coverage levels instead of following the sun continuously. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
-          "end_entity": "Entity indicating ending time"
+          "end_entity": "Entity indicating ending time",
+          "minimize_movements": "Minimize movements",
+          "max_coverage_steps": "Maximum coverage steps"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -576,7 +586,9 @@
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
-          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine)."
+          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
+          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
+          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
         }
       },
       "cover_entities": {
@@ -646,8 +658,6 @@
         "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
-          "minimize_movements": "Minimize movements",
-          "max_coverage_steps": "Maximum coverage steps",
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
@@ -661,8 +671,6 @@
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
-          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
-          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
@@ -687,15 +695,7 @@
           "enable_my_position_entities": "Enable My-preset entities",
           "my_position_value": "My position value",
           "sunset_use_my": "Use My at sunset",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "sunset_time_entity": "Sunset Time Entity",
-          "sunrise_time_entity": "Sunrise Time Entity",
           "open_close_threshold": "Open/Close threshold",
-          "position_tolerance": "Position match tolerance",
-          "enable_position_matching": "Enable position matching",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
@@ -709,16 +709,32 @@
           "enable_my_position_entities": "Create the Managed My Position button and the Managed My Position Value number entity. Off by default — turn on if you use the Somfy-style 'My' preset and want to recall or edit the value from a dashboard.",
           "my_position_value": "The position (1–99%) you programmed on the motor remote (My/favorite preset). Leave blank to disable My-position triggering for this cover.",
           "sunset_use_my": "When the sunset/end-time window activates, trigger the cover's My preset (via stop_cover) instead of the normal open/close fallback. Requires My position value to be set. Only affects non-position-capable covers (e.g. Somfy RTS).",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
+        }
+      },
+      "behavior": {
+        "title": "Behaviour (Timing & Thresholds)",
+        "description": "Tune how the cover behaves once a position is chosen: sunset/sunrise timing adjustments, the position-match tolerance and matching toggle, and inverse-state. These are not target positions — every percentage value lives on the Position Settings step; this step holds only the timing and threshold knobs.\n\n[Learn more]({learn_more})",
+        "data": {
+          "sunset_time_entity": "Sunset Time Entity",
+          "sunrise_time_entity": "Sunrise Time Entity",
+          "sunset_offset": "Sunset Offset",
+          "sunrise_offset": "Sunrise Offset",
+          "return_sunset": "Move covers to current default position when end time is reached",
+          "position_tolerance": "Position match tolerance",
+          "enable_position_matching": "Enable position matching",
+          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)"
+        },
+        "data_description": {
+          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time.",
-          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
-          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
           "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta on the Schedule & Timing step: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
           "enable_position_matching": "Off by default: the integration commands the cover once, then leaves it where it lands. A cover that settles past the Position match tolerance is treated as a manual override (automatic control pauses for the override duration) instead of being re-sent. Turn this on if your cover sometimes stops short of the commanded position and you want the integration to keep re-sending the target until it arrives. Leave it off for covers that reliably reach the target on the first command, that self-heal, or that you stop with a physical remote and want the stop to stick. See [When to enable position matching]({position_matching_wiki}).",
-          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this."
         }
       },
       "manual_override": {
@@ -743,7 +759,7 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})",
+        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})\n\n**Decision priority** — where each configured slot's priority lands against the fixed handlers (highest wins). This reflects the last saved priorities; it refreshes when the form re-renders, not live as you drag the slider:\n{priority_scale}",
         "data": {
           "custom_position_sensors_1": "Sensors 1",
           "custom_position_template_1": "Condition template 1",
