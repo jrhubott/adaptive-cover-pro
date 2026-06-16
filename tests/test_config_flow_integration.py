@@ -447,29 +447,39 @@ async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _SUN_TRACKING
     )
+    assert result["step_id"] == "position"
+    # 4-layer order (#613): after L1 (entities/geometry/window) and L2 (position),
+    # the L3 handler steps run in pipeline-priority order, then L4 (automation).
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MANUAL_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _CUSTOM_POSITION
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MOTION_OVERRIDE
-    )
+    assert result["step_id"] == "weather_override"  # L3 priority 90
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _WEATHER_OVERRIDE
     )
+    assert result["step_id"] == "manual_override"  # L3 priority 80
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MANUAL_OVERRIDE
+    )
+    assert result["step_id"] == "custom_position"  # L3 priority 1-100
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _CUSTOM_POSITION
+    )
+    assert result["step_id"] == "motion_override"  # L3 priority 75
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MOTION_OVERRIDE
+    )
+    assert result["step_id"] == "light_cloud"  # L3 priority 60
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _LIGHT_CLOUD
     )
+    assert result["step_id"] == "temperature_climate"  # L3 priority 50
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _TEMPERATURE_CLIMATE
+    )
+    assert result["step_id"] == "automation"  # L4 global motion constraints
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _AUTOMATION
     )
     # Summary step
     assert result["type"] == "form"
@@ -801,6 +811,63 @@ async def test_options_flow_menu_returns_list_not_dict(
     assert isinstance(
         result["menu_options"], list
     ), f"menu_options should be a list for client-side translation, got {type(result['menu_options'])}"
+
+
+@pytest.mark.integration
+async def test_options_menu_order_follows_pipeline_layers(
+    hass: HomeAssistant,
+) -> None:
+    """Options menu is ordered by the 4-layer pipeline model (#613).
+
+    L1 physical (cover_entities, geometry, sun_tracking, blind_spot) →
+    L2 positions (position, interp) →
+    L3 handlers in priority order (weather 90, manual 80, custom, motion 75,
+    cloud/light 60, climate/temperature 50, glare 45) →
+    L4 global motion constraints (automation) → admin (sync, summary, …).
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_BLIND_SPOT] = True
+    options[CONF_ENABLE_GLARE_ZONES] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Order Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=options,
+        entry_id="order_menu_01",
+        title="Order Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    menu = result["menu_options"]
+
+    def idx(step: str) -> int:
+        assert step in menu, f"{step} missing from menu {menu}"
+        return menu.index(step)
+
+    # L1 → L2
+    assert idx("cover_entities") < idx("geometry") < idx("sun_tracking")
+    assert idx("sun_tracking") < idx("blind_spot") < idx("position")
+    # L3 handlers in priority-descending order
+    assert (
+        idx("position")
+        < idx("weather_override")
+        < idx("manual_override")
+        < idx("custom_position")
+        < idx("motion_override")
+        < idx("light_cloud")
+        < idx("temperature_climate")
+        < idx("glare_zones")
+    )
+    # L4 after all handlers, admin last
+    assert idx("glare_zones") < idx("automation")
+    assert idx("automation") < idx("summary")
 
 
 def test_config_flow_does_not_use_system_language() -> None:
@@ -2062,11 +2129,12 @@ async def test_full_setup_persists_fov_and_window_width(
             "enable_glare_zones": False,
         },
     )
+    # 4-layer order (#613): position → L3 handlers (priority order) → L4 automation.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
+        result["flow_id"], _WEATHER_OVERRIDE
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _MANUAL_OVERRIDE
@@ -2078,13 +2146,13 @@ async def test_full_setup_persists_fov_and_window_width(
         result["flow_id"], _MOTION_OVERRIDE
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _WEATHER_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _LIGHT_CLOUD
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _TEMPERATURE_CLIMATE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _AUTOMATION
     )
     assert result["type"] == "form"
     assert result["step_id"] == "summary"

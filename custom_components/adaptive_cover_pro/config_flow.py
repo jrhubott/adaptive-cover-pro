@@ -2815,8 +2815,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 self.hass, user_input, length_keys=_glare_zone_length_keys()
             )
             self.config.update(canonical)
-            if self.config.get(CONF_INTERP):
-                return await self.async_step_interp()
+            # Glare zone (priority 45) is the last L3 handler → L4 automation.
             return await self.async_step_automation()
 
         schema = _build_glare_zones_schema(self.config, self.hass)
@@ -2859,6 +2858,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(canonical)
+            # L1 physical setup: the blind-spot sub-step (when enabled) attaches
+            # to the window here, before L2 positions. Quick setup skips it.
+            if self.config.get(CONF_ENABLE_BLIND_SPOT) and self.setup_mode != "quick":
+                return await self.async_step_blind_spot()
             return await self.async_step_position()
         return self._show_sun_tracking_form(self.config)
 
@@ -2890,15 +2893,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             # Quick setup: skip optional screens, go straight to summary
             if self.setup_mode == "quick":
                 return await self.async_step_summary()
-            if self.config.get(CONF_ENABLE_BLIND_SPOT):
-                return await self.async_step_blind_spot()
-            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
-                CONF_ENABLE_GLARE_ZONES
-            ):
-                return await self.async_step_glare_zones()
+            # L2 calibration (interp) stays attached to positions; then the L3
+            # handler steps begin in pipeline-priority order (weather = 90 first).
             if self.config.get(CONF_INTERP):
                 return await self.async_step_interp()
-            return await self.async_step_automation()
+            return await self.async_step_weather_override()
         return self.async_show_form(
             step_id="position",
             data_schema=POSITION_SCHEMA,
@@ -2924,13 +2923,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
-                CONF_ENABLE_GLARE_ZONES
-            ):
-                return await self.async_step_glare_zones()
-            if self.config.get(CONF_INTERP):
-                return await self.async_step_interp()
-            return await self.async_step_automation()
+            # Blind spot is the tail of L1 physical setup → continue to L2 positions.
+            return await self.async_step_position()
 
         return self.async_show_form(
             step_id="blind_spot",
@@ -2957,7 +2951,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            return await self.async_step_automation()
+            # Calibration done → begin L3 handler steps in priority order.
+            return await self.async_step_weather_override()
         return self.async_show_form(
             step_id="interp",
             data_schema=INTERPOLATION_OPTIONS,
@@ -2971,7 +2966,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
             self.config.update(user_input)
-            return await self.async_step_manual_override()
+            # L4 global motion constraints are the final config step → summary.
+            return await self.async_step_summary()
         return self.async_show_form(
             step_id="automation",
             data_schema=AUTOMATION_SCHEMA,
@@ -3024,7 +3020,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure motion/occupancy-based control."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_weather_override()
+            # L3 priority 75 → 60 (cloud / light).
+            return await self.async_step_light_cloud()
         return self.async_show_form(
             step_id="motion_override",
             data_schema=MOTION_OVERRIDE_SCHEMA,
@@ -3040,7 +3037,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
-            return await self.async_step_light_cloud()
+            # L3 priority 90 → 80 (manual override).
+            return await self.async_step_manual_override()
         return self.async_show_form(
             step_id="weather_override",
             data_schema=weather_override_schema(self.hass, self.config),
@@ -3081,7 +3079,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            return await self.async_step_summary()
+            # L3 priority 50 → glare (45) when supported/enabled, else L4 automation.
+            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
+                CONF_ENABLE_GLARE_ZONES
+            ):
+                return await self.async_step_glare_zones()
+            return await self.async_step_automation()
         return self.async_show_form(
             step_id="temperature_climate",
             data_schema=temperature_climate_schema(self.hass, self.config),
@@ -3298,44 +3301,44 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        # ── Core Setup ───────────────────────────────────────────────
+        # Ordered by the 4-layer pipeline model (#613): physical setup →
+        # positions → handlers in priority order → global motion constraints.
+
+        # ── Layer 1: What am I? (physical setup) ─────────────────────
         keys = [
             "cover_entities",
             "geometry",
             "sun_tracking",
         ]
+        if self.options.get(CONF_ENABLE_BLIND_SPOT):
+            keys.append("blind_spot")
 
-        # ── Position & Zones ─────────────────────────────────────────
+        # ── Layer 2: Where can I go? (positions & calibration) ───────
         keys.append("position")
         if self.options.get(CONF_INTERP):
             keys.append("interp")
-        if self.options.get(CONF_ENABLE_BLIND_SPOT):
-            keys.append("blind_spot")
-        if get_policy(self.sensor_type).supports_glare_zones and self.options.get(
-            CONF_ENABLE_GLARE_ZONES
-        ):
-            keys.append("glare_zones")
 
-        # ── Schedule & Automation ────────────────────────────────────
-        keys.append("automation")
-
-        # ── Light, Climate & Weather ────────────────────────────────
-        keys.extend(["light_cloud", "temperature_climate"])
-
-        # ── Override Controls (priority order: highest → lowest) ─────
+        # ── Layer 3: How do I decide? (handlers, priority high → low) ─
         keys.extend(
             [
                 "weather_override",  # Priority 90
                 "manual_override",  # Priority 80
                 "custom_position",  # Priority 1-100 per slot (100 = safety)
                 "motion_override",  # Priority 75
+                "light_cloud",  # Cloud suppression, priority 60
+                "temperature_climate",  # Climate, priority 50
             ]
         )
+        if get_policy(self.sensor_type).supports_glare_zones and self.options.get(
+            CONF_ENABLE_GLARE_ZONES
+        ):
+            keys.append("glare_zones")  # Priority 45
 
-        # ── Multi-Cover Management ──────────────────────────────────
-        keys.append("sync")
+        # ── Layer 4: How do I move? (global motion constraints) ──────
+        keys.append("automation")
 
         # ── Admin ────────────────────────────────────────────────────
+        keys.append("sync")  # Multi-cover management
         keys.extend(["summary", "debug", "done"])
 
         # Use a list so HA translates labels client-side using the user's language preference.
