@@ -15,7 +15,6 @@ from custom_components.adaptive_cover_pro.sensor import (
     _STANDARD_SPECS,
 )
 
-
 EXPECTED: dict[str, set[str]] = {
     "Cover_Position": {
         "actual_positions",

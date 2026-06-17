@@ -12,7 +12,6 @@ from custom_components.adaptive_cover_pro.managers.cover_command import Position
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.const import ControlMethod
 
-
 # ---------------------------------------------------------------------------
 # Step 8 — My Position button created when entities configured
 # ---------------------------------------------------------------------------

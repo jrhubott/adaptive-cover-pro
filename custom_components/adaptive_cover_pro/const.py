@@ -1041,7 +1041,6 @@ DEFAULT_MOTION_TEMPLATE_MODE = DEFAULT_TEMPLATE_COMBINE_MODE
 # reads names defined before this line).
 from .config_fields import OPTION_RANGES  # noqa: E402, F401
 
-
 # =============================================================================
 # 27. Enumerations (semantic identifiers)
 # =============================================================================

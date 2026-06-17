@@ -31,7 +31,6 @@ from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 
-
 SOLAR_POSITION = 30
 CACHED_DEFAULT_POSITION = 100  # previous cycle's DefaultHandler win (open)
 

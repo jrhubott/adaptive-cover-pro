@@ -29,7 +29,6 @@ from custom_components.adaptive_cover_pro.pipeline.types import (
 
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

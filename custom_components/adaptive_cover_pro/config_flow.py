@@ -245,7 +245,6 @@ from .config_dynamic import (  # noqa: E402
 )
 from .priority_chain import build_priority_chain  # noqa: E402
 
-
 # Module-level constant for tests / imports. Identical to the legacy
 # vol.Schema(...) shape — metric labels, no hass needed. ``sun_tracking_schema``
 # is re-exported from ``config_dynamic`` above.

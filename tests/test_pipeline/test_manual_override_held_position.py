@@ -25,7 +25,6 @@ from custom_components.adaptive_cover_pro.sensor import _cover_position_value
 
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # ---------------------------------------------------------------------------
 # 1. PipelineResult.held_position defaults to None
 # ---------------------------------------------------------------------------

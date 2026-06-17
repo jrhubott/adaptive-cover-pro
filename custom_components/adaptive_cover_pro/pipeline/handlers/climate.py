@@ -33,7 +33,6 @@ from .climate_modes import (
     evaluate_rules,
 )
 
-
 # ---------------------------------------------------------------------------
 # Climate data container (moved from calculation.py)
 # ---------------------------------------------------------------------------

@@ -56,7 +56,6 @@ from .helpers import (
 from .templates import is_template_string
 from .unit_system import length_display_unit, to_display_length
 
-
 # ---------------------------------------------------------------------------
 # Description dataclass
 # ---------------------------------------------------------------------------

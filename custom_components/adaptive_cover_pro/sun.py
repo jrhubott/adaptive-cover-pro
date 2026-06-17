@@ -27,7 +27,6 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-
 # ---------------------------------------------------------------------------
 # Module-level day cache — shared across all SunData instances
 # ---------------------------------------------------------------------------

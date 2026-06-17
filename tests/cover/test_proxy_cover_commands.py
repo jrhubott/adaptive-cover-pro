@@ -15,7 +15,6 @@ from custom_components.adaptive_cover_pro.const import (
 )
 from tests.ha_helpers import VERTICAL_OPTIONS, TILT_OPTIONS, _patch_coordinator_refresh
 
-
 pytestmark = pytest.mark.integration
 
 
