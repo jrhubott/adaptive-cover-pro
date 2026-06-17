@@ -686,10 +686,26 @@ def _climate_status_value(s: _ACPDiagnosticSensor) -> str | None:
     return "intermediate"
 
 
-def _round_threshold(value: float | None) -> float | None:
-    """Round a threshold value to 1 decimal place at the presentation boundary."""
+def _round_threshold(value: float | str | None) -> float | None:
+    """Round a threshold value to 1 decimal place at the presentation boundary.
+
+    Accepts numeric strings stored by TemplateSelector since #577 (e.g. ``"22"``,
+    ``"22.5"``) as well as plain numbers. Comma-decimal strings (``"22,5"``)
+    are normalised to a decimal point. Jinja2 template strings are returned as
+    ``None`` — their rendered value is only available inside the coordinator
+    update cycle via ``TemplateResolver``.
+    """
     if value is None:
         return None
+    if isinstance(value, str):
+        from .templates import is_template_string
+
+        if is_template_string(value):
+            return None  # unresolved template — no numeric value at attr time
+        try:
+            value = float(value.replace(",", "."))
+        except (ValueError, TypeError):
+            return None
     return round(value, 1)
 
 
