@@ -117,7 +117,7 @@ CONF_AWNING_ANGLE = "angle"  # tilt from horizontal, degrees (0-45)
 # Oscillating (drop-arm / pivoting) awning geometry. Unlike the fixed-angle
 # awning, the arm sweeps through an arc as it opens, so the fabric angle is a
 # function of the open percentage rather than a configured constant. See #412.
-CONF_ARM_LENGTH = "arm_length"  # pivot-arm length, metres (0.1-3.0)
+CONF_ARM_LENGTH = "arm_length"  # pivot-arm length, metres (0.1-6.0)
 CONF_AWNING_MIN_ANGLE = "awning_min_angle"  # arm angle when closed, deg (0-180)
 CONF_AWNING_MAX_ANGLE = "awning_max_angle"  # arm angle when fully open, deg (0-180)
 # Vertical offset of the arm pivot above the window top, metres (0-1). Used with
