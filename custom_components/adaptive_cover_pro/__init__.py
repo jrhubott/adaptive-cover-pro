@@ -33,7 +33,9 @@ from .const import (
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -222,6 +224,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
                 coordinator.async_check_weather_state_change,
             )
         )
+
+    # Register the optional is-raining / is-windy condition templates (issue
+    # #639). Same pattern as the occupancy/custom-position templates above:
+    # tracking the rendered result lets a template-only weather override engage
+    # and react the instant the template flips, with no companion binary sensor.
+    for _weather_template in [
+        entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
+        entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+    ]:
+        if not is_template_string(_weather_template):
+            continue
+        try:
+            _track_info = async_track_template_result(
+                hass,
+                [TrackTemplate(Template(_weather_template, hass), None)],
+                coordinator.async_check_weather_template_change,
+            )
+        except (TemplateError, ValueError) as err:
+            _LOGGER.warning(
+                "Weather condition template failed to register (%r): %s",
+                _weather_template,
+                err,
+            )
+        else:
+            entry.async_on_unload(_track_info.async_remove)
 
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)

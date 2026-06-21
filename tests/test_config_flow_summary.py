@@ -43,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -60,6 +61,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
     CONF_SILL_HEIGHT,
     CONF_START_TIME,
     CONF_START_ENTITY,
@@ -79,7 +81,9 @@ from custom_components.adaptive_cover_pro.const import (
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
@@ -855,6 +859,57 @@ def test_is_sunny_sensor_shown_with_suppression():
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "is_sunny=binary_sensor.sun_on_window" in summary
+
+
+def test_is_sunny_template_shows_placeholder():
+    """is_sunny template-only shows the [template] marker (issue #639)."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_TEMPLATE: "{{ is_state('sun.sun', 'above_horizon') }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is_sunny=[template]" in summary
+
+
+def test_is_sunny_sensor_takes_priority_over_template_in_summary():
+    """When both are set, the entity id is shown (sensor is the explicit pick)."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_SENSOR: "binary_sensor.sun_on_window",
+        CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is_sunny=binary_sensor.sun_on_window" in summary
+
+
+def test_presence_template_shows_placeholder():
+    """Presence template-only renders the [template] marker on the climate line."""
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_PRESENCE_TEMPLATE: "{{ is_state('input_boolean.home', 'on') }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "presence: [template]" in summary
+
+
+def test_weather_is_raining_template_engages_section():
+    """A template-only is-raining override appears in the weather section (#639)."""
+    cfg = {
+        CONF_WEATHER_IS_RAINING_TEMPLATE: "{{ states('sensor.rain_rate')|float > 0 }}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is-raining" in summary
+
+
+def test_weather_is_windy_template_engages_section():
+    """A template-only is-windy override appears in the weather section (#639)."""
+    cfg = {
+        CONF_WEATHER_IS_WINDY_TEMPLATE: "{{ states('sensor.gust')|float > 30 }}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is-windy" in summary
 
 
 def test_is_sunny_sensor_without_suppression_noted():

@@ -296,6 +296,11 @@ CONF_OUTSIDETEMP_ENTITY = "outside_temp"  # outdoor temp sensor entity_id
 # Outdoor temp threshold for summer/winter mode switch (range 0-100).
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_PRESENCE_ENTITY = "presence_entity"  # presence/occupancy sensor entity_id
+# Optional Jinja condition template + combine mode for presence (issue #639):
+# truthy = occupied. Folds with the presence_entity via TemplateCombineMode
+# (OR default). Render failure / empty → no opinion → existing entity logic.
+CONF_PRESENCE_TEMPLATE = "presence_template"  # truthy = occupied
+CONF_PRESENCE_TEMPLATE_MODE = "presence_template_mode"  # TemplateCombineMode
 CONF_WEATHER_ENTITY = "weather_entity"  # weather. integration entity_id
 CONF_WEATHER_STATE = "weather_state"  # states that trigger climate handler
 # True to close covers at night in winter for added insulation.
@@ -335,6 +340,11 @@ CONF_IRRADIANCE_ENTITY = "irradiance_entity"  # irradiance sensor, W/m²
 # Below this irradiance the sun is treated as too weak to track.
 CONF_IRRADIANCE_THRESHOLD = "irradiance_threshold"
 CONF_IS_SUNNY_SENSOR = "is_sunny_sensor"  # precomputed binary "is sunny"
+# Optional Jinja condition template + combine mode for is_sunny (issue #639):
+# truthy = sunny. Folds with the is_sunny_sensor via TemplateCombineMode (OR
+# default). Render failure / empty → no opinion → existing weather fallback.
+CONF_IS_SUNNY_TEMPLATE = "is_sunny_template"  # truthy = sunny
+CONF_IS_SUNNY_TEMPLATE_MODE = "is_sunny_template_mode"  # TemplateCombineMode
 CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"  # cloud-cover % sensor
 # % cloud cover above which the suppression handler activates.
 CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
@@ -492,6 +502,15 @@ CONF_WEATHER_RAIN_SENSOR = "weather_rain_sensor"  # rain-rate sensor entity_id
 CONF_WEATHER_RAIN_THRESHOLD = "weather_rain_threshold"
 CONF_WEATHER_IS_RAINING_SENSOR = "weather_is_raining_sensor"  # binary entity_id
 CONF_WEATHER_IS_WINDY_SENSOR = "weather_is_windy_sensor"  # binary entity_id
+# Optional Jinja condition templates + combine modes for the is-raining / is-windy
+# weather overrides (issue #639): truthy = raining / windy. Each folds with its
+# companion binary sensor via TemplateCombineMode (OR default). A template-only
+# override (no companion sensor) engages and reacts the instant the template
+# flips, tracked via async_track_template_result.
+CONF_WEATHER_IS_RAINING_TEMPLATE = "weather_is_raining_template"  # truthy = raining
+CONF_WEATHER_IS_RAINING_TEMPLATE_MODE = "weather_is_raining_template_mode"
+CONF_WEATHER_IS_WINDY_TEMPLATE = "weather_is_windy_template"  # truthy = windy
+CONF_WEATHER_IS_WINDY_TEMPLATE_MODE = "weather_is_windy_template_mode"
 CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"  # severe-weather list
 # Position commanded during weather override (range 0-100).
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"

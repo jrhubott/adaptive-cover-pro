@@ -337,7 +337,11 @@
           "weather_rain_sensor": "Capteur de taux de pluie",
           "weather_rain_threshold": "Seuil de taux de pluie",
           "weather_is_raining_sensor": "Capteur binaire En train de pleuvoir",
+          "weather_is_raining_template": "Is Raining template (optional)",
+          "weather_is_raining_template_mode": "Is Raining template logic",
           "weather_is_windy_sensor": "Capteur binaire Venteux",
+          "weather_is_windy_template": "Is Windy template (optional)",
+          "weather_is_windy_template_mode": "Is Windy template logic",
           "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
           "weather_override_position": "Position de dérogation",
           "weather_override_min_mode": "Mode position minimale",
@@ -352,7 +356,11 @@
           "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
           "weather_rain_threshold": "Seuil de taux de pluie qui active la dérogation. **La valeur est interprétée dans l'unité du capteur de pluie configuré, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "weather_is_raining_sensor": "Capteur binaire pour la détection de pluie. La dérogation s'active quand ce capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_is_raining_template": "Optional Home Assistant Jinja2 template that decides whether it is raining. When it renders truthy (on/true/1) the override engages. How it combines with the Is Raining binary sensor above (OR or AND) is set by 'Is Raining template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'raining' from a numeric rain-rate threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_raining_template_mode": "How the Is Raining template combines with the Is Raining binary sensor above. 'OR' (default) — raining when the template is truthy OR the sensor is ON. 'AND' — raining only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Raining template is set above.",
           "weather_is_windy_sensor": "Capteur binaire pour la détection du vent. La dérogation s'active quand ce capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_is_windy_template": "Optional Home Assistant Jinja2 template that decides whether it is windy. When it renders truthy (on/true/1) the override engages. How it combines with the Is Windy binary sensor above (OR or AND) is set by 'Is Windy template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'windy' from a numeric wind-speed threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_windy_template_mode": "How the Is Windy template combines with the Is Windy binary sensor above. 'OR' (default) — windy when the template is truthy OR the sensor is ON. 'AND' — windy only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Windy template is set above.",
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_override_position": "Position (0-100%) pour déplacer les stores quand la dérogation météo est active. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Par défaut : 0%.",
           "weather_override_min_mode": "Quand activé, la position de dérogation agit comme un plancher minimum — le store ne se fermera pas en dessous de cette position, mais les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position de dérogation exacte.",
@@ -491,7 +499,9 @@
           "cloud_suppression": "Activer la suppression des nuages (interrupteur principal)",
           "weather_state": "Conditions météorologiques",
           "cloudy_position": "Position nuageux (optionnel)",
-          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)"
+          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)",
+          "is_sunny_template": "Is Sunny template (optional)",
+          "is_sunny_template_mode": "Is Sunny template logic"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -504,7 +514,9 @@
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel la suppression de l'éblouissement est désactivée. Par exemple, 75 signifie que la protection cesse de suivre le soleil quand le ciel est couvert à 75 % ou plus. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "cloud_suppression": "Interrupteur principal de cet écran entier. Lorsqu'il est **désactivé** (par défaut), tous les capteurs ci-dessous sont ignorés et le contrôle de l'éblouissement fonctionne normalement. Lorsqu'il est **activé**, tout capteur configuré (état météorologique, luminosité, rayonnement ou couverture nuageuse) indiquant l'absence du soleil arrêtera le suivi du soleil et déplacera la protection vers la **position nuageuse** ci-dessus (ou la position par défaut si celle-ci est vide). Fonctionne seul — le mode climatique n'a pas besoin d'être activé.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut.",
-          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré."
+          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré.",
+          "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. When it renders truthy (on/true/1) sun is assumed present; when falsy it is assumed absent and cloud suppression fires. How it combines with the Is Sunny binary sensor above (OR or AND) is set by 'Is Sunny template logic' below; it can stand alone with no sensor. Example: an azimuth/elevation comparison, or a lux threshold. A template that is empty or fails to render gives no opinion, so the integration falls back to the sensor and then the Weather Entity / Weather Conditions logic. Leave empty to disable.",
+          "is_sunny_template_mode": "How the Is Sunny template combines with the Is Sunny binary sensor above. 'OR' (default) — sunny when the template is truthy OR the sensor is ON. 'AND' — sunny only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Sunny template is set above."
         }
       },
       "temperature_climate": {
@@ -518,6 +530,8 @@
           "outside_temp": "Capteur de température extérieure (optionnel)",
           "outside_threshold": "Seuil de température extérieure",
           "presence_entity": "Entité de présence (optionnelle)",
+          "presence_template": "Presence template (optional)",
+          "presence_template_mode": "Presence template logic",
           "transparent_blind": "Store transparent",
           "winter_close_insulation": "Mode isolation hivernale"
         },
@@ -529,6 +543,8 @@
           "outside_temp": "Capteur de température extérieure optionnel. Quand configuré, cette valeur (plutôt que le capteur intérieur) détermine la saison actuelle, et le seuil extérieur est appliqué pour éviter que le store se ferme comme en été lors d'une journée intérieure chaude mais extérieure froide.",
           "outside_threshold": "Température extérieure minimale requise avant l'activation du mode été. Évite de fermer les protections lors d'une journée chaude intérieure alors qu'il fait en réalité froid dehors. Utilisé uniquement quand un capteur de température extérieure est configuré. **La valeur est interprétée dans l'unité de ce capteur extérieur, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "presence_entity": "Capteur de présence, suivi d'appareil ou zone optionnel. Quand quelqu'un est à la maison, le store utilise le suivi anti-éblouissement en mode intermédiaire ; quand personne n'est là, une règle simplifiée été-fermé / hiver-ouvert s'applique. Laissez vide pour toujours traiter l'espace comme occupé.",
+          "presence_template": "Optional Home Assistant Jinja2 template that reports occupancy. When it renders truthy (on/true/1) the space counts as occupied; when falsy it is treated as empty. How it combines with the Presence entity above (OR or AND) is set by 'Presence template logic' below; it can stand alone with no entity. Use this for composite occupancy (e.g. anyone home AND awake). A template that is empty or fails to render gives no opinion, so the Presence entity logic decides. Leave empty to disable.",
+          "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Activez quand le matériau du store est transparent ou translucide. En été avec des occupants présents, un store transparent se fermera quand même complètement pour réduire les apports de chaleur, alors qu'un store opaque suivrait le suivi anti-éblouissement.",
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire)."
         }
@@ -887,7 +903,11 @@
           "weather_rain_sensor": "Capteur de taux de pluie",
           "weather_rain_threshold": "Seuil de taux de pluie",
           "weather_is_raining_sensor": "Capteur binaire En train de pleuvoir",
+          "weather_is_raining_template": "Is Raining template (optional)",
+          "weather_is_raining_template_mode": "Is Raining template logic",
           "weather_is_windy_sensor": "Capteur binaire Venteux",
+          "weather_is_windy_template": "Is Windy template (optional)",
+          "weather_is_windy_template_mode": "Is Windy template logic",
           "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
           "weather_override_position": "Position de dérogation",
           "weather_override_min_mode": "Mode position minimale",
@@ -902,7 +922,11 @@
           "weather_rain_sensor": "Capteur numérique signalant le taux de pluie. La dérogation s'active quand la valeur atteint ou dépasse le seuil. Laissez vide pour ignorer le taux de pluie.",
           "weather_rain_threshold": "Seuil de taux de pluie qui active la dérogation. **La valeur est interprétée dans l'unité du capteur de pluie configuré, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "weather_is_raining_sensor": "Capteur binaire pour la détection de pluie. La dérogation s'active quand ce capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_is_raining_template": "Optional Home Assistant Jinja2 template that decides whether it is raining. When it renders truthy (on/true/1) the override engages. How it combines with the Is Raining binary sensor above (OR or AND) is set by 'Is Raining template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'raining' from a numeric rain-rate threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_raining_template_mode": "How the Is Raining template combines with the Is Raining binary sensor above. 'OR' (default) — raining when the template is truthy OR the sensor is ON. 'AND' — raining only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Raining template is set above.",
           "weather_is_windy_sensor": "Capteur binaire pour la détection du vent. La dérogation s'active quand ce capteur est « activé ». Laissez vide pour ignorer.",
+          "weather_is_windy_template": "Optional Home Assistant Jinja2 template that decides whether it is windy. When it renders truthy (on/true/1) the override engages. How it combines with the Is Windy binary sensor above (OR or AND) is set by 'Is Windy template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'windy' from a numeric wind-speed threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_windy_template_mode": "How the Is Windy template combines with the Is Windy binary sensor above. 'OR' (default) — windy when the template is truthy OR the sensor is ON. 'AND' — windy only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Windy template is set above.",
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_override_position": "Position (0-100%) pour déplacer les stores quand la dérogation météo est active. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Par défaut : 0%.",
           "weather_override_min_mode": "Quand activé, la position de dérogation agit comme un plancher minimum — le store ne se fermera pas en dessous de cette position, mais les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position de dérogation exacte.",
@@ -1048,7 +1072,9 @@
           "cloud_suppression": "Activer la suppression des nuages (interrupteur principal)",
           "weather_state": "Conditions météorologiques",
           "cloudy_position": "Position nuageux (optionnel)",
-          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)"
+          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)",
+          "is_sunny_template": "Is Sunny template (optional)",
+          "is_sunny_template_mode": "Is Sunny template logic"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -1061,7 +1087,9 @@
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel la suppression de l'éblouissement est désactivée. Par exemple, 75 signifie que la protection cesse de suivre le soleil quand le ciel est couvert à 75 % ou plus. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "cloud_suppression": "Interrupteur principal de cet écran entier. Lorsqu'il est **désactivé** (par défaut), tous les capteurs ci-dessous sont ignorés et le contrôle de l'éblouissement fonctionne normalement. Lorsqu'il est **activé**, tout capteur configuré (état météorologique, luminosité, rayonnement ou couverture nuageuse) indiquant l'absence du soleil arrêtera le suivi du soleil et déplacera la protection vers la **position nuageuse** ci-dessus (ou la position par défaut si celle-ci est vide). Fonctionne seul — le mode climatique n'a pas besoin d'être activé.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut.",
-          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré."
+          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré.",
+          "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. When it renders truthy (on/true/1) sun is assumed present; when falsy it is assumed absent and cloud suppression fires. How it combines with the Is Sunny binary sensor above (OR or AND) is set by 'Is Sunny template logic' below; it can stand alone with no sensor. Example: an azimuth/elevation comparison, or a lux threshold. A template that is empty or fails to render gives no opinion, so the integration falls back to the sensor and then the Weather Entity / Weather Conditions logic. Leave empty to disable.",
+          "is_sunny_template_mode": "How the Is Sunny template combines with the Is Sunny binary sensor above. 'OR' (default) — sunny when the template is truthy OR the sensor is ON. 'AND' — sunny only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Sunny template is set above."
         }
       },
       "temperature_climate": {
@@ -1075,6 +1103,8 @@
           "outside_temp": "Capteur de température extérieure (optionnel)",
           "outside_threshold": "Seuil de température extérieure",
           "presence_entity": "Entité de présence (optionnelle)",
+          "presence_template": "Presence template (optional)",
+          "presence_template_mode": "Presence template logic",
           "transparent_blind": "Store transparent",
           "winter_close_insulation": "Mode isolation hivernale"
         },
@@ -1086,6 +1116,8 @@
           "outside_temp": "Capteur de température extérieure optionnel. Quand configuré, cette valeur (plutôt que le capteur intérieur) détermine la saison actuelle, et le seuil extérieur est appliqué pour éviter que le store se ferme comme en été lors d'une journée intérieure chaude mais extérieure froide.",
           "outside_threshold": "Température extérieure minimale requise avant l'activation du mode été. Évite de fermer les protections lors d'une journée chaude intérieure alors qu'il fait en réalité froid dehors. Utilisé uniquement quand un capteur de température extérieure est configuré. **La valeur est interprétée dans l'unité de ce capteur extérieur, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "presence_entity": "Capteur de présence, suivi d'appareil ou zone optionnel. Quand quelqu'un est à la maison, le store utilise le suivi anti-éblouissement en mode intermédiaire ; quand personne n'est là, une règle simplifiée été-fermé / hiver-ouvert s'applique. Laissez vide pour toujours traiter l'espace comme occupé.",
+          "presence_template": "Optional Home Assistant Jinja2 template that reports occupancy. When it renders truthy (on/true/1) the space counts as occupied; when falsy it is treated as empty. How it combines with the Presence entity above (OR or AND) is set by 'Presence template logic' below; it can stand alone with no entity. Use this for composite occupancy (e.g. anyone home AND awake). A template that is empty or fails to render gives no opinion, so the Presence entity logic decides. Leave empty to disable.",
+          "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Activez quand le matériau du store est transparent ou translucide. En été avec des occupants présents, un store transparent se fermera quand même complètement pour réduire les apports de chaleur, alors qu'un store opaque suivrait le suivi anti-éblouissement.",
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire)."
         }

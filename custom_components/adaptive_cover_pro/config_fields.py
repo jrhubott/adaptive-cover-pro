@@ -90,6 +90,8 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -119,6 +121,8 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
@@ -145,7 +149,11 @@ from .const import (
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -1144,6 +1152,30 @@ _GLARE_TOGGLE_SPECS = _spec(
 # markers. Here we record range/default/validator so the derived maps are
 # single-sourced.
 
+
+def _condition_template_specs(
+    template_key: str, mode_key: str, section: str
+) -> tuple[FieldSpec, ...]:
+    """FieldSpec pair for an optional boolean condition template + combine mode.
+
+    The single source for the is_sunny / presence / is-raining / is-windy
+    template fields (issue #639): a clearable ``NONE`` template plus a ``SELECT``
+    combine mode (``TemplateCombineMode``, default OR). The selectors are built
+    in ``config_dynamic`` (dynamic section → ``make_selector=None``), mirroring
+    the custom-position / daytime-gate template pattern.
+    """
+    return (
+        FieldSpec(template_key, section, ValidatorKind.NONE, clearable=True),
+        FieldSpec(
+            mode_key,
+            section,
+            ValidatorKind.SELECT,
+            default=DEFAULT_TEMPLATE_COMBINE_MODE,
+            select_options=tuple(m.value for m in const.TemplateCombineMode),
+        ),
+    )
+
+
 _WEATHER_OVERRIDE_SPECS = _spec(
     FieldSpec(
         CONF_WEATHER_BYPASS_AUTO_CONTROL,
@@ -1180,6 +1212,16 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         SECTION_WEATHER_OVERRIDE,
         ValidatorKind.ENTITY,
         clearable=True,
+    ),
+    *_condition_template_specs(
+        CONF_WEATHER_IS_RAINING_TEMPLATE,
+        CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+        SECTION_WEATHER_OVERRIDE,
+    ),
+    *_condition_template_specs(
+        CONF_WEATHER_IS_WINDY_TEMPLATE,
+        CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+        SECTION_WEATHER_OVERRIDE,
     ),
     FieldSpec(
         CONF_WEATHER_SEVERE_SENSORS,
@@ -1243,6 +1285,9 @@ _LIGHT_CLOUD_SPECS = _spec(
     FieldSpec(
         CONF_IS_SUNNY_SENSOR, SECTION_LIGHT_CLOUD, ValidatorKind.ENTITY, clearable=True
     ),
+    *_condition_template_specs(
+        CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE, SECTION_LIGHT_CLOUD
+    ),
     FieldSpec(
         CONF_LUX_ENTITY, SECTION_LIGHT_CLOUD, ValidatorKind.ENTITY, clearable=True
     ),
@@ -1302,6 +1347,11 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
         SECTION_TEMPERATURE_CLIMATE,
         ValidatorKind.ENTITY,
         clearable=True,
+    ),
+    *_condition_template_specs(
+        CONF_PRESENCE_TEMPLATE,
+        CONF_PRESENCE_TEMPLATE_MODE,
+        SECTION_TEMPERATURE_CLIMATE,
     ),
     FieldSpec(
         CONF_TEMP_LOW,

@@ -77,6 +77,7 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -109,6 +110,7 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
     CONF_SILL_HEIGHT,
@@ -130,7 +132,9 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -606,7 +610,9 @@ _WEATHER_OVERRIDE_OPTIONAL_KEYS: list[str] = [
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
 ]
 
 
@@ -623,6 +629,7 @@ _LIGHT_CLOUD_OPTIONAL_KEYS: list[str] = [
     CONF_CLOUDY_POSITION,
     CONF_WEATHER_ENTITY,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
     CONF_LUX_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -647,6 +654,7 @@ _TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
     CONF_TEMP_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
 ]
 
 WEATHER_OPTIONS = vol.Schema(
@@ -1354,17 +1362,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     motion_timeout = config.get(CONF_MOTION_TIMEOUT, 300)
     manual_dur = config.get(CONF_MANUAL_OVERRIDE_DURATION)
 
+    from .helpers import motion_entities
+    from .templates import is_template_string
+
     has_weather = any(
         [
             config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
             config.get(CONF_WEATHER_RAIN_SENSOR),
             config.get(CONF_WEATHER_IS_RAINING_SENSOR),
             config.get(CONF_WEATHER_IS_WINDY_SENSOR),
+            is_template_string(config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)),
+            is_template_string(config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)),
             bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
         ]
     )
-    from .helpers import motion_entities
-    from .templates import is_template_string
 
     def _thresh_display(value: Any, *, placeholder: str) -> str:
         return placeholder if is_template_string(str(value)) else str(value)
@@ -1507,8 +1518,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         wind_dir_tol = config.get(CONF_WEATHER_WIND_DIRECTION_TOLERANCE)
         rain_sensor = config.get(CONF_WEATHER_RAIN_SENSOR)
         rain_thresh = config.get(CONF_WEATHER_RAIN_THRESHOLD)
-        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR)
-        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
+        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR) or is_template_string(
+            config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)
+        )
+        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR) or is_template_string(
+            config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)
+        )
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
         if wind_sensor and wind_thresh is not None:
             wind_part = L["weather.wind"].format(
@@ -1682,8 +1697,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Cloud suppression (60)
     if has_cloud:
         cloud_parts = []
-        if v := config.get(CONF_IS_SUNNY_SENSOR):
-            cloud_parts.append(L["cloud.is_sunny"].format(value=v))
+        is_sunny_value = config.get(CONF_IS_SUNNY_SENSOR) or (
+            L["fragments.template_value"]
+            if is_template_string(config.get(CONF_IS_SUNNY_TEMPLATE))
+            else None
+        )
+        if is_sunny_value:
+            cloud_parts.append(L["cloud.is_sunny"].format(value=is_sunny_value))
         if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
             cloud_parts.append(
@@ -1777,7 +1797,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         weather_ent = config.get(CONF_WEATHER_ENTITY)
         if weather_ent:
             cl_parts.append(L["climate.weather"].format(entity=weather_ent))
-        presence = config.get(CONF_PRESENCE_ENTITY)
+        presence = config.get(CONF_PRESENCE_ENTITY) or (
+            L["fragments.template_value"]
+            if is_template_string(config.get(CONF_PRESENCE_TEMPLATE))
+            else None
+        )
         if presence:
             cl_parts.append(L["climate.presence"].format(entity=presence))
         if config.get(CONF_TRANSPARENT_BLIND):

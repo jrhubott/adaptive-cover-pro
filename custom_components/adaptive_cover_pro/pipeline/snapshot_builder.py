@@ -39,6 +39,8 @@ from ..const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
@@ -48,6 +50,8 @@ from ..const import (
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
@@ -145,6 +149,9 @@ class PipelineSnapshotBuilder:
             temp_entity=options.get(CONF_TEMP_ENTITY),
             outside_entity=options.get(CONF_OUTSIDETEMP_ENTITY),
             presence_entity=options.get(CONF_PRESENCE_ENTITY),
+            presence_template=options.get(CONF_PRESENCE_TEMPLATE),
+            presence_template_mode=options.get(CONF_PRESENCE_TEMPLATE_MODE)
+            or DEFAULT_TEMPLATE_COMBINE_MODE,
             weather_entity=options.get(CONF_WEATHER_ENTITY),
             weather_condition=options.get(CONF_WEATHER_STATE),
             use_lux=use_lux,
@@ -157,6 +164,9 @@ class PipelineSnapshotBuilder:
             cloud_coverage_entity=options.get(CONF_CLOUD_COVERAGE_ENTITY),
             cloud_coverage_threshold=options.get(CONF_CLOUD_COVERAGE_THRESHOLD),
             is_sunny_sensor=options.get(CONF_IS_SUNNY_SENSOR),
+            is_sunny_template=options.get(CONF_IS_SUNNY_TEMPLATE),
+            is_sunny_template_mode=options.get(CONF_IS_SUNNY_TEMPLATE_MODE)
+            or DEFAULT_TEMPLATE_COMBINE_MODE,
         )
 
     def read_custom_position_sensors(

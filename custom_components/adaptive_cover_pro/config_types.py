@@ -281,6 +281,10 @@ class WeatherSlice:
     is_windy_sensor: str | None
     severe_sensors: list[str]
     timeout_seconds: int
+    is_raining_template: str | None = None
+    is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    is_windy_template: str | None = None
+    is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,7 +381,11 @@ class RuntimeConfig:
             CONF_VENETIAN_POST_SETTLE_HOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_SEVERE_SENSORS,
@@ -482,6 +490,14 @@ class RuntimeConfig:
                 ),
                 is_raining_sensor=options.get(CONF_WEATHER_IS_RAINING_SENSOR),
                 is_windy_sensor=options.get(CONF_WEATHER_IS_WINDY_SENSOR),
+                is_raining_template=options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
+                is_raining_template_mode=options.get(
+                    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
+                is_windy_template=options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+                is_windy_template_mode=options.get(
+                    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
                 severe_sensors=options.get(CONF_WEATHER_SEVERE_SENSORS, []),
                 timeout_seconds=options.get(
                     CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT

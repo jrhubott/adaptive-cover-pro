@@ -42,6 +42,8 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
@@ -51,6 +53,8 @@ from .const import (
     CONF_OUTSIDE_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
@@ -58,7 +62,11 @@ from .const import (
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -79,7 +87,9 @@ from .const import (
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
     DEFAULT_WEATHER_WIND_SPEED_THRESHOLD,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WINDOW_AZIMUTH,
+    TemplateCombineMode,
 )
 from .unit_system import length_default, length_selector
 
@@ -118,6 +128,28 @@ def _threshold_selector() -> selector.TemplateSelector:
     ``unit_of_measurement``.
     """
     return selector.TemplateSelector()
+
+
+def _condition_template_schema(template_key: str, mode_key: str) -> dict:
+    """Build a schema fragment for a condition template + combine mode (#639).
+
+    The single source for the is_sunny / presence / is-raining / is-windy
+    template selectors: a ``TemplateSelector`` plus the shared OR/AND combine-mode
+    ``SelectSelector`` (``template_combine_mode`` translation key), mirroring the
+    custom-position / daytime-gate template UI.
+    """
+    return {
+        vol.Optional(template_key): selector.TemplateSelector(),
+        vol.Optional(
+            mode_key, default=DEFAULT_TEMPLATE_COMBINE_MODE
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[m.value for m in TemplateCombineMode],
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="template_combine_mode",
+            )
+        ),
+    }
 
 
 def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
@@ -268,6 +300,14 @@ def weather_override_schema(
             vol.Optional(
                 CONF_WEATHER_IS_WINDY_SENSOR, default=vol.UNDEFINED
             ): binary_on_selector(),
+            **_condition_template_schema(
+                CONF_WEATHER_IS_RAINING_TEMPLATE,
+                CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+            ),
+            **_condition_template_schema(
+                CONF_WEATHER_IS_WINDY_TEMPLATE,
+                CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+            ),
             vol.Optional(CONF_WEATHER_SEVERE_SENSORS, default=[]): binary_on_selector(
                 multiple=True
             ),
@@ -338,6 +378,9 @@ def light_cloud_schema(
             vol.Optional(
                 CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
             ): binary_on_selector(),
+            **_condition_template_schema(
+                CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE
+            ),
             vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): numeric_selector(
                 device_class="illuminance"
             ),
@@ -384,6 +427,9 @@ def temperature_climate_schema(
             vol.Optional(
                 CONF_PRESENCE_ENTITY, default=vol.UNDEFINED
             ): presence_like_selector(),
+            **_condition_template_schema(
+                CONF_PRESENCE_TEMPLATE, CONF_PRESENCE_TEMPLATE_MODE
+            ),
             vol.Optional(CONF_TEMP_LOW, default="21"): _threshold_selector(),
             vol.Optional(CONF_TEMP_HIGH, default="25"): _threshold_selector(),
             vol.Optional(CONF_OUTSIDE_THRESHOLD, default="25"): _threshold_selector(),

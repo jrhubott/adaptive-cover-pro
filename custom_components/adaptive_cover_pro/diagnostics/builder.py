@@ -613,6 +613,7 @@ class DiagnosticsBuilder:
             CONF_INTERP,
             CONF_INVERSE_STATE,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
             CONF_MAX_ELEVATION,
             CONF_MAX_POSITION,
             CONF_MANUAL_IGNORE_EXTERNAL,
@@ -627,6 +628,8 @@ class DiagnosticsBuilder:
             DEFAULT_MOTION_TEMPLATE_MODE,
             DEFAULT_MOTION_TIMEOUT,
         )
+
+        from ..templates import is_template_string
 
         options = ctx.config_options
         result = ctx.pipeline_result
@@ -682,7 +685,12 @@ class DiagnosticsBuilder:
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),
                 "is_sunny_source": (
-                    options.get(CONF_IS_SUNNY_SENSOR) or "weather_state"
+                    options.get(CONF_IS_SUNNY_SENSOR)
+                    or (
+                        "[template]"
+                        if is_template_string(options.get(CONF_IS_SUNNY_TEMPLATE))
+                        else "weather_state"
+                    )
                 ),
                 "templated_thresholds": DiagnosticsBuilder._templated_thresholds(ctx),
             }

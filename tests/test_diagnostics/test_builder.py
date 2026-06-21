@@ -1117,6 +1117,39 @@ class TestCloudyPositionDiagnostics:
         diag, _ = builder.build(_base_ctx(config_options={}))
         assert diag["configuration"]["cloud_suppression_enabled"] is False
 
+    def test_is_sunny_source_template_when_only_template_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """is_sunny_source == '[template]' when only the template is configured (#639)."""
+        from custom_components.adaptive_cover_pro.const import CONF_IS_SUNNY_TEMPLATE
+
+        options = {CONF_IS_SUNNY_TEMPLATE: "{{ true }}"}
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["is_sunny_source"] == "[template]"
+
+    def test_is_sunny_source_sensor_takes_priority_over_template(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A configured sensor wins over the template in is_sunny_source (#639)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+        )
+
+        options = {
+            CONF_IS_SUNNY_SENSOR: "binary_sensor.sunny",
+            CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+        }
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["is_sunny_source"] == "binary_sensor.sunny"
+
+    def test_is_sunny_source_weather_state_when_neither_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Falls back to 'weather_state' when no sensor and no template (#639)."""
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        assert diag["configuration"]["is_sunny_source"] == "weather_state"
+
     def test_default_position_includes_configured_cloudy_pos(
         self, builder: DiagnosticsBuilder
     ):

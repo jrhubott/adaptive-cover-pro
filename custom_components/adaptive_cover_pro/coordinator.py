@@ -827,6 +827,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         else:
             self._reconcile_weather_override()
 
+    async def async_check_weather_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Handle a weather condition template's rendered result changing (#639).
+
+        Routed from ``async_track_template_result`` so a template-only override
+        (is-raining / is-windy) engages and reacts the instant the template
+        flips — the same immediacy as a weather sensor, with no polling. The
+        tracked result only signals *that* a template changed; the manager
+        re-reads the combined condition state live so the OR/AND mode is honoured.
+        """
+        is_now_active = self._weather_mgr.is_any_condition_active
+
+        if is_now_active:
+            if not self._weather_mgr.is_weather_override_active:
+                self.logger.info(
+                    "Weather conditions active (template) — retracting covers"
+                )
+                self._weather_mgr.record_conditions_active()
+            self.state_change = True
+            await self.async_refresh()
+        else:
+            self._reconcile_weather_override()
+
     async def async_check_motion_state_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
@@ -1031,7 +1055,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         never sees the active→clear transition and never starts the clear-delay timer.
         Restoring the flag here ensures the normal clear-delay path runs correctly.
         """
-        if not self._weather_mgr.configured_sensors:
+        if not self._weather_mgr.is_feature_configured:
             return
         if self._weather_mgr.is_any_condition_active:
             self.logger.info(
@@ -1949,6 +1973,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             rain_threshold=rc.weather.rain_threshold,
             is_raining_sensor=rc.weather.is_raining_sensor,
             is_windy_sensor=rc.weather.is_windy_sensor,
+            is_raining_template=rc.weather.is_raining_template,
+            is_raining_template_mode=rc.weather.is_raining_template_mode,
+            is_windy_template=rc.weather.is_windy_template,
+            is_windy_template_mode=rc.weather.is_windy_template_mode,
             severe_sensors=rc.weather.severe_sensors,
             timeout_seconds=rc.weather.timeout_seconds,
         )
