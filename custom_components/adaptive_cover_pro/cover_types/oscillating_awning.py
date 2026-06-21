@@ -33,6 +33,7 @@ from ..const import (
     DEFAULT_AWNING_MAX_ANGLE,
     DEFAULT_AWNING_MIN_ANGLE,
     DEFAULT_WINDOW_HEIGHT,
+    _RANGE_ARM_LENGTH,
 )
 from ..engine.covers import AdaptiveOscillatingCover
 from ..unit_system import length_default, length_selector
@@ -89,7 +90,12 @@ def geometry_oscillating_schema(hass: HomeAssistant | None = None) -> vol.Schema
             ): length_selector(hass, min_m=0.0, max_m=50, metric_step=0.01),
             vol.Required(
                 CONF_ARM_LENGTH, default=length_default(DEFAULT_ARM_LENGTH, hass)
-            ): length_selector(hass, min_m=0.1, max_m=3, metric_step=0.01),
+            ): length_selector(
+                hass,
+                min_m=_RANGE_ARM_LENGTH[0],
+                max_m=_RANGE_ARM_LENGTH[1],
+                metric_step=0.01,
+            ),
             vol.Required(
                 CONF_AWNING_MIN_ANGLE, default=DEFAULT_AWNING_MIN_ANGLE
             ): _sweep_angle_selector(),

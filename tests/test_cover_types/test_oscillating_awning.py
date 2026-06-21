@@ -9,12 +9,16 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover_pro.config_types import OscillatingConfig
+import voluptuous as vol
+
 from custom_components.adaptive_cover_pro.const import (
     CONF_ARM_LENGTH,
     CONF_AWNING_ANGLE,
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
+    CONF_HEIGHT_WIN,
     CoverType,
+    _RANGE_ARM_LENGTH,
 )
 from custom_components.adaptive_cover_pro.cover_types import POLICY_REGISTRY, get_policy
 from custom_components.adaptive_cover_pro.engine.covers import AdaptiveOscillatingCover
@@ -266,3 +270,39 @@ def test_config_from_options_defaults():
     assert cfg.arm_length == 0.8
     assert cfg.min_angle == 0
     assert cfg.max_angle == 175
+
+
+def test_geometry_schema_accepts_arm_length_up_to_6m():
+    """Regression for #636: arm_length selector must accept values up to 6 m.
+
+    The config-flow geometry schema (the path the user hits at config-entry
+    creation) previously capped arm_length at 3 m, causing "Value 3.6 is too
+    large" when a user entered a physically-valid 3.6 m arm. The selector bound
+    must match _RANGE_ARM_LENGTH so the UI cap and the service-validator cap
+    share a single source of truth.
+    """
+    from custom_components.adaptive_cover_pro.cover_types.oscillating_awning import (
+        geometry_oscillating_schema,
+    )
+
+    schema = geometry_oscillating_schema()  # hass=None → metric (metres)
+
+    # Fill required geometry keys with valid in-range defaults; only arm_length
+    # is under test here.
+    base = {
+        CONF_HEIGHT_WIN: 1.5,
+        CONF_AWNING_MIN_ANGLE: 0,
+        CONF_AWNING_MAX_ANGLE: 175,
+    }
+
+    # 3.6 m was the reported value that was rejected.
+    result_36 = schema({**base, CONF_ARM_LENGTH: 3.6})
+    assert result_36[CONF_ARM_LENGTH] == pytest.approx(3.6)
+
+    # 6.0 m is the ceiling defined by _RANGE_ARM_LENGTH.
+    result_max = schema({**base, CONF_ARM_LENGTH: _RANGE_ARM_LENGTH[1]})
+    assert result_max[CONF_ARM_LENGTH] == pytest.approx(_RANGE_ARM_LENGTH[1])
+
+    # Values strictly above the ceiling must still be rejected.
+    with pytest.raises(vol.Invalid):
+        schema({**base, CONF_ARM_LENGTH: 6.1})
