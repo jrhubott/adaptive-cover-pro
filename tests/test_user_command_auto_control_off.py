@@ -44,6 +44,8 @@ def _make_coord():
     coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
     coord.config_entry = MagicMock()
     coord.config_entry.options = {}
+    # After fix #643, async_apply_user_position falls back to _resolved_options.
+    coord._resolved_options = {}
 
     from tests.test_pipeline.conftest import make_snapshot  # noqa: PLC0415
 
