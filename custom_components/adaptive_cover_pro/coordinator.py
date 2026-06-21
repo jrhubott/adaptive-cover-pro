@@ -337,7 +337,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Renders templated threshold options to numbers once per cycle (#577).
         self._template_resolver = TemplateResolver(self.hass)
         # Current cycle's options after template resolution (for diagnostics).
-        self._resolved_options: dict = dict(self.config_entry.options)
+        # Resolved at construction so apply_user_position sees float thresholds
+        # even before the first _async_update_data cycle runs (#643).
+        self._resolved_options: dict = self._template_resolver.resolve(
+            self.config_entry.options
+        )
 
         # Sun data provider
         self._sun_provider = SunProvider(hass=self.hass)
@@ -2091,7 +2095,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ``adaptive_cover_pro.set_position`` service when callers explicitly
         opt in.
         """
-        opts = options if options is not None else self.config_entry.options
+        opts = options if options is not None else self._resolved_options
         snapshot = self._snapshot_builder.build(
             opts,
             cover_data=self._cover_data,
