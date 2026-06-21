@@ -144,7 +144,12 @@
     "label_end_or_sunset": "heure de fin/coucher",
     "label_sunset": "coucher",
     "after_sunrise": "{indent}🌄 Après lever{ann} → {default_pos}% (suivi reprend).",
-    "return_sunset": "{indent}🔚 Retour à la position coucher à l'heure de fin : activé"
+    "return_sunset": "{indent}🔚 Retour à la position coucher à l'heure de fin : activé",
+    "gate_sensors": "{indent}🌗 Filtre de jour : {sensors} décident le jour par rapport à l'obscurité.",
+    "gate_template": "{indent}🌗 Filtre de jour : un modèle décide le jour par rapport à l'obscurité.",
+    "gate_both": "{indent}🌗 Filtre de jour : {sensors} et un modèle ({mode}) décident le jour par rapport à l'obscurité.",
+    "gate_explainer": "{indent}Lorsque le filtre lit le jour, ACP assure le suivi du soleil ; lorsqu'il lit l'obscurité, ACP applique la position de coucher de soleil. Le filtre remplace la limite de coucher/lever astronomique du soleil ; les heures de début/fin limitent toujours la fenêtre.",
+    "gate_offset_ignored": "{indent}⚠️ Le décalage de coucher/lever de soleil est ignoré lorsqu'un filtre de jour est défini — le filtre, et non l'horloge, décide la limite."
   },
   "blind_spot": {
     "line": "🟥 Zone aveugle : ignore le soleil à {bs} vers l'intérieur depuis la gauche FOV (par ex. arbre ou avant-toit).",

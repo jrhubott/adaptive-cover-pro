@@ -30,6 +30,9 @@ from .const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DAYTIME_GATE_TEMPLATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
@@ -98,6 +101,7 @@ from .const import (
     CONF_MOTION_TIMEOUT_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
     CONF_OPEN_CLOSE_THRESHOLD,
@@ -251,6 +255,36 @@ SUN_TRACKING_SCHEMA = sun_tracking_schema()
 # Keys in SUN_TRACKING_SCHEMA stored in canonical metres.
 _SUN_TRACKING_LENGTH_KEYS: tuple[str, ...] = (CONF_DISTANCE,)
 
+_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
+_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
+_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
+
+
+def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a single or multi-pick selector for on/off entities."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
+    )
+
+
+def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
+    )
+
+
+def _template_combine_mode_selector() -> selector.SelectSelector:
+    """Return the shared OR/AND combine-mode selector (motion + daytime gate)."""
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[m.value for m in TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        )
+    )
+
+
 POSITION_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DEFAULT_HEIGHT, default=60): selector.NumberSelector(
@@ -301,6 +335,17 @@ POSITION_SCHEMA = vol.Schema(
         vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
         ),
+        # Daytime gate (issue #632): a binary-sensor list and/or a Jinja condition
+        # template that REPLACES the astronomical sunset/sunrise boundary when set.
+        # On/truthy = daytime (track); off/falsy = dark (apply sunset position).
+        # Mirrors the motion gate shape (sensors + template + combine mode).
+        vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): _binary_on_selector(
+            multiple=True
+        ),
+        vol.Optional(CONF_DAYTIME_GATE_TEMPLATE): selector.TemplateSelector(),
+        vol.Optional(
+            CONF_DAYTIME_GATE_TEMPLATE_MODE, default=DEFAULT_TEMPLATE_COMBINE_MODE
+        ): _template_combine_mode_selector(),
         vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -377,6 +422,9 @@ _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_SUNSET_TIME_ENTITY,
     CONF_SUNRISE_TIME_ENTITY,
+    # Daytime gate template has no schema default → cleared = absent (issue #632).
+    # The sensor list carries default=[] so it round-trips on its own (NOT here).
+    CONF_DAYTIME_GATE_TEMPLATE,
 ]
 
 AUTOMATION_SCHEMA = vol.Schema(
@@ -450,24 +498,6 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
-_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
-_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
-
-
-def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
-    """Return a single or multi-pick selector for on/off entities."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
-    )
-
-
-def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
-    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
-    )
-
 
 def _build_custom_position_schema_dict(sensor_type: str | None = None) -> dict:
     """Compose the custom-position schema dict for the given cover type.
@@ -509,13 +539,7 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOTION_TEMPLATE): selector.TemplateSelector(),
         vol.Optional(
             CONF_MOTION_TEMPLATE_MODE, default=DEFAULT_MOTION_TEMPLATE_MODE
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[m.value for m in TemplateCombineMode],
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="template_combine_mode",
-            )
-        ),
+        ): _template_combine_mode_selector(),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
         ): selector.NumberSelector(
@@ -1151,6 +1175,22 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes)."
     ),
     "timing.return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    # --- Daytime gate (issue #632) ---
+    "timing.gate_sensors": "{indent}🌗 Daytime gate: {sensors} decide day vs dark.",
+    "timing.gate_template": "{indent}🌗 Daytime gate: a template decides day vs dark.",
+    "timing.gate_both": (
+        "{indent}🌗 Daytime gate: {sensors} and a template ({mode}) decide day "
+        "vs dark."
+    ),
+    "timing.gate_explainer": (
+        "{indent}When the gate reads daytime ACP sun-tracks; when it reads dark "
+        "ACP applies the sunset position. The gate replaces the astronomical "
+        "sunset/sunrise boundary; start/end times still clamp the window."
+    ),
+    "timing.gate_offset_ignored": (
+        "{indent}⚠️ Sunset/Sunrise Offset is ignored while a daytime gate is set "
+        "— the gate, not the clock, decides the boundary."
+    ),
     # --- Blind spot ---
     "blind_spot.line": (
         "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree "
@@ -1909,6 +1949,36 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             if config.get(CONF_RETURN_SUNSET):
                 lines.append(L["timing.return_sunset"].format(indent=indent))
 
+    # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
+    # replacing the astronomical sunset/sunrise calc. Rendered independently of the
+    # timing window so it shows even with no sunset_pos / schedule configured.
+    gate_sensors = config.get(CONF_DAYTIME_GATE_SENSORS) or []
+    gate_template = config.get(CONF_DAYTIME_GATE_TEMPLATE)
+    gate_has_template = is_template_string(gate_template)
+    gate_mode = config.get(
+        CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+    )
+    if gate_sensors or gate_has_template:
+        indent = " " * 4
+        sensors_str = ", ".join(gate_sensors)
+        if gate_sensors and gate_has_template:
+            lines.append(
+                L["timing.gate_both"].format(
+                    indent=indent, sensors=sensors_str, mode=gate_mode
+                )
+            )
+        elif gate_sensors:
+            lines.append(
+                L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str)
+            )
+        else:
+            lines.append(L["timing.gate_template"].format(indent=indent))
+        lines.append(L["timing.gate_explainer"].format(indent=indent))
+        # Footgun: sunset/sunrise offsets are no-ops once the gate owns the
+        # boundary. Only warn when an offset is actually set (avoid noise).
+        if sunset_off or sunrise_off:
+            lines.append(L["timing.gate_offset_ignored"].format(indent=indent))
+
     # Blind spot (sub-bullet / informational, no priority of its own)
     if config.get(CONF_ENABLE_BLIND_SPOT):
         bs_l = config.get(CONF_BLIND_SPOT_LEFT)
@@ -2179,6 +2249,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNRISE_OFFSET,
             CONF_SUNSET_TIME_ENTITY,
             CONF_SUNRISE_TIME_ENTITY,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_DAYTIME_GATE_TEMPLATE_MODE,
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_POSITION_TOLERANCE,
             CONF_ENABLE_POSITION_MATCHING,

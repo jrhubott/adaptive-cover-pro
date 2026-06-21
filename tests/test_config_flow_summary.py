@@ -11,6 +11,9 @@ from custom_components.adaptive_cover_pro.config_flow import (
 from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DAYTIME_GATE_TEMPLATE_MODE,
     CONF_ENABLE_SUN_TRACKING,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_MY_POSITION_VALUE,
@@ -2690,3 +2693,57 @@ def test_climate_outside_threshold_template_shows_placeholder():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "[template]" in summary
     assert "{%" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate (issue #632) — summary line + offset-ignored warning
+# ---------------------------------------------------------------------------
+
+
+def test_summary_shows_daytime_gate_line_for_sensor():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()
+    assert "binary_sensor.bright" in summary
+
+
+def test_summary_shows_daytime_gate_line_for_template():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_TEMPLATE] = "{{ is_state('sun.sun', 'above_horizon') }}"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()
+
+
+def test_summary_gate_absent_when_unconfigured():
+    summary = _build_config_summary(_minimal_vertical(), CoverType.BLIND)
+    assert "daytime gate" not in summary.lower()
+
+
+def test_summary_gate_warns_offsets_ignored_when_offset_set():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    cfg[CONF_SUNSET_OFFSET] = 30
+    cfg[CONF_SUNRISE_OFFSET] = 60
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    # A ⚠️ must surface the footgun: offsets are no-ops under a gate.
+    assert "⚠️" in summary
+    assert "offset" in summary.lower()
+
+
+def test_summary_gate_no_offset_warning_when_offsets_zero():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    # No offsets configured → no footgun → no offset warning, but still gate line.
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()
+    assert "offset" not in summary.lower()
+
+
+def test_summary_gate_template_mode_and():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    cfg[CONF_DAYTIME_GATE_TEMPLATE] = "{{ true }}"
+    cfg[CONF_DAYTIME_GATE_TEMPLATE_MODE] = "and"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()

@@ -227,6 +227,16 @@ CONF_SUNSET_USE_MY = "sunset_use_my"
 # Optional entity whose state is a datetime; replaces astral-computed sunset/sunrise.
 CONF_SUNSET_TIME_ENTITY = "sunset_time_entity"
 CONF_SUNRISE_TIME_ENTITY = "sunrise_time_entity"
+# Optional "daytime gate" (issue #632): a binary-sensor list and/or a Jinja
+# condition template that answers "is it daytime — should ACP sun-track now?".
+# When configured it OWNS the day/night boundary (replacing the astral sunset/
+# sunrise decision); when unconfigured ACP falls back to the astronomical calc
+# (zero regression). Gate on/active = daytime/track; off = dark → apply sunset
+# position. Clones the motion gate (§19): same evaluation helpers, no new code.
+# The combine mode reuses TemplateCombineMode / DEFAULT_TEMPLATE_COMBINE_MODE.
+CONF_DAYTIME_GATE_SENSORS = "daytime_gate_sensors"  # on/active = daytime/track
+CONF_DAYTIME_GATE_TEMPLATE = "daytime_gate_template"  # truthy = daytime/track
+CONF_DAYTIME_GATE_TEMPLATE_MODE = "daytime_gate_template_mode"  # TemplateCombineMode
 # Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
 CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
 CONF_SUNSET_TILT = (

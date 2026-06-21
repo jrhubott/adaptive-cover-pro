@@ -982,3 +982,120 @@ class TestEvalTime:
             )
         assert active is True
         assert result == 20
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate override (issue #632)
+# ---------------------------------------------------------------------------
+
+
+class TestDaytimeGateOverride:
+    """When a gate is configured it OWNS the day/night boundary.
+
+    ``daytime_gate`` is a tri-state override:
+      - ``None`` (default, unconfigured)  → astronomical decision, no regression.
+      - ``True`` (gate says daytime)       → never sunset, regardless of astral.
+      - ``False`` (gate says dark)         → always sunset, regardless of astral.
+    """
+
+    def test_gate_false_forces_sunset_at_midday(self):
+        # Astronomically midday (would be h_def) but the gate says dark.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        midday = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        with _freeze_now(midday):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=False,
+            )
+        assert active is True
+        assert result == 20
+
+    def test_gate_true_suppresses_sunset_after_astral_sunset(self):
+        # Bright evening: astronomically past sunset but the gate says daytime.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        evening = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        with _freeze_now(evening):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=True,
+            )
+        assert active is False
+        assert result == 80
+
+    def test_gate_true_suppresses_sunset_before_astral_sunrise(self):
+        # Overcast-inverse: astronomically pre-sunrise but the gate says daytime.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        early = dt.datetime(today.year, today.month, today.day, 4, 0, 0)
+        with _freeze_now(early):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=True,
+            )
+        assert active is False
+        assert result == 80
+
+    def test_gate_none_preserves_astronomical_after_sunset(self):
+        # Regression: None must behave exactly like the no-gate astral path.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        evening = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        with _freeze_now(evening):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=None,
+            )
+        assert active is True
+        assert result == 20
+
+    def test_gate_none_preserves_astronomical_at_midday(self):
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        midday = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        with _freeze_now(midday):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=None,
+            )
+        assert active is False
+        assert result == 80
+
+    def test_gate_false_ignores_window_explicitly_started(self):
+        # The gate short-circuits before the window_explicitly_started branch.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        early = dt.datetime(today.year, today.month, today.day, 4, 0, 0)
+        with _freeze_now(early):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                window_explicitly_started=True,
+                daytime_gate=False,
+            )
+        assert active is True
+        assert result == 20

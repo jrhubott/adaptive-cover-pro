@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from .const import DEFAULT_MOTION_TEMPLATE_MODE, TiltMode
+from .const import (
+    DEFAULT_MOTION_TEMPLATE_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
+    TiltMode,
+)
 
 
 def _num_or(value: Any, default: float) -> float:
@@ -243,6 +247,12 @@ class TimeWindowSlice:
     start_time_entity: str | None
     end_time: Any
     end_time_entity: str | None
+    # Daytime gate (issue #632): a binary-entity list and/or a Jinja condition
+    # template that, when configured, OWNS the day/night boundary. Empty / None =
+    # unconfigured → astronomical fallback (zero regression).
+    gate_sensors: list[str] = field(default_factory=list)
+    gate_template: str | None = None
+    gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,6 +343,9 @@ class RuntimeConfig:
         """
         from .const import (
             CONF_AZIMUTH,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_DAYTIME_GATE_TEMPLATE_MODE,
             CONF_DEBUG_EVENT_BUFFER_SIZE,
             CONF_DELTA_POSITION,
             CONF_DELTA_TIME,
@@ -425,6 +438,11 @@ class RuntimeConfig:
                 start_time_entity=options.get(CONF_START_ENTITY),
                 end_time=options.get(CONF_END_TIME),
                 end_time_entity=options.get(CONF_END_ENTITY),
+                gate_sensors=options.get(CONF_DAYTIME_GATE_SENSORS, []),
+                gate_template=options.get(CONF_DAYTIME_GATE_TEMPLATE),
+                gate_template_mode=options.get(
+                    CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
             ),
             motion=MotionSlice(
                 sensors=options.get(CONF_MOTION_SENSORS, []),

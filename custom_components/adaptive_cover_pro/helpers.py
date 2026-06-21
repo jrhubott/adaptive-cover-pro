@@ -337,6 +337,7 @@ def compute_effective_default(
     sunrise_time: dt.datetime | None = None,
     window_explicitly_started: bool = False,
     eval_time: dt.datetime | None = None,
+    daytime_gate: bool | None = None,
 ) -> tuple[int, bool]:
     """Return the effective default cover position based on astronomical sunset/sunrise.
 
@@ -378,6 +379,14 @@ def compute_effective_default(
             this lets the forecast project the effective default at each future
             sample time instead of "now". ``None`` (default) preserves the live
             behavior of evaluating against the current moment.
+        daytime_gate: Optional override from a configured "daytime gate" (issue
+            #632). ``None`` (default, no gate) keeps the astronomical decision —
+            zero regression. ``True`` (gate says daytime) forces
+            ``is_sunset_active=False`` regardless of astral times (the
+            bright-evening / pre-sunrise-dark cases). ``False`` (gate says dark)
+            forces ``is_sunset_active=True``. When set, the gate OWNS the boundary
+            and short-circuits the astral ``after_sunset``/``before_sunrise`` math
+            and the ``window_explicitly_started`` branch.
 
     Returns:
         A ``(effective_default, is_sunset_active)`` tuple where
@@ -386,6 +395,14 @@ def compute_effective_default(
     """
     if sunset_pos is None:
         return h_def, False
+
+    # A configured daytime gate OWNS the day/night boundary: it fully replaces the
+    # astronomical sunset/sunrise calc below (issue #632). Astral is the fallback
+    # only when the gate is unconfigured (``daytime_gate is None``).
+    if daytime_gate is not None:
+        is_sunset_active = daytime_gate is False
+        effective = int(sunset_pos) if is_sunset_active else int(h_def)
+        return effective, is_sunset_active
 
     sunset = (
         _local_naive_to_utc_naive(sunset_time)

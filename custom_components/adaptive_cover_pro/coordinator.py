@@ -1924,6 +1924,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             start_time_entity=rc.time_window.start_time_entity,
             end_time=rc.time_window.end_time,
             end_time_entity=rc.time_window.end_time_entity,
+            gate_sensors=rc.time_window.gate_sensors,
+            gate_template=rc.time_window.gate_template,
+            gate_template_mode=rc.time_window.gate_template_mode,
         )
         self._motion_mgr.update_config(
             sensors=rc.motion.sensors,
@@ -2603,6 +2606,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         if cover_data is None:
             cover_data = self.get_blind_data(options=options)
+        # A configured daytime gate (issue #632) OWNS the day/night boundary:
+        # pass its daytime/dark verdict (True=daytime→no sunset, False=dark→apply
+        # sunset position) only when configured, else None so
+        # compute_effective_default keeps the astronomical decision.
+        daytime_gate = (
+            self._time_mgr.gate_is_daytime
+            if self._time_mgr.gate_is_configured
+            else None
+        )
         return compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -2612,6 +2624,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
             window_explicitly_started=self.window_explicitly_started,
+            daytime_gate=daytime_gate,
         )
 
     async def _check_sunset_window_transition(self) -> None:

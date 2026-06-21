@@ -210,3 +210,57 @@ def test_sunset_tilt_absent_in_blind_schema() -> None:
     schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
     keys = {str(k) for k in schema}
     assert CONF_SUNSET_TILT not in keys, "sunset_tilt should not be in blind schema"
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate (issue #632) — lives on the POSITION step beside sunset options
+# ---------------------------------------------------------------------------
+
+
+def test_daytime_gate_keys_in_position_schema() -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAYTIME_GATE_SENSORS,
+        CONF_DAYTIME_GATE_TEMPLATE,
+        CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    )
+
+    keys = _schema_keys(cf.POSITION_SCHEMA)
+    assert CONF_DAYTIME_GATE_SENSORS in keys
+    assert CONF_DAYTIME_GATE_TEMPLATE in keys
+    assert CONF_DAYTIME_GATE_TEMPLATE_MODE in keys
+    # The gate replaces the astronomical boundary — it must not leak into timing.
+    assert CONF_DAYTIME_GATE_SENSORS not in _schema_keys(cf.AUTOMATION_SCHEMA)
+
+
+def test_daytime_gate_template_is_optional_round_trips_absent() -> None:
+    # The template has no schema default → voluptuous omits it when cleared, so it
+    # must be in _POSITION_OPTIONAL_KEYS to round-trip as cleared (None).
+    from custom_components.adaptive_cover_pro.const import CONF_DAYTIME_GATE_TEMPLATE
+
+    assert CONF_DAYTIME_GATE_TEMPLATE in cf._POSITION_OPTIONAL_KEYS
+
+
+def test_daytime_gate_sensors_default_empty_list() -> None:
+    # The sensor list carries default=[] so a cleared multi-select round-trips as
+    # [] (NOT None — None would be ambiguous). It must NOT be in the optional list.
+    from custom_components.adaptive_cover_pro.const import CONF_DAYTIME_GATE_SENSORS
+
+    marker = next(
+        k for k in cf.POSITION_SCHEMA.schema if str(k) == CONF_DAYTIME_GATE_SENSORS
+    )
+    assert marker.default() == []
+    assert CONF_DAYTIME_GATE_SENSORS not in cf._POSITION_OPTIONAL_KEYS
+
+
+def test_daytime_gate_mode_default_is_shared_combine_default() -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAYTIME_GATE_TEMPLATE_MODE,
+        DEFAULT_TEMPLATE_COMBINE_MODE,
+    )
+
+    marker = next(
+        k
+        for k in cf.POSITION_SCHEMA.schema
+        if str(k) == CONF_DAYTIME_GATE_TEMPLATE_MODE
+    )
+    assert marker.default() == DEFAULT_TEMPLATE_COMBINE_MODE

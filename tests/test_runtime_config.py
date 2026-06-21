@@ -269,3 +269,36 @@ def test_runtime_config_threads_publish_lag_into_sequencer() -> None:
 
     rc_custom = RuntimeConfig.from_options({CONF_VENETIAN_BACKROTATE_PUBLISH_LAG: 75.0})
     assert rc_custom.venetian.backrotate_publish_lag_seconds == 75.0
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate slice (issue #632)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_daytime_gate_defaults_to_empty_unconfigured() -> None:
+    rc = RuntimeConfig.from_options({})
+    assert rc.time_window.gate_sensors == []
+    assert rc.time_window.gate_template is None
+    assert rc.time_window.gate_template_mode == "or"
+
+
+@pytest.mark.unit
+def test_daytime_gate_reads_provided_values() -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAYTIME_GATE_SENSORS,
+        CONF_DAYTIME_GATE_TEMPLATE,
+        CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    )
+
+    rc = RuntimeConfig.from_options(
+        {
+            CONF_DAYTIME_GATE_SENSORS: ["binary_sensor.bright"],
+            CONF_DAYTIME_GATE_TEMPLATE: "{{ is_state('sun.sun', 'above_horizon') }}",
+            CONF_DAYTIME_GATE_TEMPLATE_MODE: "and",
+        }
+    )
+    assert rc.time_window.gate_sensors == ["binary_sensor.bright"]
+    assert rc.time_window.gate_template == "{{ is_state('sun.sun', 'above_horizon') }}"
+    assert rc.time_window.gate_template_mode == "and"

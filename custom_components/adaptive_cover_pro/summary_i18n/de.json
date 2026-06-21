@@ -144,7 +144,12 @@
     "label_end_or_sunset": "Endzeit/Sonnenuntergang",
     "label_sunset": "Sonnenuntergang",
     "after_sunrise": "{indent}🌄 Nach Sonnenaufgang{ann} → {default_pos}% (Verfolgung fortgesetzt).",
-    "return_sunset": "{indent}🔚 Zurück zur Sonnenuntergangsposition bei Endzeit: aktiviert"
+    "return_sunset": "{indent}🔚 Zurück zur Sonnenuntergangsposition bei Endzeit: aktiviert",
+    "gate_sensors": "{indent}🌗 Tageslicht-Gate: {sensors} entscheiden über Tag vs. Dunkelheit.",
+    "gate_template": "{indent}🌗 Tageslicht-Gate: eine Vorlage entscheidet über Tag vs. Dunkelheit.",
+    "gate_both": "{indent}🌗 Tageslicht-Gate: {sensors} und eine Vorlage ({mode}) entscheiden über Tag vs. Dunkelheit.",
+    "gate_explainer": "{indent}Wenn das Gate Tag anzeigt, lädt ACP die Sonnennachführung; wenn es Dunkelheit anzeigt, wendet ACP die Sonnenuntergangsposition an. Das Gate ersetzt die astronomische Sonnenuntergangs-/Sonnenaufgangsgrenze; Start-/Endzeiten begrenzen das Fenster weiterhin.",
+    "gate_offset_ignored": "{indent}⚠️ Sonnenuntergangs-/Sonnenaufgangsversatz wird ignoriert, während ein Tageslicht-Gate gesetzt ist – das Gate, nicht die Uhr, entscheidet über die Grenze."
   },
   "blind_spot": {
     "line": "🟥 Blinder Fleck: ignoriert Sonne bei {bs} innen von FOV links (z.B. Baum oder Dachüberhang).",

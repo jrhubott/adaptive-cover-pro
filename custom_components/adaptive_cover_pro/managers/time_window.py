@@ -10,8 +10,9 @@ if TYPE_CHECKING:
 
     from ..config_context_adapter import ConfigContextAdapter
 
-from ..const import BLANK_TIME
-from ..helpers import get_datetime_from_str, get_safe_state
+from ..const import BLANK_TIME, DEFAULT_TEMPLATE_COMBINE_MODE
+from ..helpers import get_datetime_from_str, get_safe_state, is_entity_active
+from ..templates import combine_with_mode, is_template_string, render_condition
 from .common import EventRecorder
 
 
@@ -45,6 +46,11 @@ class TimeWindowManager:
         self._end_time_config: str | None = None
         self._end_time_entity: str | None = None
 
+        # Daytime-gate config (issue #632) — set via update_config()
+        self._gate_sensors: list[str] = []
+        self._gate_template: str | None = None
+        self._gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+
         # Cached start time from last evaluation (for diagnostics)
         self._cached_start_time: dt.datetime | None = None
 
@@ -54,6 +60,9 @@ class TimeWindowManager:
         start_time_entity: str | None,
         end_time: str | None,
         end_time_entity: str | None,
+        gate_sensors: list[str] = (),
+        gate_template: str | None = None,
+        gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
     ) -> None:
         """Update configuration values.
 
@@ -62,12 +71,19 @@ class TimeWindowManager:
             start_time_entity: Entity ID providing start time
             end_time: Static end time string
             end_time_entity: Entity ID providing end time
+            gate_sensors: Daytime-gate binary-entity IDs (on/active = daytime)
+            gate_template: Optional daytime-gate Jinja condition (truthy = daytime)
+            gate_template_mode: How ``gate_template`` folds with the sensors
+                (a :class:`~const.TemplateCombineMode` value, or/and)
 
         """
         self._start_time = start_time
         self._start_time_entity = start_time_entity
         self._end_time_config = end_time
         self._end_time_entity = end_time_entity
+        self._gate_sensors = list(gate_sensors)
+        self._gate_template = gate_template
+        self._gate_template_mode = gate_template_mode
 
     @property
     def is_active(self) -> bool:
@@ -84,7 +100,68 @@ class TimeWindowManager:
             and self._cached_start_time > self.end_time
         ):
             self.logger.error("Start time is after end time")
-        return self.before_end_time and self.after_start_time
+        # The clock (start/end) is an OUTER CLAMP layered onto the daytime gate
+        # (issue #632): a configured gate that reads "dark" closes the window even
+        # mid-clock, so the solar handler skips and the default handler runs. When
+        # the gate is unconfigured ``gate_is_daytime`` is True (fail-open) and this
+        # collapses to the pre-gate astronomical behavior.
+        return self.before_end_time and self.after_start_time and self.gate_is_daytime
+
+    @property
+    def gate_is_configured(self) -> bool:
+        """Return True when a daytime gate source — sensor or template — is set.
+
+        Single source for "does the gate own the day/night boundary?". When False
+        the coordinator uses the astronomical sunset/sunrise calc (issue #632).
+        """
+        return bool(self._gate_sensors) or is_template_string(self._gate_template)
+
+    @property
+    def gate_is_daytime(self) -> bool:
+        """Whether the daytime gate reports "daytime" (ACP should sun-track).
+
+        Mirrors :pyattr:`MotionManager.is_motion_detected`: the gate template and
+        the gate sensors are combined per the configured mode. Returns True when
+        the gate is unconfigured (feature disabled → astronomical fallback). The
+        template renders fail-open to *daytime* (``default=True``) — unlike motion's
+        ``default=False`` — so a broken template never forces a premature sunset.
+        """
+        if not self.gate_is_configured:
+            return True  # Unconfigured → daytime → astronomical fallback
+
+        has_template = is_template_string(self._gate_template)
+        # default=True ONLY when a template is actually set: fail-open to daytime so
+        # a broken template never slams the cover to the sunset position (motion's
+        # gate fails closed; this one must not, because "dark" here ends sun
+        # tracking). With no template the source must be neutral for the combine
+        # (False), or OR would read daytime even when a sensor says dark.
+        template_truthy = (
+            render_condition(self._hass, self._gate_template, default=True)
+            if has_template
+            else False
+        )
+        sensors_active = any(
+            is_entity_active(self._hass, sid) for sid in self._gate_sensors
+        )
+        return combine_with_mode(
+            template_truthy,
+            sensors_active,
+            self._gate_template_mode,
+            has_template=has_template,
+            has_others=bool(self._gate_sensors),
+        )
+
+    @property
+    def gate_is_dark(self) -> bool:
+        """Whether a *configured* gate reports "dark" (apply the sunset position).
+
+        ``None``-safe inverse of :pyattr:`gate_is_daytime` that stays False when the
+        gate is unconfigured, so the coordinator can pass it straight through as the
+        ``daytime_gate`` override to ``compute_effective_default`` (issue #632):
+        ``True`` forces the sunset position, ``False`` (here, unconfigured) leaves
+        the astronomical decision untouched.
+        """
+        return self.gate_is_configured and not self.gate_is_daytime
 
     def _normalize_to_today(self, time: dt.datetime) -> dt.datetime:
         """Normalize a future-dated entity time to today's date.
