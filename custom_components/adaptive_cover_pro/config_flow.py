@@ -78,6 +78,7 @@ from .const import (
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
     CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -111,6 +112,7 @@ from .const import (
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
     CONF_SILL_HEIGHT,
@@ -133,8 +135,10 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
     CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
     CONF_WEATHER_IS_WINDY_SENSOR,
     CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -2381,6 +2385,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
             CONF_WEATHER_TIMEOUT,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         }
     ),
     "weather_override_sensors": frozenset(
@@ -2389,7 +2395,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
             CONF_WEATHER_SEVERE_SENSORS,
         }
     ),
@@ -2404,7 +2412,11 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
             CONF_WEATHER_SEVERE_SENSORS,
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
@@ -2419,6 +2431,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
     "light_cloud_sensors": frozenset(
@@ -2428,6 +2441,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_ENTITY,
             CONF_CLOUD_COVERAGE_ENTITY,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
         }
     ),
     # Legacy alias: full union of light_cloud_values + light_cloud_sensors
@@ -2444,6 +2458,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
     "temperature_climate_values": frozenset(
@@ -2454,6 +2470,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDE_THRESHOLD,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+            CONF_PRESENCE_TEMPLATE_MODE,
         }
     ),
     "temperature_climate_sensors": frozenset(
@@ -2461,6 +2478,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TEMP_ENTITY,
             CONF_OUTSIDETEMP_ENTITY,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
         }
     ),
     # Legacy alias: full union of temperature_climate_values + temperature_climate_sensors
@@ -2473,6 +2491,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDETEMP_ENTITY,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
+            CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
         }
@@ -2490,6 +2510,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
             CONF_CLIMATE_MODE,
             CONF_TEMP_ENTITY,
             CONF_TEMP_LOW,
@@ -2497,6 +2519,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDETEMP_ENTITY,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
+            CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
         }
