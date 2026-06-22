@@ -22,8 +22,10 @@ from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from .const import (
+    CONF_END_OF_WINDOW_POS,
     CONF_MAX_COVERAGE_STEPS,
     CONF_MINIMIZE_MOVEMENTS,
+    CONF_RETURN_SUNSET,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
     EVENT_FOV_ENTER,
@@ -101,6 +103,8 @@ def build_forecast(
     minimize_movements: bool = False,
     max_coverage_steps: int = 1,
     floor_active: bool = True,
+    end_of_window_pos: int | None = None,
+    end_of_window_time: datetime | None = None,
 ) -> Forecast:
     """Compute the forecast for one cover.
 
@@ -125,6 +129,13 @@ def build_forecast(
     ``now`` is retained on the signature for caller context (e.g. tests
     anchoring time, scripts passing wall-clock time) and for future
     use — the samples deliberately cover the full day regardless of ``now``.
+
+    ``end_of_window_pos`` / ``end_of_window_time`` (issue #625) project the
+    optional end-of-window position into the rest-of-day strip. When both are
+    set, samples at/after ``end_of_window_time`` get the end-of-window position
+    until astral sunset, then hand off to the astral sunset position — the same
+    two-phase rule the live path uses (delegated to ``compute_effective_default``
+    per sample). ``None``/``None`` (default) preserves today's behavior.
     """
     samples = _build_samples(
         sun_data=sun_data,
@@ -135,6 +146,8 @@ def build_forecast(
         minimize_movements=minimize_movements,
         max_coverage_steps=max_coverage_steps,
         floor_active=floor_active,
+        end_of_window_pos=end_of_window_pos,
+        end_of_window_time=end_of_window_time,
     )
     events = _build_events(
         sun_data=sun_data, cover_factory=cover_factory, samples=samples
@@ -152,6 +165,8 @@ def _build_samples(
     minimize_movements: bool = False,
     max_coverage_steps: int = 1,
     floor_active: bool = True,
+    end_of_window_pos: int | None = None,
+    end_of_window_time: datetime | None = None,
 ) -> list[ForecastSample]:
     """Walk the sun_data table at *step_minutes* cadence over the full calendar day.
 
@@ -168,10 +183,13 @@ def _build_samples(
     solar tracking whenever the sun is in the FOV regardless of the
     ``enable_sun_tracking`` toggle — the card's purpose is to show where the
     cover *would* sit, so that mode gate is deliberately not applied here.
-    For the same reason the operational start/end-time window is not modeled,
+    For the same reason the operational *start*-time window is not modeled,
     so ``compute_effective_default`` is called without ``window_explicitly_started``
     (defaults False) — the night position is governed purely by the
-    astronomical sunset/sunrise window at each sample time.
+    astronomical sunset/sunrise window at each sample time. The operational
+    *end* time IS modeled when ``end_of_window_time`` is supplied (issue #625):
+    samples at/after it apply the end-of-window position via the same
+    two-phase astral handoff the live path uses.
     """
     times = list(sun_data.times)
     azis = list(sun_data.solar_azimuth)
@@ -210,6 +228,15 @@ def _build_samples(
         else:
             # Sunset-aware effective default at this sample's projected time,
             # then the same limit treatment the live default branch applies.
+            # End-of-window (issue #625): this future sample is "window-closed"
+            # once it is at/after the resolved window-end. The two-phase astral
+            # handoff is automatic inside compute_effective_default (it evaluates
+            # after_sunset against eval_time=t), so no parallel branch is needed.
+            eow_active = (
+                end_of_window_pos is not None
+                and end_of_window_time is not None
+                and t >= end_of_window_time
+            )
             eff_default, is_sunset = compute_effective_default(
                 config.h_def,
                 config.sunset_pos,
@@ -217,6 +244,8 @@ def _build_samples(
                 config.sunset_off,
                 config.sunrise_off,
                 eval_time=t,
+                end_of_window_pos=end_of_window_pos,
+                end_of_window_active=eow_active,
             )
             pos = default_position_with_limits(
                 eff_default, config, is_sunset_active=is_sunset
@@ -374,6 +403,26 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
         coord._policy.position_axis_supported(c) for c in caps.values()  # noqa: SLF001
     )
 
+    # End-of-window position (issue #625): gate on CONF_RETURN_SUNSET exactly
+    # like the live path (when the toggle is off the live cover never applies the
+    # end-of-window position, so the forecast must match). Resolve the operating
+    # window-end from the time manager (None → no end configured → feature inert)
+    # and normalize its tz so the pure walker can compare it against the tz-aware
+    # sun_data.times grid.
+    eow_pos: int | None = None
+    eow_time: datetime | None = None
+    if options.get(CONF_RETURN_SUNSET):
+        eow_pos = options.get(CONF_END_OF_WINDOW_POS)
+        if eow_pos is not None:
+            end_time = coord._time_mgr.end_time  # noqa: SLF001
+            if end_time is not None:
+                if end_time.tzinfo is None:
+                    end_time = end_time.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+                eow_time = end_time
+            else:
+                # No end time configured → the feature cannot fire.
+                eow_pos = None
+
     # The coverage direction the primitives need is read from the policy's
     # primary axis (single source of truth), so the shim passes the policy
     # straight through rather than precomputing full_coverage_at_zero.
@@ -390,4 +439,6 @@ def build_forecast_for_coord(coord: AdaptiveDataUpdateCoordinator) -> Forecast:
             options.get(CONF_MAX_COVERAGE_STEPS, DEFAULT_MAX_COVERAGE_STEPS)
         ),
         floor_active=not all_positionable,
+        end_of_window_pos=eow_pos,
+        end_of_window_time=eow_time,
     )

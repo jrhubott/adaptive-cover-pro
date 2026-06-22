@@ -360,6 +360,8 @@ async def _trigger_async_apply_user_position(coord):
     """
     coord.config_entry = MagicMock()
     coord.config_entry.options = {}
+    # After fix #643, async_apply_user_position falls back to _resolved_options.
+    coord._resolved_options = {}
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors = MagicMock(return_value=[])
     # Floor composition reads from a real PipelineSnapshot (#463).

@@ -30,6 +30,9 @@ from .const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DAYTIME_GATE_TEMPLATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
@@ -45,6 +48,7 @@ from .const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
@@ -76,6 +80,8 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -100,6 +106,7 @@ from .const import (
     CONF_MOTION_TIMEOUT_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
     CONF_OPEN_CLOSE_THRESHOLD,
@@ -107,6 +114,8 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
     CONF_SILL_HEIGHT,
@@ -128,7 +137,11 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -254,6 +267,36 @@ SUN_TRACKING_SCHEMA = sun_tracking_schema()
 # Keys in SUN_TRACKING_SCHEMA stored in canonical metres.
 _SUN_TRACKING_LENGTH_KEYS: tuple[str, ...] = (CONF_DISTANCE,)
 
+_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
+_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
+_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
+
+
+def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a single or multi-pick selector for on/off entities."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
+    )
+
+
+def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
+    )
+
+
+def _template_combine_mode_selector() -> selector.SelectSelector:
+    """Return the shared OR/AND combine-mode selector (motion + daytime gate)."""
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[m.value for m in TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        )
+    )
+
+
 # ── Layer 2a: positions ─────────────────────────────────────────────────────
 # Every percentage target value lives here and only here (#613). Handlers and
 # the behavior step reference these positions; they never redefine one.
@@ -310,6 +353,27 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_END_OF_WINDOW_POS): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        # Daytime gate (issue #632): a binary-sensor list and/or a Jinja condition
+        # template that REPLACES the astronomical sunset/sunrise boundary when set.
+        # On/truthy = daytime (track); off/falsy = dark (apply sunset position).
+        # Mirrors the motion gate shape (sensors + template + combine mode). Lives on
+        # the position step beside the sunset options it overrides.
+        vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): _binary_on_selector(
+            multiple=True
+        ),
+        vol.Optional(CONF_DAYTIME_GATE_TEMPLATE): selector.TemplateSelector(),
+        vol.Optional(
+            CONF_DAYTIME_GATE_TEMPLATE_MODE, default=DEFAULT_TEMPLATE_COMBINE_MODE
+        ): _template_combine_mode_selector(),
         vol.Optional(
             CONF_ENABLE_MY_POSITION_ENTITIES,
             default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
@@ -388,8 +452,12 @@ BEHAVIOR_SCHEMA = vol.Schema(
 # (issue #439; same class as #323).
 _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_POS,
+    CONF_END_OF_WINDOW_POS,
     CONF_MY_POSITION_VALUE,
     CONF_MIN_POSITION_SUN_TRACKING,
+    # Daytime gate template has no schema default → cleared = absent (issue #632).
+    # The sensor list carries default=[] so it round-trips on its own (NOT here).
+    CONF_DAYTIME_GATE_TEMPLATE,
 ]
 
 # Same clear-handling for the L2b behavior step's entity pickers.
@@ -486,24 +554,6 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
-_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
-_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
-
-
-def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
-    """Return a single or multi-pick selector for on/off entities."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
-    )
-
-
-def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
-    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
-    )
-
 
 def _build_custom_position_schema_dict(sensor_type: str | None = None) -> dict:
     """Compose the custom-position schema dict for the given cover type.
@@ -545,13 +595,7 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOTION_TEMPLATE): selector.TemplateSelector(),
         vol.Optional(
             CONF_MOTION_TEMPLATE_MODE, default=DEFAULT_MOTION_TEMPLATE_MODE
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[m.value for m in TemplateCombineMode],
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="template_combine_mode",
-            )
-        ),
+        ): _template_combine_mode_selector(),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
         ): selector.NumberSelector(
@@ -618,7 +662,9 @@ _WEATHER_OVERRIDE_OPTIONAL_KEYS: list[str] = [
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
 ]
 
 
@@ -635,6 +681,7 @@ _LIGHT_CLOUD_OPTIONAL_KEYS: list[str] = [
     CONF_CLOUDY_POSITION,
     CONF_WEATHER_ENTITY,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
     CONF_LUX_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -659,6 +706,7 @@ _TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
     CONF_TEMP_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
 ]
 
 WEATHER_OPTIONS = vol.Schema(
@@ -1187,6 +1235,30 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes)."
     ),
     "timing.return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    "timing.end_of_window": (
+        "{indent}🔚 End-of-window position → {target} from end time until sunset "
+        "(then the sunset position applies, if set)."
+    ),
+    "timing.end_of_window_needs_return": (
+        '{indent}⚠️ End-of-window position is set but "Move covers when end time '
+        'is reached" is OFF — it will not be applied. Turn that toggle on.'
+    ),
+    # --- Daytime gate (issue #632) ---
+    "timing.gate_sensors": "{indent}🌗 Daytime gate: {sensors} decide day vs dark.",
+    "timing.gate_template": "{indent}🌗 Daytime gate: a template decides day vs dark.",
+    "timing.gate_both": (
+        "{indent}🌗 Daytime gate: {sensors} and a template ({mode}) decide day "
+        "vs dark."
+    ),
+    "timing.gate_explainer": (
+        "{indent}When the gate reads daytime ACP sun-tracks; when it reads dark "
+        "ACP applies the sunset position. The gate replaces the astronomical "
+        "sunset/sunrise boundary; start/end times still clamp the window."
+    ),
+    "timing.gate_offset_ignored": (
+        "{indent}⚠️ Sunset/Sunrise Offset is ignored while a daytime gate is set "
+        "— the gate, not the clock, decides the boundary."
+    ),
     # --- Blind spot ---
     "blind_spot.line": (
         "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree "
@@ -1350,17 +1422,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     motion_timeout = config.get(CONF_MOTION_TIMEOUT, 300)
     manual_dur = config.get(CONF_MANUAL_OVERRIDE_DURATION)
 
+    from .helpers import motion_entities
+    from .templates import is_template_string
+
     has_weather = any(
         [
             config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
             config.get(CONF_WEATHER_RAIN_SENSOR),
             config.get(CONF_WEATHER_IS_RAINING_SENSOR),
             config.get(CONF_WEATHER_IS_WINDY_SENSOR),
+            is_template_string(config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)),
+            is_template_string(config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)),
             bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
         ]
     )
-    from .helpers import motion_entities
-    from .templates import is_template_string
 
     def _thresh_display(value: Any, *, placeholder: str) -> str:
         return placeholder if is_template_string(str(value)) else str(value)
@@ -1503,8 +1578,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         wind_dir_tol = config.get(CONF_WEATHER_WIND_DIRECTION_TOLERANCE)
         rain_sensor = config.get(CONF_WEATHER_RAIN_SENSOR)
         rain_thresh = config.get(CONF_WEATHER_RAIN_THRESHOLD)
-        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR)
-        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
+        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR) or is_template_string(
+            config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)
+        )
+        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR) or is_template_string(
+            config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)
+        )
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
         if wind_sensor and wind_thresh is not None:
             wind_part = L["weather.wind"].format(
@@ -1678,8 +1757,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Cloud suppression (60)
     if has_cloud:
         cloud_parts = []
-        if v := config.get(CONF_IS_SUNNY_SENSOR):
-            cloud_parts.append(L["cloud.is_sunny"].format(value=v))
+        is_sunny_value = config.get(CONF_IS_SUNNY_SENSOR) or (
+            L["fragments.template_value"]
+            if is_template_string(config.get(CONF_IS_SUNNY_TEMPLATE))
+            else None
+        )
+        if is_sunny_value:
+            cloud_parts.append(L["cloud.is_sunny"].format(value=is_sunny_value))
         if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
             cloud_parts.append(
@@ -1773,7 +1857,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         weather_ent = config.get(CONF_WEATHER_ENTITY)
         if weather_ent:
             cl_parts.append(L["climate.weather"].format(entity=weather_ent))
-        presence = config.get(CONF_PRESENCE_ENTITY)
+        presence = config.get(CONF_PRESENCE_ENTITY) or (
+            L["fragments.template_value"]
+            if is_template_string(config.get(CONF_PRESENCE_TEMPLATE))
+            else None
+        )
         if presence:
             cl_parts.append(L["climate.presence"].format(entity=presence))
         if config.get(CONF_TRANSPARENT_BLIND):
@@ -1861,6 +1949,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     end_time = config.get(CONF_END_TIME)
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
+    eow_pos = config.get(CONF_END_OF_WINDOW_POS)
     sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
     sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     sunset_time_entity = config.get(CONF_SUNSET_TIME_ENTITY)
@@ -1882,7 +1971,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         config.get(key) not in (None, BLANK_TIME)
         for key in (CONF_START_ENTITY, CONF_END_ENTITY)
     ) or any(key in config for key in (CONF_START_TIME, CONF_END_TIME))
-    if timing_parts or sunset_pos is not None or schedule_configured:
+    if (
+        timing_parts
+        or sunset_pos is not None
+        or schedule_configured
+        or eow_pos is not None
+    ):
         timing_str = (
             " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
@@ -1944,6 +2038,51 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
             if config.get(CONF_RETURN_SUNSET):
                 lines.append(L["timing.return_sunset"].format(indent=indent))
+
+        # End-of-window position (issue #625) — renders independently of
+        # sunset_pos (a user may set it WITHOUT a sunset position). Footgun:
+        # the position only applies when CONF_RETURN_SUNSET ("Move covers when
+        # end time is reached") is on.
+        if eow_pos is not None:
+            lines.append(
+                L["timing.end_of_window"].format(
+                    indent=indent, target=_pos_label(int(eow_pos), use_my=False)
+                )
+            )
+            if not config.get(CONF_RETURN_SUNSET):
+                lines.append(
+                    L["timing.end_of_window_needs_return"].format(indent=indent)
+                )
+
+    # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
+    # replacing the astronomical sunset/sunrise calc. Rendered independently of the
+    # timing window so it shows even with no sunset_pos / schedule configured.
+    gate_sensors = config.get(CONF_DAYTIME_GATE_SENSORS) or []
+    gate_template = config.get(CONF_DAYTIME_GATE_TEMPLATE)
+    gate_has_template = is_template_string(gate_template)
+    gate_mode = config.get(
+        CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+    )
+    if gate_sensors or gate_has_template:
+        indent = " " * 4
+        sensors_str = ", ".join(gate_sensors)
+        if gate_sensors and gate_has_template:
+            lines.append(
+                L["timing.gate_both"].format(
+                    indent=indent, sensors=sensors_str, mode=gate_mode
+                )
+            )
+        elif gate_sensors:
+            lines.append(
+                L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str)
+            )
+        else:
+            lines.append(L["timing.gate_template"].format(indent=indent))
+        lines.append(L["timing.gate_explainer"].format(indent=indent))
+        # Footgun: sunset/sunrise offsets are no-ops once the gate owns the
+        # boundary. Only warn when an offset is actually set (avoid noise).
+        if sunset_off or sunrise_off:
+            lines.append(L["timing.gate_offset_ignored"].format(indent=indent))
 
     # Blind spot (sub-bullet / informational, no priority of its own)
     if config.get(CONF_ENABLE_BLIND_SPOT):
@@ -2241,6 +2380,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_ENABLE_MIN_POSITION,
             CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNSET_POS,
+            CONF_END_OF_WINDOW_POS,
             CONF_ENABLE_MY_POSITION_ENTITIES,
             CONF_MY_POSITION_VALUE,
             CONF_SUNSET_USE_MY,
@@ -2248,6 +2388,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNRISE_OFFSET,
             CONF_SUNSET_TIME_ENTITY,
             CONF_SUNRISE_TIME_ENTITY,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_DAYTIME_GATE_TEMPLATE_MODE,
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_POSITION_TOLERANCE,
             CONF_ENABLE_POSITION_MATCHING,
@@ -2353,6 +2496,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
             CONF_WEATHER_TIMEOUT,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         }
     ),
     "weather_override_sensors": frozenset(
@@ -2361,7 +2506,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
             CONF_WEATHER_SEVERE_SENSORS,
         }
     ),
@@ -2376,7 +2523,11 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
             CONF_WEATHER_SEVERE_SENSORS,
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
@@ -2391,6 +2542,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
     "light_cloud_sensors": frozenset(
@@ -2400,6 +2552,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_ENTITY,
             CONF_CLOUD_COVERAGE_ENTITY,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
         }
     ),
     # Legacy alias: full union of light_cloud_values + light_cloud_sensors
@@ -2416,6 +2569,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
     "temperature_climate_values": frozenset(
@@ -2426,6 +2581,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDE_THRESHOLD,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+            CONF_PRESENCE_TEMPLATE_MODE,
         }
     ),
     "temperature_climate_sensors": frozenset(
@@ -2433,6 +2589,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TEMP_ENTITY,
             CONF_OUTSIDETEMP_ENTITY,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
         }
     ),
     # Legacy alias: full union of temperature_climate_values + temperature_climate_sensors
@@ -2445,6 +2602,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDETEMP_ENTITY,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
+            CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
         }
@@ -2462,6 +2621,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
             CONF_CLIMATE_MODE,
             CONF_TEMP_ENTITY,
             CONF_TEMP_LOW,
@@ -2469,6 +2630,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDETEMP_ENTITY,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
+            CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
         }

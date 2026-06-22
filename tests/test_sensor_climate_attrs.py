@@ -333,3 +333,109 @@ class TestClimateStatusInactiveReasonAttr:
         # With a winning climate step + climate_mode_enabled inferred from coordinator,
         # when climate step matched=True → ACTIVE
         assert attrs["inactive_reason"] == ClimateInactiveReason.ACTIVE
+
+
+# ---------------------------------------------------------------------------
+# Issue #619 regression tests — string threshold options (post-#577 storage)
+# ---------------------------------------------------------------------------
+
+
+class TestClimateStatusThresholdStringOptions:
+    """Regression tests for #619: TemplateSelector stores threshold options as strings.
+
+    Since PR #577, CONF_TEMP_LOW/HIGH/OUTSIDE_THRESHOLD are stored in
+    config_entry.options as strings (e.g. '22', '22,5', '{{ states(...) }}').
+    _round_threshold must coerce them to float without raising TypeError.
+    """
+
+    def test_threshold_attrs_string_int_option(self) -> None:
+        """String integer options (post-#577 TemplateSelector storage) must not crash.
+
+        Regression for issue #619: TemplateSelector stores '22' not 22.0.
+        round('22', 1) raises TypeError; _round_threshold must coerce first.
+        """
+        coord = _make_coordinator(diagnostics=None, pipeline_result=None)
+        entry = MagicMock()
+        entry.entry_id = "test_entry"
+        entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
+        entry.options = {
+            CONF_TEMP_LOW: "20",
+            CONF_TEMP_HIGH: "22",
+            CONF_OUTSIDE_THRESHOLD: "24",
+        }
+        sensor = AdaptiveCoverClimateStatusSensor(
+            config_entry_id="test_entry",
+            hass=_make_hass(),
+            config_entry=entry,
+            name="Climate Status",
+            coordinator=coord,
+            hass_ref=_make_hass(),
+        )
+        attrs = sensor.extra_state_attributes  # must not raise TypeError
+        assert attrs is not None
+        assert attrs["temp_low"] == 20.0
+        assert attrs["temp_high"] == 22.0
+        assert attrs["temp_summer_outside"] == 24.0
+
+    def test_threshold_attrs_string_float_option(self) -> None:
+        """String float options (e.g. '17.777') are coerced and rounded correctly."""
+        coord = _make_coordinator(diagnostics=None, pipeline_result=None)
+        entry = MagicMock()
+        entry.entry_id = "test_entry"
+        entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
+        entry.options = {CONF_TEMP_LOW: "17.777", CONF_TEMP_HIGH: "25.999"}
+        sensor = AdaptiveCoverClimateStatusSensor(
+            config_entry_id="test_entry",
+            hass=_make_hass(),
+            config_entry=entry,
+            name="Climate Status",
+            coordinator=coord,
+            hass_ref=_make_hass(),
+        )
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert attrs["temp_low"] == 17.8
+        assert attrs["temp_high"] == 26.0
+
+    def test_threshold_attrs_comma_decimal_string(self) -> None:
+        """Comma-decimal string '22,5' (European locale) is normalised to 22.5."""
+        coord = _make_coordinator(diagnostics=None, pipeline_result=None)
+        entry = MagicMock()
+        entry.entry_id = "test_entry"
+        entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
+        entry.options = {CONF_TEMP_LOW: "22,5", CONF_TEMP_HIGH: "26,0"}
+        sensor = AdaptiveCoverClimateStatusSensor(
+            config_entry_id="test_entry",
+            hass=_make_hass(),
+            config_entry=entry,
+            name="Climate Status",
+            coordinator=coord,
+            hass_ref=_make_hass(),
+        )
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert attrs["temp_low"] == 22.5
+        assert attrs["temp_high"] == 26.0
+
+    def test_threshold_attrs_template_string_returns_none(self) -> None:
+        """A Jinja2 template string returns None — can't render without hass."""
+        coord = _make_coordinator(diagnostics=None, pipeline_result=None)
+        entry = MagicMock()
+        entry.entry_id = "test_entry"
+        entry.data = {"name": "Test", CONF_SENSOR_TYPE: CoverType.BLIND}
+        entry.options = {
+            CONF_TEMP_LOW: "{{ states('sensor.temp_setpoint') }}",
+            CONF_TEMP_HIGH: "25",
+        }
+        sensor = AdaptiveCoverClimateStatusSensor(
+            config_entry_id="test_entry",
+            hass=_make_hass(),
+            config_entry=entry,
+            name="Climate Status",
+            coordinator=coord,
+            hass_ref=_make_hass(),
+        )
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert attrs["temp_low"] is None  # template → unresolved at attr time
+        assert attrs["temp_high"] == 25.0

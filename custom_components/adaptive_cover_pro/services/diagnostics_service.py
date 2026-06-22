@@ -35,7 +35,9 @@ def _resolve_by_config_entry(
 
     Raises ServiceValidationError for any ID that doesn't exist or isn't ACP.
     """
-    all_coordinators: dict = hass.data.get(DOMAIN, {})
+    from . import loaded_coordinators  # noqa: PLC0415
+
+    all_coordinators = loaded_coordinators(hass)
     result = {}
     for entry_id in entry_ids:
         entry = hass.config_entries.async_get_entry(entry_id)

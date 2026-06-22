@@ -47,6 +47,28 @@ def render_condition(
     return result_as_boolean(result)
 
 
+def render_condition_or_none(hass: HomeAssistant, template_str) -> bool | None:
+    """Render an optional condition template to a tri-state boolean-or-None.
+
+    The "no opinion" counterpart to :func:`render_condition`: returns ``None``
+    when *template_str* is empty, not a template, or fails to render, and the
+    rendered boolean otherwise. Callers that must fall through to a different
+    source when a template is silent (is_sunny / presence / weather-override
+    condition templates, issue #639) use this instead of forcing a default.
+
+    Implemented on top of :func:`render_condition` (no separate Jinja eval):
+    a failing render returns whichever default it is given, so rendering with
+    both defaults and comparing detects the failure without duplicating the
+    rendering logic.
+    """
+    if not is_template_string(template_str):
+        return None
+    rendered = render_condition(hass, template_str, default=False)
+    if rendered != render_condition(hass, template_str, default=True):
+        return None  # unstable across defaults → render failed → no opinion
+    return rendered
+
+
 def combine_with_mode(
     template_truthy: bool,
     others_truthy: bool,
@@ -74,6 +96,43 @@ def combine_with_mode(
     if has_template and has_others and mode == "and":
         return template_truthy and others_truthy
     return template_truthy or others_truthy
+
+
+def fold_condition_template(
+    hass: HomeAssistant,
+    template_str,
+    mode: str,
+    *,
+    others_truthy: bool,
+    has_others: bool,
+) -> bool | None:
+    """Fold an optional condition template with a screen's other source.
+
+    The single-source combine used by the boolean condition-template fields
+    that pair a Jinja template with a companion entity/sensor and must fall
+    through to a separate fallback when neither source is authoritative
+    (is_sunny / presence in the climate provider, is-raining / is-windy in the
+    weather manager — issue #639). Wraps the shared trio
+    (:func:`render_condition_or_none` + :func:`combine_with_mode`) so callers
+    never re-implement the tri-state eval:
+
+    * ``has_others`` gates ``others_truthy`` — a fail-open default (e.g.
+      ``is_entity_active(None)``) can't leak in as a phantom True.
+    * A template that is empty / not Jinja / fails to render gives "no
+      opinion": the result reduces to the other source, or — when there is no
+      other source either — to ``None`` so the caller uses its own fallback.
+    """
+    others = others_truthy if has_others else False
+    template_opinion = render_condition_or_none(hass, template_str)
+    if template_opinion is None:
+        return others if has_others else None
+    return combine_with_mode(
+        template_opinion,
+        others,
+        mode,
+        has_template=True,
+        has_others=has_others,
+    )
 
 
 def is_template_string(value) -> bool:

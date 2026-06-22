@@ -13,21 +13,18 @@ from .const import (
     CONF_ENTITIES,
     CONF_MY_POSITION_VALUE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
-    DOMAIN,
 )
-from .coordinator import AdaptiveDataUpdateCoordinator
+from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: AdaptiveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the button platform."""
-    coordinator: AdaptiveDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
 
     buttons: list[ButtonEntity] = []
 

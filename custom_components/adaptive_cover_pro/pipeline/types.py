@@ -215,6 +215,17 @@ class PipelineSnapshot:
     # to True so the floor stays in effect for snapshots that don't set it.
     solar_floor_active: bool = True
 
+    # Anticipatory-solar look-ahead horizon, in minutes (issue #616). Equals
+    # CONF_DELTA_TIME — the "Minimum interval between position changes" the
+    # send-gate throttles on. When > 0 the solar branch
+    # (:func:`pipeline.helpers.anticipated_solar_position`) samples future sun
+    # positions across ``(now, now + time_threshold_minutes]`` and commands the
+    # most-protective one, so coverage holds until the next allowed move. ``0``
+    # disables anticipation (identical-to-today live solar behaviour) and keeps
+    # the no-hass snapshot paths safe. Defaults to ``0`` so snapshots that don't
+    # set it behave exactly as before.
+    time_threshold_minutes: int = 0
+
 
 # ---------------------------------------------------------------------------
 # Output types

@@ -56,6 +56,7 @@ from .const import (
     CONF_DEBUG_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DRY_RUN,
+    CONF_END_OF_WINDOW_POS,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -196,10 +197,14 @@ class AdaptiveCoverData:
     position_forecast: Forecast | None = None
 
 
+type AdaptiveConfigEntry = ConfigEntry[AdaptiveDataUpdateCoordinator]
+"""Config entry whose ``runtime_data`` holds the coordinator instance."""
+
+
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
 
-    config_entry: ConfigEntry
+    config_entry: AdaptiveConfigEntry
 
     # Default capabilities for covers when entity not ready
     _DEFAULT_CAPABILITIES = {
@@ -333,7 +338,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Renders templated threshold options to numbers once per cycle (#577).
         self._template_resolver = TemplateResolver(self.hass)
         # Current cycle's options after template resolution (for diagnostics).
-        self._resolved_options: dict = dict(self.config_entry.options)
+        # Resolved at construction so apply_user_position sees float thresholds
+        # even before the first _async_update_data cycle runs (#643).
+        self._resolved_options: dict = self._template_resolver.resolve(
+            self.config_entry.options
+        )
 
         # Sun data provider
         self._sun_provider = SunProvider(hass=self.hass)
@@ -819,6 +828,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         else:
             self._reconcile_weather_override()
 
+    async def async_check_weather_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Handle a weather condition template's rendered result changing (#639).
+
+        Routed from ``async_track_template_result`` so a template-only override
+        (is-raining / is-windy) engages and reacts the instant the template
+        flips — the same immediacy as a weather sensor, with no polling. The
+        tracked result only signals *that* a template changed; the manager
+        re-reads the combined condition state live so the OR/AND mode is honoured.
+        """
+        is_now_active = self._weather_mgr.is_any_condition_active
+
+        if is_now_active:
+            if not self._weather_mgr.is_weather_override_active:
+                self.logger.info(
+                    "Weather conditions active (template) — retracting covers"
+                )
+                self._weather_mgr.record_conditions_active()
+            self.state_change = True
+            await self.async_refresh()
+        else:
+            self._reconcile_weather_override()
+
     async def async_check_motion_state_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
@@ -1023,7 +1056,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         never sees the active→clear transition and never starts the clear-delay timer.
         Restoring the flag here ensures the normal clear-delay path runs correctly.
         """
-        if not self._weather_mgr.configured_sensors:
+        if not self._weather_mgr.is_feature_configured:
             return
         if self._weather_mgr.is_any_condition_active:
             self.logger.info(
@@ -1920,6 +1953,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             start_time_entity=rc.time_window.start_time_entity,
             end_time=rc.time_window.end_time,
             end_time_entity=rc.time_window.end_time_entity,
+            gate_sensors=rc.time_window.gate_sensors,
+            gate_template=rc.time_window.gate_template,
+            gate_template_mode=rc.time_window.gate_template_mode,
         )
         self._motion_mgr.update_config(
             sensors=rc.motion.sensors,
@@ -1938,6 +1974,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             rain_threshold=rc.weather.rain_threshold,
             is_raining_sensor=rc.weather.is_raining_sensor,
             is_windy_sensor=rc.weather.is_windy_sensor,
+            is_raining_template=rc.weather.is_raining_template,
+            is_raining_template_mode=rc.weather.is_raining_template_mode,
+            is_windy_template=rc.weather.is_windy_template,
+            is_windy_template_mode=rc.weather.is_windy_template_mode,
             severe_sensors=rc.weather.severe_sensors,
             timeout_seconds=rc.weather.timeout_seconds,
         )
@@ -2084,7 +2124,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         ``adaptive_cover_pro.set_position`` service when callers explicitly
         opt in.
         """
-        opts = options if options is not None else self.config_entry.options
+        opts = options if options is not None else self._resolved_options
         snapshot = self._snapshot_builder.build(
             opts,
             cover_data=self._cover_data,
@@ -2287,6 +2327,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             primary_axis_suppression_counts=(
                 self.manager.primary_axis_suppression_counts()
+            ),
+            # issue #625: the end-of-window position is the applied/active
+            # effective default when the window is clock-closed AND the option
+            # is set — the same condition _compute_current_effective_default
+            # uses to fire the override.
+            end_of_window_active=(
+                self.config_entry.options.get(CONF_END_OF_WINDOW_POS) is not None
+                and not self.before_end_time
             ),
         )
 
@@ -2599,6 +2647,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         if cover_data is None:
             cover_data = self.get_blind_data(options=options)
+        # A configured daytime gate (issue #632) OWNS the day/night boundary:
+        # pass its daytime/dark verdict (True=daytime→no sunset, False=dark→apply
+        # sunset position) only when configured, else None so
+        # compute_effective_default keeps the astronomical decision.
+        daytime_gate = (
+            self._time_mgr.gate_is_daytime
+            if self._time_mgr.gate_is_configured
+            else None
+        )
+        # End-of-window position (issue #625): an optional, clearable position
+        # applied once the operating window is clock-closed. ``before_end_time``
+        # is True all morning (end is later today), so the override only fires in
+        # the evening — never before the start time. compute_effective_default
+        # owns the two-phase astral handoff; here we only read the inputs.
+        eow_pos = options.get(CONF_END_OF_WINDOW_POS)
+        window_is_closed = not self._time_mgr.before_end_time
         return compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -2608,6 +2672,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunset_time=sunset_time,
             sunrise_time=sunrise_time,
             window_explicitly_started=self.window_explicitly_started,
+            daytime_gate=daytime_gate,
+            end_of_window_pos=eow_pos,
+            end_of_window_active=window_is_closed,
         )
 
     async def _check_sunset_window_transition(self) -> None:

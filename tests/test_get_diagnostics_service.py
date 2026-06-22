@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.adaptive_cover_pro.services.diagnostics_service import (
     async_handle_get_diagnostics,
@@ -41,7 +42,14 @@ def make_coordinator(entry_id="entry-1", name="Test Cover", cover_type="cover_bl
 
 def make_hass(*coordinators):
     hass = MagicMock()
-    hass.data = {DOMAIN: {coord.config_entry.entry_id: coord for coord in coordinators}}
+    entries = []
+    for coord in coordinators:
+        entry = MagicMock()
+        entry.entry_id = coord.config_entry.entry_id
+        entry.runtime_data = coord
+        entry.state = ConfigEntryState.LOADED
+        entries.append(entry)
+    hass.config_entries.async_entries = MagicMock(return_value=entries)
     hass.config_entries.async_get_entry.side_effect = lambda eid: next(
         (
             MagicMock(domain=DOMAIN, entry_id=eid)
@@ -100,7 +108,7 @@ async def test_entry_keyed_by_config_entry_id():
 async def test_no_coordinators_returns_empty_envelope():
     """No ACP instances → count 0, empty entries, no exception."""
     hass = MagicMock()
-    hass.data = {DOMAIN: {}}
+    hass.config_entries.async_entries = MagicMock(return_value=[])
     call = make_call(hass)
 
     result = await async_handle_get_diagnostics(call)
@@ -115,7 +123,7 @@ async def test_unknown_explicit_entry_raises():
     from homeassistant.exceptions import ServiceValidationError
 
     hass = MagicMock()
-    hass.data = {DOMAIN: {}}
+    hass.config_entries.async_entries = MagicMock(return_value=[])
     hass.config_entries.async_get_entry.return_value = None
     call = make_call(hass, data={"config_entry_id": ["nonexistent-id"]})
 

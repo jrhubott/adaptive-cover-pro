@@ -33,7 +33,9 @@ from .const import (
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -44,7 +46,7 @@ from .const import (
     DOMAIN,
     _LOGGER,
 )
-from .coordinator import AdaptiveDataUpdateCoordinator
+from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
     custom_position_slot_sensors,
@@ -78,10 +80,9 @@ async def async_initialize_integration(
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Set up Adaptive Cover Pro from a config entry."""
 
-    hass.data.setdefault(DOMAIN, {})
     await async_setup_services(hass)
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
@@ -224,6 +225,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         )
 
+    # Register the optional is-raining / is-windy condition templates (issue
+    # #639). Same pattern as the occupancy/custom-position templates above:
+    # tracking the rendered result lets a template-only weather override engage
+    # and react the instant the template flips, with no companion binary sensor.
+    for _weather_template in [
+        entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
+        entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+    ]:
+        if not is_template_string(_weather_template):
+            continue
+        try:
+            _track_info = async_track_template_result(
+                hass,
+                [TrackTemplate(Template(_weather_template, hass), None)],
+                coordinator.async_check_weather_template_change,
+            )
+        except (TemplateError, ValueError) as err:
+            _LOGGER.warning(
+                "Weather condition template failed to register (%r): %s",
+                _weather_template,
+                err,
+            )
+        else:
+            entry.async_on_unload(_track_info.async_remove)
+
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
 
@@ -240,7 +266,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Store coordinator before platform setup so sensor async_added_to_hass can
     # access it during RestoreEntity rehydration (must run before first_refresh).
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     # Prune entity registry orphans left over from past unique_id renames.
     # Runs before platform setup so orphans are removed before new entities register.
@@ -288,10 +314,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
         await async_unload_services(hass)
 
     return unload_ok

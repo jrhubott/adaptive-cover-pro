@@ -15,8 +15,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ENABLE_GLARE_ZONES, CONF_SENSOR_TYPE, DOMAIN
-from .coordinator import AdaptiveDataUpdateCoordinator
+from .const import CONF_ENABLE_GLARE_ZONES, CONF_SENSOR_TYPE
+from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 
 
@@ -68,13 +68,11 @@ _BINARY_SENSOR_SPECS: tuple[_SimpleBinarySensorSpec, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: AdaptiveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Adaptive Cover Pro binary sensor platform."""
-    coordinator: AdaptiveDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
 
     entities: list[BinarySensorEntity] = [
         AdaptiveCoverBinarySensor(

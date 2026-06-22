@@ -61,7 +61,7 @@ async def _setup_proxy(
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     reg = er.async_get(hass)
     proxy_eid = next(
         e.entity_id

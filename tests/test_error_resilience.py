@@ -52,7 +52,7 @@ async def _setup(
     with _patch_coordinator_refresh():
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     return entry, coordinator
 
 
@@ -70,7 +70,7 @@ async def test_sun_entity_unavailable_does_not_crash(hass: HomeAssistant) -> Non
     await hass.async_block_till_done()
 
     # Entry must still be alive
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -85,7 +85,7 @@ async def test_cover_entity_unavailable_handled(hass: HomeAssistant) -> None:
     hass.states.async_set("cover.bedroom_blind", "unavailable", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -100,7 +100,7 @@ async def test_force_override_sensor_unavailable_handled(hass: HomeAssistant) ->
     hass.states.async_set("binary_sensor.wind_alarm", "unavailable", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -120,7 +120,7 @@ async def test_all_tracked_entities_unavailable(hass: HomeAssistant) -> None:
         hass.states.async_set(entity_id, "unavailable", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ async def test_coordinator_recovers_after_single_update_error(
             pass
 
     # Coordinator is still alive and registered
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -257,7 +257,7 @@ async def test_coordinator_multiple_update_errors(hass: HomeAssistant) -> None:
                 pass
 
     # Entry must still exist — coordinator should not have been removed
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +280,7 @@ async def test_rapid_cover_position_changes_no_crash(hass: HomeAssistant) -> Non
         )
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -291,7 +291,7 @@ async def test_entry_setup_after_previous_clean_unload(hass: HomeAssistant) -> N
     # Unload cleanly
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.entry_id not in hass.data.get(DOMAIN, {})
+    assert not hasattr(entry, "runtime_data")
 
     # Re-setup the same entry
     with _patch_coordinator_refresh():
@@ -299,4 +299,4 @@ async def test_entry_setup_after_previous_clean_unload(hass: HomeAssistant) -> N
         await hass.async_block_till_done()
 
     assert result is True
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..const import (
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     DEFAULT_WEATHER_RAIN_THRESHOLD,
     DEFAULT_WEATHER_TIMEOUT,
     DEFAULT_WEATHER_WIND_DIRECTION_TOLERANCE,
@@ -13,6 +14,7 @@ from ..const import (
     DEFAULT_WINDOW_AZIMUTH,
     DEGREES_IN_CIRCLE,
 )
+from ..templates import fold_condition_template, is_template_string
 from .common import EventRecorder, TimeoutController
 
 if TYPE_CHECKING:
@@ -74,6 +76,13 @@ class WeatherManager:
         self._rain_threshold: float = DEFAULT_WEATHER_RAIN_THRESHOLD
         self._is_raining_sensor: str | None = None
         self._is_windy_sensor: str | None = None
+        # Optional condition templates + combine modes (issue #639). A
+        # template-only override (no companion binary sensor) engages and reacts
+        # the instant the template flips — see __init__.py template tracking.
+        self._is_raining_template: str | None = None
+        self._is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+        self._is_windy_template: str | None = None
+        self._is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
         self._severe_sensors: list[str] = []
         self._timeout_seconds: int = DEFAULT_WEATHER_TIMEOUT
 
@@ -97,6 +106,10 @@ class WeatherManager:
         is_windy_sensor: str | None,
         severe_sensors: list[str],
         timeout_seconds: int,
+        is_raining_template: str | None = None,
+        is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
+        is_windy_template: str | None = None,
+        is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE,
     ) -> None:
         """Update all weather override configuration.
 
@@ -111,6 +124,10 @@ class WeatherManager:
         self._rain_threshold = rain_threshold
         self._is_raining_sensor = is_raining_sensor
         self._is_windy_sensor = is_windy_sensor
+        self._is_raining_template = is_raining_template
+        self._is_raining_template_mode = is_raining_template_mode
+        self._is_windy_template = is_windy_template
+        self._is_windy_template_mode = is_windy_template_mode
         self._severe_sensors = list(severe_sensors)
         self._timeout_seconds = timeout_seconds
 
@@ -136,18 +153,42 @@ class WeatherManager:
         return sensors
 
     @property
+    def condition_templates(self) -> list[str]:
+        """Return the configured is-raining / is-windy condition templates.
+
+        Used by __init__.py to register ``async_track_template_result`` so a
+        template-only override reacts the instant the template flips (#639).
+        """
+        return [
+            tmpl
+            for tmpl in (self._is_raining_template, self._is_windy_template)
+            if is_template_string(tmpl)
+        ]
+
+    @property
+    def is_feature_configured(self) -> bool:
+        """Whether the weather override has any source — a sensor OR a template.
+
+        The feature gate for :pyattr:`is_weather_override_active`. A
+        template-only config (no companion binary sensor) must still enable the
+        override (issue #639).
+        """
+        return bool(self.configured_sensors) or bool(self.condition_templates)
+
+    @property
     def is_any_condition_active(self) -> bool:
         """Check whether any configured weather condition is currently active.
 
-        Reads live sensor states from HA. OR logic: any single condition
-        being true returns True. Unconfigured conditions are ignored.
-        Unavailable/unknown sensors are treated as inactive.
+        Reads live sensor states and renders condition templates from HA. OR
+        logic: any single condition being true returns True. Unconfigured
+        conditions are ignored. Unavailable/unknown sensors and silent/broken
+        templates are treated as inactive (fail-open: don't retract on failure).
         """
         return (
             self._is_wind_active()
             or self._is_rain_active()
-            or self._is_binary_on(self._is_raining_sensor)
-            or self._is_binary_on(self._is_windy_sensor)
+            or self._is_raining_active()
+            or self._is_windy_active()
             or self._is_any_severe_active()
         )
 
@@ -155,9 +196,9 @@ class WeatherManager:
     def is_weather_override_active(self) -> bool:
         """Return True when override is active (conditions met or in clear-delay timeout).
 
-        Returns False when no sensors are configured (feature disabled).
+        Returns False when no source (sensor or template) is configured.
         """
-        if not self.configured_sensors:
+        if not self.is_feature_configured:
             return False
         return self._override_active
 
@@ -179,9 +220,9 @@ class WeatherManager:
             result.append(_COND_WIND_SPEED)
         if self._is_rain_active():
             result.append(_COND_RAIN_RATE)
-        if self._is_binary_on(self._is_raining_sensor):
+        if self._is_raining_active():
             result.append(_COND_IS_RAINING)
-        if self._is_binary_on(self._is_windy_sensor):
+        if self._is_windy_active():
             result.append(_COND_IS_WINDY)
         if self._is_any_severe_active():
             result.append(_COND_SEVERE)
@@ -241,6 +282,40 @@ class WeatherManager:
         state = self._hass.states.get(entity_id)
         return bool(state and state.state == "on")
 
+    def _is_binary_condition_active(
+        self, entity_id: str | None, template: str | None, mode: str
+    ) -> bool:
+        """Fold a binary sensor with its optional condition template (#639).
+
+        Reuses the shared :func:`fold_condition_template`: the sensor's on/off
+        and the rendered template combine per ``mode`` (OR default). A silent /
+        broken template plus an off/absent sensor → inactive (fail-open).
+        """
+        result = fold_condition_template(
+            self._hass,
+            template,
+            mode,
+            others_truthy=self._is_binary_on(entity_id),
+            has_others=bool(entity_id),
+        )
+        return bool(result)
+
+    def _is_raining_active(self) -> bool:
+        """Whether the is-raining sensor and/or template reports rain (#639)."""
+        return self._is_binary_condition_active(
+            self._is_raining_sensor,
+            self._is_raining_template,
+            self._is_raining_template_mode,
+        )
+
+    def _is_windy_active(self) -> bool:
+        """Whether the is-windy sensor and/or template reports wind (#639)."""
+        return self._is_binary_condition_active(
+            self._is_windy_sensor,
+            self._is_windy_template,
+            self._is_windy_template_mode,
+        )
+
     def _is_any_severe_active(self) -> bool:
         """Check whether any severe weather binary sensor is 'on'."""
         return any(self._is_binary_on(entity_id) for entity_id in self._severe_sensors)
@@ -273,7 +348,7 @@ class WeatherManager:
         The caller owns timer creation because that requires a refresh callback
         the manager intentionally doesn't hold.
         """
-        if not self.configured_sensors:
+        if not self.is_feature_configured:
             return None
         if not self._override_active:
             return None

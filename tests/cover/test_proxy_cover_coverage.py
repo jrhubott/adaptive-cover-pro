@@ -84,7 +84,7 @@ async def _setup_unavail_proxy(hass):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    coord = hass.data[DOMAIN][entry.entry_id]
+    coord = entry.runtime_data
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
     reg = er.async_get(hass)
     proxy_eid = next(
@@ -160,7 +160,7 @@ async def test_tilt_command_dropped_when_source_lacks_tilt_capability(hass) -> N
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    coord = hass.data[DOMAIN][entry.entry_id]
+    coord = entry.runtime_data
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
     reg = er.async_get(hass)
     proxy_eid = next(

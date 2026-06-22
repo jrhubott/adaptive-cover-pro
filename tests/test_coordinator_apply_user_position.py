@@ -13,7 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.adaptive_cover_pro.const import DEFAULT_CUSTOM_POSITION_PRIORITY
+from custom_components.adaptive_cover_pro.const import (
+    CONF_TEMP_HIGH,
+    CONF_TEMP_LOW,
+    DEFAULT_CUSTOM_POSITION_PRIORITY,
+)
 from custom_components.adaptive_cover_pro.pipeline.handlers.custom_position import (
     CustomPositionHandler,
 )
@@ -82,7 +86,13 @@ def _make_coord(
 
     coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
     coord.config_entry = MagicMock()
-    coord.config_entry.options = default_options if default_options is not None else {}
+    entry_opts = default_options if default_options is not None else {}
+    coord.config_entry.options = entry_opts
+    # After fix #643, async_apply_user_position falls back to
+    # _resolved_options (not config_entry.options).  Initialise it to the
+    # same dict so existing tests keep working; specific tests that want to
+    # exercise the resolved-vs-raw distinction set this attribute themselves.
+    coord._resolved_options = entry_opts
     # PipelineSnapshotBuilder mock — Phase D moved HA reads + snapshot
     # assembly onto this collaborator.  Both call-sites of
     # async_apply_user_position route through it.
@@ -504,3 +514,73 @@ async def test_custom_position_min_mode_preempts_when_request_below_floor_and_ha
     assert outcome == ("skipped", "preempted_by_custom_position_2")
     coord._cmd_svc.record_preempted_skip.assert_called_once()
     coord._cmd_svc.apply_position.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Issue #643: async_apply_user_position must use resolved options, not raw
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_apply_user_position_renders_string_thresholds() -> None:
+    """apply_user_position must pass _resolved_options (floats) to build(), not
+    config_entry.options (raw strings).
+
+    Before the fix, line 2094 used ``self.config_entry.options`` as the
+    fallback, so a plain numeric string such as ``temp_low="21"`` flowed into
+    ClimateOptions.temp_low and then into ``is_winter``'s float < str
+    comparison → TypeError. After the fix, ``_resolved_options`` (already
+    float-normalized) is used instead.
+
+    This test confirms the contract: build() receives the float-resolved dict,
+    not the raw-string entry options, when options=None (the default path for
+    all user-action callers: set_position service, cover.py, button.py).
+    """
+    raw_entry_options = {CONF_TEMP_LOW: "21", CONF_TEMP_HIGH: "25"}
+    resolved_options = {CONF_TEMP_LOW: 21.0, CONF_TEMP_HIGH: 25.0}
+
+    coord, _ctx = _make_coord([], default_options=raw_entry_options)
+    # Simulate coordinator having already resolved options (normal update cycle).
+    coord._resolved_options = resolved_options
+
+    await coord.async_apply_user_position("cover.test", 50, trigger="set_position")
+
+    # build() must have been called with the float-resolved dict, NOT the raw entry opts.
+    coord._snapshot_builder.build.assert_called_once()
+    call_args, _call_kwargs = coord._snapshot_builder.build.call_args
+    opts_passed = call_args[0]
+    assert opts_passed is resolved_options, (
+        f"build() was called with {opts_passed!r} (raw config_entry.options) "
+        f"instead of the float-resolved _resolved_options {resolved_options!r}. "
+        "async_apply_user_position must fall back to self._resolved_options, not "
+        "self.config_entry.options."
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_user_position_explicit_options_not_overridden_by_resolved() -> (
+    None
+):
+    """When options is supplied explicitly, it takes priority over _resolved_options.
+
+    This is a regression guard: the fix to issue #643 must not accidentally
+    discard the ``options`` kwarg that callers supply. The existing contract
+    (explicit options win) must be preserved.
+    """
+    raw_entry_options = {CONF_TEMP_LOW: "21"}
+    resolved_options = {CONF_TEMP_LOW: 21.0}
+    explicit_options = {CONF_TEMP_LOW: 18.0, "from": "explicit"}
+
+    coord, _ctx = _make_coord([], default_options=raw_entry_options)
+    coord._resolved_options = resolved_options
+
+    await coord.async_apply_user_position(
+        "cover.test", 50, trigger="set_position", options=explicit_options
+    )
+
+    coord._snapshot_builder.build.assert_called_once()
+    call_args, _call_kwargs = coord._snapshot_builder.build.call_args
+    opts_passed = call_args[0]
+    assert (
+        opts_passed is explicit_options
+    ), "build() must use the explicitly supplied options when options != None."

@@ -982,3 +982,295 @@ class TestEvalTime:
             )
         assert active is True
         assert result == 20
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate override (issue #632)
+# ---------------------------------------------------------------------------
+
+
+class TestDaytimeGateOverride:
+    """When a gate is configured it OWNS the day/night boundary.
+
+    ``daytime_gate`` is a tri-state override:
+      - ``None`` (default, unconfigured)  → astronomical decision, no regression.
+      - ``True`` (gate says daytime)       → never sunset, regardless of astral.
+      - ``False`` (gate says dark)         → always sunset, regardless of astral.
+    """
+
+    def test_gate_false_forces_sunset_at_midday(self):
+        # Astronomically midday (would be h_def) but the gate says dark.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        midday = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        with _freeze_now(midday):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=False,
+            )
+        assert active is True
+        assert result == 20
+
+    def test_gate_true_suppresses_sunset_after_astral_sunset(self):
+        # Bright evening: astronomically past sunset but the gate says daytime.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        evening = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        with _freeze_now(evening):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=True,
+            )
+        assert active is False
+        assert result == 80
+
+    def test_gate_true_suppresses_sunset_before_astral_sunrise(self):
+        # Overcast-inverse: astronomically pre-sunrise but the gate says daytime.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        early = dt.datetime(today.year, today.month, today.day, 4, 0, 0)
+        with _freeze_now(early):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=True,
+            )
+        assert active is False
+        assert result == 80
+
+    def test_gate_none_preserves_astronomical_after_sunset(self):
+        # Regression: None must behave exactly like the no-gate astral path.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        evening = dt.datetime(today.year, today.month, today.day, 21, 0, 0)
+        with _freeze_now(evening):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=None,
+            )
+        assert active is True
+        assert result == 20
+
+    def test_gate_none_preserves_astronomical_at_midday(self):
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        midday = dt.datetime(today.year, today.month, today.day, 12, 0, 0)
+        with _freeze_now(midday):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                daytime_gate=None,
+            )
+        assert active is False
+        assert result == 80
+
+    def test_gate_false_ignores_window_explicitly_started(self):
+        # The gate short-circuits before the window_explicitly_started branch.
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        early = dt.datetime(today.year, today.month, today.day, 4, 0, 0)
+        with _freeze_now(early):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                window_explicitly_started=True,
+                daytime_gate=False,
+            )
+        assert active is True
+        assert result == 20
+
+
+# ---------------------------------------------------------------------------
+# End-of-window position (issue #625) — TWO-PHASE astral handoff
+#
+# When the operating window is clock-closed and an end-of-window position is
+# configured, it overrides the astronomical effective default from window-end
+# until astral sunset (phase 1); then the astral sunset_position takes over
+# (phase 2). When sunset_pos is None there is nothing to hand off to, so the
+# end-of-window position persists the whole evening.
+# ---------------------------------------------------------------------------
+
+
+class TestEndOfWindowPosition:
+    """end_of_window_pos overrides the effective default at/after window-end."""
+
+    def test_phase1_before_astral_sunset_uses_eow(self):
+        """Eow active, before astral sunset → end-of-window position wins."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        # 19:30 is before astral sunset (20:00) → astral would give h_def (80).
+        eval_t = dt.datetime(today.year, today.month, today.day, 19, 30, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                end_of_window_pos=0,
+                end_of_window_active=True,
+            )
+        assert result == 0
+        assert active is True
+
+    def test_phase2_after_astral_sunset_hands_off_to_sunset(self):
+        """Eow active, after astral sunset → astral sunset_position takes over."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        eval_t = dt.datetime(today.year, today.month, today.day, 21, 0, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                end_of_window_pos=0,
+                end_of_window_active=True,
+            )
+        assert result == 20
+        assert active is True
+
+    def test_no_handoff_target_persists_all_evening(self):
+        """sunset_pos None + eow active → eow persists across the evening."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        # Both before and after astral sunset return the eow position.
+        for hour in (19, 22):
+            eval_t = dt.datetime(
+                today.year, today.month, today.day, hour, 0, 0, tzinfo=UTC
+            )
+            with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+                result, active = compute_effective_default(
+                    h_def=80,
+                    sunset_pos=None,
+                    sun_data=sun,
+                    sunset_off=0,
+                    sunrise_off=0,
+                    eval_time=eval_t,
+                    end_of_window_pos=0,
+                    end_of_window_active=True,
+                )
+            assert result == 0
+            assert active is True
+
+    def test_daytime_gate_owns_boundary_when_sunset_pos_set(self):
+        """A daytime gate still owns the boundary; eow phase-1 does not override it."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        eval_t = dt.datetime(today.year, today.month, today.day, 19, 30, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                daytime_gate=True,  # gate says daytime
+                end_of_window_pos=0,
+                end_of_window_active=True,
+            )
+        # Gate owns it → daytime h_def, eow does not fire.
+        assert result == 80
+        assert active is False
+
+    def test_no_handoff_target_outranks_daytime_gate(self):
+        """sunset_pos None + eow active beats a daytime gate (top short-circuit)."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        eval_t = dt.datetime(today.year, today.month, today.day, 19, 30, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=None,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                daytime_gate=True,
+                end_of_window_pos=0,
+                end_of_window_active=True,
+            )
+        assert result == 0
+        assert active is True
+
+    def test_inactive_eow_is_no_regression_astral(self):
+        """end_of_window_active=False → byte-identical to today's astral path."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        eval_t = dt.datetime(today.year, today.month, today.day, 19, 30, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                end_of_window_pos=0,
+                end_of_window_active=False,
+            )
+        assert result == 80
+        assert active is False
+
+    def test_eow_none_is_no_regression_astral(self):
+        """end_of_window_pos=None → byte-identical to today's astral path."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        eval_t = dt.datetime(today.year, today.month, today.day, 19, 30, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=20,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                end_of_window_pos=None,
+                end_of_window_active=True,
+            )
+        assert result == 80
+        assert active is False
+
+    def test_explicit_zero_eow_distinct_from_unset(self):
+        """0% is a valid end-of-window position (None-preserving check)."""
+        sun = _make_sun_data(sunrise_hour=6, sunset_hour=20)
+        today = dt.date.today()
+        eval_t = dt.datetime(today.year, today.month, today.day, 19, 30, 0, tzinfo=UTC)
+        with patch("homeassistant.util.dt.DEFAULT_TIME_ZONE", UTC):
+            result, active = compute_effective_default(
+                h_def=80,
+                sunset_pos=None,
+                sun_data=sun,
+                sunset_off=0,
+                sunrise_off=0,
+                eval_time=eval_t,
+                end_of_window_pos=0,
+                end_of_window_active=True,
+            )
+        assert result == 0
+        assert active is True

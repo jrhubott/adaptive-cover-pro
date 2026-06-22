@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...const import ControlMethod
 from ..handler import OverrideHandler
-from ..helpers import compute_solar_position
+from ..helpers import anticipated_solar_position
 from ..types import PipelineResult, PipelineSnapshot
 
 
@@ -27,7 +27,7 @@ class SolarHandler(OverrideHandler):
         if not snapshot.cover.direct_sun_valid:
             return None
 
-        position = compute_solar_position(snapshot)
+        position = anticipated_solar_position(snapshot)
         reason = f"sun in FOV — position {position}%"
         if getattr(snapshot, "minimize_movements", False):
             steps = getattr(snapshot, "max_coverage_steps", 1)

@@ -115,7 +115,7 @@ async def test_switch_async_added_to_hass_does_not_retrigger_forecast(
         await hass.async_block_till_done()
         # Simulate a few more refreshes — same as switches firing during
         # async_added_to_hass.
-        coordinator = hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         for _ in range(14):
             await coordinator.async_refresh()
         await hass.async_block_till_done()

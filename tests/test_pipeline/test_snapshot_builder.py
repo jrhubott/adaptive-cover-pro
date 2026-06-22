@@ -234,6 +234,43 @@ def test_build_climate_options_full_mapping():
 
 
 @pytest.mark.unit
+def test_read_climate_forwards_condition_templates():
+    """is_sunny / presence templates + modes thread into climate_provider.read (#639)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_IS_SUNNY_TEMPLATE,
+        CONF_IS_SUNNY_TEMPLATE_MODE,
+        CONF_PRESENCE_TEMPLATE,
+        CONF_PRESENCE_TEMPLATE_MODE,
+    )
+
+    builder, climate_provider, _ = _make_builder()
+    opts = {
+        CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+        CONF_IS_SUNNY_TEMPLATE_MODE: "and",
+        CONF_PRESENCE_TEMPLATE: "{{ false }}",
+        CONF_PRESENCE_TEMPLATE_MODE: "and",
+    }
+    builder.read_climate(opts)
+    kwargs = climate_provider.read.call_args.kwargs
+    assert kwargs["is_sunny_template"] == "{{ true }}"
+    assert kwargs["is_sunny_template_mode"] == "and"
+    assert kwargs["presence_template"] == "{{ false }}"
+    assert kwargs["presence_template_mode"] == "and"
+
+
+@pytest.mark.unit
+def test_read_climate_template_modes_default_to_or():
+    """Absent template-mode keys default to OR (#639)."""
+    builder, climate_provider, _ = _make_builder()
+    builder.read_climate({})
+    kwargs = climate_provider.read.call_args.kwargs
+    assert kwargs["is_sunny_template"] is None
+    assert kwargs["is_sunny_template_mode"] == "or"
+    assert kwargs["presence_template"] is None
+    assert kwargs["presence_template_mode"] == "or"
+
+
+@pytest.mark.unit
 def test_build_climate_options_minimal_defaults_to_none_or_false():
     builder, _, _ = _make_builder()
     out = builder.build_climate_options({})

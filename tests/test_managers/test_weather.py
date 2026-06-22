@@ -893,3 +893,104 @@ async def test_active_conditions_empty_but_in_clear_delay(mgr):
         assert mgr.in_clear_delay is True
     finally:
         mgr.cancel_weather_timeout()
+
+
+# ---------------------------------------------------------------------------
+# Condition templates for is-raining / is-windy (issue #639)
+# Needs a real hass to render Jinja, so these use the pytest `hass` fixture.
+# ---------------------------------------------------------------------------
+
+import logging  # noqa: E402
+
+from custom_components.adaptive_cover_pro.managers.weather import (  # noqa: E402
+    _COND_IS_WINDY,
+)
+
+
+def _tmpl_mgr(hass, **overrides):
+    """WeatherManager bound to a real hass, no sensors unless overridden."""
+    m = WeatherManager(hass=hass, logger=logging.getLogger("test_weather_tmpl"))
+    cfg = {
+        "wind_speed_sensor": None,
+        "wind_direction_sensor": None,
+        "wind_speed_threshold": 50.0,
+        "wind_direction_tolerance": 45,
+        "win_azi": 180,
+        "rain_sensor": None,
+        "rain_threshold": 1.0,
+        "is_raining_sensor": None,
+        "is_windy_sensor": None,
+        "severe_sensors": [],
+        "timeout_seconds": 300,
+    }
+    cfg.update(overrides)
+    m.update_config(**cfg)
+    return m
+
+
+async def test_is_raining_template_true_engages(hass):
+    """A template-only is-raining override engages when truthy (#639)."""
+    m = _tmpl_mgr(hass, is_raining_template="{{ true }}")
+    assert m.is_any_condition_active is True
+    assert _COND_IS_RAINING in m.active_conditions
+
+
+async def test_is_raining_template_false_inactive(hass):
+    """A falsy is-raining template does not engage."""
+    m = _tmpl_mgr(hass, is_raining_template="{{ false }}")
+    assert m.is_any_condition_active is False
+    assert _COND_IS_RAINING not in m.active_conditions
+
+
+async def test_is_windy_template_reacts_to_state(hass):
+    """A states()-based is-windy template flips with the underlying state."""
+    hass.states.async_set("sensor.gust", "40")
+    await hass.async_block_till_done()
+    m = _tmpl_mgr(hass, is_windy_template="{{ states('sensor.gust') | float > 30 }}")
+    assert m.is_any_condition_active is True
+    assert _COND_IS_WINDY in m.active_conditions
+
+    hass.states.async_set("sensor.gust", "10")
+    await hass.async_block_till_done()
+    assert m.is_any_condition_active is False
+
+
+async def test_template_combines_or_with_sensor(hass):
+    """OR mode (default): sensor off, template true → active."""
+    hass.states.async_set("binary_sensor.raining", "off")
+    await hass.async_block_till_done()
+    m = _tmpl_mgr(
+        hass,
+        is_raining_sensor="binary_sensor.raining",
+        is_raining_template="{{ true }}",
+        is_raining_template_mode="or",
+    )
+    assert m.is_any_condition_active is True
+
+
+async def test_template_combines_and_with_sensor(hass):
+    """AND mode: sensor off, template true → inactive (both required)."""
+    hass.states.async_set("binary_sensor.raining", "off")
+    await hass.async_block_till_done()
+    m = _tmpl_mgr(
+        hass,
+        is_raining_sensor="binary_sensor.raining",
+        is_raining_template="{{ true }}",
+        is_raining_template_mode="and",
+    )
+    assert m.is_any_condition_active is False
+
+
+async def test_broken_template_inactive(hass):
+    """A broken template renders to no-condition (fail-open, no retract)."""
+    m = _tmpl_mgr(hass, is_raining_template="{{ nonexistent_fn() }}")
+    assert m.is_any_condition_active is False
+
+
+async def test_template_only_feature_configured(hass):
+    """A template-only config (no sensors) still enables the override feature."""
+    m = _tmpl_mgr(hass, is_windy_template="{{ true }}")
+    # No entity sensors configured, but the feature must be live.
+    assert m.configured_sensors == []
+    m.record_conditions_active()
+    assert m.is_weather_override_active is True

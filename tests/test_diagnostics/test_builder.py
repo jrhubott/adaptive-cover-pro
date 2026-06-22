@@ -467,6 +467,43 @@ class TestTimeWindowDiagnostics:
         assert "end_time" in tw
 
 
+class TestEndOfWindowDiagnostics:
+    """issue #625: end-of-window position surfaced in diagnostics."""
+
+    def test_configured_value_and_active_flag_when_closed(
+        self, builder: DiagnosticsBuilder
+    ):
+        from custom_components.adaptive_cover_pro.const import CONF_END_OF_WINDOW_POS
+
+        ctx = _base_ctx(
+            config_options={CONF_END_OF_WINDOW_POS: 20},
+            before_end_time=False,
+            end_of_window_active=True,
+        )
+        diag, _ = builder.build(ctx)
+        assert diag["configuration"]["end_of_window_position"] == 20
+        assert diag["default_position"]["configured_end_of_window_pos"] == 20
+        assert diag["default_position"]["end_of_window_active"] is True
+
+    def test_active_flag_false_when_window_open(self, builder: DiagnosticsBuilder):
+        from custom_components.adaptive_cover_pro.const import CONF_END_OF_WINDOW_POS
+
+        ctx = _base_ctx(
+            config_options={CONF_END_OF_WINDOW_POS: 20},
+            before_end_time=True,
+            end_of_window_active=False,
+        )
+        diag, _ = builder.build(ctx)
+        assert diag["default_position"]["end_of_window_active"] is False
+
+    def test_unset_value_is_none(self, builder: DiagnosticsBuilder):
+        ctx = _base_ctx(config_options={})
+        diag, _ = builder.build(ctx)
+        assert diag["configuration"]["end_of_window_position"] is None
+        assert diag["default_position"]["configured_end_of_window_pos"] is None
+        assert diag["default_position"]["end_of_window_active"] is False
+
+
 # ---------------------------------------------------------------------------
 # Sun validity diagnostics
 # ---------------------------------------------------------------------------
@@ -767,6 +804,7 @@ class TestConfigurationDiagnostics:
             "enabled_toggle",
             "cloud_suppression_enabled",
             "cloudy_position",
+            "end_of_window_position",
             "is_sunny_source",
             "templated_thresholds",
         }
@@ -1116,6 +1154,39 @@ class TestCloudyPositionDiagnostics:
         """configuration.cloud_suppression_enabled defaults to False."""
         diag, _ = builder.build(_base_ctx(config_options={}))
         assert diag["configuration"]["cloud_suppression_enabled"] is False
+
+    def test_is_sunny_source_template_when_only_template_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """is_sunny_source == '[template]' when only the template is configured (#639)."""
+        from custom_components.adaptive_cover_pro.const import CONF_IS_SUNNY_TEMPLATE
+
+        options = {CONF_IS_SUNNY_TEMPLATE: "{{ true }}"}
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["is_sunny_source"] == "[template]"
+
+    def test_is_sunny_source_sensor_takes_priority_over_template(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A configured sensor wins over the template in is_sunny_source (#639)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+        )
+
+        options = {
+            CONF_IS_SUNNY_SENSOR: "binary_sensor.sunny",
+            CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+        }
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["is_sunny_source"] == "binary_sensor.sunny"
+
+    def test_is_sunny_source_weather_state_when_neither_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Falls back to 'weather_state' when no sensor and no template (#639)."""
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        assert diag["configuration"]["is_sunny_source"] == "weather_state"
 
     def test_default_position_includes_configured_cloudy_pos(
         self, builder: DiagnosticsBuilder
