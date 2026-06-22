@@ -48,6 +48,7 @@ from .const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
@@ -359,6 +360,15 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_END_OF_WINDOW_POS): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
         vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=-120,
@@ -422,6 +432,7 @@ POSITION_SCHEMA = vol.Schema(
 # (issue #439; same class as #323).
 _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_POS,
+    CONF_END_OF_WINDOW_POS,
     CONF_MY_POSITION_VALUE,
     CONF_MIN_POSITION_SUN_TRACKING,
     CONF_SUNSET_TIME_ENTITY,
@@ -1183,6 +1194,14 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes)."
     ),
     "timing.return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    "timing.end_of_window": (
+        "{indent}🔚 End-of-window position → {target} from end time until sunset "
+        "(then the sunset position applies, if set)."
+    ),
+    "timing.end_of_window_needs_return": (
+        '{indent}⚠️ End-of-window position is set but "Move covers when end time '
+        'is reached" is OFF — it will not be applied. Turn that toggle on.'
+    ),
     # --- Daytime gate (issue #632) ---
     "timing.gate_sensors": "{indent}🌗 Daytime gate: {sensors} decide day vs dark.",
     "timing.gate_template": "{indent}🌗 Daytime gate: a template decides day vs dark.",
@@ -1889,6 +1908,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     end_time = config.get(CONF_END_TIME)
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
+    eow_pos = config.get(CONF_END_OF_WINDOW_POS)
     sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
     sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     sunset_time_entity = config.get(CONF_SUNSET_TIME_ENTITY)
@@ -1910,7 +1930,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         config.get(key) not in (None, BLANK_TIME)
         for key in (CONF_START_ENTITY, CONF_END_ENTITY)
     ) or any(key in config for key in (CONF_START_TIME, CONF_END_TIME))
-    if timing_parts or sunset_pos is not None or schedule_configured:
+    if (
+        timing_parts
+        or sunset_pos is not None
+        or schedule_configured
+        or eow_pos is not None
+    ):
         timing_str = (
             " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
@@ -1972,6 +1997,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
             if config.get(CONF_RETURN_SUNSET):
                 lines.append(L["timing.return_sunset"].format(indent=indent))
+
+        # End-of-window position (issue #625) — renders independently of
+        # sunset_pos (a user may set it WITHOUT a sunset position). Footgun:
+        # the position only applies when CONF_RETURN_SUNSET ("Move covers when
+        # end time is reached") is on.
+        if eow_pos is not None:
+            lines.append(
+                L["timing.end_of_window"].format(
+                    indent=indent, target=_pos_label(int(eow_pos), use_my=False)
+                )
+            )
+            if not config.get(CONF_RETURN_SUNSET):
+                lines.append(
+                    L["timing.end_of_window_needs_return"].format(indent=indent)
+                )
 
     # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
     # replacing the astronomical sunset/sunrise calc. Rendered independently of the
@@ -2266,6 +2306,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_ENABLE_MIN_POSITION,
             CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNSET_POS,
+            CONF_END_OF_WINDOW_POS,
             CONF_ENABLE_MY_POSITION_ENTITIES,
             CONF_MY_POSITION_VALUE,
             CONF_SUNSET_USE_MY,

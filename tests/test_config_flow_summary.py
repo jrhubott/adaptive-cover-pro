@@ -1960,6 +1960,60 @@ def test_return_sunset_line_absent_when_false():
     assert "Return to sunset position at end time" not in summary
 
 
+def test_end_of_window_line_rendered_with_return_on():
+    """Issue #625: eow position + return_sunset on + end time → line, no footgun."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_END_OF_WINDOW_POS,
+        CONF_RETURN_SUNSET,
+    )
+
+    cfg = {
+        CONF_SUNSET_POS: 30,
+        CONF_END_OF_WINDOW_POS: 0,
+        CONF_RETURN_SUNSET: True,
+        CONF_END_TIME: "19:30",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" in summary
+    assert "will not be applied" not in summary
+
+
+def test_end_of_window_footgun_when_return_off():
+    """Issue #625: eow position set but return_sunset off → footgun warning."""
+    from custom_components.adaptive_cover_pro.const import CONF_END_OF_WINDOW_POS
+
+    cfg = {CONF_SUNSET_POS: 30, CONF_END_OF_WINDOW_POS: 0}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" in summary
+    assert "will not be applied" in summary
+
+
+def test_end_of_window_line_renders_without_sunset_pos():
+    """Issue #625: eow set with NO sunset_position → line still renders.
+
+    Structural guard for the historic ``if sunset_pos is not None`` gate.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_END_OF_WINDOW_POS,
+        CONF_RETURN_SUNSET,
+    )
+
+    cfg = {
+        CONF_END_OF_WINDOW_POS: 0,
+        CONF_RETURN_SUNSET: True,
+        CONF_END_TIME: "19:30",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" in summary
+
+
+def test_end_of_window_absent_when_unset():
+    """Issue #625: no eow option → no end-of-window line."""
+    cfg = {CONF_SUNSET_POS: 30}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" not in summary
+
+
 def test_manual_ignore_intermediate_shown():
     """CONF_MANUAL_IGNORE_INTERMEDIATE adds 'ignores intermediate positions' annotation."""
     from custom_components.adaptive_cover_pro.const import (

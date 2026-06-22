@@ -110,6 +110,13 @@ class DiagnosticContext:
     # dict (default) → key omitted from diagnostics output.
     primary_axis_suppression_counts: dict[str, int] = field(default_factory=dict)
 
+    # issue #625: True when the end-of-window position is the live effective
+    # default this cycle (window clock-closed AND end_of_window_position set).
+    # Populated by the coordinator from the same window_is_closed/eow_pos it
+    # computes in _compute_current_effective_default. Surfaced in the
+    # default_position diagnostics block to disambiguate sunset-vs-eow.
+    end_of_window_active: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -357,6 +364,8 @@ class DiagnosticsBuilder:
     @staticmethod
     def _build_time_window(ctx: DiagnosticContext) -> dict:
         """Build time window diagnostics."""
+        from ..const import CONF_END_OF_WINDOW_POS
+
         result = ctx.pipeline_result
         return {
             "time_window": {
@@ -380,6 +389,15 @@ class DiagnosticsBuilder:
                 "configured_sunset_pos": (
                     result.configured_sunset_pos if result is not None else None
                 ),
+                # issue #625: the configured end-of-window position (None when
+                # disabled) plus whether it is the live effective default this
+                # cycle. ``end_of_window_active`` disambiguates "sunset position
+                # is active" from "end-of-window position is active" — both set
+                # ``is_sunset_active=True``.
+                "configured_end_of_window_pos": ctx.config_options.get(
+                    CONF_END_OF_WINDOW_POS
+                ),
+                "end_of_window_active": ctx.end_of_window_active,
                 "configured_cloudy_pos": (
                     result.configured_cloudy_pos if result is not None else None
                 ),
@@ -608,6 +626,7 @@ class DiagnosticsBuilder:
             CONF_ENABLE_MAX_POSITION,
             CONF_ENABLE_MIN_POSITION,
             CONF_ENABLE_POSITION_MATCHING,
+            CONF_END_OF_WINDOW_POS,
             CONF_FOV_LEFT,
             CONF_FOV_RIGHT,
             CONF_INTERP,
@@ -684,6 +703,8 @@ class DiagnosticsBuilder:
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),
+                # issue #625: raw config value (None when disabled).
+                "end_of_window_position": options.get(CONF_END_OF_WINDOW_POS),
                 "is_sunny_source": (
                     options.get(CONF_IS_SUNNY_SENSOR)
                     or (

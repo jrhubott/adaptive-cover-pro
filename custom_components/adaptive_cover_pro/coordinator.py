@@ -56,6 +56,7 @@ from .const import (
     CONF_DEBUG_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DRY_RUN,
+    CONF_END_OF_WINDOW_POS,
     CONF_ENTITIES,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -2327,6 +2328,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             primary_axis_suppression_counts=(
                 self.manager.primary_axis_suppression_counts()
             ),
+            # issue #625: the end-of-window position is the applied/active
+            # effective default when the window is clock-closed AND the option
+            # is set — the same condition _compute_current_effective_default
+            # uses to fire the override.
+            end_of_window_active=(
+                self.config_entry.options.get(CONF_END_OF_WINDOW_POS) is not None
+                and not self.before_end_time
+            ),
         )
 
         diagnostics, explanation = self._diagnostics_builder.build(ctx)
@@ -2647,6 +2656,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             if self._time_mgr.gate_is_configured
             else None
         )
+        # End-of-window position (issue #625): an optional, clearable position
+        # applied once the operating window is clock-closed. ``before_end_time``
+        # is True all morning (end is later today), so the override only fires in
+        # the evening — never before the start time. compute_effective_default
+        # owns the two-phase astral handoff; here we only read the inputs.
+        eow_pos = options.get(CONF_END_OF_WINDOW_POS)
+        window_is_closed = not self._time_mgr.before_end_time
         return compute_effective_default(
             h_def=h_def,
             sunset_pos=sunset_pos_cfg,
@@ -2657,6 +2673,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             sunrise_time=sunrise_time,
             window_explicitly_started=self.window_explicitly_started,
             daytime_gate=daytime_gate,
+            end_of_window_pos=eow_pos,
+            end_of_window_active=window_is_closed,
         )
 
     async def _check_sunset_window_transition(self) -> None:

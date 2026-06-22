@@ -222,6 +222,9 @@ CONF_SUNSET_POS = "sunset_position"  # post-sunset position 0-100; None=default
 CONF_SUNSET_OFFSET = "sunset_offset"  # minutes ±120 from sunset to switch
 CONF_SUNRISE_OFFSET = "sunrise_offset"  # minutes ±120 from sunrise to resume
 CONF_RETURN_SUNSET = "return_sunset"  # True: force-send default at end_time
+# Optional end-of-window position 0-100 (issue #625); None=disabled. Applied at the
+# operating-window end time (gated by CONF_RETURN_SUNSET) regardless of astral sunset.
+CONF_END_OF_WINDOW_POS = "end_of_window_position"
 # If True, sunset position uses CONF_MY_POSITION_VALUE instead of CONF_SUNSET_POS.
 CONF_SUNSET_USE_MY = "sunset_use_my"
 # Optional entity whose state is a datetime; replaces astral-computed sunset/sunrise.
@@ -1002,6 +1005,7 @@ _RANGE_DEFAULT_HEIGHT = (0, 100)  # CONF_DEFAULT_HEIGHT, percent
 _RANGE_MAX_POSITION = (1, 100)  # CONF_MAX_POSITION, percent
 _RANGE_MIN_POSITION = (0, 99)  # CONF_MIN_POSITION, percent
 _RANGE_SUNSET_POS = (0, 100)  # CONF_SUNSET_POS, percent
+_RANGE_END_OF_WINDOW_POS = (0, 100)  # CONF_END_OF_WINDOW_POS, percent
 _RANGE_MY_POSITION = (1, 99)  # CONF_MY_POSITION_VALUE, percent
 _RANGE_OFFSET_MINUTES = (-120, 120)  # sunset/sunrise offsets, minutes
 _RANGE_OPEN_CLOSE_THRESHOLD = (1, 99)  # CONF_OPEN_CLOSE_THRESHOLD, percent
