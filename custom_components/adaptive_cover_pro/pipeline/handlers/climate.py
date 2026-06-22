@@ -151,7 +151,15 @@ class ClimateCoverState:
         result = self.tilt_state() if is_tilt else self.normal_type_cover()
         if result is None:
             return None
-        return apply_snapshot_limits(self.snapshot, result, sun_valid=False)
+        # Summer cooling fires only when the sun is in the window's FOV
+        # (cover_valid is required by the rule predicate).  Pass direct_sun_valid
+        # so that "sun-tracking-only" position limits — specifically min_position
+        # with enable_min_position=True — are honoured during summer close
+        # (issue #631).  Other climate states (winter heating, low-light, glare)
+        # retain sun_valid=False to preserve existing behaviour: winter heating
+        # should not be capped by sun-only max position limits (regression #105).
+        sun_valid = self.cover.direct_sun_valid and self.climate_data.is_summer
+        return apply_snapshot_limits(self.snapshot, result, sun_valid=sun_valid)
 
     def _solar_position(self) -> int:
         """Compute solar-tracked position with limits applied."""
