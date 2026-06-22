@@ -16,7 +16,7 @@ own format. The ordering and the priority integers live here only.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from .const import CUSTOM_POSITION_SAFETY_PRIORITY
@@ -61,29 +61,34 @@ def build_priority_chain(
     has_glare: bool,
     supports_glare: bool,
     custom_slots: Iterable[Sequence] = (),
+    priorities: Mapping[str, int] | None = None,
 ) -> list[PriorityChainEntry]:
     """Return the decision chain ordered highest-priority-first.
 
-    Fixed anchors take their priority from the handler classes. ``custom_slots``
-    is an iterable of the summary's slot tuples
-    ``(slot, trigger, position, priority, use_my, tilt, tilt_only)``; each is
-    interleaved at its configured priority. The sort is stable, so a custom slot
-    sharing a fixed handler's priority renders after that handler (fixed anchors
-    are inserted first).
+    Fixed anchors take their priority from the handler classes, unless
+    ``priorities`` (a ``handler.name -> priority`` map of user overrides) supplies
+    a value for that handler. ``custom_slots`` is an iterable of the summary's
+    slot tuples ``(slot, trigger, position, priority, use_my, tilt, tilt_only)``;
+    each is interleaved at its configured priority. The sort is stable, so a
+    custom slot sharing a fixed handler's priority renders after that handler
+    (fixed anchors are inserted first).
     """
+    overrides = priorities or {}
+
+    def _prio(cls: type) -> int:
+        return overrides.get(cls.name, cls.priority)
+
     entries: list[PriorityChainEntry] = [
-        PriorityChainEntry(WeatherOverrideHandler.priority, "Weather", has_weather),
-        PriorityChainEntry(ManualOverrideHandler.priority, "Manual", True),
-        PriorityChainEntry(MotionTimeoutHandler.priority, "Motion", has_motion),
-        PriorityChainEntry(CloudSuppressionHandler.priority, "Cloud", has_cloud),
-        PriorityChainEntry(ClimateHandler.priority, "Climate", has_climate),
-        PriorityChainEntry(SolarHandler.priority, "Solar", sun_tracking_enabled),
+        PriorityChainEntry(_prio(WeatherOverrideHandler), "Weather", has_weather),
+        PriorityChainEntry(_prio(ManualOverrideHandler), "Manual", True),
+        PriorityChainEntry(_prio(MotionTimeoutHandler), "Motion", has_motion),
+        PriorityChainEntry(_prio(CloudSuppressionHandler), "Cloud", has_cloud),
+        PriorityChainEntry(_prio(ClimateHandler), "Climate", has_climate),
+        PriorityChainEntry(_prio(SolarHandler), "Solar", sun_tracking_enabled),
         PriorityChainEntry(DefaultHandler.priority, "Default", True),
     ]
     if supports_glare:
-        entries.append(
-            PriorityChainEntry(GlareZoneHandler.priority, "Glare", has_glare)
-        )
+        entries.append(PriorityChainEntry(_prio(GlareZoneHandler), "Glare", has_glare))
     for slot_tuple in custom_slots:
         slot = slot_tuple[0]
         priority = slot_tuple[3]

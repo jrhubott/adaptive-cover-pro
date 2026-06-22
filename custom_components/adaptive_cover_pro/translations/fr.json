@@ -588,7 +588,8 @@
           "debug": "🔍 Débogage et diagnostics",
           "done": "✅ Enregistrer et fermer",
           "light_cloud": "☁️ Capteurs de lumière et nuages",
-          "temperature_climate": "🌡️ Température et climat"
+          "temperature_climate": "🌡️ Température et climat",
+          "pipeline_priorities": "🔀 Priorités des gestionnaires"
         },
         "description": "Configuration : **{instance_name}**\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
@@ -1142,6 +1143,28 @@
         },
         "description": "Affinez le comportement du store une fois une position choisie : ajustements de synchronisation du coucher/lever du soleil, la tolérance de correspondance de position et le basculement de correspondance, et état inversé. Ce ne sont pas des positions cibles — chaque valeur en pourcentage vit sur l'étape Paramètres de Position ; cette étape ne contient que les boutons de synchronisation et seuil.\n\n[En savoir plus]({learn_more})",
         "title": "Comportement (Synchronisation & Seuils)"
+      },
+      "pipeline_priorities": {
+        "title": "Priorités des gestionnaires",
+        "description": "Réorganisez la chaîne de décision. Chaque gestionnaire intégré est évalué dans l'ordre de priorité (plus élevé en premier) ; le premier qui s'applique définit la position. Déplacez un curseur pour changer la priorité d'un gestionnaire, ou réinitialisez-le (le ⓧ) pour restaurer sa valeur par défaut intégrée. La plage est 1–99 — 100 est réservé au créneau de sécurité de position personnalisée, qui gagne toujours. Les égalités sont autorisées et sont tranchées par l'ordre de priorité par défaut intégré (le gestionnaire avec la priorité par défaut la plus élevée gagne).\n\n[En savoir plus]({learn_more})\n\n**Priorité de décision** — la chaîne active avec vos dérogations appliquées (reflète les dernières valeurs enregistrées ; se rafraîchit au re-rendu, pas en direct à mesure que vous le faites):\n{priority_scale}",
+        "data": {
+          "weather_priority": "Priorité de dérogation météo",
+          "manual_override_priority": "Priorité de dérogation manuelle",
+          "motion_timeout_priority": "Priorité du délai de mouvement",
+          "cloud_suppression_priority": "Priorité de suppression des nuages",
+          "climate_priority": "Priorité du mode climatique",
+          "glare_zone_priority": "Priorité de la zone d'éblouissement",
+          "solar_priority": "Priorité du suivi solaire"
+        },
+        "data_description": {
+          "weather_priority": "1–99 ; valeur par défaut intégrée 90. Gestionnaire intégré le plus élevé — abaissez-le pour laisser la dérogation manuelle ou les positions personnalisées l'emporter.",
+          "manual_override_priority": "1–99 ; valeur par défaut intégrée 80.",
+          "motion_timeout_priority": "1–99 ; valeur par défaut intégrée 75.",
+          "cloud_suppression_priority": "1–99 ; valeur par défaut intégrée 60.",
+          "climate_priority": "1–99 ; valeur par défaut intégrée 50.",
+          "glare_zone_priority": "1–99 ; valeur par défaut intégrée 45.",
+          "solar_priority": "1–99 ; valeur par défaut intégrée 40. Le gestionnaire de suivi solaire de base — augmentez-le au-dessus du mode climatique pour que le suivi solaire surclasse le contrôle climatique."
+        }
       }
     },
     "abort": {

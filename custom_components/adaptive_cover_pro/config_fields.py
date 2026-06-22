@@ -214,6 +214,7 @@ SECTION_WEATHER_OVERRIDE = "weather_override"
 SECTION_MANUAL_OVERRIDE = "manual_override"
 SECTION_CUSTOM_POSITION = "custom_position"
 SECTION_MOTION_OVERRIDE = "motion_override"
+SECTION_PIPELINE_PRIORITIES = "pipeline_priorities"
 SECTION_DEBUG = "debug"
 
 
@@ -281,6 +282,18 @@ def priority_slider() -> selector.NumberSelector:
         selector.NumberSelectorConfig(
             min=1,
             max=100,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+        )
+    )
+
+
+def priority_slider_builtin() -> selector.NumberSelector:
+    """Return a priority selector for a built-in handler (1-99; 100=safety only)."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=1,
+            max=99,
             step=1,
             mode=selector.NumberSelectorMode.SLIDER,
         )
@@ -1145,6 +1158,45 @@ def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     return vol.Schema(schema)
 
 
+# Built-in handler priority overrides. One slider per configurable handler, in
+# default-priority order (highest first). Each clears back to the handler's class
+# default. Range is _RANGE_HANDLER_PRIORITY (1-99); 100 stays custom-slot safety.
+# The order here is the form order; the key order also matters for tie-breaking
+# in build_handlers (insertion order = stable-sort tiebreak).
+PIPELINE_PRIORITY_KEYS: tuple[str, ...] = (
+    const.CONF_WEATHER_PRIORITY,
+    const.CONF_MANUAL_OVERRIDE_PRIORITY,
+    const.CONF_MOTION_TIMEOUT_PRIORITY,
+    const.CONF_CLOUD_SUPPRESSION_PRIORITY,
+    const.CONF_CLIMATE_PRIORITY,
+    const.CONF_GLARE_ZONE_PRIORITY,
+    const.CONF_SOLAR_PRIORITY,
+)
+
+
+_PIPELINE_PRIORITY_SPECS = _spec(
+    *[
+        FieldSpec(
+            key,
+            SECTION_PIPELINE_PRIORITIES,
+            ValidatorKind.RANGE,
+            rng=const._RANGE_HANDLER_PRIORITY,
+            clearable=True,
+            make_selector=_const(priority_slider_builtin),
+        )
+        for key in PIPELINE_PRIORITY_KEYS
+    ]
+)
+
+
+def pipeline_priorities_schema() -> vol.Schema:
+    """Build the pipeline-priorities section schema (one slider per handler)."""
+    schema: dict = {
+        vol.Optional(key): priority_slider_builtin() for key in PIPELINE_PRIORITY_KEYS
+    }
+    return vol.Schema(schema)
+
+
 # Glare-zones enable toggle — appended to the sun-tracking section for cover
 # types that support glare zones (blind). Config-flow-only (no validator / no
 # range), matching the legacy behaviour.
@@ -1583,6 +1635,7 @@ _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _custom_position_base_specs(),
     _custom_position_tilt_specs(),
     _MOTION_OVERRIDE_SPECS,
+    _PIPELINE_PRIORITY_SPECS,
     _DEBUG_SPECS,
 )
 

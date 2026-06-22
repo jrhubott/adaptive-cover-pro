@@ -256,7 +256,24 @@ from .config_dynamic import (  # noqa: E402
     temperature_climate_schema,
     weather_override_schema,
 )
+from .pipeline.handlers import (  # noqa: E402
+    HANDLER_PRIORITY_CONF,
+    resolve_handler_priority,
+)
 from .priority_chain import build_priority_chain  # noqa: E402
+
+
+def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
+    """Effective built-in handler priorities for *config* (override or default).
+
+    Fed to :func:`build_priority_chain` so the rendered ladder and the summary
+    decision-chain reflect the user's configured priorities, not just the class
+    defaults.
+    """
+    return {
+        name: resolve_handler_priority(config, name) for name in HANDLER_PRIORITY_CONF
+    }
+
 
 # Module-level constant for tests / imports. Identical to the legacy
 # vol.Schema(...) shape — metric labels, no hass needed. ``sun_tracking_schema``
@@ -583,6 +600,11 @@ _CUSTOM_POSITION_OPTIONAL_KEYS: list[str] = [
     for slot in CUSTOM_POSITION_SLOTS.values()
     for field in ("template", "position", "priority", "tilt")
 ] + [CONF_DEFAULT_TILT, CONF_SUNSET_TILT]
+
+# Built-in handler priority sliders: clearing one omits it from user_input, so
+# optional_entities() nulls it and resolve_handler_priority falls back to the
+# class default.
+_PIPELINE_PRIORITY_OPTIONAL_KEYS: list[str] = list(config_fields.PIPELINE_PRIORITY_KEYS)
 
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
@@ -1503,6 +1525,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         """Render a priority badge suffix: two nbsp + [N]."""
         return f"\u00a0\u00a0[{priority}]"
 
+    # Effective built-in handler priorities (configured overrides or class
+    # defaults). Each rule's badge reads its own handler here so a re-ordered
+    # chain shows the user's real numbers, not the hardcoded defaults.
+    _prio = _handler_priority_overrides(config)
+
     def _fmt_sun_dt(value) -> str | None:
         """Format a sun-times datetime as HH:MM; None passes through."""
         return value.strftime("%H:%M") if value is not None else None
@@ -1629,7 +1656,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 delay=delay_str,
                 bypass=bypass_str,
             )
-            + _badge(90)
+            + _badge(_prio["weather"])
         )
 
     # Manual override (80)
@@ -1656,7 +1683,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             L["manual.transit_timeout"].format(seconds=int(transit_timeout))
         )
     mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
-    lines.append(L["rules.manual"].format(detail=mo_str) + _badge(80))
+    lines.append(
+        L["rules.manual"].format(detail=mo_str) + _badge(_prio["manual_override"])
+    )
 
     # Custom positions — each slot at its own configured priority
     if has_custom_position:
@@ -1749,7 +1778,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 sources=sources,
                 action=action,
             )
-            + _badge(75)
+            + _badge(_prio["motion_timeout"])
         )
     elif timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
         lines.append(L["warnings.motion_hold_no_sensors"])
@@ -1800,7 +1829,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             fallback_label = L["cloud.fallback_default"].format(default_pos=default_pos)
         lines.append(
             L["rules.cloud"].format(cloud=cloud_str, fallback=fallback_label)
-            + _badge(60)
+            + _badge(_prio["cloud_suppression"])
         )
     elif any(
         [
@@ -1869,7 +1898,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if config.get(CONF_WINTER_CLOSE_INSULATION):
             cl_parts.append(L["climate.winter_close"])
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
-        lines.append(L["rules.climate"].format(detail=cl_str) + _badge(50))
+        lines.append(
+            L["rules.climate"].format(detail=cl_str) + _badge(_prio["climate"])
+        )
 
     # Glare zones — vertical only (45, below climate)
     if has_glare:
@@ -1896,7 +1927,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 )
             )
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
-        lines.append(L["rules.glare"].format(detail=gz_str) + _badge(45))
+        lines.append(
+            L["rules.glare"].format(detail=gz_str) + _badge(_prio["glare_zone"])
+        )
 
     # Solar tracking — baseline calculation (40)
     azimuth = config.get(CONF_AZIMUTH)
@@ -1930,7 +1963,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         else:
             today_str = ""
         lines.append(
-            L["rules.solar"].format(sun_desc=sun_desc, today=today_str) + _badge(40)
+            L["rules.solar"].format(sun_desc=sun_desc, today=today_str)
+            + _badge(_prio["solar"])
         )
         if config.get(CONF_MINIMIZE_MOVEMENTS, False):
             steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
@@ -1941,7 +1975,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 detail = L["solar.minimize_steps"].format(steps=steps)
             lines.append(L["solar.minimize"].format(indent=indent, detail=detail))
     else:
-        lines.append(L["rules.solar_disabled"] + _badge(40))
+        lines.append(L["rules.solar_disabled"] + _badge(_prio["solar"]))
 
     # Timing window (sub-bullet under ☀️)
     start_time = config.get(CONF_START_TIME)
@@ -2244,6 +2278,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         has_glare=has_glare,
         supports_glare=summary_policy.supports_glare_zones,
         custom_slots=_custom_slots,
+        priorities=_handler_priority_overrides(config),
     )
     chain = [_ch(e.active, e.label) for e in _chain_entries]
 
@@ -2283,6 +2318,7 @@ def _render_priority_scale(config: dict, policy) -> str:
         has_glare=True,
         supports_glare=policy.supports_glare_zones,
         custom_slots=custom_slots,
+        priorities=_handler_priority_overrides(config),
     )
 
     lines = ["```"]
@@ -3589,6 +3625,9 @@ class OptionsFlowHandler(OptionsFlow):
         ):
             keys.append("glare_zones")  # Priority 45
 
+        # Re-order the whole handler chain (built-in priority overrides).
+        keys.append("pipeline_priorities")
+
         # ── Layer 4: How do I move? (global motion constraints) ──────
         keys.append("automation")
 
@@ -3873,6 +3912,30 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+            },
+        )
+
+    async def async_step_pipeline_priorities(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Re-order the built-in handler decision chain (priority overrides)."""
+        if user_input is not None:
+            # A cleared slider is omitted; null it so the handler reverts to its
+            # class-default priority instead of keeping the stale override.
+            self.optional_entities(_PIPELINE_PRIORITY_OPTIONAL_KEYS, user_input)
+            self.options.update(user_input)
+            return await self.async_step_init()
+        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        return self.async_show_form(
+            step_id="pipeline_priorities",
+            data_schema=self.add_suggested_values_to_schema(
+                config_fields.pipeline_priorities_schema(), user_input or self.options
+            ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides",
+                "priority_scale": _render_priority_scale(
+                    self.options, get_policy(sensor_type)
+                ),
             },
         )
 

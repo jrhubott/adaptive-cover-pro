@@ -170,6 +170,7 @@ class DiagnosticsBuilder:
         diagnostics.update(self._build_solar(ctx))
         diagnostics.update(self._build_position(ctx))
         diagnostics.update(self._build_decision_trace(ctx))
+        diagnostics.update(self._build_handler_priorities(ctx))
         diagnostics.update(self._build_time_window(ctx))
         diagnostics.update(self._build_sun_validity(ctx))
         diagnostics.update(self._build_climate(ctx))
@@ -555,6 +556,9 @@ class DiagnosticsBuilder:
                     "reason": step.reason,
                     "position": step.position,
                     **(
+                        {"priority": step.priority} if step.priority is not None else {}
+                    ),
+                    **(
                         {"held_position": step.held_position}
                         if step.held_position is not None
                         else {}
@@ -563,6 +567,35 @@ class DiagnosticsBuilder:
                 for step in result.decision_trace
             ]
         }
+
+    @staticmethod
+    def _build_handler_priorities(ctx: DiagnosticContext) -> dict:
+        """Build the configurable built-in handler priority section.
+
+        Shows each handler's effective priority, its class default, and whether
+        the user overrode it — visible even for handlers that did not appear in
+        this cycle's decision_trace (e.g. a suppressed handler). Ordered by
+        effective priority, highest first, to mirror evaluation order.
+        """
+        from ..pipeline.handlers import (
+            HANDLER_PRIORITY_CONF,
+            HANDLER_PRIORITY_DEFAULTS,
+            resolve_handler_priority,
+        )
+
+        options = ctx.config_options or {}
+        rows = {
+            name: {
+                "priority": resolve_handler_priority(options, name),
+                "default": HANDLER_PRIORITY_DEFAULTS[name],
+                "overridden": options.get(HANDLER_PRIORITY_CONF[name]) is not None,
+            }
+            for name in HANDLER_PRIORITY_CONF
+        }
+        ordered = dict(
+            sorted(rows.items(), key=lambda kv: kv[1]["priority"], reverse=True)
+        )
+        return {"handler_priorities": ordered}
 
     @staticmethod
     def _build_covers(ctx: DiagnosticContext) -> dict:

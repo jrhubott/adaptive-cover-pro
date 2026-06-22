@@ -985,6 +985,65 @@ class TestDecisionTrace:
         handlers = [s["handler"] for s in diag["decision_trace"]]
         assert handlers == ["a", "b", "c"]
 
+    def test_trace_includes_priority_when_set(self, builder: DiagnosticsBuilder):
+        """A step's priority is surfaced; absent when None (synthetic step)."""
+        steps = [
+            DecisionStep(
+                handler="weather",
+                matched=True,
+                reason="storm",
+                position=100,
+                priority=90,
+            ),
+            DecisionStep(
+                handler="floor_clamp", matched=True, reason="floor", position=40
+            ),
+        ]
+        pr = PipelineResult(
+            position=100,
+            control_method=ControlMethod.WEATHER,
+            reason="weather",
+            decision_trace=steps,
+        )
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        trace = diag["decision_trace"]
+        assert trace[0]["priority"] == 90
+        assert "priority" not in trace[1]  # None → omitted
+
+
+class TestHandlerPriorities:
+    """Tests for the handler_priorities section."""
+
+    def test_defaults_when_no_overrides(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        rows = diag["handler_priorities"]
+        assert rows["weather"] == {
+            "priority": 90,
+            "default": 90,
+            "overridden": False,
+        }
+        # Ordered highest-priority first.
+        assert list(rows) == [
+            "weather",
+            "manual_override",
+            "motion_timeout",
+            "cloud_suppression",
+            "climate",
+            "glare_zone",
+            "solar",
+        ]
+
+    def test_override_marked_and_reordered(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(config_options={"solar_priority": 95, "weather_priority": 20})
+        )
+        rows = diag["handler_priorities"]
+        assert rows["solar"] == {"priority": 95, "default": 40, "overridden": True}
+        assert rows["weather"] == {"priority": 20, "default": 90, "overridden": True}
+        # Solar now sorts first; weather drops below climate.
+        assert list(rows)[0] == "solar"
+        assert list(rows).index("weather") > list(rows).index("climate")
+
 
 # ---------------------------------------------------------------------------
 # Covers section

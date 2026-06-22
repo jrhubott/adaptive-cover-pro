@@ -241,6 +241,10 @@ class DecisionStep:
     reason: str
     position: int | None
     tilt: int | None = None
+    # Evaluation priority of the handler that produced this step (higher wins).
+    # Surfaced in diagnostics so a re-ordered chain is visible for debugging.
+    # None for synthetic steps (e.g. floor_clamp) that aren't a real handler.
+    priority: int | None = None
     # Physical position the cover is held at during a manual override step.
     # Set by PipelineRegistry only for the manual_override winning step
     # (propagated from PipelineResult.held_position). None for all other

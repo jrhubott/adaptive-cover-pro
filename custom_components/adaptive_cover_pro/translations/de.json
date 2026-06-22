@@ -588,7 +588,8 @@
           "debug": "🔍 Debug und Diagnose",
           "done": "✅ Speichern und schließen",
           "light_cloud": "☁️ Lichtsensoren und Wolken",
-          "temperature_climate": "🌡️ Temperatur und Klima"
+          "temperature_climate": "🌡️ Temperatur und Klima",
+          "pipeline_priorities": "🔀 Handler-Prioritäten"
         },
         "description": "Konfiguration: **{instance_name}**\n\nWenn Adaptive Cover Pro hilfreich für dich war, kannst du [☕ Buy Me a Coffee]({coffee_url}) unterstützen."
       },
@@ -1141,6 +1142,28 @@
           "sunrise_time_entity": "Optionale Entität, deren Status ein Datum/Zeit ist (z.B. Sun2 „Sonnenaufgang bei -4° Höhe\"). Falls gesetzt, ersetzt es die astral-berechnete Sonnenaufgangszeit als Morgen-Fenster-Schließgrenze. Akzeptiert sensor oder input_datetime Entitäten. Sonnenaufgang-Versatz wird immer noch oben angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist.",
           "sunset_offset": "Minuten zur Verschiebung der Sonnenuntergangszeit (± Anpassung). Positiver Wert: Wenden Sie Sonnenuntergangsposition X Minuten NACH Sonnenuntergang an. Negativer Wert: Wenden Sie Sonnenuntergangsposition X Minuten VOR Sonnenuntergang an. Null: Genau bei Sonnenuntergang. Verwenden Sie positive Werte (z.B. 30), wenn Sie Beschattungen etwas über Sonnenuntergang hinaus offen halten möchten. Verwenden Sie negative Werte (z.B. -30), um früh zu schließen, während die Sonne noch niedrig ist.",
           "sunset_time_entity": "Optionale Entität, deren Status ein Datum/Zeit ist (z.B. Sun2 „Sonnenuntergang bei -4° Höhe\"). Falls gesetzt, ersetzt es die astral-berechnete Sonnenuntergangszeit als Fenster-Grenze. Akzeptiert sensor oder input_datetime Entitäten, die ISO-8601 Datum/Zeit melden. Sonnenuntergang-Versatz wird immer noch oben angewendet. Fällt auf astral zurück, wenn die Entität nicht verfügbar ist."
+        }
+      },
+      "pipeline_priorities": {
+        "title": "Handler-Prioritäten",
+        "description": "Ordnen Sie die Entscheidungskette neu an. Jeder integrierte Handler wird in Prioritätsreihenfolge bewertet (höchste zuerst); der erste, der anwendbar ist, legt die Position fest. Ziehen Sie einen Schieberegler, um zu ändern, wo ein Handler sitzt, oder löschen Sie ihn (das ⓧ), um seinen integrierten Standard wiederherzustellen. Der Bereich ist 1–99 — 100 ist für den Custom Position-Sicherheitsslot reserviert, der immer gewinnt. Unentschieden sind zulässig und werden nach der integrierten Standardreihenfolge entschieden (der Handler mit dem höheren Standard gewinnt).\n\n[Mehr erfahren]({learn_more})\n\n**Entscheidungspriorität** — die Live-Kette mit Ihren angewendeten Übersteuerungen (spiegelt die zuletzt gespeicherten Werte wider; wird beim Neurendern aktualisiert, nicht live während Sie ziehen):\n{priority_scale}",
+        "data": {
+          "weather_priority": "Wetter-Übersteuerungspriorität",
+          "manual_override_priority": "Priorität der Manuellen Übersteuerung",
+          "motion_timeout_priority": "Bewegungs-Timeout-Priorität",
+          "cloud_suppression_priority": "Wolkenunterdrückungspriorität",
+          "climate_priority": "Klimamodus-Priorität",
+          "glare_zone_priority": "Blendungszonenprirorität",
+          "solar_priority": "Sonnenverfolgungspriorität"
+        },
+        "data_description": {
+          "weather_priority": "1–99; integrierter Standard 90. Der Handler mit der höchsten integrierten Priorität — senken Sie ihn, um Manuelle Übersteuerung oder Benutzerdefinierte Positionen gewinnen zu lassen.",
+          "manual_override_priority": "1–99; integrierter Standard 80.",
+          "motion_timeout_priority": "1–99; integrierter Standard 75.",
+          "cloud_suppression_priority": "1–99; integrierter Standard 60.",
+          "climate_priority": "1–99; integrierter Standard 50.",
+          "glare_zone_priority": "1–99; integrierter Standard 45.",
+          "solar_priority": "1–99; integrierter Standard 40. Der Handler für die Basis-Sonnenverfolgung — erhöhen Sie ihn über Klimamodus, um Sonnenverfolgung über Klimaregelung zu priorisieren."
         }
       }
     },

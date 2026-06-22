@@ -584,12 +584,35 @@
           "custom_position": "🎯 Custom Positions",
           "motion_override": "🚶 Motion Override",
           "weather_override": "🌧️ Weather Override",
+          "pipeline_priorities": "🔀 Handler Priorities",
           "summary": "📋 Configuration Summary",
           "sync": "🔄 Copy to Other Covers",
           "debug": "🔍 Debug & Diagnostics",
           "done": "✅ Save & Close",
           "light_cloud": "☁️ Light Sensors & Cloud",
           "temperature_climate": "🌡️ Temperature & Climate"
+        }
+      },
+      "pipeline_priorities": {
+        "title": "Handler Priorities",
+        "description": "Re-order the decision chain. Each built-in handler is evaluated in priority order (highest first); the first one that applies sets the position. Drag a slider to change where a handler sits, or clear it (the ⓧ) to restore its built-in default. Range is 1–99 — 100 is reserved for the Custom Position safety slot, which always wins. Ties are allowed and break by the built-in default order (the higher-default handler wins).\n\n[Learn more]({learn_more})\n\n**Decision priority** — the live chain with your overrides applied (reflects the last saved values; refreshes on re-render, not live as you drag):\n{priority_scale}",
+        "data": {
+          "weather_priority": "Weather Override priority",
+          "manual_override_priority": "Manual Override priority",
+          "motion_timeout_priority": "Motion Timeout priority",
+          "cloud_suppression_priority": "Cloud Suppression priority",
+          "climate_priority": "Climate priority",
+          "glare_zone_priority": "Glare Zone priority",
+          "solar_priority": "Solar priority"
+        },
+        "data_description": {
+          "weather_priority": "1–99; built-in default 90. Highest built-in handler — lower it to let Manual or Custom Positions win.",
+          "manual_override_priority": "1–99; built-in default 80.",
+          "motion_timeout_priority": "1–99; built-in default 75.",
+          "cloud_suppression_priority": "1–99; built-in default 60.",
+          "climate_priority": "1–99; built-in default 50.",
+          "glare_zone_priority": "1–99; built-in default 45.",
+          "solar_priority": "1–99; built-in default 40. The base sun-tracking handler — raise it above Climate to make sun tracking outrank climate control."
         }
       },
       "automation": {

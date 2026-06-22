@@ -486,6 +486,20 @@ DEFAULT_CUSTOM_POSITION_PRIORITY = 77  # default priority for a new slot
 # Default for an absent custom_position_tilt_only_<N> option (issue #514).
 DEFAULT_CUSTOM_POSITION_TILT_ONLY = False
 
+# Configurable priorities for the built-in pipeline handlers. Each key holds an
+# integer (1-99) that overrides the handler's class-default priority, letting the
+# user re-order the decision chain. An absent/cleared key falls back to the class
+# default (read in pipeline.handlers via HANDLER_PRIORITY_DEFAULTS). The `default`
+# handler (priority 0) is deliberately not configurable — it is the chain floor.
+# 100 stays reserved for the custom-slot safety semantic, so built-ins cap at 99.
+CONF_WEATHER_PRIORITY = "weather_priority"
+CONF_MANUAL_OVERRIDE_PRIORITY = "manual_override_priority"
+CONF_MOTION_TIMEOUT_PRIORITY = "motion_timeout_priority"
+CONF_CLOUD_SUPPRESSION_PRIORITY = "cloud_suppression_priority"
+CONF_CLIMATE_PRIORITY = "climate_priority"
+CONF_GLARE_ZONE_PRIORITY = "glare_zone_priority"
+CONF_SOLAR_PRIORITY = "solar_priority"
+
 
 # =============================================================================
 # 15. Weather Override (Safety)
@@ -1028,6 +1042,7 @@ _RANGE_MANUAL_THRESHOLD = (0, 99)  # CONF_MANUAL_THRESHOLD, percent
 _RANGE_FORCE_POSITION = (0, 100)  # CONF_FORCE_OVERRIDE_POSITION, percent
 _RANGE_CUSTOM_POSITION = (0, 100)  # per-slot custom position, percent
 _RANGE_CUSTOM_PRIORITY = (1, 100)  # per-slot custom priority (100 = safety)
+_RANGE_HANDLER_PRIORITY = (1, 99)  # built-in handler priority (100 reserved=safety)
 _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 
 # Motion.
