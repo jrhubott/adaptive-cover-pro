@@ -362,18 +362,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        # Daytime gate (issue #632): a binary-sensor list and/or a Jinja condition
-        # template that REPLACES the astronomical sunset/sunrise boundary when set.
-        # On/truthy = daytime (track); off/falsy = dark (apply sunset position).
-        # Mirrors the motion gate shape (sensors + template + combine mode). Lives on
-        # the position step beside the sunset options it overrides.
-        vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): _binary_on_selector(
-            multiple=True
-        ),
-        vol.Optional(CONF_DAYTIME_GATE_TEMPLATE): selector.TemplateSelector(),
-        vol.Optional(
-            CONF_DAYTIME_GATE_TEMPLATE_MODE, default=DEFAULT_TEMPLATE_COMBINE_MODE
-        ): _template_combine_mode_selector(),
         vol.Optional(
             CONF_ENABLE_MY_POSITION_ENTITIES,
             default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
@@ -429,6 +417,18 @@ BEHAVIOR_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        # Daytime gate (issue #632): a binary-sensor list and/or a Jinja condition
+        # template that REPLACES the astronomical sunset/sunrise boundary when set.
+        # On/truthy = daytime (track); off/falsy = dark (apply sunset position).
+        # Mirrors the motion gate shape (sensors + template + combine mode). Lives on
+        # the behavior step beside the sunset-timing options it overrides.
+        vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): _binary_on_selector(
+            multiple=True
+        ),
+        vol.Optional(CONF_DAYTIME_GATE_TEMPLATE): selector.TemplateSelector(),
+        vol.Optional(
+            CONF_DAYTIME_GATE_TEMPLATE_MODE, default=DEFAULT_TEMPLATE_COMBINE_MODE
+        ): _template_combine_mode_selector(),
         vol.Optional(CONF_POSITION_TOLERANCE, default=3): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -455,15 +455,15 @@ _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_END_OF_WINDOW_POS,
     CONF_MY_POSITION_VALUE,
     CONF_MIN_POSITION_SUN_TRACKING,
-    # Daytime gate template has no schema default → cleared = absent (issue #632).
-    # The sensor list carries default=[] so it round-trips on its own (NOT here).
-    CONF_DAYTIME_GATE_TEMPLATE,
 ]
 
 # Same clear-handling for the L2b behavior step's entity pickers.
 _BEHAVIOR_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_TIME_ENTITY,
     CONF_SUNRISE_TIME_ENTITY,
+    # Daytime gate template has no schema default → cleared = absent (issue #632).
+    # The sensor list carries default=[] so it round-trips on its own (NOT here).
+    CONF_DAYTIME_GATE_TEMPLATE,
 ]
 
 # ── Layer 4: global motion constraints ──────────────────────────────────────
