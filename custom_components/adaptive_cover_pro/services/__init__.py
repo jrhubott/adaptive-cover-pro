@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -89,6 +90,9 @@ def _resolve_targets(
                         coord = all_coordinators[entry_id]
                         result.setdefault(coord, None)
 
+    # Fetch entity registry once for the ACP-owned non-cover entity fallback
+    ent_reg = er.async_get(hass)
+
     # Resolve entity_ids → coordinator + per-entity filter
     for eid in entity_ids:
         owned = False
@@ -106,6 +110,14 @@ def _resolve_targets(
                     elif existing is not None:
                         existing.add(eid)
                     # If existing is None (whole-coordinator), keep it
+        if not owned:
+            # Fallback: look up the entity registry to find any ACP-owned entity
+            # (e.g. diagnostic sensor, switch, button) by its config_entry_id.
+            reg_entry = ent_reg.async_get(eid)
+            if reg_entry and reg_entry.config_entry_id in all_coordinators:
+                coord = all_coordinators[reg_entry.config_entry_id]
+                result.setdefault(coord, None)
+                owned = True
         if not owned:
             _LOGGER.debug(
                 "integration_service: entity %s is not managed by any ACP instance — skipping",

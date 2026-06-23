@@ -479,6 +479,80 @@ async def test_emergency_stop_no_target_hits_all_instances():
 
 
 # ---------------------------------------------------------------------------
+# _resolve_targets — ACP-owned non-cover entity (issue #665)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_diagnostic_sensor_maps_to_owning_coordinator():
+    """ACP-owned non-cover entity (e.g. decision_trace sensor) resolves to its coordinator.
+
+    The sensor is not in coord.entities (which only holds cover entity_ids), so the
+    primary loop can't find it.  The entity-registry fallback must map it via
+    config_entry_id → coordinator.
+    """
+    coord = _make_coordinator(["cover.kuche"])
+    hass = _make_hass({"entry_abc": coord})
+    call = _make_call(entity_id="sensor.ac_kuche_ost_decision_trace")
+
+    fake_entry = MagicMock()
+    fake_entry.config_entry_id = "entry_abc"
+
+    ent_reg_mock = MagicMock()
+    ent_reg_mock.async_get = MagicMock(return_value=fake_entry)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.er.async_get",
+        return_value=ent_reg_mock,
+    ):
+        result = _resolve_targets(hass, call)
+
+    assert coord in result, "owning coordinator not found via registry fallback"
+    assert result[coord] is None
+
+
+def test_resolve_truly_foreign_entity_still_skipped():
+    """A genuinely foreign entity (unknown config_entry_id) must still resolve to {}.
+
+    The registry fallback must not over-match: if the entity's config_entry_id
+    is not in all_coordinators (or the entity isn't in the registry at all),
+    the result must be empty.
+    """
+    coord = _make_coordinator(["cover.kuche"])
+    hass = _make_hass({"entry_abc": coord})
+    call = _make_call(entity_id="sensor.some_foreign_sensor")
+
+    # Case 1: registry returns None for this entity
+    ent_reg_mock = MagicMock()
+    ent_reg_mock.async_get = MagicMock(return_value=None)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.er.async_get",
+        return_value=ent_reg_mock,
+    ):
+        result = _resolve_targets(hass, call)
+
+    assert (
+        result == {}
+    ), "foreign entity (registry miss) must not resolve to any coordinator"
+
+    # Case 2: registry returns an entry but with a config_entry_id we don't own
+    fake_entry = MagicMock()
+    fake_entry.config_entry_id = "some_other_entry_id"
+    ent_reg_mock2 = MagicMock()
+    ent_reg_mock2.async_get = MagicMock(return_value=fake_entry)
+
+    with patch(
+        "custom_components.adaptive_cover_pro.services.er.async_get",
+        return_value=ent_reg_mock2,
+    ):
+        result2 = _resolve_targets(hass, call)
+
+    assert (
+        result2 == {}
+    ), "entity with foreign config_entry_id must not resolve to any coordinator"
+
+
+# ---------------------------------------------------------------------------
 # async_unload_services
 # ---------------------------------------------------------------------------
 
