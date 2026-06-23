@@ -47,6 +47,7 @@ from .const import (
     CONF_AWNING_HOUSING_OFFSET,
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
+    CONF_AWNING_PIVOT_OFFSET,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
@@ -1543,6 +1544,12 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_AWNING_HOUSING_OFFSET,
+    ),
+    FieldSpec(
+        CONF_AWNING_PIVOT_OFFSET,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_AWNING_PIVOT_OFFSET,
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

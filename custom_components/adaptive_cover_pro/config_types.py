@@ -168,13 +168,17 @@ class OscillatingConfig:
     The arm of length ``arm_length`` sweeps from ``min_angle`` (closed) to
     ``max_angle`` (fully open); the fabric angle is therefore a function of the
     open percentage rather than a fixed value. ``housing_offset`` is the pivot
-    height above the window top.
+    height above the window top. ``pivot_offset`` is the horizontal distance from
+    the arm pivot / fabric plane to the window glass (the arm/housing standoff
+    plus any window inset); it lowers the dropped fabric's shadow on the pane at
+    low sun. Default 0.0 → flush mount (no-op).
     """
 
     arm_length: float = 0.8
     min_angle: float = 0.0
     max_angle: float = 175.0
     housing_offset: float = 0.0
+    pivot_offset: float = 0.0
 
     @classmethod
     def from_options(cls, options: dict) -> OscillatingConfig:
@@ -184,10 +188,12 @@ class OscillatingConfig:
             CONF_AWNING_HOUSING_OFFSET,
             CONF_AWNING_MAX_ANGLE,
             CONF_AWNING_MIN_ANGLE,
+            CONF_AWNING_PIVOT_OFFSET,
             DEFAULT_ARM_LENGTH,
             DEFAULT_AWNING_HOUSING_OFFSET,
             DEFAULT_AWNING_MAX_ANGLE,
             DEFAULT_AWNING_MIN_ANGLE,
+            DEFAULT_AWNING_PIVOT_OFFSET,
         )
 
         return cls(
@@ -196,6 +202,8 @@ class OscillatingConfig:
             max_angle=options.get(CONF_AWNING_MAX_ANGLE, DEFAULT_AWNING_MAX_ANGLE),
             housing_offset=options.get(CONF_AWNING_HOUSING_OFFSET)
             or DEFAULT_AWNING_HOUSING_OFFSET,
+            pivot_offset=options.get(CONF_AWNING_PIVOT_OFFSET)
+            or DEFAULT_AWNING_PIVOT_OFFSET,
         )
 
 

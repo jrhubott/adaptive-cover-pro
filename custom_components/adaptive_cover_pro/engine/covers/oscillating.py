@@ -16,15 +16,28 @@ lip's vertical drop past horizontal was ignored. Issue #586 replaces that with a
    height ``lip_y(θ) = pivot_y + arm·cos θ`` (θ=0 → lip up the wall, θ=90° →
    lip at the pivot, θ=180° → lip a full arm below the pivot).
 3. A sun ray grazing the lip drops back toward the wall at the same
-   foreshortened slope the vertical engine uses (``tan(elev)/cos(gamma)``), so
-   the lip's shadow top on the window face is
-   ``shadow_top(θ) = lip_y(θ) − R(θ)·tan(elev)/cos(gamma)``.
+   foreshortened slope the vertical engine uses (``tan(elev)/cos(gamma)``). The
+   pivot/fabric plane can stand off the glass by a horizontal **pivot offset**
+   ``po`` (the arm/housing standoff plus any window inset), so the lip's true
+   horizontal distance from the pane is ``po + R(θ)`` and the shadow top on the
+   window face is ``shadow_top(θ) = lip_y(θ) − (po + R(θ))·tan(elev)/cos(gamma)``.
+   ``po=0`` (flush mount) is a no-op that reproduces the earlier model exactly.
 4. The solver scans the sweep and returns the smallest θ whose shadow_top
    reaches the **protected boundary** — the exposed-glass height the inherited
    vertical sill/depth/distance solve leaves uncovered (so window_depth,
    sill_height and distance still influence the result). If no angle reaches the
    boundary it fails open (max coverage), driving position → 100% at very low
    sun. θ>90° (pos>50%) is now reachable by construction.
+
+**Monotone-coverage contract.** The raw lip-tip shadow is non-physically
+non-monotone in θ across the descending half of the sweep (its foreshortened
+drop peaks near θ≈90° while the lip keeps falling, producing a false mid-sweep
+optimum, then rising again toward θ=180°). A real awning never shades *less* as
+it extends further, so the solver operates on the **running floor** of the lip
+shadow (``_monotone_coverage_floor``) — the deepest shadow reached *up to* each
+angle. This makes both the reach search (first θ at the boundary) and the
+fail-open argmin land at the full-extension angle when the boundary is
+unreachable, instead of a spurious mid-sweep angle.
 """
 
 from __future__ import annotations
@@ -42,6 +55,12 @@ from ...const import (
 )
 from .horizontal import AdaptiveHorizontalCover
 from .vertical import MIN_COS_GAMMA_CLAMP, AdaptiveVerticalCover
+
+# Tolerance (metres) for treating two coverage-floor heights as equal when the
+# fail-open branch selects the deepest-coverage angle. Once the running floor
+# plateaus, any angle within this band shades equally, so the awning is driven
+# to the largest (most-extended) such angle.
+_COVERAGE_PLATEAU_EPS = 1e-6
 
 
 def _foreshortened_drop_per_reach(sol_elev: float, gamma: float) -> float:
@@ -67,16 +86,34 @@ def _lip_shadow_top(
     pivot_y: float,
     sol_elev: float,
     gamma: float,
+    pivot_offset: float = 0.0,
 ) -> float:
     """Window-face height of the lip's shadow top at arm angle ``theta_deg``.
 
-    ``pivot_y`` is measured in the window-bottom=0 datum. Lower return values
-    mean the lip shades further down the face (more coverage).
+    ``pivot_y`` is measured in the window-bottom=0 datum. ``pivot_offset`` is the
+    horizontal standoff of the pivot/fabric plane from the glass; it adds to the
+    lip's projected reach so the shadow drops lower on the pane (``0.0`` =
+    flush, a no-op). Lower return values mean the lip shades further down the
+    face (more coverage).
     """
     theta = rad(theta_deg)
-    reach = arm_length * float(sin(theta))
+    reach = pivot_offset + arm_length * float(sin(theta))
     lip_y = pivot_y + arm_length * float(cos(theta))
     return lip_y - reach * _foreshortened_drop_per_reach(sol_elev, gamma)
+
+
+def _monotone_coverage_floor(shadow_tops: np.ndarray) -> np.ndarray:
+    """Return the running floor (cumulative minimum) of the lip-shadow array.
+
+    The raw lip shadow is non-monotone in θ (a false mid-sweep optimum, then
+    rising again toward full extension). A physical awning never shades *less*
+    as it extends further, so the coverage the solver credits at angle ``i`` is
+    the deepest shadow reached up to and including ``i`` — i.e. the cumulative
+    minimum. This is non-increasing by construction, so the first crossing of
+    the protected boundary and the global argmin both land at full extension
+    when the boundary is otherwise unreachable.
+    """
+    return np.minimum.accumulate(shadow_tops)
 
 
 @dataclass
@@ -135,18 +172,28 @@ class AdaptiveOscillatingCover(AdaptiveHorizontalCover):
                     pivot_y=pivot_y,
                     sol_elev=self.sol_elev,
                     gamma=self.gamma,
+                    pivot_offset=self.osc_config.pivot_offset,
                 )
                 for t in thetas
             ]
         )
+        # Credit the deepest shadow reached so far (monotone-coverage contract):
+        # a physical awning never shades less as it extends, so collapse the raw
+        # non-monotone lip shadow to its running floor before solving.
+        coverage = _monotone_coverage_floor(shadow_tops)
 
-        reaches = np.flatnonzero(shadow_tops <= boundary)
+        reaches = np.flatnonzero(coverage <= boundary)
         if reaches.size:
             # Smallest angle that shades down to the boundary (full shade).
             theta = float(thetas[reaches[0]])
         else:
-            # Unreachable → maximise coverage (fail open toward pos→100%).
-            theta = float(thetas[int(np.argmin(shadow_tops))])
+            # Unreachable → maximise coverage (fail open toward pos→100%). The
+            # monotone floor plateaus once the deepest shadow is reached; further
+            # extension never *reduces* coverage, so pick the LARGEST angle that
+            # still achieves the floor minimum (full extension), not the first.
+            floor_min = float(coverage[-1])
+            best = np.flatnonzero(coverage <= floor_min + _COVERAGE_PLATEAU_EPS)
+            theta = float(thetas[best[-1]])
 
         self.logger.debug(
             "Oscillating calc: elev=%.1f°, gamma=%.1f°, pivot_y=%.3f, "

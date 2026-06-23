@@ -127,10 +127,15 @@ CONF_AWNING_MAX_ANGLE = "awning_max_angle"  # arm angle when fully open, deg (0-
 # Vertical offset of the arm pivot above the window top, metres (0-1). Used with
 # window height and arm length to locate the pivot.
 CONF_AWNING_HOUSING_OFFSET = "awning_housing_offset"
+# Horizontal distance from the arm pivot / fabric plane to the window glass,
+# metres (0-2). At low sun the dropped fabric stands off the pane by this much,
+# so its shadow projects lower on the glass. See #586 follow-up.
+CONF_AWNING_PIVOT_OFFSET = "awning_pivot_offset"
 DEFAULT_ARM_LENGTH = 0.8  # metres
 DEFAULT_AWNING_MIN_ANGLE = 0  # degrees — arm vertical / fully retracted
 DEFAULT_AWNING_MAX_ANGLE = 175  # degrees — reporter's full sweep (#412)
 DEFAULT_AWNING_HOUSING_OFFSET = 0.0  # metres
+DEFAULT_AWNING_PIVOT_OFFSET = 0.0  # metres
 
 # Vertical-drop (lip-height) shade model for the oscillating awning (#586).
 # The drop-arm's fabric lip descends as the arm sweeps past horizontal, shading
@@ -995,6 +1000,7 @@ _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
 _RANGE_ARM_LENGTH = (0.1, 6.0)  # CONF_ARM_LENGTH, metres
 _RANGE_AWNING_SWEEP_ANGLE = (0, 180)  # CONF_AWNING_MIN/MAX_ANGLE, degrees
 _RANGE_AWNING_HOUSING_OFFSET = (0.0, 1.0)  # CONF_AWNING_HOUSING_OFFSET, metres
+_RANGE_AWNING_PIVOT_OFFSET = (0.0, 2.0)  # CONF_AWNING_PIVOT_OFFSET, metres
 
 # Geometry — tilt / venetian slats.
 _RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm

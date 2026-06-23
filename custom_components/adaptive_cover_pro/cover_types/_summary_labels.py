@@ -65,6 +65,7 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.oscillating.arm": "{v}m arm",
     "geometry.oscillating.sweep": "sweep {lo}°–{hi}°",
     "geometry.oscillating.housing_offset": "{v}m housing offset",
+    "geometry.oscillating.pivot_offset": "{v}m pivot offset",
     # Venetian-only extras.
     "geometry.venetian.skip_tilt": "skip tilt when position > {skip_above}%",
     "geometry.venetian.mode_position_and_tilt": "position and tilt",

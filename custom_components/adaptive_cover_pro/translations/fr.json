@@ -52,7 +52,8 @@
           "arm_length": "Longueur du bras",
           "awning_min_angle": "Angle du bras fermé",
           "awning_max_angle": "Angle du bras complètement ouvert",
-          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre"
+          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre",
+          "awning_pivot_offset": "Décalage du pivot par rapport à la fenêtre"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -74,7 +75,8 @@
           "arm_length": "Longueur du bras articulé d'une store banne à bras articulé, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
           "awning_min_angle": "Angle du bras lorsque la store banne est complètement fermée/rétractée (0–180°). En règle générale, 0° = bras vertical contre le mur. Définit le début de l'arc de balayage.",
           "awning_max_angle": "Angle du bras lorsque la store banne est complètement ouverte (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
-          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre."
+          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
+          "awning_pivot_offset": "Distance horizontale entre le pivot du bras (plan du tissu) du store et la vitre de la fenêtre (0–2 m). Sous un soleil bas, cela permet au tissu abaissé d'ombrager plus bas sur la vitre, car le tissu se tient à distance de la vitre. Réglez cette valeur sur l'écart entre le boîtier/bras et le mur, plus tout renfoncement/embrasure de la fenêtre — utilisez 0 lorsque le tissu pend à fleur de la vitre. Exemple : 0,7 m / 28 in pour un bras monté loin du mur."
         }
       },
       "sun_tracking": {
@@ -654,7 +656,8 @@
           "arm_length": "Longueur du bras",
           "awning_min_angle": "Angle du bras fermé",
           "awning_max_angle": "Angle du bras complètement ouvert",
-          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre"
+          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre",
+          "awning_pivot_offset": "Décalage du pivot par rapport à la fenêtre"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -676,7 +679,8 @@
           "arm_length": "Longueur du bras articulé d'une store banne à bras articulé, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
           "awning_min_angle": "Angle du bras lorsque la store banne est complètement fermée/rétractée (0–180°). En règle générale, 0° = bras vertical contre le mur. Définit le début de l'arc de balayage.",
           "awning_max_angle": "Angle du bras lorsque la store banne est complètement ouverte (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
-          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre."
+          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
+          "awning_pivot_offset": "Distance horizontale entre le pivot du bras (plan du tissu) du store et la vitre de la fenêtre (0–2 m). Sous un soleil bas, cela permet au tissu abaissé d'ombrager plus bas sur la vitre, car le tissu se tient à distance de la vitre. Réglez cette valeur sur l'écart entre le boîtier/bras et le mur, plus tout renfoncement/embrasure de la fenêtre — utilisez 0 lorsque le tissu pend à fleur de la vitre. Exemple : 0,7 m / 28 in pour un bras monté loin du mur."
         }
       },
       "sun_tracking": {

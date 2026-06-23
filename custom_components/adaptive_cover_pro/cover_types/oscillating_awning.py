@@ -25,6 +25,7 @@ from ..const import (
     CONF_AWNING_HOUSING_OFFSET,
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
+    CONF_AWNING_PIVOT_OFFSET,
     CONF_HEIGHT_WIN,
     CONF_SILL_HEIGHT,
     CONF_WINDOW_DEPTH,
@@ -32,8 +33,10 @@ from ..const import (
     DEFAULT_AWNING_HOUSING_OFFSET,
     DEFAULT_AWNING_MAX_ANGLE,
     DEFAULT_AWNING_MIN_ANGLE,
+    DEFAULT_AWNING_PIVOT_OFFSET,
     DEFAULT_WINDOW_HEIGHT,
     _RANGE_ARM_LENGTH,
+    _RANGE_AWNING_PIVOT_OFFSET,
 )
 from ..engine.covers import AdaptiveOscillatingCover
 from ..unit_system import length_default, length_selector
@@ -60,6 +63,7 @@ OSCILLATING_LENGTH_KEYS: tuple[str, ...] = (
     CONF_SILL_HEIGHT,
     CONF_ARM_LENGTH,
     CONF_AWNING_HOUSING_OFFSET,
+    CONF_AWNING_PIVOT_OFFSET,
 )
 
 
@@ -106,6 +110,15 @@ def geometry_oscillating_schema(hass: HomeAssistant | None = None) -> vol.Schema
                 CONF_AWNING_HOUSING_OFFSET,
                 default=length_default(DEFAULT_AWNING_HOUSING_OFFSET, hass),
             ): length_selector(hass, min_m=0.0, max_m=1, metric_step=0.01),
+            vol.Optional(
+                CONF_AWNING_PIVOT_OFFSET,
+                default=length_default(DEFAULT_AWNING_PIVOT_OFFSET, hass),
+            ): length_selector(
+                hass,
+                min_m=_RANGE_AWNING_PIVOT_OFFSET[0],
+                max_m=_RANGE_AWNING_PIVOT_OFFSET[1],
+                metric_step=0.01,
+            ),
         }
     )
 
@@ -179,6 +192,8 @@ class OscillatingAwningPolicy(CoverTypePolicy, register=True):
             parts.append(L["geometry.window.height"].format(v=v))
         if (v := config.get(CONF_AWNING_HOUSING_OFFSET)) is not None:
             parts.append(L["geometry.oscillating.housing_offset"].format(v=v))
+        if (v := config.get(CONF_AWNING_PIVOT_OFFSET)) is not None:
+            parts.append(L["geometry.oscillating.pivot_offset"].format(v=v))
         return [", ".join(parts)] if parts else []
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:

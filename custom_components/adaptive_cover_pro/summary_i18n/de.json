@@ -216,7 +216,8 @@
     "oscillating": {
       "arm": "{v}m Arm",
       "sweep": "Schwenkbereich {lo}°–{hi}°",
-      "housing_offset": "{v}m Gehäuseversatz"
+      "housing_offset": "{v}m Gehäuseversatz",
+      "pivot_offset": "{v}m Pivotversatz"
     },
     "venetian": {
       "skip_tilt": "Neigung überspringen wenn Position > {skip_above}%",

@@ -216,7 +216,8 @@
     "oscillating": {
       "arm": "bras {v}m",
       "sweep": "amplitude {lo}°–{hi}°",
-      "housing_offset": "décalage du boîtier {v}m"
+      "housing_offset": "décalage du boîtier {v}m",
+      "pivot_offset": "décalage du pivot {v}m"
     },
     "venetian": {
       "skip_tilt": "sauter l'inclinaison quand position > {skip_above}%",
