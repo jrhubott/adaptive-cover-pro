@@ -490,6 +490,22 @@ class DiagnosticsBuilder:
         return diagnostics
 
     @staticmethod
+    def _compute_data_window(timeline) -> dict:
+        """Summarize the time span and capture moment of an event timeline.
+
+        ``start``/``end`` are the earliest/latest ``ts`` in the timeline (None
+        when empty); ``captured_at`` is the UTC ISO timestamp the snapshot was
+        taken. Shared by ``_build_debug_info`` and the diagnostics export
+        null-case marker so both describe their window identically (#656).
+        """
+        stamps = [e["ts"] for e in (timeline or []) if e.get("ts")]
+        return {
+            "start": min(stamps) if stamps else None,
+            "end": max(stamps) if stamps else None,
+            "captured_at": dt.datetime.now(dt.UTC).isoformat(),
+        }
+
+    @staticmethod
     def _build_debug_info(ctx: DiagnosticContext) -> dict:
         """Build debug & diagnostics section."""
         diagnostics: dict = {}
@@ -499,6 +515,9 @@ class DiagnosticsBuilder:
 
         # Unified event timeline from the shared ring buffer
         timeline = ctx.event_timeline or ctx.manual_override_events
+        # Always record the data window so a downloaded snapshot is
+        # self-describing — even when the timeline is empty (#656).
+        diagnostics["data_window"] = DiagnosticsBuilder._compute_data_window(timeline)
         if timeline:
             diagnostics["event_timeline"] = timeline
             # Backward-compat filtered alias for consumers that read manual_override_history

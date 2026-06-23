@@ -108,6 +108,19 @@ class TimeWindowManager:
         return self.before_end_time and self.after_start_time and self.gate_is_daytime
 
     @property
+    def clock_window_open(self) -> bool:
+        """Whether the user's start/end CLOCK window is open, ignoring the daytime gate.
+
+        This is :pyattr:`is_active` without the ``gate_is_daytime`` factor.
+        ``is_active`` conflates "outside the user's start/end clock" (ACP must stay
+        hands-off — #215/#216) with "the daytime gate reads dark" (ACP has a
+        well-defined night/default position it should still send — #656).
+        Suppression sites that only care about the clock consult THIS; the
+        gate-dark case is exposed separately via :pyattr:`gate_is_dark`.
+        """
+        return self.before_end_time and self.after_start_time
+
+    @property
     def gate_is_configured(self) -> bool:
         """Return True when a daytime gate source — sensor or template — is set.
 

@@ -29,10 +29,24 @@ UTC = dt.UTC
 # ---------------------------------------------------------------------------
 
 
-def _make_coordinator(*, check_adaptive_time: bool, automatic_control: bool = True):
-    """Build a minimal mock coordinator for testing _async_send_after_override_clear."""
+def _make_coordinator(
+    *,
+    check_adaptive_time: bool,
+    automatic_control: bool = True,
+    clock_window_open: bool | None = None,
+):
+    """Build a minimal mock coordinator for testing _async_send_after_override_clear.
+
+    ``clock_window_open`` defaults to mirror ``check_adaptive_time`` because every
+    scenario in this file models "outside the window" as a genuinely closed clock
+    (after end_time / before start_time). The gate-dark case (clock open, gate
+    dark) is exercised explicitly by passing ``clock_window_open=True`` (#656).
+    """
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
+    coordinator.clock_window_open = (
+        check_adaptive_time if clock_window_open is None else clock_window_open
+    )
     coordinator.automatic_control = automatic_control
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
@@ -98,6 +112,39 @@ async def test_override_clear_sends_position_inside_time_window():
         "manual_override_cleared",
         context=coordinator._build_position_context.return_value,
     )
+
+
+@pytest.mark.asyncio
+async def test_override_clear_sends_when_gate_dark_but_clock_open():
+    """Override clear at night (gate dark, clock still open) must dispatch the night position.
+
+    Issue #656: with a degenerate clock (start/end = 00:00) the user's clock
+    window stays open all night; is_active is False purely because the daytime
+    gate reads dark. The pipeline computes the correct night/default position
+    (here 0), and clearing the override must send it — not leave the cover where
+    the user last parked it.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,  # gate dark → is_active False
+        clock_window_open=True,  # but the clock is still open
+        automatic_control=True,
+    )
+
+    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, state=0, options={}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once_with(
+        "cover.test_blind",
+        0,
+        "manual_override_cleared",
+        context=coordinator._build_position_context.return_value,
+    )
+    assert result == {"cover.test_blind"}
 
 
 @pytest.mark.asyncio
@@ -326,11 +373,22 @@ async def test_override_clear_outside_window_takes_precedence_over_auto_control(
 
 
 def _make_state_change_coordinator(
-    *, check_adaptive_time: bool, bypass_auto_control: bool = False
+    *,
+    check_adaptive_time: bool,
+    bypass_auto_control: bool = False,
+    clock_window_open: bool | None = None,
 ):
-    """Build a minimal mock coordinator for testing async_handle_state_change."""
+    """Build a minimal mock coordinator for testing async_handle_state_change.
+
+    ``clock_window_open`` defaults to mirror ``check_adaptive_time`` (genuinely
+    closed clock). Pass ``clock_window_open=True`` to model the gate-dark case
+    where the clock is open but the daytime gate reads dark (#656).
+    """
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
+    coordinator.clock_window_open = (
+        check_adaptive_time if clock_window_open is None else clock_window_open
+    )
     coordinator.logger = MagicMock()
     coordinator.entities = ["cover.test_blind"]
     coordinator._check_sun_validity_transition = MagicMock(return_value=False)
@@ -391,6 +449,31 @@ async def test_state_change_sends_inside_time_window():
         coordinator, state=50, options={}
     )
 
+    coordinator._cmd_svc.apply_position.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_state_change_dispatches_when_gate_dark_but_clock_open():
+    """A normal-update state change at night (gate dark, clock open) must dispatch.
+
+    Issue #656: the reporter's custom-position handler wins the pipeline but the
+    L1646 guard suppressed dispatch because is_active was False (gate dark). With
+    the clock window still open, the computed night/custom position must be sent.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_state_change_coordinator(
+        check_adaptive_time=False,  # gate dark → is_active False
+        clock_window_open=True,  # but the clock is still open
+    )
+
+    await AdaptiveDataUpdateCoordinator.async_handle_state_change(
+        coordinator, state=50, options={}
+    )
+
+    # The L1646 early-return must NOT be taken: a command is dispatched.
     coordinator._cmd_svc.apply_position.assert_called_once()
 
 

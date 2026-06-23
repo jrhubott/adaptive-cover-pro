@@ -1538,9 +1538,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """
         target_covers = entities if entities is not None else list(self.entities)
 
-        if not self.check_adaptive_time:
+        if not self.clock_window_open:
             self.logger.debug(
-                "Manual override cleared for %s but outside active-hours window — "
+                "Manual override cleared for %s but outside the clock window — "
                 "skipping reposition (pipeline position was %s; will apply when "
                 "window opens)",
                 target_covers,
@@ -1643,11 +1643,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # pipeline still evaluates so diagnostics/sensor state remain correct.
         custom_position_sensor_triggered = self._is_custom_position_sensor_trigger()
 
-        if not self.check_adaptive_time and not is_safety and not safety_release:
+        if not self.clock_window_open and not is_safety and not safety_release:
             self.state_change = False
             self._last_state_change_entity = None
             self._custom_position_template_trigger = False
-            self.logger.debug("Outside time window — skipping position update")
+            self.logger.debug("Outside the clock window — skipping position update")
             return
 
         # A floor-clamp raised the winner this cycle (#534).  When manual
@@ -2035,6 +2035,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def check_adaptive_time(self):
         """Check if current time is within operational window — delegates to TimeWindowManager."""
         return self._time_mgr.is_active
+
+    @property
+    def clock_window_open(self):
+        """Whether the user's start/end clock window is open — delegates to TimeWindowManager."""
+        return self._time_mgr.clock_window_open
 
     @property
     def after_start_time(self):
