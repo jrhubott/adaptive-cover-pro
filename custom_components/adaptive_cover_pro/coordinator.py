@@ -1253,6 +1253,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Get data for the blind and update manager
         cover_data = self.get_blind_data(options=options)
+
+        # Pre-warm the SunData cache off the event loop. On HAOS (no OS tz data),
+        # pd.date_range(tz=<named-tz>) in _ensure_today() blocks the loop by
+        # importing tzdata. One executor call per first-of-day cycle fills the
+        # module-level _DAY_CACHE; subsequent accesses in this cycle are Tier 1 hits.
+        # Calling unconditionally is safe — prime_cache() is a no-op when warm.
+        # Issue #655.
+        await self.hass.async_add_executor_job(cover_data.sun_data.prime_cache)
+
         self._update_manager_and_covers()
 
         # Reset expired manual overrides BEFORE running the pipeline so the

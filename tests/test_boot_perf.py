@@ -162,3 +162,47 @@ async def test_forecast_recompute_routes_through_executor(hass: HomeAssistant) -
 
     # The initial forecast recompute went through the executor.
     assert "build_forecast_for_coord" in executor_calls
+
+
+@pytest.mark.integration
+async def test_sun_data_cache_primed_via_executor(hass: HomeAssistant) -> None:
+    """SunData._ensure_today() must NOT run synchronously on the event loop.
+
+    On HAOS (no OS tz data), pd.date_range(tz=<named-tz>) triggers
+    importlib.import_module('tzdata') which HA's loop watchdog flags as a
+    blocking call. The fix: prime the SunData cache via an executor job
+    during _async_update_data, before any pipeline handler accesses
+    sun_data.times.
+
+    This test spies on async_add_executor_job and asserts that prime_cache
+    was dispatched through it during entry setup. Issue #655.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "TzdataTest", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="tzdata_test_01",
+        title="TzdataTest",
+    )
+    entry.add_to_hass(hass)
+
+    executor_calls: list[str] = []
+    orig = hass.async_add_executor_job
+
+    def _spy(target, *args):
+        name = getattr(target, "__name__", str(target))
+        executor_calls.append(name)
+        return orig(target, *args)
+
+    hass.async_add_executor_job = _spy
+    try:
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    finally:
+        hass.async_add_executor_job = orig
+
+    # After the fix, SunData cache priming MUST go through the executor.
+    # "prime_cache" must appear in the recorded executor calls. Issue #655.
+    assert (
+        "prime_cache" in executor_calls
+    ), f"SunData.prime_cache not found in executor calls: {executor_calls}"

@@ -161,6 +161,21 @@ class SunData:
             )
         return self._cache_ele
 
+    def prime_cache(self) -> None:
+        """Pre-warm the day cache — call from an executor, never inline on the event loop.
+
+        Accessing ``pd.date_range(tz=<named-tz>)`` on a system without OS-level
+        IANA tz data (e.g. HAOS on Raspberry Pi) triggers
+        ``importlib.import_module('tzdata')`` which HA's loop watchdog flags as
+        a blocking call. This method exists so the cache fill runs in a thread
+        pool worker via ``hass.async_add_executor_job(sun_data.prime_cache)``.
+
+        If the cache is already warm for today, accessing ``self.times`` is a
+        Tier 1 fast-path hit (no lock, no I/O) — so calling this unconditionally
+        is safe and cheap. Issue #655.
+        """
+        _ = self.times  # Forces Tier 3 fill if cache is cold; no-op if warm.
+
     def sunset(self) -> datetime:
         """Fetch sunset time.
 

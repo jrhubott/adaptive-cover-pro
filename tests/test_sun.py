@@ -155,3 +155,18 @@ def test_timeline_spans_one_day_at_5min_freq():
     assert len(times) == 289
     span = times[-1] - times[0]
     assert span == timedelta(days=1)
+
+
+@pytest.mark.unit
+def test_prime_cache_warms_ensure_today():
+    """SunData.prime_cache() populates the day cache so subsequent accesses are Tier 1 hits.
+
+    Regression guard for issue #655: prime_cache() is the method called via
+    hass.async_add_executor_job to pre-warm _ensure_today() off the event loop.
+    Verifies the cache is cold before the call and warm afterwards.
+    """
+    sd = _make_sun_data()
+    assert sd._cache_day is None  # cold before call
+    sd.prime_cache()
+    assert sd._cache_day is not None  # warm after call
+    assert sd._cache_times is not None
