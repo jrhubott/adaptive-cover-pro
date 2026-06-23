@@ -156,13 +156,11 @@ if $DRY_RUN; then
     echo ""
     echo "==> Dry run complete — no files were copied."
 else
-    # ── Stamp dev version in deployed manifest.json ───────────────────────────
-    GIT_HASH="$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+    # ── Stamp 7-char commit sha in deployed manifest.json ─────────────────────
+    DEV_VERSION="$(git rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")"
     if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
-        GIT_HASH="${GIT_HASH}-dirty"
+        DEV_VERSION="${DEV_VERSION}-dirty"
     fi
-    BASE_VERSION="$(python3 -c "import json; print(json.load(open('custom_components/${INTEGRATION}/manifest.json'))['version'])")"
-    DEV_VERSION="${BASE_VERSION}-dev.${GIT_HASH}"
     echo "==> Stamping version ${DEV_VERSION} in deployed manifest.json..."
     python3 - "${DST}manifest.json" "${DEV_VERSION}" <<'EOF'
 import json, sys
@@ -177,17 +175,6 @@ EOF
 
     echo ""
     echo "==> Deploy complete (version ${DEV_VERSION})."
-
-    # ── Tag the deployed commit in git ────────────────────────────────────────
-    GIT_TAG="deploy/${DEV_VERSION}"
-    if [[ "$GIT_HASH" == *"-dirty" ]]; then
-        echo "==> Skipping git tag — working tree is dirty."
-    else
-        echo "==> Tagging deployed commit as ${GIT_TAG}..."
-        git tag "${GIT_TAG}"
-        git push origin "${GIT_TAG}" 2>/dev/null && echo "    Tag pushed to origin." \
-            || echo "    Warning: tag created locally but could not push to origin."
-    fi
 
     # ── Offer to restart HA ───────────────────────────────────────────────────
     HA_URL="${HA_URL:-http://home-assistant.home:8123}"

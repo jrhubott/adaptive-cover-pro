@@ -27,7 +27,6 @@ from .const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENTITIES,
     DEFAULT_ENABLE_PROXY_COVER,
-    DOMAIN,
     TRIGGER_PROXY_CLOSE,
     TRIGGER_PROXY_OPEN,
     TRIGGER_PROXY_POSITION,
@@ -46,7 +45,7 @@ if TYPE_CHECKING:
     from homeassistant.core import Event, HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from .coordinator import AdaptiveDataUpdateCoordinator
+    from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +53,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: AdaptiveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up proxy cover entities for an ACP config entry."""
@@ -65,7 +64,7 @@ async def async_setup_entry(
     if not sources:
         return
 
-    coordinator: AdaptiveDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: AdaptiveDataUpdateCoordinator = entry.runtime_data
     multi = len(sources) > 1
 
     entities: list[AdaptiveProxyCover] = [

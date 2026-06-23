@@ -13,6 +13,7 @@ __pycache__
 .coverage
 .vscode/
 coverage.xml
+junit.xml
 
 # Deploy config (credentials — never commit)
 .deploy

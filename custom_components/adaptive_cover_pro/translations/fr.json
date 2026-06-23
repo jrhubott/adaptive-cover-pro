@@ -60,7 +60,8 @@
           "arm_length": "Longueur du bras",
           "awning_min_angle": "Angle du bras fermé",
           "awning_max_angle": "Angle du bras complètement ouvert",
-          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre"
+          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre",
+          "awning_pivot_offset": "Décalage du pivot par rapport à la fenêtre"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -82,7 +83,8 @@
           "arm_length": "Longueur du bras articulé d'une store banne à bras articulé, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
           "awning_min_angle": "Angle du bras lorsque la store banne est complètement fermée/rétractée (0–180°). En règle générale, 0° = bras vertical contre le mur. Définit le début de l'arc de balayage.",
           "awning_max_angle": "Angle du bras lorsque la store banne est complètement ouverte (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
-          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre."
+          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
+          "awning_pivot_offset": "Distance horizontale entre le pivot du bras (plan du tissu) du store et la vitre de la fenêtre (0–2 m). Sous un soleil bas, cela permet au tissu abaissé d'ombrager plus bas sur la vitre, car le tissu se tient à distance de la vitre. Réglez cette valeur sur l'écart entre le boîtier/bras et le mur, plus tout renfoncement/embrasure de la fenêtre — utilisez 0 lorsque le tissu pend à fleur de la vitre. Exemple : 0,7 m / 28 in pour un bras monté loin du mur."
         }
       },
       "sun_tracking": {
@@ -98,8 +100,6 @@
           "blind_spot": "Configurer la zone cachée",
           "enable_glare_zones": "Activer les zones d'éblouissement",
           "distance_shaded_area": "Zone ombragée",
-          "minimize_movements": "Minimiser les mouvements",
-          "max_coverage_steps": "Étapes de couverture maximale",
           "fov_compute": "Générer le champ de vision à partir des mesures"
         },
         "data_description": {
@@ -112,8 +112,6 @@
           "blind_spot": "Activez si vous avez des obstacles bloquant le soleil dans une partie de la zone de suivi (arbres, bâtiments à proximité, surplomb de toit, balcon). Lorsqu'il est activé, vous définissez une plage azimut + élévation où le soleil est bloqué. Le store ignore la position du soleil quand elle se trouve dans cette « zone cachée ». Laissez désactivé si vous avez une vue dégagée du soleil toute la journée.",
           "enable_glare_zones": "Protégez les zones de sol spécifiques de l'éblouissement direct du soleil (stores verticaux uniquement)",
           "distance_shaded_area": "Jusqu'où vous souhaitez AUTORISER la lumière directe du soleil à pénétrer dans la pièce. Affichée dans l'unité configurée pour Home Assistant. Cela définit votre « zone d'éblouissement » acceptable — la zone où la lumière du soleil peut atteindre le sol. La position de la store s'ajuste pour maintenir cette limite alors que le soleil se déplace dans le ciel. Configurations courantes : Zéro (0 m / 0 in) empêche la lumière directe du soleil de dépasser le plan de vitre (fermeture complète les jours chauds) ; Petite zone d'éblouissement (0,3–0,5 m / 12–20 in) garde le soleil très près de la fenêtre ; Zone d'éblouissement moyenne (0,5–1,0 m / 20–40 in) permet au soleil d'atteindre le bureau ou la zone de repos ; Grande zone d'éblouissement (2,0–3,0 m / 79–118 in) permet à la lumière du soleil de pénétrer profondément dans la pièce. CONCEPT CLÉ : PLUS GRANDE valeur = PLUS de lumière du soleil autorisée plus profondément dans la pièce = la store reste PLUS HAUTE/PLUS OUVERTE ; PLUS PETITE valeur = MOINS de lumière du soleil dans la pièce = la store descend PLUS BAS/PLUS FERMÉE. Mesurez de l'intérieur de votre fenêtre jusqu'au point où vous souhaitez que la limite solaire se situe.",
-          "minimize_movements": "Réduire la fréquence de repositionnement de la protection lors du suivi du soleil en s'accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. Arrondit vers PLUS de couverture, donc le soleil direct ne s'échappe jamais de l'arrondi. Échange un peu de lumière naturelle contre beaucoup moins de mouvements moteurs. Par défaut : désactivé.",
-          "max_coverage_steps": "Nombre de positions distinctes que la protection peut utiliser pour atteindre la couverture complète lorsque « Minimiser les mouvements » est activé (1-10). 1 = sauter directement à la couverture complète dès que le soleil entre dans le champ de vision et rester là jusqu'à ce qu'il quitte (mouvements les moins nombreux). Les valeurs plus élevées suivent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
           "fov_compute": "**{computed_fov}**\n\nRemplit les champs de vision gauche/droit à partir de la largeur de la fenêtre et de la profondeur de tableau — la profondeur de tableau est mesurée depuis le parement extérieur du mur, où se trouve la couverture. Définissez la largeur de la fenêtre et la profondeur de tableau sur la page Géométrie de la couverture, puis activez cette option et soumettez pour l'appliquer. Les curseurs restent modifiables, vous pouvez donc ajuster l'un ou l'autre angle par la suite."
         }
       },
@@ -131,16 +129,9 @@
           "enable_my_position_entities": "Activer les entités du préset Ma",
           "my_position_value": "Ma valeur de position",
           "sunset_use_my": "Utiliser Ma position au coucher du soleil",
-          "sunset_offset": "Décalage du coucher du soleil",
-          "sunrise_offset": "Décalage du lever du soleil",
           "open_close_threshold": "Seuil ouverture/fermeture",
-          "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
           "interp": "Activer l'étalonnage de position (mappage custom position ouverture/fermeture)",
-          "sunrise_time_entity": "Entité Heure de Lever du Soleil",
-          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
-          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte",
-          "position_tolerance": "Tolérance de correspondance de position",
-          "enable_position_matching": "Activer la correspondance de position"
+          "end_of_window_position": "Position de fin de fenêtre"
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
@@ -153,28 +144,23 @@
           "enable_my_position_entities": "Crée le bouton « Ma position gérée » et l'entité nombre « Valeur de Ma position gérée ». Désactivé par défaut — activez cette option si vous utilisez le préset « Ma » de type Somfy et souhaitez rappeler ou modifier la valeur depuis un tableau de bord.",
           "my_position_value": "La position (1–99%) que vous avez programmée sur la télécommande du moteur (My/préset favori). Laissez vide pour désactiver le déclenchement de Ma position pour ce store.",
           "sunset_use_my": "Quand la fenêtre coucher du soleil/heure de fin s'active, déclenchez le préset Ma du store (via stop_cover) au lieu du repli ouverture/fermeture normal. Nécessite que la valeur Ma position soit définie. N'affecte que les stores sans capacité de position (par exemple Somfy RTS).",
-          "sunset_offset": "Minutes pour décaler l'heure du coucher du soleil (± ajustement). Valeur positive : Appliquez la position du coucher du soleil X minutes APRÈS le coucher du soleil. Valeur négative : Appliquez la position du coucher du soleil X minutes AVANT le coucher du soleil. Zéro : Exactement au coucher du soleil. Utilisez une valeur positive (par ex., 30) si vous voulez que les stores restent ouverts un peu après le coucher du soleil. Utilisez une valeur négative (par ex., -30) pour fermer tôt pendant que le soleil est encore bas.",
-          "sunrise_offset": "Minutes pour décaler l'heure du lever du soleil (± ajustement). Valeur positive : Commencez le contrôle automatique X minutes APRÈS le lever du soleil. Valeur négative : Commencez le contrôle automatique X minutes AVANT le lever du soleil. Zéro : Exactement au lever du soleil. Utilisez une valeur positive (par ex., 60) si vous voulez dormir après le lever du soleil. Se combine avec le paramètre Heure de début (utilise le plus tard).",
           "open_close_threshold": "Seuil de position pour les stores qui ne supportent que les commandes ouverture/fermeture (pas de contrôle de position). Quand la position calculée est supérieure ou égale à ce seuil, le store s'ouvre ; quand c'est moins, il se ferme. Par défaut : 50% (s'ouvre au point médian ou au-dessus). Les valeurs plus élevées (60-70%) gardent le store fermé plus souvent, les valeurs plus basses (30-40%) l'ouvrent plus souvent. N'affecte que les stores sans support de position - les stores avec contrôle de position ignorent ce paramètre et utilisent les positions calculées exactes.",
-          "inverse_state": "Activez pour les stores où la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez ceci UNIQUEMENT si votre store montre un comportement opposé, 100% ferme au lieu d'ouvrir, ou la documentation dit « inversé » ou « inversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
           "interp": "Activez le mappage de position personnalisé pour étalonner les stores qui ne répondent pas linéairement aux commandes 0–100%. Quand activé, une section « Étalonnage de position » apparaîtra dans le menu des options (sous Paramètres de position) où vous pouvez configurer les valeurs de mappage. Cas d'utilisation : le store ne se déplace pas linéairement, préférez certaines plages (plus fermé ou plus ouvert), étalonner pour un comportement de store inhabituel. Laissez désactivé pour un fonctionnement normal.",
-          "sunrise_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « lever du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de lever du soleil calculée par astral en tant que limite de fermeture de fenêtre le matin. Accepte les entités sensor ou input_datetime. Le Décalage Lever du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin.",
-          "position_tolerance": "Écart autorisé (%) entre la position commandée et la position signalée par le store avant que l'intégration la considère comme « non arrivée » et renvoyez la commande. Ceci est distinct de l'ajustement de mouvement sur l'étape Planification et Timing : l'ajustement détermine si une nouvelle commande doit être envoyée, tandis que cette tolérance détermine si une commande déjà envoyée a été exécutée. La valeur par défaut de 3 % couvre l'arrondi normal du moteur (par ex. un store qui se stabilise à 98 % quand il est commandé à 100 %). Augmentez-la pour les actionneurs qui sous-dépassent ou surpassent systématiquement — par exemple, réglez 6 % si un store commandé à 100 % signale 95 % et serait autrement cliqué et réessayé chaque minute.",
-          "enable_position_matching": "Désactivée par défaut: l'intégration envoie la commande à la store une seule fois, puis la laisse où elle se stabilise. Une store qui se stabilise au-delà de la tolérance de correspondance de position est traitée comme une dérogation manuelle (le contrôle automatique s'interrompt pendant la durée de dérogation) au lieu d'être renvoyée. Activez cette option si votre store dépasse parfois la position commandée et si vous souhaitez que l'intégration continue à renvoyer la position cible jusqu'à ce qu'elle arrive. Laissez-la désactivée si votre store atteint de manière fiable la position cible au premier envoi, s'auto-corrige, ou si vous la stoppez avec une télécommande physique et souhaitez que cet arrêt soit maintenu. Consultez [Quand activer la correspondance de position]({position_matching_wiki})."
+          "end_of_window_position": "Position du store à définir à l'heure de fin opérationnelle, indépendamment du coucher du soleil astronomique. Effacez le curseur (laissez vide) pour désactiver. Nécessite que « Déplacer les couvertures vers la position par défaut actuelle à l'heure de fin » soit activé. Lorsque cette position et la position au coucher du soleil sont toutes deux définies, celle-ci s'applique de l'heure de fin jusqu'au coucher du soleil astronomique, puis la position au coucher du soleil prend le relais. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Utile lorsque votre heure de fin est bien avant le coucher du soleil (par ex. 19h30 en été) et que vous voulez les stores fermés pour la soirée."
         }
       },
       "automation": {
-        "title": "Horaires et synchronisation",
-        "description": "Définissez la fenêtre opérationnelle (heures de début/fin) et le delta de position ou de temps minimal entre les ajustements.\n\n**Delta position** empêche la protection de se déplacer sauf si la cible s'est décalée d'au moins ce pourcentage — réduit l'usure du moteur dues aux petits changements du soleil. **Delta temps** applique un intervalle minimal entre les commandes consécutives. **Heures de début/fin** définissent quand le contrôle automatique est autorisé à s'exécuter ; laissez vide pour fonctionner toute la journée. Une entité HA peut fournir l'une ou l'autre heure de manière dynamique, utile pour les assistants d'horaire ou les réveille-matin.\n\n[Learn more]({learn_more})",
+        "title": "Mouvement & Programme",
+        "description": "Contraintes de mouvement globales appliquées après que le pipeline choisisse une position, indépendamment du gestionnaire qui a gagné, plus la fenêtre de temps opérationnelle.\n\n**Delta position** empêche le store de bouger à moins que la cible n'ait décalé d'au moins ce nombre de pour-cent — réduit l'usure du moteur dus aux petits changements du soleil. **Delta time** impose un écart minimum entre les commandes consécutives. **Minimiser les mouvements** et **Étapes de couverture maximale** accrochent le suivi du soleil à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. **Heures de début/fin** définissent quand le contrôle automatique est autorisé à fonctionner ; laissez vide pour fonctionner toute la journée. Une entité HA peut fournir l'une ou l'autre heure dynamiquement.\n\n[En savoir plus]({learn_more})",
         "data": {
           "delta_position": "Ajustement minimum de position",
           "delta_time": "Intervalle minimum entre les changements de position",
           "start_time": "Heure de début",
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
-          "end_entity": "Entité indiquant l'heure de fin"
+          "end_entity": "Entité indiquant l'heure de fin",
+          "max_coverage_steps": "Étapes de couverture maximale",
+          "minimize_movements": "Minimiser les mouvements"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -182,7 +168,9 @@
           "start_time": "Ne commencez pas le contrôle automatique avant cette heure (format 24 heures). Utilisez ceci pour rester endormi sans stores du matin (réglez sur 08:00 ou plus tard), correspondez à votre routine (réglez sur l'heure du réveil), ou laissez vide pour commencer au lever du soleil. Exemple : '07:30' signifie que le contrôle automatique commence à 7:30 AM. Le contrôle manuel fonctionne toujours avant cette heure.",
           "start_entity": "Entité représentant l'état de l'heure de début, remplaçant l'heure de début fixe définie ci-dessus. Utile pour automatiser l'heure de début avec une entité (par ex., un capteur qui fournit l'heure du réveil en fonction du calendrier ou du suivi du sommeil).",
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
-          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne)."
+          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
+          "max_coverage_steps": "Combien de positions distinctes le store peut utiliser sur son chemin vers la couverture complète quand « Minimiser les mouvements » est activé (1-10). 1 = sauter directement à la couverture complète dès que le soleil entre dans le champ de vision et rester là jusqu'à ce qu'il parte (moins de mouvements). Des valeurs plus élevées suivent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
+          "minimize_movements": "Réduisez la fréquence à laquelle le store se repositionne tout en suivant le soleil en accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. L'arrondi se fait vers PLUS de couverture, donc le soleil direct n'est jamais laissé entrer par l'arrondi. Échange un peu de lumière naturelle pour beaucoup moins de mouvements moteur. Par défaut : désactivé."
         }
       },
       "manual_override": {
@@ -207,7 +195,7 @@
       },
       "custom_position": {
         "title": "Positions personnalisées",
-        "description": "Configurez des capteurs de déclenchement et/ou des templates de condition qui placent le store à des positions spécifiques lorsqu'ils sont actifs. Chaque slot dispose de ses propres déclencheurs (plusieurs capteurs se combinent avec la logique OR), d'un template optionnel, d'une position cible et d'une priorité de pipeline (1-100). Chaque slot actif est évalué indépendamment — le slot actif avec la priorité la plus élevée gagne. La priorité 100 donne au slot une sémantique de sécurité : il agit en dehors de la fenêtre de début/fin et contourne les portes delta (cela remplace la fonctionnalité ancienne de Dérogation forcée). Utilisez les automations de Home Assistant pour basculer ces capteurs pour un contrôle du store basé sur des scènes ou des horaires.\n\n[En savoir plus]({learn_more})",
+        "description": "Configurez les capteurs de déclenchement et/ou modèles de condition qui définissent le store à des positions spécifiques quand actifs. Chaque emplacement a ses propres déclencheurs (plusieurs capteurs se combinent avec la logique OU), modèle optionnel, position cible, et priorité de pipeline (1-100). Chaque emplacement actif est évalué indépendamment — l'emplacement actif avec la priorité la plus élevée gagne. La priorité 100 donne à un emplacement la sémantique de sécurité : il agit en dehors de la fenêtre de temps début/fin et contourne les portes delta (ceci remplace l'ancienne fonctionnalité Force Override). Utilisez les automations Home Assistant pour basculer ces capteurs pour le contrôle du store basé sur des scènes ou des horaires.\n\n[En savoir plus]({learn_more})\n\n**Priorité de décision** — où la priorité de chaque emplacement configuré s'arrive contre les gestionnaires fixes (le plus élevé gagne). Ceci reflète les dernières priorités enregistrées ; il s'actualise quand le formulaire se rend à nouveau, pas en direct comme vous glissez le curseur :\n{priority_scale}",
         "data": {
           "custom_position_sensors_1": "Capteurs 1",
           "custom_position_template_1": "Template de condition 1",
@@ -343,7 +331,11 @@
           "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
           "weather_override_position": "Position de dérogation",
           "weather_override_min_mode": "Mode position minimale",
-          "weather_timeout": "Délai de clareté"
+          "weather_timeout": "Délai de clareté",
+          "weather_is_raining_template": "Modèle Is Raining (optionnel)",
+          "weather_is_raining_template_mode": "Logique du modèle Is Raining",
+          "weather_is_windy_template": "Modèle Is Windy (optionnel)",
+          "weather_is_windy_template_mode": "Logique du modèle Is Windy"
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
@@ -358,7 +350,11 @@
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_override_position": "Position (0-100%) pour déplacer les stores quand la dérogation météo est active. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Par défaut : 0%.",
           "weather_override_min_mode": "Quand activé, la position de dérogation agit comme un plancher minimum — le store ne se fermera pas en dessous de cette position, mais les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position de dérogation exacte.",
-          "weather_timeout": "Secondes à attendre après que TOUTES les conditions se clairent avant de reprendre le contrôle normal. Empêche le basculement rapide pendant les conditions de rafales ou intermittentes. Réglez sur 0 pour une reprise instantanée."
+          "weather_timeout": "Secondes à attendre après que TOUTES les conditions se clairent avant de reprendre le contrôle normal. Empêche le basculement rapide pendant les conditions de rafales ou intermittentes. Réglez sur 0 pour une reprise instantanée.",
+          "weather_is_raining_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il pleut. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Raining ci-dessus (OU ou ET) est définie par la « logique du modèle Is Raining » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « pluie » d'un seuil de taux de pluie numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_is_raining_template_mode": "Comment le modèle Is Raining se combine avec le capteur binaire Is Raining ci-dessus. « OU » (par défaut) — pluie lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — pluie uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Raining est défini ci-dessus.",
+          "weather_is_windy_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il fait du vent. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Windy ci-dessus (OU ou ET) est définie par la « logique du modèle Is Windy » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « venteux » d'un seuil de vitesse du vent numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus."
         }
       },
       "weather": {
@@ -493,7 +489,9 @@
           "cloud_suppression": "Activer la suppression des nuages (interrupteur principal)",
           "weather_state": "Conditions météorologiques",
           "cloudy_position": "Position nuageux (optionnel)",
-          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)"
+          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)",
+          "is_sunny_template": "Modèle Is Sunny (optionnel)",
+          "is_sunny_template_mode": "Logique du modèle Is Sunny"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -506,7 +504,9 @@
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel la suppression de l'éblouissement est désactivée. Par exemple, 75 signifie que la protection cesse de suivre le soleil quand le ciel est couvert à 75 % ou plus. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "cloud_suppression": "Interrupteur principal de cet écran entier. Lorsqu'il est **désactivé** (par défaut), tous les capteurs ci-dessous sont ignorés et le contrôle de l'éblouissement fonctionne normalement. Lorsqu'il est **activé**, tout capteur configuré (état météorologique, luminosité, rayonnement ou couverture nuageuse) indiquant l'absence du soleil arrêtera le suivi du soleil et déplacera la protection vers la **position nuageuse** ci-dessus (ou la position par défaut si celle-ci est vide). Fonctionne seul — le mode climatique n'a pas besoin d'être activé.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut.",
-          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré."
+          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré.",
+          "is_sunny_template": "Modèle Jinja2 Home Assistant optionnel qui détermine si le soleil brille sur la fenêtre. Lorsqu'il s'évalue à vrai (on/true/1), le soleil est supposé présent ; lorsqu'il est faux, il est supposé absent et la suppression nuageuse s'active. La façon dont il se combine avec le capteur binaire Is Sunny ci-dessus (OU ou ET) est définie par la « logique du modèle Is Sunny » ci-dessous ; il peut fonctionner seul sans capteur. Exemple : une comparaison azimut/élévation ou un seuil de lux. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, l'intégration revient donc au capteur, puis à la logique de l'entité météo / conditions météo. Laissez vide pour désactiver.",
+          "is_sunny_template_mode": "Comment le modèle Is Sunny se combine avec le capteur binaire Is Sunny ci-dessus. « OU » (par défaut) — ensoleillé lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — ensoleillé uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Sunny est défini ci-dessus."
         }
       },
       "temperature_climate": {
@@ -521,7 +521,9 @@
           "outside_threshold": "Seuil de température extérieure",
           "presence_entity": "Entité de présence (optionnelle)",
           "transparent_blind": "Store transparent",
-          "winter_close_insulation": "Mode isolation hivernale"
+          "winter_close_insulation": "Mode isolation hivernale",
+          "presence_template": "Modèle de présence (optionnel)",
+          "presence_template_mode": "Logique du modèle de présence"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -532,8 +534,40 @@
           "outside_threshold": "Température extérieure minimale requise avant l'activation du mode été. Évite de fermer les protections lors d'une journée chaude intérieure alors qu'il fait en réalité froid dehors. Utilisé uniquement quand un capteur de température extérieure est configuré. **La valeur est interprétée dans l'unité de ce capteur extérieur, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "presence_entity": "Capteur de présence, suivi d'appareil ou zone optionnel. Quand quelqu'un est à la maison, le store utilise le suivi anti-éblouissement en mode intermédiaire ; quand personne n'est là, une règle simplifiée été-fermé / hiver-ouvert s'applique. Laissez vide pour toujours traiter l'espace comme occupé.",
           "transparent_blind": "Activez quand le matériau du store est transparent ou translucide. En été avec des occupants présents, un store transparent se fermera quand même complètement pour réduire les apports de chaleur, alors qu'un store opaque suivrait le suivi anti-éblouissement.",
-          "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire)."
+          "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire).",
+          "presence_template": "Modèle Jinja2 Home Assistant optionnel qui signale l'occupation. Lorsqu'il s'évalue à vrai (on/true/1), l'espace est considéré comme occupé ; lorsqu'il est faux, il est traité comme vide. La façon dont il se combine avec l'entité de présence ci-dessus (OU ou ET) est définie par la « logique du modèle de présence » ci-dessous ; il peut fonctionner seul sans entité. Utilisez-le pour l'occupation composite (par exemple, quelqu'un à la maison ET réveillé). Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, donc la logique de l'entité de présence décide. Laissez vide pour désactiver.",
+          "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus."
         }
+      },
+      "behavior": {
+        "data": {
+          "enable_position_matching": "Activer la correspondance de position",
+          "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
+          "position_tolerance": "Tolérance de correspondance de position",
+          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte",
+          "daytime_gate_sensors": "Capteurs du filtre de jour",
+          "daytime_gate_template": "Modèle du filtre de jour (optionnel)",
+          "daytime_gate_template_mode": "Logique du filtre de jour",
+          "sunrise_offset": "Décalage du lever du soleil",
+          "sunrise_time_entity": "Entité Heure de Lever du Soleil",
+          "sunset_offset": "Décalage du coucher du soleil",
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil"
+        },
+        "data_description": {
+          "enable_position_matching": "Désactivé par défaut : l'intégration envoie la commande une fois au store, puis le laisse où il s'arrête. Un store qui s'arrête au-delà de la Tolérance de correspondance de position est traité comme une dérogation manuelle (le contrôle automatique s'interrompt pour la durée de dérogation) au lieu d'être renvoyé. Activez-le si votre store s'arrête parfois avant la position commandée et que vous souhaitez que l'intégration continue d'envoyer la cible jusqu'à ce qu'elle arrive. Désactivez-le pour les stores qui atteignent de façon fiable la cible au premier envoi, qui s'auto-réparent, ou que vous arrêtez avec une télécommande physique et dont vous voulez que l'arrêt perdure. Voir [Quand activer la correspondance de position]({position_matching_wiki}).",
+          "inverse_state": "Activez pour les stores dont la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez UNIQUEMENT si votre store affiche un comportement opposé, que 100% ferme au lieu d'ouvrir, ou que la documentation dit « inversé » ou « renversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
+          "position_tolerance": "Écart admissible (%) entre la position commandée et la position que le store rapporte avant que l'intégration ne la traite comme « non arrivée » et renvoie la commande. Ceci est distinct du delta de mouvement sur l'étape Programme & Synchronisation : le delta décide s'il faut envoyer une nouvelle commande, tandis que cette tolérance décide si une commande déjà envoyée a été honorée. La valeur par défaut de 3% couvre l'arrondi moteur normal (par exemple un store qui s'arrête à 98% quand on lui dit 100%). Augmentez-la pour les actionneurs qui sous-commandent ou dépassent systématiquement — par exemple, réglez à 6% si un store commandé à 100% rapporte 95% et cliquerait sinon et recommencerait tous les minuten.",
+          "return_sunset": "Quand l'heure opérationnelle de fin est atteinte, envoyez les stores à la position par défaut efficace actuelle (qui sera la position de coucher du soleil si le coucher du soleil astronomique a déjà eu lieu, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et que vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement n'a lieu que lorsque le Contrôle Automatique est ACTIVÉ — si le Contrôle Automatique est désactivé, les stores resteront où ils sont à l'heure de fin.",
+          "daytime_gate_sensors": "Capteurs binaires optionnels (ou input_boolean / switch / schedule) qui décident si c'est « jour » pour le suivi du soleil. Lorsqu'ils sont activés, l'intégration assure le suivi du soleil ; lorsqu'ils sont désactivés, elle applique la Position de coucher de soleil. Utilisez un capteur binaire « assez lumineux » basé sur le lux pour que la lumière réelle — et non l'horloge — ouvre et ferme la fenêtre de suivi : les protections continuent le suivi lors de soirées lumineuses après le coucher du soleil astronomique, et restent à la position de coucher de soleil lors des matins sombres et nuageux. Lorsqu'ils sont définis, ils REMPLACENT la limite de coucher/lever astronomique du soleil (les décalages de coucher/lever de soleil sont ignorés). Un capteur indisponible ou inconnu est traité comme jour, de sorte que le suivi ne s'arrête jamais simplement parce qu'un capteur n'a pas signalé. Laissez vide pour utiliser le calcul de coucher/lever de soleil astronomique.",
+          "daytime_gate_template": "Modèle Jinja2 Home Assistant optionnel qui décide si c'est « jour » pour le suivi du soleil. Lorsqu'il s'évalue comme vrai (on/true/1), l'intégration assure le suivi du soleil ; lorsqu'il s'évalue comme faux, elle applique la Position de coucher de soleil. La manière dont il se combine avec les capteurs du filtre ci-dessus (OR ou AND) est définie par « Logique du filtre de jour » ci-dessous. Il peut fonctionner seul sans capteurs. Exemple : un modèle d'élévation Sun2, ou une comparaison lux. Un modèle qui ne peut pas être évalué est traité comme jour, de sorte qu'un modèle cassé ne force jamais un coucher de soleil prématuré. Lorsqu'il est défini (seul ou avec des capteurs), il REMPLACE la limite de coucher/lever astronomique du soleil. Laissez vide pour désactiver.",
+          "daytime_gate_template_mode": "Comment le modèle du filtre de jour se combine avec les capteurs du filtre ci-dessus. « OR » (par défaut) — jour lorsque le modèle est vrai OU l'un des capteurs est activé. « AND » — jour seulement lorsque le modèle est vrai ET l'un des capteurs est activé, de sorte que le modèle doit tenir pour que le suivi s'exécute. Sans capteurs configurés, le modèle seul décide dans l'un ou l'autre mode. N'a d'effet que lorsqu'un modèle de filtre de jour est défini ci-dessus.",
+          "sunrise_offset": "Minutes pour décaler l'heure du lever du soleil (± ajustement). Valeur positive : démarrer le contrôle automatique X minutes APRÈS le lever du soleil. Valeur négative : démarrer le contrôle automatique X minutes AVANT le lever du soleil. Zéro : exactement au lever du soleil. Utilisez une valeur positive (par exemple 60) si vous voulez dormir plus longtemps après le lever du soleil. Se combine avec le paramètre Heure de début (utilise celle qui est la plus tard).",
+          "sunrise_time_entity": "Entité optionnelle dont l'état est un datetime (par exemple Sun2 « lever du soleil à -4° d'élévation »). Quand défini, remplace l'heure de lever du soleil calculée par astral comme limite de fermeture de la fenêtre du matin. Accepte les entités sensor ou input_datetime. Le Décalage du lever du soleil s'applique toujours en plus. Revient à astral si l'entité n'est pas disponible.",
+          "sunset_offset": "Minutes pour décaler l'heure du coucher du soleil (± ajustement). Valeur positive : appliquer la position de coucher du soleil X minutes APRÈS le coucher du soleil. Valeur négative : appliquer la position de coucher du soleil X minutes AVANT le coucher du soleil. Zéro : exactement au coucher du soleil. Utilisez une valeur positive (par exemple 30) si vous voulez que les stores restent ouverts un peu après le coucher du soleil. Utilisez une valeur négative (par exemple -30) pour fermer tôt quand le soleil est encore bas.",
+          "sunset_time_entity": "Entité optionnelle dont l'état est un datetime (par exemple Sun2 « coucher du soleil à -4° d'élévation »). Quand défini, remplace l'heure de coucher du soleil calculée par astral comme limite de la fenêtre. Accepte les entités sensor ou input_datetime rapportant un datetime ISO-8601. Le Décalage du coucher du soleil s'applique toujours en plus. Revient à astral si l'entité n'est pas disponible."
+        },
+        "description": "Affinez le comportement du store une fois une position choisie : ajustements de synchronisation du coucher/lever du soleil, la tolérance de correspondance de position et le basculement de correspondance, et état inversé. Ce ne sont pas des positions cibles — chaque valeur en pourcentage vit sur l'étape Paramètres de Position ; cette étape ne contient que les boutons de synchronisation et seuil.\n\n[En savoir plus]({learn_more})",
+        "title": "Comportement (Synchronisation & Seuils)"
       }
     },
     "abort": {
@@ -549,10 +583,11 @@
           "geometry": "📐 Géométrie du store",
           "sun_tracking": "☀️ Suivi du soleil",
           "position": "📊 Paramètres de position",
+          "behavior": "🎛️ Comportement & minuterie",
           "blind_spot": "🌳 Zone cachée",
           "glare_zones": "🔆 Zones d'éblouissement",
           "interp": "📊 Étalonnage de position",
-          "automation": "⏱️ Horaires et synchronisation",
+          "automation": "⏱️ Mouvement & horaires",
           "weather": "Conditions météorologiques",
           "manual_override": "✋ Dérogation manuelle",
           "custom_position": "🎯 Positions personnalisées",
@@ -563,20 +598,23 @@
           "debug": "🔍 Débogage et diagnostics",
           "done": "✅ Enregistrer et fermer",
           "light_cloud": "☁️ Capteurs de lumière et nuages",
-          "temperature_climate": "🌡️ Température et climat"
+          "temperature_climate": "🌡️ Température et climat",
+          "pipeline_priorities": "🔀 Priorités des gestionnaires"
         },
         "description": "Configuration : **{instance_name}**\n\nSi Adaptive Cover Pro vous a été utile, vous pouvez [☕ Buy Me a Coffee]({coffee_url})."
       },
       "automation": {
-        "title": "Horaires et synchronisation",
-        "description": "Définissez la fenêtre opérationnelle (heures de début/fin) et le delta de position ou de temps minimal entre les ajustements.\n\n**Delta position** empêche la protection de se déplacer sauf si la cible s'est décalée d'au moins ce pourcentage — réduit l'usure du moteur dues aux petits changements du soleil. **Delta temps** applique un intervalle minimal entre les commandes consécutives. **Heures de début/fin** définissent quand le contrôle automatique est autorisé à s'exécuter ; laissez vide pour fonctionner toute la journée. Une entité HA peut fournir l'une ou l'autre heure de manière dynamique, utile pour les assistants d'horaire ou les réveille-matin.\n\n[Learn more]({learn_more})",
+        "title": "Mouvement & Programme",
+        "description": "Contraintes de mouvement globales appliquées après que le pipeline choisisse une position, indépendamment du gestionnaire qui a gagné, plus la fenêtre de temps opérationnelle.\n\n**Delta position** empêche le store de bouger à moins que la cible n'ait décalé d'au moins ce nombre de pour-cent — réduit l'usure du moteur dus aux petits changements du soleil. **Delta time** impose un écart minimum entre les commandes consécutives. **Minimiser les mouvements** et **Étapes de couverture maximale** accrochent le suivi du soleil à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. **Heures de début/fin** définissent quand le contrôle automatique est autorisé à fonctionner ; laissez vide pour fonctionner toute la journée. Une entité HA peut fournir l'une ou l'autre heure dynamiquement.\n\n[En savoir plus]({learn_more})",
         "data": {
           "delta_position": "Ajustement minimum de position",
           "delta_time": "Intervalle minimum entre les changements de position",
           "start_time": "Heure de début",
           "start_entity": "Entité indiquant l'heure de début",
           "end_time": "Heure de fin",
-          "end_entity": "Entité indiquant l'heure de fin"
+          "end_entity": "Entité indiquant l'heure de fin",
+          "max_coverage_steps": "Étapes de couverture maximale",
+          "minimize_movements": "Minimiser les mouvements"
         },
         "data_description": {
           "delta_position": "Changement de position minimum (%) requis avant d'ajuster le store. Empêche les minuscules ajustements tandis que le soleil se déplace lentement. Valeurs typiques : 1-2% (très réactif, peut ajuster fréquemment), 5% (équilibré, recommandé pour la plupart), 10% (moins fréquent, mouvements plus importants). Exemple : Si le store est à 30% et le soleil se déplace légèrement, n'ajustez que si la nouvelle position est 35% ou plus (avec un seuil de 5%). Réduit l'usure du moteur et le bruit des minuscules ajustements constants.",
@@ -584,7 +622,9 @@
           "start_time": "Ne commencez pas le contrôle automatique avant cette heure (format 24 heures). Utilisez ceci pour rester endormi sans stores du matin (réglez sur 08:00 ou plus tard), correspondez à votre routine (réglez sur l'heure du réveil), ou laissez vide pour commencer au lever du soleil. Exemple : '07:30' signifie que le contrôle automatique commence à 7:30 AM. Le contrôle manuel fonctionne toujours avant cette heure.",
           "start_entity": "Entité représentant l'état de l'heure de début, remplaçant l'heure de début fixe définie ci-dessus. Utile pour automatiser l'heure de début avec une entité (par ex., un capteur qui fournit l'heure du réveil en fonction du calendrier ou du suivi du sommeil).",
           "end_time": "Arrêtez le contrôle automatique après cette heure (format 24 heures). Utilisez ceci pour garder l'intimité du soir (réglez sur 18:00 ou 19:00), retournez à la valeur par défaut avant le coucher, ou laissez vide pour continuer jusqu'au coucher du soleil. Exemple : '20:00' signifie que le contrôle automatique s'arrête à 20:00. Le contrôle manuel fonctionne toujours après cette heure.",
-          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne)."
+          "end_entity": "Entité représentant l'état de l'heure de fin, remplaçant l'heure de fin fixe définie ci-dessus. Utile pour automatiser l'heure de fin avec une entité (par ex., un capteur qui fournit l'heure du coucher basée sur le calendrier ou la routine quotidienne).",
+          "max_coverage_steps": "Combien de positions distinctes le store peut utiliser sur son chemin vers la couverture complète quand « Minimiser les mouvements » est activé (1-10). 1 = sauter directement à la couverture complète dès que le soleil entre dans le champ de vision et rester là jusqu'à ce qu'il parte (moins de mouvements). Des valeurs plus élevées suivent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
+          "minimize_movements": "Réduisez la fréquence à laquelle le store se repositionne tout en suivant le soleil en accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. L'arrondi se fait vers PLUS de couverture, donc le soleil direct n'est jamais laissé entrer par l'arrondi. Échange un peu de lumière naturelle pour beaucoup moins de mouvements moteur. Par défaut : désactivé."
         }
       },
       "cover_entities": {
@@ -632,7 +672,8 @@
           "arm_length": "Longueur du bras",
           "awning_min_angle": "Angle du bras fermé",
           "awning_max_angle": "Angle du bras complètement ouvert",
-          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre"
+          "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre",
+          "awning_pivot_offset": "Décalage du pivot par rapport à la fenêtre"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -654,7 +695,8 @@
           "arm_length": "Longueur du bras articulé d'une store banne à bras articulé, du pivot mural au bord du tissu. Affichée dans l'unité configurée pour Home Assistant. Utilisée avec l'angle de balayage du bras pour calculer la distance d'extension du tissu à chaque pourcentage d'ouverture. Exemple : 0,8 m / 31 po.",
           "awning_min_angle": "Angle du bras lorsque la store banne est complètement fermée/rétractée (0–180°). En règle générale, 0° = bras vertical contre le mur. Définit le début de l'arc de balayage.",
           "awning_max_angle": "Angle du bras lorsque la store banne est complètement ouverte (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
-          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre."
+          "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
+          "awning_pivot_offset": "Distance horizontale entre le pivot du bras (plan du tissu) du store et la vitre de la fenêtre (0–2 m). Sous un soleil bas, cela permet au tissu abaissé d'ombrager plus bas sur la vitre, car le tissu se tient à distance de la vitre. Réglez cette valeur sur l'écart entre le boîtier/bras et le mur, plus tout renfoncement/embrasure de la fenêtre — utilisez 0 lorsque le tissu pend à fleur de la vitre. Exemple : 0,7 m / 28 in pour un bras monté loin du mur."
         }
       },
       "sun_tracking": {
@@ -670,8 +712,6 @@
           "blind_spot": "Configurer la zone cachée",
           "enable_glare_zones": "Activer les zones d'éblouissement",
           "distance_shaded_area": "Zone ombragée",
-          "minimize_movements": "Minimiser les mouvements",
-          "max_coverage_steps": "Étapes de couverture maximale",
           "fov_compute": "Générer le champ de vision à partir des mesures"
         },
         "data_description": {
@@ -684,8 +724,6 @@
           "blind_spot": "Activez si vous avez des obstacles bloquant le soleil dans une partie de la zone de suivi (arbres, bâtiments à proximité, surplomb de toit, balcon). Lorsqu'il est activé, vous définissez une plage azimut + élévation où le soleil est bloqué. Le store ignore la position du soleil quand elle se trouve dans cette « zone cachée ». Laissez désactivé si vous avez une vue dégagée du soleil toute la journée.",
           "enable_glare_zones": "Protégez les zones de sol spécifiques de l'éblouissement direct du soleil (stores verticaux uniquement)",
           "distance_shaded_area": "Jusqu'où vous souhaitez AUTORISER la lumière directe du soleil à pénétrer dans la pièce. Affichée dans l'unité configurée pour Home Assistant. Cela définit votre « zone d'éblouissement » acceptable — la zone où la lumière du soleil peut atteindre le sol. La position de la store s'ajuste pour maintenir cette limite alors que le soleil se déplace dans le ciel. Configurations courantes : Zéro (0 m / 0 in) empêche la lumière directe du soleil de dépasser le plan de vitre (fermeture complète les jours chauds) ; Petite zone d'éblouissement (0,3–0,5 m / 12–20 in) garde le soleil très près de la fenêtre ; Zone d'éblouissement moyenne (0,5–1,0 m / 20–40 in) permet au soleil d'atteindre le bureau ou la zone de repos ; Grande zone d'éblouissement (2,0–3,0 m / 79–118 in) permet à la lumière du soleil de pénétrer profondément dans la pièce. CONCEPT CLÉ : PLUS GRANDE valeur = PLUS de lumière du soleil autorisée plus profondément dans la pièce = la store reste PLUS HAUTE/PLUS OUVERTE ; PLUS PETITE valeur = MOINS de lumière du soleil dans la pièce = la store descend PLUS BAS/PLUS FERMÉE. Mesurez de l'intérieur de votre fenêtre jusqu'au point où vous souhaitez que la limite solaire se situe.",
-          "minimize_movements": "Réduire la fréquence de repositionnement de la protection lors du suivi du soleil en s'accrochant à quelques niveaux de couverture fixes au lieu de suivre le soleil en continu. Arrondit vers PLUS de couverture, donc le soleil direct ne s'échappe jamais de l'arrondi. Échange un peu de lumière naturelle contre beaucoup moins de mouvements moteurs. Par défaut : désactivé.",
-          "max_coverage_steps": "Nombre de positions distinctes que la protection peut utiliser pour atteindre la couverture complète lorsque « Minimiser les mouvements » est activé (1-10). 1 = sauter directement à la couverture complète dès que le soleil entre dans le champ de vision et rester là jusqu'à ce qu'il quitte (mouvements les moins nombreux). Les valeurs plus élevées suivent le soleil plus graduellement en ce nombre d'étapes. Par défaut : 1.",
           "fov_compute": "**{computed_fov}**\n\nRemplit les champs de vision gauche/droit à partir de la largeur de la fenêtre et de la profondeur de tableau — la profondeur de tableau est mesurée depuis le parement extérieur du mur, où se trouve la couverture. Définissez la largeur de la fenêtre et la profondeur de tableau sur la page Géométrie de la couverture, puis activez cette option et soumettez pour l'appliquer. Les curseurs restent modifiables, vous pouvez donc ajuster l'un ou l'autre angle par la suite."
         }
       },
@@ -703,16 +741,9 @@
           "enable_my_position_entities": "Activer les entités du préset Ma",
           "my_position_value": "Ma valeur de position",
           "sunset_use_my": "Utiliser Ma position au coucher du soleil",
-          "sunset_offset": "Décalage du coucher du soleil",
-          "sunrise_offset": "Décalage du lever du soleil",
           "open_close_threshold": "Seuil ouverture/fermeture",
-          "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
           "interp": "Activer l'étalonnage de position (mappage custom position ouverture/fermeture)",
-          "sunrise_time_entity": "Entité Heure de Lever du Soleil",
-          "sunset_time_entity": "Entité Heure de Coucher du Soleil",
-          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte",
-          "position_tolerance": "Tolérance de correspondance de position",
-          "enable_position_matching": "Activer la correspondance de position"
+          "end_of_window_position": "Position de fin de fenêtre"
         },
         "data_description": {
           "default_percentage": "Position du store quand le soleil n'est pas devant la fenêtre (0-100%). 0% = fermé (stores baissés / store banne rétracté), 50% = demi-ouvert (lumière et intimité équilibrées), 100% = ouvert (stores levés / store banne étendu). Ceci est la « position de repos » utilisée quand le suivi du soleil n'est pas actif (soleil derrière la fenêtre, bloqué par des obstacles, ou en dehors des heures de suivi).",
@@ -725,16 +756,9 @@
           "enable_my_position_entities": "Crée le bouton « Ma position gérée » et l'entité nombre « Valeur de Ma position gérée ». Désactivé par défaut — activez cette option si vous utilisez le préset « Ma » de type Somfy et souhaitez rappeler ou modifier la valeur depuis un tableau de bord.",
           "my_position_value": "La position (1–99%) que vous avez programmée sur la télécommande du moteur (My/préset favori). Laissez vide pour désactiver le déclenchement de Ma position pour ce store.",
           "sunset_use_my": "Quand la fenêtre coucher du soleil/heure de fin s'active, déclenchez le préset Ma du store (via stop_cover) au lieu du repli ouverture/fermeture normal. Nécessite que la valeur Ma position soit définie. N'affecte que les stores sans capacité de position (par exemple Somfy RTS).",
-          "sunset_offset": "Minutes pour décaler l'heure du coucher du soleil (± ajustement). Valeur positive : Appliquez la position du coucher du soleil X minutes APRÈS le coucher du soleil. Valeur négative : Appliquez la position du coucher du soleil X minutes AVANT le coucher du soleil. Zéro : Exactement au coucher du soleil. Utilisez une valeur positive (par ex., 30) si vous voulez que les stores restent ouverts un peu après le coucher du soleil. Utilisez une valeur négative (par ex., -30) pour fermer tôt pendant que le soleil est encore bas.",
-          "sunrise_offset": "Minutes pour décaler l'heure du lever du soleil (± ajustement). Valeur positive : Commencez le contrôle automatique X minutes APRÈS le lever du soleil. Valeur négative : Commencez le contrôle automatique X minutes AVANT le lever du soleil. Zéro : Exactement au lever du soleil. Utilisez une valeur positive (par ex., 60) si vous voulez dormir après le lever du soleil. Se combine avec le paramètre Heure de début (utilise le plus tard).",
           "open_close_threshold": "Seuil de position pour les stores qui ne supportent que les commandes ouverture/fermeture (pas de contrôle de position). Quand la position calculée est supérieure ou égale à ce seuil, le store s'ouvre ; quand c'est moins, il se ferme. Par défaut : 50% (s'ouvre au point médian ou au-dessus). Les valeurs plus élevées (60-70%) gardent le store fermé plus souvent, les valeurs plus basses (30-40%) l'ouvrent plus souvent. N'affecte que les stores sans support de position - les stores avec contrôle de position ignorent ce paramètre et utilisent les positions calculées exactes.",
-          "inverse_state": "Activez pour les stores où la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez ceci UNIQUEMENT si votre store montre un comportement opposé, 100% ferme au lieu d'ouvrir, ou la documentation dit « inversé » ou « inversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
           "interp": "Activez le mappage de position personnalisé pour étalonner les stores qui ne répondent pas linéairement aux commandes 0–100%. Quand activé, une section « Étalonnage de position » apparaîtra dans le menu des options (sous Paramètres de position) où vous pouvez configurer les valeurs de mappage. Cas d'utilisation : le store ne se déplace pas linéairement, préférez certaines plages (plus fermé ou plus ouvert), étalonner pour un comportement de store inhabituel. Laissez désactivé pour un fonctionnement normal.",
-          "sunrise_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « lever du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de lever du soleil calculée par astral en tant que limite de fermeture de fenêtre le matin. Accepte les entités sensor ou input_datetime. Le Décalage Lever du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "sunset_time_entity": "Entité optionnelle dont l'état est une date/heure (ex. Sun2 « coucher du soleil à -4° d'élévation »). Lorsqu'elle est définie, elle remplace l'heure de coucher du soleil calculée par astral en tant que limite de fenêtre. Accepte les entités sensor ou input_datetime rapportant une date/heure ISO-8601. Le Décalage Coucher du Soleil s'applique toujours en plus. Bascule sur astral si l'entité n'est pas disponible.",
-          "return_sunset": "Quand l'heure de fin opérationnelle est atteinte, envoyez les stores à la position par défaut actuelle effective (qui sera la position du coucher du soleil si le coucher du soleil astronomique s'est déjà produit, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement ne se produit que quand le contrôle automatique est ACTIVÉ — si le contrôle automatique est désactivé, les stores resteront où ils se trouvent à l'heure de fin.",
-          "position_tolerance": "Écart autorisé (%) entre la position commandée et la position signalée par le store avant que l'intégration la considère comme « non arrivée » et renvoyez la commande. Ceci est distinct de l'ajustement de mouvement sur l'étape Planification et Timing : l'ajustement détermine si une nouvelle commande doit être envoyée, tandis que cette tolérance détermine si une commande déjà envoyée a été exécutée. La valeur par défaut de 3 % couvre l'arrondi normal du moteur (par ex. un store qui se stabilise à 98 % quand il est commandé à 100 %). Augmentez-la pour les actionneurs qui sous-dépassent ou surpassent systématiquement — par exemple, réglez 6 % si un store commandé à 100 % signale 95 % et serait autrement cliqué et réessayé chaque minute.",
-          "enable_position_matching": "Désactivée par défaut: l'intégration envoie la commande à la store une seule fois, puis la laisse où elle se stabilise. Une store qui se stabilise au-delà de la tolérance de correspondance de position est traitée comme une dérogation manuelle (le contrôle automatique s'interrompt pendant la durée de dérogation) au lieu d'être renvoyée. Activez cette option si votre store dépasse parfois la position commandée et si vous souhaitez que l'intégration continue à renvoyer la position cible jusqu'à ce qu'elle arrive. Laissez-la désactivée si votre store atteint de manière fiable la position cible au premier envoi, s'auto-corrige, ou si vous la stoppez avec une télécommande physique et souhaitez que cet arrêt soit maintenu. Consultez [Quand activer la correspondance de position]({position_matching_wiki})."
+          "end_of_window_position": "Position du store à définir à l'heure de fin opérationnelle, indépendamment du coucher du soleil astronomique. Effacez le curseur (laissez vide) pour désactiver. Nécessite que « Déplacer les couvertures vers la position par défaut actuelle à l'heure de fin » soit activé. Lorsque cette position et la position au coucher du soleil sont toutes deux définies, celle-ci s'applique de l'heure de fin jusqu'au coucher du soleil astronomique, puis la position au coucher du soleil prend le relais. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Utile lorsque votre heure de fin est bien avant le coucher du soleil (par ex. 19h30 en été) et que vous voulez les stores fermés pour la soirée."
         }
       },
       "manual_override": {
@@ -759,7 +783,7 @@
       },
       "custom_position": {
         "title": "Positions personnalisées",
-        "description": "Configurez des capteurs de déclenchement et/ou des templates de condition qui placent le store à des positions spécifiques lorsqu'ils sont actifs. Chaque slot dispose de ses propres déclencheurs (plusieurs capteurs se combinent avec la logique OR), d'un template optionnel, d'une position cible et d'une priorité de pipeline (1-100). Chaque slot actif est évalué indépendamment — le slot actif avec la priorité la plus élevée gagne. La priorité 100 donne au slot une sémantique de sécurité : il agit en dehors de la fenêtre de début/fin et contourne les portes delta (cela remplace la fonctionnalité ancienne de Dérogation forcée). Utilisez les automations de Home Assistant pour basculer ces capteurs pour un contrôle du store basé sur des scènes ou des horaires.\n\n[En savoir plus]({learn_more})",
+        "description": "Configurez les capteurs de déclenchement et/ou modèles de condition qui définissent le store à des positions spécifiques quand actifs. Chaque emplacement a ses propres déclencheurs (plusieurs capteurs se combinent avec la logique OU), modèle optionnel, position cible, et priorité de pipeline (1-100). Chaque emplacement actif est évalué indépendamment — l'emplacement actif avec la priorité la plus élevée gagne. La priorité 100 donne à un emplacement la sémantique de sécurité : il agit en dehors de la fenêtre de temps début/fin et contourne les portes delta (ceci remplace l'ancienne fonctionnalité Force Override). Utilisez les automations Home Assistant pour basculer ces capteurs pour le contrôle du store basé sur des scènes ou des horaires.\n\n[En savoir plus]({learn_more})\n\n**Priorité de décision** — où la priorité de chaque emplacement configuré s'arrive contre les gestionnaires fixes (le plus élevé gagne). Ceci reflète les dernières priorités enregistrées ; il s'actualise quand le formulaire se rend à nouveau, pas en direct comme vous glissez le curseur :\n{priority_scale}",
         "data": {
           "custom_position_sensors_1": "Capteurs 1",
           "custom_position_template_1": "Template de condition 1",
@@ -895,7 +919,11 @@
           "weather_severe_sensors": "Capteurs de conditions météorologiques graves (grêle, gel, tempête, etc.)",
           "weather_override_position": "Position de dérogation",
           "weather_override_min_mode": "Mode position minimale",
-          "weather_timeout": "Délai de clareté"
+          "weather_timeout": "Délai de clareté",
+          "weather_is_raining_template": "Modèle Is Raining (optionnel)",
+          "weather_is_raining_template_mode": "Logique du modèle Is Raining",
+          "weather_is_windy_template": "Modèle Is Windy (optionnel)",
+          "weather_is_windy_template_mode": "Logique du modèle Is Windy"
         },
         "data_description": {
           "weather_bypass_auto_control": "Quand activé, la dérogation météo déplacera toujours les stores à la position configurée même quand le commutateur de contrôle automatique est désactivé. Cela garantit que la protection contre le vent, la pluie et les conditions météorologiques graves reste toujours active indépendamment de l'état de l'automatisation. Désactivez ceci uniquement si vous voulez que la dérogation météo suive le commutateur de contrôle automatique.",
@@ -910,7 +938,11 @@
           "weather_severe_sensors": "Capteurs binaires pour les conditions graves (grêle, gel, tempête, etc.). La dérogation s'active quand N'IMPORTE QUEL capteur est « activé ». Laissez vide pour ignorer.",
           "weather_override_position": "Position (0-100%) pour déplacer les stores quand la dérogation météo est active. 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne étendu). Par défaut : 0%.",
           "weather_override_min_mode": "Quand activé, la position de dérogation agit comme un plancher minimum — le store ne se fermera pas en dessous de cette position, mais les positions plus élevées du suivi du soleil ou d'autres calculs sont autorisées à passer. Quand désactivé (par défaut), le store est toujours défini à la position de dérogation exacte.",
-          "weather_timeout": "Secondes à attendre après que TOUTES les conditions se clairent avant de reprendre le contrôle normal. Empêche le basculement rapide pendant les conditions de rafales ou intermittentes. Réglez sur 0 pour une reprise instantanée."
+          "weather_timeout": "Secondes à attendre après que TOUTES les conditions se clairent avant de reprendre le contrôle normal. Empêche le basculement rapide pendant les conditions de rafales ou intermittentes. Réglez sur 0 pour une reprise instantanée.",
+          "weather_is_raining_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il pleut. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Raining ci-dessus (OU ou ET) est définie par la « logique du modèle Is Raining » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « pluie » d'un seuil de taux de pluie numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_is_raining_template_mode": "Comment le modèle Is Raining se combine avec le capteur binaire Is Raining ci-dessus. « OU » (par défaut) — pluie lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — pluie uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Raining est défini ci-dessus.",
+          "weather_is_windy_template": "Modèle Jinja2 Home Assistant optionnel qui détermine s'il fait du vent. Lorsqu'il s'évalue à vrai (on/true/1), la dérogation s'active. La façon dont il se combine avec le capteur binaire Is Windy ci-dessus (OU ou ET) est définie par la « logique du modèle Is Windy » ci-dessous ; il peut fonctionner seul sans capteur et réagit instantanément quand le modèle bascule. Exemple : dériver « venteux » d'un seuil de vitesse du vent numérique. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion (pas de rétractation). Laissez vide pour désactiver.",
+          "weather_is_windy_template_mode": "Comment le modèle Is Windy se combine avec le capteur binaire Is Windy ci-dessus. « OU » (par défaut) — venteux lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — venteux uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Windy est défini ci-dessus."
         }
       },
       "weather": {
@@ -1052,7 +1084,9 @@
           "cloud_suppression": "Activer la suppression des nuages (interrupteur principal)",
           "weather_state": "Conditions météorologiques",
           "cloudy_position": "Position nuageux (optionnel)",
-          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)"
+          "is_sunny_sensor": "Capteur binaire « Ensoleillé » (optionnel)",
+          "is_sunny_template": "Modèle Is Sunny (optionnel)",
+          "is_sunny_template_mode": "Logique du modèle Is Sunny"
         },
         "data_description": {
           "weather_entity": "Intégration météo optionnelle utilisée pour détecter la couverture nuageuse. Quand l'état météo actuel ne figure pas dans la liste sélectionnée ci-dessous, le soleil direct est supposé absent et le contrôle de l'éblouissement est supprimé. Laissez vide pour ignorer l'état météo.",
@@ -1065,7 +1099,9 @@
           "cloud_coverage_threshold": "Pourcentage de couverture nuageuse à partir duquel la suppression de l'éblouissement est désactivée. Par exemple, 75 signifie que la protection cesse de suivre le soleil quand le ciel est couvert à 75 % ou plus. Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "cloud_suppression": "Interrupteur principal de cet écran entier. Lorsqu'il est **désactivé** (par défaut), tous les capteurs ci-dessous sont ignorés et le contrôle de l'éblouissement fonctionne normalement. Lorsqu'il est **activé**, tout capteur configuré (état météorologique, luminosité, rayonnement ou couverture nuageuse) indiquant l'absence du soleil arrêtera le suivi du soleil et déplacera la protection vers la **position nuageuse** ci-dessus (ou la position par défaut si celle-ci est vide). Fonctionne seul — le mode climatique n'a pas besoin d'être activé.",
           "cloudy_position": "Position (0-100%) pour déplacer les protections lorsque la suppression nuageuse se déclenche (conditions nuageuses / faible luminosité). 0% = fermé (stores baissés / store banne rétracté), 100% = ouvert (stores levés / store banne déployé). Laissez vide pour utiliser la position par défaut.",
-          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré."
+          "is_sunny_sensor": "Capteur binaire, input_boolean, interrupteur ou planning optionnel qui rapporte de manière fiable si le soleil frappe la fenêtre. Lorsque ACTIVÉ, le soleil est supposé présent ; lorsque DÉSACTIVÉ, le soleil est supposé absent et la suppression des nuages se déclenche indépendamment de l'état météorologique. En cas d'indisponibilité ou d'état inconnu, l'intégration revient à la logique de l'entité météo / conditions météorologiques ci-dessous. Utilisez ceci si vous calculez le soleil-sur-fenêtre en amont (par exemple, irradiance filtrée par azimut) et que vous souhaitez fournir à Adaptive Cover Pro un booléen épuré.",
+          "is_sunny_template": "Modèle Jinja2 Home Assistant optionnel qui détermine si le soleil brille sur la fenêtre. Lorsqu'il s'évalue à vrai (on/true/1), le soleil est supposé présent ; lorsqu'il est faux, il est supposé absent et la suppression nuageuse s'active. La façon dont il se combine avec le capteur binaire Is Sunny ci-dessus (OU ou ET) est définie par la « logique du modèle Is Sunny » ci-dessous ; il peut fonctionner seul sans capteur. Exemple : une comparaison azimut/élévation ou un seuil de lux. Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, l'intégration revient donc au capteur, puis à la logique de l'entité météo / conditions météo. Laissez vide pour désactiver.",
+          "is_sunny_template_mode": "Comment le modèle Is Sunny se combine avec le capteur binaire Is Sunny ci-dessus. « OU » (par défaut) — ensoleillé lorsque le modèle est vrai OU le capteur est ACTIF. « ET » — ensoleillé uniquement lorsque le modèle est vrai ET le capteur est ACTIF. Sans capteur configuré, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle Is Sunny est défini ci-dessus."
         }
       },
       "temperature_climate": {
@@ -1080,7 +1116,9 @@
           "outside_threshold": "Seuil de température extérieure",
           "presence_entity": "Entité de présence (optionnelle)",
           "transparent_blind": "Store transparent",
-          "winter_close_insulation": "Mode isolation hivernale"
+          "winter_close_insulation": "Mode isolation hivernale",
+          "presence_template": "Modèle de présence (optionnel)",
+          "presence_template_mode": "Logique du modèle de présence"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -1091,7 +1129,61 @@
           "outside_threshold": "Température extérieure minimale requise avant l'activation du mode été. Évite de fermer les protections lors d'une journée chaude intérieure alors qu'il fait en réalité froid dehors. Utilisé uniquement quand un capteur de température extérieure est configuré. **La valeur est interprétée dans l'unité de ce capteur extérieur, non dans l'unité d'affichage Home Assistant.** Accepte un nombre fixe ou un modèle Jinja2 Home Assistant qui évalue à un nombre, réévalué à chaque cycle de mise à jour.",
           "presence_entity": "Capteur de présence, suivi d'appareil ou zone optionnel. Quand quelqu'un est à la maison, le store utilise le suivi anti-éblouissement en mode intermédiaire ; quand personne n'est là, une règle simplifiée été-fermé / hiver-ouvert s'applique. Laissez vide pour toujours traiter l'espace comme occupé.",
           "transparent_blind": "Activez quand le matériau du store est transparent ou translucide. En été avec des occupants présents, un store transparent se fermera quand même complètement pour réduire les apports de chaleur, alors qu'un store opaque suivrait le suivi anti-éblouissement.",
-          "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire)."
+          "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire).",
+          "presence_template": "Modèle Jinja2 Home Assistant optionnel qui signale l'occupation. Lorsqu'il s'évalue à vrai (on/true/1), l'espace est considéré comme occupé ; lorsqu'il est faux, il est traité comme vide. La façon dont il se combine avec l'entité de présence ci-dessus (OU ou ET) est définie par la « logique du modèle de présence » ci-dessous ; il peut fonctionner seul sans entité. Utilisez-le pour l'occupation composite (par exemple, quelqu'un à la maison ET réveillé). Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, donc la logique de l'entité de présence décide. Laissez vide pour désactiver.",
+          "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus."
+        }
+      },
+      "behavior": {
+        "data": {
+          "enable_position_matching": "Activer la correspondance de position",
+          "inverse_state": "Inverser l'état (nécessaire pour certains stores qui ne suivent pas les directives HA)",
+          "position_tolerance": "Tolérance de correspondance de position",
+          "return_sunset": "Déplacer les stores à la position par défaut actuelle quand l'heure de fin est atteinte",
+          "daytime_gate_sensors": "Capteurs du filtre de jour",
+          "daytime_gate_template": "Modèle du filtre de jour (optionnel)",
+          "daytime_gate_template_mode": "Logique du filtre de jour",
+          "sunrise_offset": "Décalage du lever du soleil",
+          "sunrise_time_entity": "Entité Heure de Lever du Soleil",
+          "sunset_offset": "Décalage du coucher du soleil",
+          "sunset_time_entity": "Entité Heure de Coucher du Soleil"
+        },
+        "data_description": {
+          "enable_position_matching": "Désactivé par défaut : l'intégration envoie la commande une fois au store, puis le laisse où il s'arrête. Un store qui s'arrête au-delà de la Tolérance de correspondance de position est traité comme une dérogation manuelle (le contrôle automatique s'interrompt pour la durée de dérogation) au lieu d'être renvoyé. Activez-le si votre store s'arrête parfois avant la position commandée et que vous souhaitez que l'intégration continue d'envoyer la cible jusqu'à ce qu'elle arrive. Désactivez-le pour les stores qui atteignent de façon fiable la cible au premier envoi, qui s'auto-réparent, ou que vous arrêtez avec une télécommande physique et dont vous voulez que l'arrêt perdure. Voir [Quand activer la correspondance de position]({position_matching_wiki}).",
+          "inverse_state": "Activez pour les stores dont la logique de position est inversée. Standard : 0 = fermé/baissé, 100 = ouvert/levé. Inversé : 0 = ouvert/levé, 100 = fermé/baissé. Cochez UNIQUEMENT si votre store affiche un comportement opposé, que 100% ferme au lieu d'ouvrir, ou que la documentation dit « inversé » ou « renversé ». Testez votre store manuellement d'abord pour confirmer. La plupart des stores n'en ont pas besoin.",
+          "position_tolerance": "Écart admissible (%) entre la position commandée et la position que le store rapporte avant que l'intégration ne la traite comme « non arrivée » et renvoie la commande. Ceci est distinct du delta de mouvement sur l'étape Programme & Synchronisation : le delta décide s'il faut envoyer une nouvelle commande, tandis que cette tolérance décide si une commande déjà envoyée a été honorée. La valeur par défaut de 3% couvre l'arrondi moteur normal (par exemple un store qui s'arrête à 98% quand on lui dit 100%). Augmentez-la pour les actionneurs qui sous-commandent ou dépassent systématiquement — par exemple, réglez à 6% si un store commandé à 100% rapporte 95% et cliquerait sinon et recommencerait tous les minuten.",
+          "return_sunset": "Quand l'heure opérationnelle de fin est atteinte, envoyez les stores à la position par défaut efficace actuelle (qui sera la position de coucher du soleil si le coucher du soleil astronomique a déjà eu lieu, sinon la valeur par défaut normale). Utile quand votre heure de fin est avant le coucher du soleil et que vous voulez que les stores soient positionnés correctement pour la soirée. Ce mouvement n'a lieu que lorsque le Contrôle Automatique est ACTIVÉ — si le Contrôle Automatique est désactivé, les stores resteront où ils sont à l'heure de fin.",
+          "daytime_gate_sensors": "Capteurs binaires optionnels (ou input_boolean / switch / schedule) qui décident si c'est « jour » pour le suivi du soleil. Lorsqu'ils sont activés, l'intégration assure le suivi du soleil ; lorsqu'ils sont désactivés, elle applique la Position de coucher de soleil. Utilisez un capteur binaire « assez lumineux » basé sur le lux pour que la lumière réelle — et non l'horloge — ouvre et ferme la fenêtre de suivi : les protections continuent le suivi lors de soirées lumineuses après le coucher du soleil astronomique, et restent à la position de coucher de soleil lors des matins sombres et nuageux. Lorsqu'ils sont définis, ils REMPLACENT la limite de coucher/lever astronomique du soleil (les décalages de coucher/lever de soleil sont ignorés). Un capteur indisponible ou inconnu est traité comme jour, de sorte que le suivi ne s'arrête jamais simplement parce qu'un capteur n'a pas signalé. Laissez vide pour utiliser le calcul de coucher/lever de soleil astronomique.",
+          "daytime_gate_template": "Modèle Jinja2 Home Assistant optionnel qui décide si c'est « jour » pour le suivi du soleil. Lorsqu'il s'évalue comme vrai (on/true/1), l'intégration assure le suivi du soleil ; lorsqu'il s'évalue comme faux, elle applique la Position de coucher de soleil. La manière dont il se combine avec les capteurs du filtre ci-dessus (OR ou AND) est définie par « Logique du filtre de jour » ci-dessous. Il peut fonctionner seul sans capteurs. Exemple : un modèle d'élévation Sun2, ou une comparaison lux. Un modèle qui ne peut pas être évalué est traité comme jour, de sorte qu'un modèle cassé ne force jamais un coucher de soleil prématuré. Lorsqu'il est défini (seul ou avec des capteurs), il REMPLACE la limite de coucher/lever astronomique du soleil. Laissez vide pour désactiver.",
+          "daytime_gate_template_mode": "Comment le modèle du filtre de jour se combine avec les capteurs du filtre ci-dessus. « OR » (par défaut) — jour lorsque le modèle est vrai OU l'un des capteurs est activé. « AND » — jour seulement lorsque le modèle est vrai ET l'un des capteurs est activé, de sorte que le modèle doit tenir pour que le suivi s'exécute. Sans capteurs configurés, le modèle seul décide dans l'un ou l'autre mode. N'a d'effet que lorsqu'un modèle de filtre de jour est défini ci-dessus.",
+          "sunrise_offset": "Minutes pour décaler l'heure du lever du soleil (± ajustement). Valeur positive : démarrer le contrôle automatique X minutes APRÈS le lever du soleil. Valeur négative : démarrer le contrôle automatique X minutes AVANT le lever du soleil. Zéro : exactement au lever du soleil. Utilisez une valeur positive (par exemple 60) si vous voulez dormir plus longtemps après le lever du soleil. Se combine avec le paramètre Heure de début (utilise celle qui est la plus tard).",
+          "sunrise_time_entity": "Entité optionnelle dont l'état est un datetime (par exemple Sun2 « lever du soleil à -4° d'élévation »). Quand défini, remplace l'heure de lever du soleil calculée par astral comme limite de fermeture de la fenêtre du matin. Accepte les entités sensor ou input_datetime. Le Décalage du lever du soleil s'applique toujours en plus. Revient à astral si l'entité n'est pas disponible.",
+          "sunset_offset": "Minutes pour décaler l'heure du coucher du soleil (± ajustement). Valeur positive : appliquer la position de coucher du soleil X minutes APRÈS le coucher du soleil. Valeur négative : appliquer la position de coucher du soleil X minutes AVANT le coucher du soleil. Zéro : exactement au coucher du soleil. Utilisez une valeur positive (par exemple 30) si vous voulez que les stores restent ouverts un peu après le coucher du soleil. Utilisez une valeur négative (par exemple -30) pour fermer tôt quand le soleil est encore bas.",
+          "sunset_time_entity": "Entité optionnelle dont l'état est un datetime (par exemple Sun2 « coucher du soleil à -4° d'élévation »). Quand défini, remplace l'heure de coucher du soleil calculée par astral comme limite de la fenêtre. Accepte les entités sensor ou input_datetime rapportant un datetime ISO-8601. Le Décalage du coucher du soleil s'applique toujours en plus. Revient à astral si l'entité n'est pas disponible."
+        },
+        "description": "Affinez le comportement du store une fois une position choisie : ajustements de synchronisation du coucher/lever du soleil, la tolérance de correspondance de position et le basculement de correspondance, et état inversé. Ce ne sont pas des positions cibles — chaque valeur en pourcentage vit sur l'étape Paramètres de Position ; cette étape ne contient que les boutons de synchronisation et seuil.\n\n[En savoir plus]({learn_more})",
+        "title": "Comportement (Synchronisation & Seuils)"
+      },
+      "pipeline_priorities": {
+        "title": "Priorités des gestionnaires",
+        "description": "Réorganisez la chaîne de décision. Chaque gestionnaire intégré est évalué dans l'ordre de priorité (plus élevé en premier) ; le premier qui s'applique définit la position. Déplacez un curseur pour changer la priorité d'un gestionnaire, ou réinitialisez-le (le ⓧ) pour restaurer sa valeur par défaut intégrée. La plage est 1–99 — 100 est réservé au créneau de sécurité de position personnalisée, qui gagne toujours. Les égalités sont autorisées et sont tranchées par l'ordre de priorité par défaut intégré (le gestionnaire avec la priorité par défaut la plus élevée gagne).\n\n[En savoir plus]({learn_more})\n\n**Priorité de décision** — la chaîne active avec vos dérogations appliquées (reflète les dernières valeurs enregistrées ; se rafraîchit au re-rendu, pas en direct à mesure que vous le faites):\n{priority_scale}",
+        "data": {
+          "weather_priority": "Priorité de dérogation météo",
+          "manual_override_priority": "Priorité de dérogation manuelle",
+          "motion_timeout_priority": "Priorité du délai de mouvement",
+          "cloud_suppression_priority": "Priorité de suppression des nuages",
+          "climate_priority": "Priorité du mode climatique",
+          "glare_zone_priority": "Priorité de la zone d'éblouissement",
+          "solar_priority": "Priorité du suivi solaire"
+        },
+        "data_description": {
+          "weather_priority": "1–99 ; valeur par défaut intégrée 90. Gestionnaire intégré le plus élevé — abaissez-le pour laisser la dérogation manuelle ou les positions personnalisées l'emporter.",
+          "manual_override_priority": "1–99 ; valeur par défaut intégrée 80.",
+          "motion_timeout_priority": "1–99 ; valeur par défaut intégrée 75.",
+          "cloud_suppression_priority": "1–99 ; valeur par défaut intégrée 60.",
+          "climate_priority": "1–99 ; valeur par défaut intégrée 50.",
+          "glare_zone_priority": "1–99 ; valeur par défaut intégrée 45.",
+          "solar_priority": "1–99 ; valeur par défaut intégrée 40. Le gestionnaire de suivi solaire de base — augmentez-le au-dessus du mode climatique pour que le suivi solaire surclasse le contrôle climatique."
         }
       }
     },

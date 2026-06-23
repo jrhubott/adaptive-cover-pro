@@ -467,6 +467,43 @@ class TestTimeWindowDiagnostics:
         assert "end_time" in tw
 
 
+class TestEndOfWindowDiagnostics:
+    """issue #625: end-of-window position surfaced in diagnostics."""
+
+    def test_configured_value_and_active_flag_when_closed(
+        self, builder: DiagnosticsBuilder
+    ):
+        from custom_components.adaptive_cover_pro.const import CONF_END_OF_WINDOW_POS
+
+        ctx = _base_ctx(
+            config_options={CONF_END_OF_WINDOW_POS: 20},
+            before_end_time=False,
+            end_of_window_active=True,
+        )
+        diag, _ = builder.build(ctx)
+        assert diag["configuration"]["end_of_window_position"] == 20
+        assert diag["default_position"]["configured_end_of_window_pos"] == 20
+        assert diag["default_position"]["end_of_window_active"] is True
+
+    def test_active_flag_false_when_window_open(self, builder: DiagnosticsBuilder):
+        from custom_components.adaptive_cover_pro.const import CONF_END_OF_WINDOW_POS
+
+        ctx = _base_ctx(
+            config_options={CONF_END_OF_WINDOW_POS: 20},
+            before_end_time=True,
+            end_of_window_active=False,
+        )
+        diag, _ = builder.build(ctx)
+        assert diag["default_position"]["end_of_window_active"] is False
+
+    def test_unset_value_is_none(self, builder: DiagnosticsBuilder):
+        ctx = _base_ctx(config_options={})
+        diag, _ = builder.build(ctx)
+        assert diag["configuration"]["end_of_window_position"] is None
+        assert diag["default_position"]["configured_end_of_window_pos"] is None
+        assert diag["default_position"]["end_of_window_active"] is False
+
+
 # ---------------------------------------------------------------------------
 # Sun validity diagnostics
 # ---------------------------------------------------------------------------
@@ -767,6 +804,7 @@ class TestConfigurationDiagnostics:
             "enabled_toggle",
             "cloud_suppression_enabled",
             "cloudy_position",
+            "end_of_window_position",
             "is_sunny_source",
             "templated_thresholds",
         }
@@ -947,6 +985,65 @@ class TestDecisionTrace:
         handlers = [s["handler"] for s in diag["decision_trace"]]
         assert handlers == ["a", "b", "c"]
 
+    def test_trace_includes_priority_when_set(self, builder: DiagnosticsBuilder):
+        """A step's priority is surfaced; absent when None (synthetic step)."""
+        steps = [
+            DecisionStep(
+                handler="weather",
+                matched=True,
+                reason="storm",
+                position=100,
+                priority=90,
+            ),
+            DecisionStep(
+                handler="floor_clamp", matched=True, reason="floor", position=40
+            ),
+        ]
+        pr = PipelineResult(
+            position=100,
+            control_method=ControlMethod.WEATHER,
+            reason="weather",
+            decision_trace=steps,
+        )
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        trace = diag["decision_trace"]
+        assert trace[0]["priority"] == 90
+        assert "priority" not in trace[1]  # None → omitted
+
+
+class TestHandlerPriorities:
+    """Tests for the handler_priorities section."""
+
+    def test_defaults_when_no_overrides(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        rows = diag["handler_priorities"]
+        assert rows["weather"] == {
+            "priority": 90,
+            "default": 90,
+            "overridden": False,
+        }
+        # Ordered highest-priority first.
+        assert list(rows) == [
+            "weather",
+            "manual_override",
+            "motion_timeout",
+            "cloud_suppression",
+            "climate",
+            "glare_zone",
+            "solar",
+        ]
+
+    def test_override_marked_and_reordered(self, builder: DiagnosticsBuilder):
+        diag, _ = builder.build(
+            _base_ctx(config_options={"solar_priority": 95, "weather_priority": 20})
+        )
+        rows = diag["handler_priorities"]
+        assert rows["solar"] == {"priority": 95, "default": 40, "overridden": True}
+        assert rows["weather"] == {"priority": 20, "default": 90, "overridden": True}
+        # Solar now sorts first; weather drops below climate.
+        assert list(rows)[0] == "solar"
+        assert list(rows).index("weather") > list(rows).index("climate")
+
 
 # ---------------------------------------------------------------------------
 # Covers section
@@ -1117,6 +1214,39 @@ class TestCloudyPositionDiagnostics:
         diag, _ = builder.build(_base_ctx(config_options={}))
         assert diag["configuration"]["cloud_suppression_enabled"] is False
 
+    def test_is_sunny_source_template_when_only_template_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """is_sunny_source == '[template]' when only the template is configured (#639)."""
+        from custom_components.adaptive_cover_pro.const import CONF_IS_SUNNY_TEMPLATE
+
+        options = {CONF_IS_SUNNY_TEMPLATE: "{{ true }}"}
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["is_sunny_source"] == "[template]"
+
+    def test_is_sunny_source_sensor_takes_priority_over_template(
+        self, builder: DiagnosticsBuilder
+    ):
+        """A configured sensor wins over the template in is_sunny_source (#639)."""
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+        )
+
+        options = {
+            CONF_IS_SUNNY_SENSOR: "binary_sensor.sunny",
+            CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+        }
+        diag, _ = builder.build(_base_ctx(config_options=options))
+        assert diag["configuration"]["is_sunny_source"] == "binary_sensor.sunny"
+
+    def test_is_sunny_source_weather_state_when_neither_set(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Falls back to 'weather_state' when no sensor and no template (#639)."""
+        diag, _ = builder.build(_base_ctx(config_options={}))
+        assert diag["configuration"]["is_sunny_source"] == "weather_state"
+
     def test_default_position_includes_configured_cloudy_pos(
         self, builder: DiagnosticsBuilder
     ):
@@ -1195,3 +1325,58 @@ class TestPrimaryAxisSuppressionCounts:
         ctx = _base_ctx(primary_axis_suppression_counts={})
         diag, _ = builder.build(ctx)
         assert "primary_axis_suppression_last_24h" not in diag
+
+
+# ---------------------------------------------------------------------------
+# Position forecast
+# ---------------------------------------------------------------------------
+
+
+class TestForecast:
+    """Verify the rest-of-day forecast section."""
+
+    @staticmethod
+    def _make_forecast():
+        from custom_components.adaptive_cover_pro.forecast import (
+            Forecast,
+            ForecastEvent,
+            ForecastSample,
+        )
+
+        t0 = dt.datetime(2026, 6, 14, 12, 0, tzinfo=dt.UTC)
+        return Forecast(
+            samples=(
+                ForecastSample(t=t0, position=40, handler="solar"),
+                ForecastSample(
+                    t=t0 + dt.timedelta(minutes=15), position=0, handler="default"
+                ),
+            ),
+            events=(ForecastEvent(t=t0, kind="fov_exit", label="Sun leaves FOV"),),
+        )
+
+    def test_omitted_when_no_forecast(self, builder: DiagnosticsBuilder):
+        """No cached forecast → key absent (background recompute not done yet)."""
+        diag, _ = builder.build(_base_ctx(position_forecast=None))
+        assert "position_forecast" not in diag
+
+    def test_present_when_forecast_cached(self, builder: DiagnosticsBuilder):
+        """Cached forecast surfaces under ``position_forecast`` with samples/events."""
+        ctx = _base_ctx(position_forecast=self._make_forecast())
+        diag, _ = builder.build(ctx)
+        section = diag["position_forecast"]
+        assert section["step_minutes"] == 15
+        assert section["forecast"][0] == {
+            "t": "2026-06-14T12:00:00+00:00",
+            "position": 40,
+            "handler": "solar",
+        }
+        assert section["events"][0]["kind"] == "fov_exit"
+
+    def test_labeled_solar_only(self, builder: DiagnosticsBuilder):
+        """A reader must be told the projection ignores non-solar handlers."""
+        ctx = _base_ctx(position_forecast=self._make_forecast())
+        diag, _ = builder.build(ctx)
+        description = diag["position_forecast"]["description"].lower()
+        assert "solar-tracking-only" in description
+        assert "does not model" in description
+        assert "decision_trace" in description

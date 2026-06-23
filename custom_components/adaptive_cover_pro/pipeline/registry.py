@@ -83,6 +83,8 @@ class PipelineRegistry:
                             matched=True,
                             reason=result.reason,
                             position=result.position,
+                            held_position=result.held_position,
+                            priority=handler.priority,
                         )
                     )
                 else:
@@ -92,6 +94,7 @@ class PipelineRegistry:
                             matched=False,
                             reason=f"outprioritized by {winning_handler.name}",
                             position=result.position,
+                            priority=handler.priority,
                         )
                     )
             else:
@@ -101,6 +104,7 @@ class PipelineRegistry:
                         matched=False,
                         reason=handler.describe_skip(snapshot),
                         position=None,
+                        priority=handler.priority,
                     )
                 )
 

@@ -60,7 +60,8 @@
           "arm_length": "Arm Length",
           "awning_min_angle": "Arm Angle When Closed",
           "awning_max_angle": "Arm Angle When Fully Open",
-          "awning_housing_offset": "Housing Offset Above Window"
+          "awning_housing_offset": "Housing Offset Above Window",
+          "awning_pivot_offset": "Pivot Offset From Window"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -82,7 +83,8 @@
           "arm_length": "Length of the pivoting arm of an oscillating (drop-arm) awning, from the wall pivot to the fabric edge. Shown in the unit Home Assistant is configured for. Used with the arm sweep angle to compute how far the fabric reaches out at each open percentage. Example: 0.8 m / 31 in.",
           "awning_min_angle": "Arm angle when the awning is fully closed/retracted (0–180°). Typically 0° = arm vertical against the wall. Defines the start of the sweep arc.",
           "awning_max_angle": "Arm angle when the awning is fully open (0–180°). The arm sweeps linearly from the closed angle to this value across 0–100% open. Example: a 175° total sweep ≈ 1.75° per 1%.",
-          "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top."
+          "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top.",
+          "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall."
         }
       },
       "sun_tracking": {
@@ -90,8 +92,6 @@
         "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
-          "minimize_movements": "Minimize movements",
-          "max_coverage_steps": "Maximum coverage steps",
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
@@ -105,8 +105,6 @@
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
-          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
-          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
@@ -128,18 +126,11 @@
           "enable_min_position": "Apply min only during sun tracking",
           "min_position_sun_tracking": "Min Position During Sun Tracking",
           "sunset_position": "Sunset Position",
+          "end_of_window_position": "End-of-Window Position",
           "enable_my_position_entities": "Enable My-preset entities",
           "my_position_value": "My position value",
           "sunset_use_my": "Use My at sunset",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "sunset_time_entity": "Sunset Time Entity",
-          "sunrise_time_entity": "Sunrise Time Entity",
           "open_close_threshold": "Open/Close threshold",
-          "position_tolerance": "Position match tolerance",
-          "enable_position_matching": "Enable position matching",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
@@ -150,31 +141,56 @@
           "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
           "min_position_sun_tracking": "Optional separate minimum position floor that only applies while the sun is in the field of view. When set, replaces 'Minimum Position' during sun-tracking calculations. Leave blank to use 'Minimum Position' for both sun-tracking and other modes. Use this when your cover has a mechanical dead zone at the bottom of travel (e.g. roller shutters whose slats gap before the bottom lifts) and you want sun-tracking to skip that dead zone while still allowing the cover to fully close at sunset. 0% = closed (blinds lowered), 100% = open (blinds raised).",
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Common uses: Privacy (0%), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
+          "end_of_window_position": "Cover position to set at the operational end time, regardless of astronomical sunset. Clear the slider (leave empty) to disable. Requires 'Move covers to current default position when end time is reached' to be on. When both this and Sunset Position are set, this applies from the end time until astronomical sunset, then the Sunset Position takes over. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Useful when your end time is well before sunset (e.g. 19:30 in summer) and you want covers closed for the evening.",
           "enable_my_position_entities": "Create the Managed My Position button and the Managed My Position Value number entity. Off by default — turn on if you use the Somfy-style 'My' preset and want to recall or edit the value from a dashboard.",
           "my_position_value": "The position (1–99%) you programmed on the motor remote (My/favorite preset). Leave blank to disable My-position triggering for this cover.",
           "sunset_use_my": "When the sunset/end-time window activates, trigger the cover's My preset (via stop_cover) instead of the normal open/close fallback. Requires My position value to be set. Only affects non-position-capable covers (e.g. Somfy RTS).",
-          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
-          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
-          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time.",
-          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
-          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
           "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
-          "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta on the Schedule & Timing step: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
-          "enable_position_matching": "Off by default: the integration commands the cover once, then leaves it where it lands. A cover that settles past the Position match tolerance is treated as a manual override (automatic control pauses for the override duration) instead of being re-sent. Turn this on if your cover sometimes stops short of the commanded position and you want the integration to keep re-sending the target until it arrives. Leave it off for covers that reliably reach the target on the first command, that self-heal, or that you stop with a physical remote and want the stop to stick. See [When to enable position matching]({position_matching_wiki}).",
-          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
           "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
         }
       },
+      "behavior": {
+        "title": "Behaviour (Timing & Thresholds)",
+        "description": "Tune how the cover behaves once a position is chosen: sunset/sunrise timing adjustments, the position-match tolerance and matching toggle, and inverse-state. These are not target positions — every percentage value lives on the Position Settings step; this step holds only the timing and threshold knobs.\n\n[Learn more]({learn_more})",
+        "data": {
+          "sunset_time_entity": "Sunset Time Entity",
+          "sunrise_time_entity": "Sunrise Time Entity",
+          "sunset_offset": "Sunset Offset",
+          "sunrise_offset": "Sunrise Offset",
+          "return_sunset": "Move covers to current default position when end time is reached",
+          "daytime_gate_sensors": "Daytime gate sensors",
+          "daytime_gate_template": "Daytime gate template (optional)",
+          "daytime_gate_template_mode": "Daytime gate template logic",
+          "position_tolerance": "Position match tolerance",
+          "enable_position_matching": "Enable position matching",
+          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)"
+        },
+        "data_description": {
+          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
+          "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
+          "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time.",
+          "daytime_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide when it is 'daytime' for sun tracking. When ON the integration sun-tracks; when OFF it applies the Sunset Position. Use a lux 'bright enough' binary sensor so real light — not the clock — opens and closes the tracking window: covers keep tracking on bright evenings past astronomical sunset, and stay at the sunset position on dark, overcast mornings. When set, this REPLACES the astronomical sunset/sunrise boundary (Sunset/Sunrise Offset are ignored). An unavailable or unknown sensor is treated as daytime, so tracking never stops just because a sensor hasn't reported. Leave empty to use the astronomical sunset/sunrise calculation.",
+          "daytime_gate_template": "Optional Home Assistant Jinja2 template that decides 'daytime' for sun tracking. When it renders truthy (on/true/1) the integration sun-tracks; when falsy it applies the Sunset Position. How it combines with the gate sensors above (OR or AND) is set by 'Daytime gate template logic' below. It can stand alone with no sensors. Example: a Sun2 elevation template, or a lux comparison. A template that fails to render is treated as daytime, so a broken template never forces a premature sunset. When set (alone or with sensors), this REPLACES the astronomical sunset/sunrise boundary. Leave empty to disable.",
+          "daytime_gate_template_mode": "How the daytime gate template combines with the gate sensors above. 'OR' (default) — daytime when the template is truthy OR any sensor is ON. 'AND' — daytime only when the template is truthy AND a sensor is ON, so the template must hold for tracking to run. With no sensors configured, the template alone decides in either mode. Only has an effect when a daytime gate template is set above.",
+          "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta on the Schedule & Timing step: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
+          "enable_position_matching": "Off by default: the integration commands the cover once, then leaves it where it lands. A cover that settles past the Position match tolerance is treated as a manual override (automatic control pauses for the override duration) instead of being re-sent. Turn this on if your cover sometimes stops short of the commanded position and you want the integration to keep re-sending the target until it arrives. Leave it off for covers that reliably reach the target on the first command, that self-heal, or that you stop with a physical remote and want the stop to stick. See [When to enable position matching]({position_matching_wiki}).",
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this."
+        }
+      },
       "automation": {
-        "title": "Schedule & Timing",
-        "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
+        "title": "Movement & Schedule",
+        "description": "Global movement constraints applied after the pipeline picks a position, regardless of which handler won, plus the operational time window.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Minimize movements** and **Maximum coverage steps** snap sun tracking to a few fixed coverage levels instead of following the sun continuously. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
-          "end_entity": "Entity indicating ending time"
+          "end_entity": "Entity indicating ending time",
+          "minimize_movements": "Minimize movements",
+          "max_coverage_steps": "Maximum coverage steps"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -182,7 +198,9 @@
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
-          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine)."
+          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
+          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
+          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
         }
       },
       "manual_override": {
@@ -207,7 +225,7 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})",
+        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})\n\n**Decision priority** — where each configured slot's priority lands against the fixed handlers (highest wins). This reflects the last saved priorities; it refreshes when the form re-renders, not live as you drag the slider:\n{priority_scale}",
         "data": {
           "custom_position_sensors_1": "Sensors 1",
           "custom_position_template_1": "Condition template 1",
@@ -339,7 +357,11 @@
           "weather_rain_sensor": "Rain rate sensor",
           "weather_rain_threshold": "Rain rate threshold",
           "weather_is_raining_sensor": "Is Raining binary sensor",
+          "weather_is_raining_template": "Is Raining template (optional)",
+          "weather_is_raining_template_mode": "Is Raining template logic",
           "weather_is_windy_sensor": "Is Windy binary sensor",
+          "weather_is_windy_template": "Is Windy template (optional)",
+          "weather_is_windy_template_mode": "Is Windy template logic",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
           "weather_override_min_mode": "Minimum position mode",
@@ -354,7 +376,11 @@
           "weather_rain_sensor": "Numeric sensor reporting rain rate. Override activates when the value meets or exceeds the threshold. Leave empty to ignore rain rate.",
           "weather_rain_threshold": "Rain rate threshold that activates the override. **Value is interpreted in the configured rain sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "weather_is_raining_sensor": "Binary sensor for rain detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_raining_template": "Optional Home Assistant Jinja2 template that decides whether it is raining. When it renders truthy (on/true/1) the override engages. How it combines with the Is Raining binary sensor above (OR or AND) is set by 'Is Raining template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'raining' from a numeric rain-rate threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_raining_template_mode": "How the Is Raining template combines with the Is Raining binary sensor above. 'OR' (default) — raining when the template is truthy OR the sensor is ON. 'AND' — raining only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Raining template is set above.",
           "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_windy_template": "Optional Home Assistant Jinja2 template that decides whether it is windy. When it renders truthy (on/true/1) the override engages. How it combines with the Is Windy binary sensor above (OR or AND) is set by 'Is Windy template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'windy' from a numeric wind-speed threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_windy_template_mode": "How the Is Windy template combines with the Is Windy binary sensor above. 'OR' (default) — windy when the template is truthy OR the sensor is ON. 'AND' — windy only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Windy template is set above.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
           "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
@@ -485,6 +511,8 @@
         "data": {
           "weather_entity": "Weather entity (optional)",
           "is_sunny_sensor": "Is Sunny binary sensor (optional)",
+          "is_sunny_template": "Is Sunny template (optional)",
+          "is_sunny_template_mode": "Is Sunny template logic",
           "lux_entity": "Lux sensor (optional)",
           "lux_threshold": "Lux threshold",
           "irradiance_entity": "Irradiance sensor (optional)",
@@ -499,6 +527,8 @@
           "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
           "weather_state": "The weather states that count as 'sun is out'. When the live weather state matches one of these, glare tracking runs normally. When it does not match, the cover returns to its default position. Keep the defaults (sunny, partlycloudy, clear) unless your weather integration uses different state names.",
           "is_sunny_sensor": "Optional binary sensor, input_boolean, switch, or schedule that authoritatively reports whether the sun is hitting the window. When ON, sun is assumed present; when OFF, sun is assumed absent and cloud suppression fires regardless of weather state. When unavailable or unknown, the integration falls back to the Weather Entity / Weather Conditions logic below. Use this when you compute sun-on-window upstream (e.g. azimuth-gated irradiance) and want to feed Adaptive Cover Pro a clean boolean.",
+          "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. When it renders truthy (on/true/1) sun is assumed present; when falsy it is assumed absent and cloud suppression fires. How it combines with the Is Sunny binary sensor above (OR or AND) is set by 'Is Sunny template logic' below; it can stand alone with no sensor. Example: an azimuth/elevation comparison, or a lux threshold. A template that is empty or fails to render gives no opinion, so the integration falls back to the sensor and then the Weather Entity / Weather Conditions logic. Leave empty to disable.",
+          "is_sunny_template_mode": "How the Is Sunny template combines with the Is Sunny binary sensor above. 'OR' (default) — sunny when the template is truthy OR the sensor is ON. 'AND' — sunny only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Sunny template is set above.",
           "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
           "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. **Value is interpreted in the configured lux sensor's unit**. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
@@ -520,6 +550,8 @@
           "outside_temp": "Outside temperature sensor (optional)",
           "outside_threshold": "Outside temperature threshold",
           "presence_entity": "Presence entity (optional)",
+          "presence_template": "Presence template (optional)",
+          "presence_template_mode": "Presence template logic",
           "transparent_blind": "Transparent blind",
           "winter_close_insulation": "Winter insulation mode"
         },
@@ -531,6 +563,8 @@
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
           "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured. **Value is interpreted in that outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
+          "presence_template": "Optional Home Assistant Jinja2 template that reports occupancy. When it renders truthy (on/true/1) the space counts as occupied; when falsy it is treated as empty. How it combines with the Presence entity above (OR or AND) is set by 'Presence template logic' below; it can stand alone with no entity. Use this for composite occupancy (e.g. anyone home AND awake). A template that is empty or fails to render gives no opinion, so the Presence entity logic decides. Leave empty to disable.",
+          "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Enable when the blind material is sheer or translucent. In summer with occupants present a transparent blind will still close fully to reduce heat gain, whereas an opaque blind would instead follow glare-control tracking.",
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }
@@ -550,15 +584,17 @@
           "geometry": "📐 Cover Geometry",
           "sun_tracking": "☀️ Sun Tracking",
           "position": "📊 Position Settings",
+          "behavior": "🎛️ Behaviour & Timing",
           "blind_spot": "🌳 Blind Spot",
           "glare_zones": "🔆 Glare Zones",
           "interp": "📊 Position Calibration",
-          "automation": "⏱️ Schedule & Timing",
+          "automation": "⏱️ Movement & Schedule",
           "weather": "Weather Conditions",
           "manual_override": "✋ Manual Override",
           "custom_position": "🎯 Custom Positions",
           "motion_override": "🚶 Motion Override",
           "weather_override": "🌧️ Weather Override",
+          "pipeline_priorities": "🔀 Handler Priorities",
           "summary": "📋 Configuration Summary",
           "sync": "🔄 Copy to Other Covers",
           "debug": "🔍 Debug & Diagnostics",
@@ -567,16 +603,40 @@
           "temperature_climate": "🌡️ Temperature & Climate"
         }
       },
+      "pipeline_priorities": {
+        "title": "Handler Priorities",
+        "description": "Re-order the decision chain. Each built-in handler is evaluated in priority order (highest first); the first one that applies sets the position. Drag a slider to change where a handler sits, or clear it (the ⓧ) to restore its built-in default. Range is 1–99 — 100 is reserved for the Custom Position safety slot, which always wins. Ties are allowed and break by the built-in default order (the higher-default handler wins).\n\n[Learn more]({learn_more})\n\n**Decision priority** — the live chain with your overrides applied (reflects the last saved values; refreshes on re-render, not live as you drag):\n{priority_scale}",
+        "data": {
+          "weather_priority": "Weather Override priority",
+          "manual_override_priority": "Manual Override priority",
+          "motion_timeout_priority": "Motion Timeout priority",
+          "cloud_suppression_priority": "Cloud Suppression priority",
+          "climate_priority": "Climate priority",
+          "glare_zone_priority": "Glare Zone priority",
+          "solar_priority": "Solar priority"
+        },
+        "data_description": {
+          "weather_priority": "1–99; built-in default 90. Highest built-in handler — lower it to let Manual or Custom Positions win.",
+          "manual_override_priority": "1–99; built-in default 80.",
+          "motion_timeout_priority": "1–99; built-in default 75.",
+          "cloud_suppression_priority": "1–99; built-in default 60.",
+          "climate_priority": "1–99; built-in default 50.",
+          "glare_zone_priority": "1–99; built-in default 45.",
+          "solar_priority": "1–99; built-in default 40. The base sun-tracking handler — raise it above Climate to make sun tracking outrank climate control."
+        }
+      },
       "automation": {
-        "title": "Schedule & Timing",
-        "description": "Set the operational window (start/end times) and the minimum position or time delta between adjustments.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically, useful for schedule helpers or alarm clocks.\n\n[Learn more]({learn_more})",
+        "title": "Movement & Schedule",
+        "description": "Global movement constraints applied after the pipeline picks a position, regardless of which handler won, plus the operational time window.\n\n**Delta position** prevents the cover from moving unless the target has shifted by at least this many percent — reduces motor wear from small sun changes. **Delta time** enforces a minimum gap between consecutive commands. **Minimize movements** and **Maximum coverage steps** snap sun tracking to a few fixed coverage levels instead of following the sun continuously. **Start/end times** define when automatic control is allowed to run; leave blank to run all day. An HA entity can supply either time dynamically.\n\n[Learn more]({learn_more})",
         "data": {
           "delta_position": "Minimum position adjustment",
           "delta_time": "Minimum interval between position changes",
           "start_time": "Starting time",
           "start_entity": "Entity indicating starting time",
           "end_time": "End time",
-          "end_entity": "Entity indicating ending time"
+          "end_entity": "Entity indicating ending time",
+          "minimize_movements": "Minimize movements",
+          "max_coverage_steps": "Maximum coverage steps"
         },
         "data_description": {
           "delta_position": "Minimum position change (%) required before adjusting the cover. Prevents tiny adjustments as sun moves slowly. Typical values: 1-2% (very responsive, may adjust frequently), 5% (balanced, recommended for most), 10% (less frequent, larger movements). Example: If cover is at 30% and sun moves slightly, only adjust if new position is 35% or more (with 5% threshold). Reduces motor wear and noise from constant tiny adjustments.",
@@ -584,7 +644,9 @@
           "start_time": "Don't start automatic control before this time (24-hour format). Use this to sleep in without morning blinds (set to 08:00 or later), match your routine (set to when you wake up), or leave blank to start at sunrise. Example: '07:30' means automatic control begins at 7:30 AM. Manual control still works before this time.",
           "start_entity": "Entity representing starting time state, overriding the fixed start time set above. Useful for automating the start time with an entity (e.g., sensor that provides wake-up time based on calendar or sleep tracking).",
           "end_time": "Stop automatic control after this time (24-hour format). Use this to keep evening privacy (set to 18:00 or 19:00), return to default before bed, or leave blank to continue until sunset. Example: '20:00' means automatic control stops at 8:00 PM. Manual control still works after this time.",
-          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine)."
+          "end_entity": "Entity representing ending time state, overriding the fixed end time set above. Useful for automating the end time with an entity (e.g., sensor that provides bedtime based on calendar or daily routine).",
+          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
+          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1."
         }
       },
       "cover_entities": {
@@ -632,7 +694,8 @@
           "arm_length": "Arm Length",
           "awning_min_angle": "Arm Angle When Closed",
           "awning_max_angle": "Arm Angle When Fully Open",
-          "awning_housing_offset": "Housing Offset Above Window"
+          "awning_housing_offset": "Housing Offset Above Window",
+          "awning_pivot_offset": "Pivot Offset From Window"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -654,7 +717,8 @@
           "arm_length": "Length of the pivoting arm of an oscillating (drop-arm) awning, from the wall pivot to the fabric edge. Shown in the unit Home Assistant is configured for. Used with the arm sweep angle to compute how far the fabric reaches out at each open percentage. Example: 0.8 m / 31 in.",
           "awning_min_angle": "Arm angle when the awning is fully closed/retracted (0–180°). Typically 0° = arm vertical against the wall. Defines the start of the sweep arc.",
           "awning_max_angle": "Arm angle when the awning is fully open (0–180°). The arm sweeps linearly from the closed angle to this value across 0–100% open. Example: a 175° total sweep ≈ 1.75° per 1%.",
-          "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top."
+          "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top.",
+          "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall."
         }
       },
       "sun_tracking": {
@@ -662,8 +726,6 @@
         "description": "Set your window's compass direction and the angular range where the sun is visible. The integration tracks the sun within this field of view and holds the cover at its default position when the sun is outside it.\n\n**Azimuth** is the compass bearing your window faces (0° = North, 90° = East, 180° = South, 270° = West). **FOV** defines how far left and right from centre the sun is tracked. Set the left and right angles directly, or tick **Generate field of view from measurements** to fill them from the window width and reveal depth (set on the Cover Geometry page) — you can then fine-tune either angle. **Elevation limits** filter out very low angles (sunrise glare) or very high angles (zenith) where blocking may not be needed.\n\n[Learn more]({learn_more})",
         "data": {
           "enable_sun_tracking": "Enable sun tracking",
-          "minimize_movements": "Minimize movements",
-          "max_coverage_steps": "Maximum coverage steps",
           "set_azimuth": "Window Azimuth",
           "fov_compute": "Generate field of view from measurements",
           "fov_left": "Field of view left",
@@ -677,8 +739,6 @@
         "data_description": {
           "enable_sun_tracking": "When enabled, covers track the sun within the configured FOV and elevation limits (solar positioning). Disable to skip distance-based solar positioning while keeping glare zones (controlled by their own switch), climate, motion, manual override, custom positions, and other overrides active. Default: enabled.",
           "fov_compute": "**{computed_fov}**\n\nFills the left/right field of view from the window width and the reveal depth — the reveal depth is measured from the outer wall face, where the cover is located. Set the window width and reveal depth on the Cover Geometry page, then tick this and submit to apply it. The sliders stay editable, so you can adjust either angle afterwards.",
-          "minimize_movements": "Reduce how often the cover repositions while tracking the sun by snapping to a few fixed coverage levels instead of following the sun continuously. Rounds toward MORE coverage, so direct sun is never let in by the rounding. Trades some natural light for far fewer motor movements. Default: off.",
-          "max_coverage_steps": "How many distinct positions the cover may use on its way to full coverage when 'Minimize movements' is on (1-10). 1 = jump straight to full coverage the moment the sun enters the field of view and hold there until it leaves (fewest movements). Higher values track the sun more gradually in that many steps. Default: 1.",
           "set_azimuth": "Direction your window faces (0-359°). North=0°, East=90°, South=180°, West=270°. Example: A south-facing window = 180°. Use a compass app or check sun at noon to determine. This tells the integration where your window points so it can calculate sun angles accurately.",
           "fov_left": "How wide the sun tracking area is on the LEFT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the left should we track the sun? Combined with fov_right, this defines the horizontal tracking zone.",
           "fov_right": "How wide the sun tracking area is on the RIGHT side of the window (in degrees). Standard windows: 45° (90° total coverage with both sides), Wide windows or glass doors: 60-75°, Narrow windows: 30°. Think of this as peripheral vision - how far to the right should we track the sun? Combined with fov_left, this defines the horizontal tracking zone.",
@@ -700,18 +760,11 @@
           "enable_min_position": "Apply min only during sun tracking",
           "min_position_sun_tracking": "Min Position During Sun Tracking",
           "sunset_position": "Sunset Position",
+          "end_of_window_position": "End-of-Window Position",
           "enable_my_position_entities": "Enable My-preset entities",
           "my_position_value": "My position value",
           "sunset_use_my": "Use My at sunset",
-          "sunset_offset": "Sunset Offset",
-          "sunrise_offset": "Sunrise Offset",
-          "return_sunset": "Move covers to current default position when end time is reached",
-          "sunset_time_entity": "Sunset Time Entity",
-          "sunrise_time_entity": "Sunrise Time Entity",
           "open_close_threshold": "Open/Close threshold",
-          "position_tolerance": "Position match tolerance",
-          "enable_position_matching": "Enable position matching",
-          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)",
           "interp": "Enable Position Calibration (custom open/close position mapping)"
         },
         "data_description": {
@@ -722,19 +775,42 @@
           "enable_min_position": "Controls WHEN minimum position limit applies. UNCHECKED (default, recommended): Minimum position applies ALL THE TIME - during sun tracking, default position, climate modes, etc. Cover never goes below min value. CHECKED (advanced): Minimum position ONLY applies when sun is directly in front of window. During default/fallback states, cover can go below min value. Most users should leave this UNCHECKED for consistent protection.",
           "min_position_sun_tracking": "Optional separate minimum position floor that only applies while the sun is in the field of view. When set, replaces 'Minimum Position' during sun-tracking calculations. Leave blank to use 'Minimum Position' for both sun-tracking and other modes. Use this when your cover has a mechanical dead zone at the bottom of travel (e.g. roller shutters whose slats gap before the bottom lifts) and you want sun-tracking to skip that dead zone while still allowing the cover to fully close at sunset. 0% = closed (blinds lowered), 100% = open (blinds raised).",
           "sunset_position": "Cover position to set after sunset. Clear the slider (leave empty) to use the Default Position instead — no special sunset behavior. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Common uses: Privacy (0%), Open for night air (100%), Partial privacy (30-50%). When set, this overrides the default position after sun sets.",
+          "end_of_window_position": "Cover position to set at the operational end time, regardless of astronomical sunset. Clear the slider (leave empty) to disable. Requires 'Move covers to current default position when end time is reached' to be on. When both this and Sunset Position are set, this applies from the end time until astronomical sunset, then the Sunset Position takes over. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Useful when your end time is well before sunset (e.g. 19:30 in summer) and you want covers closed for the evening.",
           "enable_my_position_entities": "Create the Managed My Position button and the Managed My Position Value number entity. Off by default — turn on if you use the Somfy-style 'My' preset and want to recall or edit the value from a dashboard.",
           "my_position_value": "The position (1–99%) you programmed on the motor remote (My/favorite preset). Leave blank to disable My-position triggering for this cover.",
           "sunset_use_my": "When the sunset/end-time window activates, trigger the cover's My preset (via stop_cover) instead of the normal open/close fallback. Requires My position value to be set. Only affects non-position-capable covers (e.g. Somfy RTS).",
+          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
+          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
+        }
+      },
+      "behavior": {
+        "title": "Behaviour (Timing & Thresholds)",
+        "description": "Tune how the cover behaves once a position is chosen: sunset/sunrise timing adjustments, the position-match tolerance and matching toggle, and inverse-state. These are not target positions — every percentage value lives on the Position Settings step; this step holds only the timing and threshold knobs.\n\n[Learn more]({learn_more})",
+        "data": {
+          "sunset_time_entity": "Sunset Time Entity",
+          "sunrise_time_entity": "Sunrise Time Entity",
+          "sunset_offset": "Sunset Offset",
+          "sunrise_offset": "Sunrise Offset",
+          "return_sunset": "Move covers to current default position when end time is reached",
+          "daytime_gate_sensors": "Daytime gate sensors",
+          "daytime_gate_template": "Daytime gate template (optional)",
+          "daytime_gate_template_mode": "Daytime gate template logic",
+          "position_tolerance": "Position match tolerance",
+          "enable_position_matching": "Enable position matching",
+          "inverse_state": "Inverse the state (needed for some covers that don't follow HA guidelines)"
+        },
+        "data_description": {
+          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
           "sunset_offset": "Minutes to shift sunset time (± adjustment). Positive value: Apply sunset position X minutes AFTER sunset. Negative value: Apply sunset position X minutes BEFORE sunset. Zero: Exactly at sunset. Use positive value (e.g., 30) if you want covers to stay open a bit past sunset. Use negative value (e.g., -30) to close early while sun is still low.",
           "sunrise_offset": "Minutes to shift sunrise time (± adjustment). Positive value: Start automatic control X minutes AFTER sunrise. Negative value: Start automatic control X minutes BEFORE sunrise. Zero: Exactly at sunrise. Use positive value (e.g., 60) if you want to sleep in past sunrise. Combines with Start Time setting (uses whichever is later).",
           "return_sunset": "When the operational end time is reached, send covers to the current effective default position (which will be the sunset position if astronomical sunset has already occurred, otherwise the normal default). Useful when your end time is before sunset and you want covers positioned correctly for the evening. This movement only occurs when Automatic Control is ON — if Automatic Control is disabled, covers will stay where they are at end time.",
-          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
-          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
-          "open_close_threshold": "Position threshold for covers that only support open/close commands (not position control). When the calculated position is greater than or equal to this threshold, the cover opens; when below, it closes. Default: 50% (opens at midpoint or above). Higher values (60-70%) keep cover closed more often, lower values (30-40%) open more often. Only affects covers without position support - covers with position control ignore this setting and use exact calculated positions.",
+          "daytime_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide when it is 'daytime' for sun tracking. When ON the integration sun-tracks; when OFF it applies the Sunset Position. Use a lux 'bright enough' binary sensor so real light — not the clock — opens and closes the tracking window: covers keep tracking on bright evenings past astronomical sunset, and stay at the sunset position on dark, overcast mornings. When set, this REPLACES the astronomical sunset/sunrise boundary (Sunset/Sunrise Offset are ignored). An unavailable or unknown sensor is treated as daytime, so tracking never stops just because a sensor hasn't reported. Leave empty to use the astronomical sunset/sunrise calculation.",
+          "daytime_gate_template": "Optional Home Assistant Jinja2 template that decides 'daytime' for sun tracking. When it renders truthy (on/true/1) the integration sun-tracks; when falsy it applies the Sunset Position. How it combines with the gate sensors above (OR or AND) is set by 'Daytime gate template logic' below. It can stand alone with no sensors. Example: a Sun2 elevation template, or a lux comparison. A template that fails to render is treated as daytime, so a broken template never forces a premature sunset. When set (alone or with sensors), this REPLACES the astronomical sunset/sunrise boundary. Leave empty to disable.",
+          "daytime_gate_template_mode": "How the daytime gate template combines with the gate sensors above. 'OR' (default) — daytime when the template is truthy OR any sensor is ON. 'AND' — daytime only when the template is truthy AND a sensor is ON, so the template must hold for tracking to run. With no sensors configured, the template alone decides in either mode. Only has an effect when a daytime gate template is set above.",
           "position_tolerance": "Allowed gap (%) between the commanded position and the position the cover reports back before the integration treats it as 'not arrived' and resends the command. This is distinct from the movement delta on the Schedule & Timing step: the delta decides whether to send a new command, while this tolerance decides whether an already-sent command was honored. The default of 3% covers normal motor rounding (e.g. a cover that settles at 98% when told 100%). Raise it for actuators that consistently under- or overshoot — for example, set 6% if a cover commanded to 100% reports 95% and would otherwise click and retry every minute.",
           "enable_position_matching": "Off by default: the integration commands the cover once, then leaves it where it lands. A cover that settles past the Position match tolerance is treated as a manual override (automatic control pauses for the override duration) instead of being re-sent. Turn this on if your cover sometimes stops short of the commanded position and you want the integration to keep re-sending the target until it arrives. Leave it off for covers that reliably reach the target on the first command, that self-heal, or that you stop with a physical remote and want the stop to stick. See [When to enable position matching]({position_matching_wiki}).",
-          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this.",
-          "interp": "Enable custom position mapping to calibrate covers that don't respond linearly to 0–100% commands. When enabled, a \"Position Calibration\" section will appear in the options menu (under Position Settings) where you can configure the mapping values. Use cases: cover doesn't move linearly, prefer certain ranges (more closed or more open), calibrate for unusual cover behavior. Leave disabled for normal operation."
+          "inverse_state": "Enable for covers where position logic is reversed. Standard: 0 = closed/lowered, 100 = open/raised. Inverted: 0 = open/raised, 100 = closed/lowered. Check this ONLY if your cover shows opposite behavior, 100% closes instead of opens, or documentation says 'inverted' or 'reversed'. Test your cover manually first to confirm. Most covers don't need this."
         }
       },
       "manual_override": {
@@ -759,7 +835,7 @@
       },
       "custom_position": {
         "title": "Custom Positions",
-        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})",
+        "description": "Configure trigger sensors and/or condition templates that set the cover to specific positions when active. Each slot has its own triggers (multiple sensors combine with OR logic), optional template, target position, and pipeline priority (1-100). Each active slot is evaluated independently — the highest-priority active slot wins. Priority 100 gives a slot safety semantics: it acts outside the start/end time window and bypasses the delta gates (this replaces the former Force Override feature). Use Home Assistant automations to toggle these sensors for scene-based or schedule-based cover control.\n\n[Learn more]({learn_more})\n\n**Decision priority** — where each configured slot's priority lands against the fixed handlers (highest wins). This reflects the last saved priorities; it refreshes when the form re-renders, not live as you drag the slider:\n{priority_scale}",
         "data": {
           "custom_position_sensors_1": "Sensors 1",
           "custom_position_template_1": "Condition template 1",
@@ -891,7 +967,11 @@
           "weather_rain_sensor": "Rain rate sensor",
           "weather_rain_threshold": "Rain rate threshold",
           "weather_is_raining_sensor": "Is Raining binary sensor",
+          "weather_is_raining_template": "Is Raining template (optional)",
+          "weather_is_raining_template_mode": "Is Raining template logic",
           "weather_is_windy_sensor": "Is Windy binary sensor",
+          "weather_is_windy_template": "Is Windy template (optional)",
+          "weather_is_windy_template_mode": "Is Windy template logic",
           "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
           "weather_override_position": "Override position",
           "weather_override_min_mode": "Minimum position mode",
@@ -906,7 +986,11 @@
           "weather_rain_sensor": "Numeric sensor reporting rain rate. Override activates when the value meets or exceeds the threshold. Leave empty to ignore rain rate.",
           "weather_rain_threshold": "Rain rate threshold that activates the override. **Value is interpreted in the configured rain sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "weather_is_raining_sensor": "Binary sensor for rain detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_raining_template": "Optional Home Assistant Jinja2 template that decides whether it is raining. When it renders truthy (on/true/1) the override engages. How it combines with the Is Raining binary sensor above (OR or AND) is set by 'Is Raining template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'raining' from a numeric rain-rate threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_raining_template_mode": "How the Is Raining template combines with the Is Raining binary sensor above. 'OR' (default) — raining when the template is truthy OR the sensor is ON. 'AND' — raining only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Raining template is set above.",
           "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_windy_template": "Optional Home Assistant Jinja2 template that decides whether it is windy. When it renders truthy (on/true/1) the override engages. How it combines with the Is Windy binary sensor above (OR or AND) is set by 'Is Windy template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'windy' from a numeric wind-speed threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_windy_template_mode": "How the Is Windy template combines with the Is Windy binary sensor above. 'OR' (default) — windy when the template is truthy OR the sensor is ON. 'AND' — windy only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Windy template is set above.",
           "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
           "weather_override_position": "Position (0-100%) to move covers to when weather override is active. 0% = closed (blinds lowered / awning retracted), 100% = open (blinds raised / awning extended). Default: 0%.",
           "weather_override_min_mode": "When enabled, the override position acts as a minimum floor — the cover will not close below this position, but higher positions from sun tracking or other calculations are allowed through. When disabled (default), the cover is always set to the exact override position.",
@@ -1044,6 +1128,8 @@
         "data": {
           "weather_entity": "Weather entity (optional)",
           "is_sunny_sensor": "Is Sunny binary sensor (optional)",
+          "is_sunny_template": "Is Sunny template (optional)",
+          "is_sunny_template_mode": "Is Sunny template logic",
           "lux_entity": "Lux sensor (optional)",
           "lux_threshold": "Lux threshold",
           "irradiance_entity": "Irradiance sensor (optional)",
@@ -1058,6 +1144,8 @@
           "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
           "weather_state": "The weather states that count as 'sun is out'. When the live weather state matches one of these, glare tracking runs normally. When it does not match, the cover returns to its default position. Keep the defaults (sunny, partlycloudy, clear) unless your weather integration uses different state names.",
           "is_sunny_sensor": "Optional binary sensor, input_boolean, switch, or schedule that authoritatively reports whether the sun is hitting the window. When ON, sun is assumed present; when OFF, sun is assumed absent and cloud suppression fires regardless of weather state. When unavailable or unknown, the integration falls back to the Weather Entity / Weather Conditions logic below. Use this when you compute sun-on-window upstream (e.g. azimuth-gated irradiance) and want to feed Adaptive Cover Pro a clean boolean.",
+          "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. When it renders truthy (on/true/1) sun is assumed present; when falsy it is assumed absent and cloud suppression fires. How it combines with the Is Sunny binary sensor above (OR or AND) is set by 'Is Sunny template logic' below; it can stand alone with no sensor. Example: an azimuth/elevation comparison, or a lux threshold. A template that is empty or fails to render gives no opinion, so the integration falls back to the sensor and then the Weather Entity / Weather Conditions logic. Leave empty to disable.",
+          "is_sunny_template_mode": "How the Is Sunny template combines with the Is Sunny binary sensor above. 'OR' (default) — sunny when the template is truthy OR the sensor is ON. 'AND' — sunny only when the template is truthy AND the sensor is ON. With no sensor configured, the template alone decides in either mode. Only has an effect when an Is Sunny template is set above.",
           "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
           "lux_threshold": "Illuminance level above which the sun is considered present. Below this value the cover returns to its default position instead of tracking the sun. Typical values: 5,000–10,000 lux for direct sunlight, 2,000–3,000 lux for bright indirect light. **Value is interpreted in the configured lux sensor's unit**. Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
@@ -1079,6 +1167,8 @@
           "outside_temp": "Outside temperature sensor (optional)",
           "outside_threshold": "Outside temperature threshold",
           "presence_entity": "Presence entity (optional)",
+          "presence_template": "Presence template (optional)",
+          "presence_template_mode": "Presence template logic",
           "transparent_blind": "Transparent blind",
           "winter_close_insulation": "Winter insulation mode"
         },
@@ -1090,6 +1180,8 @@
           "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
           "outside_threshold": "Minimum outdoor temperature required before summer mode activates. Guards against closing covers on a hot indoor day when it is actually cold outside. Only used when an outside temperature sensor is configured. **Value is interpreted in that outside sensor's unit, not Home Assistant's display unit.** Accepts a fixed number or a Home Assistant Jinja2 template that evaluates to a number, re-evaluated each update cycle.",
           "presence_entity": "Optional presence sensor, device tracker, or zone. When someone is home, the cover uses glare-control tracking in intermediate conditions; when nobody is home a simpler summer-closed / winter-open rule applies. Leave blank to always treat the space as occupied.",
+          "presence_template": "Optional Home Assistant Jinja2 template that reports occupancy. When it renders truthy (on/true/1) the space counts as occupied; when falsy it is treated as empty. How it combines with the Presence entity above (OR or AND) is set by 'Presence template logic' below; it can stand alone with no entity. Use this for composite occupancy (e.g. anyone home AND awake). A template that is empty or fails to render gives no opinion, so the Presence entity logic decides. Leave empty to disable.",
+          "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Enable when the blind material is sheer or translucent. In summer with occupants present a transparent blind will still close fully to reduce heat gain, whereas an opaque blind would instead follow glare-control tracking.",
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }

@@ -415,6 +415,9 @@ async def test_recover_on_restart_called_before_calculate_on_first_refresh():
     coordinator.async_handle_first_refresh = AsyncMock()
     coordinator._update_solar_times_if_needed = AsyncMock(return_value=(None, None))
     coordinator._pipeline_result = MagicMock()
+    hass.async_add_executor_job = (
+        AsyncMock()
+    )  # issue #655: prime_cache offloaded to executor
 
     call_order: list[str] = []
     original_recover = (
@@ -462,6 +465,9 @@ async def test_recover_on_restart_not_called_on_subsequent_refresh():
     coordinator.manager.reset_if_needed = AsyncMock(return_value=False)
     coordinator._update_solar_times_if_needed = AsyncMock(return_value=(None, None))
     coordinator._pipeline_result = MagicMock()
+    hass.async_add_executor_job = (
+        AsyncMock()
+    )  # issue #655: prime_cache offloaded to executor
 
     call_order: list[str] = []
 

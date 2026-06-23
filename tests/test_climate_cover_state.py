@@ -469,6 +469,107 @@ class TestClimateCoverState:
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_get_state_summer_honors_sun_tracking_only_min(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Regression for issue #631: summer close must respect min_position when
+        enable_min_position=True (sun-tracking-only mode) and sun is in FOV.
+
+        Before the fix, get_state() passed sun_valid=False to apply_snapshot_limits,
+        which caused the "sun-tracking only" gate to skip the min floor entirely —
+        returning 0 even when min_pos=30 was configured.  The fix passes
+        self.cover.direct_sun_valid so the min is honoured when tracking.
+        """
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
+        # "sun tracking only" min — enable_min_position=True
+        vertical_cover_instance.min_pos = 30
+        vertical_cover_instance.min_pos_bool = True
+
+        climate_data = _make_climate(
+            inside_temperature="27.0",  # Above temp_high (25) → summer
+            is_sunny=True,
+            is_presence=True,
+            transparent_blind=True,  # Required for NORMAL_WITH_PRESENCE summer rule
+        )
+
+        # Sun is centred in the window (sol_azi=win_azi=180, gamma≈0) so
+        # direct_sun_valid is True — exactly the user's "during sun tracking" window.
+        state_handler = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            climate_data,
+        )
+        result = state_handler.get_state()
+        # Summer closes to 0; min_pos=30 with sun in FOV must floor it to 30.
+        assert result == 30
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_get_state_sun_tracking_only_min_skipped_when_sun_not_in_fov(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Night behaviour preserved: sun-tracking-only min is NOT applied when
+        direct_sun_valid is False (sun has set / outside FOV).
+
+        With enable_min_position=True, the min floor must be skipped at night so
+        the cover can fully close as the user intends.
+        """
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
+        # "sun tracking only" min
+        vertical_cover_instance.min_pos = 30
+        vertical_cover_instance.min_pos_bool = True
+
+        with (
+            patch.object(
+                type(vertical_cover_instance), "valid", new_callable=PropertyMock
+            ) as mock_valid,
+            patch.object(
+                type(vertical_cover_instance),
+                "direct_sun_valid",
+                new_callable=PropertyMock,
+            ) as mock_dsv,
+        ):
+            mock_valid.return_value = False  # Sun outside FOV / has set
+            mock_dsv.return_value = False
+
+            # Intermediate temperature (not summer, not winter) + no presence
+            # → NORMAL_WITHOUT_PRESENCE falls through to LOW_LIGHT → default_position.
+            # default_position=0, so without a floor the result is 0.
+            climate_data = _make_climate(
+                inside_temperature="22.0",  # Between temp_low=20 and temp_high=25
+                is_sunny=False,
+                is_presence=False,
+            )
+
+            state_handler = ClimateCoverState(
+                make_snapshot_for_cover(
+                    vertical_cover_instance,
+                    default_position=0,  # Explicit 0 so the floor would be visible
+                ),
+                climate_data,
+            )
+            result = state_handler.get_state()
+            # Min floor must NOT apply when sun is out of FOV → result stays at 0
+            assert result is not None
+            assert (
+                result < 30
+            ), f"Expected result < 30 (min floor skipped at night) but got {result}"
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
     def test_normal_with_presence_winter_sunny_no_sensors(
         self, mock_datetime, vertical_cover_instance, mock_logger
     ):
@@ -1419,13 +1520,22 @@ class TestIssue373Mode2SummerTiltHemisphere:
             winter_close_insulation=False,
         )
 
-        state_handler = ClimateCoverState(
-            make_snapshot_for_cover(tilt, tilt.config.h_def),
-            climate_data,
-        )
-        # get_state() runs tilt_state() then apply_snapshot_limits — this is
-        # exactly what the pipeline does and what reproduces the issue.
-        result = state_handler.get_state()
+        # direct_sun_valid is False because the sun is outside the FOV (gamma=90 >
+        # fov_left=45).  The patch is needed because the base-class debug log in
+        # direct_sun_valid eagerly evaluates sunset_valid even when valid=False,
+        # which would crash on the unset mock_sun_data.sunset.
+        with patch.object(
+            type(tilt), "direct_sun_valid", new_callable=PropertyMock
+        ) as mock_dsv:
+            mock_dsv.return_value = False
+
+            state_handler = ClimateCoverState(
+                make_snapshot_for_cover(tilt, tilt.config.h_def),
+                climate_data,
+            )
+            # get_state() runs tilt_state() then apply_snapshot_limits — this is
+            # exactly what the pipeline does and what reproduces the issue.
+            result = state_handler.get_state()
 
         assert (
             result != 50

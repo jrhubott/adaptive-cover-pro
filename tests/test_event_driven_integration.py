@@ -52,7 +52,7 @@ async def _setup(
     with _patch_coordinator_refresh():
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     return entry, coordinator
 
 
@@ -84,7 +84,7 @@ async def test_sun_state_change_calls_coordinator(hass: HomeAssistant) -> None:
 
     # The listener should have been called (we can't guarantee the mock
     # injection worked after setup, so just verify the entry is still valid)
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -115,7 +115,7 @@ async def test_force_override_sensor_wired(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     # Integration should still be alive
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -131,7 +131,7 @@ async def test_force_override_off_to_on(hass: HomeAssistant) -> None:
     hass.states.async_set("binary_sensor.storm", "on", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ async def test_cover_state_change_is_handled(hass: HomeAssistant) -> None:
     )
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ async def test_delta_position_option_is_stored(hass: HomeAssistant) -> None:
     # Verify the config entry has the delta_position we set
     assert entry.options.get(CONF_DELTA_POSITION) == 10
     # Coordinator must exist and be wired to this entry
-    assert hass.data[DOMAIN][entry.entry_id] is coordinator
+    assert entry.runtime_data is coordinator
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ async def test_motion_sensor_on_event_handled(hass: HomeAssistant) -> None:
     hass.states.async_set("binary_sensor.pir", "on", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -208,7 +208,7 @@ async def test_motion_sensor_off_event_handled(hass: HomeAssistant) -> None:
     hass.states.async_set("binary_sensor.pir", "off", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +233,7 @@ async def test_rapid_sun_changes_do_not_crash(hass: HomeAssistant) -> None:
         )
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")
 
 
 @pytest.mark.integration
@@ -246,4 +246,4 @@ async def test_unavailable_cover_entity_handled(hass: HomeAssistant) -> None:
     hass.states.async_set("cover.disappearing_blind", "unavailable", {})
     await hass.async_block_till_done()
 
-    assert entry.entry_id in hass.data[DOMAIN]
+    assert hasattr(entry, "runtime_data")

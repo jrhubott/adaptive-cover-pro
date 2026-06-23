@@ -357,6 +357,205 @@ class TestSunnySensor:
 
 
 # ---------------------------------------------------------------------------
+# is_sunny condition template (issue #639) — needs a real hass to render Jinja
+# ---------------------------------------------------------------------------
+
+
+def _real_provider(hass):
+    """ClimateProvider bound to a real hass for template rendering."""
+    return ClimateProvider(hass=hass, logger=MagicMock())
+
+
+class TestSunnyTemplate:
+    """Optional Jinja condition template folds into is_sunny (issue #639)."""
+
+    async def test_template_true_no_sensor_no_weather(self, hass):
+        """Template ``{{ true }}`` alone → sunny."""
+        p = _real_provider(hass)
+        readings = p.read(is_sunny_template="{{ true }}")
+        assert readings.is_sunny is True
+
+    async def test_template_false_no_sensor_no_weather(self, hass):
+        """Template ``{{ false }}`` alone → not sunny (overrides default-True)."""
+        p = _real_provider(hass)
+        readings = p.read(is_sunny_template="{{ false }}")
+        assert readings.is_sunny is False
+
+    async def test_template_states_expression_true(self, hass):
+        """A states()-based template renders to True when the state is high."""
+        hass.states.async_set("sensor.elev", "30")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(is_sunny_template="{{ states('sensor.elev') | float > 10 }}")
+        assert readings.is_sunny is True
+
+    async def test_template_states_expression_false(self, hass):
+        """The same template renders to False when the state is low."""
+        hass.states.async_set("sensor.elev", "5")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(is_sunny_template="{{ states('sensor.elev') | float > 10 }}")
+        assert readings.is_sunny is False
+
+    async def test_template_or_sensor_off_template_true(self, hass):
+        """OR mode (default): sensor off, template true → sunny."""
+        hass.states.async_set("binary_sensor.sunny", "off")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            is_sunny_sensor="binary_sensor.sunny",
+            is_sunny_template="{{ true }}",
+            is_sunny_template_mode="or",
+        )
+        assert readings.is_sunny is True
+
+    async def test_template_and_sensor_off_template_true(self, hass):
+        """AND mode: sensor off, template true → not sunny (both required)."""
+        hass.states.async_set("binary_sensor.sunny", "off")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            is_sunny_sensor="binary_sensor.sunny",
+            is_sunny_template="{{ true }}",
+            is_sunny_template_mode="and",
+        )
+        assert readings.is_sunny is False
+
+    async def test_empty_template_falls_through_to_weather(self, hass):
+        """Empty template → no opinion → weather fallback wins."""
+        hass.states.async_set("weather.home", "rainy")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_template="",
+        )
+        assert readings.is_sunny is False
+
+    async def test_broken_template_falls_through_to_weather(self, hass):
+        """Broken template → no opinion → weather fallback wins."""
+        hass.states.async_set("weather.home", "sunny")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_template="{{ nonexistent_fn() }}",
+        )
+        # Template gives no opinion; weather sunny → True.
+        assert readings.is_sunny is True
+
+    async def test_non_template_string_falls_through(self, hass):
+        """A plain (non-Jinja) string is not a template → weather fallback."""
+        hass.states.async_set("weather.home", "rainy")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            weather_entity="weather.home",
+            weather_condition=["sunny"],
+            is_sunny_template="just text",
+        )
+        assert readings.is_sunny is False
+
+
+# ---------------------------------------------------------------------------
+# presence condition template (issue #639)
+# ---------------------------------------------------------------------------
+
+
+class TestPresenceTemplate:
+    """Optional Jinja condition template folds into is_presence (issue #639)."""
+
+    async def test_template_true_no_entity(self, hass):
+        """Template ``{{ true }}`` alone → present."""
+        p = _real_provider(hass)
+        readings = p.read(presence_template="{{ true }}")
+        assert readings.is_presence is True
+
+    async def test_template_false_no_entity(self, hass):
+        """Template ``{{ false }}`` alone → not present.
+
+        With no entity, the fail-open ``is_entity_active(None)`` must NOT leak
+        in as a True operand — a lone falsy template means not-present.
+        """
+        p = _real_provider(hass)
+        readings = p.read(presence_template="{{ false }}")
+        assert readings.is_presence is False
+
+    async def test_template_states_expression(self, hass):
+        """A states()-based presence template renders both directions."""
+        hass.states.async_set("sensor.people", "2")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        assert (
+            p.read(
+                presence_template="{{ states('sensor.people') | int > 0 }}"
+            ).is_presence
+            is True
+        )
+        hass.states.async_set("sensor.people", "0")
+        await hass.async_block_till_done()
+        assert (
+            p.read(
+                presence_template="{{ states('sensor.people') | int > 0 }}"
+            ).is_presence
+            is False
+        )
+
+    async def test_template_or_entity_off_template_true(self, hass):
+        """OR mode: entity not-home, template true → present."""
+        hass.states.async_set("person.alice", "not_home")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            presence_entity="person.alice",
+            presence_template="{{ true }}",
+            presence_template_mode="or",
+        )
+        assert readings.is_presence is True
+
+    async def test_template_and_entity_off_template_true(self, hass):
+        """AND mode: entity not-home, template true → not present."""
+        hass.states.async_set("person.alice", "not_home")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            presence_entity="person.alice",
+            presence_template="{{ true }}",
+            presence_template_mode="and",
+        )
+        assert readings.is_presence is False
+
+    async def test_empty_template_falls_through_to_entity(self, hass):
+        """Empty template → existing entity logic decides."""
+        hass.states.async_set("binary_sensor.presence", "on")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            presence_entity="binary_sensor.presence",
+            presence_template="",
+        )
+        assert readings.is_presence is True
+
+    async def test_broken_template_falls_through_to_entity(self, hass):
+        """Broken template → no opinion → entity logic decides."""
+        hass.states.async_set("binary_sensor.presence", "off")
+        await hass.async_block_till_done()
+        p = _real_provider(hass)
+        readings = p.read(
+            presence_entity="binary_sensor.presence",
+            presence_template="{{ nonexistent_fn() }}",
+        )
+        assert readings.is_presence is False
+
+    async def test_no_template_no_entity_default_true(self, hass):
+        """No template and no entity → present (existing fail-open behavior)."""
+        p = _real_provider(hass)
+        assert p.read().is_presence is True
+
+
+# ---------------------------------------------------------------------------
 # Lux
 # ---------------------------------------------------------------------------
 

@@ -9,6 +9,10 @@ on:
       - main
       - develop
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Format check (Black)
@@ -22,9 +26,11 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install Black
-        run: pip install black==25.1.0
+        run: pip install "black~=26.5"
 
       - name: Run black --check
         run: black --check .
@@ -52,6 +58,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install dependencies (stable — HA 2026.3.1)
         if: matrix.ha-channel == 'stable'
@@ -72,12 +80,19 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov --cov-report=xml --cov-report=term
+          pytest -n auto --cov --cov-report=xml --cov-report=term \
+            --junitxml=junit.xml -o junit_family=legacy
 
       - name: Upload coverage to Codecov (stable only)
         if: matrix.python-version == '3.14' && matrix.ha-channel == 'stable'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov (stable only)
+        if: ${{ !cancelled() && matrix.python-version == '3.14' && matrix.ha-channel == 'stable' }}
+        uses: codecov/test-results-action@v1
+        with:
           token: ${{ secrets.CODECOV_TOKEN }}

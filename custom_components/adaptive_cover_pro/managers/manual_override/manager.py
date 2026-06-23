@@ -415,6 +415,12 @@ class AdaptiveCoverManager:
         new_position = policy.read_axis_value(
             self.hass, entity_id, caps, state_obj=new_state
         )
+        old_state_obj = getattr(event, "old_state", None)
+        old_position = (
+            policy.read_axis_value(self.hass, entity_id, caps, state_obj=old_state_obj)
+            if old_state_obj is not None
+            else None
+        )
 
         now = dt.datetime.now(dt.UTC)
         ctx_obj = getattr(new_state, "context", None)
@@ -424,8 +430,9 @@ class AdaptiveCoverManager:
             entity_id=entity_id,
             our_state=our_state,
             new_state=new_state,
-            old_state=getattr(event, "old_state", None),
+            old_state=old_state_obj,
             new_position=new_position,
+            old_position=old_position,
             caps=caps,
             policy=policy,
             manual_threshold=manual_threshold,

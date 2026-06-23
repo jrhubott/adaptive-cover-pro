@@ -37,13 +37,25 @@ class ManualOverrideHandler(OverrideHandler):
 
         if snapshot.cover.direct_sun_valid:
             position = compute_solar_position(snapshot)
-            reason = f"manual override active — holding solar position {position}%"
+            if held_position is not None:
+                reason = (
+                    f"manual override active — holding {held_position}%"
+                    f" (solar would-be {position}%)"
+                )
+            else:
+                reason = f"manual override active — solar would-be {position}%"
         else:
             position = compute_default_position(snapshot)
             pos_label = (
                 "sunset position" if snapshot.is_sunset_active else "default position"
             )
-            reason = f"manual override active — holding {pos_label} {position}%"
+            if held_position is not None:
+                reason = (
+                    f"manual override active — holding {held_position}%"
+                    f" ({pos_label} would be {position}%)"
+                )
+            else:
+                reason = f"manual override active — {pos_label} {position}%"
 
         return PipelineResult(
             position=position,

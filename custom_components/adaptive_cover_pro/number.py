@@ -15,23 +15,20 @@ from .const import (
     CONF_MY_POSITION_VALUE,
     CONF_SENSOR_TYPE,
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
-    DOMAIN,
     _RANGE_MY_POSITION,
 )
-from .coordinator import AdaptiveDataUpdateCoordinator
+from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .entity_base import AdaptiveCoverBaseEntity
 from .services.options_service import apply_options_patch, validate_options_patch
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: AdaptiveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the number platform."""
-    coordinator: AdaptiveDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
 
     numbers = []
 

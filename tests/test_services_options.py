@@ -31,6 +31,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_ENABLE_MIN_POSITION,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -227,6 +228,22 @@ class TestFieldValidators:
     def test_none_always_accepted(self):
         for _key, validator in FIELD_VALIDATORS.items():
             validator(None)  # should not raise for any field
+
+    def test_end_of_window_pos_in_option_ranges(self):
+        """Issue #625: end-of-window position range is single-sourced (0, 100)."""
+        from custom_components.adaptive_cover_pro.const import OPTION_RANGES
+
+        assert OPTION_RANGES[CONF_END_OF_WINDOW_POS] == (0, 100)
+
+    def test_end_of_window_pos_validator(self):
+        """Issue #625: validator accepts None/0/100, rejects out-of-range."""
+        FIELD_VALIDATORS[CONF_END_OF_WINDOW_POS](None)
+        FIELD_VALIDATORS[CONF_END_OF_WINDOW_POS](0)
+        FIELD_VALIDATORS[CONF_END_OF_WINDOW_POS](100)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_END_OF_WINDOW_POS](101)
+        with pytest.raises(Exception):
+            FIELD_VALIDATORS[CONF_END_OF_WINDOW_POS](-1)
 
     def test_bool_field_accepts_bool(self):
         FIELD_VALIDATORS[CONF_ENABLE_MIN_POSITION](True)

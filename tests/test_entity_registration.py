@@ -359,14 +359,14 @@ async def test_target_position_sensor_unit_percentage(hass: HomeAssistant) -> No
 async def test_unload_entry_removes_coordinator(hass: HomeAssistant) -> None:
     """Unloading the entry removes the coordinator from hass.data."""
     entry = await _setup_entry(hass, entry_id="unload_01")
-    assert entry.entry_id in hass.data.get(DOMAIN, {})
+    assert hasattr(entry, "runtime_data")
 
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.entry_id not in hass.data.get(
-        DOMAIN, {}
-    ), "Coordinator should be removed from hass.data after unload"
+    assert not hasattr(
+        entry, "runtime_data"
+    ), "Coordinator should be removed from runtime_data after unload"
 
 
 @pytest.mark.integration
@@ -374,13 +374,13 @@ async def test_reload_creates_fresh_coordinator(hass: HomeAssistant) -> None:
     """Reloading the entry creates a new coordinator instance."""
     entry = await _setup_entry(hass, entry_id="reload_coord_01")
 
-    coordinator_before = hass.data[DOMAIN][entry.entry_id]
+    coordinator_before = entry.runtime_data
 
     with _patch_coordinator_refresh():
         await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
 
-    coordinator_after = hass.data[DOMAIN][entry.entry_id]
+    coordinator_after = entry.runtime_data
     assert (
         coordinator_before is not coordinator_after
     ), "Reload should create a new coordinator instance"

@@ -30,6 +30,9 @@ from .const import (
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DAYTIME_GATE_TEMPLATE_MODE,
     CONF_DEFAULT_HEIGHT,
     CONF_DEFAULT_TILT,
     CONF_DELTA_POSITION,
@@ -45,6 +48,7 @@ from .const import (
     CONF_ENABLE_PROXY_COVER,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
@@ -59,6 +63,8 @@ from .const import (
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_ENABLE_PROXY_COVER,
+    DEFAULT_MAX_COVERAGE_STEPS,
+    DEFAULT_MINIMIZE_MOVEMENTS,
     CONF_FOV_COMPUTE,
     CONF_FOV_LEFT,
     CONF_FOV_RIGHT,
@@ -74,6 +80,8 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -98,6 +106,7 @@ from .const import (
     CONF_MOTION_TIMEOUT_MODE,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_MOTION_TIMEOUT_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
     MOTION_TIMEOUT_MODE_HOLD,
     MOTION_TIMEOUT_MODE_RETURN,
     CONF_OPEN_CLOSE_THRESHOLD,
@@ -105,6 +114,8 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
     CONF_SILL_HEIGHT,
@@ -126,7 +137,11 @@ from .const import (
     CONF_WINTER_CLOSE_INSULATION,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -241,6 +256,23 @@ from .config_dynamic import (  # noqa: E402
     temperature_climate_schema,
     weather_override_schema,
 )
+from .pipeline.handlers import (  # noqa: E402
+    HANDLER_PRIORITY_CONF,
+    resolve_handler_priority,
+)
+from .priority_chain import build_priority_chain  # noqa: E402
+
+
+def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
+    """Effective built-in handler priorities for *config* (override or default).
+
+    Fed to :func:`build_priority_chain` so the rendered ladder and the summary
+    decision-chain reflect the user's configured priorities, not just the class
+    defaults.
+    """
+    return {
+        name: resolve_handler_priority(config, name) for name in HANDLER_PRIORITY_CONF
+    }
 
 
 # Module-level constant for tests / imports. Identical to the legacy
@@ -252,6 +284,39 @@ SUN_TRACKING_SCHEMA = sun_tracking_schema()
 # Keys in SUN_TRACKING_SCHEMA stored in canonical metres.
 _SUN_TRACKING_LENGTH_KEYS: tuple[str, ...] = (CONF_DISTANCE,)
 
+_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
+_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
+_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
+
+
+def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a single or multi-pick selector for on/off entities."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
+    )
+
+
+def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
+    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
+    )
+
+
+def _template_combine_mode_selector() -> selector.SelectSelector:
+    """Return the shared OR/AND combine-mode selector (motion + daytime gate)."""
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[m.value for m in TemplateCombineMode],
+            mode=selector.SelectSelectorMode.LIST,
+            translation_key="template_combine_mode",
+        )
+    )
+
+
+# ── Layer 2a: positions ─────────────────────────────────────────────────────
+# Every percentage target value lives here and only here (#613). Handlers and
+# the behavior step reference these positions; they never redefine one.
 POSITION_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DEFAULT_HEIGHT, default=60): selector.NumberSelector(
@@ -296,12 +361,6 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
-        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
-        ),
         vol.Optional(CONF_SUNSET_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -311,23 +370,15 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
+        vol.Optional(CONF_END_OF_WINDOW_POS): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=-120,
-                max=120,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="minutes",
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
             )
         ),
-        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=-120,
-                max=120,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="minutes",
-            )
-        ),
-        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
         vol.Optional(
             CONF_ENABLE_MY_POSITION_ENTITIES,
             default=DEFAULT_ENABLE_MY_POSITION_ENTITIES,
@@ -350,6 +401,51 @@ POSITION_SCHEMA = vol.Schema(
                 unit_of_measurement="%",
             )
         ),
+        vol.Optional(CONF_INTERP, default=False): selector.BooleanSelector(),
+    }
+)
+
+# ── Layer 2b: behavior (timing & thresholds) ────────────────────────────────
+# Non-percentage tuning: sunset/sunrise timing, position tolerance/matching, and
+# inverse-state. Separated from the L2a positions so each surface is single-
+# purpose (#613).
+BEHAVIOR_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_SUNSET_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNRISE_TIME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        vol.Optional(CONF_SUNSET_OFFSET, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_SUNRISE_OFFSET, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-120,
+                max=120,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(CONF_RETURN_SUNSET, default=False): selector.BooleanSelector(),
+        # Daytime gate (issue #632): a binary-sensor list and/or a Jinja condition
+        # template that REPLACES the astronomical sunset/sunrise boundary when set.
+        # On/truthy = daytime (track); off/falsy = dark (apply sunset position).
+        # Mirrors the motion gate shape (sensors + template + combine mode). Lives on
+        # the behavior step beside the sunset-timing options it overrides.
+        vol.Optional(CONF_DAYTIME_GATE_SENSORS, default=[]): _binary_on_selector(
+            multiple=True
+        ),
+        vol.Optional(CONF_DAYTIME_GATE_TEMPLATE): selector.TemplateSelector(),
+        vol.Optional(
+            CONF_DAYTIME_GATE_TEMPLATE_MODE, default=DEFAULT_TEMPLATE_COMBINE_MODE
+        ): _template_combine_mode_selector(),
         vol.Optional(CONF_POSITION_TOLERANCE, default=3): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
@@ -364,7 +460,6 @@ POSITION_SCHEMA = vol.Schema(
             default=DEFAULT_ENABLE_POSITION_MATCHING,
         ): selector.BooleanSelector(),
         vol.Optional(CONF_INVERSE_STATE, default=False): selector.BooleanSelector(),
-        vol.Optional(CONF_INTERP, default=False): selector.BooleanSelector(),
     }
 )
 
@@ -374,12 +469,24 @@ POSITION_SCHEMA = vol.Schema(
 # (issue #439; same class as #323).
 _POSITION_OPTIONAL_KEYS: list[str] = [
     CONF_SUNSET_POS,
+    CONF_END_OF_WINDOW_POS,
     CONF_MY_POSITION_VALUE,
     CONF_MIN_POSITION_SUN_TRACKING,
-    CONF_SUNSET_TIME_ENTITY,
-    CONF_SUNRISE_TIME_ENTITY,
 ]
 
+# Same clear-handling for the L2b behavior step's entity pickers.
+_BEHAVIOR_OPTIONAL_KEYS: list[str] = [
+    CONF_SUNSET_TIME_ENTITY,
+    CONF_SUNRISE_TIME_ENTITY,
+    # Daytime gate template has no schema default → cleared = absent (issue #632).
+    # The sensor list carries default=[] so it round-trips on its own (NOT here).
+    CONF_DAYTIME_GATE_TEMPLATE,
+]
+
+# ── Layer 4: global motion constraints ──────────────────────────────────────
+# Applied after the pipeline picks a position, regardless of which handler won:
+# movement deltas, the schedule window, and the movement-minimization controls
+# (relocated here from the sun-tracking step, #613).
 AUTOMATION_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DELTA_POSITION, default=2): selector.NumberSelector(
@@ -397,6 +504,19 @@ AUTOMATION_SCHEMA = vol.Schema(
                 max=60,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="minutes",
+            )
+        ),
+        vol.Optional(
+            CONF_MINIMIZE_MOVEMENTS, default=DEFAULT_MINIMIZE_MOVEMENTS
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_MAX_COVERAGE_STEPS, default=DEFAULT_MAX_COVERAGE_STEPS
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=10,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
         vol.Optional(CONF_START_ENTITY): selector.EntitySelector(
@@ -451,24 +571,6 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
     }
 )
 
-_BINARY_ON_DOMAINS = ["binary_sensor", "input_boolean", "switch", "schedule"]
-_PRESENCE_LIKE_DOMAINS = _BINARY_ON_DOMAINS + ["device_tracker", "person", "zone"]
-_NUMERIC_DOMAINS = ["sensor", "input_number", "number"]
-
-
-def _binary_on_selector(*, multiple: bool = False) -> selector.EntitySelector:
-    """Return a single or multi-pick selector for on/off entities."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=_BINARY_ON_DOMAINS, multiple=multiple)
-    )
-
-
-def _presence_like_selector(*, multiple: bool = False) -> selector.EntitySelector:
-    """Return a selector for presence-shaped entities (motion, occupancy, presence)."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(domain=_PRESENCE_LIKE_DOMAINS, multiple=multiple)
-    )
-
 
 def _build_custom_position_schema_dict(sensor_type: str | None = None) -> dict:
     """Compose the custom-position schema dict for the given cover type.
@@ -499,6 +601,11 @@ _CUSTOM_POSITION_OPTIONAL_KEYS: list[str] = [
     for field in ("template", "position", "priority", "tilt")
 ] + [CONF_DEFAULT_TILT, CONF_SUNSET_TILT]
 
+# Built-in handler priority sliders: clearing one omits it from user_input, so
+# optional_entities() nulls it and resolve_handler_priority falls back to the
+# class default.
+_PIPELINE_PRIORITY_OPTIONAL_KEYS: list[str] = list(config_fields.PIPELINE_PRIORITY_KEYS)
+
 MOTION_OVERRIDE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MOTION_SENSORS, default=[]): _presence_like_selector(
@@ -510,13 +617,7 @@ MOTION_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOTION_TEMPLATE): selector.TemplateSelector(),
         vol.Optional(
             CONF_MOTION_TEMPLATE_MODE, default=DEFAULT_MOTION_TEMPLATE_MODE
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[m.value for m in TemplateCombineMode],
-                mode=selector.SelectSelectorMode.LIST,
-                translation_key="template_combine_mode",
-            )
-        ),
+        ): _template_combine_mode_selector(),
         vol.Optional(
             CONF_MOTION_TIMEOUT, default=DEFAULT_MOTION_TIMEOUT
         ): selector.NumberSelector(
@@ -583,7 +684,9 @@ _WEATHER_OVERRIDE_OPTIONAL_KEYS: list[str] = [
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
 ]
 
 
@@ -600,6 +703,7 @@ _LIGHT_CLOUD_OPTIONAL_KEYS: list[str] = [
     CONF_CLOUDY_POSITION,
     CONF_WEATHER_ENTITY,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
     CONF_LUX_ENTITY,
     CONF_IRRADIANCE_ENTITY,
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -624,6 +728,7 @@ _TEMPERATURE_CLIMATE_OPTIONAL_KEYS: list[str] = [
     CONF_TEMP_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
 ]
 
 WEATHER_OPTIONS = vol.Schema(
@@ -1152,6 +1257,30 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "{indent}🌄 After sunrise{ann} → {default_pos}% (tracking resumes)."
     ),
     "timing.return_sunset": "{indent}🔚 Return to sunset position at end time: on",
+    "timing.end_of_window": (
+        "{indent}🔚 End-of-window position → {target} from end time until sunset "
+        "(then the sunset position applies, if set)."
+    ),
+    "timing.end_of_window_needs_return": (
+        '{indent}⚠️ End-of-window position is set but "Move covers when end time '
+        'is reached" is OFF — it will not be applied. Turn that toggle on.'
+    ),
+    # --- Daytime gate (issue #632) ---
+    "timing.gate_sensors": "{indent}🌗 Daytime gate: {sensors} decide day vs dark.",
+    "timing.gate_template": "{indent}🌗 Daytime gate: a template decides day vs dark.",
+    "timing.gate_both": (
+        "{indent}🌗 Daytime gate: {sensors} and a template ({mode}) decide day "
+        "vs dark."
+    ),
+    "timing.gate_explainer": (
+        "{indent}When the gate reads daytime ACP sun-tracks; when it reads dark "
+        "ACP applies the sunset position. The gate replaces the astronomical "
+        "sunset/sunrise boundary; start/end times still clamp the window."
+    ),
+    "timing.gate_offset_ignored": (
+        "{indent}⚠️ Sunset/Sunrise Offset is ignored while a daytime gate is set "
+        "— the gate, not the clock, decides the boundary."
+    ),
     # --- Blind spot ---
     "blind_spot.line": (
         "🟥 Blind spot: ignores sun at {bs} inward from FOV left (e.g. tree "
@@ -1315,17 +1444,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     motion_timeout = config.get(CONF_MOTION_TIMEOUT, 300)
     manual_dur = config.get(CONF_MANUAL_OVERRIDE_DURATION)
 
+    from .helpers import motion_entities
+    from .templates import is_template_string
+
     has_weather = any(
         [
             config.get(CONF_WEATHER_WIND_SPEED_SENSOR),
             config.get(CONF_WEATHER_RAIN_SENSOR),
             config.get(CONF_WEATHER_IS_RAINING_SENSOR),
             config.get(CONF_WEATHER_IS_WINDY_SENSOR),
+            is_template_string(config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)),
+            is_template_string(config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)),
             bool(config.get(CONF_WEATHER_SEVERE_SENSORS)),
         ]
     )
-    from .helpers import motion_entities
-    from .templates import is_template_string
 
     def _thresh_display(value: Any, *, placeholder: str) -> str:
         return placeholder if is_template_string(str(value)) else str(value)
@@ -1392,6 +1524,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     def _badge(priority: int) -> str:
         """Render a priority badge suffix: two nbsp + [N]."""
         return f"\u00a0\u00a0[{priority}]"
+
+    # Effective built-in handler priorities (configured overrides or class
+    # defaults). Each rule's badge reads its own handler here so a re-ordered
+    # chain shows the user's real numbers, not the hardcoded defaults.
+    _prio = _handler_priority_overrides(config)
 
     def _fmt_sun_dt(value) -> str | None:
         """Format a sun-times datetime as HH:MM; None passes through."""
@@ -1468,8 +1605,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         wind_dir_tol = config.get(CONF_WEATHER_WIND_DIRECTION_TOLERANCE)
         rain_sensor = config.get(CONF_WEATHER_RAIN_SENSOR)
         rain_thresh = config.get(CONF_WEATHER_RAIN_THRESHOLD)
-        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR)
-        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR)
+        is_rain = config.get(CONF_WEATHER_IS_RAINING_SENSOR) or is_template_string(
+            config.get(CONF_WEATHER_IS_RAINING_TEMPLATE)
+        )
+        is_wind = config.get(CONF_WEATHER_IS_WINDY_SENSOR) or is_template_string(
+            config.get(CONF_WEATHER_IS_WINDY_TEMPLATE)
+        )
         severe = config.get(CONF_WEATHER_SEVERE_SENSORS) or []
         if wind_sensor and wind_thresh is not None:
             wind_part = L["weather.wind"].format(
@@ -1515,7 +1656,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 delay=delay_str,
                 bypass=bypass_str,
             )
-            + _badge(90)
+            + _badge(_prio["weather"])
         )
 
     # Manual override (80)
@@ -1542,7 +1683,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             L["manual.transit_timeout"].format(seconds=int(transit_timeout))
         )
     mo_str = f" ({', '.join(mo_parts)})" if mo_parts else ""
-    lines.append(L["rules.manual"].format(detail=mo_str) + _badge(80))
+    lines.append(
+        L["rules.manual"].format(detail=mo_str) + _badge(_prio["manual_override"])
+    )
 
     # Custom positions — each slot at its own configured priority
     if has_custom_position:
@@ -1635,7 +1778,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 sources=sources,
                 action=action,
             )
-            + _badge(75)
+            + _badge(_prio["motion_timeout"])
         )
     elif timeout_mode == MOTION_TIMEOUT_MODE_HOLD:
         lines.append(L["warnings.motion_hold_no_sensors"])
@@ -1643,8 +1786,13 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     # Cloud suppression (60)
     if has_cloud:
         cloud_parts = []
-        if v := config.get(CONF_IS_SUNNY_SENSOR):
-            cloud_parts.append(L["cloud.is_sunny"].format(value=v))
+        is_sunny_value = config.get(CONF_IS_SUNNY_SENSOR) or (
+            L["fragments.template_value"]
+            if is_template_string(config.get(CONF_IS_SUNNY_TEMPLATE))
+            else None
+        )
+        if is_sunny_value:
+            cloud_parts.append(L["cloud.is_sunny"].format(value=is_sunny_value))
         if v := config.get(CONF_LUX_ENTITY):
             t = config.get(CONF_LUX_THRESHOLD)
             cloud_parts.append(
@@ -1681,7 +1829,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             fallback_label = L["cloud.fallback_default"].format(default_pos=default_pos)
         lines.append(
             L["rules.cloud"].format(cloud=cloud_str, fallback=fallback_label)
-            + _badge(60)
+            + _badge(_prio["cloud_suppression"])
         )
     elif any(
         [
@@ -1738,7 +1886,11 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         weather_ent = config.get(CONF_WEATHER_ENTITY)
         if weather_ent:
             cl_parts.append(L["climate.weather"].format(entity=weather_ent))
-        presence = config.get(CONF_PRESENCE_ENTITY)
+        presence = config.get(CONF_PRESENCE_ENTITY) or (
+            L["fragments.template_value"]
+            if is_template_string(config.get(CONF_PRESENCE_TEMPLATE))
+            else None
+        )
         if presence:
             cl_parts.append(L["climate.presence"].format(entity=presence))
         if config.get(CONF_TRANSPARENT_BLIND):
@@ -1746,7 +1898,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if config.get(CONF_WINTER_CLOSE_INSULATION):
             cl_parts.append(L["climate.winter_close"])
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
-        lines.append(L["rules.climate"].format(detail=cl_str) + _badge(50))
+        lines.append(
+            L["rules.climate"].format(detail=cl_str) + _badge(_prio["climate"])
+        )
 
     # Glare zones — vertical only (45, below climate)
     if has_glare:
@@ -1773,7 +1927,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 )
             )
         gz_str = f" ({', '.join(gz_parts)})" if gz_parts else ""
-        lines.append(L["rules.glare"].format(detail=gz_str) + _badge(45))
+        lines.append(
+            L["rules.glare"].format(detail=gz_str) + _badge(_prio["glare_zone"])
+        )
 
     # Solar tracking — baseline calculation (40)
     azimuth = config.get(CONF_AZIMUTH)
@@ -1807,7 +1963,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         else:
             today_str = ""
         lines.append(
-            L["rules.solar"].format(sun_desc=sun_desc, today=today_str) + _badge(40)
+            L["rules.solar"].format(sun_desc=sun_desc, today=today_str)
+            + _badge(_prio["solar"])
         )
         if config.get(CONF_MINIMIZE_MOVEMENTS, False):
             steps = int(config.get(CONF_MAX_COVERAGE_STEPS, 1))
@@ -1818,7 +1975,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
                 detail = L["solar.minimize_steps"].format(steps=steps)
             lines.append(L["solar.minimize"].format(indent=indent, detail=detail))
     else:
-        lines.append(L["rules.solar_disabled"] + _badge(40))
+        lines.append(L["rules.solar_disabled"] + _badge(_prio["solar"]))
 
     # Timing window (sub-bullet under ☀️)
     start_time = config.get(CONF_START_TIME)
@@ -1826,6 +1983,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     end_time = config.get(CONF_END_TIME)
     end_entity = config.get(CONF_END_ENTITY)
     sunset_pos = config.get(CONF_SUNSET_POS)
+    eow_pos = config.get(CONF_END_OF_WINDOW_POS)
     sunset_off = config.get(CONF_SUNSET_OFFSET, 0) or 0
     sunrise_off = config.get(CONF_SUNRISE_OFFSET, 0) or 0
     sunset_time_entity = config.get(CONF_SUNSET_TIME_ENTITY)
@@ -1847,7 +2005,12 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         config.get(key) not in (None, BLANK_TIME)
         for key in (CONF_START_ENTITY, CONF_END_ENTITY)
     ) or any(key in config for key in (CONF_START_TIME, CONF_END_TIME))
-    if timing_parts or sunset_pos is not None or schedule_configured:
+    if (
+        timing_parts
+        or sunset_pos is not None
+        or schedule_configured
+        or eow_pos is not None
+    ):
         timing_str = (
             " ".join(timing_parts) if timing_parts else L["timing.active_daylight"]
         )
@@ -1909,6 +2072,51 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             )
             if config.get(CONF_RETURN_SUNSET):
                 lines.append(L["timing.return_sunset"].format(indent=indent))
+
+        # End-of-window position (issue #625) — renders independently of
+        # sunset_pos (a user may set it WITHOUT a sunset position). Footgun:
+        # the position only applies when CONF_RETURN_SUNSET ("Move covers when
+        # end time is reached") is on.
+        if eow_pos is not None:
+            lines.append(
+                L["timing.end_of_window"].format(
+                    indent=indent, target=_pos_label(int(eow_pos), use_my=False)
+                )
+            )
+            if not config.get(CONF_RETURN_SUNSET):
+                lines.append(
+                    L["timing.end_of_window_needs_return"].format(indent=indent)
+                )
+
+    # Daytime gate (issue #632) — when configured it OWNS the day/night boundary,
+    # replacing the astronomical sunset/sunrise calc. Rendered independently of the
+    # timing window so it shows even with no sunset_pos / schedule configured.
+    gate_sensors = config.get(CONF_DAYTIME_GATE_SENSORS) or []
+    gate_template = config.get(CONF_DAYTIME_GATE_TEMPLATE)
+    gate_has_template = is_template_string(gate_template)
+    gate_mode = config.get(
+        CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+    )
+    if gate_sensors or gate_has_template:
+        indent = " " * 4
+        sensors_str = ", ".join(gate_sensors)
+        if gate_sensors and gate_has_template:
+            lines.append(
+                L["timing.gate_both"].format(
+                    indent=indent, sensors=sensors_str, mode=gate_mode
+                )
+            )
+        elif gate_sensors:
+            lines.append(
+                L["timing.gate_sensors"].format(indent=indent, sensors=sensors_str)
+            )
+        else:
+            lines.append(L["timing.gate_template"].format(indent=indent))
+        lines.append(L["timing.gate_explainer"].format(indent=indent))
+        # Footgun: sunset/sunrise offsets are no-ops once the gate owns the
+        # boundary. Only warn when an offset is actually set (avoid noise).
+        if sunset_off or sunrise_off:
+            lines.append(L["timing.gate_offset_ignored"].format(indent=indent))
 
     # Blind spot (sub-bullet / informational, no priority of its own)
     if config.get(CONF_ENABLE_BLIND_SPOT):
@@ -2059,30 +2267,65 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mark = "✅" if active else "❌"
         return f"{mark}{short}"
 
-    # Build the full priority chain including per-slot custom positions.
-    # Each entry is (priority, label, active) so we can sort and render.
-    _chain_entries: list[tuple[int, str, bool]] = [
-        (90, "Weather", has_weather),
-        (80, "Manual", True),
-        (75, "Motion", has_motion),
-        (60, "Cloud", has_cloud),
-        (50, "Climate", has_climate),
-        (40, "Solar", sun_tracking_enabled),
-        (0, "Default", True),
-    ]
-    if summary_policy.supports_glare_zones:
-        _chain_entries.append((45, "Glare", has_glare))
-    # Insert one entry per custom slot at its configured priority
-    for _slot, _trigger, _pos, _pri, _use_my, _slot_tilt, _tilt_only in _custom_slots:
-        _chain_entries.append((_pri, f"Custom#{_slot}({_pri})", True))
-    # Sort highest priority first
-    _chain_entries.sort(key=lambda e: e[0], reverse=True)
-    chain = [_ch(active, short) for _pri, short, active in _chain_entries]
+    # Build the full priority chain (fixed anchors + per-slot custom positions)
+    # via the shared helper, which owns the priority integers and ordering.
+    _chain_entries = build_priority_chain(
+        has_weather=has_weather,
+        has_motion=has_motion,
+        has_cloud=has_cloud,
+        has_climate=has_climate,
+        sun_tracking_enabled=sun_tracking_enabled,
+        has_glare=has_glare,
+        supports_glare=summary_policy.supports_glare_zones,
+        custom_slots=_custom_slots,
+        priorities=_handler_priority_overrides(config),
+    )
+    chain = [_ch(e.active, e.label) for e in _chain_entries]
 
     lines.append("")
     lines.append(L["headers.decision_priority"])
     lines.append(" → ".join(chain))
 
+    return "\n".join(lines)
+
+
+def _render_priority_scale(config: dict, policy) -> str:
+    """Render the decision-priority ladder for the custom-slot step (#613).
+
+    Shows every fixed handler anchor at its declared priority plus each
+    configured custom slot interleaved at its own priority and marked with
+    ``◀``, so the user sees where a 1–100 slot priority lands. Built from the
+    shared :func:`build_priority_chain` — the priority integers live there, not
+    here. HA options flows cannot recompute live as the slider moves, so the
+    ladder reflects the *last submitted* priorities and refreshes on re-render.
+    """
+    custom_slots: list[tuple] = []
+    for slot, slot_keys in CUSTOM_POSITION_SLOTS.items():
+        if not custom_position_slot_configured(config, slot_keys):
+            continue
+        priority = int(
+            config.get(slot_keys["priority"]) or DEFAULT_CUSTOM_POSITION_PRIORITY
+        )
+        # build_priority_chain reads index 0 (slot) and 3 (priority).
+        custom_slots.append((slot, None, 0, priority, False, None, False))
+
+    entries = build_priority_chain(
+        has_weather=True,
+        has_motion=True,
+        has_cloud=True,
+        has_climate=True,
+        sun_tracking_enabled=True,
+        has_glare=True,
+        supports_glare=policy.supports_glare_zones,
+        custom_slots=custom_slots,
+        priorities=_handler_priority_overrides(config),
+    )
+
+    lines = ["```"]
+    for entry in entries:
+        marker = "◀" if entry.slot is not None else " "
+        lines.append(f"{entry.priority:>3} {marker} {entry.label}")
+    lines.append("```")
     return "\n".join(lines)
 
 
@@ -2173,6 +2416,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_ENABLE_MIN_POSITION,
             CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNSET_POS,
+            CONF_END_OF_WINDOW_POS,
             CONF_ENABLE_MY_POSITION_ENTITIES,
             CONF_MY_POSITION_VALUE,
             CONF_SUNSET_USE_MY,
@@ -2180,6 +2424,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_SUNRISE_OFFSET,
             CONF_SUNSET_TIME_ENTITY,
             CONF_SUNRISE_TIME_ENTITY,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_DAYTIME_GATE_TEMPLATE_MODE,
             CONF_OPEN_CLOSE_THRESHOLD,
             CONF_POSITION_TOLERANCE,
             CONF_ENABLE_POSITION_MATCHING,
@@ -2285,6 +2532,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
             CONF_WEATHER_TIMEOUT,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         }
     ),
     "weather_override_sensors": frozenset(
@@ -2293,7 +2542,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
             CONF_WEATHER_SEVERE_SENSORS,
         }
     ),
@@ -2308,7 +2559,11 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
             CONF_WEATHER_SEVERE_SENSORS,
             CONF_WEATHER_OVERRIDE_POSITION,
             CONF_WEATHER_OVERRIDE_MIN_MODE,
@@ -2323,6 +2578,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_COVERAGE_THRESHOLD,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
     "light_cloud_sensors": frozenset(
@@ -2332,6 +2588,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IRRADIANCE_ENTITY,
             CONF_CLOUD_COVERAGE_ENTITY,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
         }
     ),
     # Legacy alias: full union of light_cloud_values + light_cloud_sensors
@@ -2348,6 +2605,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
     "temperature_climate_values": frozenset(
@@ -2358,6 +2617,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDE_THRESHOLD,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+            CONF_PRESENCE_TEMPLATE_MODE,
         }
     ),
     "temperature_climate_sensors": frozenset(
@@ -2365,6 +2625,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_TEMP_ENTITY,
             CONF_OUTSIDETEMP_ENTITY,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
         }
     ),
     # Legacy alias: full union of temperature_climate_values + temperature_climate_sensors
@@ -2377,6 +2638,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDETEMP_ENTITY,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
+            CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
         }
@@ -2394,6 +2657,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
+            CONF_IS_SUNNY_TEMPLATE_MODE,
             CONF_CLIMATE_MODE,
             CONF_TEMP_ENTITY,
             CONF_TEMP_LOW,
@@ -2401,6 +2666,8 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDETEMP_ENTITY,
             CONF_OUTSIDE_THRESHOLD,
             CONF_PRESENCE_ENTITY,
+            CONF_PRESENCE_TEMPLATE,
+            CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
         }
@@ -2664,10 +2931,14 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
     VERSION = 3
-    # 3.2 (issue #563): force override merged into custom-position slot 5.
-    # Minor bump on purpose — older releases can still load 3.2 entries, so
-    # users can roll back; the migration is additive (legacy keys retained).
-    MINOR_VERSION = 2
+    # 3.4 (issue #591/#606): MINOR_VERSION raised so HA triggers
+    # async_migrate_entry for entries below 3.4.  The v3.3→v3.4 block enables
+    # position matching for every pre-existing entry so upgrades keep the old
+    # reconcile/chase behavior; new installs default to off via the schema.
+    # 3.3 (issue #563 trailing defect): copy legacy custom_position_sensor_N
+    # into the new list key.
+    # Rollback-safe: every migration block is additive (existing keys retained).
+    MINOR_VERSION = 4
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -2828,8 +3099,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 self.hass, user_input, length_keys=_glare_zone_length_keys()
             )
             self.config.update(canonical)
-            if self.config.get(CONF_INTERP):
-                return await self.async_step_interp()
+            # Glare zone (priority 45) is the last L3 handler → L4 automation.
             return await self.async_step_automation()
 
         schema = _build_glare_zones_schema(self.config, self.hass)
@@ -2872,6 +3142,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(canonical)
+            # L1 physical setup: the blind-spot sub-step (when enabled) attaches
+            # to the window here, before L2 positions. Quick setup skips it.
+            if self.config.get(CONF_ENABLE_BLIND_SPOT) and self.setup_mode != "quick":
+                return await self.async_step_blind_spot()
             return await self.async_step_position()
         return self._show_sun_tracking_form(self.config)
 
@@ -2903,18 +3177,29 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             # Quick setup: skip optional screens, go straight to summary
             if self.setup_mode == "quick":
                 return await self.async_step_summary()
-            if self.config.get(CONF_ENABLE_BLIND_SPOT):
-                return await self.async_step_blind_spot()
-            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
-                CONF_ENABLE_GLARE_ZONES
-            ):
-                return await self.async_step_glare_zones()
-            if self.config.get(CONF_INTERP):
-                return await self.async_step_interp()
-            return await self.async_step_automation()
+            # L2a positions → L2b behavior.
+            return await self.async_step_behavior()
         return self.async_show_form(
             step_id="position",
             data_schema=POSITION_SCHEMA,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
+            },
+        )
+
+    async def async_step_behavior(self, user_input: dict[str, Any] | None = None):
+        """Configure L2b timing & threshold behavior."""
+        if user_input is not None:
+            self.optional_entities(_BEHAVIOR_OPTIONAL_KEYS, user_input)
+            self.config.update(user_input)
+            # L2 calibration (interp) stays attached to positions/behavior; then
+            # the L3 handler steps begin in pipeline-priority order (weather = 90).
+            if self.config.get(CONF_INTERP):
+                return await self.async_step_interp()
+            return await self.async_step_weather_override()
+        return self.async_show_form(
+            step_id="behavior",
+            data_schema=BEHAVIOR_SCHEMA,
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
                 "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
@@ -2937,13 +3222,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
-                CONF_ENABLE_GLARE_ZONES
-            ):
-                return await self.async_step_glare_zones()
-            if self.config.get(CONF_INTERP):
-                return await self.async_step_interp()
-            return await self.async_step_automation()
+            # Blind spot is the tail of L1 physical setup → continue to L2 positions.
+            return await self.async_step_position()
 
         return self.async_show_form(
             step_id="blind_spot",
@@ -2970,7 +3250,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            return await self.async_step_automation()
+            # Calibration done → begin L3 handler steps in priority order.
+            return await self.async_step_weather_override()
         return self.async_show_form(
             step_id="interp",
             data_schema=INTERPOLATION_OPTIONS,
@@ -2984,7 +3265,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.optional_entities([CONF_START_ENTITY, CONF_END_ENTITY], user_input)
             self.config.update(user_input)
-            return await self.async_step_manual_override()
+            # L4 global motion constraints are the final config step → summary.
+            return await self.async_step_summary()
         return self.async_show_form(
             step_id="automation",
             data_schema=AUTOMATION_SCHEMA,
@@ -3027,7 +3309,10 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="custom_position",
             data_schema=schema,
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
+                "priority_scale": _render_priority_scale(
+                    self.config, get_policy(self.type_blind)
+                ),
             },
         )
 
@@ -3037,7 +3322,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Configure motion/occupancy-based control."""
         if user_input is not None:
             self.config.update(user_input)
-            return await self.async_step_weather_override()
+            # L3 priority 75 → 60 (cloud / light).
+            return await self.async_step_light_cloud()
         return self.async_show_form(
             step_id="motion_override",
             data_schema=MOTION_OVERRIDE_SCHEMA,
@@ -3053,7 +3339,8 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
-            return await self.async_step_light_cloud()
+            # L3 priority 90 → 80 (manual override).
+            return await self.async_step_manual_override()
         return self.async_show_form(
             step_id="weather_override",
             data_schema=weather_override_schema(self.hass, self.config),
@@ -3094,7 +3381,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     },
                 )
             self.config.update(user_input)
-            return await self.async_step_summary()
+            # L3 priority 50 → glare (45) when supported/enabled, else L4 automation.
+            if get_policy(self.type_blind).supports_glare_zones and self.config.get(
+                CONF_ENABLE_GLARE_ZONES
+            ):
+                return await self.async_step_glare_zones()
+            return await self.async_step_automation()
         return self.async_show_form(
             step_id="temperature_climate",
             data_schema=temperature_climate_schema(self.hass, self.config),
@@ -3165,6 +3457,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         )
         options.setdefault(CONF_MOTION_SENSORS, [])
         options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
+        options.setdefault(
+            CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
+        )
 
         return self.async_create_entry(
             title=title,
@@ -3308,44 +3603,48 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        # ── Core Setup ───────────────────────────────────────────────
+        # Ordered by the 4-layer pipeline model (#613): physical setup →
+        # positions → handlers in priority order → global motion constraints.
+
+        # ── Layer 1: What am I? (physical setup) ─────────────────────
         keys = [
             "cover_entities",
             "geometry",
             "sun_tracking",
         ]
-
-        # ── Position & Zones ─────────────────────────────────────────
-        keys.append("position")
-        if self.options.get(CONF_INTERP):
-            keys.append("interp")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             keys.append("blind_spot")
-        if get_policy(self.sensor_type).supports_glare_zones and self.options.get(
-            CONF_ENABLE_GLARE_ZONES
-        ):
-            keys.append("glare_zones")
 
-        # ── Schedule & Automation ────────────────────────────────────
-        keys.append("automation")
+        # ── Layer 2: Where can I go? / how do I behave? ──────────────
+        keys.append("position")  # L2a positions (% values)
+        keys.append("behavior")  # L2b timing & thresholds
+        if self.options.get(CONF_INTERP):
+            keys.append("interp")
 
-        # ── Light, Climate & Weather ────────────────────────────────
-        keys.extend(["light_cloud", "temperature_climate"])
-
-        # ── Override Controls (priority order: highest → lowest) ─────
+        # ── Layer 3: How do I decide? (handlers, priority high → low) ─
         keys.extend(
             [
                 "weather_override",  # Priority 90
                 "manual_override",  # Priority 80
                 "custom_position",  # Priority 1-100 per slot (100 = safety)
                 "motion_override",  # Priority 75
+                "light_cloud",  # Cloud suppression, priority 60
+                "temperature_climate",  # Climate, priority 50
             ]
         )
+        if get_policy(self.sensor_type).supports_glare_zones and self.options.get(
+            CONF_ENABLE_GLARE_ZONES
+        ):
+            keys.append("glare_zones")  # Priority 45
 
-        # ── Multi-Cover Management ──────────────────────────────────
-        keys.append("sync")
+        # Re-order the whole handler chain (built-in priority overrides).
+        keys.append("pipeline_priorities")
+
+        # ── Layer 4: How do I move? (global motion constraints) ──────
+        keys.append("automation")
 
         # ── Admin ────────────────────────────────────────────────────
+        keys.append("sync")  # Multi-cover management
         keys.extend(["summary", "debug", "done"])
 
         # Use a list so HA translates labels client-side using the user's language preference.
@@ -3504,6 +3803,22 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
+            },
+        )
+
+    async def async_step_behavior(self, user_input: dict[str, Any] | None = None):
+        """Manage L2b timing & threshold behavior options."""
+        if user_input is not None:
+            self.optional_entities(_BEHAVIOR_OPTIONAL_KEYS, user_input)
+            self.options.update(user_input)
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="behavior",
+            data_schema=self.add_suggested_values_to_schema(
+                BEHAVIOR_SCHEMA, user_input or self.options
+            ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position",
                 "position_matching_wiki": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Position-Matching",
             },
         )
@@ -3569,7 +3884,10 @@ class OptionsFlowHandler(OptionsFlow):
                 schema, user_input or self.options
             ),
             description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position"
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Custom-Position",
+                "priority_scale": _render_priority_scale(
+                    self.options, get_policy(sensor_type)
+                ),
             },
         )
 
@@ -3606,6 +3924,30 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+            },
+        )
+
+    async def async_step_pipeline_priorities(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Re-order the built-in handler decision chain (priority overrides)."""
+        if user_input is not None:
+            # A cleared slider is omitted; null it so the handler reverts to its
+            # class-default priority instead of keeping the stale override.
+            self.optional_entities(_PIPELINE_PRIORITY_OPTIONAL_KEYS, user_input)
+            self.options.update(user_input)
+            return await self.async_step_init()
+        sensor_type = self._config_entry.data.get(CONF_SENSOR_TYPE)
+        return self.async_show_form(
+            step_id="pipeline_priorities",
+            data_schema=self.add_suggested_values_to_schema(
+                config_fields.pipeline_priorities_schema(), user_input or self.options
+            ),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides",
+                "priority_scale": _render_priority_scale(
+                    self.options, get_policy(sensor_type)
+                ),
             },
         )
 

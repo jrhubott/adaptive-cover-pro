@@ -3,11 +3,29 @@ name: Notebook Validation
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - "notebooks/**"
+      - "custom_components/adaptive_cover_pro/calculation.py"
+      - "custom_components/adaptive_cover_pro/sun.py"
+      - "custom_components/adaptive_cover_pro/engine/**"
+      - "requirements-dev.txt"
+      - ".github/workflows/notebook-validation.yml"
   push:
     branches:
       - main
       - develop
       - feature/*
+    paths:
+      - "notebooks/**"
+      - "custom_components/adaptive_cover_pro/calculation.py"
+      - "custom_components/adaptive_cover_pro/sun.py"
+      - "custom_components/adaptive_cover_pro/engine/**"
+      - "requirements-dev.txt"
+      - ".github/workflows/notebook-validation.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-notebook:
@@ -22,6 +40,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install dependencies
         run: |

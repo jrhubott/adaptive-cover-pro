@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+
+    from ..coordinator import AdaptiveDataUpdateCoordinator
 
 from ..const import DOMAIN
 from .diagnostics_service import GET_DIAGNOSTICS_SCHEMA, async_handle_get_diagnostics
@@ -20,6 +23,21 @@ from .set_position_service import SET_POSITION_SCHEMA, async_handle_set_position
 from .stop_service import async_handle_stop
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def loaded_coordinators(
+    hass: HomeAssistant,
+) -> dict[str, AdaptiveDataUpdateCoordinator]:
+    """Map entry_id → coordinator for every loaded ACP config entry.
+
+    Replaces the legacy ``hass.data[DOMAIN]`` registry: each loaded entry now
+    stores its coordinator on ``entry.runtime_data``.
+    """
+    return {
+        entry.entry_id: entry.runtime_data
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED
+    }
 
 
 def _resolve_targets(
@@ -40,7 +58,7 @@ def _resolve_targets(
 
     Unmanaged entity_ids (not owned by any ACP coordinator) are silently skipped.
     """
-    all_coordinators: dict = hass.data.get(DOMAIN, {})
+    all_coordinators = loaded_coordinators(hass)
 
     entity_ids: list[str] = cv.ensure_list(call.data.get("entity_id"))
     device_ids: list[str] = cv.ensure_list(call.data.get("device_id"))
@@ -175,8 +193,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove integration services when the last config entry is unloaded."""
-    if hass.data.get(DOMAIN):
+    """Remove integration services when the last config entry is unloaded.
+
+    The unloading entry is already ``UNLOAD_IN_PROGRESS`` (not ``LOADED``) when
+    this runs, so ``loaded_coordinators`` counts only the entries that remain.
+    """
+    if loaded_coordinators(hass):
         return  # Other entries still active
     hass.services.async_remove(DOMAIN, "export_config")
     hass.services.async_remove(DOMAIN, "get_diagnostics")

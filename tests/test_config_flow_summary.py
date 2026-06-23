@@ -11,6 +11,9 @@ from custom_components.adaptive_cover_pro.config_flow import (
 from custom_components.adaptive_cover_pro.const import (
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
+    CONF_DAYTIME_GATE_TEMPLATE_MODE,
     CONF_ENABLE_SUN_TRACKING,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_MY_POSITION_VALUE,
@@ -40,6 +43,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -57,6 +61,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
     CONF_SILL_HEIGHT,
     CONF_START_TIME,
     CONF_START_ENTITY,
@@ -76,7 +81,9 @@ from custom_components.adaptive_cover_pro.const import (
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_RAIN_THRESHOLD,
@@ -852,6 +859,57 @@ def test_is_sunny_sensor_shown_with_suppression():
     }
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "is_sunny=binary_sensor.sun_on_window" in summary
+
+
+def test_is_sunny_template_shows_placeholder():
+    """is_sunny template-only shows the [template] marker (issue #639)."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_TEMPLATE: "{{ is_state('sun.sun', 'above_horizon') }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is_sunny=[template]" in summary
+
+
+def test_is_sunny_sensor_takes_priority_over_template_in_summary():
+    """When both are set, the entity id is shown (sensor is the explicit pick)."""
+    cfg = {
+        CONF_CLOUD_SUPPRESSION: True,
+        CONF_IS_SUNNY_SENSOR: "binary_sensor.sun_on_window",
+        CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is_sunny=binary_sensor.sun_on_window" in summary
+
+
+def test_presence_template_shows_placeholder():
+    """Presence template-only renders the [template] marker on the climate line."""
+    cfg = {
+        CONF_CLIMATE_MODE: True,
+        CONF_PRESENCE_TEMPLATE: "{{ is_state('input_boolean.home', 'on') }}",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "presence: [template]" in summary
+
+
+def test_weather_is_raining_template_engages_section():
+    """A template-only is-raining override appears in the weather section (#639)."""
+    cfg = {
+        CONF_WEATHER_IS_RAINING_TEMPLATE: "{{ states('sensor.rain_rate')|float > 0 }}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is-raining" in summary
+
+
+def test_weather_is_windy_template_engages_section():
+    """A template-only is-windy override appears in the weather section (#639)."""
+    cfg = {
+        CONF_WEATHER_IS_WINDY_TEMPLATE: "{{ states('sensor.gust')|float > 30 }}",
+        CONF_WEATHER_OVERRIDE_POSITION: 0,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is-windy" in summary
 
 
 def test_is_sunny_sensor_without_suppression_noted():
@@ -1902,6 +1960,60 @@ def test_return_sunset_line_absent_when_false():
     assert "Return to sunset position at end time" not in summary
 
 
+def test_end_of_window_line_rendered_with_return_on():
+    """Issue #625: eow position + return_sunset on + end time → line, no footgun."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_END_OF_WINDOW_POS,
+        CONF_RETURN_SUNSET,
+    )
+
+    cfg = {
+        CONF_SUNSET_POS: 30,
+        CONF_END_OF_WINDOW_POS: 0,
+        CONF_RETURN_SUNSET: True,
+        CONF_END_TIME: "19:30",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" in summary
+    assert "will not be applied" not in summary
+
+
+def test_end_of_window_footgun_when_return_off():
+    """Issue #625: eow position set but return_sunset off → footgun warning."""
+    from custom_components.adaptive_cover_pro.const import CONF_END_OF_WINDOW_POS
+
+    cfg = {CONF_SUNSET_POS: 30, CONF_END_OF_WINDOW_POS: 0}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" in summary
+    assert "will not be applied" in summary
+
+
+def test_end_of_window_line_renders_without_sunset_pos():
+    """Issue #625: eow set with NO sunset_position → line still renders.
+
+    Structural guard for the historic ``if sunset_pos is not None`` gate.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_END_OF_WINDOW_POS,
+        CONF_RETURN_SUNSET,
+    )
+
+    cfg = {
+        CONF_END_OF_WINDOW_POS: 0,
+        CONF_RETURN_SUNSET: True,
+        CONF_END_TIME: "19:30",
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" in summary
+
+
+def test_end_of_window_absent_when_unset():
+    """Issue #625: no eow option → no end-of-window line."""
+    cfg = {CONF_SUNSET_POS: 30}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "End-of-window position" not in summary
+
+
 def test_manual_ignore_intermediate_shown():
     """CONF_MANUAL_IGNORE_INTERMEDIATE adds 'ignores intermediate positions' annotation."""
     from custom_components.adaptive_cover_pro.const import (
@@ -2528,18 +2640,18 @@ def test_summary_shows_custom_slot_tilt_when_set():
 
 
 def test_position_schema_accepts_sunset_time_entity():
-    """POSITION_SCHEMA accepts sunset_time_entity key."""
-    from custom_components.adaptive_cover_pro.config_flow import POSITION_SCHEMA
+    """BEHAVIOR_SCHEMA accepts sunset_time_entity key (moved L2a→L2b, #613)."""
+    from custom_components.adaptive_cover_pro.config_flow import BEHAVIOR_SCHEMA
 
-    result = POSITION_SCHEMA({CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk"})
+    result = BEHAVIOR_SCHEMA({CONF_SUNSET_TIME_ENTITY: "sensor.sun2_dusk"})
     assert result[CONF_SUNSET_TIME_ENTITY] == "sensor.sun2_dusk"
 
 
 def test_position_schema_accepts_sunrise_time_entity():
-    """POSITION_SCHEMA accepts sunrise_time_entity key."""
-    from custom_components.adaptive_cover_pro.config_flow import POSITION_SCHEMA
+    """BEHAVIOR_SCHEMA accepts sunrise_time_entity key (moved L2a→L2b, #613)."""
+    from custom_components.adaptive_cover_pro.config_flow import BEHAVIOR_SCHEMA
 
-    result = POSITION_SCHEMA({CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn"})
+    result = BEHAVIOR_SCHEMA({CONF_SUNRISE_TIME_ENTITY: "sensor.sun2_dawn"})
     assert result[CONF_SUNRISE_TIME_ENTITY] == "sensor.sun2_dawn"
 
 
@@ -2690,3 +2802,57 @@ def test_climate_outside_threshold_template_shows_placeholder():
     summary = _build_config_summary(cfg, CoverType.BLIND)
     assert "[template]" in summary
     assert "{%" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate (issue #632) — summary line + offset-ignored warning
+# ---------------------------------------------------------------------------
+
+
+def test_summary_shows_daytime_gate_line_for_sensor():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()
+    assert "binary_sensor.bright" in summary
+
+
+def test_summary_shows_daytime_gate_line_for_template():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_TEMPLATE] = "{{ is_state('sun.sun', 'above_horizon') }}"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()
+
+
+def test_summary_gate_absent_when_unconfigured():
+    summary = _build_config_summary(_minimal_vertical(), CoverType.BLIND)
+    assert "daytime gate" not in summary.lower()
+
+
+def test_summary_gate_warns_offsets_ignored_when_offset_set():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    cfg[CONF_SUNSET_OFFSET] = 30
+    cfg[CONF_SUNRISE_OFFSET] = 60
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    # A ⚠️ must surface the footgun: offsets are no-ops under a gate.
+    assert "⚠️" in summary
+    assert "offset" in summary.lower()
+
+
+def test_summary_gate_no_offset_warning_when_offsets_zero():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    # No offsets configured → no footgun → no offset warning, but still gate line.
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()
+    assert "offset" not in summary.lower()
+
+
+def test_summary_gate_template_mode_and():
+    cfg = _minimal_vertical()
+    cfg[CONF_DAYTIME_GATE_SENSORS] = ["binary_sensor.bright"]
+    cfg[CONF_DAYTIME_GATE_TEMPLATE] = "{{ true }}"
+    cfg[CONF_DAYTIME_GATE_TEMPLATE_MODE] = "and"
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "daytime gate" in summary.lower()

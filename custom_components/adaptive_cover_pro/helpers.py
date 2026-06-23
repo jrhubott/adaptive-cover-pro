@@ -61,6 +61,28 @@ def custom_position_slot_sensors(
     return [legacy] if legacy else []
 
 
+def copy_legacy_slot_sensors_to_list(options: dict) -> bool:
+    """Promote each slot's legacy single-sensor key into the new list key.
+
+    Called by the v3.2 → v3.3 migration (issue #563). For every custom-position
+    slot where the new ``sensors`` list key is absent AND the legacy ``sensor``
+    key holds a non-empty value, the legacy value is wrapped in a one-element
+    list and written under the ``sensors`` key. The legacy key is left intact
+    (additive / rollback-safe: same invariant as the v3.2 migration). Slots
+    whose list key already exists, or that have no legacy sensor configured,
+    are skipped. Returns ``True`` when at least one slot was updated.
+    """
+    changed = False
+    for slot_keys in CUSTOM_POSITION_SLOTS.values():
+        if slot_keys["sensors"] in options:
+            continue
+        legacy = options.get(slot_keys["sensor"])
+        if legacy:
+            options[slot_keys["sensors"]] = [legacy]
+            changed = True
+    return changed
+
+
 def mirror_legacy_slot_sensor_keys(options: dict) -> None:
     """Mirror each slot's first sensor into the legacy single-sensor key.
 
@@ -315,6 +337,9 @@ def compute_effective_default(
     sunrise_time: dt.datetime | None = None,
     window_explicitly_started: bool = False,
     eval_time: dt.datetime | None = None,
+    daytime_gate: bool | None = None,
+    end_of_window_pos: int | None = None,
+    end_of_window_active: bool = False,
 ) -> tuple[int, bool]:
     """Return the effective default cover position based on astronomical sunset/sunrise.
 
@@ -356,14 +381,53 @@ def compute_effective_default(
             this lets the forecast project the effective default at each future
             sample time instead of "now". ``None`` (default) preserves the live
             behavior of evaluating against the current moment.
+        daytime_gate: Optional override from a configured "daytime gate" (issue
+            #632). ``None`` (default, no gate) keeps the astronomical decision —
+            zero regression. ``True`` (gate says daytime) forces
+            ``is_sunset_active=False`` regardless of astral times (the
+            bright-evening / pre-sunrise-dark cases). ``False`` (gate says dark)
+            forces ``is_sunset_active=True``. When set, the gate OWNS the boundary
+            and short-circuits the astral ``after_sunset``/``before_sunrise`` math
+            and the ``window_explicitly_started`` branch.
+        end_of_window_pos: Optional end-of-window position (0–100, issue #625) or
+            ``None`` (default, disabled — zero regression). When set AND
+            ``end_of_window_active`` is ``True`` it overrides the astronomical
+            effective default with a TWO-PHASE astral handoff:
+              - When ``sunset_pos`` is also set: the end-of-window position holds
+                from window-end UNTIL astral sunset (phase 1, gated on
+                ``not after_sunset``), then the astral ``sunset_pos`` takes over
+                (phase 2, automatic fall-through).
+              - When ``sunset_pos`` is ``None`` (no handoff target): the
+                end-of-window position persists the whole evening (a top-of-body
+                short-circuit that outranks even a configured ``daytime_gate``).
+            A configured ``daytime_gate`` still OWNS the boundary in the
+            ``sunset_pos`` set case (phase 1 does not override it).
+        end_of_window_active: ``True`` when the operating window is clock-closed
+            (now is at/after the configured/entity end time). Only meaningful when
+            ``end_of_window_pos`` is set. Defaults to ``False``.
 
     Returns:
         A ``(effective_default, is_sunset_active)`` tuple where
         ``is_sunset_active`` is ``True`` when the sunset position is in effect.
 
     """
+    # End-of-window with no astral sunset handoff target (issue #625): the
+    # end-of-window position must persist the whole evening. This outranks even a
+    # configured daytime_gate, and must precede the ``sunset_pos is None`` guard
+    # (which would otherwise return h_def before the eow check is reached).
+    if end_of_window_active and end_of_window_pos is not None and sunset_pos is None:
+        return int(end_of_window_pos), True
+
     if sunset_pos is None:
         return h_def, False
+
+    # A configured daytime gate OWNS the day/night boundary: it fully replaces the
+    # astronomical sunset/sunrise calc below (issue #632). Astral is the fallback
+    # only when the gate is unconfigured (``daytime_gate is None``).
+    if daytime_gate is not None:
+        is_sunset_active = daytime_gate is False
+        effective = int(sunset_pos) if is_sunset_active else int(h_def)
+        return effective, is_sunset_active
 
     sunset = (
         _local_naive_to_utc_naive(sunset_time)
@@ -383,6 +447,15 @@ def compute_effective_default(
 
     after_sunset = now_naive > (sunset + timedelta(minutes=sunset_off))
     before_sunrise = now_naive < (sunrise + timedelta(minutes=sunrise_off))
+
+    # End-of-window phase 1 (issue #625): once the operating window is
+    # clock-closed, the end-of-window position holds from window-end UNTIL astral
+    # sunset; then phase 2 (the astral sunset_pos branch below) takes over. Gated
+    # on ``not after_sunset`` so it yields to astral at the handoff. The
+    # daytime_gate branch above intentionally still owns the boundary here.
+    if end_of_window_active and end_of_window_pos is not None and not after_sunset:
+        return int(end_of_window_pos), True
+
     # Suppress before_sunrise only when the operational window has *explicitly*
     # started: a real start_time < astronomical_sunrise is a valid user config
     # (e.g. start at 08:00, sunrise at 08:15 in winter, issue #438) and once that

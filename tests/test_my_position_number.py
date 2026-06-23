@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Step 1 — Platform.NUMBER in PLATFORMS
 # ---------------------------------------------------------------------------

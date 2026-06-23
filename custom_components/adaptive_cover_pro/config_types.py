@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from .const import DEFAULT_MOTION_TEMPLATE_MODE, TiltMode
+from .const import (
+    DEFAULT_MOTION_TEMPLATE_MODE,
+    DEFAULT_TEMPLATE_COMBINE_MODE,
+    TiltMode,
+)
 
 
 def _num_or(value: Any, default: float) -> float:
@@ -164,13 +168,17 @@ class OscillatingConfig:
     The arm of length ``arm_length`` sweeps from ``min_angle`` (closed) to
     ``max_angle`` (fully open); the fabric angle is therefore a function of the
     open percentage rather than a fixed value. ``housing_offset`` is the pivot
-    height above the window top.
+    height above the window top. ``pivot_offset`` is the horizontal distance from
+    the arm pivot / fabric plane to the window glass (the arm/housing standoff
+    plus any window inset); it lowers the dropped fabric's shadow on the pane at
+    low sun. Default 0.0 → flush mount (no-op).
     """
 
     arm_length: float = 0.8
     min_angle: float = 0.0
     max_angle: float = 175.0
     housing_offset: float = 0.0
+    pivot_offset: float = 0.0
 
     @classmethod
     def from_options(cls, options: dict) -> OscillatingConfig:
@@ -180,10 +188,12 @@ class OscillatingConfig:
             CONF_AWNING_HOUSING_OFFSET,
             CONF_AWNING_MAX_ANGLE,
             CONF_AWNING_MIN_ANGLE,
+            CONF_AWNING_PIVOT_OFFSET,
             DEFAULT_ARM_LENGTH,
             DEFAULT_AWNING_HOUSING_OFFSET,
             DEFAULT_AWNING_MAX_ANGLE,
             DEFAULT_AWNING_MIN_ANGLE,
+            DEFAULT_AWNING_PIVOT_OFFSET,
         )
 
         return cls(
@@ -192,6 +202,8 @@ class OscillatingConfig:
             max_angle=options.get(CONF_AWNING_MAX_ANGLE, DEFAULT_AWNING_MAX_ANGLE),
             housing_offset=options.get(CONF_AWNING_HOUSING_OFFSET)
             or DEFAULT_AWNING_HOUSING_OFFSET,
+            pivot_offset=options.get(CONF_AWNING_PIVOT_OFFSET)
+            or DEFAULT_AWNING_PIVOT_OFFSET,
         )
 
 
@@ -243,6 +255,12 @@ class TimeWindowSlice:
     start_time_entity: str | None
     end_time: Any
     end_time_entity: str | None
+    # Daytime gate (issue #632): a binary-entity list and/or a Jinja condition
+    # template that, when configured, OWNS the day/night boundary. Empty / None =
+    # unconfigured → astronomical fallback (zero regression).
+    gate_sensors: list[str] = field(default_factory=list)
+    gate_template: str | None = None
+    gate_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +289,10 @@ class WeatherSlice:
     is_windy_sensor: str | None
     severe_sensors: list[str]
     timeout_seconds: int
+    is_raining_template: str | None = None
+    is_raining_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
+    is_windy_template: str | None = None
+    is_windy_template_mode: str = DEFAULT_TEMPLATE_COMBINE_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,6 +355,9 @@ class RuntimeConfig:
         """
         from .const import (
             CONF_AZIMUTH,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_DAYTIME_GATE_TEMPLATE_MODE,
             CONF_DEBUG_EVENT_BUFFER_SIZE,
             CONF_DELTA_POSITION,
             CONF_DELTA_TIME,
@@ -364,7 +389,11 @@ class RuntimeConfig:
             CONF_VENETIAN_POST_SETTLE_HOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
             CONF_WEATHER_IS_RAINING_SENSOR,
+            CONF_WEATHER_IS_RAINING_TEMPLATE,
+            CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
             CONF_WEATHER_IS_WINDY_SENSOR,
+            CONF_WEATHER_IS_WINDY_TEMPLATE,
+            CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
             CONF_WEATHER_RAIN_SENSOR,
             CONF_WEATHER_RAIN_THRESHOLD,
             CONF_WEATHER_SEVERE_SENSORS,
@@ -425,6 +454,11 @@ class RuntimeConfig:
                 start_time_entity=options.get(CONF_START_ENTITY),
                 end_time=options.get(CONF_END_TIME),
                 end_time_entity=options.get(CONF_END_ENTITY),
+                gate_sensors=options.get(CONF_DAYTIME_GATE_SENSORS, []),
+                gate_template=options.get(CONF_DAYTIME_GATE_TEMPLATE),
+                gate_template_mode=options.get(
+                    CONF_DAYTIME_GATE_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
             ),
             motion=MotionSlice(
                 sensors=options.get(CONF_MOTION_SENSORS, []),
@@ -464,6 +498,14 @@ class RuntimeConfig:
                 ),
                 is_raining_sensor=options.get(CONF_WEATHER_IS_RAINING_SENSOR),
                 is_windy_sensor=options.get(CONF_WEATHER_IS_WINDY_SENSOR),
+                is_raining_template=options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
+                is_raining_template_mode=options.get(
+                    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
+                is_windy_template=options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+                is_windy_template_mode=options.get(
+                    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE, DEFAULT_TEMPLATE_COMBINE_MODE
+                ),
                 severe_sensors=options.get(CONF_WEATHER_SEVERE_SENSORS, []),
                 timeout_seconds=options.get(
                     CONF_WEATHER_TIMEOUT, DEFAULT_WEATHER_TIMEOUT

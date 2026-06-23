@@ -244,6 +244,119 @@ def test_is_active_logs_error_when_start_after_end():
 
 
 # ---------------------------------------------------------------------------
+# clock_window_open: the gate-free clock predicate (issue #656)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_clock_window_open_true_when_gate_dark_but_clock_open():
+    """clock_window_open is True when the clock is open even if the gate reads dark.
+
+    Issue #656: is_active folds the daytime gate into the clock window, so a
+    gate-dark night reads is_active=False even when the user's start/end clock
+    is still open. clock_window_open must stay True in that case so suppression
+    sites that only care about the clock still dispatch the night position.
+    """
+    from unittest.mock import PropertyMock
+    from custom_components.adaptive_cover_pro.managers.time_window import (
+        TimeWindowManager,
+    )
+
+    mgr = _make_manager()
+
+    with (
+        patch.object(
+            TimeWindowManager,
+            "before_end_time",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+        patch.object(
+            TimeWindowManager,
+            "after_start_time",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+        patch.object(
+            TimeWindowManager,
+            "gate_is_daytime",
+            new_callable=PropertyMock,
+            return_value=False,  # gate reads dark
+        ),
+    ):
+        assert mgr.clock_window_open is True
+        # is_active simultaneously False because the gate is dark
+        assert mgr.is_active is False
+
+
+@pytest.mark.unit
+def test_clock_window_open_false_when_clock_closed():
+    """clock_window_open is False when the user's start/end clock is genuinely closed."""
+    from unittest.mock import PropertyMock
+    from custom_components.adaptive_cover_pro.managers.time_window import (
+        TimeWindowManager,
+    )
+
+    mgr = _make_manager()
+
+    with (
+        patch.object(
+            TimeWindowManager,
+            "before_end_time",
+            new_callable=PropertyMock,
+            return_value=False,  # clock closed (after end time)
+        ),
+        patch.object(
+            TimeWindowManager,
+            "after_start_time",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+    ):
+        assert mgr.clock_window_open is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("before_end", [True, False])
+@pytest.mark.parametrize("after_start", [True, False])
+@pytest.mark.parametrize("gate_daytime", [True, False])
+def test_is_active_is_clock_window_open_and_gate(before_end, after_start, gate_daytime):
+    """Lock the slice: is_active == (clock_window_open and gate_is_daytime).
+
+    is_active must remain exactly the clock predicate ANDed with the daytime
+    gate — clock_window_open is is_active with the gate factor removed.
+    """
+    from unittest.mock import PropertyMock
+    from custom_components.adaptive_cover_pro.managers.time_window import (
+        TimeWindowManager,
+    )
+
+    mgr = _make_manager()
+
+    with (
+        patch.object(
+            TimeWindowManager,
+            "before_end_time",
+            new_callable=PropertyMock,
+            return_value=before_end,
+        ),
+        patch.object(
+            TimeWindowManager,
+            "after_start_time",
+            new_callable=PropertyMock,
+            return_value=after_start,
+        ),
+        patch.object(
+            TimeWindowManager,
+            "gate_is_daytime",
+            new_callable=PropertyMock,
+            return_value=gate_daytime,
+        ),
+    ):
+        assert mgr.is_active == (mgr.clock_window_open and gate_daytime)
+
+
+# ---------------------------------------------------------------------------
 # check_transition
 # ---------------------------------------------------------------------------
 

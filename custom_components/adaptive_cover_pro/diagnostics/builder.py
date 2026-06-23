@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..const import ControlStatus
-from ..const import ClimateStrategy, ControlMethod, SunState
+from ..const import ClimateStrategy, ControlMethod, FORECAST_STEP_MINUTES, SunState
 
 # ---------------------------------------------------------------------------
 # Context dataclass – the coordinator populates this before calling build()
@@ -56,6 +56,10 @@ class DiagnosticContext:
     inverse_state: bool = False
     use_interpolation: bool = False
     final_state: int = 0  # coordinator.state (after interpolation/inverse)
+
+    # Solar-tracking-only forecast for the rest of today (issue #437 cache).
+    # Optional — None when the background recompute hasn't produced one yet.
+    position_forecast: Any = None  # Forecast | None
 
     # Configuration snapshot
     config_options: dict = field(default_factory=dict)
@@ -110,6 +114,13 @@ class DiagnosticContext:
     # dict (default) → key omitted from diagnostics output.
     primary_axis_suppression_counts: dict[str, int] = field(default_factory=dict)
 
+    # issue #625: True when the end-of-window position is the live effective
+    # default this cycle (window clock-closed AND end_of_window_position set).
+    # Populated by the coordinator from the same window_is_closed/eow_pos it
+    # computes in _compute_current_effective_default. Surfaced in the
+    # default_position diagnostics block to disambiguate sunset-vs-eow.
+    end_of_window_active: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Strategy label map (moved from coordinator class attribute)
@@ -163,11 +174,13 @@ class DiagnosticsBuilder:
         diagnostics.update(self._build_solar(ctx))
         diagnostics.update(self._build_position(ctx))
         diagnostics.update(self._build_decision_trace(ctx))
+        diagnostics.update(self._build_handler_priorities(ctx))
         diagnostics.update(self._build_time_window(ctx))
         diagnostics.update(self._build_sun_validity(ctx))
         diagnostics.update(self._build_climate(ctx))
         diagnostics.update(self._build_last_action(ctx))
         diagnostics.update(self._build_covers(ctx))
+        diagnostics.update(self._build_forecast(ctx))
         diagnostics.update(self._build_manual_override_state(ctx))
         diagnostics.update(self._build_configuration(ctx))
         diagnostics.update(self._build_debug_info(ctx))
@@ -358,6 +371,8 @@ class DiagnosticsBuilder:
     @staticmethod
     def _build_time_window(ctx: DiagnosticContext) -> dict:
         """Build time window diagnostics."""
+        from ..const import CONF_END_OF_WINDOW_POS
+
         result = ctx.pipeline_result
         return {
             "time_window": {
@@ -381,6 +396,15 @@ class DiagnosticsBuilder:
                 "configured_sunset_pos": (
                     result.configured_sunset_pos if result is not None else None
                 ),
+                # issue #625: the configured end-of-window position (None when
+                # disabled) plus whether it is the live effective default this
+                # cycle. ``end_of_window_active`` disambiguates "sunset position
+                # is active" from "end-of-window position is active" — both set
+                # ``is_sunset_active=True``.
+                "configured_end_of_window_pos": ctx.config_options.get(
+                    CONF_END_OF_WINDOW_POS
+                ),
+                "end_of_window_active": ctx.end_of_window_active,
                 "configured_cloudy_pos": (
                     result.configured_cloudy_pos if result is not None else None
                 ),
@@ -472,6 +496,22 @@ class DiagnosticsBuilder:
         return diagnostics
 
     @staticmethod
+    def _compute_data_window(timeline) -> dict:
+        """Summarize the time span and capture moment of an event timeline.
+
+        ``start``/``end`` are the earliest/latest ``ts`` in the timeline (None
+        when empty); ``captured_at`` is the UTC ISO timestamp the snapshot was
+        taken. Shared by ``_build_debug_info`` and the diagnostics export
+        null-case marker so both describe their window identically (#656).
+        """
+        stamps = [e["ts"] for e in (timeline or []) if e.get("ts")]
+        return {
+            "start": min(stamps) if stamps else None,
+            "end": max(stamps) if stamps else None,
+            "captured_at": dt.datetime.now(dt.UTC).isoformat(),
+        }
+
+    @staticmethod
     def _build_debug_info(ctx: DiagnosticContext) -> dict:
         """Build debug & diagnostics section."""
         diagnostics: dict = {}
@@ -481,6 +521,9 @@ class DiagnosticsBuilder:
 
         # Unified event timeline from the shared ring buffer
         timeline = ctx.event_timeline or ctx.manual_override_events
+        # Always record the data window so a downloaded snapshot is
+        # self-describing — even when the timeline is empty (#656).
+        diagnostics["data_window"] = DiagnosticsBuilder._compute_data_window(timeline)
         if timeline:
             diagnostics["event_timeline"] = timeline
             # Backward-compat filtered alias for consumers that read manual_override_history
@@ -537,10 +580,47 @@ class DiagnosticsBuilder:
                     "matched": step.matched,
                     "reason": step.reason,
                     "position": step.position,
+                    **(
+                        {"priority": step.priority} if step.priority is not None else {}
+                    ),
+                    **(
+                        {"held_position": step.held_position}
+                        if step.held_position is not None
+                        else {}
+                    ),
                 }
                 for step in result.decision_trace
             ]
         }
+
+    @staticmethod
+    def _build_handler_priorities(ctx: DiagnosticContext) -> dict:
+        """Build the configurable built-in handler priority section.
+
+        Shows each handler's effective priority, its class default, and whether
+        the user overrode it — visible even for handlers that did not appear in
+        this cycle's decision_trace (e.g. a suppressed handler). Ordered by
+        effective priority, highest first, to mirror evaluation order.
+        """
+        from ..pipeline.handlers import (
+            HANDLER_PRIORITY_CONF,
+            HANDLER_PRIORITY_DEFAULTS,
+            resolve_handler_priority,
+        )
+
+        options = ctx.config_options or {}
+        rows = {
+            name: {
+                "priority": resolve_handler_priority(options, name),
+                "default": HANDLER_PRIORITY_DEFAULTS[name],
+                "overridden": options.get(HANDLER_PRIORITY_CONF[name]) is not None,
+            }
+            for name in HANDLER_PRIORITY_CONF
+        }
+        ordered = dict(
+            sorted(rows.items(), key=lambda kv: kv[1]["priority"], reverse=True)
+        )
+        return {"handler_priorities": ordered}
 
     @staticmethod
     def _build_covers(ctx: DiagnosticContext) -> dict:
@@ -548,6 +628,40 @@ class DiagnosticsBuilder:
         if not ctx.covers:
             return {"covers": {}}
         return {"covers": ctx.covers}
+
+    @staticmethod
+    def _build_forecast(ctx: DiagnosticContext) -> dict:
+        """Build the rest-of-day position forecast section.
+
+        The forecast is a **solar-tracking-only** projection: it holds the
+        window geometry constant and walks the sun forward through the rest of
+        today. It deliberately ignores every real-time handler (manual
+        override, motion, weather safety, climate, custom positions), so it is
+        useful for validating sun/FOV geometry and timing — *not* for
+        explaining why a cover did or did not move at a given instant (the
+        ``decision_trace`` section above answers that). The ``description``
+        field is emitted into the dump so a reader never mistakes the
+        projection for the live decision.
+        """
+        forecast = ctx.position_forecast
+        if forecast is None:
+            return {}
+        # Reuse the sensor's wire serialization ("forecast" samples + "events",
+        # ISO-8601 times) so the dump and the card share one format.
+        return {
+            "position_forecast": {
+                "description": (
+                    "Solar-tracking-only projection for the rest of today. "
+                    "Holds window geometry constant and walks the sun forward; "
+                    "does NOT model manual override, motion, weather safety, "
+                    "climate, or custom-position handlers. Use it to validate "
+                    "sun/FOV geometry and timing, not to explain a specific "
+                    "command — see decision_trace for that."
+                ),
+                "step_minutes": FORECAST_STEP_MINUTES,
+                **forecast.to_attrs(),
+            }
+        }
 
     @staticmethod
     def _build_manual_override_state(ctx: DiagnosticContext) -> dict:
@@ -570,11 +684,13 @@ class DiagnosticsBuilder:
             CONF_ENABLE_MAX_POSITION,
             CONF_ENABLE_MIN_POSITION,
             CONF_ENABLE_POSITION_MATCHING,
+            CONF_END_OF_WINDOW_POS,
             CONF_FOV_LEFT,
             CONF_FOV_RIGHT,
             CONF_INTERP,
             CONF_INVERSE_STATE,
             CONF_IS_SUNNY_SENSOR,
+            CONF_IS_SUNNY_TEMPLATE,
             CONF_MAX_ELEVATION,
             CONF_MAX_POSITION,
             CONF_MANUAL_IGNORE_EXTERNAL,
@@ -589,6 +705,8 @@ class DiagnosticsBuilder:
             DEFAULT_MOTION_TEMPLATE_MODE,
             DEFAULT_MOTION_TIMEOUT,
         )
+
+        from ..templates import is_template_string
 
         options = ctx.config_options
         result = ctx.pipeline_result
@@ -643,8 +761,15 @@ class DiagnosticsBuilder:
                 "enabled_toggle": ctx.enabled_toggle,
                 "cloud_suppression_enabled": options.get(CONF_CLOUD_SUPPRESSION, False),
                 "cloudy_position": options.get(CONF_CLOUDY_POSITION),
+                # issue #625: raw config value (None when disabled).
+                "end_of_window_position": options.get(CONF_END_OF_WINDOW_POS),
                 "is_sunny_source": (
-                    options.get(CONF_IS_SUNNY_SENSOR) or "weather_state"
+                    options.get(CONF_IS_SUNNY_SENSOR)
+                    or (
+                        "[template]"
+                        if is_template_string(options.get(CONF_IS_SUNNY_TEMPLATE))
+                        else "weather_state"
+                    )
                 ),
                 "templated_thresholds": DiagnosticsBuilder._templated_thresholds(ctx),
             }

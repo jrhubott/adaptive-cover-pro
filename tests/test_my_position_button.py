@@ -12,7 +12,6 @@ from custom_components.adaptive_cover_pro.managers.cover_command import Position
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.const import ControlMethod
 
-
 # ---------------------------------------------------------------------------
 # Step 8 — My Position button created when entities configured
 # ---------------------------------------------------------------------------
@@ -158,6 +157,8 @@ def _make_my_position_coord():
     coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
     coord.config_entry = MagicMock()
     coord.config_entry.options = {}
+    # After fix #643, async_apply_user_position falls back to _resolved_options.
+    coord._resolved_options = {}
     coord._snapshot_builder = MagicMock()
     coord._snapshot_builder.read_custom_position_sensors.return_value = []
     # Floor composition reads from a real PipelineSnapshot (#463).

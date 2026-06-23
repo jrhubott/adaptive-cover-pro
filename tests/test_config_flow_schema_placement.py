@@ -5,12 +5,28 @@ from __future__ import annotations
 import pytest
 
 from custom_components.adaptive_cover_pro import config_flow as cf
+from custom_components.adaptive_cover_pro.config_dynamic import sun_tracking_schema
 from custom_components.adaptive_cover_pro.const import (
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
+    CONF_DEFAULT_HEIGHT,
+    CONF_DELTA_POSITION,
+    CONF_DELTA_TIME,
     CONF_ENABLE_POSITION_MATCHING,
+    CONF_INVERSE_STATE,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MAX_COVERAGE_STEPS,
+    CONF_MAX_POSITION,
+    CONF_MIN_POSITION,
+    CONF_MIN_POSITION_SUN_TRACKING,
+    CONF_MINIMIZE_MOVEMENTS,
+    CONF_OPEN_CLOSE_THRESHOLD,
     CONF_POSITION_TOLERANCE,
+    CONF_RETURN_SUNSET,
+    CONF_SUNRISE_OFFSET,
+    CONF_SUNSET_OFFSET,
+    CONF_SUNSET_POS,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_TRANSIT_TIMEOUT,
     CONF_VENETIAN_MODE,
 )
@@ -20,27 +36,84 @@ def _schema_keys(schema) -> set[str]:
     return {str(k) for k in schema.schema}
 
 
-def test_position_tolerance_in_position_schema_with_default_three() -> None:
-    """CONF_POSITION_TOLERANCE lives on the position step, default 3 (issue #591)."""
-    keys = _schema_keys(cf.POSITION_SCHEMA)
-    assert CONF_POSITION_TOLERANCE in keys
-    # It is a position concept, not a timing one — must not remain on automation.
-    assert CONF_POSITION_TOLERANCE not in _schema_keys(cf.AUTOMATION_SCHEMA)
+# ---------------------------------------------------------------------------
+# 4-layer split (#613): L2a positions (% values only) vs L2b behavior
+# (timing/thresholds) vs L4 global motion constraints.
+# ---------------------------------------------------------------------------
+
+# All percentage target values live ONLY in the L2a positions schema.
+_L2A_POSITION_KEYS = [
+    CONF_DEFAULT_HEIGHT,
+    CONF_MIN_POSITION,
+    CONF_MAX_POSITION,
+    CONF_MIN_POSITION_SUN_TRACKING,
+    CONF_SUNSET_POS,
+    CONF_OPEN_CLOSE_THRESHOLD,
+]
+
+# Timing & threshold behavior lives ONLY in the L2b behavior schema.
+_L2B_BEHAVIOR_KEYS = [
+    CONF_POSITION_TOLERANCE,
+    CONF_ENABLE_POSITION_MATCHING,
+    CONF_INVERSE_STATE,
+    CONF_SUNSET_OFFSET,
+    CONF_SUNRISE_OFFSET,
+    CONF_RETURN_SUNSET,
+    CONF_SUNSET_TIME_ENTITY,
+]
+
+
+def test_l2a_position_keys_in_position_schema_not_behavior() -> None:
+    """Every % position value lives on the L2a position step only."""
+    pos = _schema_keys(cf.POSITION_SCHEMA)
+    beh = _schema_keys(cf.BEHAVIOR_SCHEMA)
+    for key in _L2A_POSITION_KEYS:
+        assert key in pos, f"{key} should be in POSITION_SCHEMA (L2a)"
+        assert key not in beh, f"{key} must not be in BEHAVIOR_SCHEMA (L2b)"
+
+
+def test_l2b_behavior_keys_in_behavior_schema_not_position() -> None:
+    """Every timing/threshold value lives on the L2b behavior step only."""
+    pos = _schema_keys(cf.POSITION_SCHEMA)
+    beh = _schema_keys(cf.BEHAVIOR_SCHEMA)
+    for key in _L2B_BEHAVIOR_KEYS:
+        assert key in beh, f"{key} should be in BEHAVIOR_SCHEMA (L2b)"
+        assert key not in pos, f"{key} must not be in POSITION_SCHEMA (L2a)"
+
+
+def test_position_tolerance_in_behavior_schema_with_default_three() -> None:
+    """CONF_POSITION_TOLERANCE moved to the L2b behavior step, default 3 (#591/#613)."""
     marker = next(
-        k for k in cf.POSITION_SCHEMA.schema if str(k) == CONF_POSITION_TOLERANCE
+        k for k in cf.BEHAVIOR_SCHEMA.schema if str(k) == CONF_POSITION_TOLERANCE
     )
     assert marker.default() == 3
 
 
-def test_enable_position_matching_in_position_schema() -> None:
-    """CONF_ENABLE_POSITION_MATCHING lives on the position step, default False (#591)."""
-    keys = _schema_keys(cf.POSITION_SCHEMA)
-    assert CONF_ENABLE_POSITION_MATCHING in keys
-    assert CONF_ENABLE_POSITION_MATCHING not in _schema_keys(cf.AUTOMATION_SCHEMA)
+def test_enable_position_matching_in_behavior_schema() -> None:
+    """CONF_ENABLE_POSITION_MATCHING moved to L2b behavior, default False (#591/#613)."""
     marker = next(
-        k for k in cf.POSITION_SCHEMA.schema if str(k) == CONF_ENABLE_POSITION_MATCHING
+        k for k in cf.BEHAVIOR_SCHEMA.schema if str(k) == CONF_ENABLE_POSITION_MATCHING
     )
     assert marker.default() is False
+
+
+def test_l4_motion_constraints_in_automation_schema() -> None:
+    """L4 global motion constraints (delta + minimize/coverage) on the automation step."""
+    auto = _schema_keys(cf.AUTOMATION_SCHEMA)
+    for key in (
+        CONF_DELTA_POSITION,
+        CONF_DELTA_TIME,
+        CONF_MINIMIZE_MOVEMENTS,
+        CONF_MAX_COVERAGE_STEPS,
+    ):
+        assert key in auto, f"{key} should be in AUTOMATION_SCHEMA (L4)"
+
+
+def test_minimize_and_coverage_moved_off_sun_tracking_step() -> None:
+    """minimize_movements / max_coverage_steps are L4, not on the L1 window step."""
+    sun_keys = _schema_keys(sun_tracking_schema())
+    assert CONF_MINIMIZE_MOVEMENTS not in sun_keys
+    assert CONF_MAX_COVERAGE_STEPS not in sun_keys
 
 
 @pytest.mark.parametrize(
@@ -210,3 +283,60 @@ def test_sunset_tilt_absent_in_blind_schema() -> None:
     schema = cf._build_custom_position_schema_dict(sensor_type=CoverType.BLIND)
     keys = {str(k) for k in schema}
     assert CONF_SUNSET_TILT not in keys, "sunset_tilt should not be in blind schema"
+
+
+# ---------------------------------------------------------------------------
+# Daytime gate (issue #632) — lives on the L2b BEHAVIOR step beside the
+# sunset-timing options it overrides (relocated from positions in the #613 split).
+# ---------------------------------------------------------------------------
+
+
+def test_daytime_gate_keys_in_behavior_schema() -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAYTIME_GATE_SENSORS,
+        CONF_DAYTIME_GATE_TEMPLATE,
+        CONF_DAYTIME_GATE_TEMPLATE_MODE,
+    )
+
+    keys = _schema_keys(cf.BEHAVIOR_SCHEMA)
+    assert CONF_DAYTIME_GATE_SENSORS in keys
+    assert CONF_DAYTIME_GATE_TEMPLATE in keys
+    assert CONF_DAYTIME_GATE_TEMPLATE_MODE in keys
+    # It is a timing boundary, not a % target — it must not leak into positions.
+    assert CONF_DAYTIME_GATE_SENSORS not in _schema_keys(cf.POSITION_SCHEMA)
+    # The gate replaces the astronomical boundary — it must not leak into L4 motion.
+    assert CONF_DAYTIME_GATE_SENSORS not in _schema_keys(cf.AUTOMATION_SCHEMA)
+
+
+def test_daytime_gate_template_is_optional_round_trips_absent() -> None:
+    # The template has no schema default → voluptuous omits it when cleared, so it
+    # must be in _BEHAVIOR_OPTIONAL_KEYS to round-trip as cleared (None).
+    from custom_components.adaptive_cover_pro.const import CONF_DAYTIME_GATE_TEMPLATE
+
+    assert CONF_DAYTIME_GATE_TEMPLATE in cf._BEHAVIOR_OPTIONAL_KEYS
+
+
+def test_daytime_gate_sensors_default_empty_list() -> None:
+    # The sensor list carries default=[] so a cleared multi-select round-trips as
+    # [] (NOT None — None would be ambiguous). It must NOT be in the optional list.
+    from custom_components.adaptive_cover_pro.const import CONF_DAYTIME_GATE_SENSORS
+
+    marker = next(
+        k for k in cf.BEHAVIOR_SCHEMA.schema if str(k) == CONF_DAYTIME_GATE_SENSORS
+    )
+    assert marker.default() == []
+    assert CONF_DAYTIME_GATE_SENSORS not in cf._BEHAVIOR_OPTIONAL_KEYS
+
+
+def test_daytime_gate_mode_default_is_shared_combine_default() -> None:
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DAYTIME_GATE_TEMPLATE_MODE,
+        DEFAULT_TEMPLATE_COMBINE_MODE,
+    )
+
+    marker = next(
+        k
+        for k in cf.BEHAVIOR_SCHEMA.schema
+        if str(k) == CONF_DAYTIME_GATE_TEMPLATE_MODE
+    )
+    assert marker.default() == DEFAULT_TEMPLATE_COMBINE_MODE

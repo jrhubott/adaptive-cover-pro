@@ -760,3 +760,67 @@ async def test_user_context_change_marks_override_even_without_recorded_target()
 
     coordinator.manager.handle_user_initiated_state_change.assert_called_once()
     coordinator.manager.handle_state_change.assert_not_called()
+
+
+# ===========================================================================
+# Issue #654: context-less remote move with no recorded target must engage
+# ===========================================================================
+
+
+def test_no_recorded_target_real_move_engages_override_end_to_end():
+    """No recorded target + a real position move → manual override engages (#654).
+
+    A physical-remote move arrives with no HA user_id (numeric path) and ACP has
+    never commanded the cover (target=None → has_recorded_target=False). The move
+    is real because the position changed from old_state (25%) to new_state (80%),
+    so the override must engage despite the missing command target.
+    """
+    manager = _make_manager()
+    entity_id = "cover.test"
+
+    state_data = _make_state_change_data(entity_id, position=80)
+    state_data.old_state.attributes = {"current_position": 25}
+
+    manager.handle_state_change(
+        state_data,
+        our_state=100,  # meaningless pipeline default (never commanded)
+        policy=get_policy("cover_blind"),
+        allow_reset=False,
+        is_waiting=lambda _eid: False,
+        manual_threshold=3,
+        has_recorded_target=False,
+    )
+
+    assert manager.is_cover_manual(entity_id), (
+        "A real context-less move (25% → 80%) with no recorded target must "
+        "engage manual override"
+    )
+
+
+def test_no_recorded_target_resting_republish_no_override_end_to_end():
+    """No recorded target + resting-position republish → no override (#546).
+
+    Same numeric path, but the cover republishes its resting position (old == new
+    == 25%). There is no move, only pipeline-default divergence, so the override
+    must stay suppressed.
+    """
+    manager = _make_manager()
+    entity_id = "cover.test"
+
+    state_data = _make_state_change_data(entity_id, position=25)
+    state_data.old_state.attributes = {"current_position": 25}
+
+    manager.handle_state_change(
+        state_data,
+        our_state=100,  # meaningless pipeline default (never commanded)
+        policy=get_policy("cover_blind"),
+        allow_reset=False,
+        is_waiting=lambda _eid: False,
+        manual_threshold=3,
+        has_recorded_target=False,
+    )
+
+    assert not manager.is_cover_manual(entity_id), (
+        "A resting-position republish (25% → 25%) with no recorded target must "
+        "NOT engage manual override"
+    )

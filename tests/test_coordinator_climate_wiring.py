@@ -26,10 +26,14 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
@@ -312,6 +316,10 @@ class TestClimateProviderApiCoverage:
         CONF_CLOUD_COVERAGE_ENTITY: "cloud_coverage_entity",
         CONF_CLOUD_COVERAGE_THRESHOLD: "cloud_coverage_threshold",
         CONF_IS_SUNNY_SENSOR: "is_sunny_sensor",
+        CONF_IS_SUNNY_TEMPLATE: "is_sunny_template",
+        CONF_IS_SUNNY_TEMPLATE_MODE: "is_sunny_template_mode",
+        CONF_PRESENCE_TEMPLATE: "presence_template",
+        CONF_PRESENCE_TEMPLATE_MODE: "presence_template_mode",
     }
 
     @pytest.mark.unit
@@ -363,6 +371,10 @@ class TestClimateProviderApiCoverage:
             CONF_CLOUD_COVERAGE_ENTITY: "sensor.cloud",
             CONF_CLOUD_COVERAGE_THRESHOLD: 80,
             CONF_IS_SUNNY_SENSOR: "binary_sensor.sunny",
+            CONF_IS_SUNNY_TEMPLATE: "{{ true }}",
+            CONF_IS_SUNNY_TEMPLATE_MODE: "or",
+            CONF_PRESENCE_TEMPLATE: "{{ false }}",
+            CONF_PRESENCE_TEMPLATE_MODE: "or",
         }
         coord._read_climate_state(options)
         _, kwargs = coord._climate_provider.read.call_args

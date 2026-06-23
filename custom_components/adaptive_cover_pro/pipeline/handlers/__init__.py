@@ -12,10 +12,18 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from ...const import (
+    CONF_CLIMATE_PRIORITY,
+    CONF_CLOUD_SUPPRESSION_PRIORITY,
     CONF_ENABLE_SUN_TRACKING,
+    CONF_GLARE_ZONE_PRIORITY,
+    CONF_MANUAL_OVERRIDE_PRIORITY,
+    CONF_MOTION_TIMEOUT_PRIORITY,
+    CONF_SOLAR_PRIORITY,
+    CONF_WEATHER_PRIORITY,
     CUSTOM_POSITION_SLOTS,
     DEFAULT_CUSTOM_POSITION_ENABLED,
     DEFAULT_CUSTOM_POSITION_PRIORITY,
+    _RANGE_HANDLER_PRIORITY,
 )
 from ...helpers import (
     custom_position_slot_configured,
@@ -35,6 +43,51 @@ from .weather import WeatherOverrideHandler
 # handlers are always-on singletons; a couple are config-driven (custom-position
 # slots, sun-tracking toggle).
 HandlerFactory = Callable[[Mapping[str, Any]], list[OverrideHandler]]
+
+# The seven built-in handlers whose priority the user may override, mapped to the
+# option key carrying that override. ``default`` is excluded — it is the chain
+# floor (priority 0) and stays fixed. Custom-position slots own their priority via
+# CUSTOM_POSITION_SLOTS and are handled separately.
+HANDLER_PRIORITY_CONF: dict[str, str] = {
+    WeatherOverrideHandler.name: CONF_WEATHER_PRIORITY,
+    ManualOverrideHandler.name: CONF_MANUAL_OVERRIDE_PRIORITY,
+    MotionTimeoutHandler.name: CONF_MOTION_TIMEOUT_PRIORITY,
+    CloudSuppressionHandler.name: CONF_CLOUD_SUPPRESSION_PRIORITY,
+    ClimateHandler.name: CONF_CLIMATE_PRIORITY,
+    GlareZoneHandler.name: CONF_GLARE_ZONE_PRIORITY,
+    SolarHandler.name: CONF_SOLAR_PRIORITY,
+}
+
+# Each handler's class-default priority — the single source of truth lives on the
+# class, so the fallback is read from there rather than re-typed here.
+HANDLER_PRIORITY_DEFAULTS: dict[str, int] = {
+    cls.name: cls.priority
+    for cls in (
+        WeatherOverrideHandler,
+        ManualOverrideHandler,
+        MotionTimeoutHandler,
+        CloudSuppressionHandler,
+        ClimateHandler,
+        GlareZoneHandler,
+        SolarHandler,
+    )
+}
+
+_PRIORITY_MIN, _PRIORITY_MAX = _RANGE_HANDLER_PRIORITY
+
+
+def resolve_handler_priority(options: Mapping[str, Any], name: str) -> int:
+    """Effective priority for a built-in handler.
+
+    Returns the user-configured override (clamped to the valid range) when the
+    option is set, otherwise the handler's class-default priority. Both the
+    runtime build path and the config-flow priority-ladder visualization call
+    this so the order shown always matches the order evaluated.
+    """
+    raw = options.get(HANDLER_PRIORITY_CONF[name])
+    if raw is None:
+        return HANDLER_PRIORITY_DEFAULTS[name]
+    return max(_PRIORITY_MIN, min(_PRIORITY_MAX, int(raw)))
 
 
 def _single(cls: type[OverrideHandler]) -> HandlerFactory:
@@ -97,17 +150,26 @@ HANDLER_FACTORIES: tuple[HandlerFactory, ...] = (
 def build_handlers(options: Mapping[str, Any]) -> list[OverrideHandler]:
     """Build every configured pipeline handler from ``options``.
 
-    Iterates the registry and flattens each factory's output. The result is
-    handed to ``PipelineRegistry``, which sorts by priority.
+    Iterates the registry and flattens each factory's output, then applies any
+    per-handler priority overrides. The result is handed to ``PipelineRegistry``,
+    which sorts by priority.
     """
     handlers: list[OverrideHandler] = []
     for factory in HANDLER_FACTORIES:
         handlers.extend(factory(options))
+    # Apply configured priority overrides. Setting the instance attribute shadows
+    # the class default, exactly as CustomPositionHandler does in its __init__.
+    # Handlers absent from the map (default, custom slots) keep their own priority.
+    for handler in handlers:
+        if handler.name in HANDLER_PRIORITY_CONF:
+            handler.priority = resolve_handler_priority(options, handler.name)
     return handlers
 
 
 __all__ = [
     "HANDLER_FACTORIES",
+    "HANDLER_PRIORITY_CONF",
+    "HANDLER_PRIORITY_DEFAULTS",
     "ClimateHandler",
     "CloudSuppressionHandler",
     "CustomPositionHandler",
@@ -119,4 +181,5 @@ __all__ = [
     "SolarHandler",
     "WeatherOverrideHandler",
     "build_handlers",
+    "resolve_handler_priority",
 ]

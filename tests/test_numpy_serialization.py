@@ -34,7 +34,7 @@ def _check_native_types(obj, path: str = "root") -> list[str]:
     elif isinstance(obj, dict):
         for k, v in obj.items():
             violations.extend(_check_native_types(v, f"{path}.{k}"))
-    elif isinstance(obj, (list, tuple)):
+    elif isinstance(obj, list | tuple):
         for i, v in enumerate(obj):
             violations.extend(_check_native_types(v, f"{path}[{i}]"))
     return violations
@@ -166,13 +166,13 @@ class TestEdgeCaseHandlerTypes:
         assert not isinstance(pos, np.floating)
 
     def test_high_elevation_returns_python_float(self) -> None:
-        """The high-elevation branch uses np.clip — must be wrapped in float()."""
+        """Issue #600: high elevation is no longer an edge case; types stay native."""
         from custom_components.adaptive_cover_pro.geometry import EdgeCaseHandler
 
         is_edge, pos = EdgeCaseHandler.check_and_handle(
             sol_elev=89.0, gamma=10.0, distance=3.0, h_win=2.5
         )
-        assert is_edge is True
+        assert is_edge is False
         assert isinstance(pos, float)
         assert not isinstance(pos, np.floating)
 
@@ -288,7 +288,7 @@ class TestInterpolatePositionTypes:
         )
 
         result = interpolate_position(50.0, 10.0, 90.0, None, None)
-        assert isinstance(result, (int, float)), f"Expected numeric, got {type(result)}"
+        assert isinstance(result, int | float), f"Expected numeric, got {type(result)}"
         assert not isinstance(result, np.floating), "Got numpy float"
 
     def test_returns_original_when_no_range(self) -> None:

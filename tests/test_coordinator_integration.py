@@ -393,6 +393,7 @@ class TestCustomPositionSensorEdgeTriggerBypassesGate:
         coordinator.check_adaptive_time = (
             False  # outside time window — before start_time
         )
+        coordinator.clock_window_open = False  # clock genuinely closed (pre-start)
         coordinator._is_custom_position_sensor_trigger = MagicMock(return_value=True)
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
@@ -621,6 +622,7 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
 
         coordinator = self._make_release_coordinator()
         coordinator.check_adaptive_time = False  # outside time window — after end_time
+        coordinator.clock_window_open = False  # clock genuinely closed (after end_time)
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
             coordinator,
@@ -647,6 +649,7 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
         coordinator.check_adaptive_time = (
             False  # outside time window — before start_time
         )
+        coordinator.clock_window_open = False  # clock genuinely closed (pre-start)
         coordinator._last_state_change_entity = "binary_sensor.movie_time"
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(
@@ -673,6 +676,7 @@ class TestCustomPositionSensorReleaseEdgeBypassesGate:
 
         coordinator = self._make_release_coordinator()
         coordinator.check_adaptive_time = False  # outside time window — sunset active
+        coordinator.clock_window_open = False  # clock genuinely closed (outside window)
         coordinator._last_state_change_entity = "binary_sensor.movie_time"
 
         await AdaptiveDataUpdateCoordinator.async_handle_state_change(

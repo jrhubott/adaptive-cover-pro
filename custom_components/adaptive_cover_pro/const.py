@@ -121,16 +121,36 @@ CONF_AWNING_ANGLE = "angle"  # tilt from horizontal, degrees (0-45)
 # Oscillating (drop-arm / pivoting) awning geometry. Unlike the fixed-angle
 # awning, the arm sweeps through an arc as it opens, so the fabric angle is a
 # function of the open percentage rather than a configured constant. See #412.
-CONF_ARM_LENGTH = "arm_length"  # pivot-arm length, metres (0.1-3.0)
+CONF_ARM_LENGTH = "arm_length"  # pivot-arm length, metres (0.1-6.0)
 CONF_AWNING_MIN_ANGLE = "awning_min_angle"  # arm angle when closed, deg (0-180)
 CONF_AWNING_MAX_ANGLE = "awning_max_angle"  # arm angle when fully open, deg (0-180)
 # Vertical offset of the arm pivot above the window top, metres (0-1). Used with
 # window height and arm length to locate the pivot.
 CONF_AWNING_HOUSING_OFFSET = "awning_housing_offset"
+# Horizontal distance from the arm pivot / fabric plane to the window glass,
+# metres (0-2). At low sun the dropped fabric stands off the pane by this much,
+# so its shadow projects lower on the glass. See #586 follow-up.
+CONF_AWNING_PIVOT_OFFSET = "awning_pivot_offset"
 DEFAULT_ARM_LENGTH = 0.8  # metres
 DEFAULT_AWNING_MIN_ANGLE = 0  # degrees — arm vertical / fully retracted
 DEFAULT_AWNING_MAX_ANGLE = 175  # degrees — reporter's full sweep (#412)
 DEFAULT_AWNING_HOUSING_OFFSET = 0.0  # metres
+DEFAULT_AWNING_PIVOT_OFFSET = 0.0  # metres
+
+# Vertical-drop (lip-height) shade model for the oscillating awning (#586).
+# The drop-arm's fabric lip descends as the arm sweeps past horizontal, shading
+# the window face down to a protected boundary. The solver scans the arm-sweep
+# arc and selects the smallest angle whose lip shadow reaches the boundary.
+#
+# Default/fallback protected boundary on the window face (window-bottom datum,
+# metres). The LIVE boundary is derived from the inherited vertical sill/depth/
+# distance solve (the exposed-glass height); this constant is only the fallback
+# when that solve leaves the whole face exposed.
+OSCILLATING_PROTECTED_BOUNDARY_DEFAULT = 0.0  # metres (window bottom)
+# Arc-scan resolution: number of arm-angle samples across the [min, max] sweep.
+# 0.1° steps over a 180° sweep — fine enough that the pinned positions are
+# stable to <0.1%.
+OSCILLATING_ARC_SCAN_SAMPLES = 1801
 
 
 # =============================================================================
@@ -207,11 +227,24 @@ CONF_SUNSET_POS = "sunset_position"  # post-sunset position 0-100; None=default
 CONF_SUNSET_OFFSET = "sunset_offset"  # minutes ±120 from sunset to switch
 CONF_SUNRISE_OFFSET = "sunrise_offset"  # minutes ±120 from sunrise to resume
 CONF_RETURN_SUNSET = "return_sunset"  # True: force-send default at end_time
+# Optional end-of-window position 0-100 (issue #625); None=disabled. Applied at the
+# operating-window end time (gated by CONF_RETURN_SUNSET) regardless of astral sunset.
+CONF_END_OF_WINDOW_POS = "end_of_window_position"
 # If True, sunset position uses CONF_MY_POSITION_VALUE instead of CONF_SUNSET_POS.
 CONF_SUNSET_USE_MY = "sunset_use_my"
 # Optional entity whose state is a datetime; replaces astral-computed sunset/sunrise.
 CONF_SUNSET_TIME_ENTITY = "sunset_time_entity"
 CONF_SUNRISE_TIME_ENTITY = "sunrise_time_entity"
+# Optional "daytime gate" (issue #632): a binary-sensor list and/or a Jinja
+# condition template that answers "is it daytime — should ACP sun-track now?".
+# When configured it OWNS the day/night boundary (replacing the astral sunset/
+# sunrise decision); when unconfigured ACP falls back to the astronomical calc
+# (zero regression). Gate on/active = daytime/track; off = dark → apply sunset
+# position. Clones the motion gate (§19): same evaluation helpers, no new code.
+# The combine mode reuses TemplateCombineMode / DEFAULT_TEMPLATE_COMBINE_MODE.
+CONF_DAYTIME_GATE_SENSORS = "daytime_gate_sensors"  # on/active = daytime/track
+CONF_DAYTIME_GATE_TEMPLATE = "daytime_gate_template"  # truthy = daytime/track
+CONF_DAYTIME_GATE_TEMPLATE_MODE = "daytime_gate_template_mode"  # TemplateCombineMode
 # Explicit tilt for venetian covers (0-100). None = use solar-computed tilt.
 CONF_DEFAULT_TILT = "default_tilt"  # tilt when no handler fires
 CONF_SUNSET_TILT = (
@@ -271,6 +304,11 @@ CONF_OUTSIDETEMP_ENTITY = "outside_temp"  # outdoor temp sensor entity_id
 # Outdoor temp threshold for summer/winter mode switch (range 0-100).
 CONF_OUTSIDE_THRESHOLD = "outside_threshold"
 CONF_PRESENCE_ENTITY = "presence_entity"  # presence/occupancy sensor entity_id
+# Optional Jinja condition template + combine mode for presence (issue #639):
+# truthy = occupied. Folds with the presence_entity via TemplateCombineMode
+# (OR default). Render failure / empty → no opinion → existing entity logic.
+CONF_PRESENCE_TEMPLATE = "presence_template"  # truthy = occupied
+CONF_PRESENCE_TEMPLATE_MODE = "presence_template_mode"  # TemplateCombineMode
 CONF_WEATHER_ENTITY = "weather_entity"  # weather. integration entity_id
 CONF_WEATHER_STATE = "weather_state"  # states that trigger climate handler
 # True to close covers at night in winter for added insulation.
@@ -310,6 +348,11 @@ CONF_IRRADIANCE_ENTITY = "irradiance_entity"  # irradiance sensor, W/m²
 # Below this irradiance the sun is treated as too weak to track.
 CONF_IRRADIANCE_THRESHOLD = "irradiance_threshold"
 CONF_IS_SUNNY_SENSOR = "is_sunny_sensor"  # precomputed binary "is sunny"
+# Optional Jinja condition template + combine mode for is_sunny (issue #639):
+# truthy = sunny. Folds with the is_sunny_sensor via TemplateCombineMode (OR
+# default). Render failure / empty → no opinion → existing weather fallback.
+CONF_IS_SUNNY_TEMPLATE = "is_sunny_template"  # truthy = sunny
+CONF_IS_SUNNY_TEMPLATE_MODE = "is_sunny_template_mode"  # TemplateCombineMode
 CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"  # cloud-cover % sensor
 # % cloud cover above which the suppression handler activates.
 CONF_CLOUD_COVERAGE_THRESHOLD = "cloud_coverage_threshold"
@@ -448,6 +491,20 @@ DEFAULT_CUSTOM_POSITION_PRIORITY = 77  # default priority for a new slot
 # Default for an absent custom_position_tilt_only_<N> option (issue #514).
 DEFAULT_CUSTOM_POSITION_TILT_ONLY = False
 
+# Configurable priorities for the built-in pipeline handlers. Each key holds an
+# integer (1-99) that overrides the handler's class-default priority, letting the
+# user re-order the decision chain. An absent/cleared key falls back to the class
+# default (read in pipeline.handlers via HANDLER_PRIORITY_DEFAULTS). The `default`
+# handler (priority 0) is deliberately not configurable — it is the chain floor.
+# 100 stays reserved for the custom-slot safety semantic, so built-ins cap at 99.
+CONF_WEATHER_PRIORITY = "weather_priority"
+CONF_MANUAL_OVERRIDE_PRIORITY = "manual_override_priority"
+CONF_MOTION_TIMEOUT_PRIORITY = "motion_timeout_priority"
+CONF_CLOUD_SUPPRESSION_PRIORITY = "cloud_suppression_priority"
+CONF_CLIMATE_PRIORITY = "climate_priority"
+CONF_GLARE_ZONE_PRIORITY = "glare_zone_priority"
+CONF_SOLAR_PRIORITY = "solar_priority"
+
 
 # =============================================================================
 # 15. Weather Override (Safety)
@@ -467,6 +524,15 @@ CONF_WEATHER_RAIN_SENSOR = "weather_rain_sensor"  # rain-rate sensor entity_id
 CONF_WEATHER_RAIN_THRESHOLD = "weather_rain_threshold"
 CONF_WEATHER_IS_RAINING_SENSOR = "weather_is_raining_sensor"  # binary entity_id
 CONF_WEATHER_IS_WINDY_SENSOR = "weather_is_windy_sensor"  # binary entity_id
+# Optional Jinja condition templates + combine modes for the is-raining / is-windy
+# weather overrides (issue #639): truthy = raining / windy. Each folds with its
+# companion binary sensor via TemplateCombineMode (OR default). A template-only
+# override (no companion sensor) engages and reacts the instant the template
+# flips, tracked via async_track_template_result.
+CONF_WEATHER_IS_RAINING_TEMPLATE = "weather_is_raining_template"  # truthy = raining
+CONF_WEATHER_IS_RAINING_TEMPLATE_MODE = "weather_is_raining_template_mode"
+CONF_WEATHER_IS_WINDY_TEMPLATE = "weather_is_windy_template"  # truthy = windy
+CONF_WEATHER_IS_WINDY_TEMPLATE_MODE = "weather_is_windy_template_mode"
 CONF_WEATHER_SEVERE_SENSORS = "weather_severe_sensors"  # severe-weather list
 # Position commanded during weather override (range 0-100).
 CONF_WEATHER_OVERRIDE_POSITION = "weather_override_position"
@@ -492,9 +558,18 @@ DEFAULT_WEATHER_TIMEOUT = 300  # seconds before resuming after clear
 # active time-of-day window.
 
 CONF_DELTA_POSITION = "delta_position"  # min % change to emit, range 1-90
-CONF_DELTA_TIME = "delta_time"  # min seconds between commands, range 2-60
+CONF_DELTA_TIME = "delta_time"  # min minutes between commands, range 2-60
 DEFAULT_DELTA_POSITION = 2  # minimum percentage change threshold
-DEFAULT_DELTA_TIME = 2  # minimum seconds between commands
+DEFAULT_DELTA_TIME = 2  # minimum minutes between commands
+
+# Anticipatory solar positioning (issue #616): when CONF_DELTA_TIME (the
+# minimum interval between position changes, in minutes) is the look-ahead
+# horizon, the solar handler samples this many future sun positions across
+# (now, now + delta_time] and commands the most-protective one so coverage is
+# guaranteed until the next allowed move. Bounded and small because the sun
+# moves slowly and covers step coarsely; the SunData table is only 5-min
+# resolution, so finer sampling buys nothing.
+SOLAR_ANTICIPATION_SAMPLES = 4
 # Allowed gap between commanded and reported position before the periodic
 # reconciliation pass treats the cover as "not arrived" and resends the
 # command. Distinct from CONF_DELTA_POSITION (movement hysteresis). Default
@@ -891,10 +966,10 @@ class ClimateInactiveReason:
 # and engine/sun_geometry.py. Tuning these affects how aggressively the
 # integration retreats from extreme sun geometries.
 
-# Edge-case thresholds for extreme sun positions.
-EDGE_CASE_LOW_ELEVATION = 2.0  # deg — below this, use low-elev path
-EDGE_CASE_HIGH_ELEVATION = 88.0  # deg — above this, use high-elev path
-EDGE_CASE_EXTREME_GAMMA = 85  # deg — max horizontal angle considered
+# Low-sun edge-case threshold. The former extreme-gamma (85°) and very-high-
+# elevation (88°) thresholds were removed in issue #600 once the projection
+# formula gained its own numerical guards; only the horizon-sun floor remains.
+EDGE_CASE_LOW_ELEVATION = 2.0  # deg — below this, force full coverage (closed)
 
 # Safety margin thresholds and multipliers.
 SAFETY_MARGIN_GAMMA_THRESHOLD = 45  # deg — angle where gamma margins start
@@ -950,9 +1025,10 @@ _RANGE_LENGTH_AWNING = (0.3, 6.0)  # CONF_LENGTH_AWNING, metres
 _RANGE_AWNING_ANGLE = (0, 45)  # CONF_AWNING_ANGLE, degrees
 
 # Geometry — oscillating (drop-arm) awning.
-_RANGE_ARM_LENGTH = (0.1, 3.0)  # CONF_ARM_LENGTH, metres
+_RANGE_ARM_LENGTH = (0.1, 6.0)  # CONF_ARM_LENGTH, metres
 _RANGE_AWNING_SWEEP_ANGLE = (0, 180)  # CONF_AWNING_MIN/MAX_ANGLE, degrees
 _RANGE_AWNING_HOUSING_OFFSET = (0.0, 1.0)  # CONF_AWNING_HOUSING_OFFSET, metres
+_RANGE_AWNING_PIVOT_OFFSET = (0.0, 2.0)  # CONF_AWNING_PIVOT_OFFSET, metres
 
 # Geometry — tilt / venetian slats.
 _RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm
@@ -977,6 +1053,7 @@ _RANGE_DEFAULT_HEIGHT = (0, 100)  # CONF_DEFAULT_HEIGHT, percent
 _RANGE_MAX_POSITION = (1, 100)  # CONF_MAX_POSITION, percent
 _RANGE_MIN_POSITION = (0, 99)  # CONF_MIN_POSITION, percent
 _RANGE_SUNSET_POS = (0, 100)  # CONF_SUNSET_POS, percent
+_RANGE_END_OF_WINDOW_POS = (0, 100)  # CONF_END_OF_WINDOW_POS, percent
 _RANGE_MY_POSITION = (1, 99)  # CONF_MY_POSITION_VALUE, percent
 _RANGE_OFFSET_MINUTES = (-120, 120)  # sunset/sunrise offsets, minutes
 _RANGE_OPEN_CLOSE_THRESHOLD = (1, 99)  # CONF_OPEN_CLOSE_THRESHOLD, percent
@@ -989,7 +1066,7 @@ _RANGE_MAX_COVERAGE_STEPS = (1, 10)  # CONF_MAX_COVERAGE_STEPS, discrete levels
 
 # Automation timing.
 _RANGE_DELTA_POSITION = (1, 90)  # CONF_DELTA_POSITION, percent
-_RANGE_DELTA_TIME = (2, 60)  # CONF_DELTA_TIME, seconds
+_RANGE_DELTA_TIME = (2, 60)  # CONF_DELTA_TIME, minutes
 _RANGE_POSITION_TOLERANCE = (0, 20)  # CONF_POSITION_TOLERANCE, percent
 
 # Manual override.
@@ -999,6 +1076,7 @@ _RANGE_MANUAL_THRESHOLD = (0, 99)  # CONF_MANUAL_THRESHOLD, percent
 _RANGE_FORCE_POSITION = (0, 100)  # CONF_FORCE_OVERRIDE_POSITION, percent
 _RANGE_CUSTOM_POSITION = (0, 100)  # per-slot custom position, percent
 _RANGE_CUSTOM_PRIORITY = (1, 100)  # per-slot custom priority (100 = safety)
+_RANGE_HANDLER_PRIORITY = (1, 99)  # built-in handler priority (100 reserved=safety)
 _RANGE_TILT = (0, 100)  # per-slot/default/sunset tilt, percent
 
 # Motion.
@@ -1068,7 +1146,6 @@ DEFAULT_MOTION_TEMPLATE_MODE = DEFAULT_TEMPLATE_COMBINE_MODE
 # ``from . import const`` (the partially-initialised module is fine — it only
 # reads names defined before this line).
 from .config_fields import OPTION_RANGES  # noqa: E402, F401
-
 
 # =============================================================================
 # 27. Enumerations (semantic identifiers)

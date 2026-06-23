@@ -35,6 +35,7 @@ def _ctx(
     *,
     our_state: int = 50,
     new_position: int | None = 50,
+    old_position: int | None = None,
     manual_threshold: int | None = 5,
     is_in_transit: bool = False,
     primary_suppress: bool = False,
@@ -53,6 +54,7 @@ def _ctx(
         new_state=new_state,
         old_state=None,
         new_position=new_position,
+        old_position=old_position,
         caps=MagicMock(),
         policy=policy,
         manual_threshold=manual_threshold,
@@ -185,18 +187,76 @@ def test_position_delta_threshold_floored_at_tolerance():
     assert d.event_name == "manual_override_rejected_within_threshold"
 
 
-def test_position_delta_no_recorded_target_suppresses_override():
-    """No recorded command target → numeric delta is meaningless, no override.
+def test_position_delta_no_recorded_target_resting_position_still_suppressed():
+    """No recorded target + cover resting (old≈new) → still suppressed (#546).
 
     Issue #546: when ACP never sent a command, ``our_state`` is the pipeline's
-    theoretical default, not a commanded position. Comparing a real cover
-    position against it is meaningless and must NOT mark manual override.
+    theoretical default, not a commanded position. A cover simply republishing
+    its resting position (old == new) must NOT mark manual override, even though
+    that position differs wildly from the meaningless default.
     """
     d = PositionDeltaDetector().detect(
         _ctx(
             our_state=100,
+            old_position=25,
             new_position=25,
             manual_threshold=3,
+            has_recorded_target=False,
+        )
+    )
+    assert d.mark_manual is False
+    assert d.event_name == "manual_override_rejected_no_command_target"
+
+
+def test_position_delta_no_recorded_target_real_move_marks_override():
+    """No recorded target + a real move (old≠new) → marks override (#654).
+
+    A context-less physical-remote move shows the position changing between
+    old_state and new_state. Even without a recorded command target, that
+    change itself is the user touch and must engage the override, recording
+    new_position (where the user left it) as the manual position.
+    """
+    d = PositionDeltaDetector().detect(
+        _ctx(
+            our_state=100,
+            old_position=25,
+            new_position=80,
+            manual_threshold=3,
+            has_recorded_target=False,
+        )
+    )
+    assert d.mark_manual is True
+    assert d.event_name == "manual_override_set"
+    assert d.event_kwargs["new_position"] == 80
+
+
+def test_position_delta_no_recorded_target_old_position_none_suppressed():
+    """No recorded target + unknown old position → cannot prove a move, suppress."""
+    d = PositionDeltaDetector().detect(
+        _ctx(
+            our_state=100,
+            old_position=None,
+            new_position=80,
+            manual_threshold=3,
+            has_recorded_target=False,
+        )
+    )
+    assert d.mark_manual is False
+    assert d.event_name == "manual_override_rejected_no_command_target"
+
+
+def test_position_delta_no_recorded_target_subthreshold_move_suppressed():
+    """No recorded target + tiny move (2% < tolerance floor 3%) → suppressed.
+
+    A sub-tolerance drift between old and new is motor imprecision, not a user
+    touch, so it stays suppressed even with no recorded command target.
+    """
+    d = PositionDeltaDetector().detect(
+        _ctx(
+            our_state=100,
+            old_position=25,
+            new_position=27,
+            manual_threshold=0,
             has_recorded_target=False,
         )
     )

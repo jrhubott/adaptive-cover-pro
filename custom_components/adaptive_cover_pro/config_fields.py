@@ -47,6 +47,7 @@ from .const import (
     CONF_AWNING_HOUSING_OFFSET,
     CONF_AWNING_MAX_ANGLE,
     CONF_AWNING_MIN_ANGLE,
+    CONF_AWNING_PIVOT_OFFSET,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
@@ -73,6 +74,7 @@ from .const import (
     CONF_ENABLE_POSITION_MATCHING,
     CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
+    CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
     CONF_FORCE_OVERRIDE_MIN_MODE,
     CONF_FORCE_OVERRIDE_POSITION,
@@ -90,6 +92,8 @@ from .const import (
     CONF_IRRADIANCE_ENTITY,
     CONF_IRRADIANCE_THRESHOLD,
     CONF_IS_SUNNY_SENSOR,
+    CONF_IS_SUNNY_TEMPLATE,
+    CONF_IS_SUNNY_TEMPLATE_MODE,
     CONF_LENGTH_AWNING,
     CONF_LUX_ENTITY,
     CONF_LUX_THRESHOLD,
@@ -119,6 +123,8 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_POSITION_TOLERANCE,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_TEMPLATE,
+    CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
@@ -145,7 +151,11 @@ from .const import (
     CONF_WEATHER_BYPASS_AUTO_CONTROL,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
+    CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
+    CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
     CONF_WEATHER_OVERRIDE_MIN_MODE,
     CONF_WEATHER_OVERRIDE_POSITION,
     CONF_WEATHER_RAIN_SENSOR,
@@ -205,6 +215,7 @@ SECTION_WEATHER_OVERRIDE = "weather_override"
 SECTION_MANUAL_OVERRIDE = "manual_override"
 SECTION_CUSTOM_POSITION = "custom_position"
 SECTION_MOTION_OVERRIDE = "motion_override"
+SECTION_PIPELINE_PRIORITIES = "pipeline_priorities"
 SECTION_DEBUG = "debug"
 
 
@@ -272,6 +283,18 @@ def priority_slider() -> selector.NumberSelector:
         selector.NumberSelectorConfig(
             min=1,
             max=100,
+            step=1,
+            mode=selector.NumberSelectorMode.SLIDER,
+        )
+    )
+
+
+def priority_slider_builtin() -> selector.NumberSelector:
+    """Return a priority selector for a built-in handler (1-99; 100=safety only)."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=1,
+            max=99,
             step=1,
             mode=selector.NumberSelectorMode.SLIDER,
         )
@@ -502,16 +525,20 @@ _SUN_TRACKING_SPECS = _spec(
         default=False,
         make_selector=_bool(),
     ),
+    # minimize_movements / max_coverage_steps are L4 global motion constraints
+    # (config-flow automation step), not sun-tracking UI fields (#613). The
+    # acp.set_sun_tracking service still groups them (stable API) — see
+    # services/options_service._SECTION_SUN_TRACKING.
     FieldSpec(
         CONF_MINIMIZE_MOVEMENTS,
-        SECTION_SUN_TRACKING,
+        SECTION_AUTOMATION,
         ValidatorKind.BOOL,
         default=DEFAULT_MINIMIZE_MOVEMENTS,
         make_selector=_bool(),
     ),
     FieldSpec(
         CONF_MAX_COVERAGE_STEPS,
-        SECTION_SUN_TRACKING,
+        SECTION_AUTOMATION,
         ValidatorKind.RANGE,
         rng=const._RANGE_MAX_COVERAGE_STEPS,
         default=DEFAULT_MAX_COVERAGE_STEPS,
@@ -587,6 +614,14 @@ _POSITION_SPECS = _spec(
         SECTION_POSITION,
         ValidatorKind.RANGE,
         rng=const._RANGE_SUNSET_POS,
+        clearable=True,
+        make_selector=_number(minimum=0, maximum=100, step=1, unit="%"),
+    ),
+    FieldSpec(
+        CONF_END_OF_WINDOW_POS,
+        SECTION_POSITION,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_END_OF_WINDOW_POS,
         clearable=True,
         make_selector=_number(minimum=0, maximum=100, step=1, unit="%"),
     ),
@@ -1124,6 +1159,45 @@ def custom_position_schema(*, include_tilt: bool = False) -> vol.Schema:
     return vol.Schema(schema)
 
 
+# Built-in handler priority overrides. One slider per configurable handler, in
+# default-priority order (highest first). Each clears back to the handler's class
+# default. Range is _RANGE_HANDLER_PRIORITY (1-99); 100 stays custom-slot safety.
+# The order here is the form order; the key order also matters for tie-breaking
+# in build_handlers (insertion order = stable-sort tiebreak).
+PIPELINE_PRIORITY_KEYS: tuple[str, ...] = (
+    const.CONF_WEATHER_PRIORITY,
+    const.CONF_MANUAL_OVERRIDE_PRIORITY,
+    const.CONF_MOTION_TIMEOUT_PRIORITY,
+    const.CONF_CLOUD_SUPPRESSION_PRIORITY,
+    const.CONF_CLIMATE_PRIORITY,
+    const.CONF_GLARE_ZONE_PRIORITY,
+    const.CONF_SOLAR_PRIORITY,
+)
+
+
+_PIPELINE_PRIORITY_SPECS = _spec(
+    *[
+        FieldSpec(
+            key,
+            SECTION_PIPELINE_PRIORITIES,
+            ValidatorKind.RANGE,
+            rng=const._RANGE_HANDLER_PRIORITY,
+            clearable=True,
+            make_selector=_const(priority_slider_builtin),
+        )
+        for key in PIPELINE_PRIORITY_KEYS
+    ]
+)
+
+
+def pipeline_priorities_schema() -> vol.Schema:
+    """Build the pipeline-priorities section schema (one slider per handler)."""
+    schema: dict = {
+        vol.Optional(key): priority_slider_builtin() for key in PIPELINE_PRIORITY_KEYS
+    }
+    return vol.Schema(schema)
+
+
 # Glare-zones enable toggle — appended to the sun-tracking section for cover
 # types that support glare zones (blind). Config-flow-only (no validator / no
 # range), matching the legacy behaviour.
@@ -1143,6 +1217,30 @@ _GLARE_TOGGLE_SPECS = _spec(
 # a bound sensor's unit; the section builders (config_dynamic.py) emit the
 # markers. Here we record range/default/validator so the derived maps are
 # single-sourced.
+
+
+def _condition_template_specs(
+    template_key: str, mode_key: str, section: str
+) -> tuple[FieldSpec, ...]:
+    """FieldSpec pair for an optional boolean condition template + combine mode.
+
+    The single source for the is_sunny / presence / is-raining / is-windy
+    template fields (issue #639): a clearable ``NONE`` template plus a ``SELECT``
+    combine mode (``TemplateCombineMode``, default OR). The selectors are built
+    in ``config_dynamic`` (dynamic section → ``make_selector=None``), mirroring
+    the custom-position / daytime-gate template pattern.
+    """
+    return (
+        FieldSpec(template_key, section, ValidatorKind.NONE, clearable=True),
+        FieldSpec(
+            mode_key,
+            section,
+            ValidatorKind.SELECT,
+            default=DEFAULT_TEMPLATE_COMBINE_MODE,
+            select_options=tuple(m.value for m in const.TemplateCombineMode),
+        ),
+    )
+
 
 _WEATHER_OVERRIDE_SPECS = _spec(
     FieldSpec(
@@ -1180,6 +1278,16 @@ _WEATHER_OVERRIDE_SPECS = _spec(
         SECTION_WEATHER_OVERRIDE,
         ValidatorKind.ENTITY,
         clearable=True,
+    ),
+    *_condition_template_specs(
+        CONF_WEATHER_IS_RAINING_TEMPLATE,
+        CONF_WEATHER_IS_RAINING_TEMPLATE_MODE,
+        SECTION_WEATHER_OVERRIDE,
+    ),
+    *_condition_template_specs(
+        CONF_WEATHER_IS_WINDY_TEMPLATE,
+        CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
+        SECTION_WEATHER_OVERRIDE,
     ),
     FieldSpec(
         CONF_WEATHER_SEVERE_SENSORS,
@@ -1243,6 +1351,9 @@ _LIGHT_CLOUD_SPECS = _spec(
     FieldSpec(
         CONF_IS_SUNNY_SENSOR, SECTION_LIGHT_CLOUD, ValidatorKind.ENTITY, clearable=True
     ),
+    *_condition_template_specs(
+        CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE, SECTION_LIGHT_CLOUD
+    ),
     FieldSpec(
         CONF_LUX_ENTITY, SECTION_LIGHT_CLOUD, ValidatorKind.ENTITY, clearable=True
     ),
@@ -1302,6 +1413,11 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
         SECTION_TEMPERATURE_CLIMATE,
         ValidatorKind.ENTITY,
         clearable=True,
+    ),
+    *_condition_template_specs(
+        CONF_PRESENCE_TEMPLATE,
+        CONF_PRESENCE_TEMPLATE_MODE,
+        SECTION_TEMPERATURE_CLIMATE,
     ),
     FieldSpec(
         CONF_TEMP_LOW,
@@ -1430,6 +1546,12 @@ _GEOMETRY_SPECS = _spec(
         rng=const._RANGE_AWNING_HOUSING_OFFSET,
     ),
     FieldSpec(
+        CONF_AWNING_PIVOT_OFFSET,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_AWNING_PIVOT_OFFSET,
+    ),
+    FieldSpec(
         CONF_TILT_DEPTH,
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
@@ -1520,6 +1642,7 @@ _ALL_SPEC_GROUPS: tuple[list[FieldSpec], ...] = (
     _custom_position_base_specs(),
     _custom_position_tilt_specs(),
     _MOTION_OVERRIDE_SPECS,
+    _PIPELINE_PRIORITY_SPECS,
     _DEBUG_SPECS,
 )
 

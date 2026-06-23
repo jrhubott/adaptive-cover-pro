@@ -613,6 +613,70 @@ class TestForecastSunsetParity:
         assert {s.position for s in f.samples} == {20, 80}
 
 
+class TestForecastEndOfWindowPosition:
+    """Forecast reflects the end-of-window position with the two-phase handoff.
+
+    issue #625: between window-end and astral sunset the projected default is
+    the end-of-window position (phase 1); after astral sunset it hands off to
+    the astral sunset position (phase 2). With no sunset_pos the eow position
+    persists across the evening.
+    """
+
+    def test_two_phase_handoff_in_forecast(self):
+        sunrise = _DAY_START + timedelta(hours=6)
+        sunset = _DAY_START + timedelta(hours=20)
+        sd = _make_sun_data(sunrise=sunrise, sunset=sunset)
+        eow_time = _DAY_START + timedelta(hours=19, minutes=30)  # window-end 19:30
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(h_def=80, sunset_pos=20),
+            now=_NOW,
+            end_of_window_pos=0,
+            end_of_window_time=eow_time,
+        )
+        pos_at = {s.t: s.position for s in f.samples}
+        # Before window-end → daytime default.
+        assert pos_at[_DAY_START + timedelta(hours=12)] == 80
+        # After window-end but before astral sunset → end-of-window (phase 1).
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 0
+        # After astral sunset → astral sunset position (phase 2 handoff).
+        assert pos_at[_DAY_START + timedelta(hours=22)] == 20
+
+    def test_no_sunset_pos_persists_across_evening(self):
+        sunrise = _DAY_START + timedelta(hours=6)
+        sunset = _DAY_START + timedelta(hours=20)
+        sd = _make_sun_data(sunrise=sunrise, sunset=sunset)
+        eow_time = _DAY_START + timedelta(hours=19, minutes=30)
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(h_def=80, sunset_pos=None),
+            now=_NOW,
+            end_of_window_pos=0,
+            end_of_window_time=eow_time,
+        )
+        pos_at = {s.t: s.position for s in f.samples}
+        assert pos_at[_DAY_START + timedelta(hours=12)] == 80
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 0
+        assert pos_at[_DAY_START + timedelta(hours=22)] == 0
+
+    def test_omitting_eow_kwargs_is_no_regression(self):
+        sunrise = _DAY_START + timedelta(hours=6)
+        sunset = _DAY_START + timedelta(hours=20)
+        sd = _make_sun_data(sunrise=sunrise, sunset=sunset)
+        f = build_forecast(
+            sun_data=sd,
+            cover_factory=_make_cover_factory(solar_valid=False),
+            config=_make_config(h_def=80, sunset_pos=20),
+            now=_NOW,
+        )
+        pos_at = {s.t: s.position for s in f.samples}
+        # Without the feature: daytime default before sunset, sunset pos after.
+        assert pos_at[_DAY_START + timedelta(hours=19, minutes=45)] == 80
+        assert pos_at[_DAY_START + timedelta(hours=22)] == 20
+
+
 class TestForecastMatchesLivePipeline:
     """Anti-drift lock: forecast samples == the live snapshot-based helpers."""
 
@@ -795,6 +859,95 @@ async def test_async_recompute_forecast_swallows_exceptions(monkeypatch):
     # No exception escapes.
     await coord_mod.AdaptiveDataUpdateCoordinator.async_recompute_forecast(coord)
     assert coord.data.position_forecast is None
+
+
+class TestForecastShimEndOfWindow:
+    """build_forecast_for_coord threads the eow option through, gated on return_sunset."""
+
+    def _stub_coord(self, *, options, end_time):
+        from custom_components.adaptive_cover_pro.coordinator import (
+            AdaptiveDataUpdateCoordinator,
+        )
+
+        coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+        coord.config_entry = MagicMock()
+        coord.config_entry.options = options
+        coord.logger = MagicMock()
+        coord.hass = MagicMock()
+        coord.hass.config.time_zone = "UTC"
+        sun_data = _make_sun_data(
+            sunrise=_DAY_START + timedelta(hours=6),
+            sunset=_DAY_START + timedelta(hours=20),
+        )
+        coord._sun_provider = MagicMock()
+        coord._sun_provider.create_sun_data = MagicMock(return_value=sun_data)
+        coord._config_service = MagicMock()
+        coord._config_service.get_common_data = MagicMock(
+            return_value=_make_config(h_def=80, sunset_pos=20)
+        )
+        coord._policy = MagicMock()
+        coord._policy.position_axis_supported = MagicMock(return_value=False)
+        coord._snapshot = MagicMock()
+        coord._snapshot.cover_capabilities = {}
+        coord._time_mgr = MagicMock()
+        coord._time_mgr.end_time = end_time
+        return coord
+
+    def _run(self, coord):
+        from custom_components.adaptive_cover_pro import forecast as fc_mod
+
+        spy = MagicMock(return_value=MagicMock(name="Forecast"))
+        with patch.object(fc_mod, "build_forecast", spy):
+            fc_mod.build_forecast_for_coord(coord)
+        return spy
+
+    def test_passes_eow_pos_and_time_when_gate_on(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_END_OF_WINDOW_POS,
+            CONF_RETURN_SUNSET,
+        )
+
+        end_time = (_DAY_START + timedelta(hours=19, minutes=30)).replace(tzinfo=None)
+        coord = self._stub_coord(
+            options={CONF_RETURN_SUNSET: True, CONF_END_OF_WINDOW_POS: 0},
+            end_time=end_time,
+        )
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["end_of_window_pos"] == 0
+        assert kwargs["end_of_window_time"] is not None
+        # tz attached so it's comparable to the tz-aware sun_data.times grid.
+        assert kwargs["end_of_window_time"].tzinfo is not None
+
+    def test_gate_off_passes_none(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_END_OF_WINDOW_POS,
+            CONF_RETURN_SUNSET,
+        )
+
+        end_time = (_DAY_START + timedelta(hours=19, minutes=30)).replace(tzinfo=None)
+        coord = self._stub_coord(
+            options={CONF_RETURN_SUNSET: False, CONF_END_OF_WINDOW_POS: 0},
+            end_time=end_time,
+        )
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["end_of_window_pos"] is None
+
+    def test_no_end_time_makes_feature_inert(self):
+        from custom_components.adaptive_cover_pro.const import (
+            CONF_END_OF_WINDOW_POS,
+            CONF_RETURN_SUNSET,
+        )
+
+        coord = self._stub_coord(
+            options={CONF_RETURN_SUNSET: True, CONF_END_OF_WINDOW_POS: 0},
+            end_time=None,
+        )
+        spy = self._run(coord)
+        _, kwargs = spy.call_args
+        assert kwargs["end_of_window_pos"] is None
+        assert kwargs["end_of_window_time"] is None
 
 
 # ---------------------------------------------------------------------------

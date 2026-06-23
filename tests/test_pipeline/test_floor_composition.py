@@ -40,7 +40,6 @@ from custom_components.adaptive_cover_pro.state.climate_provider import (
 
 from tests.test_pipeline.conftest import make_snapshot
 
-
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------

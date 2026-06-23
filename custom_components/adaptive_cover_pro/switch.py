@@ -22,9 +22,8 @@ from .const import (
     CONF_OUTSIDETEMP_ENTITY,
     CONF_SENSOR_TYPE,
     CONF_WEATHER_ENTITY,
-    DOMAIN,
 )
-from .coordinator import AdaptiveDataUpdateCoordinator
+from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
 from .helpers import motion_entities
@@ -185,13 +184,11 @@ def _glare_zone_specs(entry: ConfigEntry) -> list[_SwitchSpec]:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: AdaptiveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the demo switch platform."""
-    coordinator: AdaptiveDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator: AdaptiveDataUpdateCoordinator = config_entry.runtime_data
 
     specs: list[_SwitchSpec] = [
         spec for spec in _SWITCH_SPECS if spec.enabled_when(config_entry)

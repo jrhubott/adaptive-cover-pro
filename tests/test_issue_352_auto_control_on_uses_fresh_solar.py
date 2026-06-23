@@ -32,7 +32,6 @@ from custom_components.adaptive_cover_pro.managers.toggles import ToggleManager
 from custom_components.adaptive_cover_pro.pipeline.types import PipelineResult
 from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
 
-
 SOLAR_POSITION = 30
 CACHED_DEFAULT_POSITION = 100  # previous cycle's DefaultHandler win (open)
 
@@ -75,6 +74,7 @@ def _make_coord_with_stale_default():
     coord.manager = manager
     coord._time_mgr = MagicMock()
     coord._time_mgr.is_active = True  # check_adaptive_time delegates here
+    coord._time_mgr.clock_window_open = True  # clock_window_open delegates here (#656)
     coord._check_sun_validity_transition = MagicMock(return_value=False)
     coord._is_custom_position_sensor_trigger = MagicMock(return_value=False)
     coord._last_state_change_entity = None
@@ -243,6 +243,7 @@ async def test_auto_control_on_outside_time_window_does_not_dispatch():
     """
     coord = _make_coord_with_stale_default()
     coord._time_mgr.is_active = False  # outside time window
+    coord._time_mgr.clock_window_open = False  # clock genuinely closed (#656)
     _wire_solar_refresh(coord)
 
     switch = _make_switch(coord)

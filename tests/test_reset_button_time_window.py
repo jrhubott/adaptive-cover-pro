@@ -16,14 +16,24 @@ from unittest.mock import AsyncMock, MagicMock
 # ---------------------------------------------------------------------------
 
 
-def _make_coordinator(*, check_adaptive_time=True, automatic_control=True):
-    """Minimal coordinator mock for testing _async_send_after_override_clear."""
+def _make_coordinator(
+    *, check_adaptive_time=True, automatic_control=True, clock_window_open=None
+):
+    """Minimal coordinator mock for testing _async_send_after_override_clear.
+
+    ``clock_window_open`` defaults to mirror ``check_adaptive_time`` (closed clock
+    when outside the window). Pass ``clock_window_open=True`` to model the
+    gate-dark case: clock still open, daytime gate reads dark (#656).
+    """
     from custom_components.adaptive_cover_pro.managers.cover_command import (
         PositionContext,
     )
 
     coordinator = MagicMock()
     coordinator.check_adaptive_time = check_adaptive_time
+    coordinator.clock_window_open = (
+        check_adaptive_time if clock_window_open is None else clock_window_open
+    )
     coordinator.automatic_control = automatic_control
     coordinator.entities = ["cover.test"]
     coordinator.logger = MagicMock()
@@ -60,13 +70,18 @@ def _make_button(coordinator, entities):
 
 
 @pytest.mark.asyncio
-async def test_send_after_override_clear_skips_when_outside_time_window():
-    """apply_position must not be called when check_adaptive_time is False."""
+async def test_send_after_override_clear_skips_when_clock_window_closed():
+    """apply_position must not be called when the user's start/end clock is closed.
+
+    Re-scoped from the old "outside time window" test (issue #656): the guard now
+    suppresses only when the *clock* window is genuinely closed — not merely when
+    the daytime gate reads dark. Model the closed-clock case explicitly.
+    """
     from custom_components.adaptive_cover_pro.coordinator import (
         AdaptiveDataUpdateCoordinator,
     )
 
-    coordinator = _make_coordinator(check_adaptive_time=False)
+    coordinator = _make_coordinator(check_adaptive_time=False, clock_window_open=False)
 
     result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
         coordinator, 75, {}
@@ -74,6 +89,35 @@ async def test_send_after_override_clear_skips_when_outside_time_window():
 
     coordinator._cmd_svc.apply_position.assert_not_called()
     assert result == set()
+
+
+@pytest.mark.asyncio
+async def test_send_after_override_clear_sends_when_gate_dark_but_clock_open():
+    """apply_position MUST be called with the night position when gate dark but clock open.
+
+    Issue #656 core fix: clearing a manual override at night (degenerate clock so
+    the clock window stays open; daytime gate reads dark so is_active is False)
+    must dispatch the pipeline's night position (0), returning the cover to its
+    computed default instead of leaving it where the user parked it.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coordinator = _make_coordinator(
+        check_adaptive_time=False,  # gate dark → is_active False
+        clock_window_open=True,  # clock still open
+        automatic_control=True,
+    )
+
+    result = await AdaptiveDataUpdateCoordinator._async_send_after_override_clear(
+        coordinator, 0, {}
+    )
+
+    coordinator._cmd_svc.apply_position.assert_called_once()
+    sent_position = coordinator._cmd_svc.apply_position.call_args[0][1]
+    assert sent_position == 0
+    assert result == {"cover.test"}
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_CALL_SERVICE, Platform
 from homeassistant.core import HomeAssistant
@@ -16,8 +18,11 @@ from homeassistant.helpers.template import Template
 
 from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
+    CONF_ENABLE_POSITION_MATCHING,
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_START_ENTITY,
@@ -32,7 +37,9 @@ from .const import (
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
+    CONF_WEATHER_IS_RAINING_TEMPLATE,
     CONF_WEATHER_IS_WINDY_SENSOR,
+    CONF_WEATHER_IS_WINDY_TEMPLATE,
     CONF_WEATHER_RAIN_SENSOR,
     CONF_WEATHER_SEVERE_SENSORS,
     CONF_WEATHER_WIND_DIRECTION_SENSOR,
@@ -43,8 +50,12 @@ from .const import (
     DOMAIN,
     _LOGGER,
 )
-from .coordinator import AdaptiveDataUpdateCoordinator
-from .helpers import custom_position_slot_sensors, motion_entities
+from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
+from .helpers import (
+    copy_legacy_slot_sensors_to_list,
+    custom_position_slot_sensors,
+    motion_entities,
+)
 from .templates import is_template_string
 from .migrations import (
     async_prune_legacy_entities,
@@ -73,10 +84,40 @@ async def async_initialize_integration(
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+def _register_template_tracker(
+    hass: HomeAssistant,
+    entry: AdaptiveConfigEntry,
+    template_str: str | None,
+    action: Callable,
+    description: str,
+) -> None:
+    """Track one rendered template result, wiring teardown to the entry.
+
+    Shared by the occupancy, custom-position, weather, and daytime-gate
+    templates (issues #577/#563/#639/#632): tracking the rendered result gives
+    a template-only override sensor-grade immediacy — the cover reacts the
+    instant the template flips, with no companion binary sensor and no polling.
+    Non-templates are skipped; render/parse failures are logged and skipped.
+    """
+    if not is_template_string(template_str):
+        return
+    try:
+        _track_info = async_track_template_result(
+            hass,
+            [TrackTemplate(Template(template_str, hass), None)],
+            action,
+        )
+    except (TemplateError, ValueError) as err:
+        _LOGGER.warning(
+            "%s failed to register (%r): %s", description, template_str, err
+        )
+    else:
+        entry.async_on_unload(_track_info.async_remove)
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Set up Adaptive Cover Pro from a config entry."""
 
-    hass.data.setdefault(DOMAIN, {})
     await async_setup_services(hass)
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
@@ -114,6 +155,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # than waiting for the next periodic refresh or another entity change.
     for _slot_keys in CUSTOM_POSITION_SLOTS.values():
         _entities.extend(custom_position_slot_sensors(entry.options, _slot_keys))
+
+    # Add daytime gate sensors (issue #632) so flipping the gate OFF (dark)
+    # triggers an immediate positioning cycle — same immediacy as lux/irradiance.
+    _entities.extend(entry.options.get(CONF_DAYTIME_GATE_SENSORS, []))
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 
@@ -157,44 +202,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # the rendered result means the cover reacts the instant the template flips
     # truthy — same immediacy as a motion sensor, no polling. Re-registered on
     # every reload (options changes trigger a full reload).
-    _motion_template = entry.options.get(CONF_MOTION_TEMPLATE)
-    if is_template_string(_motion_template):
-        try:
-            _track_info = async_track_template_result(
-                hass,
-                [TrackTemplate(Template(_motion_template, hass), None)],
-                coordinator.async_check_motion_template_change,
-            )
-        except (TemplateError, ValueError) as err:
-            _LOGGER.warning(
-                "Motion occupancy template failed to register (%r): %s",
-                _motion_template,
-                err,
-            )
-        else:
-            entry.async_on_unload(_track_info.async_remove)
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_MOTION_TEMPLATE),
+        coordinator.async_check_motion_template_change,
+        "Motion occupancy template",
+    )
 
     # Register each custom-position slot's optional condition template (issue
     # #563). Same pattern as the occupancy template above: tracking the
     # rendered result gives sensor-grade immediacy when a template flips.
     for _slot_keys in CUSTOM_POSITION_SLOTS.values():
-        _slot_template = entry.options.get(_slot_keys["template"])
-        if not is_template_string(_slot_template):
-            continue
-        try:
-            _track_info = async_track_template_result(
-                hass,
-                [TrackTemplate(Template(_slot_template, hass), None)],
-                coordinator.async_check_custom_position_template_change,
-            )
-        except (TemplateError, ValueError) as err:
-            _LOGGER.warning(
-                "Custom position template failed to register (%r): %s",
-                _slot_template,
-                err,
-            )
-        else:
-            entry.async_on_unload(_track_info.async_remove)
+        _register_template_tracker(
+            hass,
+            entry,
+            entry.options.get(_slot_keys["template"]),
+            coordinator.async_check_custom_position_template_change,
+            "Custom position template",
+        )
 
     # Register weather sensor listeners separately (need custom handler for clear-delay)
     _weather_sensor_ids: list[str] = []
@@ -219,6 +245,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         )
 
+    # Register the optional is-raining / is-windy condition templates (issue
+    # #639). Same pattern as the occupancy/custom-position templates above:
+    # tracking the rendered result lets a template-only weather override engage
+    # and react the instant the template flips, with no companion binary sensor.
+    for _weather_template in [
+        entry.options.get(CONF_WEATHER_IS_RAINING_TEMPLATE),
+        entry.options.get(CONF_WEATHER_IS_WINDY_TEMPLATE),
+    ]:
+        _register_template_tracker(
+            hass,
+            entry,
+            _weather_template,
+            coordinator.async_check_weather_template_change,
+            "Weather condition template",
+        )
+
+    # Register the optional daytime-gate template (issue #632). Tracking the
+    # rendered result gives the gate the same sensor-grade immediacy as the
+    # occupancy and weather templates — the cover repositions the instant the
+    # template flips dark, with no polling.
+    _register_template_tracker(
+        hass,
+        entry,
+        entry.options.get(CONF_DAYTIME_GATE_TEMPLATE),
+        coordinator.async_check_daytime_gate_template_change,
+        "Daytime gate template",
+    )
+
     # Register cleanup for cover command service reconciliation timer
     entry.async_on_unload(coordinator._cmd_svc.stop)
 
@@ -235,7 +289,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Store coordinator before platform setup so sensor async_added_to_hass can
     # access it during RestoreEntity rehydration (must run before first_refresh).
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     # Prune entity registry orphans left over from past unique_id renames.
     # Runs before platform setup so orphans are removed before new entities register.
@@ -283,10 +337,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
         await async_unload_services(hass)
 
     return unload_ok
@@ -384,6 +437,27 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.data.get("name", entry.entry_id),
             )
         new_minor = 2
+
+    # v3.2 → v3.3: copy each legacy custom_position_sensor_N single-sensor key
+    # into the new custom_position_sensors_N list key so pre-multi-sensor entries
+    # prefill the options-flow multi-select correctly (issue #563 trailing defect).
+    # Additive + rollback-safe: legacy keys are left intact.
+    if new_version == 3 and new_minor < 3:
+        if copy_legacy_slot_sensors_to_list(new_options):
+            _LOGGER.info(
+                "Migrated legacy single-sensor keys of %s into list keys",
+                entry.data.get("name", entry.entry_id),
+            )
+        new_minor = 3
+
+    # v3.3 → v3.4: enable position matching by default for every pre-existing
+    # entry so upgrading covers keep the old reconcile/chase behavior instead of
+    # silently flipping to the new command-once default (issue #591, #606). New
+    # installs created on v3.4 onwards default to False via the config-flow
+    # schema. Additive + rollback-safe: the key is only filled when absent.
+    if new_version == 3 and new_minor < 4:
+        new_options.setdefault(CONF_ENABLE_POSITION_MATCHING, True)
+        new_minor = 4
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

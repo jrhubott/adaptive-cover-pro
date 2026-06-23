@@ -22,7 +22,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 _NOW = datetime(2026, 6, 1, 6, 0, tzinfo=UTC)
 
 

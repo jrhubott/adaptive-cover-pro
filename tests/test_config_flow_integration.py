@@ -91,6 +91,7 @@ _SUN_TRACKING_VERTICAL = {
     "enable_glare_zones": False,
 }
 
+# L2a positions step (% values only, #613).
 _POSITION = {
     CONF_DEFAULT_HEIGHT: 50,
     CONF_MIN_POSITION: 0,
@@ -98,12 +99,16 @@ _POSITION = {
     CONF_MAX_POSITION: 100,
     CONF_ENABLE_MAX_POSITION: False,
     # CONF_SUNSET_POS is Optional — omit to use default
+    "interp": False,
+    "open_close_threshold": 50,
+}
+
+# L2b behavior step (timing & thresholds, #613).
+_BEHAVIOR = {
     CONF_SUNSET_OFFSET: 0,
     CONF_SUNRISE_OFFSET: 0,
     CONF_RETURN_SUNSET: False,
     CONF_INVERSE_STATE: False,
-    "interp": False,
-    "open_close_threshold": 50,
 }
 
 _AUTOMATION = {
@@ -447,29 +452,43 @@ async def test_full_setup_vertical_creates_entry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _SUN_TRACKING
     )
+    assert result["step_id"] == "position"
+    # 4-layer order (#613): after L1 (entities/geometry/window) and L2 (position),
+    # the L3 handler steps run in pipeline-priority order, then L4 (automation).
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
+    assert result["step_id"] == "behavior"  # L2b timing & thresholds
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
+        result["flow_id"], _BEHAVIOR
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MANUAL_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _CUSTOM_POSITION
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _MOTION_OVERRIDE
-    )
+    assert result["step_id"] == "weather_override"  # L3 priority 90
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _WEATHER_OVERRIDE
     )
+    assert result["step_id"] == "manual_override"  # L3 priority 80
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MANUAL_OVERRIDE
+    )
+    assert result["step_id"] == "custom_position"  # L3 priority 1-100
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _CUSTOM_POSITION
+    )
+    assert result["step_id"] == "motion_override"  # L3 priority 75
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _MOTION_OVERRIDE
+    )
+    assert result["step_id"] == "light_cloud"  # L3 priority 60
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _LIGHT_CLOUD
     )
+    assert result["step_id"] == "temperature_climate"  # L3 priority 50
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _TEMPERATURE_CLIMATE
+    )
+    assert result["step_id"] == "automation"  # L4 global motion constraints
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _AUTOMATION
     )
     # Summary step
     assert result["type"] == "form"
@@ -803,6 +822,147 @@ async def test_options_flow_menu_returns_list_not_dict(
     ), f"menu_options should be a list for client-side translation, got {type(result['menu_options'])}"
 
 
+@pytest.mark.integration
+async def test_options_menu_order_follows_pipeline_layers(
+    hass: HomeAssistant,
+) -> None:
+    """Options menu is ordered by the 4-layer pipeline model (#613).
+
+    L1 physical (cover_entities, geometry, sun_tracking, blind_spot) →
+    L2 positions (position, interp) →
+    L3 handlers in priority order (weather 90, manual 80, custom, motion 75,
+    cloud/light 60, climate/temperature 50, glare 45) →
+    L4 global motion constraints (automation) → admin (sync, summary, …).
+    """
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_BLIND_SPOT] = True
+    options[CONF_ENABLE_GLARE_ZONES] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Order Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=options,
+        entry_id="order_menu_01",
+        title="Order Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    menu = result["menu_options"]
+
+    def idx(step: str) -> int:
+        assert step in menu, f"{step} missing from menu {menu}"
+        return menu.index(step)
+
+    # L1 → L2
+    assert idx("cover_entities") < idx("geometry") < idx("sun_tracking")
+    assert idx("sun_tracking") < idx("blind_spot") < idx("position")
+    # L2a positions → L2b behavior
+    assert idx("position") < idx("behavior")
+    # L3 handlers in priority-descending order
+    assert (
+        idx("behavior")
+        < idx("weather_override")
+        < idx("manual_override")
+        < idx("custom_position")
+        < idx("motion_override")
+        < idx("light_cloud")
+        < idx("temperature_climate")
+        < idx("glare_zones")
+    )
+    # L4 after all handlers, admin last
+    assert idx("glare_zones") < idx("automation")
+    assert idx("automation") < idx("summary")
+
+
+@pytest.mark.integration
+async def test_custom_position_step_exposes_priority_scale(
+    hass: HomeAssistant,
+) -> None:
+    """The custom_position step renders the inline priority-scale visual (#613)."""
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Scale Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="scale_custom_01",
+        title="Scale Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "custom_position"}
+        )
+    assert result["step_id"] == "custom_position"
+    scale = result["description_placeholders"]["priority_scale"]
+    assert "Weather" in scale and "Default" in scale
+
+
+@pytest.mark.integration
+async def test_options_menu_every_entry_has_a_label(
+    hass: HomeAssistant,
+) -> None:
+    """Every options-menu step must have a menu_options label (#613).
+
+    Guards against a menu entry rendering as a blank row — the symptom when a
+    new step (e.g. ``behavior``) is added to the menu but missing from
+    ``options.step.init.menu_options`` in en.json.
+    """
+    import json
+    import os
+
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    from custom_components.adaptive_cover_pro.const import CONF_INTERP
+
+    options = dict(VERTICAL_OPTIONS)
+    options[CONF_ENABLE_BLIND_SPOT] = True
+    options[CONF_ENABLE_GLARE_ZONES] = True
+    options[CONF_INTERP] = True
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "Label Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=options,
+        entry_id="menu_label_01",
+        title="Label Test",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    menu = result["menu_options"]
+
+    en_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "custom_components",
+        "adaptive_cover_pro",
+        "translations",
+        "en.json",
+    )
+    with open(en_path, encoding="utf-8") as f:
+        labels = json.load(f)["options"]["step"]["init"]["menu_options"]
+
+    missing = [k for k in menu if k not in labels]
+    assert not missing, f"menu entries with no label (blank rows): {missing}"
+
+
 def test_config_flow_does_not_use_system_language() -> None:
     """config_flow must not read the system language (issue #227).
 
@@ -848,12 +1008,17 @@ def test_config_flow_does_not_use_system_language() -> None:
                 CONF_ENABLE_MIN_POSITION: False,
                 CONF_MAX_POSITION: 100,
                 CONF_ENABLE_MAX_POSITION: False,
+                "interp": False,
+                "open_close_threshold": 50,
+            },
+        ),
+        (
+            "behavior",
+            {
                 CONF_SUNSET_OFFSET: 0,
                 CONF_SUNRISE_OFFSET: 0,
                 CONF_RETURN_SUNSET: False,
                 CONF_INVERSE_STATE: False,
-                "interp": False,
-                "open_close_threshold": 50,
             },
         ),
         (
@@ -935,12 +1100,8 @@ async def test_options_flow_form_step_saves_and_returns_to_init(
 async def test_options_flow_position_saves_position_tolerance(
     hass: HomeAssistant,
 ) -> None:
-    """Submitting the position step persists CONF_POSITION_TOLERANCE (issue #591)."""
-    from custom_components.adaptive_cover_pro.const import (
-        CONF_ENABLE_MY_POSITION_ENTITIES,
-        CONF_POSITION_TOLERANCE,
-        CONF_SUNSET_USE_MY,
-    )
+    """Submitting the behavior step persists CONF_POSITION_TOLERANCE (#591/#613)."""
+    from custom_components.adaptive_cover_pro.const import CONF_POSITION_TOLERANCE
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
 
     entry = MockConfigEntry(
@@ -958,27 +1119,19 @@ async def test_options_flow_position_saves_position_tolerance(
         result = await hass.config_entries.options.async_init(entry.entry_id)
         if result["type"] == "menu":
             result = await hass.config_entries.options.async_configure(
-                result["flow_id"], {"next_step_id": "position"}
+                result["flow_id"], {"next_step_id": "behavior"}
             )
-        assert result["step_id"] == "position"
+        assert result["step_id"] == "behavior"
 
-        # Submit the position step with the new tolerance; returns to the menu.
+        # position_tolerance now lives on the L2b behavior step; returns to menu.
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
-                CONF_DEFAULT_HEIGHT: 60,
-                CONF_MIN_POSITION: 0,
-                CONF_ENABLE_MIN_POSITION: False,
-                CONF_MAX_POSITION: 100,
-                CONF_ENABLE_MAX_POSITION: False,
                 CONF_SUNSET_OFFSET: 0,
                 CONF_SUNRISE_OFFSET: 0,
+                CONF_RETURN_SUNSET: False,
                 CONF_INVERSE_STATE: False,
-                "interp": False,
-                "open_close_threshold": 50,
                 CONF_POSITION_TOLERANCE: 8,
-                CONF_ENABLE_MY_POSITION_ENTITIES: False,
-                CONF_SUNSET_USE_MY: False,
             },
         )
         # Finish the flow so the accumulated options are written to the entry.
@@ -1905,9 +2058,6 @@ async def test_options_flow_position_step_exposes_my_position_toggle(
             CONF_ENABLE_MIN_POSITION: False,
             CONF_MAX_POSITION: 100,
             CONF_ENABLE_MAX_POSITION: False,
-            CONF_SUNSET_OFFSET: 0,
-            CONF_SUNRISE_OFFSET: 0,
-            CONF_INVERSE_STATE: False,
             "interp": False,
             "open_close_threshold": 50,
             CONF_ENABLE_MY_POSITION_ENTITIES: True,
@@ -1972,9 +2122,6 @@ async def test_options_flow_position_step_clears_sunset_pos_when_omitted(
             CONF_ENABLE_MIN_POSITION: False,
             CONF_MAX_POSITION: 100,
             CONF_ENABLE_MAX_POSITION: False,
-            CONF_SUNSET_OFFSET: 0,
-            CONF_SUNRISE_OFFSET: 0,
-            CONF_INVERSE_STATE: False,
             "interp": False,
             "open_close_threshold": 50,
             CONF_ENABLE_MY_POSITION_ENTITIES: False,
@@ -2062,11 +2209,15 @@ async def test_full_setup_persists_fov_and_window_width(
             "enable_glare_zones": False,
         },
     )
+    # 4-layer order (#613): position → behavior → L3 handlers → L4 automation.
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _POSITION
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _AUTOMATION
+        result["flow_id"], _BEHAVIOR
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _WEATHER_OVERRIDE
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _MANUAL_OVERRIDE
@@ -2078,13 +2229,13 @@ async def test_full_setup_persists_fov_and_window_width(
         result["flow_id"], _MOTION_OVERRIDE
     )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _WEATHER_OVERRIDE
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _LIGHT_CLOUD
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], _TEMPERATURE_CLIMATE
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _AUTOMATION
     )
     assert result["type"] == "form"
     assert result["step_id"] == "summary"

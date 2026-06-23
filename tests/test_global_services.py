@@ -16,6 +16,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.adaptive_cover_pro.services import (
     _resolve_targets,
@@ -43,9 +44,21 @@ def _make_coordinator(entities: list[str]) -> MagicMock:
 
 
 def _make_hass(coordinators: dict) -> MagicMock:
-    """Create a mock hass with hass.data[DOMAIN] = coordinators."""
+    """Create a mock hass whose loaded ACP entries expose ``coordinators``.
+
+    Each dict key becomes a mock config entry's ``entry_id`` with the coordinator
+    on ``entry.runtime_data`` and state ``LOADED`` — mirroring the registry that
+    ``loaded_coordinators()`` reads after the runtime_data migration.
+    """
     hass = MagicMock()
-    hass.data = {"adaptive_cover_pro": coordinators}
+    entries = []
+    for entry_id, coord in coordinators.items():
+        entry = MagicMock()
+        entry.entry_id = entry_id
+        entry.runtime_data = coord
+        entry.state = ConfigEntryState.LOADED
+        entries.append(entry)
+    hass.config_entries.async_entries = MagicMock(return_value=entries)
     hass.services = MagicMock()
     hass.services.has_service = MagicMock(return_value=False)
     hass.services.async_register = MagicMock()

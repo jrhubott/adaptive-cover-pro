@@ -36,6 +36,7 @@ class DetectionContext:
     new_state: Any  # HA State: .state / .attributes / .last_updated / .context
     old_state: Any | None
     new_position: int | None  # resolved via policy.read_axis_value
+    old_position: int | None  # prior primary-axis value (resolved from old_state)
     caps: Any  # CoverCapabilities
     policy: Any  # CoverTypePolicy
     manual_threshold: int | None
