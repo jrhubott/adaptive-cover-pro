@@ -1250,3 +1250,45 @@ class TestForecast:
         assert "solar-tracking-only" in description
         assert "does not model" in description
         assert "decision_trace" in description
+
+# ---------------------------------------------------------------------------
+# Issue #667: Show active tilt-only custom slot in Control Status string
+# ---------------------------------------------------------------------------
+
+
+class TestTiltOnlyCustomSlotInControlStatus:
+    """Verify tilt-only custom slots are surfaced in the Control Status string."""
+
+    def test_tilt_only_custom_slot_appends_suffix_to_control_status(
+        self, builder: DiagnosticsBuilder
+    ):
+        """Active tilt-only custom slot appends '— tilt fixed by Custom #X' to status.
+
+        Ensures the tilt override is visible to the user even when it does not
+        control the primary position axis, addressing Issue #667.
+        """
+        ctx = _base_ctx(
+            position_winner_reason="solar position 45%",
+            active_tilt_only_custom_slot=3,
+        )
+        diag, _ = builder.build(ctx)
+        control_status = diag.get("control_status", "")
+        assert "solar position 45%" in control_status
+        assert "— tilt fixed by Custom #3" in control_status
+
+    def test_control_status_unchanged_when_no_tilt_only_custom_slot(
+        self, builder: DiagnosticsBuilder
+    ):
+        """No tilt-only custom slot → status message remains unmodified.
+
+        Verifies that the suffix is only appended when a tilt-only custom
+        slot is explicitly active.
+        """
+        ctx = _base_ctx(
+            position_winner_reason="manual position 20%",
+            active_tilt_only_custom_slot=None,
+        )
+        diag, _ = builder.build(ctx)
+        control_status = diag.get("control_status", "")
+        assert control_status == "manual position 20%"
+        assert "tilt fixed by" not in control_status

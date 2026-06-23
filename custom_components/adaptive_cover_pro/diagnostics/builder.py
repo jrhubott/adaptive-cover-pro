@@ -278,6 +278,14 @@ class DiagnosticsBuilder:
         if ctx.cover and not ctx.cover.valid:
             return ControlStatus.SUN_NOT_VISIBLE
 
+        # Check for active tilt-only custom slot (issue #667)
+        if result is not None and result.tilt is not None:
+            # If tilt is set but position is default/solar, it's likely a tilt-only custom slot
+            # Check if there's a custom position override that only affected tilt
+            if hasattr(result, 'custom_position_override') and result.custom_position_override:
+                slot_id = getattr(result.custom_position_override, 'slot_id', '?')
+                return f"{ControlStatus.ACTIVE} — tilt fixed by Custom #{slot_id}"
+
         return ControlStatus.ACTIVE
 
     @classmethod
