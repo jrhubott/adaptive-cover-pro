@@ -53,6 +53,12 @@
           "off": "mdi:window-shutter"
         }
       },
+      "sun_tracking": {
+        "default": "mdi:weather-sunny",
+        "state": {
+          "off": "mdi:weather-sunny-off"
+        }
+      },
       "manual_toggle": {
         "default": "mdi:hand-back-left",
         "state": {

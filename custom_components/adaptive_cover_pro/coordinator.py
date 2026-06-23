@@ -319,7 +319,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._pipeline = self._build_pipeline()
         self._pipeline_result = None
 
-        self._cached_options = None
+        # Snapshot of the last raw config-entry options. The update listener
+        # uses it to distinguish Sun Tracking-only changes from options that
+        # still require a full reload.
+        self._cached_options = dict(self.config_entry.options)
 
         # Initialize configuration service
         self._config_service = ConfigurationService(
@@ -1235,7 +1238,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Run the main coordinator update cycle: calculate position, send commands, build diagnostics."""
         self.logger.debug("Updating data")
         if self.first_refresh:
-            self._cached_options = self.config_entry.options
+            self._cached_options = dict(self.config_entry.options)
 
         # Render any templated threshold options to numbers for this cycle, so
         # every downstream consumer (RuntimeConfig, climate reads) sees a number,
@@ -1915,15 +1918,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._is_reload = False
         self.logger.debug("First refresh handled")
 
+    async def async_apply_sun_tracking_update(self) -> None:
+        """Rebuild the pipeline after Sun Tracking changes without a reload.
+
+        ``enable_sun_tracking`` changes only pipeline composition; they do not
+        alter entity listeners or cover geometry. The refresh evaluates the new
+        winner immediately while the command path keeps its normal gates.
+        """
+        self._pipeline = self._build_pipeline()
+        self._cached_options = dict(self.config_entry.options)
+        # The Sun Tracking switch renders from config_entry.options; notify
+        # listeners so service/options-flow changes redraw the entity too.
+        self.async_update_listeners()
+        self.state_change = True
+        await self.async_refresh()
+
     def _build_pipeline(self) -> PipelineRegistry:
         """Build the override pipeline from the registry of handler factories.
 
-        Called once at coordinator initialisation.  Because the integration
-        reloads fully on every options change (see ``_async_update_listener``
-        in ``__init__.py``), this always sees the current configuration and
-        there is no need to rebuild at runtime. Handler composition lives in
-        ``pipeline.handlers.build_handlers`` (registry-driven), so adding a
-        handler never touches the coordinator.
+        Called at coordinator initialisation and when Sun Tracking is toggled at
+        runtime. Other options changes still reload the integration.
+        Handler composition lives in ``pipeline.handlers.build_handlers``
+        (registry-driven), so adding a handler never touches the coordinator.
         """
         handlers = build_handlers(self.config_entry.options)
         self.logger.debug(

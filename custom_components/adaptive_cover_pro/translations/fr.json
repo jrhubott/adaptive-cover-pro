@@ -1251,6 +1251,13 @@
           "off": "Off"
         }
       },
+      "sun_tracking": {
+        "name": "Suivi du soleil",
+        "state": {
+          "on": "Activé",
+          "off": "Désactivé"
+        }
+      },
       "motion_control": {
         "name": "Contrôle du mouvement",
         "state": {

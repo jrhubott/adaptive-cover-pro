@@ -23,6 +23,7 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_ENABLE_MY_POSITION_ENTITIES,
     CONF_ENABLE_POSITION_MATCHING,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_START_ENTITY,
@@ -467,4 +468,21 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
+    coordinator = entry.runtime_data
+    previous_options = coordinator._cached_options
+    if previous_options is not None:
+        current_options = dict(entry.options)
+        previous_options = dict(previous_options)
+        changed_keys = {
+            key
+            for key in current_options.keys() | previous_options.keys()
+            if current_options.get(key) != previous_options.get(key)
+        }
+
+        if not changed_keys:
+            return
+        if changed_keys == {CONF_ENABLE_SUN_TRACKING}:
+            await coordinator.async_apply_sun_tracking_update()
+            return
+
     await hass.config_entries.async_reload(entry.entry_id)

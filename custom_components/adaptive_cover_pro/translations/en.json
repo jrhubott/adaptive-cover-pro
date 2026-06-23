@@ -1251,6 +1251,13 @@
           "off": "Off"
         }
       },
+      "sun_tracking": {
+        "name": "Sun Tracking",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
       "motion_control": {
         "name": "Motion Control",
         "state": {
