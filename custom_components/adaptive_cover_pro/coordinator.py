@@ -908,6 +908,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._custom_position_template_trigger = True
         await self.async_refresh()
 
+    async def async_check_daytime_gate_template_change(
+        self, event: Event | None, updates: list
+    ) -> None:
+        """Handle the daytime-gate template's rendered result changing (#632).
+
+        Routed from ``async_track_template_result`` so the cover repositions the
+        instant the gate template flips dark — the same immediacy as a gate binary
+        sensor or weather template, with no polling. The tracked result only
+        signals *that* the template changed; ``TimeWindowManager.gate_is_daytime``
+        re-reads live sensor/template state during the subsequent refresh so the
+        OR/AND combine mode is honoured.
+        """
+        self.state_change = True
+        await self.async_refresh()
+
     async def _handle_occupancy_change(self, *, source: str) -> None:
         """Apply an occupancy-source transition shared by sensors and the template.
 
