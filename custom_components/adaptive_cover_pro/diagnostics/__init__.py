@@ -53,22 +53,33 @@ async def async_get_config_entry_diagnostics(
             "status": "unavailable",
             "reason": "coordinator missing — the integration is not set up for this entry",
         }
-    elif coordinator.data is not None:
-        coordinator_diagnostics = _sanitize(coordinator.data.diagnostics)
     else:
-        # Data present-but-None: diagnostics requested before the first completed
-        # update cycle. Surface an explicit marker (not a bare None) and include
-        # the event buffer so there is still a timeline to triage from.
-        marker = {
-            "status": "unavailable",
-            "reason": "no completed update cycle yet — coordinator.data is None",
-        }
-        event_buffer = getattr(coordinator, "_event_buffer", None)
-        if event_buffer is not None:
-            timeline = _sanitize(event_buffer.snapshot())
-            marker["event_timeline"] = timeline
-            marker["data_window"] = DiagnosticsBuilder._compute_data_window(timeline)
-        coordinator_diagnostics = marker
+        if coordinator.data is None:
+            # Diagnostics requested before the first completed update cycle (e.g.
+            # right after a restart/reload). Trigger one refresh so the download
+            # captures a full snapshot instead of an empty marker. Scoped to the
+            # data-is-None case, so a normal download (data already present) never
+            # triggers an extra update cycle or cover commands.
+            await coordinator.async_refresh()
+
+        if coordinator.data is not None:
+            coordinator_diagnostics = _sanitize(coordinator.data.diagnostics)
+        else:
+            # The refresh did not yield data (first cycle still failing). Surface
+            # an explicit marker (not a bare None) and include the event buffer so
+            # there is still a timeline to triage from.
+            marker = {
+                "status": "unavailable",
+                "reason": "no completed update cycle yet — coordinator.data is None",
+            }
+            event_buffer = getattr(coordinator, "_event_buffer", None)
+            if event_buffer is not None:
+                timeline = _sanitize(event_buffer.snapshot())
+                marker["event_timeline"] = timeline
+                marker["data_window"] = DiagnosticsBuilder._compute_data_window(
+                    timeline
+                )
+            coordinator_diagnostics = marker
 
     return {
         "title": "Adaptive Cover Pro Configuration",

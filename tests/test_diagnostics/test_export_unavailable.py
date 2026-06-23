@@ -8,7 +8,7 @@ bare ``None`` that gives no diagnostic clue about why the snapshot is empty.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.config_entries import ConfigEntry
@@ -39,7 +39,7 @@ def _make_hass(coordinator, entry_id: str = "entry-1") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_data_none_emits_marker_with_event_timeline():
-    """coordinator.data is None → status unavailable + sanitized event buffer."""
+    """coordinator.data is None and refresh yields nothing → marker + event buffer."""
     entry = _make_entry()
     events = [
         {"ts": "2026-06-22T20:00:00+00:00", "event": "manual_override_armed"},
@@ -47,6 +47,7 @@ async def test_data_none_emits_marker_with_event_timeline():
     ]
     coordinator = MagicMock()
     coordinator.data = None
+    coordinator.async_refresh = AsyncMock()  # refresh runs but leaves data None
     coordinator._event_buffer.snapshot.return_value = events
 
     hass = _make_hass(coordinator)
@@ -78,8 +79,9 @@ async def test_coordinator_missing_emits_marker_without_timeline():
 async def test_data_none_without_event_buffer_falls_back_to_reason_only():
     """A coordinator stub lacking _event_buffer → marker without timeline, no raise."""
     entry = _make_entry()
-    coordinator = MagicMock(spec=["data"])
+    coordinator = MagicMock(spec=["data", "async_refresh"])
     coordinator.data = None
+    coordinator.async_refresh = AsyncMock()
 
     hass = _make_hass(coordinator)
     result = await async_get_config_entry_diagnostics(hass, entry)
@@ -105,3 +107,62 @@ async def test_data_present_returns_sanitized_passthrough_not_marker():
     assert diag["control_status"] == "sun_tracking"
     assert diag["position"] == 42
     assert "status" not in diag or diag.get("status") != "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_data_none_triggers_refresh_then_returns_full_diagnostics():
+    """Data is None → one refresh runs; if it populates data, export the full snapshot."""
+    entry = _make_entry()
+    coordinator = MagicMock()
+    coordinator.data = None
+
+    async def _refresh():
+        # A completed update cycle populates coordinator.data.
+        populated = MagicMock()
+        populated.diagnostics = {"control_status": "sun_tracking", "position": 42}
+        coordinator.data = populated
+
+    coordinator.async_refresh = AsyncMock(side_effect=_refresh)
+
+    hass = _make_hass(coordinator)
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    coordinator.async_refresh.assert_awaited_once()
+    diag = result["diagnostics"]
+    assert diag["control_status"] == "sun_tracking"
+    assert diag["position"] == 42
+    assert diag.get("status") != "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_data_present_does_not_trigger_refresh():
+    """Data already present → no refresh (no extra update cycle / cover commands)."""
+    entry = _make_entry()
+    coordinator = MagicMock()
+    coordinator.data.diagnostics = {"control_status": "sun_tracking"}
+    coordinator.async_refresh = AsyncMock()
+
+    hass = _make_hass(coordinator)
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    coordinator.async_refresh.assert_not_awaited()
+    assert result["diagnostics"]["control_status"] == "sun_tracking"
+
+
+@pytest.mark.asyncio
+async def test_refresh_failure_falls_back_to_marker():
+    """Data is None and refresh leaves it None → refresh attempted once, marker returned."""
+    entry = _make_entry()
+    events = [{"ts": "2026-06-22T20:00:00+00:00", "event": "manual_override_armed"}]
+    coordinator = MagicMock()
+    coordinator.data = None
+    coordinator.async_refresh = AsyncMock()  # refresh runs but data stays None
+    coordinator._event_buffer.snapshot.return_value = events
+
+    hass = _make_hass(coordinator)
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    coordinator.async_refresh.assert_awaited_once()
+    diag = result["diagnostics"]
+    assert diag["status"] == "unavailable"
+    assert diag["event_timeline"] == events
