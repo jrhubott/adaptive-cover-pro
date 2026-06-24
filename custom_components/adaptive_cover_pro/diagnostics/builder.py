@@ -211,15 +211,21 @@ class DiagnosticsBuilder:
     @staticmethod
     def _get_control_state_reason(ctx: DiagnosticContext) -> str:
         """Get the current control state reason from pipeline result or cover geometry."""
-        if ctx.pipeline_result is not None:
-            method = ctx.pipeline_result.control_method
-            if method == ControlMethod.MOTION:
-                return "Motion Timeout"
-            if method == ControlMethod.MANUAL:
-                return "Manual Override"
-        if ctx.cover:
-            return ctx.cover.control_state_reason
-        return "Unknown"
+        result = ctx.pipeline_result
+        if result is not None and result.control_method == ControlMethod.MOTION:
+            reason = "Motion Timeout"
+        elif result is not None and result.control_method == ControlMethod.MANUAL:
+            reason = "Manual Override"
+        elif ctx.cover:
+            reason = ctx.cover.control_state_reason
+        else:
+            reason = "Unknown"
+
+        # An applied tilt-only custom slot is otherwise invisible on the tracker
+        # entity because the position winner owns the status (#667).
+        if result is not None and result.tilt_only_slot is not None:
+            reason = f"{reason} — tilt fixed by Custom #{result.tilt_only_slot}"
+        return reason
 
     @staticmethod
     def _build_position_explanation(ctx: DiagnosticContext) -> str:
@@ -257,6 +263,13 @@ class DiagnosticsBuilder:
             parts.append(
                 f"manual override active — holding cover at {result.held_position}%"
                 f" (solar would be {result.raw_calculated_position}%)"
+            )
+
+        # Surface an applied tilt-only custom slot alongside the position winner
+        # so it is visible in the Control Status string (#667).
+        if result.tilt_only_slot is not None:
+            parts.append(
+                f"tilt fixed at {result.tilt}% by Custom #{result.tilt_only_slot}"
             )
 
         # Append post-processing transforms if they changed the value

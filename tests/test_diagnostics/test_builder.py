@@ -74,6 +74,8 @@ def _make_pr(
     configured_cloudy_pos: int | None = None,
     bypass_auto_control: bool = False,
     is_safety: bool = False,
+    tilt: int | None = None,
+    tilt_only_slot: int | None = None,
 ) -> PipelineResult:
     """Build a PipelineResult with sensible defaults."""
     return PipelineResult(
@@ -91,6 +93,8 @@ def _make_pr(
         configured_cloudy_pos=configured_cloudy_pos,
         bypass_auto_control=bypass_auto_control,
         is_safety=is_safety,
+        tilt=tilt,
+        tilt_only_slot=tilt_only_slot,
     )
 
 
@@ -1380,3 +1384,45 @@ class TestForecast:
         assert "solar-tracking-only" in description
         assert "does not model" in description
         assert "decision_trace" in description
+
+
+# ---------------------------------------------------------------------------
+# Issue #667: surface an active tilt-only custom slot in the Control Status
+# tracker entity (position_explanation + control_state_reason).
+# ---------------------------------------------------------------------------
+
+
+class TestTiltOnlyCustomSlotSurfacing:
+    """An applied tilt-only custom slot is visible on the Control Status tracker."""
+
+    def test_position_explanation_appends_tilt_only_slot(
+        self, builder: DiagnosticsBuilder
+    ):
+        """position_explanation mentions the tilt-only slot alongside the winner."""
+        pr = _make_pr(
+            reason="solar position 45%",
+            tilt=30,
+            tilt_only_slot=1,
+        )
+        diag, explanation = builder.build(_base_ctx(pipeline_result=pr))
+        assert "solar position 45%" in explanation
+        assert "tilt fixed at 30% by Custom #1" in explanation
+        assert explanation == diag["position_explanation"]
+
+    def test_control_state_reason_appends_tilt_only_slot(
+        self, builder: DiagnosticsBuilder
+    ):
+        """control_state_reason gains a tilt-only suffix for the tracker entity."""
+        pr = _make_pr(reason="solar position 45%", tilt=30, tilt_only_slot=2)
+        diag, _ = builder.build(_base_ctx(pipeline_result=pr))
+        assert diag["control_state_reason"] == "Sun in FOV — tilt fixed by Custom #2"
+
+    def test_no_tilt_only_slot_leaves_strings_unchanged(
+        self, builder: DiagnosticsBuilder
+    ):
+        """With no applied tilt-only slot, neither string mentions a tilt fix."""
+        pr = _make_pr(reason="solar position 45%", tilt=None, tilt_only_slot=None)
+        diag, explanation = builder.build(_base_ctx(pipeline_result=pr))
+        assert "tilt fixed" not in explanation
+        assert "tilt fixed" not in diag["control_state_reason"]
+        assert diag["control_state_reason"] == "Sun in FOV"

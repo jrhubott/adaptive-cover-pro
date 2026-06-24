@@ -313,6 +313,13 @@ class PipelineResult:
     # inside cover_types/.
     tilt_only_contribution_active: bool = False
 
+    # 1-based slot number of the tilt-only contribution that was *applied*
+    # (overlaid its slat angle onto the position winner). Set by the registry
+    # only when the overlay actually took effect (winner's own tilt was None);
+    # None when no tilt-only slot fired or when it was deferred because the
+    # winner already set tilt. Surfaced in the Control Status string (#667).
+    tilt_only_slot: int | None = None
+
     # When True, the coordinator should route this command through
     # CoverCommandService.send_my_position() on non-position-capable covers
     # (cover.stop_cover while stationary → triggers the Somfy "My" hardware preset).

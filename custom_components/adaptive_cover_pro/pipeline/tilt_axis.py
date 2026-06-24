@@ -35,12 +35,15 @@ class TiltAxisContribution:
         label:  Human-readable name used in the trace reason — the bound
                 sensor's friendly name, or its entity_id when unnamed.
         tilt:   The slat angle (0–100) to overlay onto the position winner.
+        slot:   1-based slot number of the contributing custom-position slot,
+                surfaced in the Control Status string when applied (#667).
 
     """
 
     source: str
     label: str
     tilt: int
+    slot: int
 
 
 def gather_tilt_only_contributions(
@@ -64,6 +67,7 @@ def gather_tilt_only_contributions(
                     source=custom_position_handler_name(state.slot),
                     label=label,
                     tilt=state.tilt,
+                    slot=state.slot,
                 )
             )
     return contributions
@@ -92,4 +96,5 @@ def resolve_tilt_axis(snapshot: PipelineSnapshot) -> TiltAxisContribution | None
         source=custom_position_handler_name(winner_state.slot),
         label=label,
         tilt=winner_state.tilt,
+        slot=winner_state.slot,
     )

@@ -229,6 +229,7 @@ class TestResolveTiltAxis:
         assert info.tilt == 42
         assert info.source == "custom_position_2"
         assert info.label == "Glare slot"
+        assert info.slot == 2
 
     def test_highest_priority_wins(self) -> None:
         from custom_components.adaptive_cover_pro.pipeline.tilt_axis import (
@@ -326,6 +327,8 @@ class TestRegistryOverlaysTilt:
         assert result.position == 60
         assert result.tilt == 25
         assert result.tilt_only_contribution_active is True
+        # The applied tilt-only slot identity is recorded for diagnostics (#667).
+        assert result.tilt_only_slot == 1
 
     def test_trace_has_matched_tilt_step_no_stale_skip(self) -> None:
         cover = _solar_cover(calculate_percentage_return=60.0)
@@ -417,6 +420,8 @@ class TestFillWhenUnset:
         ]
         assert len(deferred) == 1
         assert deferred[0].matched is False
+        # Deferred (not applied) → no slot recorded for the Control Status surface (#667).
+        assert result.tilt_only_slot is None
 
 
 # ---------------------------------------------------------------------------
