@@ -4,8 +4,8 @@ ruff~=0.15
 black~=26.5
 colorlog~=6.10
 pvlib~=0.15
-matplotlib~=3.10
-ipykernel~=7.2
+matplotlib~=3.11
+ipykernel~=7.3
 nbconvert>=7.17.1  # For executing notebooks in CI
 pytest>=9.0.3  # pinned by pytest-homeassistant-custom-component to ==9.0.3
 pytest-asyncio>=1.3.0  # pinned by pytest-homeassistant-custom-component to ==1.3.0
