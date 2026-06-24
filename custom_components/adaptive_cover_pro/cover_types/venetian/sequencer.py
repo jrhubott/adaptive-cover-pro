@@ -37,6 +37,8 @@ from ...const import (
     ATTR_TILT_POSITION,
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+    POSITION_CLOSED,
+    POSITION_OPEN,
     VENETIAN_BACKROTATE_MAX_DELTA_PERCENT,
     VENETIAN_DRIFT_RETRY_DELAY_SECONDS,
     VENETIAN_POSITION_SETTLE_NO_CHANGE_SAMPLES,
@@ -74,6 +76,12 @@ _REBASE_SKIP_SETTLE_FAILED = "settle_failed"
 # previously-stored target (fallback when the actuator can't be read).
 _ANCHOR_SOURCE_ACTUAL = "actual"
 _ANCHOR_SOURCE_TARGET_FALLBACK = "target_fallback"
+
+# Special tilt positions that always bypass the min-delta gate (issue #629).
+# A tilt command to fully-open (100) or fully-closed (0) is explicit user
+# intent and must never be silently swallowed by drift suppression. This
+# mirrors the position-axis behaviour in ``managers/cover_command/routing.py``.
+_TILT_SPECIAL_POSITIONS: list[int] = [POSITION_CLOSED, POSITION_OPEN]
 
 
 class DualAxisSequencer:
@@ -390,7 +398,7 @@ class DualAxisSequencer:
                 entity_id,
                 tilt_target,
                 self._get_min_change(),
-                None,
+                _TILT_SPECIAL_POSITIONS,
                 position=anchor,
                 logger=self._logger,
                 axis_label="tilt",

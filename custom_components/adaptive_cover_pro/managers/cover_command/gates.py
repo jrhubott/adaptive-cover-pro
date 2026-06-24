@@ -38,8 +38,9 @@ def check_position_delta(
     Same-position short-circuit is handled upstream in apply_position and
     applies to all callers including force=True (issue #290).
 
-    ``special_positions`` may be ``None`` (treated as empty — no bypass for
-    special values). Used by the tilt axis, which has no special positions.
+    ``special_positions`` may be ``None`` (treated as empty, so no bypass for
+    special values). Both the position axis and the tilt axis pass the special
+    set [0, 100] so fully-open/closed targets are never gated (issue #629).
     ``axis_label`` appears in debug log lines for readability.
     """
     _special = special_positions or []

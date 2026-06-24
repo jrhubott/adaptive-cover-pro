@@ -1883,6 +1883,122 @@ class TestTiltDeltaGate:
         assert hass.services.async_call.call_count == 1
 
 
+@pytest.mark.asyncio
+class TestTiltSpecialPositionBypass:
+    """Tilt commands to 0 or 100 must bypass the min-delta gate (issue #629).
+
+    The position axis already bypasses the delta gate for special positions
+    (0, 100) via ``routing.build_special_positions``. The tilt axis must do the
+    same — a custom-position tilt-only command to 100 (slats fully open) or 0
+    (slats fully closed) is explicit user intent and must never be silently
+    swallowed by the min-delta drift-suppression gate.
+    """
+
+    async def test_tilt_to_100_bypasses_delta_gate_when_near_100(self):
+        """Tilt→100 fires even when the actuator is within min_change of 100.
+
+        Scenario from issue #629: venetian_mode=tilt_only, slot 1 tilt=100,
+        delta_position=12. Actuator at 95 (delta 5 < 12). Without the
+        special-position bypass the gate suppresses the command; with it the
+        service call must fire.
+
+        The actuator reads 95 for the verify step too, so verify sees drift
+        (|95-100|=5 > VENETIAN_TILT_VERIFY_TOLERANCE=5? actually 5 == 5 so
+        within tolerance → target kept). We use tilt_position=97 as the
+        actuator reading to ensure verify sees 3 delta (in-tolerance at 5).
+        """
+        buf = EventBuffer(maxlen=20)
+        hass, seq = _build_sequencer(
+            get_min_change=lambda: 12,
+            get_current_tilt_position=lambda _eid: 97,  # delta=3 from 100, in-tolerance
+            event_buffer=buf,
+        )
+        # Prior target ≠ 100 so the dedup short-circuit does not fire.
+        seq._tilt_targets["cover.x"] = 80
+
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=100, current_position=0, reason="custom_position_1"
+        )
+
+        assert hass.services.async_call.call_count == 1, (
+            "set_cover_tilt_position was not called — tilt→100 was suppressed by "
+            "the min-delta gate instead of bypassing it as a special position"
+        )
+        call_args = hass.services.async_call.call_args.args
+        assert call_args[1] == "set_cover_tilt_position"
+        assert call_args[2]["tilt_position"] == 100
+        # No delta_too_small skip event must have been recorded.
+        skipped_delta = [
+            e
+            for e in buf.snapshot()
+            if e["event"] == "tilt_command_skipped"
+            and e.get("reason") == "delta_too_small"
+        ]
+        assert skipped_delta == [], f"Unexpected delta_too_small skip: {skipped_delta}"
+
+    async def test_tilt_to_0_bypasses_delta_gate_when_near_0(self):
+        """Tilt→0 (slats fully closed) fires even when actuator is within min_change of 0.
+
+        Actuator at 5 (delta 5 < 12). The gate must bypass for the special
+        position 0 the same way it does for 100.
+        """
+        buf = EventBuffer(maxlen=20)
+        hass, seq = _build_sequencer(
+            get_min_change=lambda: 12,
+            get_current_tilt_position=lambda _eid: 3,  # delta=3 from 0, in-tolerance
+            event_buffer=buf,
+        )
+        seq._tilt_targets["cover.x"] = 50
+
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=0, current_position=0, reason="custom_position_1"
+        )
+
+        assert hass.services.async_call.call_count == 1, (
+            "set_cover_tilt_position was not called — tilt→0 was suppressed by "
+            "the min-delta gate instead of bypassing it as a special position"
+        )
+        skipped_delta = [
+            e
+            for e in buf.snapshot()
+            if e["event"] == "tilt_command_skipped"
+            and e.get("reason") == "delta_too_small"
+        ]
+        assert (
+            skipped_delta == []
+        ), f"Unexpected delta_too_small skip for tilt→0: {skipped_delta}"
+
+    async def test_non_special_small_tilt_move_still_gated(self):
+        """A small move to a non-special tilt value (55→60) is still suppressed.
+
+        This regression guard preserves the drift-suppression behavior the gate
+        was built for: sun-tracking micro-moves that don't cross a special value
+        must not bypass the gate.
+        """
+        buf = EventBuffer(maxlen=20)
+        hass, seq = _build_sequencer(
+            get_min_change=lambda: 12,
+            get_current_tilt_position=lambda _eid: 55,
+            event_buffer=buf,
+        )
+        seq._tilt_targets["cover.x"] = 50
+
+        await seq._send_tilt_command(
+            "cover.x", tilt_target=60, position_target=40, reason="solar"
+        )
+
+        assert (
+            hass.services.async_call.call_count == 0
+        ), "Non-special tilt move (55→60, delta=5 < min_change=12) must remain gated"
+        skipped_delta = [
+            e
+            for e in buf.snapshot()
+            if e["event"] == "tilt_command_skipped"
+            and e.get("reason") == "delta_too_small"
+        ]
+        assert len(skipped_delta) == 1
+
+
 class TestResolveTiltAnchor:
     """``_resolve_tilt_anchor`` returns the right (value, source) for each branch.
 
