@@ -8,13 +8,21 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
+    CONF_CLIMATE_MODE,
+    CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
+    CONF_IRRADIANCE_ENTITY,
+    CONF_LUX_ENTITY,
     CONF_SENSOR_TYPE,
     DOMAIN,
     CoverType,
 )
-from custom_components.adaptive_cover_pro.switch import AdaptiveCoverSwitch
+from custom_components.adaptive_cover_pro.switch import (
+    AdaptiveCoverSwitch,
+    _has_irradiance_feature,
+    _has_lux_feature,
+)
 
 
 def _make_config_entry(options: dict | None = None, sensor_type: str = CoverType.BLIND):
@@ -345,6 +353,71 @@ async def test_glare_zone_switches_created_when_configured(hass) -> None:
     # Should have 2 glare zone switches (2 named zones)
     glare_switches = [s for s in switch_names if "Glare Zone" in s]
     assert len(glare_switches) == 2
+
+
+# ---------------------------------------------------------------------------
+# enabled_when predicates — lux/irradiance feature gate (issue #668)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_lux_switch_created_when_cloud_suppression_on_without_climate_mode():
+    """Lux switch must appear when CONF_CLOUD_SUPPRESSION is on, regardless of climate mode.
+
+    Issue #668: cloud suppression is independent of climate mode but the
+    lux gate previously required climate mode ON.
+    """
+    entry = _make_config_entry(
+        options={
+            CONF_CLOUD_SUPPRESSION: True,
+            CONF_LUX_ENTITY: "sensor.lux",
+            CONF_CLIMATE_MODE: False,
+        }
+    )
+    assert _has_lux_feature(entry) is True
+
+
+@pytest.mark.unit
+def test_irradiance_switch_created_when_cloud_suppression_on_without_climate_mode():
+    """Irradiance switch must appear when cloud suppression is on, regardless of climate mode.
+
+    Issue #668: cloud suppression is independent of climate mode but the
+    irradiance gate previously required climate mode ON.
+    """
+    entry = _make_config_entry(
+        options={
+            CONF_CLOUD_SUPPRESSION: True,
+            CONF_IRRADIANCE_ENTITY: "sensor.irradiance",
+            CONF_CLIMATE_MODE: False,
+        }
+    )
+    assert _has_irradiance_feature(entry) is True
+
+
+@pytest.mark.unit
+def test_lux_switch_not_created_without_either_feature():
+    """Lux switch absent when neither climate mode nor cloud suppression is on."""
+    entry = _make_config_entry(
+        options={
+            CONF_CLOUD_SUPPRESSION: False,
+            CONF_LUX_ENTITY: "sensor.lux",
+            CONF_CLIMATE_MODE: False,
+        }
+    )
+    assert _has_lux_feature(entry) is False
+
+
+@pytest.mark.unit
+def test_lux_switch_still_created_with_climate_mode_only():
+    """Regression: climate-mode-only user still gets the lux switch."""
+    entry = _make_config_entry(
+        options={
+            CONF_CLOUD_SUPPRESSION: False,
+            CONF_LUX_ENTITY: "sensor.lux",
+            CONF_CLIMATE_MODE: True,
+        }
+    )
+    assert _has_lux_feature(entry) is True
 
 
 @pytest.mark.integration

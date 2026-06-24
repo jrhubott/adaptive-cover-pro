@@ -15,6 +15,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     CONF_CLIMATE_MODE,
+    CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
     CONF_IRRADIANCE_ENTITY,
@@ -62,12 +63,18 @@ def _has_climate_temp_source(entry: ConfigEntry) -> bool:
     )
 
 
-def _has_climate_lux(entry: ConfigEntry) -> bool:
-    return _has_climate_mode(entry) and bool(entry.options.get(CONF_LUX_ENTITY))
+def _has_lux_feature(entry: ConfigEntry) -> bool:
+    """Lux switch shown when lux entity configured AND either climate mode or cloud suppression is on."""
+    return bool(entry.options.get(CONF_LUX_ENTITY)) and (
+        _has_climate_mode(entry) or bool(entry.options.get(CONF_CLOUD_SUPPRESSION))
+    )
 
 
-def _has_climate_irradiance(entry: ConfigEntry) -> bool:
-    return _has_climate_mode(entry) and bool(entry.options.get(CONF_IRRADIANCE_ENTITY))
+def _has_irradiance_feature(entry: ConfigEntry) -> bool:
+    """Irradiance switch shown when irradiance entity configured AND either climate mode or cloud suppression is on."""
+    return bool(entry.options.get(CONF_IRRADIANCE_ENTITY)) and (
+        _has_climate_mode(entry) or bool(entry.options.get(CONF_CLOUD_SUPPRESSION))
+    )
 
 
 def _supports_return_to_default_switch(entry: ConfigEntry) -> bool:
@@ -134,14 +141,14 @@ _SWITCH_SPECS: tuple[_SwitchSpec, ...] = (
         key="lux_toggle",
         initial_state=True,
         enabled_default=False,
-        enabled_when=_has_climate_lux,
+        enabled_when=_has_lux_feature,
     ),
     _SwitchSpec(
         switch_name="Irradiance",
         key="irradiance_toggle",
         initial_state=True,
         enabled_default=False,
-        enabled_when=_has_climate_irradiance,
+        enabled_when=_has_irradiance_feature,
     ),
 )
 
