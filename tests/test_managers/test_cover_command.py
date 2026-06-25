@@ -14,6 +14,9 @@ from custom_components.adaptive_cover_pro.managers.cover_command import (
     build_special_positions,
     route_service_call,
 )
+from custom_components.adaptive_cover_pro.managers.cover_command.gates import (
+    check_position_delta,
+)
 
 
 @pytest.fixture
@@ -534,6 +537,81 @@ def test_build_special_positions_with_actual_keys():
     assert 10 in positions
     assert 0 in positions
     assert 100 in positions
+
+
+# --- enforce_delta_at_endpoints (issue #679) ---
+
+
+def test_special_positions_omits_endpoints_when_enforced(logger):
+    """Flag ON → the 0/100 endpoints are dropped from the special list (#679).
+
+    Non-endpoint specials (default/sunset/my) are still bypassed, and with the
+    endpoints gone the delta gate now applies to a target of 0: a 3 → 0 move
+    below min_change=5 is gated out (False).
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_DEFAULT_HEIGHT,
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+
+    positions = build_special_positions(
+        {CONF_ENFORCE_DELTA_AT_ENDPOINTS: True, CONF_DEFAULT_HEIGHT: 40}
+    )
+    assert 0 not in positions
+    assert 100 not in positions
+    assert 40 in positions
+    # Delta gate now runs for the 0 endpoint: 3 → 0 below min_change=5 → gated.
+    assert (
+        check_position_delta("cover.x", 0, 5, positions, position=3, logger=logger)
+        is False
+    )
+
+
+def test_endpoint_100_gated_when_enforced(logger):
+    """Flag ON → a near-100 target below min_change is gated (#679)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+
+    positions = build_special_positions({CONF_ENFORCE_DELTA_AT_ENDPOINTS: True})
+    assert 100 not in positions
+    assert (
+        check_position_delta("cover.x", 100, 5, positions, position=97, logger=logger)
+        is False
+    )
+
+
+def test_endpoint_current_side_gated_when_enforced(logger):
+    """Flag ON → a move FROM the 0 endpoint to a near position is also gated.
+
+    With endpoints removed the ``position in _special`` bypass no longer fires
+    either, so 0 → 3 below min_change=5 is gated out.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+
+    positions = build_special_positions({CONF_ENFORCE_DELTA_AT_ENDPOINTS: True})
+    assert (
+        check_position_delta("cover.x", 3, 5, positions, position=0, logger=logger)
+        is False
+    )
+
+
+def test_endpoints_bypass_delta_when_not_enforced(logger):
+    """Flag OFF (default) → 0/100 still bypass delta (issue #629 regression lock).
+
+    This is the byte-for-byte guarantee that must not regress: a target of 0
+    from position 3 with min_change=5 bypasses the gate (True) because 0 stays
+    in the special list.
+    """
+    positions = build_special_positions({})
+    assert 0 in positions
+    assert 100 in positions
+    assert (
+        check_position_delta("cover.x", 0, 5, positions, position=3, logger=logger)
+        is True
+    )
 
 
 # --- Tilt-only entity under cover_blind config (bug fix coverage) ---

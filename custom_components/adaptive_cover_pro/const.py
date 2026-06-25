@@ -184,6 +184,12 @@ CONF_MIN_POSITION_SUN_TRACKING = "min_position_sun_tracking"
 CONF_ENABLE_MAX_POSITION = "enable_max_position"
 # If True, min_position is only enforced during active sun tracking.
 CONF_ENABLE_MIN_POSITION = "enable_min_position"
+# If True, the position/tilt delta (min_change) gate is also enforced for the
+# fully-open (100) and fully-closed (0) endpoints. Default False preserves the
+# issue #629 "always send to 0/100" guarantee. Useful on mechanically coupled
+# covers where commanding a full endpoint disturbs tilt (issue #679).
+CONF_ENFORCE_DELTA_AT_ENDPOINTS = "enforce_delta_at_endpoints"
+DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS = False
 # Fallback position when no override applies, % (range 0-100).
 CONF_DEFAULT_HEIGHT = "default_percentage"
 # Effective default position when no `default_percentage` is configured.

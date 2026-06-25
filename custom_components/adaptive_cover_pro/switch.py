@@ -18,6 +18,7 @@ from .const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_OUTSIDETEMP_ENTITY,
@@ -28,6 +29,7 @@ from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .cover_types import get_policy
 from .entity_base import AdaptiveCoverBaseEntity
 from .helpers import motion_entities
+from .services.options_service import apply_options_patch, validate_options_patch
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,14 +42,20 @@ class _SwitchSpec:
     `key`. The two are intentionally different (e.g. `Manual Override` vs
     `manual_toggle`) and the test in
     `tests/test_switch_actions.py:204` pins this asymmetry.
+
+    ``option_key`` marks a switch backed by ``config_entry.options`` instead of
+    a coordinator attribute. The coordinator's update listener maps the
+    persisted change to its runtime action (see ``_RUNTIME_APPLICABLE_OPTIONS``
+    in ``__init__``), so the switch only persists — it never rebuilds directly.
     """
 
     switch_name: str  # → unique_id suffix; LOCKED
-    key: str  # translation_key + coordinator attribute name
+    key: str  # translation_key; legacy switches also reuse it as the coordinator attr
     initial_state: bool
     enabled_default: bool = True
     display_name: str | None = None
     enabled_when: Callable[[ConfigEntry], bool] = field(default=lambda _: True)
+    option_key: str | None = None
 
 
 def _has_climate_mode(entry: ConfigEntry) -> bool:
@@ -104,6 +112,12 @@ _SWITCH_SPECS: tuple[_SwitchSpec, ...] = (
         switch_name="Automatic Control",
         key="automatic_control",
         initial_state=True,
+    ),
+    _SwitchSpec(
+        switch_name="Sun Tracking",
+        key="sun_tracking",
+        initial_state=True,
+        option_key=CONF_ENABLE_SUN_TRACKING,
     ),
     _SwitchSpec(
         switch_name="Manual Override",
@@ -209,10 +223,15 @@ async def async_setup_entry(
             config_entry,
             coordinator,
             spec.switch_name,
-            spec.initial_state,
+            (
+                bool(config_entry.options.get(spec.option_key, spec.initial_state))
+                if spec.option_key
+                else spec.initial_state
+            ),
             spec.key,
             enabled_default=spec.enabled_default,
             display_name=spec.display_name,
+            option_key=spec.option_key,
         )
         for spec in specs
     )
@@ -220,6 +239,8 @@ async def async_setup_entry(
 
 class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
     """Representation of a adaptive cover switch."""
+
+    _option_key: str | None = None
 
     def __init__(
         self,
@@ -234,6 +255,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         *,
         enabled_default: bool = True,
         display_name: str | None = None,
+        option_key: str | None = None,
     ) -> None:
         """Initialize the switch."""
         super().__init__(entry_id, hass, config_entry, coordinator)
@@ -243,6 +265,7 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         self._switch_name = display_name or switch_name
         self._attr_device_class = device_class
         self._initial_state = initial_state
+        self._option_key = option_key
         self._attr_unique_id = f"{entry_id}_{switch_name}"
         self._attr_entity_registry_enabled_default = enabled_default
 
@@ -253,9 +276,28 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
         """Name of the entity."""
         return self._switch_name
 
+    @property
+    def is_on(self) -> bool | None:
+        """Return the switch state.
+
+        Option-backed switches read config_entry.options so service/options-flow
+        changes are reflected without RestoreEntity state drift.
+        """
+        if self._option_key is not None:
+            return bool(
+                self.config_entry.options.get(
+                    self._option_key,
+                    self._initial_state,
+                )
+            )
+        return self._attr_is_on
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         self.coordinator.logger.debug("Turning on")
+        if self._option_key is not None:
+            await self._async_set_option(True)
+            return
         self._attr_is_on = True
         setattr(self.coordinator, self._key, True)
         if self._key == "automatic_control" and kwargs.get("added") is not True:
@@ -283,6 +325,9 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the device off."""
         self.coordinator.logger.debug("Turning off")
+        if self._option_key is not None:
+            await self._async_set_option(False)
+            return
         self._attr_is_on = False
         setattr(self.coordinator, self._key, False)
         if self._key == "enabled_toggle" and kwargs.get("added") is not True:
@@ -329,6 +374,15 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
+        await super().async_added_to_hass()
+
+        if self._option_key is not None:
+            # Option-backed switches derive is_on from config_entry.options, so
+            # there is no RestoreEntity state to reconcile — persisted options
+            # win. The coordinator listener (registered via super) applies any
+            # runtime change.
+            return
+
         last_state = await self.async_get_last_state()
         self.coordinator.logger.debug("%s: last state is %s", self._name, last_state)
         if (last_state is None and self._initial_state) or (
@@ -337,3 +391,20 @@ class AdaptiveCoverSwitch(AdaptiveCoverBaseEntity, SwitchEntity, RestoreEntity):
             await self.async_turn_on(added=True)
         else:
             await self.async_turn_off(added=True)
+
+    async def _async_set_option(self, value: bool) -> None:
+        """Persist the option through the shared services path.
+
+        The coordinator's update listener (``_async_update_listener``) maps the
+        persisted change to its runtime action, so there is a single rebuild
+        path whether the option is changed here, by a service, or in the
+        options flow. The immediate ``schedule_update_ha_state`` redraws this
+        switch from the freshly-persisted option without waiting for the
+        listener-driven refresh.
+        """
+        assert self._option_key is not None
+        patch = {self._option_key: value}
+        sensor_type = self.config_entry.data.get(CONF_SENSOR_TYPE)
+        validate_options_patch(patch, dict(self.config_entry.options), sensor_type)
+        await apply_options_patch(self.hass, self.coordinator, patch)
+        self.schedule_update_ha_state()

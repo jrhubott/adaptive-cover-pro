@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -12,6 +12,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_CLOUD_SUPPRESSION,
     CONF_DEFAULT_HEIGHT,
     CONF_ENABLE_GLARE_ZONES,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_IRRADIANCE_ENTITY,
     CONF_LUX_ENTITY,
     CONF_SENSOR_TYPE,
@@ -37,6 +38,7 @@ def _make_coordinator(mock_hass=None):
     coord = MagicMock()
     coord.hass = mock_hass or MagicMock()
     coord.logger = MagicMock()
+    coord.async_add_listener = MagicMock(return_value=lambda: None)
     coord.entities = []
     coord._cmd_svc = MagicMock()
     coord._cmd_svc.apply_position = AsyncMock()
@@ -46,6 +48,7 @@ def _make_coordinator(mock_hass=None):
     coord.check_adaptive_time = True
     coord._build_position_context = MagicMock(return_value=MagicMock())
     coord.async_refresh = AsyncMock()
+    coord.async_apply_sun_tracking_update = AsyncMock()
     coord.state = 50
     return coord
 
@@ -269,6 +272,90 @@ async def test_turn_off_non_automatic_control_key_no_special_logic():
     coord.manager.reset.assert_not_called()
     coord._cmd_svc.apply_position.assert_not_called()
     coord.async_refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Option-backed Sun Tracking switch
+# ---------------------------------------------------------------------------
+
+
+def _make_sun_tracking_switch(*, enabled: bool) -> AdaptiveCoverSwitch:
+    """Create a Sun Tracking switch wired to mocked options persistence."""
+    coord = _make_coordinator()
+    entry = _make_config_entry(options={CONF_ENABLE_SUN_TRACKING: enabled})
+    coord.config_entry = entry
+    return AdaptiveCoverSwitch(
+        entry_id="test_entry",
+        hass=coord.hass,
+        config_entry=entry,
+        coordinator=coord,
+        switch_name="Sun Tracking",
+        initial_state=enabled,
+        key="sun_tracking",
+        option_key=CONF_ENABLE_SUN_TRACKING,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_sun_tracking_uses_config_option_as_source_of_truth(enabled):
+    """The switch initializes from options instead of stale restored state."""
+    switch = _make_sun_tracking_switch(enabled=enabled)
+    switch.async_get_last_state = AsyncMock()
+
+    await switch.async_added_to_hass()
+
+    assert switch.is_on is enabled
+    switch.async_get_last_state.assert_not_awaited()
+    switch.coordinator.async_add_listener.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("method", "enabled"), [("async_turn_on", True), ("async_turn_off", False)]
+)
+async def test_sun_tracking_persists_option(method, enabled):
+    """Runtime changes persist through the in-place options update path."""
+    switch = _make_sun_tracking_switch(enabled=not enabled)
+    original_options = dict(switch.config_entry.options)
+
+    with (
+        patch(
+            "custom_components.adaptive_cover_pro.switch.validate_options_patch"
+        ) as mock_validate,
+        patch(
+            "custom_components.adaptive_cover_pro.switch.apply_options_patch",
+            new_callable=AsyncMock,
+        ) as mock_apply,
+    ):
+        mock_apply.side_effect = lambda _hass, _coordinator, option_patch: setattr(
+            switch.config_entry,
+            "options",
+            {**switch.config_entry.options, **option_patch},
+        )
+        await getattr(switch, method)()
+
+    expected_patch = {CONF_ENABLE_SUN_TRACKING: enabled}
+    mock_validate.assert_called_once_with(
+        expected_patch,
+        original_options,
+        CoverType.BLIND,
+    )
+    mock_apply.assert_awaited_once_with(switch.hass, switch.coordinator, expected_patch)
+    assert switch.is_on is enabled
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("enabled", [True, False])
+def test_sun_tracking_reflects_external_option_updates(enabled):
+    """Service and options-flow changes are visible without entity reload."""
+    switch = _make_sun_tracking_switch(enabled=not enabled)
+
+    switch.config_entry.options = {CONF_ENABLE_SUN_TRACKING: enabled}
+
+    assert switch.is_on is enabled
 
 
 # ---------------------------------------------------------------------------

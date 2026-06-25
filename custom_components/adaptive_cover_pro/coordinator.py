@@ -319,7 +319,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._pipeline = self._build_pipeline()
         self._pipeline_result = None
 
-        self._cached_options = None
+        # Snapshot of the last raw config-entry options. The update listener
+        # uses it to distinguish Sun Tracking-only changes from options that
+        # still require a full reload.
+        self._cached_options = dict(self.config_entry.options)
 
         # Initialize configuration service
         self._config_service = ConfigurationService(
@@ -388,6 +391,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Built once and reused for both the command-service construction
         # (position_tolerance) and the late policy.attach below.
         _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
+        # Seeded here so the live lambda passed to policy.attach reads a value
+        # before the first _update_options cycle; refreshed each cycle (#679).
+        self._enforce_delta_at_endpoints = (
+            _rc_attach.tracking.enforce_delta_at_endpoints
+        )
 
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
@@ -447,6 +455,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             invert_tilt=lambda: self._inverse_tilt,
             get_min_change=lambda: self.min_change,
+            get_enforce_delta_at_endpoints=lambda: self._enforce_delta_at_endpoints,
         )
 
         # Time window manager (start/end time checks)
@@ -1235,7 +1244,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Run the main coordinator update cycle: calculate position, send commands, build diagnostics."""
         self.logger.debug("Updating data")
         if self.first_refresh:
-            self._cached_options = self.config_entry.options
+            self._cached_options = dict(self.config_entry.options)
 
         # Render any templated threshold options to numbers for this cycle, so
         # every downstream consumer (RuntimeConfig, climate reads) sees a number,
@@ -1915,15 +1924,28 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._is_reload = False
         self.logger.debug("First refresh handled")
 
+    async def async_apply_sun_tracking_update(self) -> None:
+        """Rebuild the pipeline after Sun Tracking changes without a reload.
+
+        ``enable_sun_tracking`` changes only pipeline composition; they do not
+        alter entity listeners or cover geometry. The refresh evaluates the new
+        winner immediately while the command path keeps its normal gates.
+        """
+        self._pipeline = self._build_pipeline()
+        self._cached_options = dict(self.config_entry.options)
+        # The Sun Tracking switch renders from config_entry.options; notify
+        # listeners so service/options-flow changes redraw the entity too.
+        self.async_update_listeners()
+        self.state_change = True
+        await self.async_refresh()
+
     def _build_pipeline(self) -> PipelineRegistry:
         """Build the override pipeline from the registry of handler factories.
 
-        Called once at coordinator initialisation.  Because the integration
-        reloads fully on every options change (see ``_async_update_listener``
-        in ``__init__.py``), this always sees the current configuration and
-        there is no need to rebuild at runtime. Handler composition lives in
-        ``pipeline.handlers.build_handlers`` (registry-driven), so adding a
-        handler never touches the coordinator.
+        Called at coordinator initialisation and when Sun Tracking is toggled at
+        runtime. Other options changes still reload the integration.
+        Handler composition lives in ``pipeline.handlers.build_handlers``
+        (registry-driven), so adding a handler never touches the coordinator.
         """
         handlers = build_handlers(self.config_entry.options)
         self.logger.debug(
@@ -1972,6 +1994,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cmd_svc.update_threshold(rc.open_close_threshold)
         self._cmd_svc.update_position_tolerance(rc.tracking.position_tolerance)
         self._cmd_svc.enable_position_matching = rc.tracking.enable_position_matching
+        # Mirror the endpoint-delta-enforcement flag (issue #679) so the
+        # venetian tilt-axis gate (wired via a live lambda in policy.attach)
+        # and the position-axis special list pick up mid-session changes.
+        self._enforce_delta_at_endpoints = rc.tracking.enforce_delta_at_endpoints
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,

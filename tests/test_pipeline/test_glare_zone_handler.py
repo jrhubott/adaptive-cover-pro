@@ -382,6 +382,98 @@ class TestGlareZoneBoundaryAtBaseDistance:
         assert self.handler.evaluate(snap) is None
 
 
+class TestGlareZoneWithoutSunTracking:
+    """Glare-only mode compares active zones against Default, not base Solar."""
+
+    handler = GlareZoneHandler()
+
+    def test_sun_tracking_disabled_zone_can_win_with_zero_base_distance(self) -> None:
+        """A disabled SolarHandler must not make distance_shaded_area=0 suppress glare."""
+        cover = _make_vertical_cover(
+            distance=0.0,
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=25.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            default_position=100,
+            glare_zones=glare_cfg,
+            active_zone_names={"desk"},
+            enable_sun_tracking=False,
+        )
+
+        result = self.handler.evaluate(snap)
+
+        assert result is not None
+        assert result.control_method == ControlMethod.GLARE_ZONE
+        assert result.position == 25
+
+    def test_sun_tracking_disabled_falls_through_when_default_more_protective(
+        self,
+    ) -> None:
+        """If Default is already as protective as glare, leave Default in control."""
+        cover = _make_vertical_cover(
+            distance=0.0,
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=50.0,
+        )
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            default_position=20,
+            glare_zones=glare_cfg,
+            active_zone_names={"desk"},
+            enable_sun_tracking=False,
+        )
+
+        assert self.handler.evaluate(snap) is None
+
+    def test_sun_tracking_disabled_does_not_apply_sun_tracking_floor(self) -> None:
+        """Sun-tracking-only limits must not clamp the glare position when off.
+
+        ``sun_valid`` follows ``enable_sun_tracking``: with tracking disabled the
+        ``min_pos_sun_tracking`` floor stays inert, so the computed glare
+        position survives instead of being lifted to the sun-tracking minimum.
+        """
+        cover = _make_vertical_cover(
+            distance=0.0,
+            gamma=0.0,
+            direct_sun_valid=True,
+            calculate_percentage_return=25.0,
+        )
+        # A sun-tracking-only floor that would clamp 25 -> 50 if (wrongly) applied.
+        cover.config.min_pos_sun_tracking = 50
+        glare_cfg = GlareZonesConfig(
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
+        )
+        snap = make_snapshot(
+            cover=cover,
+            cover_type="cover_blind",
+            default_position=100,
+            glare_zones=glare_cfg,
+            active_zone_names={"desk"},
+            enable_sun_tracking=False,
+        )
+
+        result = self.handler.evaluate(snap)
+
+        assert result is not None
+        assert result.control_method == ControlMethod.GLARE_ZONE
+        assert result.position == 25
+
+
 class TestGlareZonePositionFloor:
     """Verify the solar floor clamp prevents position 0 for open/close-only covers."""
 

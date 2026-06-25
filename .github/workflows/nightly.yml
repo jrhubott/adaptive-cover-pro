@@ -32,7 +32,7 @@ jobs:
       tag: ${{ steps.decide.outputs.tag }}
     steps:
       - name: Checkout develop
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: develop
           fetch-depth: 0
@@ -86,7 +86,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout develop (with release PAT)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: develop
           fetch-depth: 0

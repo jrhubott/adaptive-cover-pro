@@ -19,6 +19,7 @@ from ...const import ControlMethod
 from ..handler import OverrideHandler
 from ..helpers import (
     apply_snapshot_limits,
+    compute_default_position,
     compute_raw_calculated_position,
     solar_floor,
 )
@@ -28,13 +29,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class GlareZoneHandler(OverrideHandler):
-    """Lower the blind further when active glare zones need more protection than SolarHandler.
+    """Lower the blind when active glare zones need more protection.
 
     Priority 45 — below ClimateHandler (50), above SolarHandler (40).
     Only applies to vertical covers (cover_blind). Computes effective distances
     for all active glare zones using pure geometry, then returns a position
-    based on the minimum (closest) zone distance when it is less than the
-    cover's base distance.
+    based on the minimum (closest) zone distance when it is more protective
+    than the lower-priority fallback.
 
     ClimateHandler defers its GLARE_CONTROL case (returns None), so this
     handler fires naturally when climate mode is on and the sun is tracking.
@@ -42,11 +43,13 @@ class GlareZoneHandler(OverrideHandler):
     and cover-type gates.
 
     Geometry: smaller effective distance → lower position% → more blind deployed.
-    A zone closer to the window than the base distance is in the illuminated area
-    and needs the blind lowered further than SolarHandler would compute.
+    With Sun Tracking enabled, a zone closer to the window than the base distance
+    needs the blind lowered further than SolarHandler would compute. With Sun
+    Tracking disabled, the computed glare-zone position is compared to Default.
 
     Falls through to SolarHandler (returns None) when all zones are at or beyond
-    the base distance (already in shadow from normal solar tracking).
+    the base distance. Falls through to Default when Sun Tracking is disabled
+    and the glare-zone position would not be more protective.
     """
 
     name = "glare_zone"
@@ -101,7 +104,7 @@ class GlareZoneHandler(OverrideHandler):
         min_distance = min(d for _, d in zone_results)
         contributing_zones = [name for name, d in zone_results if d == min_distance]
 
-        if min_distance >= base_distance:
+        if snapshot.enable_sun_tracking and min_distance >= base_distance:
             # All zones are at or beyond the base distance — they're already in
             # shadow from SolarHandler's normal calculation. No override needed.
             return None
@@ -110,7 +113,21 @@ class GlareZoneHandler(OverrideHandler):
             round(cover.calculate_percentage(effective_distance_override=min_distance))
         )
         state = solar_floor(state, floor_active=snapshot.solar_floor_active)
-        position = apply_snapshot_limits(snapshot, state, sun_valid=True)
+        # ``sun_valid`` follows the live tracking state: the sun-only limits
+        # (``*_sun_only`` and ``min_pos_sun_tracking``) apply only while Sun
+        # Tracking is enabled — matching ``compute_default_position`` /
+        # ``compute_raw_calculated_position``. With tracking off, the glare
+        # position and the Default it is weighed against share the same regime.
+        position = apply_snapshot_limits(
+            snapshot, state, sun_valid=snapshot.enable_sun_tracking
+        )
+        if not snapshot.enable_sun_tracking:
+            default_position = compute_default_position(snapshot)
+            if (
+                policy.more_protective_position(position, default_position)
+                == default_position
+            ):
+                return None
 
         zone_names = ", ".join(contributing_zones)
         z_adjusted = any(zones_by_name[name].z > 0 for name in contributing_zones)

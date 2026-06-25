@@ -314,6 +314,10 @@ class TrackingSlice:
     # When False (default), command once and let a settle past tolerance become
     # a manual override (issue #591).
     enable_position_matching: bool = False
+    # When True, the position/tilt delta gate is also enforced for the 0 and
+    # 100 endpoints (issue #679). Default False preserves issue #629's
+    # always-send-to-0/100 guarantee.
+    enforce_delta_at_endpoints: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,6 +368,7 @@ class RuntimeConfig:
             CONF_ENABLE_POSITION_MATCHING,
             CONF_END_ENTITY,
             CONF_END_TIME,
+            CONF_ENFORCE_DELTA_AT_ENDPOINTS,
             CONF_ENTITIES,
             CONF_INTERP_END,
             CONF_INTERP_LIST,
@@ -404,6 +409,7 @@ class RuntimeConfig:
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
             DEFAULT_ENABLE_POSITION_MATCHING,
+            DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
             DEFAULT_MAX_COVERAGE_STEPS,
             DEFAULT_MINIMIZE_MOVEMENTS,
             DEFAULT_MOTION_TIMEOUT,
@@ -442,6 +448,10 @@ class RuntimeConfig:
                 ),
                 enable_position_matching=options.get(
                     CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
+                ),
+                enforce_delta_at_endpoints=options.get(
+                    CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+                    DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
                 ),
             ),
             manual_override=ManualOverrideSlice(

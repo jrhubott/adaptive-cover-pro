@@ -96,6 +96,7 @@ EXPECTED_UNIQUE_ID_SUFFIXES = sorted(
         # --- switch platform (uses display switch_name, not translation key) ---
         "Integration Enabled",
         "Automatic Control",
+        "Sun Tracking",
         "Manual Override",  # translation key is "manual_toggle"; unique_id keeps display name
         "Climate Mode",
         "Outside Temperature",

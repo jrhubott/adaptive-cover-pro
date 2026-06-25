@@ -102,6 +102,7 @@ class DualAxisSequencer:
         event_buffer: EventBuffer | None = None,
         invert_tilt: Callable[[], bool] | None = None,
         get_min_change: Callable[[], int] | None = None,
+        get_enforce_delta_at_endpoints: Callable[[], bool] | None = None,
         post_settle_hold_seconds: float = DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         backrotate_publish_lag_seconds: float = (
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
@@ -128,6 +129,7 @@ class DualAxisSequencer:
         self._event_buffer = event_buffer
         self._invert_tilt = invert_tilt
         self._get_min_change = get_min_change
+        self._get_enforce_delta_at_endpoints = get_enforce_delta_at_endpoints
         self._post_settle_hold_seconds = post_settle_hold_seconds
         self._backrotate_publish_lag_seconds = backrotate_publish_lag_seconds
         # Per-entity timestamps. Keep these on the sequencer (rather than on
@@ -186,6 +188,36 @@ class DualAxisSequencer:
             if wire is not None:
                 return self._to_wire(wire), _ANCHOR_SOURCE_ACTUAL
         return self._tilt_targets.get(entity_id), _ANCHOR_SOURCE_TARGET_FALLBACK
+
+    def _target_already_satisfied(self, entity_id: str, tilt_target: int) -> bool:
+        """Return whether the tilt dedup may safely skip a re-send.
+
+        The stored-target dedup alone is wrong for mechanically coupled
+        venetians (issue #679): a ``set_cover_position`` command back-drives
+        the tilt actuator, so the stored target (last verified send) no longer
+        reflects reality. Before treating a target as "unchanged", confirm the
+        *live* actuator tilt is still within ``VENETIAN_TILT_VERIFY_TOLERANCE``
+        of the stored target.
+
+        Returns ``True`` only when the stored target equals ``tilt_target``
+        AND (the live tilt could not be read OR it still matches within
+        tolerance). Returns ``False`` when the stored target differs, or when
+        the live actuator reading has drifted out of tolerance — forcing a
+        re-send so the coupled cover recovers its slat angle. Reuses
+        :meth:`_resolve_tilt_anchor` for the live read (the same actual-aware
+        path the min-delta gate uses) — no second live-read path.
+        """
+        stored = self._tilt_targets.get(entity_id)
+        if stored is None or stored != tilt_target:
+            return False
+        anchor, source = self._resolve_tilt_anchor(entity_id)
+        if (
+            source == _ANCHOR_SOURCE_ACTUAL
+            and anchor is not None
+            and abs(anchor - stored) > VENETIAN_TILT_VERIFY_TOLERANCE
+        ):
+            return False
+        return True
 
     # -- suppression window ------------------------------------------------ #
 
@@ -376,7 +408,7 @@ class DualAxisSequencer:
         depth flag is threaded straight into the verify step so a still-
         drifting retry does not spawn another retry.
         """
-        if not force and tilt_target == self._tilt_targets.get(entity_id):
+        if not force and self._target_already_satisfied(entity_id, tilt_target):
             self._record_event(
                 "tilt_command_skipped",
                 reason=_TILT_SKIP_TARGET_UNCHANGED,
@@ -394,11 +426,20 @@ class DualAxisSequencer:
 
         if not force and self._get_min_change is not None:
             anchor, anchor_source = self._resolve_tilt_anchor(entity_id)
+            # When endpoint-delta enforcement is enabled (issue #679), drop the
+            # 0/100 special bypass so the gate applies to the full endpoints too
+            # — mirrors the position axis in ``build_special_positions``.
+            tilt_specials = (
+                []
+                if self._get_enforce_delta_at_endpoints
+                and self._get_enforce_delta_at_endpoints()
+                else _TILT_SPECIAL_POSITIONS
+            )
             if anchor is not None and not check_position_delta(
                 entity_id,
                 tilt_target,
                 self._get_min_change(),
-                _TILT_SPECIAL_POSITIONS,
+                tilt_specials,
                 position=anchor,
                 logger=self._logger,
                 axis_label="tilt",
@@ -527,7 +568,7 @@ class DualAxisSequencer:
         (cover is already at the commanded position) so tilt can still track
         the sun continuously.
         """
-        if tilt_target == self._tilt_targets.get(entity_id):
+        if self._target_already_satisfied(entity_id, tilt_target):
             self._record_event(
                 "tilt_command_skipped",
                 reason=_TILT_SKIP_TARGET_UNCHANGED,

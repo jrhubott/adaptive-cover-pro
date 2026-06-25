@@ -6,12 +6,15 @@ options-change-triggered reload, and multi-entry independence.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.adaptive_cover_pro.const import (
     CONF_ENTITIES,
+    CONF_ENABLE_SUN_TRACKING,
     CONF_FORCE_OVERRIDE_SENSORS,
     CONF_MOTION_SENSORS,
     CONF_MOTION_TEMPLATE,
@@ -161,6 +164,34 @@ async def test_options_update_triggers_reload(hass: HomeAssistant) -> None:
     assert coord_before is not coord_after
 
 
+@pytest.mark.integration
+async def test_sun_tracking_only_update_refreshes_without_reload(
+    hass: HomeAssistant,
+) -> None:
+    """Sun Tracking toggle rebuilds the pipeline on the existing coordinator."""
+    entry = await _setup(hass, entry_id="sun_tracking_runtime_01")
+    coordinator = entry.runtime_data
+    coordinator._cached_options = dict(entry.options)
+    new_pipeline = MagicMock()
+    coordinator._build_pipeline = MagicMock(return_value=new_pipeline)
+    coordinator.async_update_listeners = MagicMock()
+    coordinator.async_refresh = AsyncMock()
+
+    new_options = dict(entry.options)
+    new_options[CONF_ENABLE_SUN_TRACKING] = not entry.options.get(
+        CONF_ENABLE_SUN_TRACKING, True
+    )
+    hass.config_entries.async_update_entry(entry, options=new_options)
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data is coordinator
+    assert coordinator._pipeline is new_pipeline
+    assert coordinator.state_change is True
+    coordinator.async_update_listeners.assert_called_once()
+    coordinator.async_refresh.assert_awaited_once()
+    assert coordinator._cached_options == new_options
+
+
 # ---------------------------------------------------------------------------
 # 4b: Entity change wiring (verify listeners are registered)
 # ---------------------------------------------------------------------------
@@ -264,9 +295,9 @@ async def test_last_update_success_time_attribute_exists(hass: HomeAssistant) ->
     import datetime as _dt
 
     val = coordinator._last_update_success_time
-    assert val is None or isinstance(
-        val, _dt.datetime
-    ), f"_last_update_success_time must be None or datetime, got {type(val)}"
+    assert val is None or isinstance(val, _dt.datetime), (
+        f"_last_update_success_time must be None or datetime, got {type(val)}"
+    )
 
 
 # ---------------------------------------------------------------------------
