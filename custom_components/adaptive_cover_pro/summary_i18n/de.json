@@ -227,7 +227,8 @@
       "max_tilt": "max. Neigung {max_tilt}%",
       "min_tilt": "min. Neigung {min_tilt}%",
       "post_settle_hold": "Nach-Stabilisierungshalte {hold}s",
-      "backrotate_lag": "Rück-Rotationsverzögerung {lag}s"
+      "backrotate_lag": "Rück-Rotationsverzögerung {lag}s",
+      "drift_reset": "Drift-Reset alle {threshold}% akkumulierte Neigung"
     },
     "fov": {
       "computed": "Berechnetes Sichtfeld ≈ {deg}°/{deg}° ({w}m Breite, {d}m Laibungstiefe)"
