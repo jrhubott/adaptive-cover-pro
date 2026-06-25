@@ -127,6 +127,53 @@ def test_sun_tracking_disabled_pipeline_falls_through_to_default():
 
 
 @pytest.mark.unit
+def test_sun_tracking_disabled_pipeline_allows_glare_zone_to_win():
+    """With Solar removed, active glare zones compare against Default."""
+    from custom_components.adaptive_cover_pro.config_types import (
+        GlareZone,
+        GlareZonesConfig,
+    )
+    from custom_components.adaptive_cover_pro.const import ControlMethod
+    from custom_components.adaptive_cover_pro.engine.covers.vertical import (
+        AdaptiveVerticalCover,
+    )
+    from tests.test_pipeline.conftest import make_snapshot
+
+    coord = _make_coordinator({CONF_ENABLE_SUN_TRACKING: False})
+    registry = coord._build_pipeline()
+
+    cover = MagicMock(spec=AdaptiveVerticalCover)
+    cover.direct_sun_valid = True
+    cover.distance = 0.0
+    cover.gamma = 0.0
+    cover.sol_elev = 45.0
+    cover.calculate_percentage = MagicMock(return_value=25.0)
+    cover.config = MagicMock()
+    cover.config.min_pos = None
+    cover.config.max_pos = None
+    cover.config.min_pos_sun_only = False
+    cover.config.max_pos_sun_only = False
+    cover.config.min_pos_sun_tracking = None
+
+    snap = make_snapshot(
+        cover=cover,
+        direct_sun_valid=True,
+        default_position=100,
+        glare_zones=GlareZonesConfig(
+            zones=[GlareZone(name="desk", x=0.0, y=1.0, radius=0.0)],
+            window_width=2.0,
+        ),
+        active_zone_names={"desk"},
+        enable_sun_tracking=False,
+    )
+    result = registry.evaluate(snap)
+
+    assert result is not None
+    assert result.control_method == ControlMethod.GLARE_ZONE
+    assert result.position == 25
+
+
+@pytest.mark.unit
 def test_safety_slot_min_mode_with_sun_tracking_off_uses_default():
     """A priority-100 safety slot (migrated force override, #563) defers in
     min_mode; with sun tracking off, the winner is DefaultHandler
