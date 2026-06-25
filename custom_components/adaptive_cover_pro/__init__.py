@@ -466,6 +466,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+# Option keys that a live coordinator can apply without a full reload, mapped
+# to the coordinator coroutine that applies them. When *every* changed option
+# key is in this map the listener applies them in place (rebuilds the pipeline,
+# no reload); any other changed key forces a full reload so all listeners and
+# pipeline handlers pick up the new values. This is the single rebuild path —
+# the option-backed switches only persist the value and rely on the listener.
+_RUNTIME_APPLICABLE_OPTIONS: dict[str, str] = {
+    CONF_ENABLE_SUN_TRACKING: "async_apply_sun_tracking_update",
+}
+
+
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     coordinator = entry.runtime_data
@@ -481,8 +492,11 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
         if not changed_keys:
             return
-        if changed_keys == {CONF_ENABLE_SUN_TRACKING}:
-            await coordinator.async_apply_sun_tracking_update()
+        if changed_keys.issubset(_RUNTIME_APPLICABLE_OPTIONS):
+            for apply_name in {
+                _RUNTIME_APPLICABLE_OPTIONS[key] for key in changed_keys
+            }:
+                await getattr(coordinator, apply_name)()
             return
 
     await hass.config_entries.async_reload(entry.entry_id)

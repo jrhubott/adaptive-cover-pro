@@ -23,7 +23,6 @@ from custom_components.adaptive_cover_pro.switch import (
     AdaptiveCoverSwitch,
     _has_irradiance_feature,
     _has_lux_feature,
-    _SwitchOption,
 )
 
 
@@ -280,16 +279,11 @@ async def test_turn_off_non_automatic_control_key_no_special_logic():
 # ---------------------------------------------------------------------------
 
 
-def _make_sun_tracking_switch(
-    *,
-    enabled: bool,
-    option_apply=None,
-) -> AdaptiveCoverSwitch:
+def _make_sun_tracking_switch(*, enabled: bool) -> AdaptiveCoverSwitch:
     """Create a Sun Tracking switch wired to mocked options persistence."""
     coord = _make_coordinator()
     entry = _make_config_entry(options={CONF_ENABLE_SUN_TRACKING: enabled})
     coord.config_entry = entry
-    option_apply = option_apply or AsyncMock()
     return AdaptiveCoverSwitch(
         entry_id="test_entry",
         hass=coord.hass,
@@ -298,10 +292,7 @@ def _make_sun_tracking_switch(
         switch_name="Sun Tracking",
         initial_state=enabled,
         key="sun_tracking",
-        option=_SwitchOption(
-            option_key=CONF_ENABLE_SUN_TRACKING,
-            apply=option_apply,
-        ),
+        option_key=CONF_ENABLE_SUN_TRACKING,
     )
 
 
@@ -327,11 +318,7 @@ async def test_sun_tracking_uses_config_option_as_source_of_truth(enabled):
 )
 async def test_sun_tracking_persists_option(method, enabled):
     """Runtime changes persist through the in-place options update path."""
-    option_apply = AsyncMock()
-    switch = _make_sun_tracking_switch(
-        enabled=not enabled,
-        option_apply=option_apply,
-    )
+    switch = _make_sun_tracking_switch(enabled=not enabled)
     original_options = dict(switch.config_entry.options)
 
     with (
@@ -358,7 +345,6 @@ async def test_sun_tracking_persists_option(method, enabled):
     )
     mock_apply.assert_awaited_once_with(switch.hass, switch.coordinator, expected_patch)
     assert switch.is_on is enabled
-    option_apply.assert_awaited_once_with(switch.coordinator)
 
 
 @pytest.mark.unit

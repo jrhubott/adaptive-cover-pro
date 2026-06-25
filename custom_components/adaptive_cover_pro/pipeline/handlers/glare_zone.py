@@ -113,7 +113,14 @@ class GlareZoneHandler(OverrideHandler):
             round(cover.calculate_percentage(effective_distance_override=min_distance))
         )
         state = solar_floor(state, floor_active=snapshot.solar_floor_active)
-        position = apply_snapshot_limits(snapshot, state, sun_valid=True)
+        # ``sun_valid`` follows the live tracking state: the sun-only limits
+        # (``*_sun_only`` and ``min_pos_sun_tracking``) apply only while Sun
+        # Tracking is enabled — matching ``compute_default_position`` /
+        # ``compute_raw_calculated_position``. With tracking off, the glare
+        # position and the Default it is weighed against share the same regime.
+        position = apply_snapshot_limits(
+            snapshot, state, sun_valid=snapshot.enable_sun_tracking
+        )
         if not snapshot.enable_sun_tracking:
             default_position = compute_default_position(snapshot)
             if (
