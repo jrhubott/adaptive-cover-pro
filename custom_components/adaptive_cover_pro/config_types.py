@@ -230,6 +230,10 @@ class VenetianSlice:
     post_settle_hold_seconds: float
     tilt_skip_above: int
     venetian_mode: str
+    # Accumulated commanded tilt-% change that triggers a mechanical drift
+    # reset (issue #663). 0 disables. Consumed by ``DualAxisSequencer`` via a
+    # live ``get_tilt_reset_threshold`` lambda threaded through ``attach()``.
+    tilt_reset_threshold: int
     # Width (seconds) of the publish-lag suppression window anchored to the
     # cover's ``moving → settled`` transition (issue #33 Phase 5). Used by
     # ``DualAxisSequencer.is_in_suppression_with_cap`` for the tilt axis and
@@ -392,6 +396,7 @@ class RuntimeConfig:
             CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
             CONF_VENETIAN_MODE,
             CONF_VENETIAN_POST_SETTLE_HOLD,
+            CONF_VENETIAN_TILT_RESET_THRESHOLD,
             CONF_VENETIAN_TILT_SKIP_ABOVE,
             CONF_WEATHER_IS_RAINING_SENSOR,
             CONF_WEATHER_IS_RAINING_TEMPLATE,
@@ -416,6 +421,7 @@ class RuntimeConfig:
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
             DEFAULT_VENETIAN_MODE,
             DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+            DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
             DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
             DEFAULT_WEATHER_RAIN_THRESHOLD,
             DEFAULT_WEATHER_TIMEOUT,
@@ -530,6 +536,10 @@ class RuntimeConfig:
                     CONF_VENETIAN_TILT_SKIP_ABOVE, DEFAULT_VENETIAN_TILT_SKIP_ABOVE
                 ),
                 venetian_mode=options.get(CONF_VENETIAN_MODE, DEFAULT_VENETIAN_MODE),
+                tilt_reset_threshold=options.get(
+                    CONF_VENETIAN_TILT_RESET_THRESHOLD,
+                    DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
+                ),
                 backrotate_publish_lag_seconds=options.get(
                     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
                     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,

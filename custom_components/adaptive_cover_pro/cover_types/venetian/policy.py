@@ -30,6 +30,7 @@ from ...const import (
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_VENETIAN_TILT_RESET_THRESHOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     ControlMethod,
     DEFAULT_MAX_COVERAGE_STEPS,
@@ -39,10 +40,13 @@ from ...const import (
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+    DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    MAX_VENETIAN_TILT_RESET_THRESHOLD,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
     MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
+    MIN_VENETIAN_TILT_RESET_THRESHOLD,
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     POSITION_CLOSED,
     POSITION_OPEN,
@@ -111,6 +115,16 @@ def _venetian_extras_schema() -> dict:
             vol.Coerce(int),
             vol.Range(
                 min=MIN_VENETIAN_TILT_SKIP_ABOVE, max=MAX_VENETIAN_TILT_SKIP_ABOVE
+            ),
+        ),
+        vol.Optional(
+            CONF_VENETIAN_TILT_RESET_THRESHOLD,
+            default=DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(
+                min=MIN_VENETIAN_TILT_RESET_THRESHOLD,
+                max=MAX_VENETIAN_TILT_RESET_THRESHOLD,
             ),
         ),
         vol.Optional(CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE): vol.In(
@@ -291,6 +305,17 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         backrotate_line = [
             L["geometry.venetian.backrotate_lag"].format(lag=round(lag, 1))
         ]
+        # Drift-reset is opt-in: render the line only when a non-zero threshold
+        # is configured (0 disables the feature entirely).
+        reset_threshold = config.get(
+            CONF_VENETIAN_TILT_RESET_THRESHOLD,
+            DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
+        )
+        drift_reset_line = (
+            [L["geometry.venetian.drift_reset"].format(threshold=reset_threshold)]
+            if reset_threshold
+            else []
+        )
         return (
             window_dimensions_lines(config, labels)
             + slat_line
@@ -301,6 +326,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             + max_tilt_line
             + post_settle_line
             + backrotate_line
+            + drift_reset_line
         )
 
     def cover_capability_warnings(self, known: dict[str, dict]) -> list[str]:
@@ -519,6 +545,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             invert_tilt=kwargs.get("invert_tilt"),
             get_min_change=kwargs.get("get_min_change"),
             get_enforce_delta_at_endpoints=kwargs.get("get_enforce_delta_at_endpoints"),
+            get_tilt_reset_threshold=kwargs.get("get_tilt_reset_threshold"),
             post_settle_hold_seconds=kwargs.get(
                 "post_settle_hold_seconds", DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
             ),

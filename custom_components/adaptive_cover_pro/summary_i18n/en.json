@@ -227,7 +227,8 @@
       "max_tilt": "max tilt {max_tilt}%",
       "min_tilt": "min tilt {min_tilt}%",
       "post_settle_hold": "post-settle hold {hold}s",
-      "backrotate_lag": "back-rotate publish lag {lag}s"
+      "backrotate_lag": "back-rotate publish lag {lag}s",
+      "drift_reset": "drift-reset every {threshold}% accumulated tilt"
     },
     "fov": {
       "computed": "Computed FOV ≈ {deg}°/{deg}° ({w} m width, {d} m reveal depth)"

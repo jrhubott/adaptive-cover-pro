@@ -850,6 +850,17 @@ DEFAULT_VENETIAN_TILT_SKIP_ABOVE = 95  # percent — default skip-tilt threshold
 MIN_VENETIAN_TILT_SKIP_ABOVE = 50  # UI lower bound
 MAX_VENETIAN_TILT_SKIP_ABOVE = 100  # UI upper bound
 
+# Accumulated commanded tilt-% change that triggers a mechanical drift reset
+# (issue #663). Each real (non-deduped, non-dry-run, non-gated) tilt send adds
+# ``abs(new_target - prior_anchor)`` to a per-entity accumulator; when it
+# crosses this threshold the sequencer drives the slats fully open and back to
+# the target to flush accumulated actuator drift. 0 disables the feature. The
+# value is configurable per-instance; venetian-only.
+CONF_VENETIAN_TILT_RESET_THRESHOLD = "venetian_tilt_reset_threshold"  # % accum
+DEFAULT_VENETIAN_TILT_RESET_THRESHOLD = 0  # 0 = disabled (no reset)
+MIN_VENETIAN_TILT_RESET_THRESHOLD = 0  # UI lower bound (0 disables)
+MAX_VENETIAN_TILT_RESET_THRESHOLD = 5000  # UI upper bound (accumulated %)
+
 # Venetian cover operating mode.  position_and_tilt tracks both axes with solar
 # geometry; tilt_only closes the cover to 0% and tracks only the slat angle.
 CONF_VENETIAN_MODE = "venetian_mode"  # one of VENETIAN_MODES
@@ -1079,6 +1090,10 @@ _RANGE_VENETIAN_TILT_SKIP_ABOVE = (
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     MAX_VENETIAN_TILT_SKIP_ABOVE,
 )  # CONF_VENETIAN_TILT_SKIP_ABOVE, percent
+_RANGE_VENETIAN_TILT_RESET_THRESHOLD = (
+    MIN_VENETIAN_TILT_RESET_THRESHOLD,
+    MAX_VENETIAN_TILT_RESET_THRESHOLD,
+)  # CONF_VENETIAN_TILT_RESET_THRESHOLD, accumulated percent
 _RANGE_VENETIAN_BACKROTATE_PUBLISH_LAG = (
     MIN_VENETIAN_BACKROTATE_PUBLISH_LAG,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,

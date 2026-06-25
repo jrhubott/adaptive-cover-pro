@@ -669,6 +669,35 @@ def test_wiki_anchor(cover_type: str, anchor: str) -> None:
     assert get_policy(cover_type).wiki_anchor() == anchor
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("cover_type", "expected"),
+    [
+        ("cover_blind", False),
+        ("cover_awning", False),
+        ("cover_tilt", False),
+        ("cover_venetian", True),
+    ],
+)
+def test_drift_reset_option_is_venetian_only(cover_type: str, expected: bool) -> None:
+    """The drift-reset threshold (#663) is a venetian-only geometry option.
+
+    The accumulator state and reset behaviour live on ``DualAxisSequencer``,
+    which only the venetian policy owns. The config key must surface in no
+    other cover type's geometry schema — a regression guard so the option
+    never leaks into a non-venetian policy.
+    """
+    import voluptuous as vol
+
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_RESET_THRESHOLD,
+    )
+
+    schema = get_policy(cover_type).geometry_schema()
+    keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema.schema}
+    assert (CONF_VENETIAN_TILT_RESET_THRESHOLD in keys) is expected
+
+
 class TestLiftTravelMetres:
     """Policy hook returning the configured travel range for the lift axis.
 

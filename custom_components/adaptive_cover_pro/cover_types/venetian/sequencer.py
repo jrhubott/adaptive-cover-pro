@@ -103,6 +103,7 @@ class DualAxisSequencer:
         invert_tilt: Callable[[], bool] | None = None,
         get_min_change: Callable[[], int] | None = None,
         get_enforce_delta_at_endpoints: Callable[[], bool] | None = None,
+        get_tilt_reset_threshold: Callable[[], int] | None = None,
         post_settle_hold_seconds: float = DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         backrotate_publish_lag_seconds: float = (
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
@@ -130,6 +131,10 @@ class DualAxisSequencer:
         self._invert_tilt = invert_tilt
         self._get_min_change = get_min_change
         self._get_enforce_delta_at_endpoints = get_enforce_delta_at_endpoints
+        # Live accessor for the accumulated commanded tilt-% drift-reset
+        # threshold (issue #663). 0 disables. A live lambda (like
+        # ``get_min_change``) so an options change applies without a reload.
+        self._get_tilt_reset_threshold = get_tilt_reset_threshold or (lambda: 0)
         self._post_settle_hold_seconds = post_settle_hold_seconds
         self._backrotate_publish_lag_seconds = backrotate_publish_lag_seconds
         # Per-entity timestamps. Keep these on the sequencer (rather than on
@@ -151,6 +156,15 @@ class DualAxisSequencer:
         # subsequent verifying send still runs (issue #33).
         self._tilt_targets_verified: set[str] = set()
         self._tilt_sent_at: dict[str, dt.datetime] = {}
+        # Per-entity accumulated commanded tilt-% change (issue #663). Each real
+        # (non-deduped, non-dry-run, non-gated) tilt send adds
+        # ``abs(new_target - prior_anchor)``; crossing
+        # ``_get_tilt_reset_threshold()`` triggers a two-step drift reset.
+        self._accumulated_tilt: dict[str, float] = {}
+        # Entities currently inside a drift-reset's two-step send. A dedicated
+        # guard (not reason-string sniffing): the reset's own open + return
+        # sends must neither re-accumulate nor re-trigger another reset.
+        self._reset_in_progress: set[str] = set()
 
     # -- tilt inversion ---------------------------------------------------- #
 
@@ -324,6 +338,10 @@ class DualAxisSequencer:
         self._tilt_targets.clear()
         self._tilt_targets_verified.clear()
         self._settled_at.clear()
+        # Drift-reset accumulator + recursion guard (issue #663) are per-entity
+        # caches like the above and must reset on Auto Control off→on too.
+        self._accumulated_tilt.clear()
+        self._reset_in_progress.clear()
 
     async def run_sequence(
         self,
@@ -474,6 +492,22 @@ class DualAxisSequencer:
             )
             return
 
+        # Capture the pre-send anchor BEFORE overwriting _tilt_targets so the
+        # drift accumulator (issue #663) measures real commanded travel. Uses
+        # the same actual-aware source as the min-delta gate; a cold-start None
+        # accumulates 0 (the freshly-stored target seeds the next send). Only
+        # resolved when the feature is enabled (threshold > 0) and the send is
+        # not part of a reset already — resolving does a live actuator read, so
+        # skipping it when disabled keeps the read sequence identical to the
+        # pre-#663 behaviour for the dominant disabled case.
+        drift_reset_enabled = (
+            entity_id not in self._reset_in_progress
+            and self._get_tilt_reset_threshold() > 0
+        )
+        pre_send_anchor: int | None = None
+        if drift_reset_enabled:
+            pre_send_anchor, _ = self._resolve_tilt_anchor(entity_id)
+
         self._tilt_targets[entity_id] = tilt_target  # store logical value
         # A freshly-sent target is unverified until _verify_and_record_tilt
         # confirms it lands on the actuator (issue #33). Discard preemptively
@@ -526,6 +560,20 @@ class DualAxisSequencer:
             trigger=reason,
         )
 
+        # Accumulate real commanded travel and, when the threshold is crossed,
+        # run a two-step mechanical drift reset (issue #663). Placed after the
+        # successful async_call so deduped / dry-run / min-delta-gated sends do
+        # not count. ``drift_reset_enabled`` already folds in the recursion
+        # guard and the disabled (threshold 0) case, so the reset's own two
+        # sends neither re-accumulate nor re-trigger.
+        if drift_reset_enabled:
+            await self._maybe_drift_reset(
+                entity_id,
+                original_target=tilt_target,
+                position_target=position_target,
+                pre_send_anchor=pre_send_anchor,
+            )
+
         if not verify:
             return
 
@@ -553,6 +601,90 @@ class DualAxisSequencer:
                 position_target=position_target,
                 trigger=reason,
             )
+
+    async def _maybe_drift_reset(
+        self,
+        entity_id: str,
+        *,
+        original_target: int,
+        position_target: int,
+        pre_send_anchor: int | None,
+    ) -> None:
+        """Accumulate commanded tilt travel; reset to flush drift on threshold.
+
+        Issue #663. Adds ``abs(original_target - pre_send_anchor)`` to the
+        per-entity accumulator (0 when the anchor is unresolved at cold start —
+        the freshly-stored target seeds the next send). When a positive
+        threshold is crossed, runs a two-step re-zero through
+        :meth:`_send_tilt_command` (reusing inverse / grace / dedup gates per
+        the no-duplication rule):
+
+        1. Drive the slats to the mechanical endpoint — logical
+           ``POSITION_OPEN`` (``force=True``, ``verify=False``). The literal
+           logical value is passed so ``_to_wire`` applies inversion exactly
+           once; it is NOT clamped to ``CONF_MAX_TILT`` — the hardware endpoint
+           is the correct re-zero anchor.
+        2. Settle (``VENETIAN_POST_TILT_REBASE_DELAY_SECONDS``).
+        3. Re-send the original target (``force=True``, ``verify=True``) so the
+           dedup gate doesn't swallow the unchanged value.
+
+        Then zeroes the accumulator. A dedicated ``_reset_in_progress`` guard
+        wraps the two sends so they neither re-accumulate nor re-trigger.
+        """
+        if entity_id in self._reset_in_progress:
+            return
+
+        delta = (
+            abs(original_target - pre_send_anchor)
+            if pre_send_anchor is not None
+            else 0.0
+        )
+        accumulated = self._accumulated_tilt.get(entity_id, 0.0) + delta
+        self._accumulated_tilt[entity_id] = accumulated
+
+        threshold = self._get_tilt_reset_threshold()
+        if not (threshold > 0 and accumulated >= threshold):
+            return
+
+        self._record_event(
+            "tilt_reset_triggered",
+            entity_id=entity_id,
+            accumulated_tilt=accumulated,
+            threshold=threshold,
+            target=original_target,
+        )
+        self._reset_in_progress.add(entity_id)
+        try:
+            self._record_event(
+                "tilt_reset_open",
+                entity_id=entity_id,
+                tilt_position=POSITION_OPEN,
+            )
+            await self._send_tilt_command(
+                entity_id,
+                tilt_target=POSITION_OPEN,
+                position_target=position_target,
+                reason="tilt_reset_open",
+                force=True,
+                verify=False,
+            )
+            await asyncio.sleep(VENETIAN_POST_TILT_REBASE_DELAY_SECONDS)
+            self._record_event(
+                "tilt_reset_return",
+                entity_id=entity_id,
+                tilt_position=original_target,
+            )
+            await self._send_tilt_command(
+                entity_id,
+                tilt_target=original_target,
+                position_target=position_target,
+                reason="tilt_reset_return",
+                force=True,
+                verify=True,
+            )
+        finally:
+            self._reset_in_progress.discard(entity_id)
+        self._accumulated_tilt[entity_id] = 0.0
 
     async def update_tilt_only(
         self,
