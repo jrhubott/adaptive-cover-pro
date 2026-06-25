@@ -123,6 +123,22 @@ def test_enable_position_matching_reads_provided_value() -> None:
     assert rc.tracking.enable_position_matching is True
 
 
+def test_enforce_delta_at_endpoints_defaults_false() -> None:
+    """Empty options → endpoint delta enforcement is off by default (issue #679)."""
+    rc = RuntimeConfig.from_options({})
+    assert rc.tracking.enforce_delta_at_endpoints is False
+
+
+def test_runtime_config_reads_enforce_delta_at_endpoints() -> None:
+    """The endpoint-enforce toggle flows through to the tracking slice (#679)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+
+    rc = RuntimeConfig.from_options({CONF_ENFORCE_DELTA_AT_ENDPOINTS: True})
+    assert rc.tracking.enforce_delta_at_endpoints is True
+
+
 def test_from_options_reads_every_field_from_provided_dict() -> None:
     options = {
         CONF_ENTITIES: ["cover.test"],

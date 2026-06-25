@@ -26,6 +26,7 @@ from custom_components.adaptive_cover_pro.cover_types import VenetianPolicy, get
 from custom_components.adaptive_cover_pro.managers.cover_command import (
     CoverCommandService,
     PositionContext,
+    build_special_positions,
 )
 
 
@@ -600,6 +601,22 @@ def test_attach_passes_min_change_callable_to_sequencer(svc, hass):
     assert policy._sequencer._get_min_change() == 5
 
 
+def test_attach_passes_enforce_delta_at_endpoints_callable(svc, hass):
+    """attach() wires the endpoint-enforce callable into the sequencer (#679)."""
+    policy = VenetianPolicy()
+    policy.attach(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=svc._get_current_position,
+        set_commanded_position=svc.set_target,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        get_enforce_delta_at_endpoints=lambda: True,
+    )
+    assert policy._sequencer._get_enforce_delta_at_endpoints() is True
+
+
 @pytest.mark.asyncio
 async def test_tilt_below_delta_threshold_skipped_in_full_pipeline(svc, hass):
     """Tilt commands below min_change are skipped; skip event is emitted on second cycle."""
@@ -658,3 +675,220 @@ async def test_tilt_below_delta_threshold_skipped_in_full_pipeline(svc, hass):
         and e.get("reason") == "delta_too_small"
     ]
     assert len(skip_events) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Issue #679 capstone: mechanically coupled venetian (set_cover_position
+# back-drives tilt). With the endpoint-enforce option ON the cover parks at the
+# reachable 3/100 instead of chasing an impossible 0/100; with the option OFF
+# the actual-aware tilt dedup still recovers (no permanent 0/0).
+# ---------------------------------------------------------------------------
+
+
+class _CoupledCover:
+    """Stateful model of a coupled venetian.
+
+    - ``set_cover_position(p)`` drives the carriage to ``p`` and, because the
+      carriage and slats share one motor, back-drives the tilt actuator to 0.
+    - ``set_cover_tilt_position(t)`` drives the slats to ``t``; rotating the
+      slats open (toward 100) mechanically lifts the carriage by ~3 %, so a
+      commanded 0 settles at the reachable 3.
+    """
+
+    def __init__(self, position: int, tilt: int) -> None:
+        self.position = position
+        self.tilt = tilt
+
+    def state(self) -> MagicMock:
+        import datetime as dt
+
+        st = MagicMock()
+        st.state = "open"
+        # Old enough that the time-delta gate (threshold 0) always passes.
+        st.last_updated = dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)
+        st.last_changed = st.last_updated
+        st.attributes = {
+            "current_position": self.position,
+            "current_tilt_position": self.tilt,
+        }
+        return st
+
+
+def _attach_coupled_policy(svc, hass, cover: _CoupledCover, buf):
+    """Attach a VenetianPolicy whose actuator reads track a coupled cover."""
+    policy = VenetianPolicy()
+    policy.attach(
+        hass=hass,
+        logger=MagicMock(),
+        grace_mgr=MagicMock(),
+        get_current_position=lambda _eid: cover.position,
+        set_commanded_position=svc.set_target,
+        position_tolerance=5,
+        is_dry_run=lambda: False,
+        get_state=lambda _eid: "open",
+        get_current_tilt_position=lambda _eid: cover.tilt,
+        event_buffer=buf,
+        get_min_change=lambda: 5,
+        get_enforce_delta_at_endpoints=lambda: svc._enforce_endpoints,
+    )
+    # Skip the real polling loop; settle returns the coupled-driven position.
+    policy._sequencer._wait_for_position_settle = AsyncMock(
+        return_value=(True, cover.position)
+    )
+    return policy
+
+
+def _coupled_ctx(policy, *, tilt: int, special_positions: list[int]) -> PositionContext:
+    """Build a NON-force ctx so the real position delta gate runs."""
+    return PositionContext(
+        auto_control=True,
+        manual_override=False,
+        sun_just_appeared=False,
+        min_change=5,
+        time_threshold=0,
+        special_positions=special_positions,
+        force=False,
+        tilt=tilt,
+        policy=policy,
+    )
+
+
+@pytest.mark.asyncio
+async def test_coupled_cover_parks_at_reachable_position_with_option_on(svc, hass):
+    """Flag ON: cycle-2 position-0 is gated; cover parks at the reachable 3/100."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    buf = EventBuffer(maxlen=64)
+    entity_id = "cover.coupled_venetian"
+    svc._enforce_endpoints = True
+    # Endpoints omitted from the special list when the flag is on (#679).
+    specials = build_special_positions({CONF_ENFORCE_DELTA_AT_ENDPOINTS: True})
+    assert specials == []
+
+    # Start at 3/100 (the reachable state from a prior settle).
+    cover = _CoupledCover(position=3, tilt=100)
+    policy = _attach_coupled_policy(svc, hass, cover, buf)
+
+    def _service_side_effect(domain, service, data, **_):
+        if service == "set_cover_position":
+            cover.position = data["position"]
+            cover.tilt = 0  # coupled: position command back-drives the slats
+        elif service == "set_cover_tilt_position":
+            cover.tilt = data["tilt_position"]
+            if cover.position == 0 and cover.tilt >= 100:
+                cover.position = 3  # coupled rise lifts carriage to reachable 3
+        return None
+
+    hass.services.async_call.side_effect = _service_side_effect
+
+    # --- Cycle 1: solar wants 0/100, but cover is at 3 (delta 3 < 5) and 0 is
+    #     no longer special → the position command is GATED. Tilt already at
+    #     100 matches the live actuator → no tilt command either. Stable at 3/100.
+    hass.states.get.return_value = cover.state()
+    with _patch_caps_dual_axis():
+        outcome1, reason1 = await svc.apply_position(
+            entity_id,
+            0,
+            "solar",
+            _coupled_ctx(policy, tilt=100, special_positions=specials),
+        )
+
+    assert outcome1 == "skipped"
+    # No position command fired — the endpoint delta gate held.
+    pos_calls = [
+        c
+        for c in hass.services.async_call.call_args_list
+        if c.args[1] == "set_cover_position"
+    ]
+    assert pos_calls == []
+    assert cover.position == 3
+    assert cover.tilt == 100
+
+    # --- Cycle 2: identical solar decision. Confirm the position-0 target is
+    #     still gated (the defect would have re-fired it and stuck at 0/0).
+    hass.services.async_call.reset_mock()
+    hass.services.async_call.side_effect = _service_side_effect
+    hass.states.get.return_value = cover.state()
+    with _patch_caps_dual_axis():
+        outcome2, reason2 = await svc.apply_position(
+            entity_id,
+            0,
+            "solar",
+            _coupled_ctx(policy, tilt=100, special_positions=specials),
+        )
+
+    assert outcome2 == "skipped"
+    pos_calls2 = [
+        c
+        for c in hass.services.async_call.call_args_list
+        if c.args[1] == "set_cover_position"
+    ]
+    assert pos_calls2 == [], "cycle-2 position-0 must be gated (issue #679)"
+    # Final reachable state preserved.
+    assert (cover.position, cover.tilt) == (3, 100)
+
+
+@pytest.mark.asyncio
+async def test_coupled_cover_with_option_off_recovers_via_actual_aware_dedup(svc, hass):
+    """Flag OFF: 0 still bypasses delta (issue #629), but the actual-aware tilt
+    dedup recovers the slats — the cover never sticks permanently at 0/0.
+    """
+    from custom_components.adaptive_cover_pro.diagnostics.event_buffer import (
+        EventBuffer,
+    )
+
+    buf = EventBuffer(maxlen=64)
+    entity_id = "cover.coupled_venetian"
+    svc._enforce_endpoints = False
+    specials = build_special_positions({})  # [0, 100] — endpoints stay special
+
+    cover = _CoupledCover(position=3, tilt=100)
+    policy = _attach_coupled_policy(svc, hass, cover, buf)
+
+    def _service_side_effect(domain, service, data, **_):
+        if service == "set_cover_position":
+            cover.position = data["position"]
+            cover.tilt = 0  # coupled: position command back-drives the slats
+            policy._sequencer._wait_for_position_settle = AsyncMock(
+                return_value=(True, cover.position)
+            )
+        elif service == "set_cover_tilt_position":
+            cover.tilt = data["tilt_position"]
+            if cover.position == 0 and cover.tilt >= 100:
+                cover.position = 3
+                policy._sequencer._wait_for_position_settle = AsyncMock(
+                    return_value=(True, cover.position)
+                )
+        return None
+
+    hass.services.async_call.side_effect = _service_side_effect
+
+    # Cycle: solar wants 0/100. 0 IS special (flag off) → position command fires
+    # → cover drives to 0/0 (tilt back-driven). after_position_command →
+    # run_sequence sends tilt 100 → coupled rise → settles at 3/100. The
+    # actual-aware dedup re-sends tilt because the live actuator drifted to 0.
+    hass.states.get.return_value = cover.state()
+    with _patch_caps_dual_axis():
+        outcome, _ = await svc.apply_position(
+            entity_id,
+            0,
+            "solar",
+            _coupled_ctx(policy, tilt=100, special_positions=specials),
+        )
+
+    assert outcome == "sent"
+    # The position command fired (0 is special) and a tilt command recovered
+    # the slats — the cover is NOT stuck at 0/0.
+    tilt_calls = [
+        c
+        for c in hass.services.async_call.call_args_list
+        if c.args[1] == "set_cover_tilt_position" and c.args[2]["tilt_position"] == 100
+    ]
+    assert tilt_calls, "tilt must be re-driven to 100 — no permanent 0/0 (issue #679)"
+    assert cover.tilt == 100
+    assert cover.position == 3

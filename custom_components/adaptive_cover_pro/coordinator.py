@@ -388,6 +388,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Built once and reused for both the command-service construction
         # (position_tolerance) and the late policy.attach below.
         _rc_attach = RuntimeConfig.from_options(self.config_entry.options)
+        # Seeded here so the live lambda passed to policy.attach reads a value
+        # before the first _update_options cycle; refreshed each cycle (#679).
+        self._enforce_delta_at_endpoints = (
+            _rc_attach.tracking.enforce_delta_at_endpoints
+        )
 
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
@@ -447,6 +452,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ),
             invert_tilt=lambda: self._inverse_tilt,
             get_min_change=lambda: self.min_change,
+            get_enforce_delta_at_endpoints=lambda: self._enforce_delta_at_endpoints,
         )
 
         # Time window manager (start/end time checks)
@@ -1972,6 +1978,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cmd_svc.update_threshold(rc.open_close_threshold)
         self._cmd_svc.update_position_tolerance(rc.tracking.position_tolerance)
         self._cmd_svc.enable_position_matching = rc.tracking.enable_position_matching
+        # Mirror the endpoint-delta-enforcement flag (issue #679) so the
+        # venetian tilt-axis gate (wired via a live lambda in policy.attach)
+        # and the position-axis special list pick up mid-session changes.
+        self._enforce_delta_at_endpoints = rc.tracking.enforce_delta_at_endpoints
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,

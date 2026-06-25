@@ -518,6 +518,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             event_buffer=kwargs.get("event_buffer"),
             invert_tilt=kwargs.get("invert_tilt"),
             get_min_change=kwargs.get("get_min_change"),
+            get_enforce_delta_at_endpoints=kwargs.get("get_enforce_delta_at_endpoints"),
             post_settle_hold_seconds=kwargs.get(
                 "post_settle_hold_seconds", DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
             ),

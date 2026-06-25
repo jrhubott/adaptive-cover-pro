@@ -72,6 +72,15 @@ def test_l2a_position_keys_in_position_schema_not_behavior() -> None:
         assert key not in beh, f"{key} must not be in BEHAVIOR_SCHEMA (L2b)"
 
 
+def test_position_schema_has_enforce_delta_at_endpoints() -> None:
+    """The enforce-delta-at-endpoints toggle lives on the position step (#679)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+    )
+
+    assert CONF_ENFORCE_DELTA_AT_ENDPOINTS in _schema_keys(cf.POSITION_SCHEMA)
+
+
 def test_l2b_behavior_keys_in_behavior_schema_not_position() -> None:
     """Every timing/threshold value lives on the L2b behavior step only."""
     pos = _schema_keys(cf.POSITION_SCHEMA)

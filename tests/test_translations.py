@@ -219,6 +219,22 @@ def test_en_blind_spot_labels_name_fov_frame() -> None:
         ), f"{step_key}.blind_spot.data.blind_spot_right label must mention 'FOV'"
 
 
+def test_enforce_delta_at_endpoints_strings_present() -> None:
+    """en.json carries the label + description on both config and options steps (#679)."""
+    en = _load(TRANSLATIONS_DIR / "en.json")
+    for step_key in ("config", "options"):
+        pos = en[step_key]["step"]["position"]
+        assert (
+            "enforce_delta_at_endpoints" in pos["data"]
+        ), f"{step_key}.position.data missing enforce_delta_at_endpoints label"
+        assert "enforce_delta_at_endpoints" in pos["data_description"], (
+            f"{step_key}.position.data_description missing "
+            "enforce_delta_at_endpoints"
+        )
+        assert pos["data"]["enforce_delta_at_endpoints"].strip()
+        assert pos["data_description"]["enforce_delta_at_endpoints"].strip()
+
+
 def test_en_blind_spot_descriptions_do_not_mention_window_azimuth() -> None:
     """Helper text must not contradict services.yaml by saying 'from window azimuth'."""
     en = _load(TRANSLATIONS_DIR / "en.json")

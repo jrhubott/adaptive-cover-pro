@@ -23,8 +23,10 @@ from homeassistant.const import ATTR_ENTITY_ID
 
 from ...const import (
     CONF_DEFAULT_HEIGHT,
+    CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_POS,
+    DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
 )
 from ...cover_types.base import (
     CAP_HAS_CLOSE,
@@ -155,8 +157,17 @@ def build_special_positions(options: dict) -> list[int]:
     added in ``_check_position_delta`` — if the cover is already at the
     target, no command is sent regardless of whether the target is special.
 
+    When ``CONF_ENFORCE_DELTA_AT_ENDPOINTS`` is enabled (issue #679), the 0
+    and 100 endpoints are omitted so the normal delta gate runs for those
+    targets too. Default (off) preserves issue #629's always-send-to-0/100
+    guarantee byte-for-byte. Useful on mechanically coupled covers where
+    commanding a full endpoint disturbs the tilt axis.
+
     """
-    special_positions = [0, 100]
+    enforce_endpoints = options.get(
+        CONF_ENFORCE_DELTA_AT_ENDPOINTS, DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS
+    )
+    special_positions = [] if enforce_endpoints else [0, 100]
     default_height = options.get(CONF_DEFAULT_HEIGHT)
     sunset_pos = options.get(CONF_SUNSET_POS)
     my_position_value = options.get(CONF_MY_POSITION_VALUE)
