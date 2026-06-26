@@ -194,7 +194,8 @@
     "awning": "Horizontale Markise",
     "tilt": "Jalousie / Neigung",
     "oscillating_awning": "Schwenkmarkise",
-    "venetian": "Jalousie (Zwei-Achsen)"
+    "venetian": "Jalousie (Zwei-Achsen)",
+    "roof_window": "Dachfenster"
   },
   "geometry": {
     "window": {
@@ -233,6 +234,10 @@
     },
     "fov": {
       "computed": "Berechnetes Sichtfeld ≈ {deg}°/{deg}° ({w}m Breite, {d}m Laibungstiefe)"
+    },
+    "roof": {
+      "pitch": "Dachneigung {v}° von Horizontal",
+      "height_above": "{v}m Dach über Fenster (First-Gate)"
     }
   }
 }

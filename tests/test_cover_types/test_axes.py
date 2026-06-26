@@ -41,7 +41,13 @@ from custom_components.adaptive_cover_pro.state.snapshot import CoverCapabilitie
 # Cover-type keys exercised across the parametrised tests below. Listed once
 # here so adding a new cover type only changes one place (the parametrize
 # decorators below pick up the new value automatically).
-ALL_COVER_TYPES = ["cover_blind", "cover_awning", "cover_tilt", "cover_venetian"]
+ALL_COVER_TYPES = [
+    "cover_blind",
+    "cover_awning",
+    "cover_tilt",
+    "cover_venetian",
+    "cover_roof_window",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +168,7 @@ class TestPolicyAxesDeclarations:
                 "cover_awning": AXIS_NAME_POSITION,
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_POSITION,
+                "cover_roof_window": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -172,6 +179,7 @@ class TestPolicyAxesDeclarations:
                 "cover_awning": AXIS_NAME_POSITION,
                 "cover_tilt": AXIS_NAME_TILT,  # cover_tilt always routes tilt
                 "cover_venetian": AXIS_NAME_POSITION,
+                "cover_roof_window": AXIS_NAME_POSITION,
             },
         ),
         (
@@ -184,6 +192,7 @@ class TestPolicyAxesDeclarations:
                 "cover_awning": AXIS_NAME_TILT,
                 "cover_tilt": AXIS_NAME_TILT,
                 "cover_venetian": AXIS_NAME_TILT,
+                "cover_roof_window": AXIS_NAME_TILT,
             },
         ),
     ],

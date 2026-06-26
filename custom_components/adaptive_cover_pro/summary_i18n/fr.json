@@ -194,7 +194,8 @@
     "awning": "Store banne horizontal",
     "tilt": "Store vénitien / inclinaison",
     "oscillating_awning": "Store oscillant",
-    "venetian": "Store vénitien (deux axes)"
+    "venetian": "Store vénitien (deux axes)",
+    "roof_window": "Fenêtre de toit"
   },
   "geometry": {
     "window": {
@@ -233,6 +234,10 @@
     },
     "fov": {
       "computed": "FOV calculé ≈ {deg}°/{deg}° (largeur {w}m, profondeur tableau {d}m)"
+    },
+    "roof": {
+      "pitch": "pente de toit {v}° depuis l'horizontale",
+      "height_above": "{v}m de toit au-dessus de la fenêtre (porte de faîtage)"
     }
   }
 }

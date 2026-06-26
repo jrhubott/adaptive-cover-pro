@@ -17,6 +17,7 @@ from .base import POLICY_REGISTRY, CoverTypePolicy
 from .blind import BlindPolicy
 from .awning import AwningPolicy
 from .oscillating_awning import OscillatingAwningPolicy
+from .roof_window import RoofWindowPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
 
@@ -49,6 +50,7 @@ __all__ = [
     "BlindPolicy",
     "CoverTypePolicy",
     "OscillatingAwningPolicy",
+    "RoofWindowPolicy",
     "TiltPolicy",
     "VenetianPolicy",
     "get_policy",

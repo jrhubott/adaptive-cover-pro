@@ -135,6 +135,8 @@ from .const import (
     CONF_SUNSET_POS,
     CONF_SUNSET_TILT,
     CONF_SUNSET_TIME_ENTITY,
+    CONF_ROOF_HEIGHT_ABOVE,
+    CONF_ROOF_PITCH,
     CONF_SUNSET_USE_MY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
@@ -1552,6 +1554,19 @@ _GEOMETRY_SPECS = _spec(
         SECTION_GEOMETRY,
         ValidatorKind.RANGE,
         rng=const._RANGE_AWNING_PIVOT_OFFSET,
+    ),
+    # Roof / skylight window geometry (#212).
+    FieldSpec(
+        CONF_ROOF_PITCH,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_ROOF_PITCH,
+    ),
+    FieldSpec(
+        CONF_ROOF_HEIGHT_ABOVE,
+        SECTION_GEOMETRY,
+        ValidatorKind.RANGE,
+        rng=const._RANGE_ROOF_HEIGHT_ABOVE,
     ),
     FieldSpec(
         CONF_TILT_DEPTH,

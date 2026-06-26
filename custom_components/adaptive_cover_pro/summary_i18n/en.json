@@ -194,7 +194,8 @@
     "awning": "Horizontal Awning",
     "tilt": "Venetian / Tilt Blind",
     "oscillating_awning": "Oscillating Awning",
-    "venetian": "Venetian Blind (Dual-Axis)"
+    "venetian": "Venetian Blind (Dual-Axis)",
+    "roof_window": "Roof Window"
   },
   "geometry": {
     "window": {
@@ -219,6 +220,10 @@
       "sweep": "sweep {lo}°–{hi}°",
       "housing_offset": "{v}m housing offset",
       "pivot_offset": "{v}m pivot offset"
+    },
+    "roof": {
+      "pitch": "roof pitch {v}° from horizontal",
+      "height_above": "{v}m roof above window (ridge gate)"
     },
     "venetian": {
       "skip_tilt": "skip tilt when position > {skip_above}%",

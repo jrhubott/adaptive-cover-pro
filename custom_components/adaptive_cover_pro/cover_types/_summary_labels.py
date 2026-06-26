@@ -38,6 +38,7 @@ COVER_TYPE_LABELS_EN: dict[str, str] = {
     "cover_types.tilt": "Venetian / Tilt Blind",
     "cover_types.oscillating_awning": "Oscillating Awning",
     "cover_types.venetian": "Venetian Blind (Dual-Axis)",
+    "cover_types.roof_window": "Roof Window",
 }
 
 # --- Geometry / physical-dimension templates (namespace config_summary.geometry.*)
@@ -66,6 +67,9 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.oscillating.sweep": "sweep {lo}°–{hi}°",
     "geometry.oscillating.housing_offset": "{v}m housing offset",
     "geometry.oscillating.pivot_offset": "{v}m pivot offset",
+    # Roof / skylight window (#212).
+    "geometry.roof.pitch": "roof pitch {v}° from horizontal",
+    "geometry.roof.height_above": "{v}m roof above window (ridge gate)",
     # Venetian-only extras.
     "geometry.venetian.skip_tilt": "skip tilt when position > {skip_above}%",
     "geometry.venetian.mode_position_and_tilt": "position and tilt",

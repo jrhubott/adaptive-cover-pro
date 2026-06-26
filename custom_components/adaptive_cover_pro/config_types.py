@@ -208,6 +208,46 @@ class OscillatingConfig:
 
 
 @dataclass
+class RoofWindowConfig:
+    """Configuration specific to roof / skylight windows (#212).
+
+    A roof window is a vertical-style blind travelling down-slope across
+    pitched glass. It reuses the vertical window geometry (distance, height,
+    depth, sill — carried in a sibling ``VerticalConfig``) and adds the glass
+    pitch and the along-slope roof height above the window.
+
+    ``roof_pitch`` is measured FROM HORIZONTAL: ``0`` = flat skylight,
+    ``90`` = vertical window (reproduces the vertical engine exactly).
+    ``roof_height_above`` enables the ridge occlusion gate when > 0; ``0``
+    (the default) disables it (e.g. a window sitting at the ridge).
+    """
+
+    roof_pitch: float = 40.0
+    roof_height_above: float = 0.0
+
+    @classmethod
+    def from_options(cls, options: dict) -> RoofWindowConfig:
+        """Build from a config-entry options dict, applying defaults."""
+        from .const import (
+            CONF_ROOF_HEIGHT_ABOVE,
+            CONF_ROOF_PITCH,
+            DEFAULT_ROOF_HEIGHT_ABOVE,
+            DEFAULT_ROOF_PITCH,
+        )
+
+        pitch = options.get(CONF_ROOF_PITCH)
+        height_above = options.get(CONF_ROOF_HEIGHT_ABOVE)
+        return cls(
+            roof_pitch=float(pitch) if pitch is not None else float(DEFAULT_ROOF_PITCH),
+            roof_height_above=(
+                float(height_above)
+                if height_above is not None
+                else float(DEFAULT_ROOF_HEIGHT_ABOVE)
+            ),
+        )
+
+
+@dataclass
 class TiltConfig:
     """Configuration specific to tilt/venetian blinds."""
 

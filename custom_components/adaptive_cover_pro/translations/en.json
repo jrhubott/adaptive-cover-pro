@@ -55,7 +55,9 @@
           "awning_min_angle": "Arm Angle When Closed",
           "awning_max_angle": "Arm Angle When Fully Open",
           "awning_housing_offset": "Housing Offset Above Window",
-          "awning_pivot_offset": "Pivot Offset From Window"
+          "awning_pivot_offset": "Pivot Offset From Window",
+          "roof_pitch": "Roof Pitch",
+          "roof_height_above": "Roof Height Above Window"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -80,7 +82,9 @@
           "awning_min_angle": "Arm angle when the awning is fully closed/retracted (0–180°). Typically 0° = arm vertical against the wall. Defines the start of the sweep arc.",
           "awning_max_angle": "Arm angle when the awning is fully open (0–180°). The arm sweeps linearly from the closed angle to this value across 0–100% open. Example: a 175° total sweep ≈ 1.75° per 1%.",
           "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top.",
-          "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall."
+          "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall.",
+          "roof_pitch": "Pitch of the roof glass measured FROM HORIZONTAL (0–90°). 0° = a flat skylight (sun lets in whenever it is above the horizon); 90° = a vertical window (behaves exactly like a vertical blind). Typical Velux-style roof windows are 30–50°. If you are migrating from the vertical-blind workaround that used a max-elevation limit, this pitch is the complement of that angle (e.g. a 35° roof ↔ a ~55° max-elevation workaround).",
+          "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for."
         }
       },
       "sun_tracking": {
@@ -689,7 +693,9 @@
           "awning_min_angle": "Arm Angle When Closed",
           "awning_max_angle": "Arm Angle When Fully Open",
           "awning_housing_offset": "Housing Offset Above Window",
-          "awning_pivot_offset": "Pivot Offset From Window"
+          "awning_pivot_offset": "Pivot Offset From Window",
+          "roof_pitch": "Roof Pitch",
+          "roof_height_above": "Roof Height Above Window"
         },
         "data_description": {
           "window_height": "Height of your window (from bottom to top of the glass area). Shown in the unit Home Assistant is configured for. Examples: Standard door = 2.0 m / 79 in, Small window = 1.5 m / 59 in, Floor-to-ceiling = 2.5 m / 98 in. Measure from where the cover starts to where it ends when fully extended.",
@@ -714,7 +720,9 @@
           "awning_min_angle": "Arm angle when the awning is fully closed/retracted (0–180°). Typically 0° = arm vertical against the wall. Defines the start of the sweep arc.",
           "awning_max_angle": "Arm angle when the awning is fully open (0–180°). The arm sweeps linearly from the closed angle to this value across 0–100% open. Example: a 175° total sweep ≈ 1.75° per 1%.",
           "awning_housing_offset": "Vertical offset of the arm pivot above the top of the window (0–1 m). Combined with window height and arm length to locate the pivot. Set 0 when the housing sits flush with the window top.",
-          "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall."
+          "awning_pivot_offset": "Horizontal distance from the awning arm pivot (fabric plane) to the window glass (0–2 m). At low sun this lets the dropped fabric shade lower on the glass, because the fabric stands off the pane. Set this to the housing/arm standoff from the wall plus any window inset/reveal — use 0 when the fabric hangs flush against the glass. Example: 0.7 m / 28 in for an arm mounted well off the wall.",
+          "roof_pitch": "Pitch of the roof glass measured FROM HORIZONTAL (0–90°). 0° = a flat skylight (sun lets in whenever it is above the horizon); 90° = a vertical window (behaves exactly like a vertical blind). Typical Velux-style roof windows are 30–50°. If you are migrating from the vertical-blind workaround that used a max-elevation limit, this pitch is the complement of that angle (e.g. a 35° roof ↔ a ~55° max-elevation workaround).",
+          "roof_height_above": "Along-slope distance from the top of the window up to the roof ridge (0–10 m). When > 0 the roof above the window can hide the sun once it swings past the ridge and drops low (the ridge occlusion gate). Set 0 (default) to disable the gate — e.g. a window sitting right at the ridge with no roof above it. Shown in the unit Home Assistant is configured for."
         }
       },
       "sun_tracking": {
@@ -1310,7 +1318,8 @@
         "cover_awning": "Horizontal blind",
         "cover_tilt": "Tilted blind",
         "cover_venetian": "Venetian blind (dual-axis)",
-        "cover_oscillating_awning": "Oscillating awning (drop-arm)"
+        "cover_oscillating_awning": "Oscillating awning (drop-arm)",
+        "cover_roof_window": "Roof window"
       }
     },
     "tilt_mode": {

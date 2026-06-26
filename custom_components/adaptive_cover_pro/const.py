@@ -92,6 +92,15 @@ CONF_WINDOW_WIDTH = "window_width"  # window width, metres (0.1-50.0)
 CONF_WINDOW_DEPTH = "window_depth"  # window recess depth, metres (0.0-5.0)
 CONF_SILL_HEIGHT = "sill_height"  # sill height above floor, metres (0.0-50.0)
 CONF_DISTANCE = "distance_shaded_area"  # blind→shaded distance, m (0.0-50.0)
+# Roof / skylight window geometry (#212). A roof window is a vertical-style
+# blind travelling down-slope across pitched glass; it reuses the window
+# width/height/depth/sill/distance fields above and adds these two.
+CONF_ROOF_PITCH = "roof_pitch"  # glass pitch from horizontal, deg (0=flat, 90=vertical)
+CONF_ROOF_HEIGHT_ABOVE = (
+    "roof_height_above"  # along-slope roof above window, m (0=no ridge gate)
+)
+DEFAULT_ROOF_PITCH = 40  # degrees — typical Velux roof window pitch
+DEFAULT_ROOF_HEIGHT_ABOVE = 0.0  # metres — 0 disables the ridge occlusion gate
 CONF_FOV_LEFT = "fov_left"  # left half-FOV from azimuth, degrees 0-180
 CONF_FOV_RIGHT = "fov_right"  # right half-FOV from azimuth, degrees 0-180
 DEFAULT_FOV_LEFT = 90  # degrees; matches config flow default
@@ -1057,6 +1066,10 @@ _RANGE_AWNING_SWEEP_ANGLE = (0, 180)  # CONF_AWNING_MIN/MAX_ANGLE, degrees
 _RANGE_AWNING_HOUSING_OFFSET = (0.0, 1.0)  # CONF_AWNING_HOUSING_OFFSET, metres
 _RANGE_AWNING_PIVOT_OFFSET = (0.0, 2.0)  # CONF_AWNING_PIVOT_OFFSET, metres
 
+# Geometry — roof / skylight window (#212).
+_RANGE_ROOF_PITCH = (0, 90)  # CONF_ROOF_PITCH, degrees (0=flat, 90=vertical)
+_RANGE_ROOF_HEIGHT_ABOVE = (0.0, 10.0)  # CONF_ROOF_HEIGHT_ABOVE, metres
+
 # Geometry — tilt / venetian slats.
 _RANGE_TILT_DEPTH = (0.1, 15.0)  # CONF_TILT_DEPTH, cm
 _RANGE_TILT_DISTANCE = (0.1, 15.0)  # CONF_TILT_DISTANCE, cm
@@ -1201,6 +1214,7 @@ class CoverType(StrEnum):
     TILT = "cover_tilt"
     VENETIAN = "cover_venetian"
     OSCILLATING_AWNING = "cover_oscillating_awning"
+    ROOF_WINDOW = "cover_roof_window"
 
     @property
     def display_name(self) -> str:
@@ -1216,6 +1230,7 @@ class CoverType(StrEnum):
             self.TILT: "Tilt",
             self.VENETIAN: "Venetian",
             self.OSCILLATING_AWNING: "Oscillating Awning",
+            self.ROOF_WINDOW: "Roof Window",
         }[self]
 
 

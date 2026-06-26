@@ -201,6 +201,27 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             "clamped_to_window": bool(clamped_to_window),
         }
 
+    def _project_drop(
+        self, effective_distance: float
+    ) -> tuple[float, float, float, float]:
+        """Project the protected horizontal distance onto the vertical glass.
+
+        Returns ``(base_height, cos_gamma, cos_gamma_clamped, path_length)``.
+
+        Factored out of ``calculate_position`` so pitched-glass cover types
+        (roof / skylight windows) can re-project the *same* effective distance
+        onto a tilted plane without duplicating the surrounding edge-case /
+        window-depth / sill / safety-margin pipeline (CODING_GUIDELINES.md
+        "Code duplication is not okay").
+        """
+        cos_gamma = float(cos(rad(self.gamma)))
+        cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
+            1 if cos_gamma >= 0 else -1
+        )
+        path_length = effective_distance / cos_gamma_clamped
+        base_height = path_length * float(tan(rad(self.sol_elev)))
+        return base_height, cos_gamma, cos_gamma_clamped, path_length
+
     def calculate_position(
         self, effective_distance_override: float | None = None
     ) -> float:
@@ -299,13 +320,10 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         if effective_distance < 0:
             effective_distance = 0.0
 
-        # Base calculation: project to vertical blind height.
-        cos_gamma = float(cos(rad(self.gamma)))
-        cos_gamma_clamped = max(abs(cos_gamma), MIN_COS_GAMMA_CLAMP) * (
-            1 if cos_gamma >= 0 else -1
+        # Base calculation: project the protected distance to a blind drop.
+        base_height, cos_gamma, cos_gamma_clamped, path_length = self._project_drop(
+            effective_distance
         )
-        path_length = effective_distance / cos_gamma_clamped
-        base_height = path_length * float(tan(rad(self.sol_elev)))
 
         # Apply safety margin for extreme angles
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)

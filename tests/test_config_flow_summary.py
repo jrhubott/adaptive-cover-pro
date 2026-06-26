@@ -450,6 +450,39 @@ def test_geometry_oscillating_awning_housing_offset_omitted_when_unset():
     assert "housing offset" not in summary
 
 
+def test_geometry_roof_window_shows_pitch():
+    """Roof-window summary renders the glass pitch (#212)."""
+    from custom_components.adaptive_cover_pro.const import CONF_ROOF_PITCH
+
+    cfg = {CONF_HEIGHT_WIN: 1.2, CONF_DISTANCE: 0.4, CONF_ROOF_PITCH: 35}
+    summary = _build_config_summary(cfg, CoverType.ROOF_WINDOW)
+    assert "roof pitch 35° from horizontal" in summary
+
+
+def test_geometry_roof_window_shows_ridge_height_when_set():
+    """Roof-window summary renders the roof-above-window ridge height when > 0."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ROOF_HEIGHT_ABOVE,
+        CONF_ROOF_PITCH,
+    )
+
+    cfg = {CONF_ROOF_PITCH: 40, CONF_ROOF_HEIGHT_ABOVE: 1.5}
+    summary = _build_config_summary(cfg, CoverType.ROOF_WINDOW)
+    assert "1.5m roof above window" in summary
+
+
+def test_geometry_roof_window_ridge_height_omitted_when_zero():
+    """Ridge-height line is absent when roof_height_above is 0 (gate disabled)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_ROOF_HEIGHT_ABOVE,
+        CONF_ROOF_PITCH,
+    )
+
+    cfg = {CONF_ROOF_PITCH: 40, CONF_ROOF_HEIGHT_ABOVE: 0.0}
+    summary = _build_config_summary(cfg, CoverType.ROOF_WINDOW)
+    assert "roof above window" not in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 2: How It Decides — Sun Tracking
 # ---------------------------------------------------------------------------
