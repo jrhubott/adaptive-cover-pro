@@ -54,7 +54,7 @@ from .const import (
     _LOGGER,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
-from .cover_types import weather_retraction_default
+from .cover_types import get_policy, weather_retraction_default
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
     custom_position_slot_sensors,
@@ -124,6 +124,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     """Set up Adaptive Cover Pro from a config entry."""
 
     await async_setup_services(hass)
+
+    # Virtual entry types (the Building Profile) hold only shared building-level
+    # sensor IDs — they register no platforms and build no coordinator. Filter on
+    # the policy capability, never on the cover-type string, so the regression
+    # guard stays unambiguous. Register a propagation update-listener so a change
+    # to the profile reaches its linked covers, then return without forwarding
+    # platforms.
+    if not get_policy(entry.data[CONF_SENSOR_TYPE]).controls_cover:
+        entry.async_on_unload(entry.add_update_listener(_async_profile_propagate))
+        return True
 
     coordinator = AdaptiveDataUpdateCoordinator(hass)
     # Detect reload vs. cold HA boot so first-refresh can suppress non-safety
@@ -505,6 +515,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 _RUNTIME_APPLICABLE_OPTIONS: dict[str, str] = {
     CONF_ENABLE_SUN_TRACKING: "async_apply_sun_tracking_update",
 }
+
+
+async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Propagate a Building Profile's sensor changes to its linked covers.
+
+    Registered as the update listener for virtual ``building_profile`` entries
+    (which build no coordinator). A no-op for now — Commit 4 implements the
+    copy-to-linked-covers propagation.
+    """
+    # Commit 4 implements propagation.
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

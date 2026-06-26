@@ -21,6 +21,11 @@ from .roof_window import RoofWindowPolicy
 from .tilt import TiltPolicy
 from .venetian import VenetianPolicy
 
+# Virtual entry type — imported LAST so it sorts to the bottom of the
+# cover-type picker (``SENSOR_TYPE_MENU`` follows registration order). It is
+# not a physical cover (``controls_cover = False``).
+from .building_profile import BuildingProfilePolicy
+
 
 def get_policy(cover_type) -> CoverTypePolicy:
     """Return a policy instance for the given cover-type identifier.
@@ -61,6 +66,7 @@ __all__ = [
     "POLICY_REGISTRY",
     "AwningPolicy",
     "BlindPolicy",
+    "BuildingProfilePolicy",
     "CoverTypePolicy",
     "OscillatingAwningPolicy",
     "RoofWindowPolicy",

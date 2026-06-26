@@ -82,11 +82,14 @@ def register_stub_policy(policy_cls: type[CoverTypePolicy]):
         POLICY_REGISTRY.pop(key, None)
 
 
-# The four real policies plus both stubs. Most invariant tests parametrise
+# Every real COVER policy plus both stubs. Most invariant tests parametrise
 # over this list so adding a fifth real cover type automatically extends
-# coverage without further edits.
+# coverage without further edits. Virtual entry types (the building profile,
+# ``controls_cover = False``) are excluded: they have zero axes and register
+# no platforms, so the cover-contract suite must not pull them in. The filter
+# is on the ``controls_cover`` capability, never on a cover-type string.
 ALL_POLICIES_WITH_STUBS: tuple[type[CoverTypePolicy], ...] = (
-    *POLICY_REGISTRY.values(),
+    *(p for p in POLICY_REGISTRY.values() if p.controls_cover),
     StubSingleAxisPolicy,
     StubDualAxisPolicy,
 )

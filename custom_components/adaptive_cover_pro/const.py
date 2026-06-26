@@ -78,6 +78,9 @@ CONF_BLUEPRINT = "blueprint"
 
 CONF_SENSOR_TYPE = "sensor_type"  # one of CoverType.* (see section 27)
 CONF_DEVICE_ID = "linked_device_id"  # HA device_id to link this instance to
+CONF_BUILDING_PROFILE_ID = (
+    "building_profile_id"  # entry_id of a linked Building Profile
+)
 
 
 # =============================================================================
@@ -1221,6 +1224,10 @@ class CoverType(StrEnum):
     VENETIAN = "cover_venetian"
     OSCILLATING_AWNING = "cover_oscillating_awning"
     ROOF_WINDOW = "cover_roof_window"
+    # Virtual entry type — not a physical cover. Holds shared building-level
+    # sensor entity IDs that linked covers copy into their own options. Its
+    # policy registers no platforms (``controls_cover = False``).
+    BUILDING_PROFILE = "cover_building_profile"
 
     @property
     def display_name(self) -> str:
@@ -1237,7 +1244,58 @@ class CoverType(StrEnum):
             self.VENETIAN: "Venetian",
             self.OSCILLATING_AWNING: "Oscillating Awning",
             self.ROOF_WINDOW: "Roof Window",
+            self.BUILDING_PROFILE: "Building Profile",
         }[self]
+
+
+# =============================================================================
+# 28. Building-profile sensor key sets
+# =============================================================================
+# Canonical frozensets of the sensor-picker option keys. ``config_flow``'s
+# ``SYNC_CATEGORIES`` references these (it used to inline the same membership),
+# so they live here — ``const`` cannot import from ``config_flow`` (circular).
+# ``BUILDING_PROFILE_SENSOR_KEYS`` is the set of option keys a Building Profile
+# owns and copies into each linked cover. Threshold/reaction keys, presence,
+# the sunrise/sunset OFFSETS, and all ``*_template_mode`` keys are deliberately
+# excluded — they stay per-cover.
+
+LIGHT_CLOUD_SENSOR_KEYS = frozenset(
+    {
+        CONF_WEATHER_ENTITY,
+        CONF_LUX_ENTITY,
+        CONF_IRRADIANCE_ENTITY,
+        CONF_CLOUD_COVERAGE_ENTITY,
+        CONF_IS_SUNNY_SENSOR,
+        CONF_IS_SUNNY_TEMPLATE,
+    }
+)
+
+WEATHER_OVERRIDE_SENSOR_KEYS = frozenset(
+    {
+        CONF_WEATHER_WIND_SPEED_SENSOR,
+        CONF_WEATHER_WIND_DIRECTION_SENSOR,
+        CONF_WEATHER_RAIN_SENSOR,
+        CONF_WEATHER_IS_RAINING_SENSOR,
+        CONF_WEATHER_IS_RAINING_TEMPLATE,
+        CONF_WEATHER_IS_WINDY_SENSOR,
+        CONF_WEATHER_IS_WINDY_TEMPLATE,
+        CONF_WEATHER_SEVERE_SENSORS,
+    }
+)
+
+BUILDING_PROFILE_SENSOR_KEYS = (
+    LIGHT_CLOUD_SENSOR_KEYS
+    | WEATHER_OVERRIDE_SENSOR_KEYS
+    | frozenset(
+        {
+            CONF_OUTSIDETEMP_ENTITY,
+            CONF_DAYTIME_GATE_SENSORS,
+            CONF_DAYTIME_GATE_TEMPLATE,
+            CONF_SUNSET_TIME_ENTITY,
+            CONF_SUNRISE_TIME_ENTITY,
+        }
+    )
+)
 
 
 class TiltMode(StrEnum):

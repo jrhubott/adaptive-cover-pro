@@ -22,6 +22,8 @@ from homeassistant.helpers import selector
 
 from .const import (
     BLANK_TIME,
+    LIGHT_CLOUD_SENSOR_KEYS,
+    WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
@@ -2574,18 +2576,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_WEATHER_IS_WINDY_TEMPLATE_MODE,
         }
     ),
-    "weather_override_sensors": frozenset(
-        {
-            CONF_WEATHER_WIND_SPEED_SENSOR,
-            CONF_WEATHER_WIND_DIRECTION_SENSOR,
-            CONF_WEATHER_RAIN_SENSOR,
-            CONF_WEATHER_IS_RAINING_SENSOR,
-            CONF_WEATHER_IS_RAINING_TEMPLATE,
-            CONF_WEATHER_IS_WINDY_SENSOR,
-            CONF_WEATHER_IS_WINDY_TEMPLATE,
-            CONF_WEATHER_SEVERE_SENSORS,
-        }
-    ),
+    # Canonical membership lives in const.WEATHER_OVERRIDE_SENSOR_KEYS so the
+    # building-profile sensor-key set can reuse it without duplication.
+    "weather_override_sensors": WEATHER_OVERRIDE_SENSOR_KEYS,
     # Legacy alias: full union of weather_override_values + weather_override_sensors
     "weather_override": frozenset(
         {
@@ -2620,16 +2613,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_IS_SUNNY_TEMPLATE_MODE,
         }
     ),
-    "light_cloud_sensors": frozenset(
-        {
-            CONF_WEATHER_ENTITY,
-            CONF_LUX_ENTITY,
-            CONF_IRRADIANCE_ENTITY,
-            CONF_CLOUD_COVERAGE_ENTITY,
-            CONF_IS_SUNNY_SENSOR,
-            CONF_IS_SUNNY_TEMPLATE,
-        }
-    ),
+    # Canonical membership lives in const.LIGHT_CLOUD_SENSOR_KEYS so the
+    # building-profile sensor-key set can reuse it without duplication.
+    "light_cloud_sensors": LIGHT_CLOUD_SENSOR_KEYS,
     # Legacy alias: full union of light_cloud_values + light_cloud_sensors
     "light_cloud": frozenset(
         {
