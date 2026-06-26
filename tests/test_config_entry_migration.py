@@ -25,11 +25,15 @@ pytestmark = pytest.mark.integration
 
 
 def _make_entry(
-    hass: HomeAssistant, options: dict, version: int = 1, minor_version: int = 1
+    hass: HomeAssistant,
+    options: dict,
+    version: int = 1,
+    minor_version: int = 1,
+    sensor_type=CoverType.BLIND,
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"name": "Migration Test", CONF_SENSOR_TYPE: CoverType.BLIND},
+        data={"name": "Migration Test", CONF_SENSOR_TYPE: sensor_type},
         options=options,
         version=version,
         minor_version=minor_version,
@@ -246,7 +250,7 @@ async def test_migrate_v3_2_copies_force_override_into_slot_5(
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
     assert entry.options[_SLOT5["min_mode"]] is True
     assert entry.version == 3
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v3_2_preserves_legacy_keys_for_rollback(
@@ -282,7 +286,7 @@ async def test_migrate_v3_2_no_force_config_is_a_noop(hass: HomeAssistant) -> No
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
     assert _SLOT5["position"] not in entry.options
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> None:
@@ -295,7 +299,7 @@ async def test_migrate_v3_2_empty_sensor_list_is_a_noop(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert _SLOT5["sensors"] not in entry.options
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v3_2_missing_position_defaults_to_zero(
@@ -322,7 +326,7 @@ async def test_migrate_v1_cascades_through_v3_2(hass: HomeAssistant) -> None:
     )
     await async_migrate_entry(hass, entry)
     assert entry.version == 3
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
     assert entry.options[CONF_WINDOW_WIDTH] == 2.0
     assert entry.options[_SLOT5["priority"]] == CUSTOM_POSITION_SAFETY_PRIORITY
 
@@ -359,7 +363,7 @@ async def test_migrate_v3_3_copies_legacy_single_sensor_into_list(
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CUSTOM_POSITION_SLOTS[1]["sensors"]] == ["binary_sensor.table"]
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v3_3_leaves_legacy_key_intact(hass: HomeAssistant) -> None:
@@ -401,7 +405,7 @@ async def test_migrate_v3_3_no_legacy_is_noop(hass: HomeAssistant) -> None:
         minor_version=2,
     )
     await async_migrate_entry(hass, entry)
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
     for slot_n in (1, 2, 3, 4, 5):
         assert CUSTOM_POSITION_SLOTS[slot_n]["sensors"] not in entry.options
 
@@ -424,7 +428,7 @@ async def test_migrate_v3_4_sets_position_matching_true_for_existing_entry(
     entry = _make_entry(hass, {"azimuth": 180}, version=3, minor_version=3)
     assert await async_migrate_entry(hass, entry) is True
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> None:
@@ -437,7 +441,7 @@ async def test_migrate_v3_4_no_op_when_key_already_true(hass: HomeAssistant) -> 
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) -> None:
@@ -450,7 +454,7 @@ async def test_migrate_v3_4_no_op_when_key_already_false(hass: HomeAssistant) ->
     )
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is False
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
 
 
 async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> None:
@@ -459,7 +463,58 @@ async def test_migrate_v1_cascades_to_position_matching(hass: HomeAssistant) -> 
     await async_migrate_entry(hass, entry)
     assert entry.options[CONF_ENABLE_POSITION_MATCHING] is True
     assert entry.version == 3
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
+
+
+# ---------------------------------------------------------------------------
+# Migration: v3.4 → v3.5 — seed CONF_SHOW_WEATHER_RETRACTION from the cover-type
+# policy default (True for awnings, False elsewhere). Additive + rollback-safe:
+# an entry that already carries the key keeps its value.
+# ---------------------------------------------------------------------------
+
+from custom_components.adaptive_cover_pro.const import (  # noqa: E402
+    CONF_SHOW_WEATHER_RETRACTION,
+)
+
+
+async def test_migrate_v3_4_seeds_weather_retraction(hass: HomeAssistant) -> None:
+    """An awning seeds the toggle True; a blind seeds it False."""
+    awning = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=4,
+        sensor_type=CoverType.AWNING,
+    )
+    assert await async_migrate_entry(hass, awning) is True
+    assert awning.options[CONF_SHOW_WEATHER_RETRACTION] is True
+    assert awning.minor_version == 5
+
+    blind = _make_entry(
+        hass,
+        {"azimuth": 180},
+        version=3,
+        minor_version=4,
+        sensor_type=CoverType.BLIND,
+    )
+    assert await async_migrate_entry(hass, blind) is True
+    assert blind.options[CONF_SHOW_WEATHER_RETRACTION] is False
+    assert blind.minor_version == 5
+
+
+async def test_migrate_v3_5_preserves_existing_toggle(hass: HomeAssistant) -> None:
+    """An entry that already set the key keeps its value (rollback-safe)."""
+    entry = _make_entry(
+        hass,
+        {CONF_SHOW_WEATHER_RETRACTION: True},
+        version=3,
+        minor_version=4,
+        sensor_type=CoverType.BLIND,
+    )
+    await async_migrate_entry(hass, entry)
+    # Policy default for a blind is False, but the explicit True is preserved.
+    assert entry.options[CONF_SHOW_WEATHER_RETRACTION] is True
+    assert entry.minor_version == 5
 
 
 # ---------------------------------------------------------------------------
@@ -478,10 +533,10 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     that minor are never seen as stale and the migration is dead code in
     production.
 
-    Currently the highest target is 4 (the v3.3 → v3.4 enable-position-matching
-    setdefault, per issue #591/#606).  Raise this assertion whenever a new minor
+    Currently the highest target is 5 (the v3.4 → v3.5 seed-weather-retraction
+    setdefault, per issue #693).  Raise this assertion whenever a new minor
     migration block is added.
     """
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
-    assert ConfigFlowHandler.MINOR_VERSION == 4
+    assert ConfigFlowHandler.MINOR_VERSION == 5

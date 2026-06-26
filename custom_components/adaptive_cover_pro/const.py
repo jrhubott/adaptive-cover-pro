@@ -556,6 +556,12 @@ CONF_WEATHER_OVERRIDE_MIN_MODE = "weather_override_min_mode"
 CONF_WEATHER_TIMEOUT = "weather_timeout"  # resume delay after clear, s (0-3600)
 # If True, weather override fires even when auto control is off.
 CONF_WEATHER_BYPASS_AUTO_CONTROL = "weather_bypass_auto_control"
+# Per-cover UI toggle: reveal the wind/rain/severe retraction sensor pickers in
+# the weather-override config step. Config-flow-only (never read at runtime); the
+# default comes from the cover-type policy's ``weather_retraction_default``
+# ClassVar (True for awnings, False elsewhere) but any user can flip it on.
+CONF_SHOW_WEATHER_RETRACTION = "show_weather_retraction"
+DEFAULT_SHOW_WEATHER_RETRACTION = False
 
 # Threshold unit must match the sensor (no conversion applied).
 DEFAULT_WEATHER_WIND_SPEED_THRESHOLD = 50.0

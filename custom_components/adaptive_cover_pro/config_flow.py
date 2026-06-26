@@ -120,6 +120,7 @@ from .const import (
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_RETURN_SUNSET,
     CONF_SENSOR_TYPE,
+    CONF_SHOW_WEATHER_RETRACTION,
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
     CONF_START_TIME,
@@ -236,6 +237,7 @@ from .cover_types import (  # noqa: E402
     BlindPolicy,
     TiltPolicy,
     get_policy,
+    weather_retraction_default,
 )
 from .cover_types.awning import GEOMETRY_HORIZONTAL_SCHEMA  # noqa: E402, F401
 from .cover_types.blind import GEOMETRY_VERTICAL_SCHEMA  # noqa: E402, F401
@@ -679,9 +681,13 @@ DEBUG_SCHEMA = vol.Schema(
 )
 
 
-# Module-level constant for tests / imports. Uses empty/fallback labels.
+# Module-level constant for tests / imports. Uses empty/fallback labels and is
+# built with the retraction pickers revealed so it represents the full schema
+# surface (the live steps gate the pickers on CONF_SHOW_WEATHER_RETRACTION).
 # ``weather_override_schema`` is re-exported from ``config_dynamic`` above.
-WEATHER_OVERRIDE_SCHEMA = weather_override_schema()
+WEATHER_OVERRIDE_SCHEMA = weather_override_schema(
+    options={CONF_SHOW_WEATHER_RETRACTION: True}
+)
 
 # Keys in WEATHER_OVERRIDE_SCHEMA with default=vol.UNDEFINED. Voluptuous omits
 # them from user_input when cleared, so both flow handlers must call
@@ -807,6 +813,23 @@ INTERPOLATION_OPTIONS = vol.Schema(
 def _get_azimuth_edges(data) -> int:
     """Return the total azimuth field-of-view span (fov_left + fov_right)."""
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
+
+
+def _weather_override_needs_reveal(
+    prior_options: dict, user_input: dict, policy_default: bool
+) -> bool:
+    """Whether the weather-override step must re-render to expose the pickers.
+
+    The retraction sensor pickers are rendered only when
+    ``CONF_SHOW_WEATHER_RETRACTION`` is on. When the user flips the toggle on
+    while the form they submitted against still had it off, the pickers weren't
+    on screen — so re-render (two-pass) instead of committing, exactly like the
+    ``async_step_cover_entities`` device reveal. ``policy_default`` is the
+    cover-type default used as the fallback for an absent stored value.
+    """
+    was_showing = bool(prior_options.get(CONF_SHOW_WEATHER_RETRACTION, policy_default))
+    now_on = bool(user_input.get(CONF_SHOW_WEATHER_RETRACTION, policy_default))
+    return now_on and not was_showing
 
 
 def _stringify_templatable(suggested: dict) -> dict:
@@ -2540,6 +2563,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "weather_override_values": frozenset(
         {
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
+            CONF_SHOW_WEATHER_RETRACTION,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             CONF_WEATHER_WIND_DIRECTION_TOLERANCE,
             CONF_WEATHER_RAIN_THRESHOLD,
@@ -2566,6 +2590,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
     "weather_override": frozenset(
         {
             CONF_WEATHER_BYPASS_AUTO_CONTROL,
+            CONF_SHOW_WEATHER_RETRACTION,
             CONF_WEATHER_WIND_SPEED_SENSOR,
             CONF_WEATHER_WIND_DIRECTION_SENSOR,
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
@@ -2937,6 +2962,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle ConfigFlow."""
 
     VERSION = 3
+    # 3.5 (issue #693): seed CONF_SHOW_WEATHER_RETRACTION from the cover-type
+    # policy default so existing awnings keep showing the wind/rain/severe
+    # pickers while other cover types hide them by default.
     # 3.4 (issue #591/#606): MINOR_VERSION raised so HA triggers
     # async_migrate_entry for entries below 3.4.  The v3.3→v3.4 block enables
     # position matching for every pre-existing entry so upgrades keep the old
@@ -2944,7 +2972,7 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     # 3.3 (issue #563 trailing defect): copy legacy custom_position_sensor_N
     # into the new list key.
     # Rollback-safe: every migration block is additive (existing keys retained).
-    MINOR_VERSION = 4
+    MINOR_VERSION = 5
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
@@ -3338,11 +3366,26 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ):
         """Configure weather-based safety overrides."""
+        policy_default = weather_retraction_default(self.type_blind)
         if user_input is not None:
+            if _weather_override_needs_reveal(self.config, user_input, policy_default):
+                # Two-pass reveal: the toggle just turned on, so re-render with
+                # the retraction pickers exposed instead of committing.
+                self.config.update(user_input)
+                return self.async_show_form(
+                    step_id="weather_override",
+                    data_schema=self.add_suggested_values_to_schema(
+                        weather_override_schema(self.hass, self.config), self.config
+                    ),
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+                    },
+                )
             self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
             # L3 priority 90 → 80 (manual override).
             return await self.async_step_manual_override()
+        self.config.setdefault(CONF_SHOW_WEATHER_RETRACTION, policy_default)
         return self.async_show_form(
             step_id="weather_override",
             data_schema=weather_override_schema(self.hass, self.config),
@@ -3914,11 +3957,26 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ):
         """Manage weather-based safety overrides."""
-        suggested = _stringify_templatable(user_input or self.options)
+        policy_default = weather_retraction_default(self.sensor_type)
         if user_input is not None:
+            if _weather_override_needs_reveal(self.options, user_input, policy_default):
+                # Two-pass reveal: re-render with the retraction pickers exposed.
+                self.options.update(user_input)
+                revealed = _stringify_templatable(self.options)
+                return self.async_show_form(
+                    step_id="weather_override",
+                    data_schema=self.add_suggested_values_to_schema(
+                        weather_override_schema(self.hass, revealed), revealed
+                    ),
+                    description_placeholders={
+                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+                    },
+                )
             self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.options.update(user_input)
             return await self.async_step_init()
+        self.options.setdefault(CONF_SHOW_WEATHER_RETRACTION, policy_default)
+        suggested = _stringify_templatable(self.options)
         return self.async_show_form(
             step_id="weather_override",
             data_schema=self.add_suggested_values_to_schema(

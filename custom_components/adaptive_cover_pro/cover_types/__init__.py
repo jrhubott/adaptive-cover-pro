@@ -44,6 +44,19 @@ def get_policy(cover_type) -> CoverTypePolicy:
     return cls()
 
 
+def weather_retraction_default(cover_type) -> bool:
+    """Policy default for the ``CONF_SHOW_WEATHER_RETRACTION`` toggle.
+
+    Wraps :func:`get_policy` so callers (config flow, migration) read the
+    per-cover-type default without branching on the cover-type string. Unknown
+    or absent cover types fall back to ``False`` (pickers hidden).
+    """
+    try:
+        return get_policy(cover_type).weather_retraction_default
+    except ValueError:
+        return False
+
+
 __all__ = [
     "POLICY_REGISTRY",
     "AwningPolicy",
@@ -54,4 +67,5 @@ __all__ = [
     "TiltPolicy",
     "VenetianPolicy",
     "get_policy",
+    "weather_retraction_default",
 ]

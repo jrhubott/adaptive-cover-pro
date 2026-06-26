@@ -35,6 +35,8 @@ from .const import (
     CONF_MOTION_TEMPLATE,
     CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
+    CONF_SENSOR_TYPE,
+    CONF_SHOW_WEATHER_RETRACTION,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_IS_RAINING_SENSOR,
@@ -52,6 +54,7 @@ from .const import (
     _LOGGER,
 )
 from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
+from .cover_types import weather_retraction_default
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
     custom_position_slot_sensors,
@@ -474,6 +477,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if new_version == 3 and new_minor < 4:
         new_options.setdefault(CONF_ENABLE_POSITION_MATCHING, True)
         new_minor = 4
+
+    # v3.4 → v3.5: seed the weather-retraction visibility toggle from the
+    # cover-type policy default (True for awnings, False elsewhere) so existing
+    # awnings keep showing the wind/rain/severe pickers while other cover types
+    # hide them by default — both remaining user-flippable. Additive +
+    # rollback-safe: the key is only filled when absent.
+    if new_version == 3 and new_minor < 5:
+        new_options.setdefault(
+            CONF_SHOW_WEATHER_RETRACTION,
+            weather_retraction_default(entry.data.get(CONF_SENSOR_TYPE)),
+        )
+        new_minor = 5
 
     hass.config_entries.async_update_entry(
         entry, options=new_options, version=new_version, minor_version=new_minor

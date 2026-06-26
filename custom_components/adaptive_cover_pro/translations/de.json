@@ -324,6 +324,7 @@
         "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jede konfigurierte Bedingung löst Beschattungselemente-Einziehen aus. Nicht konfigurierte Eingaben werden ignoriert.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Aktiv, wenn automatische Steuerung aus ist",
+          "show_weather_retraction": "Wind-/Regen-/Unwetter-Schutzsensoren anzeigen",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
           "weather_wind_speed_threshold": "Windgeschwindigkeits-Schwellwert",
@@ -343,6 +344,7 @@
         },
         "data_description": {
           "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetterübersteuerung die Beschattungen immer noch in die konfigurierte Position bewegen, auch wenn der Schalter ‚Automatische Kontrolle' ausgeschaltet ist. Dies gewährleistet, dass Wind-, Regen- und Starkwetterschutz immer aktiv ist, unabhängig vom Automatisierungszustand. Deaktivieren Sie dies nur, wenn die Wetterübersteuerung dem Schalter ‚Automatische Kontrolle' folgen soll.",
+          "show_weather_retraction": "Blendet die Sensorauswahl für Wind, Regen und Unwetter unten ein. Markisen zeigen diese standardmäßig an, da Wind- und Regenschutz ihre wichtigste Sicherheitsfunktion ist; andere Behangtypen blenden sie aus. Aktivieren Sie dies, um den wetterbasierten Rückzug des Behangs für jeden Behangtyp zu konfigurieren. Beim Deaktivieren werden diese Sensoren ausgeblendet und deaktiviert.",
           "weather_wind_speed_sensor": "Numerischer Sensor, der Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erfüllt oder überschreitet. Leer lassen zum Ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind gegen das Azimut dieses Fensters weht (innerhalb der Richtungstoleranz). Leer lassen, um Übersteuerung allein auf Windgeschwindigkeit zu triggern, unabhängig von der Richtung.",
           "weather_wind_speed_threshold": "Windgeschwindigkeitsschwelle, die die Übersteuerung aktiviert. **Der Wert wird in der Einheit des konfigurierten Windgeschwindigkeitssensors interpretiert, nicht in der Anzeigeeinheit von Home Assistant.** Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",
@@ -916,6 +918,7 @@
         "description": "Konfigurieren Sie wetterbasierte Sicherheitsübersteuerungen. Jede konfigurierte Bedingung löst Beschattungselemente-Einziehen aus. Nicht konfigurierte Eingaben werden ignoriert.\n\n[Weitere Informationen]({learn_more})",
         "data": {
           "weather_bypass_auto_control": "Aktiv, wenn automatische Steuerung aus ist",
+          "show_weather_retraction": "Wind-/Regen-/Unwetter-Schutzsensoren anzeigen",
           "weather_wind_speed_sensor": "Windgeschwindigkeitssensor",
           "weather_wind_direction_sensor": "Windrichtungssensor (optional)",
           "weather_wind_speed_threshold": "Windgeschwindigkeits-Schwellwert",
@@ -935,6 +938,7 @@
         },
         "data_description": {
           "weather_bypass_auto_control": "Wenn aktiviert, wird die Wetter-Übersteuerung Behänge immer noch zur konfigurierten Position bewegen, auch wenn der Schalter 'Automatische Steuerung' deaktiviert ist. Dies stellt sicher, dass Wind-, Regen- und Extremwetterschutz immer aktiv ist, unabhängig vom Automatisierungsstatus. Deaktivieren Sie dies nur, wenn Sie möchten, dass die Wetter-Übersteuerung dem Schalter 'Automatische Steuerung' folgt.",
+          "show_weather_retraction": "Blendet die Sensorauswahl für Wind, Regen und Unwetter unten ein. Markisen zeigen diese standardmäßig an, da Wind- und Regenschutz ihre wichtigste Sicherheitsfunktion ist; andere Behangtypen blenden sie aus. Aktivieren Sie dies, um den wetterbasierten Rückzug des Behangs für jeden Behangtyp zu konfigurieren. Beim Deaktivieren werden diese Sensoren ausgeblendet und deaktiviert.",
           "weather_wind_speed_sensor": "Numerischer Sensor, der die Windgeschwindigkeit meldet. Übersteuerung aktiviert sich, wenn der Wert den Schwellwert erreicht oder übersteigt. Leer lassen, um zu ignorieren.",
           "weather_wind_direction_sensor": "Optional: Trigger Wind-Übersteuerung nur, wenn Wind zu dieser Fensterrазимuth weht (innerhalb der Richtungstoleranz). Leer lassen, um bei Windgeschwindigkeit allein auszulösen, unabhängig von Richtung.",
           "weather_wind_speed_threshold": "Windgeschwindigkeitsschwelle, die die Übersteuerung aktiviert. **Der Wert wird in der Einheit des konfigurierten Windgeschwindigkeitssensors interpretiert, nicht in der Anzeigeeinheit von Home Assistant.** Akzeptiert eine feste Zahl oder eine Home Assistant Jinja2-Vorlage, die eine Zahl ergibt und bei jedem Update neu bewertet wird.",

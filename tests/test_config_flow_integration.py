@@ -137,12 +137,14 @@ _MOTION_OVERRIDE = {
 # Threshold fields are multiline TextSelectors (#577): the frontend submits
 # them as strings (a number or a Jinja2 template), so the simulated form
 # submissions use string values too.
+# A blind defaults the retraction pickers off (CONF_SHOW_WEATHER_RETRACTION),
+# so the simulated submission carries only the always-present fields — the
+# frontend never renders (and thus never submits) the hidden picker keys.
 _WEATHER_OVERRIDE = {
     "weather_bypass_auto_control": False,
     "weather_wind_speed_threshold": "50",
     "weather_wind_direction_tolerance": "45",
     "weather_rain_threshold": "1",
-    "weather_severe_sensors": [],
     "weather_override_position": 0,
 }
 
@@ -1089,7 +1091,6 @@ def test_config_flow_does_not_use_system_language() -> None:
                 "weather_wind_speed_threshold": "50",
                 "weather_wind_direction_tolerance": "45",
                 "weather_rain_threshold": "1",
-                "weather_severe_sensors": [],
                 "weather_override_position": 0,
             },
         ),

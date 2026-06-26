@@ -486,3 +486,75 @@ async def test_recover_on_restart_not_called_on_subsequent_refresh():
     assert (
         "recover" not in call_order
     ), "_recover_weather_override_on_restart must NOT run when first_refresh=False"
+
+
+# --- weather_override_schema: conditional retraction-picker inclusion ---
+
+
+_RETRACTION_PICKER_KEYS = (
+    "weather_wind_speed_sensor",
+    "weather_wind_direction_sensor",
+    "weather_rain_sensor",
+    "weather_is_raining_sensor",
+    "weather_is_raining_template",
+    "weather_is_windy_sensor",
+    "weather_is_windy_template",
+    "weather_severe_sensors",
+)
+
+_ALWAYS_PRESENT_KEYS = (
+    "weather_wind_speed_threshold",
+    "weather_override_position",
+    "weather_timeout",
+    "show_weather_retraction",
+)
+
+
+def _schema_keys(schema):
+    return {str(marker.schema) for marker in schema.schema}
+
+
+def test_schema_omits_retraction_pickers_when_off():
+    """With the toggle off, the retraction pickers are absent but the toggle and
+    thresholds/position/timeout remain.
+    """
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    keys = _schema_keys(
+        weather_override_schema(None, {"show_weather_retraction": False})
+    )
+    for picker in _RETRACTION_PICKER_KEYS:
+        assert picker not in keys, picker
+    for always in _ALWAYS_PRESENT_KEYS:
+        assert always in keys, always
+
+
+def test_schema_includes_retraction_pickers_when_on():
+    """With the toggle on, every retraction picker is revealed."""
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    keys = _schema_keys(
+        weather_override_schema(None, {"show_weather_retraction": True})
+    )
+    for picker in _RETRACTION_PICKER_KEYS:
+        assert picker in keys, picker
+    for always in _ALWAYS_PRESENT_KEYS:
+        assert always in keys, always
+
+
+def test_schema_toggle_always_present_with_no_options():
+    """The toggle itself is rendered even when options is None/empty (pickers off
+    by default).
+    """
+    from custom_components.adaptive_cover_pro.config_dynamic import (
+        weather_override_schema,
+    )
+
+    keys = _schema_keys(weather_override_schema())
+    assert "show_weather_retraction" in keys
+    for picker in _RETRACTION_PICKER_KEYS:
+        assert picker not in keys, picker
