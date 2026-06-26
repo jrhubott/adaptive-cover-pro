@@ -317,6 +317,23 @@ class DualAxisSequencer:
         # leak from a prior cycle. ``stamp_position_command`` pops; this
         # write puts the fresh settle stamp back.
         self._stamp_settled(entity_id)
+        # A position move can mechanically back-rotate the slats on real
+        # motors (Somfy IO via Tahoma, KNX): the carriage bottoming out at /
+        # near POSITION_CLOSED drags the tilt shut regardless of the angle we
+        # last commanded. Any prior verification of the stored tilt target is
+        # therefore stale the moment the carriage has travelled. Drop the
+        # verified flag so the post-settle send below re-reads the actuator
+        # and re-asserts tilt on drift, instead of short-circuiting on the
+        # target-unchanged + already-verified dedup in ``_send_tilt_command``
+        # and leaving the slats wherever the motor parked them.
+        #
+        # Opening transitions already force tilt through
+        # ``before_position_command`` (and that force-send discards the flag);
+        # closing transitions had no equivalent, so a close to 0 left the
+        # slats shut until some later open happened to clear the flag — an
+        # intermittent, state-dependent blackout. This closes that gap on the
+        # closing path.
+        self._tilt_targets_verified.discard(entity_id)
         await self._send_tilt_command(
             entity_id,
             tilt_target=tilt_target,

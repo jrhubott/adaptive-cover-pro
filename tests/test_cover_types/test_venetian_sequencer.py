@@ -2224,3 +2224,66 @@ class TestClearTiltTargets:
         seq.clear_tilt_targets()
 
         assert seq._suppression_at == before
+
+
+@pytest.mark.asyncio
+class TestRunSequenceReverifiesTiltAfterPositionMove:
+    """``run_sequence`` must re-assert tilt after a close that back-rotates slats.
+
+    Real motors (Somfy IO via Tahoma, KNX) drag the slats shut when the
+    carriage bottoms out at POSITION_CLOSED. If a prior cycle marked the
+    stored tilt target ``verified``, the target-unchanged dedup in
+    ``_send_tilt_command`` would short-circuit AND skip the verify, leaving
+    the slats wherever the motor parked them — an intermittent blackout that
+    only self-corrected when a later open happened to clear the verified flag.
+
+    ``run_sequence`` therefore discards the verified flag before the
+    post-settle send so the actuator is always re-read after the carriage has
+    moved.
+    """
+
+    async def test_reasserts_tilt_when_motor_backrotated_slats_on_close(self):
+        """Verified target 100, but the close left actual tilt at 1 → must re-send.
+
+        Without the fix the dedup short-circuits on (target unchanged + already
+        verified) and emits zero service calls, so the slats stay shut.
+        """
+        # Actuator reads back 1 (slats dragged shut by the close to 0).
+        hass, seq = _build_sequencer(get_current_tilt_position=lambda _eid: 1)
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 0))
+        # Prior cycle left a verified tilt target of 100 (slats open).
+        seq._tilt_targets["cover.x"] = 100
+        seq._tilt_targets_verified.add("cover.x")
+
+        await seq.run_sequence(
+            "cover.x", position_target=0, tilt_target=100, reason="solar"
+        )
+
+        # The post-settle verify sees actual=1 vs target=100, detects drift,
+        # and the bounded drift-retry force-resends the tilt command.
+        assert hass.services.async_call.call_count >= 1
+        last_call = hass.services.async_call.call_args.args
+        assert last_call[1] == "set_cover_tilt_position"
+        assert last_call[2]["tilt_position"] == 100
+        # Drift never clears on this still-shut mock, so the stale target is gone.
+        assert seq.last_tilt_target("cover.x") is None
+
+    async def test_no_redundant_command_when_slats_already_correct(self):
+        """Verified target 100 and actual already 100 → no spurious relay click.
+
+        Discarding the verified flag must not turn every close into an extra
+        service call: when the actuator confirms the tilt already landed, the
+        re-verify passes and re-marks the target verified without re-sending.
+        """
+        hass, seq = _build_sequencer(get_current_tilt_position=lambda _eid: 100)
+        seq._wait_for_position_settle = AsyncMock(return_value=(True, 0))
+        seq._tilt_targets["cover.x"] = 100
+        seq._tilt_targets_verified.add("cover.x")
+
+        await seq.run_sequence(
+            "cover.x", position_target=0, tilt_target=100, reason="solar"
+        )
+
+        assert hass.services.async_call.call_count == 0
+        assert seq.last_tilt_target("cover.x") == 100
+        assert "cover.x" in seq._tilt_targets_verified
