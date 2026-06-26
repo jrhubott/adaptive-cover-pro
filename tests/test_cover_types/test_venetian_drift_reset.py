@@ -20,9 +20,14 @@ import pytest
 
 from custom_components.adaptive_cover_pro.config_types import RuntimeConfig
 from custom_components.adaptive_cover_pro.const import (
+    CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
+    DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
+    POSITION_CLOSED,
     POSITION_OPEN,
+    VENETIAN_TILT_RESET_CLOSE,
+    VENETIAN_TILT_RESET_OPEN,
 )
 from custom_components.adaptive_cover_pro.cover_types.venetian.sequencer import (
     DualAxisSequencer,
@@ -54,12 +59,18 @@ def _build_sequencer(
     invert_tilt=None,
     get_min_change=None,
     get_tilt_reset_threshold=None,
+    get_tilt_reset_direction=None,
 ):
     hass = MagicMock()
     hass.services.async_call = AsyncMock()
     if current_positions is None:
         current_positions = []
     iter_positions = iter(current_positions)
+    # Only thread the direction lambda through when supplied so back-compat
+    # tests exercise the ctor's default (open) path with no kwarg present.
+    extra: dict = {}
+    if get_tilt_reset_direction is not None:
+        extra["get_tilt_reset_direction"] = get_tilt_reset_direction
     return (
         hass,
         DualAxisSequencer(
@@ -75,6 +86,7 @@ def _build_sequencer(
             invert_tilt=invert_tilt,
             get_min_change=get_min_change,
             get_tilt_reset_threshold=get_tilt_reset_threshold,
+            **extra,
         ),
     )
 
@@ -451,3 +463,127 @@ class TestClearTiltTargets:
         seq.clear_tilt_targets()
         assert seq._accumulated_tilt == {}
         assert seq._reset_in_progress == set()
+
+
+# ---------------------------------------------------------------------------
+# Step 12 — Configurable reset direction (issue #686).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestResetDirection:
+    """The drift-reset endpoint follows ``get_tilt_reset_direction``."""
+
+    async def test_close_direction_drives_to_closed(self):
+        buf = EventBuffer(maxlen=100)
+        hass, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 50,
+            get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_CLOSE,
+            event_buffer=buf,
+        )
+        seq._tilt_targets["cover.x"] = 0  # anchor 0 → delta 60 ≥ 50
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=60, current_position=40, reason="solar"
+        )
+        # First reset send drives to the CLOSED endpoint, then back to target.
+        tilt_values = [
+            c.args[2]["tilt_position"] for c in hass.services.async_call.call_args_list
+        ]
+        assert tilt_values == [60, POSITION_CLOSED, 60]
+        # Event NAME stays stable for the Lovelace card; only the position
+        # value reflects the chosen endpoint.
+        snap = buf.snapshot()
+        reset_open = next(e for e in snap if e["event"] == "tilt_reset_open")
+        assert reset_open["tilt_position"] == POSITION_CLOSED
+        triggered = next(e for e in snap if e["event"] == "tilt_reset_triggered")
+        assert triggered["direction"] == VENETIAN_TILT_RESET_CLOSE
+
+    async def test_open_direction_drives_to_open(self):
+        buf = EventBuffer(maxlen=100)
+        hass, seq = _build_sequencer(
+            get_tilt_reset_threshold=lambda: 50,
+            get_tilt_reset_direction=lambda: VENETIAN_TILT_RESET_OPEN,
+            event_buffer=buf,
+        )
+        seq._tilt_targets["cover.x"] = 0
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=60, current_position=40, reason="solar"
+        )
+        tilt_values = [
+            c.args[2]["tilt_position"] for c in hass.services.async_call.call_args_list
+        ]
+        assert tilt_values == [60, POSITION_OPEN, 60]
+        snap = buf.snapshot()
+        reset_open = next(e for e in snap if e["event"] == "tilt_reset_open")
+        assert reset_open["tilt_position"] == POSITION_OPEN
+        triggered = next(e for e in snap if e["event"] == "tilt_reset_triggered")
+        assert triggered["direction"] == VENETIAN_TILT_RESET_OPEN
+
+    async def test_default_direction_is_open(self):
+        """A sequencer built WITHOUT the direction lambda still resets open."""
+        hass, seq = _build_sequencer(get_tilt_reset_threshold=lambda: 50)
+        seq._tilt_targets["cover.x"] = 0
+        await seq.update_tilt_only(
+            "cover.x", tilt_target=60, current_position=40, reason="solar"
+        )
+        tilt_values = [
+            c.args[2]["tilt_position"] for c in hass.services.async_call.call_args_list
+        ]
+        assert tilt_values == [60, POSITION_OPEN, 60]
+        assert DEFAULT_VENETIAN_TILT_RESET_DIRECTION == VENETIAN_TILT_RESET_OPEN
+
+
+@pytest.mark.unit
+class TestResetDirectionPlumbing:
+    """Config + policy wiring for the reset direction option."""
+
+    def test_runtime_config_reads_direction(self):
+        rc = RuntimeConfig.from_options(
+            {CONF_VENETIAN_TILT_RESET_DIRECTION: VENETIAN_TILT_RESET_CLOSE}
+        )
+        assert rc.venetian.tilt_reset_direction == VENETIAN_TILT_RESET_CLOSE
+
+    def test_runtime_config_default_direction(self):
+        rc = RuntimeConfig.from_options({})
+        assert rc.venetian.tilt_reset_direction == DEFAULT_VENETIAN_TILT_RESET_DIRECTION
+
+    def test_extras_schema_has_direction_selector(self):
+        import voluptuous as vol
+
+        from custom_components.adaptive_cover_pro.cover_types.venetian.policy import (
+            _venetian_extras_schema,
+        )
+
+        schema = _venetian_extras_schema()
+        keys = {(k.schema if isinstance(k, vol.Marker) else k) for k in schema}
+        assert CONF_VENETIAN_TILT_RESET_DIRECTION in keys
+
+    def test_validator_rejects_invalid_direction(self):
+        from custom_components.adaptive_cover_pro.services.options_service import (
+            FIELD_VALIDATORS,
+        )
+
+        validator = FIELD_VALIDATORS[CONF_VENETIAN_TILT_RESET_DIRECTION]
+        assert validator(VENETIAN_TILT_RESET_CLOSE) == VENETIAN_TILT_RESET_CLOSE
+        with pytest.raises(Exception):
+            validator("sideways")
+
+    def test_attach_forwards_live_direction_lambda(self):
+        from custom_components.adaptive_cover_pro.cover_types import get_policy
+
+        policy = get_policy("cover_venetian")
+        box = {"value": VENETIAN_TILT_RESET_OPEN}
+        policy.attach(
+            hass=MagicMock(),
+            logger=MagicMock(),
+            grace_mgr=MagicMock(),
+            get_current_position=lambda _eid: None,
+            set_commanded_position=lambda *_: None,
+            position_tolerance=5,
+            is_dry_run=lambda: False,
+            get_tilt_reset_direction=lambda: box["value"],
+        )
+        seq = policy.sequencer
+        assert seq._get_tilt_reset_direction() == VENETIAN_TILT_RESET_OPEN
+        box["value"] = VENETIAN_TILT_RESET_CLOSE
+        assert seq._get_tilt_reset_direction() == VENETIAN_TILT_RESET_CLOSE

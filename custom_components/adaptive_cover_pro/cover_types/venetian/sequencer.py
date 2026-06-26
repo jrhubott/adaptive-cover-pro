@@ -48,6 +48,8 @@ from ...const import (
     VENETIAN_POST_SETTLE_CAP_GRACE_SECONDS,
     VENETIAN_POST_TILT_REBASE_DELAY_SECONDS,
     VENETIAN_REBASE_MAX_DRIFT_PERCENT,
+    VENETIAN_TILT_RESET_CLOSE,
+    VENETIAN_TILT_RESET_OPEN,
     VENETIAN_TILT_SUPPRESSION_SECONDS,
     VENETIAN_TILT_VERIFY_MAX_SAMPLES,
     VENETIAN_TILT_VERIFY_POLL_SECONDS,
@@ -104,6 +106,7 @@ class DualAxisSequencer:
         get_min_change: Callable[[], int] | None = None,
         get_enforce_delta_at_endpoints: Callable[[], bool] | None = None,
         get_tilt_reset_threshold: Callable[[], int] | None = None,
+        get_tilt_reset_direction: Callable[[], str] | None = None,
         post_settle_hold_seconds: float = DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
         backrotate_publish_lag_seconds: float = (
             DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS
@@ -135,6 +138,13 @@ class DualAxisSequencer:
         # threshold (issue #663). 0 disables. A live lambda (like
         # ``get_min_change``) so an options change applies without a reload.
         self._get_tilt_reset_threshold = get_tilt_reset_threshold or (lambda: 0)
+        # Live accessor for the drift-reset direction (issue #686). Resolves the
+        # mechanical endpoint the reset drives to before re-sending the target —
+        # ``VENETIAN_TILT_RESET_OPEN`` (default, back-compat) or ``_CLOSE``. A
+        # live lambda so an options change applies without a reload.
+        self._get_tilt_reset_direction = get_tilt_reset_direction or (
+            lambda: VENETIAN_TILT_RESET_OPEN
+        )
         self._post_settle_hold_seconds = post_settle_hold_seconds
         self._backrotate_publish_lag_seconds = backrotate_publish_lag_seconds
         # Per-entity timestamps. Keep these on the sequencer (rather than on
@@ -619,11 +629,12 @@ class DualAxisSequencer:
         :meth:`_send_tilt_command` (reusing inverse / grace / dedup gates per
         the no-duplication rule):
 
-        1. Drive the slats to the mechanical endpoint — logical
-           ``POSITION_OPEN`` (``force=True``, ``verify=False``). The literal
-           logical value is passed so ``_to_wire`` applies inversion exactly
-           once; it is NOT clamped to ``CONF_MAX_TILT`` — the hardware endpoint
-           is the correct re-zero anchor.
+        1. Drive the slats to the mechanical endpoint chosen by
+           ``get_tilt_reset_direction`` (issue #686) — logical ``POSITION_OPEN``
+           (default) or ``POSITION_CLOSED`` (``force=True``, ``verify=False``).
+           The literal logical value is passed so ``_to_wire`` applies inversion
+           exactly once; it is NOT clamped to ``CONF_MAX_TILT`` — the hardware
+           endpoint is the correct re-zero anchor.
         2. Settle (``VENETIAN_POST_TILT_REBASE_DELAY_SECONDS``).
         3. Re-send the original target (``force=True``, ``verify=True``) so the
            dedup gate doesn't swallow the unchanged value.
@@ -646,23 +657,32 @@ class DualAxisSequencer:
         if not (threshold > 0 and accumulated >= threshold):
             return
 
+        # Resolve the drive-to endpoint once (issue #686). ``close`` drives the
+        # slats fully closed; anything else (default ``open``) drives fully open.
+        direction = self._get_tilt_reset_direction()
+        reset_endpoint = (
+            POSITION_CLOSED if direction == VENETIAN_TILT_RESET_CLOSE else POSITION_OPEN
+        )
         self._record_event(
             "tilt_reset_triggered",
             entity_id=entity_id,
             accumulated_tilt=accumulated,
             threshold=threshold,
             target=original_target,
+            direction=direction,
         )
         self._reset_in_progress.add(entity_id)
         try:
+            # Event NAME stays ``tilt_reset_open`` for Lovelace-card / test
+            # stability; its ``tilt_position`` reflects the chosen endpoint.
             self._record_event(
                 "tilt_reset_open",
                 entity_id=entity_id,
-                tilt_position=POSITION_OPEN,
+                tilt_position=reset_endpoint,
             )
             await self._send_tilt_command(
                 entity_id,
-                tilt_target=POSITION_OPEN,
+                tilt_target=reset_endpoint,
                 position_target=position_target,
                 reason="tilt_reset_open",
                 force=True,

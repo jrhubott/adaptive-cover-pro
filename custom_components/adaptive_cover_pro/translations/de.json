@@ -54,7 +54,8 @@
           "awning_max_angle": "Armwinkel vollständig offen",
           "awning_housing_offset": "Gehäuseversatz über Fenster",
           "awning_pivot_offset": "Pivotversatz von der Fensterscheibe",
-          "venetian_tilt_reset_threshold": "Jalousie-Drift-Reset-Schwellenwert (akkumulierte Neigung %)"
+          "venetian_tilt_reset_threshold": "Jalousie-Drift-Reset-Schwellenwert (akkumulierte Neigung %)",
+          "venetian_tilt_reset_direction": "Drift-Reset-Richtung"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -78,7 +79,8 @@
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
           "awning_pivot_offset": "Horizontaler Abstand vom Armpivot (Stoffebene) der Markise zur Fensterscheibe (0–2 m). Bei niedrigem Sonnenstand verschattet der herabgelassene Stoff dadurch tiefer auf der Scheibe, da der Stoff von der Scheibe absteht. Setzen Sie diesen Wert auf den Abstand des Gehäuses/Arms von der Wand plus etwaige Fenstereinrückung/-laibung — verwenden Sie 0, wenn der Stoff bündig an der Scheibe hängt. Beispiel: 0,7 m / 28 in für einen weit von der Wand montierten Arm.",
-          "venetian_tilt_reset_threshold": "Fahren Sie die Lamellen vollständig auf und zurück, um angesammelte mechanische Drift zu spülen, sobald diese Menge an kommandierter Neigungsänderung angesammelt wurde. 0 deaktiviert Drift-Reset."
+          "venetian_tilt_reset_threshold": "Fahren Sie die Lamellen vollständig auf und zurück, um angesammelte mechanische Drift zu spülen, sobald diese Menge an kommandierter Neigungsänderung angesammelt wurde. 0 deaktiviert Drift-Reset.",
+          "venetian_tilt_reset_direction": "Bestimmt die Richtung, in die der Drift-Reset die Lamellen vor der Rückkehr zur Zielposition fährt. **Offen** (Standard): ganz öffnen und dann zurück — das ursprüngliche Verhalten. **Geschlossen**: ganz schließen und dann zurück. Wählen Sie Geschlossen, wenn die Beschattung während der Verfolgung nahe der geschlossenen Position sitzt (leiser und schneller zurückgesetzt) oder wenn Ihr Aktor die Lamellen beim Schließbefehl neu kalibriert."
         }
       },
       "sun_tracking": {
@@ -662,7 +664,8 @@
           "awning_max_angle": "Armwinkel vollständig offen",
           "awning_housing_offset": "Gehäuseversatz über Fenster",
           "awning_pivot_offset": "Pivotversatz von der Fensterscheibe",
-          "venetian_tilt_reset_threshold": "Jalousie-Drift-Reset-Schwellenwert (akkumulierte Neigung %)"
+          "venetian_tilt_reset_threshold": "Jalousie-Drift-Reset-Schwellenwert (akkumulierte Neigung %)",
+          "venetian_tilt_reset_direction": "Drift-Reset-Richtung"
         },
         "data_description": {
           "window_height": "Höhe Ihres Fensters (von unten bis oben des Glasbereichs). In der von Home Assistant konfigurierten Einheit angezeigt. Beispiele: Standard-Tür = 2,0 m / 79 in, Kleines Fenster = 1,5 m / 59 in, Vom Boden bis zur Decke = 2,5 m / 98 in. Messen Sie von dort, wo die Beschattung beginnt, bis dort, wo sie endet, wenn sie vollständig ausgefahren ist.",
@@ -686,7 +689,8 @@
           "awning_max_angle": "Armwinkel, wenn die Markise vollständig offen ist (0–180°). Der Arm schwenkt linear vom geschlossenen Winkel zu diesem Wert über 0–100% Öffnung. Beispiel: ein Schwenkbereich von 175° ≈ 1,75° pro 1%.",
           "awning_housing_offset": "Vertikaler Versatz des Armpivots über die Oberkante des Fensters (0–1 m). Zusammen mit Fensterhöhe und Armlänge zur Lokalisierung des Pivots verwendet. Setzen Sie auf 0, wenn das Gehäuse bündig mit der Fensteroberkante sitzt.",
           "awning_pivot_offset": "Horizontaler Abstand vom Armpivot (Stoffebene) der Markise zur Fensterscheibe (0–2 m). Bei niedrigem Sonnenstand verschattet der herabgelassene Stoff dadurch tiefer auf der Scheibe, da der Stoff von der Scheibe absteht. Setzen Sie diesen Wert auf den Abstand des Gehäuses/Arms von der Wand plus etwaige Fenstereinrückung/-laibung — verwenden Sie 0, wenn der Stoff bündig an der Scheibe hängt. Beispiel: 0,7 m / 28 in für einen weit von der Wand montierten Arm.",
-          "venetian_tilt_reset_threshold": "Fahren Sie die Lamellen vollständig auf und zurück, um angesammelte mechanische Drift zu spülen, sobald diese Menge an kommandierter Neigungsänderung angesammelt wurde. 0 deaktiviert Drift-Reset."
+          "venetian_tilt_reset_threshold": "Fahren Sie die Lamellen vollständig auf und zurück, um angesammelte mechanische Drift zu spülen, sobald diese Menge an kommandierter Neigungsänderung angesammelt wurde. 0 deaktiviert Drift-Reset.",
+          "venetian_tilt_reset_direction": "Bestimmt die Richtung, in die der Drift-Reset die Lamellen vor der Rückkehr zur Zielposition fährt. **Offen** (Standard): ganz öffnen und dann zurück — das ursprüngliche Verhalten. **Geschlossen**: ganz schließen und dann zurück. Wählen Sie Geschlossen, wenn die Beschattung während der Verfolgung nahe der geschlossenen Position sitzt (leiser und schneller zurückgesetzt) oder wenn Ihr Aktor die Lamellen beim Schließbefehl neu kalibriert."
         }
       },
       "sun_tracking": {

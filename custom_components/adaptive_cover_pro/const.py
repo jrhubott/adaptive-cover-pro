@@ -861,6 +861,20 @@ DEFAULT_VENETIAN_TILT_RESET_THRESHOLD = 0  # 0 = disabled (no reset)
 MIN_VENETIAN_TILT_RESET_THRESHOLD = 0  # UI lower bound (0 disables)
 MAX_VENETIAN_TILT_RESET_THRESHOLD = 5000  # UI upper bound (accumulated %)
 
+# Direction the drift-reset drives the slats before re-sending the target
+# (issue #686). ``open`` keeps the original behaviour (drive to the fully-open
+# mechanical endpoint); ``close`` drives to the fully-closed endpoint instead —
+# useful on covers that sit near-closed during tracking (faster, quieter reset)
+# or whose actuator re-zeroes the slats on a close command. Venetian-only.
+CONF_VENETIAN_TILT_RESET_DIRECTION = "venetian_tilt_reset_direction"  # one of below
+VENETIAN_TILT_RESET_OPEN = "open"  # drive to POSITION_OPEN then back (default)
+VENETIAN_TILT_RESET_CLOSE = "close"  # drive to POSITION_CLOSED then back
+DEFAULT_VENETIAN_TILT_RESET_DIRECTION = VENETIAN_TILT_RESET_OPEN  # back-compat
+VENETIAN_TILT_RESET_DIRECTIONS = (
+    VENETIAN_TILT_RESET_OPEN,
+    VENETIAN_TILT_RESET_CLOSE,
+)
+
 # Venetian cover operating mode.  position_and_tilt tracks both axes with solar
 # geometry; tilt_only closes the cover to 0% and tracks only the slat angle.
 CONF_VENETIAN_MODE = "venetian_mode"  # one of VENETIAN_MODES

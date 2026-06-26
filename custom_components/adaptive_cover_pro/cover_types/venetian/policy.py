@@ -30,6 +30,7 @@ from ...const import (
     CONF_VENETIAN_BACKROTATE_PUBLISH_LAG,
     CONF_VENETIAN_MODE,
     CONF_VENETIAN_POST_SETTLE_HOLD,
+    CONF_VENETIAN_TILT_RESET_DIRECTION,
     CONF_VENETIAN_TILT_RESET_THRESHOLD,
     CONF_VENETIAN_TILT_SKIP_ABOVE,
     ControlMethod,
@@ -40,6 +41,7 @@ from ...const import (
     DEFAULT_VENETIAN_BACKROTATE_PUBLISH_LAG_SECONDS,
     DEFAULT_VENETIAN_MODE,
     DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS,
+    DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
     DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
     DEFAULT_VENETIAN_TILT_SKIP_ABOVE,
     MAX_VENETIAN_BACKROTATE_PUBLISH_LAG,
@@ -54,6 +56,7 @@ from ...const import (
     VENETIAN_MODE_POSITION_AND_TILT,
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
+    VENETIAN_TILT_RESET_DIRECTIONS,
 )
 from ...engine.covers import AdaptiveVerticalCover, VenetianCoverCalculation
 from ...managers.manual_override import SecondaryAxisCheck
@@ -128,6 +131,10 @@ def _venetian_extras_schema() -> dict:
                 max=MAX_VENETIAN_TILT_RESET_THRESHOLD,
             ),
         ),
+        vol.Optional(
+            CONF_VENETIAN_TILT_RESET_DIRECTION,
+            default=DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
+        ): vol.In(VENETIAN_TILT_RESET_DIRECTIONS),
         vol.Optional(CONF_VENETIAN_MODE, default=DEFAULT_VENETIAN_MODE): vol.In(
             VENETIAN_MODES
         ),
@@ -312,8 +319,16 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             CONF_VENETIAN_TILT_RESET_THRESHOLD,
             DEFAULT_VENETIAN_TILT_RESET_THRESHOLD,
         )
+        reset_direction = config.get(
+            CONF_VENETIAN_TILT_RESET_DIRECTION,
+            DEFAULT_VENETIAN_TILT_RESET_DIRECTION,
+        )
         drift_reset_line = (
-            [L["geometry.venetian.drift_reset"].format(threshold=reset_threshold)]
+            [
+                L["geometry.venetian.drift_reset"].format(
+                    threshold=reset_threshold, direction=reset_direction
+                )
+            ]
             if reset_threshold
             else []
         )
@@ -558,6 +573,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             get_min_change=kwargs.get("get_min_change"),
             get_enforce_delta_at_endpoints=kwargs.get("get_enforce_delta_at_endpoints"),
             get_tilt_reset_threshold=kwargs.get("get_tilt_reset_threshold"),
+            get_tilt_reset_direction=kwargs.get("get_tilt_reset_direction"),
             post_settle_hold_seconds=kwargs.get(
                 "post_settle_hold_seconds", DEFAULT_VENETIAN_POST_SETTLE_HOLD_SECONDS
             ),

@@ -408,6 +408,33 @@ def test_geometry_venetian_shows_backrotate_lag_custom():
     assert "back-rotate publish lag 60.0s" in summary
 
 
+def test_geometry_venetian_drift_reset_shows_default_direction():
+    """Drift-reset summary names the default (open) direction when enabled."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_RESET_THRESHOLD,
+    )
+
+    cfg = {CONF_VENETIAN_TILT_RESET_THRESHOLD: 300}
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "drift-reset every 300% accumulated tilt (via open)" in summary
+
+
+def test_geometry_venetian_drift_reset_shows_close_direction():
+    """Drift-reset summary reflects a configured close direction."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_VENETIAN_TILT_RESET_DIRECTION,
+        CONF_VENETIAN_TILT_RESET_THRESHOLD,
+        VENETIAN_TILT_RESET_CLOSE,
+    )
+
+    cfg = {
+        CONF_VENETIAN_TILT_RESET_THRESHOLD: 300,
+        CONF_VENETIAN_TILT_RESET_DIRECTION: VENETIAN_TILT_RESET_CLOSE,
+    }
+    summary = _build_config_summary(cfg, CoverType.VENETIAN)
+    assert "(via close)" in summary
+
+
 def test_geometry_oscillating_awning_shows_housing_offset():
     """Oscillating-awning summary renders the housing offset when configured."""
     from custom_components.adaptive_cover_pro.const import CONF_AWNING_HOUSING_OFFSET

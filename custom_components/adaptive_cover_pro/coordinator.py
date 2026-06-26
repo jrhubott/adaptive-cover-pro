@@ -400,6 +400,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # reads a value before the first _update_options cycle; refreshed each
         # cycle (issue #663).
         self._venetian_tilt_reset_threshold = _rc_attach.venetian.tilt_reset_threshold
+        # Seeded alongside the threshold so the live drift-reset direction lambda
+        # passed to policy.attach reads a value before the first _update_options
+        # cycle; refreshed each cycle (issue #686).
+        self._venetian_tilt_reset_direction = _rc_attach.venetian.tilt_reset_direction
 
         # Cover command service — self-contained: owns positioning, target tracking,
         # and the reconciliation timer (started in async_config_entry_first_refresh).
@@ -461,6 +465,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             get_min_change=lambda: self.min_change,
             get_enforce_delta_at_endpoints=lambda: self._enforce_delta_at_endpoints,
             get_tilt_reset_threshold=lambda: self._venetian_tilt_reset_threshold,
+            get_tilt_reset_direction=lambda: self._venetian_tilt_reset_direction,
         )
 
         # Time window manager (start/end time checks)
@@ -2006,6 +2011,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Mirror the venetian drift-reset threshold (issue #663) so the live
         # lambda wired into policy.attach picks up mid-session changes.
         self._venetian_tilt_reset_threshold = rc.venetian.tilt_reset_threshold
+        # Mirror the venetian drift-reset direction (issue #686) so the live
+        # lambda wired into policy.attach picks up mid-session changes.
+        self._venetian_tilt_reset_direction = rc.venetian.tilt_reset_direction
         self._time_mgr.update_config(
             start_time=rc.time_window.start_time,
             start_time_entity=rc.time_window.start_time_entity,

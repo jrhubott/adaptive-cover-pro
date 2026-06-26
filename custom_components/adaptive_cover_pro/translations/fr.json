@@ -54,7 +54,8 @@
           "awning_max_angle": "Angle du bras complètement ouvert",
           "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre",
           "awning_pivot_offset": "Décalage du pivot par rapport à la fenêtre",
-          "venetian_tilt_reset_threshold": "Seuil de réinitialisation de dérive store vénitien (inclinaison cumulée %)"
+          "venetian_tilt_reset_threshold": "Seuil de réinitialisation de dérive store vénitien (inclinaison cumulée %)",
+          "venetian_tilt_reset_direction": "Direction de réinitialisation de dérive"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -78,7 +79,8 @@
           "awning_max_angle": "Angle du bras lorsque la store banne est complètement ouverte (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
           "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
           "awning_pivot_offset": "Distance horizontale entre le pivot du bras (plan du tissu) du store et la vitre de la fenêtre (0–2 m). Sous un soleil bas, cela permet au tissu abaissé d'ombrager plus bas sur la vitre, car le tissu se tient à distance de la vitre. Réglez cette valeur sur l'écart entre le boîtier/bras et le mur, plus tout renfoncement/embrasure de la fenêtre — utilisez 0 lorsque le tissu pend à fleur de la vitre. Exemple : 0,7 m / 28 in pour un bras monté loin du mur.",
-          "venetian_tilt_reset_threshold": "Ouvrir complètement les lamelles puis les ramener à la position pour éliminer la dérive mécanique accumulée une fois que cette quantité de changement d'inclinaison commandé s'est accumulée. 0 désactive la réinitialisation de dérive."
+          "venetian_tilt_reset_threshold": "Ouvrir complètement les lamelles puis les ramener à la position pour éliminer la dérive mécanique accumulée une fois que cette quantité de changement d'inclinaison commandé s'est accumulée. 0 désactive la réinitialisation de dérive.",
+          "venetian_tilt_reset_direction": "Direction dans laquelle la réinitialisation de dérive entraîne les lamelles avant de revenir à la cible. **Ouvrir** (par défaut) : entraîner complètement ouvert, puis revenir — le comportement d'origine. **Fermer** : entraîner complètement fermé, puis revenir. Choisissez Fermer quand le store se situe près de la fermeture lors du suivi (une réinitialisation plus silencieuse et plus rapide) ou quand votre actionneur réinitialise les lamelles sur une commande de fermeture."
         }
       },
       "sun_tracking": {
@@ -662,7 +664,8 @@
           "awning_max_angle": "Angle du bras complètement ouvert",
           "awning_housing_offset": "Décalage du boîtier au-dessus de la fenêtre",
           "awning_pivot_offset": "Décalage du pivot par rapport à la fenêtre",
-          "venetian_tilt_reset_threshold": "Seuil de réinitialisation de dérive store vénitien (inclinaison cumulée %)"
+          "venetian_tilt_reset_threshold": "Seuil de réinitialisation de dérive store vénitien (inclinaison cumulée %)",
+          "venetian_tilt_reset_direction": "Direction de réinitialisation de dérive"
         },
         "data_description": {
           "window_height": "Hauteur de votre fenêtre (de bas en haut de la zone vitrée). Affiché dans l'unité configurée dans Home Assistant. Exemples : Porte standard = 2,0 m / 79 in, Petite fenêtre = 1,5 m / 59 in, Du sol au plafond = 2,5 m / 98 in. Mesurez d'où la protection commence à d'où elle finit lorsqu'elle est complètement étendue.",
@@ -686,7 +689,8 @@
           "awning_max_angle": "Angle du bras lorsque la store banne est complètement ouverte (0–180°). Le bras pivote linéairement de l'angle fermé à cette valeur sur 0–100% d'ouverture. Exemple : un balayage total de 175° ≈ 1,75° par 1%.",
           "awning_housing_offset": "Décalage vertical du pivot du bras au-dessus du haut de la fenêtre (0–1 m). Combiné avec la hauteur de la fenêtre et la longueur du bras pour localiser le pivot. Définir à 0 lorsque le boîtier s'aligne avec le haut de la fenêtre.",
           "awning_pivot_offset": "Distance horizontale entre le pivot du bras (plan du tissu) du store et la vitre de la fenêtre (0–2 m). Sous un soleil bas, cela permet au tissu abaissé d'ombrager plus bas sur la vitre, car le tissu se tient à distance de la vitre. Réglez cette valeur sur l'écart entre le boîtier/bras et le mur, plus tout renfoncement/embrasure de la fenêtre — utilisez 0 lorsque le tissu pend à fleur de la vitre. Exemple : 0,7 m / 28 in pour un bras monté loin du mur.",
-          "venetian_tilt_reset_threshold": "Ouvrir complètement les lamelles puis les ramener à la position pour éliminer la dérive mécanique accumulée une fois que cette quantité de changement d'inclinaison commandé s'est accumulée. 0 désactive la réinitialisation de dérive."
+          "venetian_tilt_reset_threshold": "Ouvrir complètement les lamelles puis les ramener à la position pour éliminer la dérive mécanique accumulée une fois que cette quantité de changement d'inclinaison commandé s'est accumulée. 0 désactive la réinitialisation de dérive.",
+          "venetian_tilt_reset_direction": "Direction dans laquelle la réinitialisation de dérive entraîne les lamelles avant de revenir à la cible. **Ouvrir** (par défaut) : entraîner complètement ouvert, puis revenir — le comportement d'origine. **Fermer** : entraîner complètement fermé, puis revenir. Choisissez Fermer quand le store se situe près de la fermeture lors du suivi (une réinitialisation plus silencieuse et plus rapide) ou quand votre actionneur réinitialise les lamelles sur une commande de fermeture."
         }
       },
       "sun_tracking": {

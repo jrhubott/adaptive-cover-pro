@@ -228,7 +228,7 @@
       "min_tilt": "inclinaison min {min_tilt}%",
       "post_settle_hold": "maintien post-stabilisation {hold}s",
       "backrotate_lag": "délai de publication back-rotate {lag}s",
-      "drift_reset": "réinitialisation de dérive tous les {threshold}% d'inclinaison cumulée"
+      "drift_reset": "réinitialisation de dérive tous les {threshold}% d'inclinaison cumulée (via {direction})"
     },
     "fov": {
       "computed": "FOV calculé ≈ {deg}°/{deg}° (largeur {w}m, profondeur tableau {d}m)"

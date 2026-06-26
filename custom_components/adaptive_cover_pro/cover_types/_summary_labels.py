@@ -75,7 +75,9 @@ GEOMETRY_LABELS_EN: dict[str, str] = {
     "geometry.venetian.min_tilt": "min tilt {min_tilt}%",
     "geometry.venetian.post_settle_hold": "post-settle hold {hold}s",
     "geometry.venetian.backrotate_lag": "back-rotate publish lag {lag}s",
-    "geometry.venetian.drift_reset": "drift-reset every {threshold}% accumulated tilt",
+    "geometry.venetian.drift_reset": (
+        "drift-reset every {threshold}% accumulated tilt (via {direction})"
+    ),
     # Computed-FOV read-only line (blind + venetian Measurements mode, #565).
     "geometry.fov.computed": (
         "Computed FOV ≈ {deg}°/{deg}° " "({w} m width, {d} m reveal depth)"
