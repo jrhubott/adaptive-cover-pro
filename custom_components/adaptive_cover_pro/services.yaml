@@ -89,6 +89,39 @@ set_position:
       selector:
         boolean:
 
+set_tilt:
+  name: Set tilt
+  description: >-
+    Set the slat/tilt axis of the targeted covers. On venetian (dual-axis)
+    covers this drives ONLY the tilt slats and leaves the carriage untouched;
+    on cover types whose primary axis already is the tilt it behaves like a
+    tilt move. By default the call engages manual override; set force=true to
+    skip manual-override engagement (matching set_position's force semantics).
+  target:
+    entity:
+      integration: adaptive_cover_pro
+  fields:
+    tilt:
+      name: Tilt
+      description: "Target tilt (0–100%)."
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    force:
+      name: Force
+      description: >-
+        When true, skip manual-override engagement. Default false — service
+        calls engage manual override like a dashboard slider.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 set_position_limits:
   name: Set position limits
   description: >-

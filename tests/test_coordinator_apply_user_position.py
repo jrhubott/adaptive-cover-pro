@@ -644,6 +644,39 @@ async def test_async_apply_user_tilt_falls_back_to_position_for_non_venetian() -
     outcome = await coord.async_apply_user_tilt("cover.blind", 33, trigger="proxy_tilt")
 
     coord.async_apply_user_position.assert_awaited_once_with(
-        "cover.blind", 33, trigger="proxy_tilt"
+        "cover.blind", 33, trigger="proxy_tilt", force=False
     )
     assert outcome == ("sent", "fallback")
+
+
+@pytest.mark.asyncio
+async def test_async_apply_user_tilt_force_false_engages_manual_override() -> None:
+    """force=False (default) engages manual override before delegating."""
+    from custom_components.adaptive_cover_pro.cover_types import BlindPolicy
+
+    coord = _make_tilt_coord(policy=BlindPolicy())
+
+    await coord.async_apply_user_tilt("cover.blind", 33, trigger="set_tilt")
+
+    coord.manager.mark_user_command.assert_called_once_with(
+        "cover.blind", reason="set_tilt"
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_apply_user_tilt_force_true_skips_override_and_threads_force() -> (
+    None
+):
+    """force=True does NOT engage manual override and threads force into the
+    non-venetian position fallback.
+    """
+    from custom_components.adaptive_cover_pro.cover_types import BlindPolicy
+
+    coord = _make_tilt_coord(policy=BlindPolicy())
+
+    await coord.async_apply_user_tilt("cover.blind", 33, trigger="set_tilt", force=True)
+
+    coord.manager.mark_user_command.assert_not_called()
+    coord.async_apply_user_position.assert_awaited_once_with(
+        "cover.blind", 33, trigger="set_tilt", force=True
+    )

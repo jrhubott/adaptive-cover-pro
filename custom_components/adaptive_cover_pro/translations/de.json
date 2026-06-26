@@ -1928,6 +1928,20 @@
     "stop": {
       "name": "Beschattung stoppen",
       "description": "Sendet stop_cover an die gewählten Beschattungen über den ACP-Proxy. Aktiviert Manuelle Übersteuerung, sodass der nächste automatische Zyklus die Beschattung nicht gegen die Bedienung aussteuert. Verwenden Sie dies statt cover.stop_cover, wenn manual_ignore_external aktiviert ist."
+    },
+    "set_tilt": {
+      "name": "Neigung setzen",
+      "description": "Stellt die Lamellen-/Neigungsachse der Beschattung ein. Bei Jalousien (dual-axis Beschattungen) treibt dies nur die Neigungs-Lamellen an und lässt den Schlitten unverändert; bei Beschattungstypen, deren primäre Achse bereits die Neigung ist, verhält sich dies wie eine Neigungs-Bewegung. Standardmäßig aktiviert der Aufruf die Manuelle Übersteuerung; setzen Sie force=true, um die Aktivierung der Manuellen Übersteuerung zu überspringen (entspricht der force-Semantik von set_position).",
+      "fields": {
+        "tilt": {
+          "name": "Neigung",
+          "description": "Ziel-Neigung (0–100%)."
+        },
+        "force": {
+          "name": "Erzwingen",
+          "description": "Wenn aktiviert, die Aktivierung der Manuellen Übersteuerung überspringen. Standard: deaktiviert — Dienstaufrufe aktivieren die Manuelle Übersteuerung wie ein Dashboard-Schieberegler."
+        }
+      }
     }
   }
 }

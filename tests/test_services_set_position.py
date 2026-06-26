@@ -134,6 +134,29 @@ async def test_set_position_service_removed_after_all_entries_unloaded(hass) -> 
     ), "set_position service should be removed when last entry is unloaded"
 
 
+@pytest.mark.integration
+async def test_set_tilt_service_registered_after_setup(hass) -> None:
+    """set_tilt service is registered after async_setup_services."""
+    await _setup(hass, entry_id="st_reg_01")
+    assert hass.services.has_service(
+        DOMAIN, "set_tilt"
+    ), "set_tilt service should be registered after setup"
+
+
+@pytest.mark.integration
+async def test_set_tilt_service_removed_after_all_entries_unloaded(hass) -> None:
+    """set_tilt service is removed when the last entry is unloaded."""
+    entry = await _setup(hass, entry_id="st_unload_01")
+    assert hass.services.has_service(DOMAIN, "set_tilt")
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert not hass.services.has_service(
+        DOMAIN, "set_tilt"
+    ), "set_tilt service should be removed when last entry is unloaded"
+
+
 # ---------------------------------------------------------------------------
 # Wrapper coverage: thin _resolve_targets re-export
 # ---------------------------------------------------------------------------

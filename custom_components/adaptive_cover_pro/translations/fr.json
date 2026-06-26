@@ -1928,6 +1928,20 @@
     "stop": {
       "name": "Arrêter la protection",
       "description": "Envoie stop_cover aux protections ciblées via le proxy ACP. Active la dérogation manuelle afin que le prochain cycle automatique ne contre-commande pas la protection. Utilisez ce service à la place de cover.stop_cover quand manual_ignore_external est activé."
+    },
+    "set_tilt": {
+      "name": "Définir l'inclinaison",
+      "description": "Définit l'axe inclinaison/lamelle de la protection. Sur les stores vénitiens (à double axe), cela entraîne uniquement les lamelles d'inclinaison et laisse le chariot inchangé ; sur les types de protection dont l'axe principal est déjà l'inclinaison, cela se comporte comme un mouvement d'inclinaison. Par défaut, l'appel engage la dérogation manuelle ; mettez force=true pour ignorer l'engagement de dérogation manuelle (correspondant à la sémantique de force de set_position).",
+      "fields": {
+        "tilt": {
+          "name": "Inclinaison",
+          "description": "Inclinaison cible (0–100%)."
+        },
+        "force": {
+          "name": "Forcer",
+          "description": "Lorsque cette option est activée, ignore l'engagement de dérogation manuelle. Par défaut false — les appels de service engagent la dérogation manuelle comme un curseur du tableau de bord."
+        }
+      }
     }
   }
 }

@@ -1928,6 +1928,20 @@
           "description": "When true, bypass the priority pipeline check and skip manual-override engagement. Default false — service calls respect force_override / weather and engage manual override like a dashboard slider."
         }
       }
+    },
+    "set_tilt": {
+      "name": "Set tilt",
+      "description": "Sets the slat/tilt axis of the cover. On venetian (dual-axis) covers this drives only the tilt slats and leaves the carriage untouched; on cover types whose primary axis already is the tilt it behaves like a tilt move. By default the call engages manual override; set force=true to skip manual-override engagement (matching set_position's force semantics).",
+      "fields": {
+        "tilt": {
+          "name": "Tilt",
+          "description": "Target tilt (0–100%)."
+        },
+        "force": {
+          "name": "Force",
+          "description": "When true, skip manual-override engagement. Default false — service calls engage manual override like a dashboard slider."
+        }
+      }
     }
   }
 }

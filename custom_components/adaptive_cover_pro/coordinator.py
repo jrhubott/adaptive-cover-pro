@@ -2269,26 +2269,37 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         tilt: int,
         *,
         trigger: str,
+        force: bool = False,
     ) -> tuple[str, str]:
         """Apply a user-initiated tilt to a single cover (issue #684).
 
-        Dedicated tilt-axis entry point for the opt-in proxy cover (and any
-        future user-facing tilt command). Engages manual override, then
-        delegates to the cover-type policy's ``apply_user_tilt`` hook. Cover
-        types with an independent tilt axis (venetian) drive ONLY the tilt
-        slats — the carriage is left untouched. Cover types whose primary axis
-        already IS the tilt (``cover_tilt``) return not-handled from the base
-        hook, so we fall back to ``async_apply_user_position`` (a tilt there is
-        a position move).
+        Dedicated tilt-axis entry point for the opt-in proxy cover, the
+        ``adaptive_cover_pro.set_tilt`` service, and any future user-facing
+        tilt command. Delegates to the cover-type policy's ``apply_user_tilt``
+        hook. Cover types with an independent tilt axis (venetian) drive ONLY
+        the tilt slats — the carriage is left untouched. Cover types whose
+        primary axis already IS the tilt (``cover_tilt``) return not-handled
+        from the base hook, so we fall back to ``async_apply_user_position``
+        (a tilt there is a position move).
+
+        ``force`` (default ``False``) governs manual-override engagement only:
+        when ``False`` (the proxy slider / default service call) manual override
+        is engaged like a dashboard control; when ``True`` engagement is
+        skipped, matching ``set_position``'s force semantics. There is no
+        pipeline-preemption check on the tilt path (by design); ``force`` is
+        threaded through to the ``async_apply_user_position`` fallback so the
+        ``cover_tilt`` case stays consistent. The venetian sequencer's internal
+        force-resend for an explicit command is independent and stays always-on.
         """
-        self.manager.mark_user_command(entity_id, reason=trigger)
+        if not force:
+            self.manager.mark_user_command(entity_id, reason=trigger)
         handled = await self._policy.apply_user_tilt(
             entity_id, tilt=int(tilt), reason=trigger
         )
         if handled:
             return "sent", ""
         return await self.async_apply_user_position(
-            entity_id, int(tilt), trigger=trigger
+            entity_id, int(tilt), trigger=trigger, force=force
         )
 
     async def async_apply_user_stop(
