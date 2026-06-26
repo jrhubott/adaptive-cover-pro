@@ -22,10 +22,12 @@ from homeassistant.helpers import selector
 
 from .const import (
     BLANK_TIME,
+    BUILDING_PROFILE_SENSOR_KEYS,
     LIGHT_CLOUD_SENSOR_KEYS,
     WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
+    CONF_BUILDING_PROFILE_ID,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
@@ -198,6 +200,8 @@ from .cover_types import POLICY_REGISTRY as _POLICY_REGISTRY  # noqa: E402
 SENSOR_TYPE_MENU = list(_POLICY_REGISTRY)
 
 _STANDALONE_SENTINEL = "__standalone__"
+# Sentinel value for the "no profile / unlink" choice in the link selector.
+_PROFILE_NONE_SENTINEL = "__none__"
 
 _WIKI_BASE_URL = "https://github.com/jrhubott/adaptive-cover-pro/wiki"
 
@@ -256,6 +260,7 @@ from .unit_system import (  # noqa: E402
 from . import config_fields  # noqa: E402
 from .config_dynamic import (  # noqa: E402
     blind_spot_schema,
+    building_profile_sensors_schema,
     glare_zones_schema as _glare_zones_schema,
     light_cloud_schema,
     sun_tracking_schema,
@@ -2760,6 +2765,40 @@ def _extract_shared_options(
     return {k: v for k, v in entry.options.items() if k in allowed_keys}
 
 
+def _copy_profile_to_cover(hass, profile_entry, cover_entry) -> None:
+    """Copy a profile's non-empty shared-sensor subset into a linked cover.
+
+    Q2 per-key fallback: only overwrite a cover key when the profile holds a
+    NON-EMPTY value for it, so a profile that leaves a field blank never wipes
+    the cover's own locally-configured sensor. Stamps ``CONF_BUILDING_PROFILE_ID``
+    and reuses the sync execution pattern (``async_update_entry`` merge) — the
+    update fires the cover's existing self-reload listener. This is the single
+    shared copier; the profile-change propagation listener reuses it.
+    """
+    subset = {
+        k: v
+        for k, v in profile_entry.options.items()
+        if k in BUILDING_PROFILE_SENSOR_KEYS and v not in (None, "", [])
+    }
+    hass.config_entries.async_update_entry(
+        cover_entry,
+        options={
+            **cover_entry.options,
+            **subset,
+            CONF_BUILDING_PROFILE_ID: profile_entry.entry_id,
+        },
+    )
+
+
+def _building_profile_entries(hass) -> list:
+    """Return all Building Profile config entries (controls_cover == False)."""
+    return [
+        e
+        for e in hass.config_entries.async_entries(DOMAIN)
+        if not get_policy(e.data.get(CONF_SENSOR_TYPE)).controls_cover
+    ]
+
+
 def _build_cover_entity_schema(
     sensor_type: str,
     devices: dict[str, str] | None = None,
@@ -2997,10 +3036,31 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input:
             self.config = user_input
             self.type_blind = self.config[CONF_MODE]
+            # A virtual entry type (Building Profile) has no physical cover, so
+            # it skips the geometry/cover-entity wizard and collects only the
+            # shared sensor IDs. Branch on the policy discriminator, never on a
+            # cover-type string.
+            if not get_policy(self.type_blind).controls_cover:
+                return await self.async_step_building_profile_sensors()
             return await self.async_step_setup_mode()
         return self.async_show_form(
             step_id="create_new",
             data_schema=CONFIG_SCHEMA,
+        )
+
+    async def async_step_building_profile_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Collect the shared building-level sensor IDs for a profile entry."""
+        if user_input is not None:
+            self.config.update(user_input)
+            return await self.async_step_update()
+        return self.async_show_form(
+            step_id="building_profile_sensors",
+            data_schema=building_profile_sensors_schema(),
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
+            },
         )
 
     async def async_step_setup_mode(self, user_input: dict[str, Any] | None = None):
@@ -3480,17 +3540,20 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
         # Quick setup skips some steps (e.g. automation) leaving critical keys
         # absent from self.config.  Apply constant-backed defaults so the
-        # coordinator never receives None for gating values (issue #133).
-        options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
-        options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
-        options.setdefault(
-            CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION
-        )
-        options.setdefault(CONF_MOTION_SENSORS, [])
-        options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
-        options.setdefault(
-            CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
-        )
+        # coordinator never receives None for gating values (issue #133). A
+        # virtual entry type (Building Profile) builds no coordinator, so it
+        # keeps only the sensor IDs it collected — no cover automation defaults.
+        if get_policy(self.type_blind).controls_cover:
+            options.setdefault(CONF_DELTA_POSITION, DEFAULT_DELTA_POSITION)
+            options.setdefault(CONF_DELTA_TIME, DEFAULT_DELTA_TIME)
+            options.setdefault(
+                CONF_MANUAL_OVERRIDE_DURATION, DEFAULT_MANUAL_OVERRIDE_DURATION
+            )
+            options.setdefault(CONF_MOTION_SENSORS, [])
+            options.setdefault(CONF_MOTION_TIMEOUT, DEFAULT_MOTION_TIMEOUT)
+            options.setdefault(
+                CONF_ENABLE_POSITION_MATCHING, DEFAULT_ENABLE_POSITION_MATCHING
+            )
 
         return self.async_create_entry(
             title=title,
@@ -3643,6 +3706,12 @@ class OptionsFlowHandler(OptionsFlow):
             "geometry",
             "sun_tracking",
         ]
+        # Link this cover to a Building Profile (shared sensor IDs). Only shown
+        # for real covers, and only when at least one profile exists to link to.
+        if get_policy(self.sensor_type).controls_cover and _building_profile_entries(
+            self.hass
+        ):
+            keys.append("building_profile")
         if self.options.get(CONF_ENABLE_BLIND_SPOT):
             keys.append("blind_spot")
 
@@ -3958,7 +4027,12 @@ class OptionsFlowHandler(OptionsFlow):
                         "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
                     },
                 )
-            self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
+            # A linked cover hides the profile-owned sensor pickers, so they are
+            # absent from user_input. Don't null them — that would wipe the
+            # values copied from the profile.
+            self.optional_entities(
+                self._unhidden_keys(_WEATHER_OVERRIDE_OPTIONAL_KEYS), user_input
+            )
             self.options.update(user_input)
             return await self.async_step_init()
         self.options.setdefault(CONF_SHOW_WEATHER_RETRACTION, policy_default)
@@ -3970,6 +4044,65 @@ class OptionsFlowHandler(OptionsFlow):
             ),
             description_placeholders={
                 "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+            },
+        )
+
+    def _unhidden_keys(self, keys: list[str]) -> list[str]:
+        """Drop profile-owned sensor keys when this cover is linked to a profile.
+
+        Used to keep ``optional_entities`` from nulling pickers that a linked
+        cover hides — those values are inherited from the profile.
+        """
+        if not self.options.get(CONF_BUILDING_PROFILE_ID):
+            return keys
+        return [k for k in keys if k not in BUILDING_PROFILE_SENSOR_KEYS]
+
+    async def async_step_building_profile(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Link this cover to a Building Profile (or unlink it).
+
+        Linking copies the profile's non-empty shared-sensor subset into this
+        cover's own options (reusing ``_copy_profile_to_cover``) and reloads the
+        cover. Selecting the none/unlink choice clears the link; the last-copied
+        sensor IDs are left in place (no teardown).
+        """
+        if user_input is not None:
+            chosen = user_input.get(CONF_BUILDING_PROFILE_ID) or _PROFILE_NONE_SENTINEL
+            if chosen != _PROFILE_NONE_SENTINEL:
+                profile = self.hass.config_entries.async_get_entry(chosen)
+                if profile is not None:
+                    _copy_profile_to_cover(self.hass, profile, self._config_entry)
+                    self.options = dict(self._config_entry.options)
+            elif self.options.pop(CONF_BUILDING_PROFILE_ID, None) is not None:
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, options=dict(self.options)
+                )
+            return await self.async_step_init()
+
+        profiles = _building_profile_entries(self.hass)
+        options = [
+            {"value": _PROFILE_NONE_SENTINEL, "label": "None (unlinked)"},
+            *({"value": e.entry_id, "label": e.title} for e in profiles),
+        ]
+        current = self.options.get(CONF_BUILDING_PROFILE_ID) or _PROFILE_NONE_SENTINEL
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_BUILDING_PROFILE_ID, default=current
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="building_profile",
+            data_schema=schema,
+            description_placeholders={
+                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/How-It-Decides"
             },
         )
 
@@ -4191,7 +4324,9 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage light sensors, weather conditions, and cloud suppression."""
         suggested = _stringify_templatable(user_input or self.options)
         if user_input is not None:
-            self.optional_entities(_LIGHT_CLOUD_OPTIONAL_KEYS, user_input)
+            self.optional_entities(
+                self._unhidden_keys(_LIGHT_CLOUD_OPTIONAL_KEYS), user_input
+            )
             self.options.update(user_input)
             return await self.async_step_init()
         return self.async_show_form(

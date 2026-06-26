@@ -574,6 +574,52 @@
           "transparent_blind": "Closes the blind fully in summer even when occupants are present. Without this, an opaque blind follows glare-control sun tracking in summer instead of closing. Enable it for sheer or translucent material — or for any blind you want fully closed for heat protection when people are home.",
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
         }
+      },
+      "building_profile_sensors": {
+        "title": "Building Profile Sensors",
+        "description": "Select the shared building-level sensors this profile provides. Linked covers copy these sensor entities into their own configuration. Leave a field blank to let each cover keep its own local sensor.\n\n[Learn more]({learn_more})",
+        "data": {
+          "cloud_coverage_entity": "Cloud coverage sensor (optional)",
+          "daytime_gate_sensors": "Daytime gate sensors",
+          "daytime_gate_template": "Daytime gate template (optional)",
+          "irradiance_entity": "Irradiance sensor (optional)",
+          "is_sunny_sensor": "Is Sunny binary sensor (optional)",
+          "is_sunny_template": "Is Sunny template (optional)",
+          "lux_entity": "Lux sensor (optional)",
+          "outside_temp": "Outside temperature sensor (optional)",
+          "sunrise_time_entity": "Sunrise Time Entity",
+          "sunset_time_entity": "Sunset Time Entity",
+          "weather_entity": "Weather entity (optional)",
+          "weather_is_raining_sensor": "Is Raining binary sensor",
+          "weather_is_raining_template": "Is Raining template (optional)",
+          "weather_is_windy_sensor": "Is Windy binary sensor",
+          "weather_is_windy_template": "Is Windy template (optional)",
+          "weather_rain_sensor": "Rain rate sensor",
+          "weather_severe_sensors": "Severe weather sensors (hail, frost, storm, etc.)",
+          "weather_wind_direction_sensor": "Wind direction sensor (optional)",
+          "weather_wind_speed_sensor": "Wind speed sensor"
+        },
+        "data_description": {
+          "cloud_coverage_entity": "Optional cloud coverage sensor reporting 0–100% (e.g. from a weather integration). When the reading reaches the threshold, glare control is suppressed and the cover returns to its default position. Leave empty if you don't have this sensor.",
+          "daytime_gate_sensors": "Optional binary sensors (or input_boolean / switch / schedule) that decide when it is 'daytime' for sun tracking. When ON the integration sun-tracks; when OFF it applies the Sunset Position. Use a lux 'bright enough' binary sensor so real light — not the clock — opens and closes the tracking window: covers keep tracking on bright evenings past astronomical sunset, and stay at the sunset position on dark, overcast mornings. When set, this REPLACES the astronomical sunset/sunrise boundary (Sunset/Sunrise Offset are ignored). An unavailable or unknown sensor is treated as daytime, so tracking never stops just because a sensor hasn't reported. Leave empty to use the astronomical sunset/sunrise calculation.",
+          "daytime_gate_template": "Optional Home Assistant Jinja2 template that decides 'daytime' for sun tracking. When it renders truthy (on/true/1) the integration sun-tracks; when falsy it applies the Sunset Position. How it combines with the gate sensors above (OR or AND) is set by 'Daytime gate template logic' below. It can stand alone with no sensors. Example: a Sun2 elevation template, or a lux comparison. A template that fails to render is treated as daytime, so a broken template never forces a premature sunset. When set (alone or with sensors), this REPLACES the astronomical sunset/sunrise boundary. Leave empty to disable.",
+          "irradiance_entity": "Optional solar irradiance sensor (outdoor) for precise sun detection. Measures solar power in W/m². When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Leave empty if you don't have this sensor.",
+          "is_sunny_sensor": "Optional binary sensor, input_boolean, switch, or schedule that authoritatively reports whether the sun is hitting the window. When ON, sun is assumed present; when OFF, sun is assumed absent and cloud suppression fires regardless of weather state. When unavailable or unknown, the integration falls back to the Weather Entity / Weather Conditions logic below. Use this when you compute sun-on-window upstream (e.g. azimuth-gated irradiance) and want to feed Adaptive Cover Pro a clean boolean.",
+          "is_sunny_template": "Optional Home Assistant Jinja2 template that decides whether the sun is on the window. When it renders truthy (on/true/1) sun is assumed present; when falsy it is assumed absent and cloud suppression fires. How it combines with the Is Sunny binary sensor above (OR or AND) is set by 'Is Sunny template logic' below; it can stand alone with no sensor. Example: an azimuth/elevation comparison, or a lux threshold. A template that is empty or fails to render gives no opinion, so the integration falls back to the sensor and then the Weather Entity / Weather Conditions logic. Leave empty to disable.",
+          "lux_entity": "Optional illuminance sensor (indoor or outdoor) for precise sun detection. When the sensor reads below the threshold, direct sun is absent and glare control is suppressed. Typical direct-sun values: 5,000–10,000 lux. Leave empty if you don't have this sensor.",
+          "outside_temp": "Optional outdoor temperature sensor. When provided, this reading (rather than the indoor sensor) determines the current season, and the outside threshold guard is applied to prevent summer-close behavior on cold days.",
+          "sunrise_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunrise at -4° elevation'). When set, replaces the astral-computed sunrise time as the morning window-close boundary. Accepts sensor or input_datetime entities. Sunrise Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "sunset_time_entity": "Optional entity whose state is a datetime (e.g. Sun2 'sunset at -4° elevation'). When set, replaces the astral-computed sunset time as the window boundary. Accepts sensor or input_datetime entities reporting an ISO-8601 datetime. Sunset Offset still applies on top. Falls back to astral if the entity is unavailable.",
+          "weather_entity": "Optional weather integration used to detect cloud cover. When the current weather state is not in the selected list below, direct sun is assumed absent and glare control is suppressed. Leave empty to ignore weather state.",
+          "weather_is_raining_sensor": "Binary sensor for rain detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_raining_template": "Optional Home Assistant Jinja2 template that decides whether it is raining. When it renders truthy (on/true/1) the override engages. How it combines with the Is Raining binary sensor above (OR or AND) is set by 'Is Raining template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'raining' from a numeric rain-rate threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_is_windy_sensor": "Binary sensor for wind detection. Override activates when this sensor is 'on'. Leave empty to ignore.",
+          "weather_is_windy_template": "Optional Home Assistant Jinja2 template that decides whether it is windy. When it renders truthy (on/true/1) the override engages. How it combines with the Is Windy binary sensor above (OR or AND) is set by 'Is Windy template logic' below; it can stand alone with no sensor and reacts the instant the template flips. Example: derive 'windy' from a numeric wind-speed threshold. A template that is empty or fails to render gives no opinion (no retract). Leave empty to disable.",
+          "weather_rain_sensor": "Numeric sensor reporting rain rate. Override activates when the value meets or exceeds the threshold. Leave empty to ignore rain rate.",
+          "weather_severe_sensors": "Binary sensors for severe conditions (hail, frost, thunderstorm, etc.). Override activates when ANY sensor is 'on'. Leave empty to ignore.",
+          "weather_wind_direction_sensor": "Optional: only trigger wind override when wind blows toward this window's azimuth (within the direction tolerance). Leave empty to trigger on wind speed alone regardless of direction.",
+          "weather_wind_speed_sensor": "Numeric sensor reporting wind speed. Override activates when the value meets or exceeds the threshold. Leave empty to ignore wind speed."
+        }
       }
     },
     "abort": {
@@ -606,7 +652,8 @@
           "debug": "🔍 Debug & Diagnostics",
           "done": "✅ Save & Close",
           "light_cloud": "☁️ Light Sensors & Cloud",
-          "temperature_climate": "🌡️ Temperature & Climate"
+          "temperature_climate": "🌡️ Temperature & Climate",
+          "building_profile": "🏢 Building Profile"
         }
       },
       "pipeline_priorities": {
@@ -1196,6 +1243,16 @@
           "presence_template_mode": "How the Presence template combines with the Presence entity above. 'OR' (default) — occupied when the template is truthy OR the entity is active. 'AND' — occupied only when the template is truthy AND the entity is active. With no entity configured, the template alone decides in either mode. Only has an effect when a Presence template is set above.",
           "transparent_blind": "Closes the blind fully in summer even when occupants are present. Without this, an opaque blind follows glare-control sun tracking in summer instead of closing. Enable it for sheer or translucent material — or for any blind you want fully closed for heat protection when people are home.",
           "winter_close_insulation": "When enabled, the cover closes fully (0%) during winter when the sun is not directly hitting the window, helping to trap heat indoors. Has no effect when the sun is on the window (the cover opens to capture solar heat)."
+        }
+      },
+      "building_profile": {
+        "title": "Building Profile",
+        "description": "Link this cover to a Building Profile to share building-level sensors across covers. Linking copies the profile's sensors into this cover; blank profile fields keep this cover's own values.\n\n[Learn more]({learn_more})",
+        "data": {
+          "building_profile_id": "Building Profile"
+        },
+        "data_description": {
+          "building_profile_id": "Link this cover to a Building Profile to inherit its shared building-level sensors. Select 'None (unlinked)' to manage this cover's sensors locally."
         }
       }
     },

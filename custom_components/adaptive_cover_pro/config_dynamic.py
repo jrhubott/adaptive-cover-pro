@@ -25,15 +25,19 @@ from .config_fields import (
     presence_like_selector,
 )
 from .const import (
+    BUILDING_PROFILE_SENSOR_KEYS,
     CONF_AZIMUTH,
     CONF_BLIND_SPOT_ELEVATION,
     CONF_BLIND_SPOT_LEFT,
     CONF_BLIND_SPOT_RIGHT,
+    CONF_BUILDING_PROFILE_ID,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
+    CONF_DAYTIME_GATE_SENSORS,
+    CONF_DAYTIME_GATE_TEMPLATE,
     CONF_DISTANCE,
     CONF_ENABLE_BLIND_SPOT,
     CONF_ENABLE_SUN_TRACKING,
@@ -54,6 +58,8 @@ from .const import (
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
     CONF_SHOW_WEATHER_RETRACTION,
+    CONF_SUNRISE_TIME_ENTITY,
+    CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
@@ -126,6 +132,30 @@ def _threshold_selector() -> selector.TemplateSelector:
     ``unit_of_measurement``.
     """
     return selector.TemplateSelector()
+
+
+def _hidden_profile_keys(options: dict | None) -> frozenset[str]:
+    """Profile-owned sensor keys to hide when the cover is linked to a profile.
+
+    A cover carrying ``CONF_BUILDING_PROFILE_ID`` inherits the
+    ``BUILDING_PROFILE_SENSOR_KEYS`` from its profile, so those pickers are
+    removed from the per-cover weather-override / light-cloud forms. Thresholds,
+    template-combine modes, and flags are NOT in the set and stay per-cover.
+    """
+    if (options or {}).get(CONF_BUILDING_PROFILE_ID):
+        return BUILDING_PROFILE_SENSOR_KEYS
+    return frozenset()
+
+
+def _drop_hidden(schema_dict: dict, hidden: frozenset[str]) -> dict:
+    """Return ``schema_dict`` without any marker whose key is in ``hidden``."""
+    if not hidden:
+        return schema_dict
+    return {
+        marker: sel
+        for marker, sel in schema_dict.items()
+        if getattr(marker, "schema", marker) not in hidden
+    }
 
 
 def _condition_template_schema(template_key: str, mode_key: str) -> dict:
@@ -358,64 +388,107 @@ def weather_override_schema(
             ),
         }
     )
-    return vol.Schema(schema)
+    return vol.Schema(_drop_hidden(schema, _hidden_profile_keys(options)))
 
 
 def light_cloud_schema(
     hass: HomeAssistant | None = None, options: dict | None = None
 ) -> vol.Schema:
     """Light/cloud schema. Lux/irradiance thresholds accept number or template."""
+    schema: dict = {
+        vol.Optional(CONF_CLOUD_SUPPRESSION, default=False): selector.BooleanSelector(),
+        vol.Optional(CONF_CLOUDY_POSITION): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=1,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional(
+            CONF_WEATHER_ENTITY, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(domain="weather")
+        ),
+        vol.Optional(CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED): binary_on_selector(),
+        **_condition_template_schema(
+            CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE
+        ),
+        vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): numeric_selector(
+            device_class="illuminance"
+        ),
+        vol.Optional(CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED): numeric_selector(
+            device_class="irradiance"
+        ),
+        vol.Optional(
+            CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
+        ): numeric_selector(),
+        vol.Optional(
+            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                multiple=True,
+                sort=False,
+                options=list(_WEATHER_STATES),
+            )
+        ),
+        vol.Optional(CONF_LUX_THRESHOLD, default="1000"): _threshold_selector(),
+        vol.Optional(CONF_IRRADIANCE_THRESHOLD, default="300"): _threshold_selector(),
+        vol.Optional(
+            CONF_CLOUD_COVERAGE_THRESHOLD,
+            default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
+        ): _threshold_selector(),
+    }
+    return vol.Schema(_drop_hidden(schema, _hidden_profile_keys(options)))
+
+
+def building_profile_sensors_schema() -> vol.Schema:
+    """Sensor-only schema for a Building Profile entry.
+
+    Renders exactly the ``BUILDING_PROFILE_SENSOR_KEYS`` pickers — no
+    thresholds, geometry, or cover selection. Reuses the same selector
+    primitives as the weather-override / light-cloud / climate / behavior
+    steps so the profile collects the building-level sensor IDs once and copies
+    them into each linked cover.
+    """
+    selectors: dict = {
+        # Light & cloud sensors
+        CONF_WEATHER_ENTITY: selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(domain="weather")
+        ),
+        CONF_IS_SUNNY_SENSOR: binary_on_selector(),
+        CONF_IS_SUNNY_TEMPLATE: selector.TemplateSelector(),
+        CONF_LUX_ENTITY: numeric_selector(device_class="illuminance"),
+        CONF_IRRADIANCE_ENTITY: numeric_selector(device_class="irradiance"),
+        CONF_CLOUD_COVERAGE_ENTITY: numeric_selector(),
+        # Weather-override retraction sensors
+        CONF_WEATHER_WIND_SPEED_SENSOR: numeric_selector(),
+        CONF_WEATHER_WIND_DIRECTION_SENSOR: numeric_selector(),
+        CONF_WEATHER_RAIN_SENSOR: numeric_selector(),
+        CONF_WEATHER_IS_RAINING_SENSOR: binary_on_selector(),
+        CONF_WEATHER_IS_RAINING_TEMPLATE: selector.TemplateSelector(),
+        CONF_WEATHER_IS_WINDY_SENSOR: binary_on_selector(),
+        CONF_WEATHER_IS_WINDY_TEMPLATE: selector.TemplateSelector(),
+        CONF_WEATHER_SEVERE_SENSORS: binary_on_selector(multiple=True),
+        # Outside temperature
+        CONF_OUTSIDETEMP_ENTITY: numeric_selector(),
+        # Daytime gate
+        CONF_DAYTIME_GATE_SENSORS: binary_on_selector(multiple=True),
+        CONF_DAYTIME_GATE_TEMPLATE: selector.TemplateSelector(),
+        # Sunrise / sunset time entities (offsets stay per-cover)
+        CONF_SUNSET_TIME_ENTITY: selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+        CONF_SUNRISE_TIME_ENTITY: selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+        ),
+    }
     return vol.Schema(
         {
-            vol.Optional(
-                CONF_CLOUD_SUPPRESSION, default=False
-            ): selector.BooleanSelector(),
-            vol.Optional(CONF_CLOUDY_POSITION): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=100,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="%",
-                )
-            ),
-            vol.Optional(
-                CONF_WEATHER_ENTITY, default=vol.UNDEFINED
-            ): selector.EntitySelector(
-                selector.EntityFilterSelectorConfig(domain="weather")
-            ),
-            vol.Optional(
-                CONF_IS_SUNNY_SENSOR, default=vol.UNDEFINED
-            ): binary_on_selector(),
-            **_condition_template_schema(
-                CONF_IS_SUNNY_TEMPLATE, CONF_IS_SUNNY_TEMPLATE_MODE
-            ),
-            vol.Optional(CONF_LUX_ENTITY, default=vol.UNDEFINED): numeric_selector(
-                device_class="illuminance"
-            ),
-            vol.Optional(
-                CONF_IRRADIANCE_ENTITY, default=vol.UNDEFINED
-            ): numeric_selector(device_class="irradiance"),
-            vol.Optional(
-                CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
-            ): numeric_selector(),
-            vol.Optional(
-                CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    multiple=True,
-                    sort=False,
-                    options=list(_WEATHER_STATES),
-                )
-            ),
-            vol.Optional(CONF_LUX_THRESHOLD, default="1000"): _threshold_selector(),
-            vol.Optional(
-                CONF_IRRADIANCE_THRESHOLD, default="300"
-            ): _threshold_selector(),
-            vol.Optional(
-                CONF_CLOUD_COVERAGE_THRESHOLD,
-                default=str(DEFAULT_CLOUD_COVERAGE_THRESHOLD),
-            ): _threshold_selector(),
+            vol.Optional(key): sel
+            for key, sel in selectors.items()
+            if key in BUILDING_PROFILE_SENSOR_KEYS
         }
     )
 
