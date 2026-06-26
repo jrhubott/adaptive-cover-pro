@@ -603,6 +603,51 @@ class AdaptiveCoverManager:
         """
         self.manual_control[cover] = True
 
+    def engage_manual_override_from_external(self, reason: str) -> None:
+        """Engage manual override on every tracked cover from an external trigger.
+
+        Wall-switch / input-sensor path (issue #688): an off→on edge on a
+        configured input binary sensor means the user physically operated the
+        cover, so ACP pauses auto-control on *every* cover in this instance and
+        drops any latched target. Routes each cover through :meth:`_apply_decision`
+        with ``mark_manual=True`` (sharing the mark/event/edge block rather than
+        re-implementing it — no-duplication rule).
+
+        Two deliberate divergences from :meth:`mark_user_command`:
+
+        * It **must** fire the ``on_engaged`` edge (→ ``discard_target``): unlike
+          the ACP-owned surfaces, this path issues no command afterward, so the
+          latched target has to be discarded or the next cycle would yank the
+          cover back.
+        * Each press **overwrites** ``manual_control_time`` with a fresh ``now``,
+          re-arming the full override duration on every press — the opposite of
+          ``mark_user_command``'s ``setdefault``. ``_apply_decision`` calls
+          ``set_timestamp`` whenever it marks, so the overwrite lands even when
+          the cover was already manual.
+
+        Args:
+            reason: Short label recorded into the diagnostic event buffer
+                (e.g. ``"input_sensor"``).
+
+        """
+        now = dt.datetime.now(dt.UTC)
+        for entity_id in self.covers:
+            self._apply_decision(
+                entity_id,
+                OverrideDecision(
+                    mark_manual=True,
+                    event_name="manual_override_set",
+                    event_kwargs={
+                        "our_state": None,
+                        "new_position": None,
+                        "reason": reason,
+                    },
+                ),
+                set_timestamp=lambda eid=entity_id: self.manual_control_time.__setitem__(
+                    eid, now
+                ),
+            )
+
     def mark_user_command(self, entity_id: str, *, reason: str) -> None:
         """Engage manual override pre-emptively from an ACP-owned surface.
 

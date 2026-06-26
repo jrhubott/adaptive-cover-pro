@@ -56,6 +56,7 @@
     "resets_on_move": "resets on next move",
     "ignore_intermediate": "ignores intermediate positions",
     "ignore_external": "ACP-only (ignores external moves)",
+    "input_entities": "input-sensor override: {count} sensor(s)",
     "transit_timeout": "transit timeout: {seconds}s"
   },
   "custom": {

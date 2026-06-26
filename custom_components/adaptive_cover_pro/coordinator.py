@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 import pytz
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_ON
 from homeassistant.core import (
     Event,
     HomeAssistant,
@@ -888,6 +889,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             new_state.state,
         )
         await self._handle_occupancy_change(source=entity_id)
+
+    async def async_check_manual_override_input_change(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Engage manual override on the off→on edge of a configured input sensor.
+
+        Wall-switch path (issue #688): a configured input binary sensor (e.g. a
+        Shelly ``binary_sensor.*_cover_input_0``) transitioning off→on means the
+        user physically operated the cover, so ACP engages manual override on
+        every cover in the instance and drops the latched target. Only the
+        rising edge engages — ``on→on`` (no edge), ``None→on`` (a sensor restored
+        already-on at startup), ``unavailable``/``unknown`` (not "on"), and a
+        removed entity (``new_state`` None) all do nothing.
+        """
+        data = event.data
+        old_state = data["old_state"]
+        new_state = data["new_state"]
+        if new_state is None or new_state.state != STATE_ON:
+            return
+        if old_state is None or old_state.state == STATE_ON:
+            return
+        self.logger.debug(
+            "Manual override input %s edge off→on — engaging override on all covers",
+            data["entity_id"],
+        )
+        self.manager.engage_manual_override_from_external(reason="input_sensor")
+        self.state_change = True
+        await self.async_refresh()
 
     async def async_check_motion_template_change(
         self, event: Event | None, updates: list
@@ -1981,6 +2010,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.manual_reset = rc.manual_override.reset
         self.manual_duration = rc.manual_override.duration
         self.manual_ignore_external = rc.manual_override.ignore_external
+        # Per-cycle snapshot of the input sensors whose off→on edge engages
+        # manual override (issue #688). The HA subscription is (re)registered in
+        # async_setup_entry on every reload; this mirror is the single canonical
+        # coordinator-side read of the option.
+        self.manual_override_input_entities = rc.manual_override.input_entities
         self.manual_threshold = rc.tracking.manual_threshold
         # Mirror the reconciliation tolerance coordinator-side so the cover
         # state-change handler can lower the override-detection threshold when

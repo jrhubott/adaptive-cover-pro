@@ -213,6 +213,39 @@ async def test_unset_daytime_gate_not_tracked(hass) -> None:
     ), "Unconfigured gate sensors must not appear in the tracked entity list."
 
 
+async def test_manual_override_input_entities_tracked(hass) -> None:
+    """Configured input sensors are registered for state-change tracking (issue #688).
+
+    An off→on edge on one of these sensors engages manual override, so they must
+    have the same immediate-reaction registration as motion/gate sensors.
+    """
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    )
+
+    _, calls = await _setup_entry_capture_tracked(
+        hass,
+        extra_options={
+            CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.cover_input_0"]
+        },
+        entry_id="track_mo_input_01",
+    )
+    all_tracked = [e for call in calls for e in call]
+    assert "binary_sensor.cover_input_0" in all_tracked, (
+        "CONF_MANUAL_OVERRIDE_INPUT_ENTITIES must be registered for state-change "
+        "tracking so the off→on edge engages manual override immediately (#688)."
+    )
+
+
+async def test_unset_manual_override_input_entities_not_tracked(hass) -> None:
+    """With no input sensors configured, none are registered (guarded subscription)."""
+    _, calls = await _setup_entry_capture_tracked(
+        hass, entry_id="track_mo_input_none_01"
+    )
+    all_tracked = [e for call in calls for e in call]
+    assert "binary_sensor.cover_input_0" not in all_tracked
+
+
 async def test_daytime_gate_template_registered(hass) -> None:
     """Daytime gate template is registered via async_track_template_result (issue #632).
 

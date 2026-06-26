@@ -55,6 +55,7 @@ from .coordinator import AdaptiveConfigEntry, AdaptiveDataUpdateCoordinator
 from .helpers import (
     copy_legacy_slot_sensors_to_list,
     custom_position_slot_sensors,
+    manual_override_input_entities,
     motion_entities,
 )
 from .templates import is_template_string
@@ -132,6 +133,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
     _start_time_entity = entry.options.get(CONF_START_ENTITY)
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _motion_sensors = motion_entities(entry.options)
+    _manual_override_input_entities = manual_override_input_entities(entry.options)
     _cloud_coverage_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
     _lux_entity = entry.options.get(CONF_LUX_ENTITY)
     _irradiance_entity = entry.options.get(CONF_IRRADIANCE_ENTITY)
@@ -196,6 +198,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) -> 
                 hass,
                 _motion_sensors,
                 coordinator.async_check_motion_state_change,
+            )
+        )
+
+    # Register input-sensor manual-override listeners separately (issue #688):
+    # an off→on edge on one of these (e.g. a Shelly wall-switch input) engages
+    # manual override on every cover in the instance. Dedicated handler, not the
+    # motion debounce path.
+    if _manual_override_input_entities:
+        entry.async_on_unload(
+            async_track_state_change_event(
+                hass,
+                _manual_override_input_entities,
+                coordinator.async_check_manual_override_input_change,
             )
         )
 

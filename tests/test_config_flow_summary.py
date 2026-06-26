@@ -1045,6 +1045,30 @@ def test_manual_override_reset_shown():
     assert "resets on next move" in summary
 
 
+def test_manual_override_input_entities_shown():
+    """Configured input-override sensors render in the manual override section (#688)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    )
+
+    cfg = {
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: [
+            "binary_sensor.a",
+            "binary_sensor.b",
+        ]
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    mo_line = next((ln for ln in summary.splitlines() if "Manual override" in ln), None)
+    assert mo_line is not None
+    assert "input-sensor override: 2 sensor(s)" in mo_line
+
+
+def test_manual_override_input_entities_omitted_when_unset():
+    """No input-override sensors → no input-sensor line in the summary."""
+    summary = _build_config_summary({}, CoverType.BLIND)
+    assert "input-sensor override" not in summary
+
+
 # ---------------------------------------------------------------------------
 # Section 2: Motion Timeout
 # ---------------------------------------------------------------------------

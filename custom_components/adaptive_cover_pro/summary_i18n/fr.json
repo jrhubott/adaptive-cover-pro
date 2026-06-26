@@ -56,7 +56,8 @@
     "resets_on_move": "réinitialise au prochain mouvement",
     "ignore_intermediate": "ignore les positions intermédiaires",
     "ignore_external": "ACP uniquement (ignore les mouvements externes)",
-    "transit_timeout": "délai d'attente de transit : {seconds}s"
+    "transit_timeout": "délai d'attente de transit : {seconds}s",
+    "input_entities": "dérogation capteur d'entrée : {count} capteur(s)"
   },
   "custom": {
     "tilt_note": ", inclinaison {tilt}%",

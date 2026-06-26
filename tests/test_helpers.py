@@ -126,6 +126,30 @@ def test_motion_entities_empty_when_nothing_configured():
 
 
 @pytest.mark.unit
+def test_manual_override_input_entities_returns_configured():
+    """manual_override_input_entities returns the configured sensor list (#688)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    )
+    from custom_components.adaptive_cover_pro.helpers import (
+        manual_override_input_entities,
+    )
+
+    options = {CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.cover_input_0"]}
+    assert manual_override_input_entities(options) == ["binary_sensor.cover_input_0"]
+
+
+@pytest.mark.unit
+def test_manual_override_input_entities_empty_when_nothing_configured():
+    """No input sensors → empty list (feature disabled)."""
+    from custom_components.adaptive_cover_pro.helpers import (
+        manual_override_input_entities,
+    )
+
+    assert manual_override_input_entities({}) == []
+
+
+@pytest.mark.unit
 def test_get_safe_state_returns_state(mock_hass):
     """Test get_safe_state returns state when available."""
     state_obj = MagicMock()

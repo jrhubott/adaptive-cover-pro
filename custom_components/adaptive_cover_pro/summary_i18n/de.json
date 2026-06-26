@@ -56,7 +56,8 @@
     "resets_on_move": "setzt bei nächster Bewegung zurück",
     "ignore_intermediate": "ignoriert Zwischenpositionen",
     "ignore_external": "Nur ACP (ignoriert externe Bewegungen)",
-    "transit_timeout": "Übergangszeitüberschreitung: {seconds}s"
+    "transit_timeout": "Übergangszeitüberschreitung: {seconds}s",
+    "input_entities": "Eingangssensor-Übersteuerung: {count} Sensor(en)"
   },
   "custom": {
     "tilt_note": ", Neigung {tilt}%",

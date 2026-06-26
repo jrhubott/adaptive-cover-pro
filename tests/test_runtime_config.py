@@ -139,6 +139,24 @@ def test_runtime_config_reads_enforce_delta_at_endpoints() -> None:
     assert rc.tracking.enforce_delta_at_endpoints is True
 
 
+def test_manual_override_input_entities_defaults_empty() -> None:
+    """Empty options → no input-sensor override entities configured (issue #688)."""
+    rc = RuntimeConfig.from_options({})
+    assert rc.manual_override.input_entities == []
+
+
+def test_runtime_config_reads_manual_override_input_entities() -> None:
+    """Configured input sensors flow through to the manual-override slice (#688)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    )
+
+    rc = RuntimeConfig.from_options(
+        {CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.cover_input_0"]}
+    )
+    assert rc.manual_override.input_entities == ["binary_sensor.cover_input_0"]
+
+
 def test_from_options_reads_every_field_from_provided_dict() -> None:
     options = {
         CONF_ENTITIES: ["cover.test"],

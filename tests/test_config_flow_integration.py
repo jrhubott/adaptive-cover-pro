@@ -594,6 +594,40 @@ async def test_quick_setup_critical_keys_never_none(hass: HomeAssistant) -> None
 
 
 @pytest.mark.integration
+async def test_options_flow_round_trips_input_entities(hass: HomeAssistant) -> None:
+    """Options flow manual-override step accepts the input-sensor list (issue #688)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
+    )
+    from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Blind", CONF_SENSOR_TYPE: CoverType.BLIND},
+        options=dict(VERTICAL_OPTIONS),
+        entry_id="opts_mo_input_01",
+        title="My Blind",
+    )
+    entry.add_to_hass(hass)
+    with _patch_coordinator_refresh():
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] in ("form", "menu")
+    if result["type"] == "menu":
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "manual_override"}
+        )
+    assert result["step_id"] == "manual_override"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_MANUAL_OVERRIDE_INPUT_ENTITIES: ["binary_sensor.cover_input_0"]},
+    )
+    # Step accepted the new field and advanced (back to the menu / created entry).
+    assert result["type"] in ("form", "menu", "create_entry")
+
+
 async def test_options_flow_change_geometry(hass: HomeAssistant) -> None:
     """Options flow geometry step saves updated height to options."""
     from tests.ha_helpers import VERTICAL_OPTIONS, _patch_coordinator_refresh

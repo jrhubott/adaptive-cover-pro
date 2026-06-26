@@ -631,6 +631,11 @@ CONF_MANUAL_IGNORE_INTERMEDIATE = "manual_ignore_intermediate"
 # If True, only commands routed through ACP (proxy entity or set_position
 # service) engage manual override; all other position changes are ignored.
 CONF_MANUAL_IGNORE_EXTERNAL = "manual_ignore_external"
+# Binary-sensor-like entities whose off→on edge engages manual override on every
+# cover in the instance (issue #688). Lets a physical wall switch wired to an
+# input (e.g. Shelly binary_sensor.*_cover_input_0) act as the manual-override
+# trigger instead of inferring intent from cover state/position changes.
+CONF_MANUAL_OVERRIDE_INPUT_ENTITIES = "manual_override_input_entities"
 # Which manual-override detection strategy to use. Maps to a registered
 # OverrideDetector via managers.manual_override.get_detector. Changing this
 # selects a different detection pattern; takes effect on config-entry reload.

@@ -89,6 +89,7 @@ from .const import (
     CONF_MANUAL_IGNORE_EXTERNAL,
     CONF_MANUAL_IGNORE_INTERMEDIATE,
     CONF_MANUAL_OVERRIDE_DURATION,
+    CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
     CONF_MANUAL_OVERRIDE_RESET,
     CONF_MANUAL_THRESHOLD,
     CONF_MAX_COVERAGE_STEPS,
@@ -560,6 +561,9 @@ MANUAL_OVERRIDE_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_MANUAL_IGNORE_EXTERNAL, default=False
         ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, default=[]
+        ): _binary_on_selector(multiple=True),
         vol.Optional(
             CONF_TRANSIT_TIMEOUT,
             default=DEFAULT_TRANSIT_TIMEOUT_SECONDS,
@@ -1139,6 +1143,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "manual.resets_on_move": "resets on next move",
     "manual.ignore_intermediate": "ignores intermediate positions",
     "manual.ignore_external": "ACP-only (ignores external moves)",
+    "manual.input_entities": "input-sensor override: {count} sensor(s)",
     "manual.transit_timeout": "transit timeout: {seconds}s",
     # --- Custom positions ---
     "rules.custom_tilt_only": (
@@ -1678,6 +1683,9 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         mo_parts.append(L["manual.ignore_intermediate"])
     if config.get(CONF_MANUAL_IGNORE_EXTERNAL):
         mo_parts.append(L["manual.ignore_external"])
+    input_entities = config.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES)
+    if input_entities:
+        mo_parts.append(L["manual.input_entities"].format(count=len(input_entities)))
     transit_timeout = config.get(CONF_TRANSIT_TIMEOUT)
     if (
         transit_timeout is not None
@@ -2465,6 +2473,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MANUAL_THRESHOLD,
             CONF_MANUAL_IGNORE_INTERMEDIATE,
             CONF_MANUAL_IGNORE_EXTERNAL,
+            CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
             CONF_TRANSIT_TIMEOUT,
         }
     ),

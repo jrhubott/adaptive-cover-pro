@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_MANUAL_OVERRIDE_INPUT_ENTITIES,
     CONF_MOTION_MEDIA_PLAYERS,
     CONF_MOTION_SENSORS,
     CUSTOM_POSITION_SLOTS,
@@ -42,6 +43,18 @@ def motion_entities(options: Mapping) -> list[str]:
     return list(options.get(CONF_MOTION_SENSORS, [])) + list(
         options.get(CONF_MOTION_MEDIA_PLAYERS, [])
     )
+
+
+def manual_override_input_entities(options: Mapping) -> list[str]:
+    """Return the input binary sensors that engage manual override (issue #688).
+
+    Single source of truth for "is input-sensor override configured?": any
+    non-empty result means an off→on edge on one of these entities engages
+    manual override across every cover in the instance. Mirrors
+    :func:`motion_entities` so the ``__init__`` subscription guard and any
+    "configured?" checks stay consistent.
+    """
+    return list(options.get(CONF_MANUAL_OVERRIDE_INPUT_ENTITIES, []))
 
 
 def custom_position_slot_sensors(
