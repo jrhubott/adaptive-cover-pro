@@ -1230,6 +1230,9 @@
           "winter_mode": "Wintermodus",
           "intermediate": "Übergang"
         }
+      },
+      "solar_calculation": {
+        "name": "Solarberechnung"
       }
     },
     "switch": {

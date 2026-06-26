@@ -9,7 +9,12 @@ from numpy import cos, sin, tan
 from numpy import radians as rad
 
 from ...config_types import GlareZone, GlareZonesConfig, VerticalConfig
-from ...const import WINDOW_DEPTH_GAMMA_THRESHOLD
+from ...const import (
+    TRACE_KEY_GAMMA_DEG,
+    TRACE_KEY_POSITION_PCT,
+    TRACE_KEY_SOL_ELEV_DEG,
+    WINDOW_DEPTH_GAMMA_THRESHOLD,
+)
 from ...geometry import EdgeCaseHandler, SafetyMarginCalculator
 from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
@@ -152,6 +157,50 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             self.sol_elev, self.gamma, self.distance, self.h_win
         )
 
+    def _build_vertical_trace(
+        self,
+        *,
+        edge_case_detected: bool,
+        safety_margin: float,
+        effective_distance: float,
+        effective_distance_source: str,
+        window_depth_contribution: float,
+        sill_height_offset: float,
+        cos_gamma: float,
+        cos_gamma_clamped: float,
+        path_length: float,
+        base_height: float,
+        adjusted_height: float,
+        result: float,
+        clamped_to_window: bool,
+    ) -> dict:
+        """Assemble the raw vertical solar-calculation trace (issue #682).
+
+        Single source for both the edge-case and normal return paths so the key
+        set never drifts between them. Values are raw native floats — rounding
+        happens at the presentation boundary (``DiagnosticsBuilder``), never here.
+        ``glare_zones_active`` is left empty; the GlareZoneHandler populates it
+        downstream via diagnostics.
+        """
+        return {
+            TRACE_KEY_SOL_ELEV_DEG: float(self.sol_elev),
+            TRACE_KEY_GAMMA_DEG: float(self.gamma),
+            TRACE_KEY_POSITION_PCT: PositionConverter.to_percentage(result, self.h_win),
+            "edge_case_detected": bool(edge_case_detected),
+            "effective_distance_m": effective_distance,
+            "effective_distance_source": effective_distance_source,
+            "window_depth_contribution_m": window_depth_contribution,
+            "sill_height_offset_m": sill_height_offset,
+            "safety_margin": safety_margin,
+            "glare_zones_active": [],
+            "cos_gamma": cos_gamma,
+            "cos_gamma_clamped": cos_gamma_clamped,
+            "path_length_m": path_length,
+            "base_height_m": base_height,
+            "adjusted_height_m": adjusted_height,
+            "clamped_to_window": bool(clamped_to_window),
+        }
+
     def calculate_position(
         self, effective_distance_override: float | None = None
     ) -> float:
@@ -183,15 +232,21 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
                 self.gamma,
                 edge_position,
             )
-            self._last_calc_details = {
-                "edge_case_detected": True,
-                "safety_margin": 1.0,
-                "effective_distance": self.distance,
-                "window_depth_contribution": 0.0,
-                "sill_height_offset": 0.0,
-                "glare_zones_active": [],
-                "effective_distance_source": "edge_case",
-            }
+            self._last_calc_details = self._build_vertical_trace(
+                edge_case_detected=True,
+                safety_margin=1.0,
+                effective_distance=float(self.distance),
+                effective_distance_source="edge_case",
+                window_depth_contribution=0.0,
+                sill_height_offset=0.0,
+                cos_gamma=float(cos(rad(self.gamma))),
+                cos_gamma_clamped=float(cos(rad(self.gamma))),
+                path_length=0.0,
+                base_height=0.0,
+                adjusted_height=0.0,
+                result=edge_position,
+                clamped_to_window=False,
+            )
             return edge_position
 
         # Use override from handler (e.g. GlareZoneHandler) or base distance
@@ -256,6 +311,7 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
         safety_margin = self._calculate_safety_margin(self.gamma, self.sol_elev)
         adjusted_height = base_height * safety_margin
         result = float(np.clip(adjusted_height, 0, self.h_win))
+        clamped_to_window = bool(adjusted_height > self.h_win)
 
         self.logger.debug(
             "Vertical calc: elev=%.1f°, gamma=%.1f°, dist=%.3f→%.3f "
@@ -273,15 +329,21 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
             result,
             effective_distance_source,
         )
-        self._last_calc_details = {
-            "edge_case_detected": False,
-            "safety_margin": round(safety_margin, 4),
-            "effective_distance": round(effective_distance, 4),
-            "window_depth_contribution": round(depth_contribution, 4),
-            "sill_height_offset": round(sill_offset, 4),
-            "glare_zones_active": [],  # populated by GlareZoneHandler via diagnostics
-            "effective_distance_source": effective_distance_source,
-        }
+        self._last_calc_details = self._build_vertical_trace(
+            edge_case_detected=False,
+            safety_margin=float(safety_margin),
+            effective_distance=float(effective_distance),
+            effective_distance_source=effective_distance_source,
+            window_depth_contribution=float(depth_contribution),
+            sill_height_offset=float(sill_offset),
+            cos_gamma=float(cos_gamma),
+            cos_gamma_clamped=float(cos_gamma_clamped),
+            path_length=float(path_length),
+            base_height=float(base_height),
+            adjusted_height=float(adjusted_height),
+            result=result,
+            clamped_to_window=clamped_to_window,
+        )
         return result
 
     def calculate_percentage(

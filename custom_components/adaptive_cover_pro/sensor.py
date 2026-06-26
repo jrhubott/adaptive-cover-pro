@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_FRIENDLY_NAME, PERCENTAGE
+from homeassistant.const import ATTR_FRIENDLY_NAME, MATCH_ALL, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -332,7 +332,10 @@ def _cover_position_attrs(s: _ACPSensor) -> Mapping[str, Any] | None:
         if calc_details:
             attrs["edge_case_detected"] = calc_details.get("edge_case_detected")
             attrs["safety_margin"] = calc_details.get("safety_margin")
-            attrs["effective_distance"] = calc_details.get("effective_distance")
+            # The trace key is suffixed (effective_distance_m), but the companion
+            # card depends on the legacy `effective_distance` attribute name on the
+            # cover_position sensor — map it back so the card stays byte-identical.
+            attrs["effective_distance"] = calc_details.get("effective_distance_m")
 
     snapshot = s.coordinator._snapshot  # noqa: SLF001
     if snapshot and snapshot.cover_positions:
@@ -771,6 +774,35 @@ def _climate_status_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any]:
     return attrs
 
 
+def _solar_calculation_details(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Read the raw solar-calculation trace from diagnostics (single source).
+
+    The trace is the same ``calculation_details`` dict that the diagnostics
+    download surfaces — the sensor and the download therefore read one source.
+    """
+    diagnostics = s.data.diagnostics if s.data else None
+    if not diagnostics:
+        return None
+    return diagnostics.get("calculation_details") or None
+
+
+def _solar_calculation_value(s: _ACPDiagnosticSensor) -> int | None:
+    """State = raw geometric position percentage (pre-interpolation, pre-inverse).
+
+    For venetian this is the lift/position axis (top-level ``position_pct``); the
+    tilt axis rides in the attributes under the nested ``tilt`` sub-key.
+    """
+    details = _solar_calculation_details(s)
+    if details is None:
+        return None
+    return details.get("position_pct")
+
+
+def _solar_calculation_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
+    """Attributes = the full raw calculation_details trace dict."""
+    return _solar_calculation_details(s)
+
+
 def _decision_trace_value(s: _ACPDiagnosticSensor) -> str:
     result = s.coordinator._pipeline_result  # noqa: SLF001
     if result is None:
@@ -1085,6 +1117,20 @@ _DIAGNOSTIC_SPECS: tuple[_SensorSpec, ...] = (
         suggested_display_precision=1,
         value_fn=_sun_position_value,
         attrs_fn=_sun_position_attrs,
+    ),
+    _SensorSpec(
+        suffix="solar_calculation",
+        display_name="Solar Calculation",
+        icon="mdi:sun-angle-outline",
+        translation_key="solar_calculation",
+        state_class=SensorStateClass.MEASUREMENT,
+        unit=PERCENTAGE,
+        suggested_display_precision=0,
+        value_fn=_solar_calculation_value,
+        attrs_fn=_solar_calculation_attrs,
+        # The raw trace can be large and changes every cycle — keep all attributes
+        # out of the recorder DB while the small numeric state still records.
+        unrecorded_attributes=frozenset({MATCH_ALL}),
     ),
     _SensorSpec(
         suffix="control_status",

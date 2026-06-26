@@ -522,3 +522,56 @@ class TestPostPipelineResolveHandlerTilt:
         handler_names = [s.handler for s in out.decision_trace]
         assert "venetian_engine" in handler_names
         assert "venetian_handler_tilt" not in handler_names
+
+
+class TestPostPipelineResolveTiltSubTrace:
+    """The venetian tilt sub-trace is merged into the position engine's trace.
+
+    Issue #682: the tilt engine inside ``post_pipeline_resolve`` is transient and
+    its ``_last_calc_details`` was discarded. The merge writes it under a ``tilt``
+    sub-key on the position engine's (``cover``) ``_last_calc_details`` so the
+    live ``solar_calculation`` sensor and the diagnostics download both surface
+    both axes.
+    """
+
+    @staticmethod
+    def _cover_with_trace(*, direct_sun_valid: bool = True):
+        """Build a cover stub with a real-dict _last_calc_details (position trace)."""
+        cover = MagicMock()
+        cover.direct_sun_valid = direct_sun_valid
+        # Real dict, as the vertical engine would have set during the pipeline.
+        cover._last_calc_details = {
+            "sol_elev_deg": 45.0,
+            "gamma_deg": 0.0,
+            "position_pct": 25,
+            "effective_distance_m": 0.5,
+        }
+        return cover
+
+    def test_tilt_subtrace_present_after_solar_resolve(self):
+        policy = _make_policy()
+        kwargs = dict(_solar_kwargs())
+        cover = self._cover_with_trace()
+        kwargs["cover"] = cover
+        policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SOLAR, position=50), **kwargs
+        )
+        details = cover._last_calc_details
+        assert "tilt" in details
+        # The tilt sub-trace carries the tilt-engine keys.
+        assert "beta_rad" in details["tilt"]
+        assert "tilt_mode" in details["tilt"]
+        # The position (vertical) keys remain at the top level.
+        assert "effective_distance_m" in details
+
+    def test_no_tilt_subtrace_when_tilt_suppressed(self):
+        """Suppressed-tilt branch must NOT merge a tilt sub-trace."""
+        policy = _make_policy()
+        cover = self._cover_with_trace(direct_sun_valid=False)
+        kwargs = dict(_solar_kwargs())
+        kwargs["cover"] = cover
+        # direct_sun_valid False → tilt suppressed; the merge must be guarded.
+        policy.post_pipeline_resolve(
+            _make_result(ControlMethod.SOLAR, position=80), **kwargs
+        )
+        assert "tilt" not in cover._last_calc_details

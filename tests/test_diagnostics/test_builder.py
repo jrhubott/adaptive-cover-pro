@@ -445,11 +445,15 @@ class TestPositionDiagnostics:
         assert "last_updated" in diag
 
     def test_calculation_details_included(self, builder: DiagnosticsBuilder):
-        """Calculation details from cover are included."""
+        """Calculation details from cover are surfaced, with cover_type stamped."""
         details = {"edge_case": True, "safety_margin": 1.1}
         cover = _make_cover(calc_details=details)
-        diag, _ = builder.build(_base_ctx(cover=cover))
-        assert diag["calculation_details"] == details
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        out = diag["calculation_details"]
+        # Original keys are preserved; the builder stamps the cover_type discriminator.
+        assert out["edge_case"] is True
+        assert out["safety_margin"] == pytest.approx(1.1)
+        assert out["cover_type"] == "cover_blind"
 
 
 # ---------------------------------------------------------------------------
@@ -1426,3 +1430,220 @@ class TestTiltOnlyCustomSlotSurfacing:
         assert "tilt fixed" not in explanation
         assert "tilt fixed" not in diag["control_state_reason"]
         assert diag["control_state_reason"] == "Sun in FOV"
+
+
+# ---------------------------------------------------------------------------
+# Solar-calculation trace (issue #682) — cover_type stamp + boundary rounding
+# ---------------------------------------------------------------------------
+
+
+class TestCalculationDetailsTrace:
+    """`_build_position_calc_details` stamps cover_type and rounds at the boundary."""
+
+    def _raw_vertical_trace(self) -> dict:
+        """Return a raw, deliberately un-rounded vertical trace as an engine emits."""
+        return {
+            "sol_elev_deg": 45.123456,
+            "gamma_deg": -12.98765,
+            "position_pct": 25,
+            "edge_case_detected": False,
+            "effective_distance_m": 0.512345,
+            "effective_distance_source": "base",
+            "window_depth_contribution_m": 0.0,
+            "sill_height_offset_m": 0.0,
+            "safety_margin": 1.234567,
+            "glare_zones_active": [],
+            "cos_gamma": 0.974370,
+            "cos_gamma_clamped": 0.974370,
+            "path_length_m": 0.525678,
+            "base_height_m": 0.525678,
+            "adjusted_height_m": 0.648911,
+            "clamped_to_window": False,
+        }
+
+    def test_cover_type_stamped_from_ctx(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        details = diag["calculation_details"]
+        assert details["cover_type"] == "cover_blind"
+
+    def test_cover_type_matches_ctx_cover_type(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        ctx = _base_ctx(cover=cover, cover_type="cover_venetian")
+        diag, _ = builder.build(ctx)
+        assert diag["calculation_details"]["cover_type"] == ctx.cover_type
+
+    def test_angles_rounded_one_decimal(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        details = diag["calculation_details"]
+        assert details["sol_elev_deg"] == 45.1
+        assert details["gamma_deg"] == -13.0
+
+    def test_distances_rounded_three_decimals(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        details = diag["calculation_details"]
+        assert details["effective_distance_m"] == 0.512
+        assert details["path_length_m"] == 0.526
+
+    def test_position_pct_is_integer(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        details_pct = diag["calculation_details"]["position_pct"]
+        assert isinstance(details_pct, int)
+        assert details_pct == 25
+
+    def test_ratios_rounded(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        details = diag["calculation_details"]
+        # safety_margin / cos_gamma are unit-less ratios → kept at a few decimals.
+        assert details["safety_margin"] == pytest.approx(1.235, abs=1e-3)
+
+    def test_booleans_and_strings_passthrough(self, builder: DiagnosticsBuilder):
+        cover = _make_cover(calc_details=self._raw_vertical_trace())
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        details = diag["calculation_details"]
+        assert details["edge_case_detected"] is False
+        assert details["effective_distance_source"] == "base"
+        assert details["glare_zones_active"] == []
+
+    def test_does_not_mutate_engine_trace(self, builder: DiagnosticsBuilder):
+        """The builder must round into a copy, not mutate the engine's dict."""
+        raw = self._raw_vertical_trace()
+        cover = _make_cover(calc_details=raw)
+        builder.build(_base_ctx(cover=cover, cover_type="cover_blind"))
+        # Engine's dict keeps full precision.
+        assert raw["sol_elev_deg"] == 45.123456
+
+    def test_nested_tilt_subtrace_rounded(self, builder: DiagnosticsBuilder):
+        """Venetian nested tilt sub-trace is rounded the same way."""
+        trace = self._raw_vertical_trace()
+        trace["tilt"] = {
+            "sol_elev_deg": 45.987654,
+            "gamma_deg": 5.55555,
+            "position_pct": 60,
+            "beta_rad": 0.7853981,
+            "discriminant": 1.234567,
+            "negative_discriminant": False,
+            "slat_angle_raw_deg": 88.7654,
+            "nan_result": False,
+            "max_degrees": 90,
+            "tilt_mode": "mode1",
+        }
+        cover = _make_cover(calc_details=trace)
+        diag, _ = builder.build(_base_ctx(cover=cover, cover_type="cover_venetian"))
+        tilt = diag["calculation_details"]["tilt"]
+        assert tilt["sol_elev_deg"] == 46.0
+        assert tilt["slat_angle_raw_deg"] == 88.8
+        assert tilt["position_pct"] == 60
+
+
+class TestCalculationDetailsAllCoverTypes:
+    """Single-source proof (issue #682): the same calculation_details rail that
+    feeds the live solar_calculation sensor carries enriched, type-correct traces
+    for every cover type in the diagnostics build — no extra download plumbing.
+    """
+
+    def _build_for(self, cover, cover_type: str) -> dict:
+        # Exercise the exact rail (_build_position_calc_details) that both the
+        # live sensor and the diagnostics download read — no full build() needed.
+        out = DiagnosticsBuilder._build_position_calc_details(
+            _base_ctx(cover=cover, cover_type=cover_type)
+        )
+        return out["calculation_details"]
+
+    def test_vertical_trace_in_diagnostics(self):
+        from tests.cover_helpers import build_vertical_cover
+
+        cover = build_vertical_cover(
+            logger=SimpleNamespace(debug=lambda *a, **k: None),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            sun_data=SimpleNamespace(),
+            win_azi=180,
+            distance=0.5,
+            h_win=2.0,
+        )
+        cover.calculate_position()
+        details = self._build_for(cover, "cover_blind")
+        assert details["cover_type"] == "cover_blind"
+        assert "effective_distance_m" in details
+        assert "position_pct" in details
+
+    def test_horizontal_trace_in_diagnostics(self):
+        from tests.cover_helpers import build_horizontal_cover
+
+        cover = build_horizontal_cover(
+            logger=SimpleNamespace(debug=lambda *a, **k: None),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            sun_data=SimpleNamespace(),
+            win_azi=180,
+            distance=0.5,
+            h_win=2.0,
+            awn_length=2.0,
+            awn_angle=0,
+        )
+        cover.calculate_position()
+        details = self._build_for(cover, "cover_awning")
+        assert details["cover_type"] == "cover_awning"
+        # Horizontal-shaped, not vertical (latent-overwrite regression).
+        assert "awn_angle_deg" in details
+        assert "effective_distance_m" not in details
+
+    def test_tilt_trace_in_diagnostics(self):
+        from tests.cover_helpers import build_tilt_cover
+
+        cover = build_tilt_cover(
+            logger=SimpleNamespace(debug=lambda *a, **k: None),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            sun_data=SimpleNamespace(),
+            win_azi=180,
+            slat_distance=0.03,
+            depth=0.05,
+            mode="mode1",
+        )
+        cover.calculate_position()
+        details = self._build_for(cover, "cover_tilt")
+        assert details["cover_type"] == "cover_tilt"
+        assert "beta_rad" in details
+        assert "tilt_mode" in details
+
+    def test_venetian_nested_tilt_in_diagnostics(self):
+        """Venetian: position keys at top level + nested tilt sub-key, both rounded."""
+        from tests.cover_helpers import build_vertical_cover
+
+        cover = build_vertical_cover(
+            logger=SimpleNamespace(debug=lambda *a, **k: None),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            sun_data=SimpleNamespace(),
+            win_azi=180,
+            distance=0.5,
+            h_win=2.0,
+        )
+        cover.calculate_position()
+        # Simulate the venetian policy merge: tilt engine trace under `tilt`.
+        from tests.cover_helpers import build_tilt_cover
+
+        tilt = build_tilt_cover(
+            logger=SimpleNamespace(debug=lambda *a, **k: None),
+            sol_azi=180.0,
+            sol_elev=45.0,
+            sun_data=SimpleNamespace(),
+            win_azi=180,
+            slat_distance=0.03,
+            depth=0.05,
+            mode="mode1",
+        )
+        tilt.calculate_position()
+        cover._last_calc_details["tilt"] = tilt._last_calc_details
+        details = self._build_for(cover, "cover_venetian")
+        assert details["cover_type"] == "cover_venetian"
+        assert "tilt" in details
+        assert "beta_rad" in details["tilt"]
+        # Top-level position axis present.
+        assert "position_pct" in details

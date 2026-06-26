@@ -9,7 +9,12 @@ from numpy import cos, tan
 from numpy import radians as rad
 
 from ...config_types import TiltConfig
-from ...const import TiltMode
+from ...const import (
+    TRACE_KEY_GAMMA_DEG,
+    TRACE_KEY_POSITION_PCT,
+    TRACE_KEY_SOL_ELEV_DEG,
+    TiltMode,
+)
 from ...position_utils import PositionConverter
 from .base import AdaptiveGeneralCover
 
@@ -50,6 +55,47 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         beta = np.arctan(tan(rad(self.sol_elev)) / cos(rad(self.gamma)))
         return beta
 
+    def _max_degrees(self) -> int:
+        """Resolve max slat degrees for the configured mode (string or enum)."""
+        if isinstance(self.mode, TiltMode):
+            return self.mode.max_degrees
+        return TiltMode(self.mode).max_degrees
+
+    def _build_trace(
+        self,
+        *,
+        beta: float,
+        discriminant: float,
+        negative_discriminant: bool,
+        slat_angle_raw_deg: float | None,
+        nan_result: bool,
+        max_degrees: int,
+        result: float,
+    ) -> dict:
+        """Assemble the raw tilt solar-calculation trace (issue #682).
+
+        Single source for the negative-discriminant guard, the NaN guard, and the
+        normal return path so the key set never drifts. Raw native floats — the
+        ``DiagnosticsBuilder`` rounds at the presentation boundary.
+        """
+        mode_value = self.mode.value if isinstance(self.mode, TiltMode) else self.mode
+        return {
+            TRACE_KEY_SOL_ELEV_DEG: float(self.sol_elev),
+            TRACE_KEY_GAMMA_DEG: float(self.gamma),
+            TRACE_KEY_POSITION_PCT: PositionConverter.to_percentage(
+                result, max_degrees
+            ),
+            "beta_rad": float(beta),
+            "discriminant": float(discriminant),
+            "negative_discriminant": bool(negative_discriminant),
+            "slat_angle_raw_deg": (
+                None if slat_angle_raw_deg is None else float(slat_angle_raw_deg)
+            ),
+            "nan_result": bool(nan_result),
+            "max_degrees": int(max_degrees),
+            "tilt_mode": str(mode_value),
+        }
+
     def calculate_position(self) -> float:
         """Calculate optimal slat tilt angle to block direct sun.
 
@@ -69,6 +115,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         """
         beta = self.beta
+        max_degrees = self._max_degrees()
 
         # Guard: discriminant can be negative when slat_distance/depth ratio is
         # large relative to tan(beta), making sqrt of a negative.  NumPy returns
@@ -78,6 +125,15 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             self.logger.debug(
                 "Tilt calc: negative discriminant (%.4f) — returning 0° (closed)",
                 float(discriminant),
+            )
+            self._last_calc_details = self._build_trace(
+                beta=beta,
+                discriminant=discriminant,
+                negative_discriminant=True,
+                slat_angle_raw_deg=None,
+                nan_result=False,
+                max_degrees=max_degrees,
+                result=0.0,
             )
             return 0.0
 
@@ -94,14 +150,19 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
                 self.gamma,
                 float(beta),
             )
+            self._last_calc_details = self._build_trace(
+                beta=beta,
+                discriminant=discriminant,
+                negative_discriminant=False,
+                slat_angle_raw_deg=None,
+                nan_result=True,
+                max_degrees=max_degrees,
+                result=0.0,
+            )
             return 0.0
 
-        if isinstance(self.mode, TiltMode):
-            max_degrees = self.mode.max_degrees
-        else:
-            max_degrees = TiltMode(self.mode).max_degrees
-
-        result = max(0.0, min(float(max_degrees), result))
+        slat_angle_raw_deg = float(result)
+        result = max(0.0, min(float(max_degrees), float(result)))
 
         self.logger.debug(
             "Tilt calc: elev=%.1f°, gamma=%.1f°, beta=%.4f rad, slat_angle=%.1f°",
@@ -109,6 +170,15 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
             self.gamma,
             beta,
             result,
+        )
+        self._last_calc_details = self._build_trace(
+            beta=beta,
+            discriminant=discriminant,
+            negative_discriminant=False,
+            slat_angle_raw_deg=slat_angle_raw_deg,
+            nan_result=False,
+            max_degrees=max_degrees,
+            result=result,
         )
         return result
 

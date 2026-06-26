@@ -366,14 +366,57 @@ class DiagnosticsBuilder:
         return diagnostics
 
     @staticmethod
-    def _build_position_calc_details(ctx: DiagnosticContext) -> dict:
-        """Surface the cover's per-cycle calc trace when one was recorded."""
+    def _round_trace_value(key: str, value: Any) -> Any:
+        """Round one raw trace leaf at the presentation boundary (issue #682).
+
+        Convention (issue #140 §Display Rounding): degrees/ratios that aren't
+        positions → 1 decimal for angles, ~3 decimals for unit-less ratios;
+        distances (``_m``) → 3 decimals; positions/percent → integer; everything
+        else (bools, strings, lists, None) passes through untouched. Rounding
+        happens here — never inside the calc engines.
+        """
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            return value
+        if key.endswith("_pct") or key.endswith("_position") or key == "max_degrees":
+            return int(round(value))
+        if key.endswith("_deg"):
+            return round(value, 1)
+        if key.endswith("_m"):
+            return round(value, 3)
+        # Unit-less ratios (cos_gamma, safety_margin, discriminant, beta_rad, …).
+        return round(value, 3)
+
+    @classmethod
+    def _round_trace(cls, trace: dict) -> dict:
+        """Return a rounded copy of a trace dict, recursing into nested sub-traces.
+
+        Copies rather than mutating so the engine's ``_last_calc_details`` keeps
+        full precision for any other reader.
+        """
+        rounded: dict = {}
+        for key, value in trace.items():
+            if isinstance(value, dict):
+                rounded[key] = cls._round_trace(value)
+            else:
+                rounded[key] = cls._round_trace_value(key, value)
+        return rounded
+
+    @classmethod
+    def _build_position_calc_details(cls, ctx: DiagnosticContext) -> dict:
+        """Surface the cover's per-cycle calc trace when one was recorded.
+
+        Stamps the ``cover_type`` discriminator from ``ctx.cover_type`` (config
+        data — engines never branch on their own type string) and rounds every
+        numeric leaf at this presentation boundary.
+        """
         if not ctx.cover:
             return {}
         calc_details = getattr(ctx.cover, "_last_calc_details", None)
         if calc_details is None:
             return {}
-        return {"calculation_details": calc_details}
+        details = cls._round_trace(calc_details)
+        details["cover_type"] = ctx.cover_type
+        return {"calculation_details": details}
 
     @staticmethod
     def _build_time_window(ctx: DiagnosticContext) -> dict:

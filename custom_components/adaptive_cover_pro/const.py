@@ -973,6 +973,25 @@ WINDOW_DEPTH_GAMMA_THRESHOLD = 10  # deg — min gamma for depth contribution
 
 
 # =============================================================================
+# Solar-calculation trace keys (issue #682)
+# =============================================================================
+# Stable key names for the per-cycle raw geometric solar-position trace that
+# each calc engine records in ``_last_calc_details``. The new
+# ``solar_calculation`` diagnostic sensor and the diagnostics download both read
+# this single dict. Suffix convention: ``_deg`` = degrees, ``_m`` = metres,
+# ``_pct`` = percent (0-100), raw ratios carry no suffix.
+#
+# Common to every cover type (stamped by the engine; ``cover_type`` stamped by
+# the builder from config — engines never branch on their own type string).
+TRACE_KEY_COVER_TYPE = "cover_type"
+TRACE_KEY_SOL_ELEV_DEG = "sol_elev_deg"
+TRACE_KEY_GAMMA_DEG = "gamma_deg"
+TRACE_KEY_POSITION_PCT = "position_pct"
+# Venetian dual-axis: the tilt sub-trace nests under this key.
+TRACE_KEY_TILT = "tilt"
+
+
+# =============================================================================
 # 25. UI Defaults & Validation Caps
 # =============================================================================
 # Default values shown in the config-flow UI and hard caps not derived from

@@ -1189,6 +1189,9 @@
   },
   "entity": {
     "sensor": {
+      "solar_calculation": {
+        "name": "Solar Calculation"
+      },
       "control_status": {
         "state": {
           "force_override_active": "Force override active",

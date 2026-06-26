@@ -50,6 +50,7 @@ from ...const import (
     MIN_VENETIAN_TILT_SKIP_ABOVE,
     POSITION_CLOSED,
     POSITION_OPEN,
+    TRACE_KEY_TILT,
     VENETIAN_MODE_POSITION_AND_TILT,
     VENETIAN_MODE_TILT_ONLY,
     VENETIAN_MODES,
@@ -479,6 +480,17 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             logger=logger,
         )
         tilt = venetian_calc.tilt_for_position(result.position)
+        # Issue #682: merge the (otherwise transient) tilt engine's raw trace into
+        # the position engine's _last_calc_details under a `tilt` sub-key so the
+        # live solar_calculation sensor and the diagnostics download surface BOTH
+        # axes. Guarded: only when the position engine recorded a dict trace and
+        # the tilt engine produced one (this branch is the non-suppressed path).
+        tilt_trace = getattr(
+            venetian_calc._tilt, "_last_calc_details", None
+        )  # noqa: SLF001
+        cover_trace = getattr(cover, "_last_calc_details", None)
+        if isinstance(cover_trace, dict) and tilt_trace is not None:
+            cover_trace[TRACE_KEY_TILT] = tilt_trace
         # Movement minimization: quantize the slat tilt into the same number of
         # discrete coverage levels as the carriage position (which the solar
         # branch already quantized). The tilt axis closes at 0%, so full coverage

@@ -46,6 +46,7 @@ _EXPECTED_SENSOR_TRANSLATION_KEYS: frozenset[str] = frozenset(
         "decision_trace",
         "motion_status",
         "position_forecast",
+        "solar_calculation",
     }
 )
 
