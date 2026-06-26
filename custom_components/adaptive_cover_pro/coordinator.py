@@ -2263,6 +2263,34 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         return await self._cmd_svc.apply_position(entity_id, clamped, trigger, ctx)
 
+    async def async_apply_user_tilt(
+        self,
+        entity_id: str,
+        tilt: int,
+        *,
+        trigger: str,
+    ) -> tuple[str, str]:
+        """Apply a user-initiated tilt to a single cover (issue #684).
+
+        Dedicated tilt-axis entry point for the opt-in proxy cover (and any
+        future user-facing tilt command). Engages manual override, then
+        delegates to the cover-type policy's ``apply_user_tilt`` hook. Cover
+        types with an independent tilt axis (venetian) drive ONLY the tilt
+        slats — the carriage is left untouched. Cover types whose primary axis
+        already IS the tilt (``cover_tilt``) return not-handled from the base
+        hook, so we fall back to ``async_apply_user_position`` (a tilt there is
+        a position move).
+        """
+        self.manager.mark_user_command(entity_id, reason=trigger)
+        handled = await self._policy.apply_user_tilt(
+            entity_id, tilt=int(tilt), reason=trigger
+        )
+        if handled:
+            return "sent", ""
+        return await self.async_apply_user_position(
+            entity_id, int(tilt), trigger=trigger
+        )
+
     async def async_apply_user_stop(
         self,
         entity_id: str,

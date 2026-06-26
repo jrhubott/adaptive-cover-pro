@@ -274,14 +274,20 @@ class AdaptiveProxyCover(AdaptiveCoverBaseEntity, CoverEntity):
         )
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
-        """Route tilt position via the helper when the source supports tilt."""
+        """Route the requested tilt onto the dedicated tilt axis (issue #684).
+
+        Dual-axis covers (venetian) must move only the slats — routing a tilt
+        through ``async_apply_user_position`` previously drove the carriage to
+        the requested value and left the slats untouched. ``async_apply_user_tilt``
+        dispatches through the cover-type policy so the carriage stays put.
+        """
         if not self._source_available():
             return
         if not caps_get(self._source_caps(), CAP_HAS_SET_TILT_POSITION):
             return
-        position = int(kwargs["tilt_position"])
-        await self.coordinator.async_apply_user_position(
-            self._source_entity_id, position, trigger=TRIGGER_PROXY_TILT
+        tilt = int(kwargs["tilt_position"])
+        await self.coordinator.async_apply_user_tilt(
+            self._source_entity_id, tilt, trigger=TRIGGER_PROXY_TILT
         )
 
     async def async_stop_cover(self, **kwargs: Any) -> None:

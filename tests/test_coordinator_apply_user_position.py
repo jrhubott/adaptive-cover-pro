@@ -584,3 +584,66 @@ async def test_apply_user_position_explicit_options_not_overridden_by_resolved()
     assert (
         opts_passed is explicit_options
     ), "build() must use the explicitly supplied options when options != None."
+
+
+# ---------------------------------------------------------------------------
+# async_apply_user_tilt — issue #684 dedicated tilt-axis entry point
+# ---------------------------------------------------------------------------
+
+
+def _make_tilt_coord(*, policy):
+    """Build a coordinator-shaped mock that exposes the real ``async_apply_user_tilt``.
+
+    Binds the real method off the class so the manual-override engagement and
+    the policy-hook dispatch / position fall-back can be exercised against
+    mocked collaborators.
+    """
+    from custom_components.adaptive_cover_pro.coordinator import (
+        AdaptiveDataUpdateCoordinator,
+    )
+
+    coord = MagicMock(spec=AdaptiveDataUpdateCoordinator)
+    coord._policy = policy
+    coord.manager = MagicMock()
+    coord.manager.mark_user_command = MagicMock()
+    coord.async_apply_user_position = AsyncMock(return_value=("sent", "fallback"))
+    coord.async_apply_user_tilt = (
+        AdaptiveDataUpdateCoordinator.async_apply_user_tilt.__get__(coord)
+    )
+    return coord
+
+
+@pytest.mark.asyncio
+async def test_async_apply_user_tilt_engages_override_and_delegates_to_policy() -> None:
+    """Venetian: the tilt entry point engages manual override and delegates to the policy."""
+    policy = MagicMock()
+    policy.apply_user_tilt = AsyncMock(return_value=True)
+    coord = _make_tilt_coord(policy=policy)
+
+    outcome = await coord.async_apply_user_tilt(
+        "cover.venetian", 10, trigger="proxy_tilt"
+    )
+
+    coord.manager.mark_user_command.assert_called_once_with(
+        "cover.venetian", reason="proxy_tilt"
+    )
+    policy.apply_user_tilt.assert_awaited_once_with(
+        "cover.venetian", tilt=10, reason="proxy_tilt"
+    )
+    coord.async_apply_user_position.assert_not_awaited()
+    assert outcome == ("sent", "")
+
+
+@pytest.mark.asyncio
+async def test_async_apply_user_tilt_falls_back_to_position_for_non_venetian() -> None:
+    """Non-venetian: the base hook returns False → fall back to async_apply_user_position."""
+    from custom_components.adaptive_cover_pro.cover_types import BlindPolicy
+
+    coord = _make_tilt_coord(policy=BlindPolicy())
+
+    outcome = await coord.async_apply_user_tilt("cover.blind", 33, trigger="proxy_tilt")
+
+    coord.async_apply_user_position.assert_awaited_once_with(
+        "cover.blind", 33, trigger="proxy_tilt"
+    )
+    assert outcome == ("sent", "fallback")

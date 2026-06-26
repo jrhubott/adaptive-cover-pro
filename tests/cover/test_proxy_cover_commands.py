@@ -13,7 +13,11 @@ from custom_components.adaptive_cover_pro.const import (
     DOMAIN,
     CoverType,
 )
-from tests.ha_helpers import VERTICAL_OPTIONS, TILT_OPTIONS, _patch_coordinator_refresh
+from tests.ha_helpers import (
+    VERTICAL_OPTIONS,
+    TILT_OPTIONS,
+    _patch_coordinator_refresh,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -133,30 +137,98 @@ async def test_close_cover_calls_apply_user_position_with_0(hass) -> None:
     )
 
 
-async def test_set_cover_tilt_position_routes_through_apply_user_position(hass) -> None:
-    """Tilt-capable cover: ``cover.set_cover_tilt_position`` routes through the helper."""
+async def test_proxy_tilt_routes_to_apply_user_tilt(hass) -> None:
+    """Venetian proxy: ``set_cover_tilt_position`` delegates to ``async_apply_user_tilt``.
+
+    Issue #684: the proxy tilt setter must drive the *tilt* axis, not the
+    position parameter of ``async_apply_user_position``. The requested tilt
+    flows into the dedicated tilt entry point with the ``proxy_tilt`` trigger,
+    and the position helper is left untouched.
+    """
     entry, coord, proxy_eid = await _setup_proxy(
         hass,
-        cover_type=CoverType.TILT,
+        cover_type=CoverType.VENETIAN,
         source="cover.venetian",
         entry_id="proxy_cmd_tilt",
+        options=dict(VERTICAL_OPTIONS),
         attrs={
             "current_position": 50,
-            "current_tilt_position": 50,
+            "current_tilt_position": 80,
             "supported_features": 143 | 128,
         },
     )
+    coord.async_apply_user_tilt = AsyncMock(return_value=("sent", ""))
     coord.async_apply_user_position = AsyncMock(return_value=("sent", ""))
 
     await hass.services.async_call(
         "cover",
         "set_cover_tilt_position",
-        {"entity_id": proxy_eid, "tilt_position": 75},
+        {"entity_id": proxy_eid, "tilt_position": 10},
         blocking=True,
     )
-    coord.async_apply_user_position.assert_awaited_once_with(
-        "cover.venetian", 75, trigger="proxy_tilt"
+    coord.async_apply_user_tilt.assert_awaited_once_with(
+        "cover.venetian", 10, trigger="proxy_tilt"
     )
+    coord.async_apply_user_position.assert_not_awaited()
+
+
+async def test_proxy_tilt_sends_real_tilt_service_leaves_carriage_unchanged(
+    hass,
+) -> None:
+    """End-to-end: a proxy tilt request lands ``set_cover_tilt_position`` on the source.
+
+    Core of issue #684 — the entry point is NOT mocked. A venetian dual-axis
+    source at position 50 / tilt 80 receiving a tilt request of 10 must emit
+    exactly one ``cover.set_cover_tilt_position`` (tilt_position == 10) on the
+    source and ZERO ``cover.set_cover_position`` calls (carriage unchanged).
+    """
+    from homeassistant.const import EVENT_CALL_SERVICE
+
+    entry, coord, proxy_eid = await _setup_proxy(
+        hass,
+        cover_type=CoverType.VENETIAN,
+        source="cover.venetian",
+        entry_id="proxy_cmd_tilt_real",
+        options=dict(VERTICAL_OPTIONS),
+        attrs={
+            "current_position": 50,
+            "current_tilt_position": 80,
+            "supported_features": 143 | 128,
+        },
+    )
+
+    tilt_calls: list[dict] = []
+    position_calls: list[dict] = []
+
+    def _on_event(event):
+        if event.data.get("domain") != "cover":
+            return
+        data = dict(event.data.get("service_data") or {})
+        if data.get("entity_id") != "cover.venetian":
+            return
+        if event.data.get("service") == "set_cover_tilt_position":
+            tilt_calls.append(data)
+        elif event.data.get("service") == "set_cover_position":
+            position_calls.append(data)
+
+    hass.bus.async_listen(EVENT_CALL_SERVICE, _on_event)
+
+    await hass.services.async_call(
+        "cover",
+        "set_cover_tilt_position",
+        {"entity_id": proxy_eid, "tilt_position": 10},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    # At least one real tilt service call lands on the source, and every tilt
+    # call requests the user value (10) — a static mock source never publishes
+    # the new tilt, so the verify path may fire a bounded drift retry of the
+    # SAME value (issue #500), which is correct production behavior.
+    assert tilt_calls, f"no tilt service call reached the source: {tilt_calls}"
+    assert all(c.get("tilt_position") == 10 for c in tilt_calls), tilt_calls
+    # Core of #684: the carriage must NOT be commanded.
+    assert position_calls == [], f"carriage moved unexpectedly: {position_calls}"
 
 
 async def test_stop_cover_forwards_directly_no_clamp(hass) -> None:

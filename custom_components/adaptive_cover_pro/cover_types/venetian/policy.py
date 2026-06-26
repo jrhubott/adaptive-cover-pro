@@ -663,6 +663,35 @@ class VenetianPolicy(CoverTypePolicy, register=True):
             reason=reason,
         )
 
+    async def apply_user_tilt(
+        self,
+        entity_id: str,
+        *,
+        tilt: int,
+        reason: str,
+    ) -> bool:
+        """Drive a user-requested tilt on the tilt axis ONLY (issue #684).
+
+        A venetian is dual-axis: the proxy/user must be able to set slat tilt
+        without moving the carriage. We read the *current* carriage position
+        purely as a reference for the sequencer's pairing/rebase logic — it is
+        never commanded — and force the tilt send so a user re-requesting the
+        current angle still fires. ``update_tilt_only`` →
+        ``_send_tilt_command`` applies ``_to_wire`` internally, so inverse-tilt
+        is handled for free.
+        """
+        if self._sequencer is None:
+            return False
+        current_position = self._sequencer._get_current_position(entity_id)
+        await self._sequencer.update_tilt_only(
+            entity_id,
+            tilt_target=tilt,
+            current_position=current_position,
+            reason=reason,
+            force=True,
+        )
+        return True
+
     def _is_in_tilt_command_grace(self, entity_id: str, delta: float = 0.0) -> bool:
         """Return True when the entity is inside the command-grace window.
 

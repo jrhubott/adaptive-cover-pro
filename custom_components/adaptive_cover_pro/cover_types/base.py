@@ -350,6 +350,27 @@ class CoverTypePolicy(ABC):
         """
         return
 
+    async def apply_user_tilt(
+        self,
+        entity_id: str,  # noqa: ARG002
+        *,
+        tilt: int,  # noqa: ARG002
+        reason: str,  # noqa: ARG002
+    ) -> bool:
+        """Apply a user-requested tilt on the dedicated tilt axis.
+
+        Returns ``True`` when the request was handled on a real tilt axis;
+        ``False`` (the default) when the cover type has no independent tilt
+        axis, so the coordinator falls back to its position path.
+
+        This is correct for ``cover_tilt``, whose *primary* axis already IS
+        the tilt slats — a user tilt request there is just a position move and
+        belongs in ``async_apply_user_position``. Only dual-axis covers
+        (venetian) override this to drive tilt without touching the carriage
+        (issue #684).
+        """
+        return False
+
     async def before_position_command(
         self,
         cmd_svc,  # noqa: ARG002

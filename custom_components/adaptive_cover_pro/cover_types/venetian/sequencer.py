@@ -693,14 +693,20 @@ class DualAxisSequencer:
         tilt_target: int,
         current_position: int | None,
         reason: str,
+        force: bool = False,
     ) -> None:
         """Emit a tilt command without a position settle wait or suppression stamp.
 
         Used by VenetianPolicy when the position axis won't fire this cycle
         (cover is already at the commanded position) so tilt can still track
         the sun continuously.
+
+        ``force=True`` bypasses the target-unchanged dedup here AND threads the
+        same flag into ``_send_tilt_command`` so it skips the dedup/min-delta
+        gates. Used by the user-tilt path (issue #684): a user explicitly
+        re-requesting the current tilt is not a no-op.
         """
-        if self._target_already_satisfied(entity_id, tilt_target):
+        if not force and self._target_already_satisfied(entity_id, tilt_target):
             self._record_event(
                 "tilt_command_skipped",
                 reason=_TILT_SKIP_TARGET_UNCHANGED,
@@ -715,6 +721,7 @@ class DualAxisSequencer:
             tilt_target=tilt_target,
             position_target=current_position if current_position is not None else 0,
             reason=reason,
+            force=force,
         )
 
     def _rebase_commanded_position(self, entity_id: str, position_target: int) -> None:
