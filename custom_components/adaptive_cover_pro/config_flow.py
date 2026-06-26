@@ -50,6 +50,7 @@ from .const import (
     CONF_END_ENTITY,
     CONF_END_OF_WINDOW_POS,
     CONF_END_TIME,
+    CONF_ENDPOINT_USE_OPEN_CLOSE,
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_ENTITIES,
     CONF_FORCE_OVERRIDE_MIN_MODE,
@@ -64,6 +65,7 @@ from .const import (
     DEFAULT_ENABLE_MY_POSITION_ENTITIES,
     DEFAULT_ENABLE_POSITION_MATCHING,
     DEFAULT_ENABLE_PROXY_COVER,
+    DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
     DEFAULT_MAX_COVERAGE_STEPS,
     DEFAULT_MINIMIZE_MOVEMENTS,
     CONF_FOV_COMPUTE,
@@ -347,6 +349,10 @@ POSITION_SCHEMA = vol.Schema(
         ): selector.BooleanSelector(),
         vol.Optional(
             CONF_ENFORCE_DELTA_AT_ENDPOINTS, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_ENDPOINT_USE_OPEN_CLOSE,
+            default=DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
         ): selector.BooleanSelector(),
         vol.Optional(CONF_MIN_POSITION, default=0): selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -2427,6 +2433,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_MIN_POSITION,
             CONF_ENABLE_MIN_POSITION,
             CONF_ENFORCE_DELTA_AT_ENDPOINTS,
+            CONF_ENDPOINT_USE_OPEN_CLOSE,
             CONF_MIN_POSITION_SUN_TRACKING,
             CONF_SUNSET_POS,
             CONF_END_OF_WINDOW_POS,

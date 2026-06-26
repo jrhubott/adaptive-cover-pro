@@ -283,6 +283,71 @@ def test_route_service_call_tilt_cover():
     assert plan.supports_position is True
 
 
+def test_prepare_service_call_endpoint_open_default_on(cmd_svc, grace_mgr):
+    """Default-ON: position-capable blind commanded to 100 fires open_cover."""
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 100, caps=caps
+    )
+    assert service == "open_cover"
+    assert cmd_svc.get_target("cover.test") == 100
+    assert supports_position is False
+
+
+def test_prepare_service_call_endpoint_close_default_on(cmd_svc, grace_mgr):
+    """Default-ON: position-capable blind commanded to 0 fires close_cover."""
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 0, caps=caps
+    )
+    assert service == "close_cover"
+    assert cmd_svc.get_target("cover.test") == 0
+    assert supports_position is False
+
+
+def test_prepare_service_call_endpoint_intermediate_default_on(cmd_svc, grace_mgr):
+    """Default-ON: an intermediate target still uses set_cover_position."""
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 60, caps=caps
+    )
+    assert service == "set_cover_position"
+    assert data["position"] == 60
+    assert supports_position is True
+
+
+def test_update_endpoint_use_open_close_disables_substitution(cmd_svc, grace_mgr):
+    """Turning the option off mid-session reverts 100 to set_cover_position."""
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+    cmd_svc.update_endpoint_use_open_close(False)
+    service, data, supports_position = cmd_svc._prepare_service_call(
+        "cover.test", 100, caps=caps
+    )
+    assert service == "set_cover_position"
+    assert data["position"] == 100
+    assert supports_position is True
+
+
 def test_prepare_service_call_open_cover(cmd_svc, grace_mgr):
     """Uses open_cover for position >= threshold when has_set_position is False."""
     caps = {
@@ -313,6 +378,158 @@ def test_prepare_service_call_close_cover(cmd_svc, grace_mgr):
     assert service == "close_cover"
     assert cmd_svc.get_target("cover.test") == 0
     assert supports_position is False
+
+
+# --- Endpoint open/close substitution (issue #697) ---
+
+
+def _endpoint_caps():
+    return {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": True,
+    }
+
+
+def test_route_endpoint_open_cover_at_100():
+    """state=100 routes to open_cover when endpoint_use_open_close is on."""
+    caps = _endpoint_caps()
+    axis = get_policy("cover_blind").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        100,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=True,
+    )
+    assert plan.service == "open_cover"
+    assert plan.routed_target == 100
+    assert plan.supports_position is False
+    assert plan.service_data == {"entity_id": "cover.test"}
+
+
+def test_route_endpoint_close_cover_at_0():
+    """state=0 routes to close_cover when endpoint_use_open_close is on."""
+    caps = _endpoint_caps()
+    axis = get_policy("cover_blind").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        0,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=True,
+    )
+    assert plan.service == "close_cover"
+    assert plan.routed_target == 0
+    assert plan.supports_position is False
+    assert plan.service_data == {"entity_id": "cover.test"}
+
+
+def test_route_endpoint_intermediate_uses_set_position():
+    """An intermediate target keeps set_cover_position even with the option on."""
+    caps = _endpoint_caps()
+    axis = get_policy("cover_blind").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        50,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=True,
+    )
+    assert plan.service == "set_cover_position"
+    assert plan.service_data["position"] == 50
+    assert plan.supports_position is True
+    assert plan.routed_target == 50
+
+
+def test_route_endpoint_disabled_uses_set_position():
+    """endpoint_use_open_close=False keeps the legacy set_cover_position(100)."""
+    caps = _endpoint_caps()
+    axis = get_policy("cover_blind").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        100,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=False,
+    )
+    assert plan.service == "set_cover_position"
+    assert plan.service_data["position"] == 100
+    assert plan.supports_position is True
+    assert plan.routed_target == 100
+
+
+def test_route_endpoint_tilt_axis_is_no_op():
+    """Tilt axis never substitutes open/close (would drive the carriage)."""
+    caps = {"has_set_position": False, "has_set_tilt_position": True}
+    axis = get_policy("cover_tilt").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        100,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=True,
+    )
+    assert plan.service == "set_cover_tilt_position"
+    assert plan.service_data["tilt_position"] == 100
+    assert plan.supports_position is True
+
+
+def test_route_endpoint_falls_back_when_no_open_capability():
+    """Position-capable cover lacking open service falls back to set_position."""
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": False,
+        "has_close": True,
+    }
+    axis = get_policy("cover_blind").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        100,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=True,
+    )
+    assert plan.service == "set_cover_position"
+    assert plan.service_data["position"] == 100
+    assert plan.supports_position is True
+
+
+def test_route_endpoint_falls_back_when_no_close_capability():
+    """Position-capable cover lacking close service falls back to set_position."""
+    caps = {
+        "has_set_position": True,
+        "has_set_tilt_position": False,
+        "has_open": True,
+        "has_close": False,
+    }
+    axis = get_policy("cover_blind").select_default_axis(caps)
+    plan = route_service_call(
+        "cover.test",
+        0,
+        caps,
+        axis=axis,
+        use_my_position=False,
+        open_close_threshold=50,
+        endpoint_use_open_close=True,
+    )
+    assert plan.service == "set_cover_position"
+    assert plan.service_data["position"] == 0
+    assert plan.supports_position is True
 
 
 def test_route_service_call_missing_open_close_caps():

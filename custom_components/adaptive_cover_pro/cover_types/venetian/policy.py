@@ -18,7 +18,11 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import voluptuous as vol
-from homeassistant.const import SERVICE_SET_COVER_POSITION
+from homeassistant.const import (
+    SERVICE_CLOSE_COVER,
+    SERVICE_OPEN_COVER,
+    SERVICE_SET_COVER_POSITION,
+)
 from homeassistant.helpers import selector
 
 from ...const import (
@@ -83,6 +87,16 @@ if TYPE_CHECKING:
     from ...engine.covers import AdaptiveGeneralCover
     from ...pipeline.types import PipelineResult
     from ...services.configuration_service import ConfigurationService
+
+
+# Position-axis services the dual-axis sequencer must treat as a carriage move.
+# The endpoint open/close substitution (issue #697) routes a target of 100 to
+# ``open_cover`` and 0 to ``close_cover``; both drive the carriage to an
+# endpoint exactly like ``set_cover_position`` does, so the tilt-first /
+# post-settle tilt sequence must still run for them.
+_POSITION_AXIS_SERVICES = frozenset(
+    {SERVICE_SET_COVER_POSITION, SERVICE_OPEN_COVER, SERVICE_CLOSE_COVER}
+)
 
 
 # Re-exported for callers that want the unit-independent venetian-only keys.
@@ -775,7 +789,7 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         to ``_send_tilt_command``, so total service-call count for an
         opening transition remains 2 (tilt + position).
         """
-        if service != SERVICE_SET_COVER_POSITION:
+        if service not in _POSITION_AXIS_SERVICES:
             return
         seq = self._sequencer
         if seq is None:
@@ -817,8 +831,10 @@ class VenetianPolicy(CoverTypePolicy, register=True):
         slats on a fully-retracted blind (issue #33).
         """
         # Only chain a tilt after the position axis fired — direct tilt
-        # commands and open/close-only paths skip the sequence entirely.
-        if service != SERVICE_SET_COVER_POSITION:
+        # commands skip the sequence entirely. The endpoint open_cover /
+        # close_cover substitution (issue #697) counts as a position-axis
+        # move, so it still drives the dual-axis sequence.
+        if service not in _POSITION_AXIS_SERVICES:
             return
         seq = self._sequencer
         if seq is None:

@@ -418,6 +418,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             open_close_threshold=self.config_entry.options.get(
                 CONF_OPEN_CLOSE_THRESHOLD, 50
             ),
+            endpoint_use_open_close=_rc_attach.tracking.endpoint_use_open_close,
             position_tolerance=_rc_attach.tracking.position_tolerance,
             transit_timeout_seconds=self.config_entry.options.get(CONF_TRANSIT_TIMEOUT)
             or DEFAULT_TRANSIT_TIMEOUT_SECONDS,
@@ -2036,6 +2037,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.new_list = rc.tracking.interp_list_new
 
         self._cmd_svc.update_threshold(rc.open_close_threshold)
+        self._cmd_svc.update_endpoint_use_open_close(
+            rc.tracking.endpoint_use_open_close
+        )
         self._cmd_svc.update_position_tolerance(rc.tracking.position_tolerance)
         self._cmd_svc.enable_position_matching = rc.tracking.enable_position_matching
         # Mirror the endpoint-delta-enforcement flag (issue #679) so the

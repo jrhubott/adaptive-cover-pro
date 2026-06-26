@@ -733,19 +733,46 @@ class TestBeforePositionCommandTiltFirstOnOpen:
         policy._sequencer._send_tilt_command.assert_not_awaited()
 
     async def test_non_position_service_does_not_send_tilt(self) -> None:
-        """The hook only acts on set_cover_position, not on open/close/stop."""
+        """A non-position-axis service (stop_cover) must not pre-send tilt.
+
+        ``open_cover`` / ``close_cover`` ARE position-axis moves (issue #697
+        endpoint substitution), so only services like ``stop_cover`` are
+        rejected by the guard.
+        """
         policy = self._make_policy_with_send_mock(current_position=20)
 
         await policy.before_position_command(
             cmd_svc=MagicMock(),
             entity_id="cover.venetian_x",
-            service="open_cover",
+            service="stop_cover",
             position=80,
             context=_ctx(policy, tilt=POSITION_OPEN),
             reason="solar",
         )
 
         policy._sequencer._send_tilt_command.assert_not_awaited()
+
+    async def test_open_cover_service_sends_tilt_on_open(self) -> None:
+        """Endpoint open_cover (issue #697) is a position-axis open transition.
+
+        current=20 → open_cover (target 100) must still pre-send tilt with
+        force, exactly like set_cover_position would on an opening move.
+        """
+        policy = self._make_policy_with_send_mock(current_position=20)
+
+        await policy.before_position_command(
+            cmd_svc=MagicMock(),
+            entity_id="cover.venetian_x",
+            service="open_cover",
+            position=100,
+            context=_ctx(policy, tilt=POSITION_OPEN),
+            reason="solar",
+        )
+
+        policy._sequencer._send_tilt_command.assert_awaited_once()
+        kwargs = policy._sequencer._send_tilt_command.await_args.kwargs
+        assert kwargs["position_target"] == 100
+        assert kwargs["force"] is True
 
     async def test_no_tilt_in_context_does_not_send_tilt(self) -> None:
         """Without a tilt target in context, there's nothing to pre-send."""

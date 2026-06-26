@@ -366,6 +366,11 @@ class TrackingSlice:
     # 100 endpoints (issue #679). Default False preserves issue #629's
     # always-send-to-0/100 guarantee.
     enforce_delta_at_endpoints: bool = False
+    # When True (default, issue #697), a final target of 100 fires
+    # cover.open_cover and 0 fires cover.close_cover on position-capable covers
+    # instead of set_cover_position(100/0). Falls back to set_cover_position
+    # when the cover lacks open/close; never applies to a tilt-only axis.
+    endpoint_use_open_close: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,6 +424,7 @@ class RuntimeConfig:
             CONF_ENABLE_POSITION_MATCHING,
             CONF_END_ENTITY,
             CONF_END_TIME,
+            CONF_ENDPOINT_USE_OPEN_CLOSE,
             CONF_ENFORCE_DELTA_AT_ENDPOINTS,
             CONF_ENTITIES,
             CONF_INTERP_END,
@@ -463,6 +469,7 @@ class RuntimeConfig:
             CONF_WEATHER_WIND_SPEED_THRESHOLD,
             DEFAULT_DEBUG_EVENT_BUFFER_SIZE,
             DEFAULT_ENABLE_POSITION_MATCHING,
+            DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
             DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
             DEFAULT_MAX_COVERAGE_STEPS,
             DEFAULT_MINIMIZE_MOVEMENTS,
@@ -508,6 +515,10 @@ class RuntimeConfig:
                 enforce_delta_at_endpoints=options.get(
                     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
                     DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
+                ),
+                endpoint_use_open_close=options.get(
+                    CONF_ENDPOINT_USE_OPEN_CLOSE,
+                    DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
                 ),
             ),
             manual_override=ManualOverrideSlice(

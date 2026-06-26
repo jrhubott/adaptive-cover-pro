@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
 from ...const import (
+    DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     MAX_POSITION_RETRIES,
     POSITION_CHECK_INTERVAL_MINUTES,
@@ -85,6 +86,7 @@ class CoverCommandService:
         max_retries: int = MAX_POSITION_RETRIES,
         transit_timeout_seconds: int = DEFAULT_TRANSIT_TIMEOUT_SECONDS,
         on_tick=None,
+        endpoint_use_open_close: bool = DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
         *,
         event_buffer=None,
         debug_log=None,
@@ -98,6 +100,9 @@ class CoverCommandService:
             cover_type: Cover type string (cover_blind, cover_awning, cover_tilt)
             grace_mgr: GracePeriodManager instance
             open_close_threshold: Threshold (0-100) for open/close-only covers
+            endpoint_use_open_close: When True (issue #697), a final target of
+                100 fires cover.open_cover and 0 fires cover.close_cover on
+                position-capable covers, instead of set_cover_position(100/0).
             check_interval_minutes: How often reconciliation runs (minutes)
             position_tolerance: Allowed deviation between target and actual (%)
             max_retries: Max reconciliation attempts per target before giving up
@@ -140,6 +145,7 @@ class CoverCommandService:
         self._policy = get_policy(cover_type)
         self._grace_mgr = grace_mgr
         self._open_close_threshold = open_close_threshold
+        self._endpoint_use_open_close = endpoint_use_open_close
         self._check_interval_minutes = check_interval_minutes
         self._position_tolerance = position_tolerance
         self._max_retries = max_retries
@@ -751,6 +757,16 @@ class CoverCommandService:
 
         """
         self._open_close_threshold = threshold
+
+    def update_endpoint_use_open_close(self, value: bool) -> None:
+        """Update the endpoint open/close substitution flag (issue #697).
+
+        Args:
+            value: When True, final targets of 100/0 fire open_cover/close_cover
+                on position-capable covers instead of set_cover_position.
+
+        """
+        self._endpoint_use_open_close = value
 
     def update_position_tolerance(self, value: int) -> None:
         """Update the position-match (reconciliation) tolerance.
@@ -1620,6 +1636,7 @@ class CoverCommandService:
             axis=axis,
             use_my_position=use_my_position,
             open_close_threshold=self._open_close_threshold,
+            endpoint_use_open_close=self._endpoint_use_open_close,
         )
 
         self._logger.debug(

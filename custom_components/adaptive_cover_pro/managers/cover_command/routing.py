@@ -26,9 +26,13 @@ from ...const import (
     CONF_ENFORCE_DELTA_AT_ENDPOINTS,
     CONF_MY_POSITION_VALUE,
     CONF_SUNSET_POS,
+    DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
     DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS,
+    POSITION_CLOSED,
+    POSITION_OPEN,
 )
 from ...cover_types.base import (
+    AXIS_NAME_POSITION,
     CAP_HAS_CLOSE,
     CAP_HAS_OPEN,
     CAP_HAS_STOP,
@@ -75,6 +79,7 @@ def route_service_call(
     axis: CoverAxis,
     use_my_position: bool,
     open_close_threshold: int,
+    endpoint_use_open_close: bool = DEFAULT_ENDPOINT_USE_OPEN_CLOSE,
 ) -> ServiceCallPlan:
     """Pick the HA service to issue for a cover/state, ignoring side effects.
 
@@ -99,12 +104,39 @@ def route_service_call(
             preset when the cover lacks ``set_cover_position`` but has
             ``stop_cover``.
         open_close_threshold: Position cutoff for the open/close fallback.
+        endpoint_use_open_close: When True (issue #697), a position-capable
+            cover commanded to the 100 endpoint is sent ``open_cover`` and the
+            0 endpoint ``close_cover`` instead of ``set_cover_position``. Only
+            applies to the position axis; falls back to ``set_cover_position``
+            when the matching open/close capability is missing.
 
     Returns:
         :class:`ServiceCallPlan` describing what the orchestrator must do.
 
     """
     supports_position = caps.get(axis.capability_key, True)
+
+    if (
+        supports_position
+        and endpoint_use_open_close
+        and axis.name == AXIS_NAME_POSITION
+    ):
+        if state >= POSITION_OPEN and caps_get(caps, CAP_HAS_OPEN):
+            return ServiceCallPlan(
+                service="open_cover",
+                service_data={ATTR_ENTITY_ID: entity},
+                supports_position=False,
+                routed_target=POSITION_OPEN,
+            )
+        if state <= POSITION_CLOSED and caps_get(caps, CAP_HAS_CLOSE):
+            return ServiceCallPlan(
+                service="close_cover",
+                service_data={ATTR_ENTITY_ID: entity},
+                supports_position=False,
+                routed_target=POSITION_CLOSED,
+            )
+        # Endpoint requested but the matching open/close service is missing;
+        # fall through to set_cover_position below.
 
     if supports_position:
         return ServiceCallPlan(

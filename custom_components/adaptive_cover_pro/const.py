@@ -199,6 +199,14 @@ CONF_ENABLE_MIN_POSITION = "enable_min_position"
 # covers where commanding a full endpoint disturbs tilt (issue #679).
 CONF_ENFORCE_DELTA_AT_ENDPOINTS = "enforce_delta_at_endpoints"
 DEFAULT_ENFORCE_DELTA_AT_ENDPOINTS = False
+# If True, a final post-inverse target of 100 is sent via cover.open_cover and a
+# final target of 0 via cover.close_cover, instead of set_cover_position(100/0).
+# Targets 1-99 still use set_cover_position. Falls back to set_cover_position
+# when the cover lacks open/close, and never applies to a tilt-only axis.
+# Default True (issue #697): open/close drives a full traverse more reliably on
+# many actuators than set_position to an endpoint.
+CONF_ENDPOINT_USE_OPEN_CLOSE = "endpoint_use_open_close"
+DEFAULT_ENDPOINT_USE_OPEN_CLOSE = True
 # Fallback position when no override applies, % (range 0-100).
 CONF_DEFAULT_HEIGHT = "default_percentage"
 # Effective default position when no `default_percentage` is configured.

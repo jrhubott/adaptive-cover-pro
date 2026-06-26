@@ -244,6 +244,50 @@ async def test_apply_position_skips_tilt_when_no_tilt_target(
 
 
 @pytest.mark.asyncio
+async def test_apply_position_endpoint_close_runs_tilt_sequence(
+    svc, hass, attached_policy
+):
+    """Endpoint open/close (issue #697) still drives the venetian tilt sequence.
+
+    A venetian closing to 0 with endpoint_use_open_close=True must fire
+    ``close_cover`` for the carriage AND still run the dual-axis tilt
+    sequence (option A: widened sequencer guard). Without the widening the
+    tilt sequence is skipped because the service is not set_cover_position.
+    """
+    entity_id = "cover.venetian_close"
+    hass.states.get.return_value = _state_with_position(60)  # closing 60 → 0
+
+    with _patch_caps_dual_axis():
+        outcome, _ = await svc.apply_position(
+            entity_id, 0, "solar", _ctx_venetian(attached_policy, tilt=20)
+        )
+
+    assert outcome == "sent"
+    services = [c.args[1] for c in hass.services.async_call.call_args_list]
+    assert "close_cover" in services
+    assert "set_cover_tilt_position" in services
+
+
+@pytest.mark.asyncio
+async def test_apply_position_endpoint_open_runs_tilt_sequence(
+    svc, hass, attached_policy
+):
+    """Venetian opening to 100 fires open_cover and still sequences tilt."""
+    entity_id = "cover.venetian_open"
+    hass.states.get.return_value = _state_with_position(0)  # opening 0 → 100
+
+    with _patch_caps_dual_axis():
+        outcome, _ = await svc.apply_position(
+            entity_id, 100, "solar", _ctx_venetian(attached_policy, tilt=80)
+        )
+
+    assert outcome == "sent"
+    services = [c.args[1] for c in hass.services.async_call.call_args_list]
+    assert "open_cover" in services
+    assert "set_cover_tilt_position" in services
+
+
+@pytest.mark.asyncio
 async def test_apply_position_no_policy_skips_tilt_entirely(svc, hass):
     """When PositionContext.policy is None (non-venetian path), no tilt fires."""
     entity_id = "cover.kitchen"
