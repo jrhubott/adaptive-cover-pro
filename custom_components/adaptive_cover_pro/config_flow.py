@@ -251,6 +251,7 @@ from .cover_types.tilt import GEOMETRY_TILT_SCHEMA  # noqa: E402, F401
 from .cover_types.venetian import GEOMETRY_VENETIAN_SCHEMA  # noqa: E402, F401
 from .unit_system import (  # noqa: E402
     options_to_display,
+    sensor_unit_label,
     user_input_to_canonical,
 )
 
@@ -841,6 +842,40 @@ def _weather_override_needs_reveal(
     was_showing = bool(prior_options.get(CONF_SHOW_WEATHER_RETRACTION, policy_default))
     now_on = bool(user_input.get(CONF_SHOW_WEATHER_RETRACTION, policy_default))
     return now_on and not was_showing
+
+
+_WEATHER_SAFETY_WIKI = (
+    "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
+)
+
+
+def _weather_override_placeholders(
+    hass: HomeAssistant | None,
+    options: dict[str, Any] | None,
+) -> dict[str, str]:
+    """description_placeholders for the weather_override step.
+
+    Returns ``learn_more``, ``wind_unit``, and ``rain_unit``. The unit strings
+    are read from the configured sensor's ``unit_of_measurement``; when no
+    sensor is configured (or its state is unavailable) the helper falls back to
+    HA's locale unit so the field still carries a unit label.
+    """
+    opts = options or {}
+    if hass is not None:
+        wind_fallback = str(hass.config.units.wind_speed_unit)
+        rain_fallback = str(hass.config.units.accumulated_precipitation_unit)
+    else:
+        wind_fallback = ""
+        rain_fallback = ""
+    return {
+        "learn_more": _WEATHER_SAFETY_WIKI,
+        "wind_unit": sensor_unit_label(
+            hass, opts.get(CONF_WEATHER_WIND_SPEED_SENSOR), wind_fallback
+        ),
+        "rain_unit": sensor_unit_label(
+            hass, opts.get(CONF_WEATHER_RAIN_SENSOR), rain_fallback
+        ),
+    }
 
 
 def _stringify_templatable(suggested: dict) -> dict:
@@ -3393,9 +3428,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                     data_schema=self.add_suggested_values_to_schema(
                         weather_override_schema(self.hass, self.config), self.config
                     ),
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
-                    },
+                    description_placeholders=_weather_override_placeholders(
+                        self.hass, self.config
+                    ),
                 )
             self.optional_entities(_WEATHER_OVERRIDE_OPTIONAL_KEYS, user_input)
             self.config.update(user_input)
@@ -3405,9 +3440,9 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="weather_override",
             data_schema=weather_override_schema(self.hass, self.config),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
-            },
+            description_placeholders=_weather_override_placeholders(
+                self.hass, self.config
+            ),
         )
 
     async def async_step_light_cloud(self, user_input: dict[str, Any] | None = None):
@@ -3993,9 +4028,9 @@ class OptionsFlowHandler(OptionsFlow):
                     data_schema=self.add_suggested_values_to_schema(
                         weather_override_schema(self.hass, revealed), revealed
                     ),
-                    description_placeholders={
-                        "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
-                    },
+                    description_placeholders=_weather_override_placeholders(
+                        self.hass, self.options
+                    ),
                 )
             # A linked cover hides the profile-owned sensor pickers, so they are
             # absent from user_input. Don't null them — that would wipe the
@@ -4012,9 +4047,9 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 weather_override_schema(self.hass, suggested), suggested
             ),
-            description_placeholders={
-                "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Weather-Safety"
-            },
+            description_placeholders=_weather_override_placeholders(
+                self.hass, self.options
+            ),
         )
 
     def _unhidden_keys(self, keys: list[str]) -> list[str]:
