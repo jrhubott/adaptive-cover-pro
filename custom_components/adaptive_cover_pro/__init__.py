@@ -17,6 +17,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.template import Template
 
 from .const import (
+    CONF_BUILDING_PROFILE_ID,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_DAYTIME_GATE_SENSORS,
     CONF_DAYTIME_GATE_TEMPLATE,
@@ -61,6 +62,7 @@ from .helpers import (
     manual_override_input_entities,
     motion_entities,
 )
+from .profile_link import _copy_profile_to_cover, _covers_linked_to
 from .templates import is_template_string
 from .migrations import (
     async_prune_legacy_entities,
@@ -374,6 +376,26 @@ async def async_unload_entry(hass: HomeAssistant, entry: AdaptiveConfigEntry) ->
     return unload_ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean up after a config entry is removed.
+
+    Q5 active sweep: when a deleted entry is a Building Profile (virtual,
+    ``controls_cover == False``), strip the dangling ``CONF_BUILDING_PROFILE_ID``
+    from every cover still linked to it so their profile pickers re-expose on the
+    next options view. The last-copied sensor IDs are deliberately left in place
+    so the covers keep functioning. Removing a real cover does nothing here.
+    """
+    if get_policy(entry.data.get(CONF_SENSOR_TYPE)).controls_cover:
+        return
+    for cover in _covers_linked_to(hass, entry):
+        hass.config_entries.async_update_entry(
+            cover,
+            options={
+                k: v for k, v in cover.options.items() if k != CONF_BUILDING_PROFILE_ID
+            },
+        )
+
+
 # Fields that moved from centimetres to metres in config-entry version 2.
 # Every legitimate cm value in the v1 UI was ≥ 10, so a stored value > 5
 # is treated as cm and divided by 100. Values ≤ 5 are assumed to already be
@@ -521,10 +543,17 @@ async def _async_profile_propagate(hass: HomeAssistant, entry: ConfigEntry) -> N
     """Propagate a Building Profile's sensor changes to its linked covers.
 
     Registered as the update listener for virtual ``building_profile`` entries
-    (which build no coordinator). A no-op for now — Commit 4 implements the
-    copy-to-linked-covers propagation.
+    (which build no coordinator). Re-copies the profile's non-empty shared-sensor
+    subset into every linked cover via the shared copier — the ``async_update_entry``
+    it performs fires each cover's self-reload listener, so linked covers pick up
+    the changed sensor IDs immediately.
     """
-    # Commit 4 implements propagation.
+    # Guard: only profiles (virtual, controls_cover == False) propagate. A real
+    # cover reaching here would be a wiring bug — its own listener handles reloads.
+    if get_policy(entry.data.get(CONF_SENSOR_TYPE)).controls_cover:
+        return
+    for cover in _covers_linked_to(hass, entry):
+        _copy_profile_to_cover(hass, entry, cover)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

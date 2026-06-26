@@ -272,6 +272,10 @@ from .pipeline.handlers import (  # noqa: E402
     resolve_handler_priority,
 )
 from .priority_chain import build_priority_chain  # noqa: E402
+from .profile_link import (  # noqa: E402
+    _building_profile_entries,
+    _copy_profile_to_cover,
+)
 
 
 def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
@@ -2763,40 +2767,6 @@ def _extract_shared_options(
         *(SYNC_CATEGORIES[c] for c in categories if c in SYNC_CATEGORIES)
     )
     return {k: v for k, v in entry.options.items() if k in allowed_keys}
-
-
-def _copy_profile_to_cover(hass, profile_entry, cover_entry) -> None:
-    """Copy a profile's non-empty shared-sensor subset into a linked cover.
-
-    Q2 per-key fallback: only overwrite a cover key when the profile holds a
-    NON-EMPTY value for it, so a profile that leaves a field blank never wipes
-    the cover's own locally-configured sensor. Stamps ``CONF_BUILDING_PROFILE_ID``
-    and reuses the sync execution pattern (``async_update_entry`` merge) — the
-    update fires the cover's existing self-reload listener. This is the single
-    shared copier; the profile-change propagation listener reuses it.
-    """
-    subset = {
-        k: v
-        for k, v in profile_entry.options.items()
-        if k in BUILDING_PROFILE_SENSOR_KEYS and v not in (None, "", [])
-    }
-    hass.config_entries.async_update_entry(
-        cover_entry,
-        options={
-            **cover_entry.options,
-            **subset,
-            CONF_BUILDING_PROFILE_ID: profile_entry.entry_id,
-        },
-    )
-
-
-def _building_profile_entries(hass) -> list:
-    """Return all Building Profile config entries (controls_cover == False)."""
-    return [
-        e
-        for e in hass.config_entries.async_entries(DOMAIN)
-        if not get_policy(e.data.get(CONF_SENSOR_TYPE)).controls_cover
-    ]
 
 
 def _build_cover_entity_schema(
