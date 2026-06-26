@@ -2428,6 +2428,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             final_state=self.state,
             config_options=dict(self.config_entry.options),
             resolved_options=dict(self._resolved_options),
+            hass=self.hass,
             motion_detected=self.is_motion_detected,
             motion_timeout_active=self._motion_mgr.is_motion_timeout_active,
             motion_template_active=self._motion_mgr.template_active,

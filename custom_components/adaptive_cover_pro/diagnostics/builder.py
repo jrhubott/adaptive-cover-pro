@@ -9,11 +9,36 @@ never accesses the coordinator directly.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from ..const import ControlStatus
 from ..const import ClimateStrategy, ControlMethod, FORECAST_STEP_MINUTES, SunState
+
+# Sensor state classifications (issue #693, Q3).
+_SENSOR_STATE_NOT_CONFIGURED = "not_configured"
+_SENSOR_STATE_UNAVAILABLE = "unavailable"
+_SENSOR_STATE_AVAILABLE = "available"
+# HA state strings that count as "no real value" for a configured entity.
+_UNAVAILABLE_HA_STATES = ("unavailable", "unknown")
+
+
+@dataclass(frozen=True, slots=True)
+class SensorSource:
+    """One shared sensor key's provenance and live availability (issue #693, Q3).
+
+    ``source`` is "local" (configured on the cover) or "profile" (inherited
+    from a linked Building Profile). ``state`` is one of
+    ``not_configured`` / ``unavailable`` / ``available``. ``entity_id`` holds
+    the raw option value — a string for most keys, a list for the multi-entity
+    keys (gate/severe sensors), or ``None`` when unset.
+    """
+
+    key: str
+    entity_id: Any  # str | list | None — the raw option value
+    source: str
+    state: str
+
 
 # ---------------------------------------------------------------------------
 # Context dataclass – the coordinator populates this before calling build()
@@ -68,6 +93,12 @@ class DiagnosticContext:
     # but with TEMPLATABLE_KEYS rendered to numbers (issue #577). Used to show
     # raw template alongside its resolved value in diagnostics.
     resolved_options: dict = field(default_factory=dict)
+
+    # HA core handle — the sole boundary the builder uses to resolve live entity
+    # states and to read a linked Building Profile's options for the sensor
+    # source/state subsections (issue #693, Q3). Optional: when absent the
+    # profile lookup is skipped and configured entities classify as unavailable.
+    hass: Any = None
 
     # Motion manager state
     motion_detected: bool = True
@@ -179,6 +210,7 @@ class DiagnosticsBuilder:
         diagnostics.update(self._build_forecast(ctx))
         diagnostics.update(self._build_manual_override_state(ctx))
         diagnostics.update(self._build_configuration(ctx))
+        diagnostics.update(self._build_sensor_sources(ctx))
         diagnostics.update(self._build_debug_info(ctx))
 
         explanation = diagnostics.get("position_explanation", "")
@@ -838,6 +870,94 @@ class DiagnosticsBuilder:
                 "templated_thresholds": DiagnosticsBuilder._templated_thresholds(ctx),
             }
         }
+
+    @classmethod
+    def _build_sensor_sources(cls, ctx: DiagnosticContext) -> dict:
+        """Build the two shared-sensor source/state subsections (issue #693, Q3).
+
+        Every key in ``BUILDING_PROFILE_SENSOR_KEYS`` is classified per cover:
+        a key is ``source="profile"`` when the linked Building Profile holds a
+        non-empty value for it (it was copied into the cover on link), else
+        ``source="local"`` — covering both the cover's own keys and any profile
+        key the profile left blank so the cover kept its own value (Q2 fallback).
+
+        Emits a top-level ``local_sensors`` list always, plus a
+        ``building_profile_sensors`` list only when the cover is linked
+        (``CONF_BUILDING_PROFILE_ID`` set). The profile block is omitted
+        entirely for an unlinked cover. Both lists are additive — the existing
+        flat ``configuration`` dict is untouched so current consumers keep
+        working.
+        """
+        from ..const import BUILDING_PROFILE_SENSOR_KEYS, CONF_BUILDING_PROFILE_ID
+
+        options = ctx.config_options or {}
+        profile_id = options.get(CONF_BUILDING_PROFILE_ID)
+        linked = bool(profile_id)
+        profile_options = cls._linked_profile_options(ctx, profile_id)
+
+        profile_block: list[dict] = []
+        local_block: list[dict] = []
+        for key in sorted(BUILDING_PROFILE_SENSOR_KEYS):
+            profile_value = profile_options.get(key)
+            if profile_value not in (None, "", []):
+                entity_id = profile_value
+                source = "profile"
+                bucket = profile_block
+            else:
+                entity_id = options.get(key)
+                source = "local"
+                bucket = local_block
+            descriptor = SensorSource(
+                key=key,
+                entity_id=entity_id,
+                source=source,
+                state=cls._classify_sensor_state(ctx.hass, entity_id),
+            )
+            bucket.append(asdict(descriptor))
+
+        diagnostics: dict = {"local_sensors": local_block}
+        if linked:
+            diagnostics["building_profile_sensors"] = profile_block
+        return diagnostics
+
+    @staticmethod
+    def _linked_profile_options(ctx: DiagnosticContext, profile_id: Any) -> dict:
+        """Return the linked Building Profile entry's options (empty when none).
+
+        Looks the profile up by ``entry_id`` among the integration's config
+        entries — the same surface ``profile_link`` uses — without importing
+        the cover-type discriminator (any ACP entry with the id is the profile).
+        """
+        from ..const import DOMAIN
+
+        if not profile_id or ctx.hass is None:
+            return {}
+        try:
+            entries = ctx.hass.config_entries.async_entries(DOMAIN)
+        except AttributeError:
+            return {}
+        for entry in entries:
+            if entry.entry_id == profile_id:
+                return entry.options or {}
+        return {}
+
+    @staticmethod
+    def _classify_sensor_state(hass: Any, entity_id: Any) -> str:
+        """Classify a sensor entity's live availability.
+
+        Falsy/empty value → ``not_configured``. A configured entity whose HA
+        state is missing/``unavailable``/``unknown`` → ``unavailable``; one that
+        resolves to a real state → ``available``. List-valued keys (gate/severe
+        sensors) resolve to ``available`` when at least one member resolves.
+        """
+        if not entity_id:
+            return _SENSOR_STATE_NOT_CONFIGURED
+        entity_ids = entity_id if isinstance(entity_id, list) else [entity_id]
+        for eid in entity_ids:
+            state = hass.states.get(eid) if hass is not None else None
+            if state is not None and state.state not in _UNAVAILABLE_HA_STATES:
+                return _SENSOR_STATE_AVAILABLE
+        return _SENSOR_STATE_UNAVAILABLE
 
     @staticmethod
     def _templated_thresholds(ctx: DiagnosticContext) -> dict:

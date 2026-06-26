@@ -827,6 +827,9 @@ class TestPositionExplanationChangeDetection:
         coord.config_entry = MagicMock()
         coord.config_entry.options = {}
         coord._resolved_options = {}
+        coord.hass = MagicMock()
+        coord.hass.config_entries.async_entries.return_value = []
+        coord.hass.states.get.return_value = None
         type(coord).is_motion_detected = PropertyMock(return_value=True)
         coord._motion_mgr = MagicMock()
         coord._motion_mgr._motion_timeout_active = False
