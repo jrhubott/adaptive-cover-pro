@@ -129,6 +129,7 @@ from .const import (
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
     CONF_START_TIME,
+    CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
@@ -1304,6 +1305,7 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
     "climate.presence": "presence: {entity}",
     "climate.transparent": "transparent blind",
     "climate.winter_close": "closes fully in winter for insulation",
+    "climate.summer_full_close": "closes fully in summer heat",
     # --- Glare (45) ---
     "rules.glare": (
         "🔆 Glare zones: lowers blind further to protect floor areas from "
@@ -2023,6 +2025,8 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             cl_parts.append(L["climate.transparent"])
         if config.get(CONF_WINTER_CLOSE_INSULATION):
             cl_parts.append(L["climate.winter_close"])
+        if config.get(CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR):
+            cl_parts.append(L["climate.summer_full_close"])
         cl_str = f" ({', '.join(cl_parts)})" if cl_parts else ""
         lines.append(
             L["rules.climate"].format(detail=cl_str) + _badge(_prio["climate"])
@@ -2739,6 +2743,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_OUTSIDE_THRESHOLD,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+            CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
             CONF_PRESENCE_TEMPLATE_MODE,
         }
     ),
@@ -2764,6 +2769,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+            CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
         }
     ),
     # Legacy alias for backward compat
@@ -2792,6 +2798,7 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
             CONF_PRESENCE_TEMPLATE_MODE,
             CONF_TRANSPARENT_BLIND,
             CONF_WINTER_CLOSE_INSULATION,
+            CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
         }
     ),
     "glare_zones": frozenset(

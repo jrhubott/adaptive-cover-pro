@@ -108,7 +108,8 @@
     "weather": "météo : {entity}",
     "presence": "présence : {entity}",
     "transparent": "store transparent",
-    "winter_close": "ferme complètement en hiver pour l'isolation"
+    "winter_close": "ferme complètement en hiver pour l'isolation",
+    "summer_full_close": "ferme complètement en cas de chaleur estivale"
   },
   "glare": {
     "zones": "zones : {names}",

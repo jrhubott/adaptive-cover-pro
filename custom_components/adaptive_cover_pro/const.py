@@ -404,6 +404,9 @@ CONF_WEATHER_ENTITY = "weather_entity"  # weather. integration entity_id
 CONF_WEATHER_STATE = "weather_state"  # states that trigger climate handler
 # True to close covers at night in winter for added insulation.
 CONF_WINTER_CLOSE_INSULATION = "winter_close_insulation"
+# True to let summer climate-close ignore the sun-in-FOV min floor
+# (min_position_sun_tracking) and reach the global min_position instead.
+CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR = "summer_close_bypass_sun_floor"
 
 STRATEGY_MODE_BASIC = "basic"  # geometry only, no climate inputs
 STRATEGY_MODE_CLIMATE = "climate"  # climate-aware (temps/presence/weather)

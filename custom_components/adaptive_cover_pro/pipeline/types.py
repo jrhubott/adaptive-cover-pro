@@ -30,6 +30,7 @@ class ClimateOptions:
     temp_summer_outside: float | None
     cloud_suppression_enabled: bool
     winter_close_insulation: bool
+    summer_close_bypass_sun_floor: bool = False
     cloudy_position: int | None = None
 
 

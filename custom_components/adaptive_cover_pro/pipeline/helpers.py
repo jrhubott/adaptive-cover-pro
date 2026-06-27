@@ -54,6 +54,7 @@ def apply_config_limits(
     config: CoverConfig,
     *,
     sun_valid: bool,
+    suppress_sun_tracking_min: bool = False,
 ) -> int:
     """Apply the configured min/max position limits from a bare ``CoverConfig``.
 
@@ -66,6 +67,10 @@ def apply_config_limits(
         value:     Raw position (0–100) to constrain.
         config:    Cover configuration providing the limit fields.
         sun_valid: Whether the sun is currently in the valid tracking zone.
+        suppress_sun_tracking_min: When True, the sun-in-FOV min floor is
+            ignored and the effective minimum falls back to ``min_pos`` — used
+            by summer climate-close to reach the global min (issue #689).
+            Defaults to False so all other callers are unchanged.
 
     Returns:
         Constrained position value (0–100).
@@ -79,6 +84,7 @@ def apply_config_limits(
         config.max_pos_sun_only,
         sun_valid,
         sun_tracking_min_pos=config.min_pos_sun_tracking,
+        suppress_sun_tracking_min=suppress_sun_tracking_min,
     )
 
 
@@ -87,6 +93,7 @@ def apply_snapshot_limits(
     value: int,
     *,
     sun_valid: bool,
+    suppress_sun_tracking_min: bool = False,
 ) -> int:
     """Apply the configured min/max position limits from *snapshot*.
 
@@ -96,12 +103,20 @@ def apply_snapshot_limits(
         snapshot: Current pipeline snapshot (provides config limits).
         value:    Raw position (0–100) to constrain.
         sun_valid: Whether the sun is currently in the valid tracking zone.
+        suppress_sun_tracking_min: When True, the sun-in-FOV min floor is
+            ignored and the effective minimum falls back to ``min_pos``
+            (issue #689). Defaults to False so all other callers are unchanged.
 
     Returns:
         Constrained position value (0–100).
 
     """
-    return apply_config_limits(value, snapshot.config, sun_valid=sun_valid)
+    return apply_config_limits(
+        value,
+        snapshot.config,
+        sun_valid=sun_valid,
+        suppress_sun_tracking_min=suppress_sun_tracking_min,
+    )
 
 
 def solar_position_from_geometry(

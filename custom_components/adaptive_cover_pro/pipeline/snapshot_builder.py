@@ -52,6 +52,7 @@ from ..const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
+    CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
@@ -275,6 +276,9 @@ class PipelineSnapshotBuilder:
             cloud_suppression_enabled=bool(options.get(CONF_CLOUD_SUPPRESSION, False)),
             winter_close_insulation=bool(
                 options.get(CONF_WINTER_CLOSE_INSULATION, False)
+            ),
+            summer_close_bypass_sun_floor=bool(
+                options.get(CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, False)
             ),
             cloudy_position=options.get(CONF_CLOUDY_POSITION),
         )

@@ -337,6 +337,45 @@ def test_apply_limits_sun_tracking_min_zero_is_distinct_from_unset():
     assert result == 5
 
 
+# ---------------------------------------------------------------------------
+# Issue #689: summer-close sun-floor bypass tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_apply_limits_suppress_sun_tracking_min_falls_back_to_min_pos():
+    """suppress_sun_tracking_min=True ignores the sun-tracking floor even when sun_valid."""
+    result = PositionConverter.apply_limits(
+        value=5,
+        min_pos=0,
+        max_pos=100,
+        apply_min=False,
+        apply_max=False,
+        sun_valid=True,
+        sun_tracking_min_pos=15,
+        suppress_sun_tracking_min=True,
+    )
+    # Floor suppressed → falls back to min_pos=0 → no clamp → raw 5 reaches through.
+    assert result == 5
+
+
+@pytest.mark.unit
+def test_apply_limits_suppress_sun_tracking_min_false_keeps_floor():
+    """suppress_sun_tracking_min=False (default behavior) still honors the floor."""
+    result = PositionConverter.apply_limits(
+        value=5,
+        min_pos=0,
+        max_pos=100,
+        apply_min=False,
+        apply_max=False,
+        sun_valid=True,
+        sun_tracking_min_pos=15,
+        suppress_sun_tracking_min=False,
+    )
+    # Floor active → clamps up to the sun-tracking min of 15.
+    assert result == 15
+
+
 @pytest.mark.unit
 def test_direct_sun_valid_uses_and_operator(mock_sun_data, mock_logger):
     """Test that direct_sun_valid uses 'and' operator (not bitwise '&')."""

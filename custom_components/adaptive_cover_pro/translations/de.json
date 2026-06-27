@@ -638,7 +638,8 @@
           "transparent_blind": "Transparente Jalousie",
           "winter_close_insulation": "Winterisolationsmodus",
           "presence_template": "Vorlage \"Presence\" (optional)",
-          "presence_template_mode": "Logik der Vorlage \"Presence\""
+          "presence_template_mode": "Logik der Vorlage \"Presence\"",
+          "summer_close_bypass_sun_floor": "Vollständiges Schließen bei Sommerhitze"
         },
         "data_description": {
           "climate_mode": "Aktivieren Sie diese Option, um alle klimagestützten Beschattungssteuerungen zu aktivieren. Wenn deaktiviert, werden alle Einstellungen auf diesem Bildschirm ignoriert und die Beschattung folgt der normalen Sonne/Blendungsverfolgung.",
@@ -651,7 +652,8 @@
           "transparent_blind": "Schließt die Jalousie im Sommer vollständig, auch wenn Bewohner anwesend sind. Ohne diese Option folgt eine lichtundurchlässige Jalousie im Sommer der Blendungszonen-Sonnennachführung statt sich zu schließen. Aktivieren Sie dies für transparentes oder transluzentes Material — oder für jede Jalousie, die Sie im Sommer vollständig geschlossen halten möchten, um Wärmeschutz bei anwesenden Personen zu gewährleisten.",
           "winter_close_insulation": "Wenn aktiviert, schließt sich die Beschattung im Winter vollständig (0 %), wenn die Sonne nicht direkt auf das Fenster trifft, um Wärme im Inneren einzufangen. Hat keine Auswirkung, wenn die Sonne auf dem Fenster liegt (die Beschattung öffnet sich, um Solarwärme zu erfassen).",
           "presence_template": "Optionale Home-Assistant-Jinja2-Vorlage, die die Anwesenheit meldet. Wenn sie als wahr (on/true/1) ausgewertet wird, wird der Raum als belegt angesehen; wenn sie als falsch ausgewertet wird, wird er als leer behandelt. Wie sie sich mit der Entität \"Presence\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Presence'\" unten definiert; sie kann auch ohne Entität allein verwendet werden. Verwenden Sie dies für zusammengesetzte Belegung (z. B. jemand im Haus UND wach). Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht, sodass die Logik der Entität \"Presence\" entscheidet. Lassen Sie leer, um zu deaktivieren.",
-          "presence_template_mode": "Wie die Vorlage \"Presence\" sich mit der Entität \"Presence\" oben kombiniert. \"OR\" (Standard) – belegt, wenn die Vorlage wahr ist ODER die Entität aktiv ist. \"AND\" – belegt nur, wenn die Vorlage wahr ist UND die Entität aktiv ist. Ohne eine konfigurierte Entität entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Presence\" festgelegt ist."
+          "presence_template_mode": "Wie die Vorlage \"Presence\" sich mit der Entität \"Presence\" oben kombiniert. \"OR\" (Standard) – belegt, wenn die Vorlage wahr ist ODER die Entität aktiv ist. \"AND\" – belegt nur, wenn die Vorlage wahr ist UND die Entität aktiv ist. Ohne eine konfigurierte Entität entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Presence\" festgelegt ist.",
+          "summer_close_bypass_sun_floor": "Bei Aktivierung schließt die Sommerhitze-Blockierung die Beschattung vollständig bis zur globalen Minimalposition und ignoriert die höhere Minimalposition-wenn-Sonne-im-Sichtfeld-Grenze. Verwenden Sie dies für vollständigen Hitzeschutz im Sommer, auch wenn die Sonne direkt auf dem Fenster ist. Hat keine Auswirkungen außerhalb des Sommers, und die Maximalpositionsgrenze gilt weiterhin."
         }
       },
       "behavior": {
@@ -1396,7 +1398,8 @@
           "transparent_blind": "Transparente Jalousie",
           "winter_close_insulation": "Winterisolationsmodus",
           "presence_template": "Vorlage \"Presence\" (optional)",
-          "presence_template_mode": "Logik der Vorlage \"Presence\""
+          "presence_template_mode": "Logik der Vorlage \"Presence\"",
+          "summer_close_bypass_sun_floor": "Vollständiges Schließen bei Sommerhitze"
         },
         "data_description": {
           "climate_mode": "Aktivieren Sie diese Option, um alle klimagestützten Beschattungssteuerungen zu aktivieren. Wenn deaktiviert, werden alle Einstellungen auf diesem Bildschirm ignoriert und die Beschattung folgt der normalen Sonne/Blendungsverfolgung.",
@@ -1409,7 +1412,8 @@
           "transparent_blind": "Schließt die Jalousie im Sommer vollständig, auch wenn Bewohner anwesend sind. Ohne diese Option folgt eine lichtundurchlässige Jalousie im Sommer der Blendungszonen-Sonnennachführung statt sich zu schließen. Aktivieren Sie dies für transparentes oder transluzentes Material — oder für jede Jalousie, die Sie im Sommer vollständig geschlossen halten möchten, um Wärmeschutz bei anwesenden Personen zu gewährleisten.",
           "winter_close_insulation": "Wenn aktiviert, schließt sich die Beschattung im Winter vollständig (0 %), wenn die Sonne nicht direkt auf das Fenster trifft, um Wärme im Inneren einzufangen. Hat keine Auswirkung, wenn die Sonne auf dem Fenster liegt (die Beschattung öffnet sich, um Solarwärme zu erfassen).",
           "presence_template": "Optionale Home-Assistant-Jinja2-Vorlage, die die Anwesenheit meldet. Wenn sie als wahr (on/true/1) ausgewertet wird, wird der Raum als belegt angesehen; wenn sie als falsch ausgewertet wird, wird er als leer behandelt. Wie sie sich mit der Entität \"Presence\" oben kombiniert (OR oder AND), wird durch die Einstellung \"Logik der Vorlage 'Presence'\" unten definiert; sie kann auch ohne Entität allein verwendet werden. Verwenden Sie dies für zusammengesetzte Belegung (z. B. jemand im Haus UND wach). Eine Vorlage, die leer ist oder nicht gerendert werden kann, äußert sich nicht, sodass die Logik der Entität \"Presence\" entscheidet. Lassen Sie leer, um zu deaktivieren.",
-          "presence_template_mode": "Wie die Vorlage \"Presence\" sich mit der Entität \"Presence\" oben kombiniert. \"OR\" (Standard) – belegt, wenn die Vorlage wahr ist ODER die Entität aktiv ist. \"AND\" – belegt nur, wenn die Vorlage wahr ist UND die Entität aktiv ist. Ohne eine konfigurierte Entität entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Presence\" festgelegt ist."
+          "presence_template_mode": "Wie die Vorlage \"Presence\" sich mit der Entität \"Presence\" oben kombiniert. \"OR\" (Standard) – belegt, wenn die Vorlage wahr ist ODER die Entität aktiv ist. \"AND\" – belegt nur, wenn die Vorlage wahr ist UND die Entität aktiv ist. Ohne eine konfigurierte Entität entscheidet die Vorlage allein in beiden Modi. Hat nur Auswirkungen, wenn oben eine Vorlage \"Presence\" festgelegt ist.",
+          "summer_close_bypass_sun_floor": "Bei Aktivierung schließt die Sommerhitze-Blockierung die Beschattung vollständig bis zur globalen Minimalposition und ignoriert die höhere Minimalposition-wenn-Sonne-im-Sichtfeld-Grenze. Verwenden Sie dies für vollständigen Hitzeschutz im Sommer, auch wenn die Sonne direkt auf dem Fenster ist. Hat keine Auswirkungen außerhalb des Sommers, und die Maximalpositionsgrenze gilt weiterhin."
         }
       },
       "behavior": {
@@ -1832,6 +1836,10 @@
         "winter_close_insulation": {
           "description": "Wenn wahr, wird die Beschattung an kalten Tagen vollständig geschlossen, um die Wärmeisolation zu verbessern.",
           "name": "Für Winterisolation schließen"
+        },
+        "summer_close_bypass_sun_floor": {
+          "name": "Vollständiges Schließen bei Sommerhitze",
+          "description": "Falls aktiviert, ignoriert die Sommer-Klimaschließung die Sichtfeld-Minimalpositionsgrenze und erreicht die globale Minimalposition."
         }
       },
       "name": "Klimaeinstellungen festlegen"

@@ -19,6 +19,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_DEFAULT_TILT,
     CONF_LUX_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_TEMP_HIGH,
     CONF_TEMP_LOW,
     CONF_TRANSPARENT_BLIND,
@@ -219,6 +220,7 @@ def test_build_climate_options_full_mapping():
         CONF_OUTSIDE_THRESHOLD: 28.0,
         CONF_CLOUD_SUPPRESSION: True,
         CONF_WINTER_CLOSE_INSULATION: True,
+        CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR: True,
         CONF_CLOUDY_POSITION: 30,
     }
     out = builder.build_climate_options(opts)
@@ -230,6 +232,7 @@ def test_build_climate_options_full_mapping():
     assert out.temp_summer_outside == 28.0
     assert out.cloud_suppression_enabled is True
     assert out.winter_close_insulation is True
+    assert out.summer_close_bypass_sun_floor is True
     assert out.cloudy_position == 30
 
 
@@ -280,6 +283,7 @@ def test_build_climate_options_minimal_defaults_to_none_or_false():
     assert out.transparent_blind is False
     assert out.cloud_suppression_enabled is False
     assert out.winter_close_insulation is False
+    assert out.summer_close_bypass_sun_floor is False
     assert out.cloudy_position is None
 
 

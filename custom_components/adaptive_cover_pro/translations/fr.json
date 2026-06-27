@@ -638,7 +638,8 @@
           "transparent_blind": "Store transparent",
           "winter_close_insulation": "Mode isolation hivernale",
           "presence_template": "Modèle de présence (optionnel)",
-          "presence_template_mode": "Logique du modèle de présence"
+          "presence_template_mode": "Logique du modèle de présence",
+          "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -651,7 +652,8 @@
           "transparent_blind": "Ferme complètement le store en été, même quand des occupants sont présents. Sans cela, un store opaque suit le contrôle d'éblouissement du soleil en été au lieu de se fermer. Activez-le pour un matériau translucide ou transparent — ou pour tout store que vous souhaitez fermer complètement pour la protection thermique quand des gens sont à la maison.",
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire).",
           "presence_template": "Modèle Jinja2 Home Assistant optionnel qui signale l'occupation. Lorsqu'il s'évalue à vrai (on/true/1), l'espace est considéré comme occupé ; lorsqu'il est faux, il est traité comme vide. La façon dont il se combine avec l'entité de présence ci-dessus (OU ou ET) est définie par la « logique du modèle de présence » ci-dessous ; il peut fonctionner seul sans entité. Utilisez-le pour l'occupation composite (par exemple, quelqu'un à la maison ET réveillé). Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, donc la logique de l'entité de présence décide. Laissez vide pour désactiver.",
-          "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus."
+          "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus.",
+          "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours."
         }
       },
       "behavior": {
@@ -1396,7 +1398,8 @@
           "transparent_blind": "Store transparent",
           "winter_close_insulation": "Mode isolation hivernale",
           "presence_template": "Modèle de présence (optionnel)",
-          "presence_template_mode": "Logique du modèle de présence"
+          "presence_template_mode": "Logique du modèle de présence",
+          "summer_close_bypass_sun_floor": "Fermeture complète en cas de chaleur estivale"
         },
         "data_description": {
           "climate_mode": "Activez pour activer tout le contrôle du store basé sur le climat. Quand désactivé, tous les paramètres de cet écran sont ignorés et le store suit le suivi solaire/anti-éblouissement normal.",
@@ -1409,7 +1412,8 @@
           "transparent_blind": "Ferme complètement le store en été, même quand des occupants sont présents. Sans cela, un store opaque suit le contrôle d'éblouissement du soleil en été au lieu de se fermer. Activez-le pour un matériau translucide ou transparent — ou pour tout store que vous souhaitez fermer complètement pour la protection thermique quand des gens sont à la maison.",
           "winter_close_insulation": "Quand activé, le store se ferme complètement (0 %) en hiver lorsque le soleil n'est pas directement en face de la fenêtre, aidant à retenir la chaleur à l'intérieur. N'a aucun effet quand le soleil est sur la fenêtre (le store s'ouvre pour capter la chaleur solaire).",
           "presence_template": "Modèle Jinja2 Home Assistant optionnel qui signale l'occupation. Lorsqu'il s'évalue à vrai (on/true/1), l'espace est considéré comme occupé ; lorsqu'il est faux, il est traité comme vide. La façon dont il se combine avec l'entité de présence ci-dessus (OU ou ET) est définie par la « logique du modèle de présence » ci-dessous ; il peut fonctionner seul sans entité. Utilisez-le pour l'occupation composite (par exemple, quelqu'un à la maison ET réveillé). Un modèle vide ou qui ne s'évalue pas n'exprime aucune opinion, donc la logique de l'entité de présence décide. Laissez vide pour désactiver.",
-          "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus."
+          "presence_template_mode": "Comment le modèle de présence se combine avec l'entité de présence ci-dessus. « OU » (par défaut) — occupé lorsque le modèle est vrai OU l'entité est active. « ET » — occupé uniquement lorsque le modèle est vrai ET l'entité est active. Sans entité configurée, le modèle seul décide dans chaque mode. N'a d'effet que lorsqu'un modèle de présence est défini ci-dessus.",
+          "summer_close_bypass_sun_floor": "Quand activé, le blocage de la chaleur estivale ferme complètement la protection jusqu'à la position minimale globale, en ignorant le seuil plus élevé de « position minimale lorsque le soleil est dans le champ de vision ». Utilisez ceci pour une protection thermique complète en été, même lorsque le soleil est directement sur la fenêtre. N'a aucun effet en dehors de l'été, et la limite de position maximale s'applique toujours."
         }
       },
       "behavior": {
@@ -1832,6 +1836,10 @@
         "winter_close_insulation": {
           "description": "Si vrai, fermer complètement la protection les jours froids pour améliorer l'isolation.",
           "name": "Fermer pour l'isolation hivernale"
+        },
+        "summer_close_bypass_sun_floor": {
+          "name": "Fermeture complète en cas de chaleur estivale",
+          "description": "Si vrai, la fermeture climatique estivale ignore le seuil minimal du soleil dans le champ de vision et atteint la position minimale globale."
         }
       },
       "name": "Définir les paramètres climatiques"

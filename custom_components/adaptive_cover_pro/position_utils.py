@@ -110,6 +110,7 @@ class PositionConverter:
         apply_max: bool,
         sun_valid: bool,
         sun_tracking_min_pos: int | None = None,
+        suppress_sun_tracking_min: bool = False,
     ) -> int:
         """Apply min/max position limits.
 
@@ -123,6 +124,11 @@ class PositionConverter:
             sun_tracking_min_pos: Optional separate minimum floor that applies
                 only during sun tracking (sun_valid=True). When set, overrides
                 min_pos for sun-tracking paths. None means fall back to min_pos.
+            suppress_sun_tracking_min: When True, the sun-tracking floor is
+                ignored even while sun_valid — the effective minimum falls back
+                to min_pos. Used by summer climate-close to reach the global min
+                instead of the sun-in-FOV floor (issue #689). The max clamp is
+                unaffected. Defaults to False so all other callers are unchanged.
 
         Returns:
             Constrained position value (0-100)
@@ -148,7 +154,11 @@ class PositionConverter:
         # fires when HA's NumberSelector stores a float (e.g. 25.0) — issue #475.
         # Using (int, float) rather than is-not-None avoids false-positives from
         # unspecified MagicMock attributes in tests.
-        _use_sun_tracking = isinstance(sun_tracking_min_pos, int | float) and sun_valid
+        _use_sun_tracking = (
+            isinstance(sun_tracking_min_pos, int | float)
+            and sun_valid
+            and not suppress_sun_tracking_min
+        )
         effective_min = int(sun_tracking_min_pos) if _use_sun_tracking else min_pos
 
         # Apply min position limit

@@ -57,6 +57,7 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_TEMPLATE,
     CONF_PRESENCE_TEMPLATE_MODE,
+    CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_TIME_ENTITY,
     CONF_TEMP_ENTITY,
@@ -520,6 +521,9 @@ def temperature_climate_schema(
             ): selector.BooleanSelector(),
             vol.Optional(
                 CONF_WINTER_CLOSE_INSULATION, default=False
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR, default=False
             ): selector.BooleanSelector(),
         }
     )

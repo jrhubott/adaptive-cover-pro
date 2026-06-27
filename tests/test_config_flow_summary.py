@@ -2398,6 +2398,18 @@ def test_winter_close_insulation_note_on_climate_line():
     assert "closes fully in winter for insulation" in summary
 
 
+def test_summer_close_bypass_sun_floor_note_on_climate_line():
+    """CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR adds a 'closes fully in summer' note (#689)."""
+    from custom_components.adaptive_cover_pro.const import (
+        CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
+    )
+
+    cfg = {CONF_CLIMATE_MODE: True, CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR: True}
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    climate_line = next(ln for ln in summary.splitlines() if "Climate mode" in ln)
+    assert "closes fully in summer heat" in climate_line
+
+
 def test_open_close_threshold_in_position_limits():
     """CONF_OPEN_CLOSE_THRESHOLD renders under Position Limits."""
     from custom_components.adaptive_cover_pro.const import CONF_OPEN_CLOSE_THRESHOLD

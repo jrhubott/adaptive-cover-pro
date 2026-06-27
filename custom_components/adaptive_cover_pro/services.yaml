@@ -653,6 +653,11 @@ set_climate:
       description: "If true, fully close the cover on cold days to improve insulation."
       selector:
         boolean:
+    summer_close_bypass_sun_floor:
+      name: Full close in summer heat
+      description: "If true, summer climate-close ignores the sun-in-FOV minimum floor and reaches the global minimum position."
+      selector:
+        boolean:
 
 set_weather_safety:
   name: Set weather safety settings

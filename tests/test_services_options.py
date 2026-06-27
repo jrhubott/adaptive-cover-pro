@@ -59,6 +59,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_SENSOR_TYPE,
     CONF_START_ENTITY,
     CONF_START_TIME,
+    CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SUNSET_POS,
@@ -81,6 +82,7 @@ from custom_components.adaptive_cover_pro.services.options_service import (
     FIELD_VALIDATORS,
     IDENTITY_KEYS,
     OPTIONS_SERVICE_NAMES,
+    _SECTION_CLIMATE,
     _cross_field_validate,
     apply_options_patch,
     validate_options_patch,
@@ -1117,6 +1119,31 @@ class TestSetClimate:
         new_opts = mock_update.call_args[1]["options"]
         assert new_opts[CONF_TEMP_LOW] == 18
         assert new_opts[CONF_TEMP_HIGH] == 26
+
+    async def test_summer_close_bypass_sun_floor_round_trip(self, hass: HomeAssistant):
+        """set_climate round-trips summer_close_bypass_sun_floor (issue #689)."""
+        await _setup(hass, entry_id="cl_bypass_01")
+        with (
+            patch.object(hass.config_entries, "async_update_entry") as mock_update,
+            patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
+        ):
+            await _call(
+                hass,
+                "set_climate",
+                {CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR: True},
+            )
+
+        new_opts = mock_update.call_args[1]["options"]
+        assert new_opts[CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR] is True
+
+    def test_summer_close_bypass_sun_floor_validator_and_section(self):
+        """The bypass flag is a bool validator and lives in the climate section (#689)."""
+        assert CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR in FIELD_VALIDATORS
+        # bool validator accepts bools and None, rejects non-bools.
+        FIELD_VALIDATORS[CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR](True)
+        FIELD_VALIDATORS[CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR](False)
+        FIELD_VALIDATORS[CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR](None)
+        assert CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR in _SECTION_CLIMATE
 
 
 class TestSetWeatherSafety:

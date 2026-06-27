@@ -39,6 +39,7 @@ def _make_climate(**overrides):
         "lux_below_threshold": False,
         "irradiance_below_threshold": False,
         "winter_close_insulation": False,
+        "summer_close_bypass_sun_floor": False,
     }
     defaults.update(overrides)
     return ClimateCoverData(**defaults)
@@ -567,6 +568,99 @@ class TestClimateCoverState:
             assert (
                 result < 30
             ), f"Expected result < 30 (min floor skipped at night) but got {result}"
+
+    # -----------------------------------------------------------------------
+    # Issue #689: summer_close_bypass_sun_floor
+    # -----------------------------------------------------------------------
+
+    def _make_summer_bypass_handler(
+        self, cover, *, bypass: bool, mock_datetime
+    ) -> ClimateCoverState:
+        """Build a summer-close handler with sun in FOV and a 5% sun-tracking floor.
+
+        ``min_pos`` stays at the global 0, while ``min_pos_sun_tracking`` is the
+        5% sun-in-FOV floor.  Summer raw close is 0, so the only thing that can
+        lift it is the sun-tracking floor — which is exactly what the bypass flag
+        controls.
+        """
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        cover.sun_data.sunset = MagicMock(return_value=datetime(2024, 1, 1, 18, 0, 0))
+        cover.sun_data.sunrise = MagicMock(return_value=datetime(2024, 1, 1, 6, 0, 0))
+        # Global min stays at 0; the 5% floor lives in min_pos_sun_tracking.
+        cover.min_pos = 0
+        cover.min_pos_bool = True  # enforce min only during sun tracking
+        cover.config.min_pos_sun_tracking = 5
+
+        climate_data = _make_climate(
+            inside_temperature="27.0",  # Above temp_high (25) → summer
+            is_sunny=True,
+            is_presence=True,
+            transparent_blind=True,  # Required for NORMAL_WITH_PRESENCE summer rule
+            summer_close_bypass_sun_floor=bypass,
+        )
+        return ClimateCoverState(
+            make_snapshot_for_cover(cover, cover.config.h_def),
+            climate_data,
+        )
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_close_bypass_off_honors_sun_tracking_min(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Bypass off (default) → summer close honors the 5% sun-in-FOV floor (#689)."""
+        handler = self._make_summer_bypass_handler(
+            vertical_cover_instance, bypass=False, mock_datetime=mock_datetime
+        )
+        result = handler.get_state()
+        # Sun in FOV → sun-tracking floor of 5 lifts the summer close from 0 to 5.
+        assert result == 5
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_close_bypass_on_reaches_global_min(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Bypass on → summer close ignores the 5% floor and reaches global min 0 (#689)."""
+        handler = self._make_summer_bypass_handler(
+            vertical_cover_instance, bypass=True, mock_datetime=mock_datetime
+        )
+        result = handler.get_state()
+        # Floor suppressed → summer close reaches the global min_position (0).
+        assert result == 0
+
+    @pytest.mark.unit
+    @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")
+    def test_summer_close_bypass_on_leaves_winter_max_clamp_intact(
+        self, mock_datetime, vertical_cover_instance, mock_logger
+    ):
+        """Bypass on must not touch the winter max clamp (regression #105)."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        vertical_cover_instance.sun_data.sunset = MagicMock(
+            return_value=datetime(2024, 1, 1, 18, 0, 0)
+        )
+        vertical_cover_instance.sun_data.sunrise = MagicMock(
+            return_value=datetime(2024, 1, 1, 6, 0, 0)
+        )
+        vertical_cover_instance.max_pos = 20
+        vertical_cover_instance.max_pos_bool = False
+
+        climate_data = _make_climate(
+            inside_temperature="18.0",  # Below temp_low (20) → winter → returns 100
+            is_sunny=False,
+            is_presence=True,
+            summer_close_bypass_sun_floor=True,  # must be inert outside summer
+        )
+
+        state_handler = ClimateCoverState(
+            make_snapshot_for_cover(
+                vertical_cover_instance, vertical_cover_instance.config.h_def
+            ),
+            climate_data,
+        )
+        result = state_handler.get_state()
+        # Winter close to 100 still clamped down to max_pos=20 — unchanged by bypass.
+        assert result == 20
 
     @pytest.mark.unit
     @patch("custom_components.adaptive_cover_pro.engine.sun_geometry.datetime")

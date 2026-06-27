@@ -126,6 +126,7 @@ from .const import (
     CONF_SILL_HEIGHT,
     CONF_START_ENTITY,
     CONF_START_TIME,
+    CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
     CONF_SUNRISE_OFFSET,
     CONF_SUNRISE_TIME_ENTITY,
     CONF_SUNSET_OFFSET,
@@ -1449,6 +1450,12 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
     ),
     FieldSpec(
         CONF_WINTER_CLOSE_INSULATION,
+        SECTION_TEMPERATURE_CLIMATE,
+        ValidatorKind.BOOL,
+        default=False,
+    ),
+    FieldSpec(
+        CONF_SUMMER_CLOSE_BYPASS_SUN_FLOOR,
         SECTION_TEMPERATURE_CLIMATE,
         ValidatorKind.BOOL,
         default=False,

@@ -59,6 +59,7 @@ class ClimateCoverData:
     lux_below_threshold: bool
     irradiance_below_threshold: bool
     winter_close_insulation: bool
+    summer_close_bypass_sun_floor: bool = False
     cloud_coverage_above_threshold: bool = False
 
     @property
@@ -159,7 +160,18 @@ class ClimateCoverState:
         # retain sun_valid=False to preserve existing behaviour: winter heating
         # should not be capped by sun-only max position limits (regression #105).
         sun_valid = self.cover.direct_sun_valid and self.climate_data.is_summer
-        return apply_snapshot_limits(self.snapshot, result, sun_valid=sun_valid)
+        # When summer_close_bypass_sun_floor is set, summer close ignores the
+        # sun-in-FOV min floor (min_position_sun_tracking) and reaches the global
+        # min_position instead (issue #689).  Only the min floor is affected — the
+        # direct_sun_valid-driven max clamp stays intact (winter/#105 untouched).
+        # The flag is harmless outside summer because the floor only engages when
+        # sun_valid is True, which already requires is_summer.
+        return apply_snapshot_limits(
+            self.snapshot,
+            result,
+            sun_valid=sun_valid,
+            suppress_sun_tracking_min=self.climate_data.summer_close_bypass_sun_floor,
+        )
 
     def _solar_position(self) -> int:
         """Compute solar-tracked position with limits applied."""
@@ -377,6 +389,7 @@ class ClimateHandler(OverrideHandler):
             lux_below_threshold=r.lux_below_threshold,
             irradiance_below_threshold=r.irradiance_below_threshold,
             winter_close_insulation=opts.winter_close_insulation,
+            summer_close_bypass_sun_floor=opts.summer_close_bypass_sun_floor,
             cloud_coverage_above_threshold=r.cloud_coverage_above_threshold,
         )
 

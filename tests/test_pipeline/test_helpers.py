@@ -92,6 +92,19 @@ class TestApplySnapshotLimits:
         assert apply_snapshot_limits(snap, value=5, sun_valid=True) == 15
         assert apply_snapshot_limits(snap, value=5, sun_valid=False) == 5
 
+    def test_suppress_sun_tracking_min_threads_through(self):
+        """suppress_sun_tracking_min=True bypasses the sun floor (issue #689)."""
+        snap = _make_snapshot(min_pos=0, min_pos_sun_tracking=15)
+        # Floor honored by default.
+        assert apply_snapshot_limits(snap, value=5, sun_valid=True) == 15
+        # Suppressed → falls back to min_pos=0 → raw 5 reaches through.
+        assert (
+            apply_snapshot_limits(
+                snap, value=5, sun_valid=True, suppress_sun_tracking_min=True
+            )
+            == 5
+        )
+
     def test_no_limits_returns_value(self):
         """Value passes through unchanged when no limits configured."""
         snap = _make_snapshot()
