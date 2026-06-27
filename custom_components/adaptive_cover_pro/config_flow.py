@@ -1249,6 +1249,13 @@ _SUMMARY_LABELS_EN: dict[str, str] = {
         "⚠️ Custom #{slot}: combine mode AND is set but no trigger sensors are "
         "configured — the template alone activates the slot."
     ),
+    "warnings.custom_safety_bypass": (
+        "⚠️ Custom #{slot} is at safety priority ({safety}) — it bypasses the "
+        "automatic-control toggle, manual override, and the start/end time "
+        "window, so it can move the cover even when automatic control is OFF "
+        "and outside your schedule. Lower its priority below {safety} to make "
+        "it respect those gates."
+    ),
     # --- Motion (75) ---
     "rules.motion": (
         "🚶 Motion-based: if no occupancy for {motion_timeout}s "
@@ -1559,8 +1566,10 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
     _has_motion_template = is_template_string(config.get(CONF_MOTION_TEMPLATE))
     has_motion = bool(_motion_sources) or _has_motion_template
     # Build per-slot custom position data:
-    # list of (slot, trigger_desc, position, priority, use_my, tilt, tilt_only)
-    _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool]] = []
+    # list of
+    #   (slot, trigger_desc, position, priority, use_my, tilt, tilt_only,
+    #    has_trigger)
+    _custom_slots: list[tuple[int, str, int, int, bool, int | None, bool, bool]] = []
     _and_no_sensor_slots: list[int] = []
     for _i, _slot_keys in CUSTOM_POSITION_SLOTS.items():
         if not custom_position_slot_configured(config, _slot_keys):
@@ -1589,8 +1598,18 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         _use_my = bool(config.get(_slot_keys["use_my"]))
         _slot_tilt = config.get(_slot_keys["tilt"])
         _tilt_only = bool(config.get(_slot_keys["tilt_only"]))
+        _has_trigger = bool(_sensors) or _has_tpl
         _custom_slots.append(
-            (_i, _trigger, int(_pos), _pri, _use_my, _slot_tilt, _tilt_only)
+            (
+                _i,
+                _trigger,
+                int(_pos),
+                _pri,
+                _use_my,
+                _slot_tilt,
+                _tilt_only,
+                _has_trigger,
+            )
         )
     has_custom_position = bool(_custom_slots)
     my_pos = config.get(CONF_MY_POSITION_VALUE)  # None = not configured
@@ -1793,6 +1812,7 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             _use_my,
             _slot_tilt,
             _tilt_only,
+            _has_trigger,
         ) in _custom_slots:
             tilt_note = (
                 L["custom.tilt_note"].format(tilt=_slot_tilt)
@@ -1843,11 +1863,21 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
             _use_my,
             _slot_tilt,
             _tilt_only,
+            _has_trigger,
         ) in _custom_slots:
             if _tilt_only and (
                 config.get(f"custom_position_min_mode_{_slot}") or _use_my
             ):
                 lines.append(L["warnings.custom_tilt_only_conflict"].format(slot=_slot))
+            # Footgun (issue #711): a safety-priority slot with a live trigger
+            # bypasses the auto-control toggle, manual override, and the time
+            # window — it can move the cover at any hour with automation off.
+            if _pri >= CUSTOM_POSITION_SAFETY_PRIORITY and _has_trigger:
+                lines.append(
+                    L["warnings.custom_safety_bypass"].format(
+                        slot=_slot, safety=CUSTOM_POSITION_SAFETY_PRIORITY
+                    )
+                )
         # Footgun warning: AND combine mode with no sensors — the template
         # gates nothing and the slot degenerates to template-only OR.
         for _slot in _and_no_sensor_slots:

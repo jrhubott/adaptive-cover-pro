@@ -94,6 +94,7 @@ from custom_components.adaptive_cover_pro.const import (
     CONF_TRANSIT_TIMEOUT,
     CONF_WINDOW_DEPTH,
     CONF_WINDOW_WIDTH,
+    CUSTOM_POSITION_SAFETY_PRIORITY,
     DEFAULT_TRANSIT_TIMEOUT_SECONDS,
     CoverType,
 )
@@ -1274,6 +1275,71 @@ def test_safety_priority_slot_shown_with_position():
     assert "100%" in summary
     assert "safety: acts outside the time window" in summary
     assert "[100]" in summary
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Safety-priority bypass warning (issue #711)
+# ---------------------------------------------------------------------------
+
+_SAFETY_BYPASS_PHRASE = (
+    "automatic-control toggle, manual override, and the start/end time window"
+)
+
+
+def test_safety_slot_with_sensor_emits_bypass_warning():
+    """A sensor-bound priority-100 slot surfaces the ⚠️ bypass warning (#711)."""
+    cfg = {
+        "custom_position_sensors_5": ["binary_sensor.outside_temp_threshold"],
+        "custom_position_5": 100,
+        "custom_position_priority_5": 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️ Custom #5 is at safety priority (100)" in summary
+    assert _SAFETY_BYPASS_PHRASE in summary
+
+
+def test_safety_slot_template_only_emits_bypass_warning():
+    """A template-only priority-100 slot (no sensor) still warns (broadened #711)."""
+    cfg = {
+        "custom_position_template_5": "{{ states('sensor.x')|float > 18 }}",
+        "custom_position_5": 100,
+        "custom_position_priority_5": 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "⚠️ Custom #5 is at safety priority (100)" in summary
+    assert _SAFETY_BYPASS_PHRASE in summary
+
+
+def test_safety_slot_no_trigger_emits_no_warning():
+    """A priority-100 slot with no sensor and no template is inert → no warning."""
+    cfg = {
+        "custom_position_5": 100,
+        "custom_position_priority_5": 100,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is at safety priority" not in summary
+
+
+def test_non_safety_slot_emits_no_bypass_warning():
+    """A sensor-bound slot below safety priority does not warn."""
+    cfg = {
+        "custom_position_sensors_5": ["binary_sensor.outside_temp_threshold"],
+        "custom_position_5": 100,
+        "custom_position_priority_5": 77,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert "is at safety priority" not in summary
+
+
+def test_safety_bypass_warning_uses_constant():
+    """The warning fills {safety} from CUSTOM_POSITION_SAFETY_PRIORITY, not a literal."""
+    cfg = {
+        "custom_position_sensors_5": ["binary_sensor.outside_temp_threshold"],
+        "custom_position_5": 100,
+        "custom_position_priority_5": CUSTOM_POSITION_SAFETY_PRIORITY,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert f"safety priority ({CUSTOM_POSITION_SAFETY_PRIORITY})" in summary
 
 
 # ---------------------------------------------------------------------------
