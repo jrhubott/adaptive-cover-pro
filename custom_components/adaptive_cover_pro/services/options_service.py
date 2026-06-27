@@ -968,7 +968,7 @@ def _make_section_handler(hass: HomeAssistant, allowed_keys: frozenset[str]):
 
 
 async def _handle_set_custom_position(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle set_custom_position — routes slot 1–5 to the right option keys."""
+    """Handle set_custom_position — routes slot 1–10 to the right option keys."""
     from . import _resolve_targets  # noqa: PLC0415
 
     slot = call.data.get("slot")

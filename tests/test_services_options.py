@@ -951,7 +951,7 @@ class TestSetCustomPosition:
             await _call(
                 hass,
                 "set_custom_position",
-                {"slot": 6, "sensor": "binary_sensor.x", "position": 50},
+                {"slot": 11, "sensor": "binary_sensor.x", "position": 50},
             )
 
     async def test_sensor_without_position_raises(self, hass: HomeAssistant):
