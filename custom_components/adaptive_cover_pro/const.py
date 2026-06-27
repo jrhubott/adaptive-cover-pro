@@ -405,14 +405,16 @@ CONF_FORCE_OVERRIDE_MIN_MODE = "force_override_min_mode"
 # =============================================================================
 # 14. Custom Position Slots
 # =============================================================================
-# Up to five independently-configurable position slots, each with its own
+# Up to ten independently-configurable position slots, each with its own
 # trigger sensors (OR logic), optional condition template, position, priority
 # (1-100), min-mode flag, and "use my position" flag. Each slot's wire-format
 # keys are generated below to keep them DRY. The numbered per-slot CONF_*
 # aliases are retained for callers that prefer named constants over dict
 # lookup.
 
-CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3, 4, 5)  # supported indices
+CUSTOM_POSITION_SLOT_NUMBERS: tuple[int, ...] = tuple(
+    range(1, 11)
+)  # slots 1–10 (issue #703)
 
 # Slots at (or above) this priority inherit the old force-override safety
 # semantics: they command the cover outside the start/end time window and

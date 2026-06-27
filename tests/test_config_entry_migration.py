@@ -540,3 +540,36 @@ def test_config_flow_minor_version_reaches_highest_migration_target() -> None:
     from custom_components.adaptive_cover_pro.config_flow import ConfigFlowHandler
 
     assert ConfigFlowHandler.MINOR_VERSION == 5
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat guard: slots 6-10 are additive (issue #703).
+# ---------------------------------------------------------------------------
+
+
+async def test_slots_6_to_10_not_injected_into_existing_entry(
+    hass: HomeAssistant,
+) -> None:
+    """An entry with no slot 6-10 keys must not have them injected by migration.
+
+    Slots 6-10 are purely additive: existing entries omit them and
+    custom_position_slot_configured() treats absent keys as unconfigured,
+    so no handler is created.  Migration must NEVER backfill these keys.
+    This test guards against a future migration accidentally doing so.
+    """
+    options = {
+        "custom_position_sensors_5": ["binary_sensor.rain"],
+        "custom_position_5": 90,
+        "custom_position_priority_5": 100,
+        "azimuth": 180,
+    }
+    entry = _make_entry(hass, options, version=3, minor_version=5)
+    assert await async_migrate_entry(hass, entry) is True
+    # No slot 6-10 keys should appear after migration.
+    for n in range(6, 11):
+        assert f"custom_position_sensors_{n}" not in entry.options
+        assert f"custom_position_{n}" not in entry.options
+        assert f"custom_position_priority_{n}" not in entry.options
+    # Existing slot 5 keys remain intact.
+    assert entry.options["custom_position_sensors_5"] == ["binary_sensor.rain"]
+    assert entry.options["custom_position_5"] == 90

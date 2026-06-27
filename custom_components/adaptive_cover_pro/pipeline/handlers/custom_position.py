@@ -15,7 +15,7 @@ from ..types import CustomPositionSensorState, PipelineResult, PipelineSnapshot
 class CustomPositionHandler(OverrideHandler):
     """Return a configured position when this slot's trigger is active.
 
-    One instance is created per configured custom position slot (up to 5).
+    One instance is created per configured custom position slot (up to 10).
     Each instance carries its own target position and pipeline priority so
     the PipelineRegistry can sort them correctly relative to all other
     handlers.
@@ -48,7 +48,7 @@ class CustomPositionHandler(OverrideHandler):
         """Create a handler for one custom position slot.
 
         Args:
-            slot:      1-based slot number (1–5).  Used to build ``name``.
+            slot:      1-based slot number (1–10).  Used to build ``name``.
             position:  Cover position (0–100 %) to apply when the trigger is on.
             priority:  Pipeline evaluation priority (1–100).  Higher = evaluated first.
             tilt:      Explicit tilt (0–100 %) for venetian covers. None = solar tilt.
