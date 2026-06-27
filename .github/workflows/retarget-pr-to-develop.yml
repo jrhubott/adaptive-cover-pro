@@ -1,0 +1,62 @@
+name: "Retarget PRs to develop"
+
+# PRs default to the repo's default branch (main), but daily work — features
+# and fixes — must land on develop. main only moves at stable-release time
+# (develop → main forward-merge) or via an intentional hotfix. This workflow
+# auto-retargets any PR opened against main to develop, with one exception:
+# PRs authored by the maintainer (jrhubott) are assumed intentional (hotfix or
+# forward-merge) and left alone.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  retarget:
+    name: "Move base from main to develop"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const MAINTAINER = "jrhubott";
+            const pr = context.payload.pull_request;
+
+            if (pr.base.ref !== "main") {
+              console.log(`Base is ${pr.base.ref}, not main — nothing to do.`);
+              return;
+            }
+
+            // Maintainer-authored PRs against main are intentional (hotfix,
+            // forward-merge). Leave them alone.
+            if (pr.user.login === MAINTAINER) {
+              console.log(`PR #${pr.number} authored by ${MAINTAINER} — leaving base as main.`);
+              return;
+            }
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              base: "develop",
+            });
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: [
+                "I've retargeted this PR from `main` to `develop`.",
+                "",
+                "In this repo, features and fixes land on `develop`; `main` only moves at",
+                "stable-release time. Your change is unaffected — this just points it at the",
+                "right integration branch. Thanks for contributing! 🙏",
+              ].join("\n"),
+            });
+
+            console.log(`PR #${pr.number} retargeted to develop.`);
