@@ -35,10 +35,8 @@ from custom_components.adaptive_cover_pro.config_flow import (
     _build_glare_zones_schema,
 )
 from custom_components.adaptive_cover_pro.const import (
+    BLIND_SPOT_SLOTS,
     CONF_AZIMUTH,
-    CONF_BLIND_SPOT_ELEVATION,
-    CONF_BLIND_SPOT_LEFT,
-    CONF_BLIND_SPOT_RIGHT,
     CONF_DEBUG_CATEGORIES,
     CONF_DEBUG_EVENT_BUFFER_SIZE,
     CONF_DEBUG_MODE,
@@ -109,9 +107,12 @@ def _all_option_schema_keys() -> frozenset[str]:
     keys.update(
         {
             CONF_ENABLE_GLARE_ZONES,  # added by _get_sun_tracking_schema() extension
-            CONF_BLIND_SPOT_LEFT,  # inline in async_step_blind_spot
-            CONF_BLIND_SPOT_RIGHT,
-            CONF_BLIND_SPOT_ELEVATION,
+            # Blind-spot slots 1–3 are rendered inline by blind_spot_schema (#701).
+            *(
+                keys[sub]
+                for keys in BLIND_SPOT_SLOTS.values()
+                for sub in ("left", "right", "elevation")
+            ),
             CONF_ENTITIES,  # inline in _build_cover_entity_schema
             CONF_DEVICE_ID,
         }

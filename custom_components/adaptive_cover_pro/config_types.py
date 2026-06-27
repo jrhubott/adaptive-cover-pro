@@ -6,10 +6,53 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
+    BLIND_SPOT_SLOT_NUMBERS,
+    BLIND_SPOT_SLOTS,
     DEFAULT_MOTION_TEMPLATE_MODE,
     DEFAULT_TEMPLATE_COMBINE_MODE,
+    BlindSpot,
     TiltMode,
 )
+
+
+def _make_blind_spot(left: Any, right: Any, elevation: Any) -> BlindSpot | None:
+    """Build a :class:`BlindSpot` from a slot's values, or ``None`` if inactive.
+
+    A slot is *active* only when its left AND right are both set. This is the
+    single place a ``BlindSpot`` is assembled from raw slot values — both the
+    live slot-1 derivation (``CoverConfig.blind_spots``) and the slot-2+ builder
+    (``_extra_blind_spots_from``) delegate here.
+    """
+    if left is None or right is None:
+        return None
+    return BlindSpot(
+        left=int(left),
+        right=int(right),
+        elevation=None if elevation is None else int(elevation),
+    )
+
+
+def _extra_blind_spots_from(get: Any, *, enabled: bool) -> tuple[BlindSpot, ...]:
+    """Build blind-spot slots 2..N from an option accessor.
+
+    Slot 1 is intentionally excluded: it derives *live* from the flat
+    ``blind_spot_*`` fields on :class:`CoverConfig` (so post-construction
+    mutation of those fields is reflected). The whole feature is gated by the
+    master ``enabled`` flag.
+    """
+    if not enabled:
+        return ()
+    spots: list[BlindSpot] = []
+    for n in BLIND_SPOT_SLOT_NUMBERS:
+        if n == 1:
+            continue
+        keys = BLIND_SPOT_SLOTS[n]
+        bs = _make_blind_spot(
+            get(keys["left"]), get(keys["right"]), get(keys["elevation"])
+        )
+        if bs is not None:
+            spots.append(bs)
+    return tuple(spots)
 
 
 def _num_or(value: Any, default: float) -> float:
@@ -78,6 +121,29 @@ class CoverConfig:
     min_pos_sun_tracking: int | None = (
         None  # separate floor for sun-tracking only; None = use min_pos
     )
+    # Blind-spot slots 2..N (issue #701). Slot 1 is NOT stored here — it derives
+    # live from the flat ``blind_spot_*`` fields above via the ``blind_spots``
+    # property, so post-construction mutation of those fields is reflected.
+    extra_blind_spots: tuple[BlindSpot, ...] = ()
+
+    @property
+    def blind_spots(self) -> tuple[BlindSpot, ...]:
+        """Active blind-spot wedges: slot 1 (live, from flat fields) then 2..N.
+
+        Sun inside ANY of these is treated as blocked. Returns ``()`` when the
+        master enable is off or no slot is active. Computed on every access so
+        it always reflects the current flat slot-1 field values.
+        """
+        if not self.blind_spot_on:
+            return ()
+        spots: list[BlindSpot] = []
+        slot1 = _make_blind_spot(
+            self.blind_spot_left, self.blind_spot_right, self.blind_spot_elevation
+        )
+        if slot1 is not None:
+            spots.append(slot1)
+        spots.extend(self.extra_blind_spots)
+        return tuple(spots)
 
     @classmethod
     def from_options(cls, options: dict) -> CoverConfig:
@@ -137,6 +203,9 @@ class CoverConfig:
             blind_spot_right=options.get(CONF_BLIND_SPOT_RIGHT),
             blind_spot_elevation=options.get(CONF_BLIND_SPOT_ELEVATION),
             blind_spot_on=options.get(CONF_ENABLE_BLIND_SPOT, False),
+            extra_blind_spots=_extra_blind_spots_from(
+                options.get, enabled=options.get(CONF_ENABLE_BLIND_SPOT, False)
+            ),
             min_elevation=options.get(CONF_MIN_ELEVATION, None),
             max_elevation=options.get(CONF_MAX_ELEVATION, None),
         )

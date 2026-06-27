@@ -790,6 +790,23 @@ def test_blind_spot_shown_when_enabled():
     assert "20°" in summary
     assert "40°" in summary
     assert "FOV left" in summary
+    # Single slot renders exactly one blind-spot line.
+    assert summary.count("Blind spot") == 1
+
+
+def test_blind_spot_multiple_slots_render_one_line_each():
+    """Two configured slots produce two blind-spot summary lines (#701)."""
+    cfg = {
+        CONF_ENABLE_BLIND_SPOT: True,
+        CONF_BLIND_SPOT_LEFT: 10,
+        CONF_BLIND_SPOT_RIGHT: 20,
+        "blind_spot_left_2": 40,
+        "blind_spot_right_2": 60,
+    }
+    summary = _build_config_summary(cfg, CoverType.BLIND)
+    assert summary.count("Blind spot") == 2
+    assert "10°" in summary
+    assert "60°" in summary
 
 
 # ---------------------------------------------------------------------------

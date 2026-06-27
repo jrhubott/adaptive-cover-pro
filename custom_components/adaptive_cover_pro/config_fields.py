@@ -49,9 +49,6 @@ from .const import (
     CONF_AWNING_MIN_ANGLE,
     CONF_AWNING_PIVOT_OFFSET,
     CONF_AZIMUTH,
-    CONF_BLIND_SPOT_ELEVATION,
-    CONF_BLIND_SPOT_LEFT,
-    CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_COVERAGE_THRESHOLD,
@@ -1464,26 +1461,43 @@ _TEMPERATURE_CLIMATE_SPECS = _spec(
 # policies' geometry builders emit the markers. Specs here keep ranges/validators
 # single-sourced. Blind-spot numeric fields live in the blind_spot section.
 
-_BLIND_SPOT_SPECS = _spec(
-    FieldSpec(
-        CONF_BLIND_SPOT_LEFT,
-        SECTION_BLIND_SPOT,
-        ValidatorKind.RANGE,
-        rng=const._RANGE_BLIND_SPOT_LEFT,
-    ),
-    FieldSpec(
-        CONF_BLIND_SPOT_RIGHT,
-        SECTION_BLIND_SPOT,
-        ValidatorKind.RANGE,
-        rng=const._RANGE_BLIND_SPOT_RIGHT,
-    ),
-    FieldSpec(
-        CONF_BLIND_SPOT_ELEVATION,
-        SECTION_BLIND_SPOT,
-        ValidatorKind.RANGE,
-        rng=const._RANGE_BLIND_SPOT_ELEVATION,
-    ),
-)
+
+# Built by looping the slot key map (issue #701): slot 1 reuses the legacy
+# unsuffixed keys, slots 2/3 are suffixed. Every slot reuses the same three
+# range constants, so OPTION_RANGES/FIELD_VALIDATORS cover all slots from a
+# single source. Selectors are emitted by ``config_dynamic.blind_spot_schema``
+# (dynamic, FOV-edge aware) so these carry no ``make_selector``.
+def _blind_spot_specs() -> list[FieldSpec]:
+    specs: list[FieldSpec] = []
+    for keys in const.BLIND_SPOT_SLOTS.values():
+        specs.append(
+            FieldSpec(
+                keys["left"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_LEFT,
+            )
+        )
+        specs.append(
+            FieldSpec(
+                keys["right"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_RIGHT,
+            )
+        )
+        specs.append(
+            FieldSpec(
+                keys["elevation"],
+                SECTION_BLIND_SPOT,
+                ValidatorKind.RANGE,
+                rng=const._RANGE_BLIND_SPOT_ELEVATION,
+            )
+        )
+    return specs
+
+
+_BLIND_SPOT_SPECS = _blind_spot_specs()
 
 # Geometry specs are owned per cover type, but the numeric metadata is declared
 # here so OPTION_RANGES/FIELD_VALIDATORS cover them. They carry section=geometry.

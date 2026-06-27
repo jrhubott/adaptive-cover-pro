@@ -468,12 +468,24 @@
         "data": {
           "blind_spot_left": "Blindfleck linke Kante (von FOV-Links)",
           "blind_spot_right": "Blindfleck rechte Kante (von FOV-Links)",
-          "blind_spot_elevation": "Blindfleck-Höhe"
+          "blind_spot_elevation": "Blindfleck-Höhe",
+          "blind_spot_left_2": "Blindfleck 2 linke Kante (von FOV-Links)",
+          "blind_spot_right_2": "Blindfleck 2 rechte Kante (von FOV-Links)",
+          "blind_spot_elevation_2": "Blindfleck 2 Höhe",
+          "blind_spot_left_3": "Blindfleck 3 linke Kante (von FOV-Links)",
+          "blind_spot_right_3": "Blindfleck 3 rechte Kante (von FOV-Links)",
+          "blind_spot_elevation_3": "Blindfleck 3 Höhe"
         },
         "data_description": {
           "blind_spot_left": "Linke Kante der blinden Fleck-Zone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze). Wobei 0 = an der äußersten linken FOV-Kante liegt. Beispiel: Wenn Ihre FOV-Links 45° beträgt und ein Baum die Sonne von 10–20° relativ zu dieser Kante blockiert, auf 10 einstellen. Dies markiert, wo die Verdeckung horizontal beginnt. Nutzen Sie Sonnenpositionssensor oder beobachten Sie, wann die Sonne blockiert ist, um diesen Wert zu finden.",
           "blind_spot_right": "Rechte Kante der blinden Fleck-Zone (horizontaler Winkel in Grad von Ihrer FOV-linken Grenze, muss > linke Kante sein). Beispiel: Wenn Ihre FOV-Links 45° beträgt und ein Baum die Sonne von 10–20° relativ zu dieser Kante blockiert, auf 20 einstellen. Dies markiert, wo die Verdeckung horizontal endet. Erstellt eine „Sonne hier nicht verfolgen“-Zone zwischen linken und rechten Kanten.",
-          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über dem Horizont), bei der der blinde Fleck gilt. Beispiel: Ein Dachüberstand blockiert die Sonne nur wenn diese niedrig ist (< 30°), also auf 30 einstellen. Sonnenhöhen über dieser Elevation durchqueren das Hindernis, daher gilt der blinde Fleck nicht. Falls das Hindernis alle Elevationen blockiert (hohes Gebäude), auf 90 einstellen oder höher lassen. Sonnenhöhe: 0°=Horizont, 45°=halbe Höhe, 90°=direkt oben. Messen oder schätzen Sie basierend auf Hindernishöhe und Entfernung."
+          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über dem Horizont), bei der der blinde Fleck gilt. Beispiel: Ein Dachüberstand blockiert die Sonne nur wenn diese niedrig ist (< 30°), also auf 30 einstellen. Sonnenhöhen über dieser Elevation durchqueren das Hindernis, daher gilt der blinde Fleck nicht. Falls das Hindernis alle Elevationen blockiert (hohes Gebäude), auf 90 einstellen oder höher lassen. Sonnenhöhe: 0°=Horizont, 45°=halbe Höhe, 90°=direkt oben. Messen oder schätzen Sie basierend auf Hindernishöhe und Entfernung.",
+          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 2 zu deaktivieren.",
+          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 2 sein).",
+          "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
+          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 3 zu deaktivieren.",
+          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 3 sein).",
+          "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden."
         },
         "title": "Blindfleck",
         "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"
@@ -1201,12 +1213,24 @@
         "data": {
           "blind_spot_left": "Blindfleck linke Kante (von FOV-Links)",
           "blind_spot_right": "Blindfleck rechte Kante (von FOV-Links)",
-          "blind_spot_elevation": "Blindfleck-Höhe"
+          "blind_spot_elevation": "Blindfleck-Höhe",
+          "blind_spot_left_2": "Blindfleck 2 linke Kante (von FOV-Links)",
+          "blind_spot_right_2": "Blindfleck 2 rechte Kante (von FOV-Links)",
+          "blind_spot_elevation_2": "Blindfleck 2 Höhe",
+          "blind_spot_left_3": "Blindfleck 3 linke Kante (von FOV-Links)",
+          "blind_spot_right_3": "Blindfleck 3 rechte Kante (von FOV-Links)",
+          "blind_spot_elevation_3": "Blindfleck 3 Höhe"
         },
         "data_description": {
           "blind_spot_left": "Linke Kante der Zone des blinden Flecks (horizontaler Winkel in Grad von Ihrer linken FOV-Grenze). Wobei 0 = an der am weitesten links liegenden FOV-Grenze. Beispiel: Wenn Ihre FOV links 45° ist und ein Baum die Sonne von 10-20° relativ zu dieser Grenze blockiert, setzen Sie dies auf 10. Dies markiert, wo die Obstruktion horizontal beginnt. Verwenden Sie einen Sonnenpositionssensor oder beobachten Sie, wenn die Sonne blockiert ist, um diesen Wert zu finden.",
           "blind_spot_right": "Rechte Kante der Blindfleckzone (horizontaler Winkel in Grad von Ihrer FOV-Linken Grenze, muss > linke Kante sein). Beispiel: Wenn Ihre FOV-Linke 45° beträgt und ein Baum die Sonne von 10-20° relativ zu dieser Kante blockiert, stellen Sie diesen Wert auf 20 ein. Dies markiert, wo die Verdeckung horizontal endet. Erstellt eine Zone „Sonne nicht hier verfolgbar“ zwischen linker und rechter Kante.",
-          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über Horizont), bei der der blinde Fleck gilt. Beispiel: Dachüberstand blockiert Sonne nur, wenn niedrig (< 30°), also auf 30 setzen. Sonne mit höherer Höhe schiebt das Hindernis, daher gilt der blinde Fleck nicht. Wenn das Hindernis alle Höhen blockiert (hohes Gebäude), auf 90 setzen oder hoch lassen. Sonnenhöhe: 0°=Horizont, 45°=halber Weg oben, 90°=direkt oben. Messen oder schätzen basierend auf Hindernishöhe und Entfernung."
+          "blind_spot_elevation": "Maximale Sonnenhöhe (Grad über Horizont), bei der der blinde Fleck gilt. Beispiel: Dachüberstand blockiert Sonne nur, wenn niedrig (< 30°), also auf 30 setzen. Sonne mit höherer Höhe schiebt das Hindernis, daher gilt der blinde Fleck nicht. Wenn das Hindernis alle Höhen blockiert (hohes Gebäude), auf 90 setzen oder hoch lassen. Sonnenhöhe: 0°=Horizont, 45°=halber Weg oben, 90°=direkt oben. Messen oder schätzen basierend auf Hindernishöhe und Entfernung.",
+          "blind_spot_left_2": "Optionaler zweiter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 2 zu deaktivieren.",
+          "blind_spot_right_2": "Rechte Kante des zweiten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 2 sein).",
+          "blind_spot_elevation_2": "Maximale Sonnenhöhe, bei der Slot 2 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden.",
+          "blind_spot_left_3": "Optionaler dritter Blindfleck-Slot. Linke Kante in Grad von Ihrer FOV-Linken Grenze. Lassen Sie diesen und die rechte Kante nicht gesetzt, um Slot 3 zu deaktivieren.",
+          "blind_spot_right_3": "Rechte Kante des dritten Blindfleck-Slots (Grad von FOV-Linke, muss größer als linke Kante von Slot 3 sein).",
+          "blind_spot_elevation_3": "Maximale Sonnenhöhe, bei der Slot 3 gilt. Nicht gesetzt lassen, um bei allen Höhen anzuwenden."
         },
         "title": "Blindfleck",
         "description": "Definieren Sie Bereiche, in denen Hindernisse die Sonne blockieren (Bäume, Gebäude, Dachüberstand). Diese Winkelwerte sind relative Grade innerhalb Ihres Sichtfelds, wobei 0 die linke Sichtfeld-Grenze ist. Das Beschattungselement ignoriert die Sonnenposition, wenn sie in diese Blindspot-Zone fällt.\n\n[Weitere Informationen]({learn_more})"

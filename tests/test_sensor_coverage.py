@@ -233,6 +233,42 @@ def test_sun_position_attributes_blind_spot_range_calculated():
     assert attrs["blind_spot_range"] == [40.0, 35.0]
 
 
+def test_sun_position_attributes_blind_spot_ranges_multi_slot():
+    """blind_spot_ranges lists every active slot; blind_spot_range stays slot 1."""
+    coord = _make_coordinator(
+        diagnostics={
+            "sun_azimuth": 180.0,
+            "sun_elevation": 45.0,
+            "gamma": None,
+            "configuration": {
+                "azimuth": 180,
+                "fov_left": 45,
+                "fov_right": 45,
+                "enable_blind_spot": True,
+                "blind_spot_left": 10.0,
+                "blind_spot_right": 5.0,
+                "blind_spot_left_2": 20.0,
+                "blind_spot_right_2": 15.0,
+            },
+        }
+    )
+    entry = _make_config_entry()
+    sensor = AdaptiveCoverSunPositionSensor(
+        unique_id="test_entry",
+        hass=_make_hass(),
+        config_entry=entry,
+        name="Test",
+        coordinator=coord,
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs is not None
+    # Back-compat single-slot attr unchanged (slot 1).
+    assert attrs["blind_spot_range"] == [40.0, 35.0]
+    # New multi-slot attr: slot 1 then slot 2.
+    # slot 2: left_edge = 45 - 20 = 25, right_edge = 45 - 15 = 30
+    assert attrs["blind_spot_ranges"] == [[40.0, 35.0], [30.0, 25.0]]
+
+
 # ---------------------------------------------------------------------------
 # AdaptiveCoverLastActionSensor
 # ---------------------------------------------------------------------------

@@ -51,6 +51,7 @@ Section index
 """
 
 import logging
+from dataclasses import dataclass
 from enum import Enum, StrEnum
 
 # =============================================================================
@@ -305,6 +306,58 @@ CONF_BLIND_SPOT_LEFT = "blind_spot_left"  # left edge, azimuth deg 0-359
 CONF_BLIND_SPOT_RIGHT = "blind_spot_right"  # right edge, azimuth deg 0-360
 # Sun elevation below which the blind-spot wedge applies, degrees 0-90.
 CONF_BLIND_SPOT_ELEVATION = "blind_spot_elevation"
+
+# --- Multiple blind-spot slots (issue #701) ---------------------------------
+# The single wedge above generalizes to UP TO 3 independent slots. The sun is
+# treated as blocked when it falls inside ANY active slot. A slot is *active*
+# when its left AND right are both set; the master CONF_ENABLE_BLIND_SPOT still
+# gates the whole feature. Slot 1 REUSES the legacy unsuffixed keys above so
+# existing installs need no migration; slots 2/3 use ``_2``/``_3`` suffixes.
+
+# Per-slot elevation modes (issue #702 will add the "above" branch — the field
+# is carried now, defaulted to "below" = today's ``sol_elev <= elevation``).
+BLIND_SPOT_ELEV_MODE_BELOW = "below"  # wedge applies when sun is at/below elev
+BLIND_SPOT_ELEV_MODE_ABOVE = "above"  # reserved for #702: at/above elev
+
+BLIND_SPOT_SLOT_NUMBERS: tuple[int, ...] = (1, 2, 3)  # slot 1 = legacy keys
+
+
+@dataclass(frozen=True, slots=True)
+class BlindSpot:
+    """One blind-spot wedge.
+
+    ``elevation`` (None = applies at all elevations). ``elevation_mode`` is
+    reserved for issue #702 (``"below"``/``"above"``); it defaults to
+    ``BLIND_SPOT_ELEV_MODE_BELOW`` which is today's behavior, so #702 only has
+    to flip the single comparison in the containment helper.
+    """
+
+    left: int
+    right: int
+    elevation: int | None = None
+    elevation_mode: str = BLIND_SPOT_ELEV_MODE_BELOW
+
+
+def _blind_spot_slot_keys(n: int) -> dict[str, str]:
+    """Return the wire-format option keys for blind-spot slot *n*.
+
+    Slot 1 keeps the legacy unsuffixed keys (no data migration); slots 2+ are
+    suffixed ``_<n>``.
+    """
+    s = "" if n == 1 else f"_{n}"
+    return {
+        "left": f"blind_spot_left{s}",
+        "right": f"blind_spot_right{s}",
+        "elevation": f"blind_spot_elevation{s}",
+        # Reserved for #702's per-slot below/above selector.
+        "elevation_mode": f"blind_spot_elevation_mode{s}",
+    }
+
+
+# {slot_number: {sub_key: wire_key}}
+BLIND_SPOT_SLOTS: dict[int, dict[str, str]] = {
+    n: _blind_spot_slot_keys(n) for n in BLIND_SPOT_SLOT_NUMBERS
+}
 
 
 # =============================================================================

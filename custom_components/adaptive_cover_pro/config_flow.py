@@ -22,15 +22,13 @@ from homeassistant.helpers import selector
 
 from .const import (
     BLANK_TIME,
+    BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
     LIGHT_CLOUD_SENSOR_KEYS,
     WEATHER_OVERRIDE_SENSOR_KEYS,
     CONF_AWNING_ANGLE,
     CONF_AZIMUTH,
     CONF_BUILDING_PROFILE_ID,
-    CONF_BLIND_SPOT_ELEVATION,
-    CONF_BLIND_SPOT_LEFT,
-    CONF_BLIND_SPOT_RIGHT,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_SUPPRESSION,
     CONF_CLOUDY_POSITION,
@@ -293,6 +291,22 @@ def _handler_priority_overrides(config: dict[str, Any]) -> dict[str, int]:
     return {
         name: resolve_handler_priority(config, name) for name in HANDLER_PRIORITY_CONF
     }
+
+
+def _blind_spot_step_errors(user_input: dict[str, Any]) -> dict[str, str]:
+    """Return per-slot ``right <= left`` errors for the blind-spot step (#701).
+
+    Shared by the initial and options flows so the gate is identical. A slot is
+    only checked when both its edges are present; absent (optional) slots 2/3
+    produce no error.
+    """
+    errors: dict[str, str] = {}
+    for keys in BLIND_SPOT_SLOTS.values():
+        left = user_input.get(keys["left"])
+        right = user_input.get(keys["right"])
+        if left is not None and right is not None and right <= left:
+            errors[keys["right"]] = "Must be greater than 'Blind Spot Left Edge'"
+    return errors
 
 
 # Module-level constant for tests / imports. Identical to the legacy
@@ -2197,18 +2211,20 @@ def _build_config_summary(  # noqa: C901, PLR0912, PLR0915
         if sunset_off or sunrise_off:
             lines.append(L["timing.gate_offset_ignored"].format(indent=indent))
 
-    # Blind spot (sub-bullet / informational, no priority of its own)
+    # Blind spot (sub-bullet / informational, no priority of its own). One line
+    # per active slot — a slot is active when its left & right are both set
+    # (issue #701). Slot 1 reuses the legacy unsuffixed keys.
     if config.get(CONF_ENABLE_BLIND_SPOT):
-        bs_l = config.get(CONF_BLIND_SPOT_LEFT)
-        bs_r = config.get(CONF_BLIND_SPOT_RIGHT)
-        bs_e = config.get(CONF_BLIND_SPOT_ELEVATION)
-        bs_parts = []
-        if bs_l is not None and bs_r is not None:
-            bs_parts.append(L["blind_spot.range"].format(left=bs_l, right=bs_r))
-        if bs_e is not None:
-            bs_parts.append(L["blind_spot.elevation"].format(elev=bs_e))
-        bs_str = " ".join(bs_parts)
-        lines.append(L["blind_spot.line"].format(bs=bs_str))
+        for keys in BLIND_SPOT_SLOTS.values():
+            bs_l = config.get(keys["left"])
+            bs_r = config.get(keys["right"])
+            if bs_l is None or bs_r is None:
+                continue
+            bs_e = config.get(keys["elevation"])
+            bs_parts = [L["blind_spot.range"].format(left=bs_l, right=bs_r)]
+            if bs_e is not None:
+                bs_parts.append(L["blind_spot.elevation"].format(elev=bs_e))
+            lines.append(L["blind_spot.line"].format(bs=" ".join(bs_parts)))
 
     # Default fallback (priority 0) — shown as the final row of the chain
     lines.append(L["rules.default"].format(default_pos=default_pos) + _badge(0))
@@ -2480,11 +2496,9 @@ SYNC_CATEGORIES: dict[str, frozenset[str]] = {
         }
     ),
     "blind_spot": frozenset(
-        {
-            CONF_BLIND_SPOT_LEFT,
-            CONF_BLIND_SPOT_RIGHT,
-            CONF_BLIND_SPOT_ELEVATION,
-        }
+        keys[sub]
+        for keys in BLIND_SPOT_SLOTS.values()
+        for sub in ("left", "right", "elevation")
     ),
     "position": frozenset(
         {
@@ -3290,13 +3304,12 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Add blindspot to data."""
         schema = blind_spot_schema(self.config)
         if user_input is not None:
-            if user_input[CONF_BLIND_SPOT_RIGHT] <= user_input[CONF_BLIND_SPOT_LEFT]:
+            errors = _blind_spot_step_errors(user_input)
+            if errors:
                 return self.async_show_form(
                     step_id="blind_spot",
                     data_schema=schema,
-                    errors={
-                        CONF_BLIND_SPOT_RIGHT: "Must be greater than 'Blind Spot Left Edge'"
-                    },
+                    errors=errors,
                     description_placeholders={
                         "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
                     },
@@ -4271,13 +4284,12 @@ class OptionsFlowHandler(OptionsFlow):
         """Add blindspot to data."""
         schema = blind_spot_schema(self.options)
         if user_input is not None:
-            if user_input[CONF_BLIND_SPOT_RIGHT] <= user_input[CONF_BLIND_SPOT_LEFT]:
+            errors = _blind_spot_step_errors(user_input)
+            if errors:
                 return self.async_show_form(
                     step_id="blind_spot",
                     data_schema=schema,
-                    errors={
-                        CONF_BLIND_SPOT_RIGHT: "Must be greater than 'Blind Spot Left Edge'"
-                    },
+                    errors=errors,
                     description_placeholders={
                         "learn_more": "https://github.com/jrhubott/adaptive-cover-pro/wiki/Configuration-Blindspot"
                     },

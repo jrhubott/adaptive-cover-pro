@@ -20,6 +20,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BLIND_SPOT_SLOTS,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_CLOUD_SUPPRESSION,
@@ -458,17 +459,21 @@ def _sun_position_attrs(s: _ACPDiagnosticSensor) -> Mapping[str, Any] | None:
             else:
                 attrs["in_fov"] = sun_azimuth >= azi_min or sun_azimuth <= azi_max
 
-    if config.get("enable_blind_spot", False):
-        blind_spot_left = config.get("blind_spot_left")
-        blind_spot_right = config.get("blind_spot_right")
-        if (
-            fov_left is not None
-            and blind_spot_left is not None
-            and blind_spot_right is not None
-        ):
-            left_edge = fov_left - blind_spot_left
-            right_edge = fov_left - blind_spot_right
-            attrs["blind_spot_range"] = [right_edge, left_edge]
+    if config.get("enable_blind_spot", False) and fov_left is not None:
+        # One [right_edge, left_edge] pair per active slot (issue #701). Slot 1
+        # reuses the legacy unsuffixed keys. ``blind_spot_range`` keeps emitting
+        # only slot 1 for Lovelace-card back-compat; ``blind_spot_ranges`` lists
+        # every active slot.
+        ranges: list[list[float]] = []
+        for keys in BLIND_SPOT_SLOTS.values():
+            bs_left = config.get(keys["left"])
+            bs_right = config.get(keys["right"])
+            if bs_left is None or bs_right is None:
+                continue
+            ranges.append([fov_left - bs_right, fov_left - bs_left])
+        if ranges:
+            attrs["blind_spot_range"] = ranges[0]
+            attrs["blind_spot_ranges"] = ranges
 
     return attrs or None
 

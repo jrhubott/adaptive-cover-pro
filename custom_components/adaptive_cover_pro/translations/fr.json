@@ -468,12 +468,24 @@
         "data": {
           "blind_spot_left": "Bord gauche de la zone cachée (depuis FOV gauche)",
           "blind_spot_right": "Bord droit de la zone cachée (depuis FOV gauche)",
-          "blind_spot_elevation": "Élévation zone cachée"
+          "blind_spot_elevation": "Élévation zone cachée",
+          "blind_spot_left_2": "Bord gauche zone cachée 2 (depuis FOV gauche)",
+          "blind_spot_right_2": "Bord droit zone cachée 2 (depuis FOV gauche)",
+          "blind_spot_elevation_2": "Élévation zone cachée 2",
+          "blind_spot_left_3": "Bord gauche zone cachée 3 (depuis FOV gauche)",
+          "blind_spot_right_3": "Bord droit zone cachée 3 (depuis FOV gauche)",
+          "blind_spot_elevation_3": "Élévation zone cachée 3"
         },
         "data_description": {
           "blind_spot_left": "Bord gauche de la zone de point aveugle (angle horizontal en degrés de votre limite FOV gauche). Où 0 = au bord FOV le plus à gauche. Exemple : Si votre FOV gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, réglez sur 10. Cela marque où l'obstruction commence horizontalement. Utilisez le capteur de position du soleil ou observez quand le soleil est bloqué pour trouver cette valeur.",
           "blind_spot_right": "Bord droit de la zone de point aveugle (angle horizontal en degrés de votre limite FOV gauche, doit être > bord gauche). Exemple : Si votre FOV gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, réglez sur 20. Cela marque où l'obstruction se termine horizontalement. Crée une zone « ne pas suivre le soleil ici » entre les bords gauche et droit.",
-          "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle."
+          "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle.",
+          "blind_spot_left_2": "Slot zone cachée 2 facultatif. Bord gauche en degrés de votre limite FOV gauche. Laissez ce champ et le bord droit vides pour désactiver le slot 2.",
+          "blind_spot_right_2": "Bord droit du slot zone cachée 2 (degrés depuis FOV gauche, doit être supérieur au bord gauche du slot 2).",
+          "blind_spot_elevation_2": "Élévation solaire maximale où le slot 2 s'applique. Laissez vide pour s'appliquer à toutes les élévations.",
+          "blind_spot_left_3": "Slot zone cachée 3 facultatif. Bord gauche en degrés de votre limite FOV gauche. Laissez ce champ et le bord droit vides pour désactiver le slot 3.",
+          "blind_spot_right_3": "Bord droit du slot zone cachée 3 (degrés depuis FOV gauche, doit être supérieur au bord gauche du slot 3).",
+          "blind_spot_elevation_3": "Élévation solaire maximale où le slot 3 s'applique. Laissez vide pour s'appliquer à toutes les élévations."
         },
         "title": "Zone cachée",
         "description": "Définissez les zones où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Ces valeurs angulaires sont relatives en degrés dans votre champ de vision, où 0 est la limite FOV la plus à gauche. La protection ignorera la position du soleil lorsqu'elle se trouve dans cette zone de point aveugle.\n\n[Learn more]({learn_more})"
@@ -1201,12 +1213,24 @@
         "data": {
           "blind_spot_left": "Bord gauche de la zone cachée (depuis FOV gauche)",
           "blind_spot_right": "Bord droit de la zone cachée (depuis FOV gauche)",
-          "blind_spot_elevation": "Élévation zone cachée"
+          "blind_spot_elevation": "Élévation zone cachée",
+          "blind_spot_left_2": "Bord gauche zone cachée 2 (depuis FOV gauche)",
+          "blind_spot_right_2": "Bord droit zone cachée 2 (depuis FOV gauche)",
+          "blind_spot_elevation_2": "Élévation zone cachée 2",
+          "blind_spot_left_3": "Bord gauche zone cachée 3 (depuis FOV gauche)",
+          "blind_spot_right_3": "Bord droit zone cachée 3 (depuis FOV gauche)",
+          "blind_spot_elevation_3": "Élévation zone cachée 3"
         },
         "data_description": {
           "blind_spot_left": "Bord gauche de la zone de point aveugle (angle horizontal en degrés de votre limite FOV gauche). Où 0 = au bord FOV le plus à gauche. Exemple : Si votre FOV gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, réglez sur 10. Cela marque où l'obstruction commence horizontalement. Utilisez le capteur de position du soleil ou observez quand le soleil est bloqué pour trouver cette valeur.",
           "blind_spot_right": "Bord droit de la zone de point aveugle (angle horizontal en degrés de votre limite FOV gauche, doit être > bord gauche). Exemple : Si votre FOV gauche est 45° et un arbre bloque le soleil de 10-20° par rapport à ce bord, réglez sur 20. Cela marque où l'obstruction se termine horizontalement. Crée une zone « ne pas suivre le soleil ici » entre les bords gauche et droit.",
-          "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle."
+          "blind_spot_elevation": "Élévation solaire maximale (degrés au-dessus de l'horizon) où la zone cachée s'applique. Exemple : Le surplomb du toit bloque le soleil uniquement quand c'est bas (< 30°) donc réglez sur 30. Le soleil à plus haute élévation dégaze l'obstacle, donc la zone cachée ne s'applique pas. Si l'obstacle bloque toutes les élévations (bâtiment haut), réglez sur 90 ou laissez élevé. Élévation du soleil : 0°=horizon, 45°=mi-hauteur, 90°=directement au-dessus. Mesurez ou estimez en fonction de la hauteur et de la distance de l'obstacle.",
+          "blind_spot_left_2": "Slot zone cachée 2 facultatif. Bord gauche en degrés de votre limite FOV gauche. Laissez ce champ et le bord droit vides pour désactiver le slot 2.",
+          "blind_spot_right_2": "Bord droit du slot zone cachée 2 (degrés depuis FOV gauche, doit être supérieur au bord gauche du slot 2).",
+          "blind_spot_elevation_2": "Élévation solaire maximale où le slot 2 s'applique. Laissez vide pour s'appliquer à toutes les élévations.",
+          "blind_spot_left_3": "Slot zone cachée 3 facultatif. Bord gauche en degrés de votre limite FOV gauche. Laissez ce champ et le bord droit vides pour désactiver le slot 3.",
+          "blind_spot_right_3": "Bord droit du slot zone cachée 3 (degrés depuis FOV gauche, doit être supérieur au bord gauche du slot 3).",
+          "blind_spot_elevation_3": "Élévation solaire maximale où le slot 3 s'applique. Laissez vide pour s'appliquer à toutes les élévations."
         },
         "title": "Zone cachée",
         "description": "Définissez les zones où les obstacles bloquent le soleil (arbres, bâtiments, surplombs de toit). Ces valeurs angulaires sont relatives en degrés dans votre champ de vision, où 0 est la limite FOV la plus à gauche. La protection ignorera la position du soleil lorsqu'elle se trouve dans cette zone de point aveugle.\n\n[Learn more]({learn_more})"

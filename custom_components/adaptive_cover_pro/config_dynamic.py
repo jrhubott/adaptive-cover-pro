@@ -25,11 +25,10 @@ from .config_fields import (
     presence_like_selector,
 )
 from .const import (
+    BLIND_SPOT_SLOT_NUMBERS,
+    BLIND_SPOT_SLOTS,
     BUILDING_PROFILE_SENSOR_KEYS,
     CONF_AZIMUTH,
-    CONF_BLIND_SPOT_ELEVATION,
-    CONF_BLIND_SPOT_LEFT,
-    CONF_BLIND_SPOT_RIGHT,
     CONF_BUILDING_PROFILE_ID,
     CONF_CLIMATE_MODE,
     CONF_CLOUD_COVERAGE_ENTITY,
@@ -253,42 +252,43 @@ def sun_tracking_schema(hass: HomeAssistant | None = None) -> vol.Schema:
 
 
 def blind_spot_schema(options: dict | None = None) -> vol.Schema:
-    """Blind-spot wedge schema. Left/right bounds derive from the FOV edges.
+    """Blind-spot wedge schema for up to 3 slots (issue #701).
 
     ``edges = fov_left + fov_right`` (defaulting to 90+90) sets the maximum
     left/right azimuth offset, matching the legacy in-step construction.
+
+    Slot 1 reuses the legacy unsuffixed keys and keeps its ``Required``
+    defaults (0/1) so its form is byte-for-byte unchanged. Slots 2/3 are
+    ``Optional`` sliders with no default, so an unconfigured slot stays absent
+    (``None``-preserving) and therefore inactive.
     """
     opts = options or {}
     edges = int(opts.get(CONF_FOV_LEFT, 90)) + int(opts.get(CONF_FOV_RIGHT, 90))
-    return vol.Schema(
-        {
-            vol.Required(CONF_BLIND_SPOT_LEFT, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                    min=0,
-                    max=edges - 1,
-                )
-            ),
-            vol.Required(CONF_BLIND_SPOT_RIGHT, default=1): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                    min=1,
-                    max=edges,
-                )
-            ),
-            vol.Optional(CONF_BLIND_SPOT_ELEVATION): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=90,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                    unit_of_measurement="°",
-                )
-            ),
+
+    def _slider(min_v: int, max_v: int, *, step: int | None = None):
+        cfg: dict = {
+            "mode": selector.NumberSelectorMode.SLIDER,
+            "unit_of_measurement": "°",
+            "min": min_v,
+            "max": max_v,
         }
-    )
+        if step is not None:
+            cfg["step"] = step
+        return selector.NumberSelector(selector.NumberSelectorConfig(**cfg))
+
+    schema: dict = {}
+    for n in BLIND_SPOT_SLOT_NUMBERS:
+        keys = BLIND_SPOT_SLOTS[n]
+        if n == 1:
+            left_marker = vol.Required(keys["left"], default=0)
+            right_marker = vol.Required(keys["right"], default=1)
+        else:
+            left_marker = vol.Optional(keys["left"])
+            right_marker = vol.Optional(keys["right"])
+        schema[left_marker] = _slider(0, edges - 1)
+        schema[right_marker] = _slider(1, edges)
+        schema[vol.Optional(keys["elevation"])] = _slider(0, 90, step=1)
+    return vol.Schema(schema)
 
 
 def weather_override_schema(

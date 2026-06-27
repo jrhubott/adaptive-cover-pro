@@ -770,10 +770,8 @@ class DiagnosticsBuilder:
     def _build_configuration(ctx: DiagnosticContext) -> dict:
         """Build configuration diagnostics."""
         from ..const import (
+            BLIND_SPOT_SLOTS,
             CONF_AZIMUTH,
-            CONF_BLIND_SPOT_ELEVATION,
-            CONF_BLIND_SPOT_LEFT,
-            CONF_BLIND_SPOT_RIGHT,
             CONF_CLOUD_SUPPRESSION,
             CONF_CLOUDY_POSITION,
             CONF_ENABLE_BLIND_SPOT,
@@ -814,9 +812,13 @@ class DiagnosticsBuilder:
                 "min_elevation": options.get(CONF_MIN_ELEVATION),
                 "max_elevation": options.get(CONF_MAX_ELEVATION),
                 "enable_blind_spot": options.get(CONF_ENABLE_BLIND_SPOT, False),
-                "blind_spot_elevation": options.get(CONF_BLIND_SPOT_ELEVATION),
-                "blind_spot_left": options.get(CONF_BLIND_SPOT_LEFT),
-                "blind_spot_right": options.get(CONF_BLIND_SPOT_RIGHT),
+                # Per-slot blind-spot keys (issue #701). Slot 1 reuses the
+                # legacy unsuffixed keys; slots 2/3 are suffixed.
+                **{
+                    keys[sub]: options.get(keys[sub])
+                    for keys in BLIND_SPOT_SLOTS.values()
+                    for sub in ("left", "right", "elevation")
+                },
                 "min_position": options.get(CONF_MIN_POSITION),
                 "min_position_sun_tracking": options.get(
                     CONF_MIN_POSITION_SUN_TRACKING
